@@ -1,164 +1,157 @@
 #!/usr/bin/env bash
 #
-# Pinos do CONTRATO de deploy.
+# Pins for the deploy CONTRACT.
 #
-# Script de asserção em shell, e não `bats`: o repositório não tem bats, e
-# introduzir ferramenta nova para quatro asserções custaria mais manutenção do
-# que resolve.
+# A plain shell assertion script, not `bats`: the repository has no bats, and a new
+# tool for a handful of assertions would cost more than it saves.
 #
-# 🔴 NENHUM PINO AQUI TOCA SERVIÇO REAL. Todos rodam `deploy.sh --validar`, que
-# sai ANTES do primeiro efeito colateral (sem mkdir, sem flock, sem log). Um pino
-# que derruba o painel para se provar é pior que a ausência dele.
+# 🔴 NO PIN HERE TOUCHES A REAL SERVICE. They all run the deploy script in its
+# validate-only mode, which exits BEFORE the first side effect (no mkdir, no flock,
+# no log).
 #
-# Cada pino afirma o CÓDIGO DE SAÍDA **e** um trecho da mensagem. Código sozinho
-# não distingue "recusou pela razão certa" de "quebrou por outro motivo" — e é
-# essa confusão que faz um pino continuar verde depois de parar de medir.
+# Each pin asserts the EXIT CODE **and** part of the message: the code alone cannot
+# tell "refused for the right reason" from "broke for another reason".
+#
+# The validate flag and the expected message fragments are the literal interface
+# of the deploy script, which lives outside this repository.
 
 set -uo pipefail
 
-RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DEPLOY="$RAIZ/scripts/deploy.sh"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+DEPLOY="$ROOT/scripts/deploy.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-falhas=0
+failures=0
 total=0
 
-# conf_valida escreve uma configuração completa e correta, com sobrescritas.
-conf_valida() {
-    local arq="$1"; shift
-    cat > "$arq" <<EOF
+# valid_conf writes a complete, correct configuration plus overrides.
+valid_conf() {
+    local file="$1"; shift
+    cat > "$file" <<EOF
 PROJ_SRC=$TMP/src
 PROJ_ROOT=$TMP/root
 BIN_DIR=\$PROJ_ROOT/bin
-LINK=\$BIN_DIR/exemplo
-ARTIFACT_PREFIX=exemplo-
+LINK=\$BIN_DIR/example
+ARTIFACT_PREFIX=example-
 BUILD_CMD=
 HEALTH_MODE=url
 HEALTH_URL=http://127.0.0.1:1/health
 HEALTH_TRIES=15
 HEALTH_INTERVAL=2
-SERVICE=exemplo
+SERVICE=example
 KEEP_BINARIES=5
 LOCK_FILE=\$PROJ_ROOT/.lock
 LOG=\$PROJ_ROOT/deploy.log
 EOF
-    for extra in "$@"; do echo "$extra" >> "$arq"; done
+    for extra in "$@"; do echo "$extra" >> "$file"; done
 }
 
-# pino <nome> <rc-esperado> <trecho-esperado> <arquivo-conf>
-pino() {
-    local nome="$1" rc_quero="$2" trecho="$3" arq="$4"
+# pin <name> <expected-rc> <expected-fragment> <conf-file>
+pin() {
+    local name="$1" want_rc="$2" fragment="$3" file="$4"
     total=$((total+1))
-    local saida rc
-    saida="$("$DEPLOY" --conf "$arq" --validar 2>&1)"; rc=$?
-    if [[ "$rc" != "$rc_quero" ]]; then
-        echo "  ✗ $nome: esperava rc=$rc_quero, veio rc=$rc"
-        echo "    saída: $saida"
-        falhas=$((falhas+1)); return
+    local output rc
+    output="$("$DEPLOY" --conf "$file" --validar 2>&1)"; rc=$?
+    if [[ "$rc" != "$want_rc" ]]; then
+        echo "  ✗ $name: expected rc=$want_rc, got rc=$rc"
+        echo "    output: $output"
+        failures=$((failures+1)); return
     fi
-    if [[ -n "$trecho" && "$saida" != *"$trecho"* ]]; then
-        echo "  ✗ $nome: rc correto ($rc) mas a mensagem não nomeia o problema"
-        echo "    esperava conter: $trecho"
-        echo "    saída: $saida"
-        falhas=$((falhas+1)); return
+    if [[ -n "$fragment" && "$output" != *"$fragment"* ]]; then
+        echo "  ✗ $name: right rc ($rc) but the message does not name the problem"
+        echo "    expected to contain: $fragment"
+        echo "    output: $output"
+        failures=$((failures+1)); return
     fi
-    echo "  ✓ $nome"
+    echo "  ✓ $name"
 }
 
-echo "═══ pinos do contrato de deploy ═══"
+echo "═══ deploy contract pins ═══"
 
-# ── CONTROLE NEGATIVO, PRIMEIRO ──────────────────────────────────────────────
-# Pino que só sabe reprovar é o defeito que a Fase 2 encontrou quatro vezes.
-# Se esta linha falhar, TODAS as outras são falso-positivo e não valem nada.
-conf_valida "$TMP/ok.conf"
-pino "CONTROLE NEGATIVO: conf válida e completa PASSA" 0 "configuração válida" "$TMP/ok.conf"
+# Negative control FIRST: if this fails, every other pin is a false positive.
+valid_conf "$TMP/ok.conf"
+pin "NEGATIVE CONTROL: a complete, valid conf PASSES" 0 "configuração válida" "$TMP/ok.conf"
 
-# ── conf ausente ─────────────────────────────────────────────────────────────
-pino "conf inexistente nomeia o arquivo" 2 "$TMP/nao-existe.conf" "$TMP/nao-existe.conf"
+# Missing conf.
+pin "a missing conf names the file" 2 "$TMP/does-not-exist.conf" "$TMP/does-not-exist.conf"
 
-# ── chave obrigatória faltando ───────────────────────────────────────────────
-for chave in PROJ_ROOT BIN_DIR LINK ARTIFACT_PREFIX SERVICE LOCK_FILE LOG; do
-    conf_valida "$TMP/sem-$chave.conf"
-    # Esvazia a chave DEPOIS, para vencer a definição anterior.
-    echo "$chave=" >> "$TMP/sem-$chave.conf"
-    pino "chave obrigatória ausente nomeia '$chave'" 2 "$chave" "$TMP/sem-$chave.conf"
+# Missing required key.
+for key in PROJ_ROOT BIN_DIR LINK ARTIFACT_PREFIX SERVICE LOCK_FILE LOG; do
+    valid_conf "$TMP/no-$key.conf"
+    # Empty the key AFTERWARDS so it wins over the earlier definition.
+    echo "$key=" >> "$TMP/no-$key.conf"
+    pin "a missing required key names '$key'" 2 "$key" "$TMP/no-$key.conf"
 done
 
-# ── HEALTH_MODE ──────────────────────────────────────────────────────────────
-conf_valida "$TMP/hm-invalido.conf" "HEALTH_MODE=xpto"
-pino "HEALTH_MODE inválido nomeia o valor" 2 "xpto" "$TMP/hm-invalido.conf"
+# HEALTH_MODE
+valid_conf "$TMP/hm-invalid.conf" "HEALTH_MODE=xpto"
+pin "an invalid HEALTH_MODE names the value" 2 "xpto" "$TMP/hm-invalid.conf"
 
-conf_valida "$TMP/url-sem-url.conf" "HEALTH_URL="
-pino "HEALTH_MODE=url sem HEALTH_URL" 2 "HEALTH_URL" "$TMP/url-sem-url.conf"
+valid_conf "$TMP/url-no-url.conf" "HEALTH_URL="
+pin "HEALTH_MODE=url without HEALTH_URL" 2 "HEALTH_URL" "$TMP/url-no-url.conf"
 
-conf_valida "$TMP/cmd-sem-cmd.conf" "HEALTH_MODE=cmd" "HEALTH_CMD="
-pino "HEALTH_MODE=cmd sem HEALTH_CMD" 2 "HEALTH_CMD" "$TMP/cmd-sem-cmd.conf"
+valid_conf "$TMP/cmd-no-cmd.conf" "HEALTH_MODE=cmd" "HEALTH_CMD="
+pin "HEALTH_MODE=cmd without HEALTH_CMD" 2 "HEALTH_CMD" "$TMP/cmd-no-cmd.conf"
 
-conf_valida "$TMP/cmd-ok.conf" "HEALTH_MODE=cmd" "HEALTH_CMD=true"
-pino "HEALTH_MODE=cmd com HEALTH_CMD é válido" 0 "cmd" "$TMP/cmd-ok.conf"
+valid_conf "$TMP/cmd-ok.conf" "HEALTH_MODE=cmd" "HEALTH_CMD=true"
+pin "HEALTH_MODE=cmd with HEALTH_CMD is valid" 0 "cmd" "$TMP/cmd-ok.conf"
 
-# ── KEEP_BINARIES ────────────────────────────────────────────────────────────
-conf_valida "$TMP/keep1.conf" "KEEP_BINARIES=1"
-pino "KEEP_BINARIES=1 explica que o rollback exige 2" 2 "pelo menos 2" "$TMP/keep1.conf"
+# KEEP_BINARIES
+valid_conf "$TMP/keep1.conf" "KEEP_BINARIES=1"
+pin "KEEP_BINARIES=1 explains that rollback needs 2" 2 "pelo menos 2" "$TMP/keep1.conf"
 
-conf_valida "$TMP/keep2.conf" "KEEP_BINARIES=2"
-pino "KEEP_BINARIES=2 é o mínimo aceito" 0 "válida" "$TMP/keep2.conf"
+valid_conf "$TMP/keep2.conf" "KEEP_BINARIES=2"
+pin "KEEP_BINARIES=2 is the minimum accepted" 0 "válida" "$TMP/keep2.conf"
 
-conf_valida "$TMP/keepx.conf" "KEEP_BINARIES=abc"
-pino "KEEP_BINARIES não numérico é recusado" 2 "não é número" "$TMP/keepx.conf"
+valid_conf "$TMP/keepx.conf" "KEEP_BINARIES=abc"
+pin "a non-numeric KEEP_BINARIES is refused" 2 "não é número" "$TMP/keepx.conf"
 
-# ── BUILD_CMD vazio NÃO é erro ───────────────────────────────────────────────
-conf_valida "$TMP/sem-build.conf" "BUILD_CMD="
-pino "BUILD_CMD vazio é caso SUPORTADO, não erro" 0 "válida" "$TMP/sem-build.conf"
+# An empty BUILD_CMD is NOT an error.
+valid_conf "$TMP/no-build.conf" "BUILD_CMD="
+pin "an empty BUILD_CMD is a SUPPORTED case, not an error" 0 "válida" "$TMP/no-build.conf"
 
-# ── swap_symlink com LINK FORA de BIN_DIR (regressão do 08-09) ───────────────
-# Até o 08-09 todo projeto tinha o LINK dentro do BIN_DIR, e `ln -s <nome>`
-# funcionava por acidente de layout. O tl-agent quebrou isso: LINK na raiz,
-# versões em versoes/ — e o symlink passou a apontar para um irmão inexistente. O
-# serviço morreu no primeiro deploy, quando ainda não havia para onde voltar.
-# Este pino congela o conserto: o alvo é resolvido relativo a onde o LINK MORA.
+# swap_symlink with LINK OUTSIDE BIN_DIR: the target must be resolved relative to
+# where the LINK lives, otherwise the symlink points at a missing sibling.
 total=$((total+1))
-_sw="$TMP/sw"; mkdir -p "$_sw/versoes"
-: > "$_sw/versoes/art-123"
+_sw="$TMP/sw"; mkdir -p "$_sw/versions"
+: > "$_sw/versions/art-123"
 (
-  LINK="$_sw/art" BIN_DIR="$_sw/versoes"
+  LINK="$_sw/art" BIN_DIR="$_sw/versions"
   swap() {
       local newName="$1"
       local linkDir; linkDir="$(cd "$(dirname "$LINK")" && pwd)"
       local binDir;  binDir="$(cd "$BIN_DIR" && pwd)"
-      local alvo="$newName"
-      [[ "$linkDir" != "$binDir" ]] && alvo="$binDir/$newName"
-      ln -sfn "$alvo" "$LINK.new"; mv -fT "$LINK.new" "$LINK"
+      local target="$newName"
+      [[ "$linkDir" != "$binDir" ]] && target="$binDir/$newName"
+      ln -sfn "$target" "$LINK.new"; mv -fT "$LINK.new" "$LINK"
   }
   swap art-123
 )
 if [[ -e "$_sw/art" ]]; then
-    echo "  ✓ swap_symlink resolve LINK fora de BIN_DIR (alvo existe)"
+    echo "  ✓ swap_symlink resolves a LINK outside BIN_DIR (target exists)"
 else
-    echo "  ✗ swap_symlink deixou link quebrado com LINK fora de BIN_DIR"
-    falhas=$((falhas+1))
+    echo "  ✗ swap_symlink left a broken link with LINK outside BIN_DIR"
+    failures=$((failures+1))
 fi
 
-# ── TODA conf de produção do repositório valida ──────────────────────────────
-# Não só o painel. Uma conf nova que não valida é um deploy que morre no destino,
-# depois de o artefato já ter viajado — e o 08-08 mostrou que a viagem é o passo
-# caro. O laço pega qualquer deploy/*.conf, então uma conf FUTURA entra no pino
-# sozinha, sem ninguém lembrar de acrescentá-la aqui.
-for conf in "$RAIZ"/deploy/*.conf; do
+# EVERY production conf in the repository validates. An invalid conf is a deploy
+# that dies at the destination after the artifact already travelled; the loop picks
+# up any future deploy/*.conf on its own.
+for conf in "$ROOT"/deploy/*.conf; do
     [[ -e "$conf" ]] || continue
     total=$((total+1))
     if BUILD_DIR="$TMP" "$DEPLOY" --conf "$conf" --validar >/dev/null 2>&1; then
-        echo "  ✓ deploy/$(basename "$conf") (produção) é válido"
+        echo "  ✓ deploy/$(basename "$conf") (production) is valid"
     else
-        echo "  ✗ deploy/$(basename "$conf") (produção) NÃO valida"
-        falhas=$((falhas+1))
+        echo "  ✗ deploy/$(basename "$conf") (production) does NOT validate"
+        failures=$((failures+1))
     fi
 done
 
-# ── HEALTH_MODE=cmd nos DOIS sentidos ────────────────────────────────────────
-# Exercita o probe de verdade, sem serviço: extrai a função do script.
-probe_com() {
+# HEALTH_MODE=cmd in BOTH directions: exercises the real probe, extracted from the
+# script, with no service.
+probe_with() {
     local cmd="$1" tries="$2"
     HEALTH_MODE=cmd HEALTH_CMD="$cmd" HEALTH_TRIES="$tries" HEALTH_INTERVAL=0 \
     HEALTH_CMD_TIMEOUT=5 LOG=/dev/null bash -c '
@@ -170,24 +163,24 @@ probe_com() {
 }
 
 total=$((total+1))
-if probe_com "true" 2; then
-    echo "  ✓ HEALTH_MODE=cmd: comando que sai 0 é saudável"
+if probe_with "true" 2; then
+    echo "  ✓ HEALTH_MODE=cmd: a command exiting 0 is healthy"
 else
-    echo "  ✗ HEALTH_MODE=cmd: comando que sai 0 devia ser saudável"
-    falhas=$((falhas+1))
+    echo "  ✗ HEALTH_MODE=cmd: a command exiting 0 should be healthy"
+    failures=$((failures+1))
 fi
 
 total=$((total+1))
-if probe_com "false" 2; then
-    echo "  ✗ HEALTH_MODE=cmd: comando que FALHA foi aceito como saudável"
-    falhas=$((falhas+1))
+if probe_with "false" 2; then
+    echo "  ✗ HEALTH_MODE=cmd: a FAILING command was accepted as healthy"
+    failures=$((failures+1))
 else
-    echo "  ✓ HEALTH_MODE=cmd: comando que falha esgota a janela (aciona o rollback)"
+    echo "  ✓ HEALTH_MODE=cmd: a failing command exhausts the window (triggers the rollback)"
 fi
 
 echo "───────────────────────────────────────"
-if (( falhas )); then
-    echo "REPROVADO: $falhas de $total pinos falharam"
+if (( failures )); then
+    echo "FAILED: $failures of $total pins failed"
     exit 1
 fi
-echo "OK: $total pinos"
+echo "OK: $total pins"

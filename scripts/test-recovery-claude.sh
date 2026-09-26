@@ -1,23 +1,22 @@
 #!/usr/bin/env bash
-# test-recovery-claude.sh — o Claude da tela de recuperação tem de ser
-# INDEPENDENTE, e independência é uma propriedade fácil de perder sem perceber.
+# test-recovery-claude.sh: the recovery screen's Claude must stay INDEPENDENT, and
+# independence is easy to lose unnoticed (an ANTHROPIC_BASE_URL added "to
+# standardize", or the host's .credentials.json mounted "to avoid logging in
+# twice"), so the guarantees are asserted here.
 #
-# Basta alguém acrescentar um ANTHROPIC_BASE_URL "para padronizar", ou montar o
-# .credentials.json do host "para não precisar autenticar duas vezes", e o
-# container passa a depender exatamente daquilo que ele existe para contornar —
-# sem que nada quebre visivelmente. Por isso as garantias são afirmadas aqui.
+# Static checks run anywhere (CI included). Runtime checks only run where the
+# container exists; its absence does NOT fail, because CI has no host Docker.
 #
-# As checagens estáticas rodam em qualquer lugar (CI incluso). As de execução só
-# rodam onde o container existe, e a ausência dele NÃO reprova: o CI não tem
-# Docker do host, e fingir cobertura seria pior que não ter.
+# NOTE: several checks grep manage.sh, Dockerfile, entrypoint.sh and
+# handlers_recovery.go for literal code (variable names, flags); keep them in sync.
 set -uo pipefail
-RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$RAIZ"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 
 pass=0; fail=0
 ok()  { printf 'PASS %s\n' "$1"; pass=$((pass+1)); }
 no()  { printf 'FAIL %s\n' "$1"; fail=$((fail+1)); }
-pula(){ printf 'SKIP %s\n' "$1"; }
+skip(){ printf 'SKIP %s\n' "$1"; }
 
 echo "=== test-recovery-claude ==="
 
@@ -27,135 +26,127 @@ ENTRY="internal/recoveryclaude/assets/entrypoint.sh"
 HANDLER="internal/api/handlers_recovery.go"
 
 for f in "$DOCKERFILE" "$SCRIPT" "$ENTRY" "$HANDLER"; do
-  [ -f "$f" ] || { no "arquivo ausente: $f"; }
+  [ -f "$f" ] || { no "missing file: $f"; }
 done
 
-# ── 1. a garantia central: nada aponta este Claude para o claude-router ──────
+# 1. The core guarantee: nothing points this Claude at the claude-router.
 if grep -q 'ANTHROPIC_BASE_URL' "$DOCKERFILE" "$ENTRY" 2>/dev/null | grep -qv '^\s*#'; then
-  no "ANTHROPIC_BASE_URL aparece na imagem — o container voltou a passar pelo router"
+  no "ANTHROPIC_BASE_URL appears in the image: the container goes through the router again"
 else
-  # comentários explicando a ausência são bem-vindos; o que não pode é ENV/export.
+  # Comments explaining the absence are fine; ENV/export is not.
   if grep -E '^(ENV|export)[[:space:]]+ANTHROPIC_BASE_URL' "$DOCKERFILE" "$ENTRY" >/dev/null 2>&1; then
-    no "ANTHROPIC_BASE_URL definida na imagem — a independência acabou"
+    no "ANTHROPIC_BASE_URL set in the image: independence is gone"
   else
-    ok "imagem não define ANTHROPIC_BASE_URL (fora do claude-router)"
+    ok "image does not set ANTHROPIC_BASE_URL (outside the claude-router)"
   fi
 fi
 if grep -E '(^|[[:space:]])-e[[:space:]]+ANTHROPIC_BASE_URL' "$SCRIPT" >/dev/null 2>&1; then
-  no "o script de subida injeta ANTHROPIC_BASE_URL"
+  no "the start script injects ANTHROPIC_BASE_URL"
 else
-  ok "o script de subida não injeta ANTHROPIC_BASE_URL"
+  ok "the start script does not inject ANTHROPIC_BASE_URL"
 fi
 
-# ── 2. login PRÓPRIO: não pode emprestar a credencial do host ────────────────
-# Os dois lados renovariam o mesmo refresh token e se invalidariam — a
-# ferramenta de emergência passaria a poder derrubar o Claude principal.
+# 2. Its OWN login: borrowing the host credential would make both sides refresh the
+# same token and invalidate each other, so the emergency tool could take down the
+# main Claude.
 if grep -E '/root/\.claude|\.credentials\.json' "$SCRIPT" | grep -E '^\s*[^#]*-v ' >/dev/null 2>&1; then
-  no "o container monta credencial do host — os dois refresh tokens se invalidam"
+  no "the container mounts the host credential: the two refresh tokens invalidate each other"
 else
-  ok "não monta credencial do host (login próprio)"
+  ok "does not mount the host credential (own login)"
 fi
 if grep -q 'VOLUME \["/config"\]' "$DOCKERFILE" && grep -q '\$VOLUME:/config' "$SCRIPT"; then
-  ok "config-dir é volume nomeado (o login sobrevive a rebuild e docker rm)"
+  ok "config dir is a named volume (the login survives rebuild and docker rm)"
 else
-  no "config-dir não é volume — o login se perderia no primeiro rebuild"
+  no "config dir is not a volume: the login would be lost on the first rebuild"
 fi
 
-# ── 3. independente do vps-manager: sobe pelo Docker, no boot ────────────────
+# 3. Independent from the panel: Docker starts it at boot.
 if grep -q -- '--restart always' "$SCRIPT"; then
-  ok "restart always (sobe no boot sem depender de nada nosso)"
+  ok "restart always (starts at boot without depending on anything of ours)"
 else
-  no "sem restart always — o container não voltaria sozinho"
+  no "no restart always: the container would not come back on its own"
 fi
 
-# ── 4. a porta de entrada continua gated pela auth de recuperação ────────────
+# 4. The entry point stays gated by the recovery auth.
 if grep -A 6 'func (r \*Router) handleRecoveryClaudePTY' "$HANDLER" | grep -q 'recoveryUserFromCookie'; then
-  ok "o terminal do Claude exige a sessão de recuperação"
+  ok "the Claude terminal requires the recovery session"
 else
-  no "handleRecoveryClaudePTY sem checagem de sessão — rota aberta"
+  no "handleRecoveryClaudePTY without a session check: open route"
 fi
 if grep -A 6 'func (r \*Router) handleRecoveryClaudeStatus' "$HANDLER" | grep -q 'recoveryUserFromCookie'; then
-  ok "o status do container exige a sessão de recuperação"
+  ok "the container status requires the recovery session"
 else
-  no "handleRecoveryClaudeStatus sem checagem de sessão"
+  no "handleRecoveryClaudeStatus without a session check"
 fi
 if grep -q '/recovery/ws/claude' internal/api/api.go && grep -q '/recovery/claude/status' internal/api/api.go; then
-  ok "rotas registradas"
+  ok "routes registered"
 else
-  no "rotas do Claude de recuperação não estão registradas"
+  no "the recovery Claude routes are not registered"
 fi
 
-# ── 5. `container inspect`, nunca `inspect` ─────────────────────────────────
-# A imagem tem o MESMO nome do container. `docker inspect` casa os dois e hoje
-# resolve o container primeiro — por sorte, não por contrato. Essa ambiguidade
-# já fez o `up` tentar `docker start` num container que não existia.
+# 5. `container inspect`, never `inspect`: the image has the SAME name as the
+# container, and `docker inspect` matches both.
 if grep -nE '^[^#]*docker (container )?inspect' "$SCRIPT" | grep -vq 'container inspect'; then
-  no "o script usa 'docker inspect' (casa imagem também) em vez de 'container inspect'"
+  no "the script uses 'docker inspect' (also matches the image) instead of 'container inspect'"
 else
-  ok "script usa 'docker container inspect' (sem ambiguidade com a imagem)"
+  ok "script uses 'docker container inspect' (no ambiguity with the image)"
 fi
 if grep -A 2 '"/usr/bin/docker"' "$HANDLER" | grep -q '"inspect"' && ! grep -A 1 '"/usr/bin/docker"' "$HANDLER" | grep -q '"container", "inspect"'; then
-  no "o handler usa 'docker inspect' em vez de 'container inspect'"
+  no "the handler uses 'docker inspect' instead of 'container inspect'"
 else
-  ok "handler usa 'docker container inspect'"
+  ok "handler uses 'docker container inspect'"
 fi
 
-# ── 6. o binário tem de carregar o que precisa ──────────────────────────────
-# Duas tentativas anteriores falharam pela mesma raiz, e as duas ficam barradas
-# aqui: (1) apontar para um script do repositório — o deploy builda do worktree
-# do ticket enquanto /opt/panel está noutra branch; (2) fazer o deploy
-# instalar o script — o agentctl executa o deploy.sh do working tree PRINCIPAL,
-# então um passo novo no deploy.sh de um worktree nunca roda.
+# 6. The binary must carry what it needs. A script at a fixed path fails because
+# the deploy builds from the ticket's worktree while /opt/panel is on another
+# branch, and a deploy step that installs the script never runs from a worktree.
 if grep -qE '"/opt/panel/scripts/|/usr/local/bin/vpsm-recovery-claude' "$HANDLER"; then
-  no "o handler voltou a depender de um script em caminho fixo do disco"
+  no "the handler depends on a script at a fixed disk path again"
 else
-  ok "handler não depende de script em caminho fixo (nem repo, nem /usr/local/bin)"
+  ok "handler does not depend on a script at a fixed path (neither repo nor /usr/local/bin)"
 fi
 if grep -q 'recoveryclaude.Command' "$HANDLER"; then
-  ok "handler materializa o gerenciador EMBUTIDO no binário (viaja com o deploy)"
+  ok "handler materializes the manager EMBEDDED in the binary (travels with the deploy)"
 else
-  no "handler não usa o gerenciador embutido — volta a depender do disco"
+  no "handler does not use the embedded manager: it depends on the disk again"
 fi
 if grep -q 'go:embed assets' internal/recoveryclaude/recoveryclaude.go; then
-  ok "Dockerfile e scripts estão embutidos no binário"
+  ok "Dockerfile and scripts are embedded in the binary"
 else
-  no "assets não estão embutidos — o binário não carrega o que precisa"
+  no "assets are not embedded: the binary does not carry what it needs"
 fi
-# O contexto de build tem de ser o diretório do próprio script: é o que faz o
-# mesmo arquivo funcionar no repo E materializado em <DataDir>.
+# The build context must be the script's own directory, so the same file works in
+# the repo AND materialized under <DataDir>.
 if grep -q 'CTX="$(cd "$(dirname "${BASH_SOURCE\[0\]}")" && pwd)"' "$SCRIPT"; then
-  ok "contexto de build é o diretório do próprio script (funciona nos dois lugares)"
+  ok "build context is the script's own directory (works in both places)"
 else
-  no "contexto de build aponta pra fora — quebra quando materializado"
+  no "build context points elsewhere: breaks when materialized"
 fi
 
-# ── 7. sessão nomeada: a conversa sobrevive a uma reconexão ──────────────────
-# O que importa é a SESSÃO NOMEADA e o "anexa se existir, cria se não" — não a
-# ferramenta. Passou a ser dtach em 2026-09-12, para não haver dois
-# multiplexadores no produto; a propriedade protegida é a mesma.
+# 7. Named session: the conversation survives a reconnect ("attach if it exists,
+# create if not").
 if grep -q 'dtach -A /tmp/recovery.sock' "$HANDLER"; then
-  ok "anexa a uma sessão dtach nomeada (reconectar não perde a conversa)"
+  ok "attaches to a named dtach session (reconnecting keeps the conversation)"
 else
-  no "sem sessão nomeada — cada reconexão começaria do zero"
+  no "no named session: every reconnect would start from scratch"
 fi
 
-# ── 8. execução (só onde o container existe) ────────────────────────────────
+# 8. Runtime (only where the container exists).
 if ! command -v docker >/dev/null 2>&1; then
-  pula "verificações de execução: docker ausente neste ambiente"
+  skip "runtime checks: docker missing in this environment"
 elif ! docker inspect vpsm-recovery-claude >/dev/null 2>&1; then
-  pula "verificações de execução: container ainda não criado (scripts/recovery-claude.sh up)"
+  skip "runtime checks: container not created yet (scripts/recovery-claude.sh up)"
 else
   bash "$SCRIPT" doctor >/dev/null 2>&1
   case $? in
-    0) ok "doctor do container passou (sem router, login próprio, alcance de host)" ;;
-    # 2 = estrutura de pé, falta só o login. É passo manual (device flow, uma
-    # vez), não regressão — reprovar aqui transformaria "ainda não configurei"
-    # em "quebrei alguma coisa", e o CI passaria a mentir.
-    2) pula "doctor: estrutura de pé; falta o login manual (rode 'claude' na aba do /recovery)" ;;
-    *) no "doctor do container reprovou — rode: $SCRIPT doctor" ;;
+    0) ok "container doctor passed (no router, own login, host reach)" ;;
+    # 2 = structure up, only the one-time manual login is missing; that is a
+    # setup step, not a regression.
+    2) skip "doctor: structure up; the manual login is missing (run 'claude' in the /recovery tab)" ;;
+    *) no "container doctor failed: run $SCRIPT doctor" ;;
   esac
 fi
 
 echo "─────────────────────────────────────"
-echo "RESULTADO: $pass OK / $fail FALHAS"
+echo "RESULT: $pass OK / $fail FAILED"
 [ "$fail" = "0" ]

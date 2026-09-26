@@ -1,32 +1,27 @@
 #!/usr/bin/env bash
-# test-invariant-canon.sh — regressão do `agentctl invariant add`
-# gravava o invariante na branch ERRADA e anunciava sucesso.
+# test-invariant-canon.sh: regression test for `agentctl invariant add` recording
+# the invariant on the WRONG branch while announcing success.
 #
-# O BUG: cmd_invariant rodava `git -C "$ROOT" commit`, e `commit` age na branch
-# CHECKED-OUT do diretório. O $ROOT (/opt/panel) vive numa branch de
-# feature, então o invariante ia parar lá — enquanto a mensagem dizia
-# "commitado no canônico", sem nunca conferir. É a reincidência exata do
-# Mesmo arquivo, mesmo motivo: confiar no exit code de um
-# comando git que age na branch corrente.
+# `git -C "$ROOT" commit` acts on the directory's CHECKED-OUT branch, and $ROOT
+# lives on a feature branch. The gate reads invariants.txt FROM DISK, so nothing
+# regresses at once: the damage is deferred until the feature branch is dropped and
+# the protection vanishes silently. Every assertion therefore asks the CANONICAL
+# branch what it really contains.
 #
-# POR QUE IMPORTA: o gate lê o invariants.txt EM DISCO, então nada regride na
-# hora — o estrago é diferido. Descartada a branch de feature, o registro do
-# invariante some do histórico e a proteção vai junto, em silêncio. Um teste que
-# só checasse "o comando saiu 0" passaria com o bug de pé; por isso cada
-# asserção aqui pergunta ao CANÔNICO o que ele realmente contém.
+# The grep patterns on agentctl's output match its literal messages (agentctl
+# lives outside this repository).
 #
-# Uso: scripts/test-invariant-canon.sh [caminho-do-agentctl]
+# Usage: scripts/test-invariant-canon.sh [path-to-agentctl]
 set -uo pipefail
 
-# ─── ISOLAMENTO DO AMBIENTE GIT (não remova) ────────────────────────────────
-# Sob o pre-push o git exporta GIT_DIR e cia, que SOBREPÕEM a descoberta de
-# repositório e vencem até o `git -C`. Sem limpar, os repos de fixture abaixo
-# reinicializariam o repositório REAL (estrago concreto, já visto uma vez).
+# Git environment isolation (do not remove): under pre-push git exports GIT_DIR and
+# friends, which override repository discovery even for `git -C`; without clearing
+# them the fixture repos would re-initialize the REAL repository.
 for _v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$_v"; done
 unset _v
 
 AGENTCTL="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.claude/agentctl}"
-[ -f "$AGENTCTL" ] || { echo "não achei o agentctl em $AGENTCTL"; exit 2; }
+[ -f "$AGENTCTL" ] || { echo "agentctl not found at $AGENTCTL"; exit 2; }
 
 pass=0; fail=0
 ok() { echo "  ✓ $1"; pass=$((pass+1)); }
@@ -38,18 +33,16 @@ trap 'case "$TMP" in /tmp/vpsm-inv-test.*|"${TMPDIR:-/tmp}"/vpsm-inv-test.*) rm 
 
 CANON="refactor/foundation"
 
-# Repo de fixture: canônico com um invariants.txt rastreado + branch de feature.
+# Fixture repo: canonical branch with a tracked invariants.txt + a feature branch.
 mk_repo() {
   local d="$1"
   mkdir -p "$d/.claude/coord"
   git -C "$d" init -q -b "$CANON"
   git -C "$d" config user.email t@t; git -C "$d" config user.name t
   git -C "$d" config commit.gpgsign false
-  printf 'arquivo.go|simboloBase|1|999|invariante base|-\n' > "$d/.claude/coord/invariants.txt"
-  # Espelha o .gitignore real: o agentctl cria board.json/messages.jsonl/
-  # deploys.jsonl/.lock ao iniciar, e no repo de verdade eles são estado de
-  # runtime ignorado. Sem isto o fixture acusaria "tree sujo" por artefato do
-  # próprio fixture, escondendo se o código realmente suja o tree.
+  printf 'file.go|baseSymbol|1|999|base invariant|-\n' > "$d/.claude/coord/invariants.txt"
+  # Mirrors the real .gitignore: agentctl creates these runtime files on start;
+  # without this the fixture itself would look like a dirty tree.
   cat > "$d/.gitignore" <<'IGN'
 .claude/coord/board.json
 .claude/coord/messages.jsonl
@@ -60,102 +53,98 @@ mk_repo() {
 IGN
   git -C "$d" add -A >/dev/null 2>&1
   git -C "$d" commit -q -m base
-  # Isolamento furou? Abortar é melhor que escrever no repo errado.
+  # Isolation leaked? Aborting beats writing into the wrong repo.
   local top; top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || true)"
-  [ "$top" = "$(cd "$d" && pwd -P)" ] || { echo "  ✗ ABORTADO: fixture não é o repo alvo (GIT_DIR vazando?)"; exit 3; }
+  [ "$top" = "$(cd "$d" && pwd -P)" ] || { echo "  ✗ ABORTED: the fixture is not the target repo (GIT_DIR leaking?)"; exit 3; }
 }
 
-add_inv() {  # add_inv <root> <descrição>
+add_inv() {  # add_inv <root> <description>
   VPSM_ROOT="$1" VPSM_CANON="$CANON" bash "$AGENTCTL" invariant add \
-    "arquivo.go" "simboloNovo" 1 999 "$2" - 2>&1
+    "file.go" "newSymbol" 1 999 "$2" - 2>&1
 }
 
-no_canon() {  # a linha existe no invariants.txt DO CANÔNICO?
+in_canon() {  # is the line in the CANONICAL branch's invariants.txt?
   git -C "$1" show "$CANON:.claude/coord/invariants.txt" 2>/dev/null | grep -q "$2"
 }
 
-# ── A. $ROOT numa branch de feature, canônico em nenhum worktree ────────────
-# É a topologia real do host — e a que produzia o bug.
-echo "[A] \$ROOT numa branch de feature (topologia real do host)"
+# A. $ROOT on a feature branch, canonical branch in no worktree (the host's real
+# topology, and the one that produced the bug).
+echo "[A] \$ROOT on a feature branch (the host's real topology)"
 A="$TMP/a"; mk_repo "$A"
-git -C "$A" checkout -q -b feat/qualquer
-out="$(add_inv "$A" "invariante do caso A")"
+git -C "$A" checkout -q -b feat/any
+out="$(add_inv "$A" "case A invariant")"
 
-no_canon "$A" "invariante do caso A" \
-  && ok "o invariante foi parar NO CANÔNICO (era o bug: ia pra branch de feature)" \
-  || no "invariante NÃO chegou no canônico — o bug voltou"
+in_canon "$A" "case A invariant" \
+  && ok "the invariant landed ON THE CANONICAL branch" \
+  || no "the invariant did NOT reach the canonical branch (the bug is back)"
 
 echo "$out" | grep -q "commitado no canônico" \
-  && ok "anuncia sucesso" || no "não anunciou sucesso: $out"
+  && ok "announces success" || no "did not announce success: $out"
 
 [ -z "$(git -C "$A" status --porcelain)" ] \
-  && ok "tree do \$ROOT continua limpo (tree sujo sabota a convergência)" \
-  || no "deixou o tree do \$ROOT sujo: $(git -C "$A" status --porcelain | head -2)"
+  && ok "\$ROOT's tree stays clean (a dirty tree sabotages convergence)" \
+  || no "left \$ROOT's tree dirty: $(git -C "$A" status --porcelain | head -2)"
 
-[ "$(git -C "$A" symbolic-ref --short HEAD)" = "feat/qualquer" ] \
-  && ok "não trocou a branch do \$ROOT por baixo do usuário" \
-  || no "a branch do \$ROOT mudou"
+[ "$(git -C "$A" symbolic-ref --short HEAD)" = "feat/any" ] \
+  && ok "did not switch \$ROOT's branch under the user" \
+  || no "\$ROOT's branch changed"
 
-# Divergência é o custo escondido de "commitar nos dois lugares": duas commits
-# gêmeas separam as branches pra sempre e todo alinhamento futuro vira merge.
-# Sendo o $ROOT ancestral do canônico, o certo é ADOTAR a commit por FF.
+# Committing in both places would create twin commits that diverge forever. Since
+# $ROOT is an ancestor of the canonical branch, it must ADOPT the commit by FF.
 git -C "$A" merge-base --is-ancestor HEAD "$CANON" \
-  && ok "\$ROOT adotou a commit do canônico por FF (sem branches divergindo)" \
-  || no "\$ROOT divergiu do canônico — duas commits gêmeas, alinhamento vira merge"
+  && ok "\$ROOT adopted the canonical commit by FF (no diverging branches)" \
+  || no "\$ROOT diverged from the canonical branch (twin commits)"
 [ "$(git -C "$A" rev-list --count HEAD)" = "2" ] \
-  && ok "uma única commit no total (não duplicou o registro)" \
-  || no "gerou $(git -C "$A" rev-list --count HEAD) commits, esperava 2"
+  && ok "a single commit in total (the record was not duplicated)" \
+  || no "produced $(git -C "$A" rev-list --count HEAD) commits, expected 2"
 
-grep -q "invariante do caso A" "$A/.claude/coord/invariants.txt" \
-  && ok "arquivo em disco (o que o gate lê) tem o invariante" \
-  || no "arquivo em disco ficou sem o invariante — o gate não protegeria"
+grep -q "case A invariant" "$A/.claude/coord/invariants.txt" \
+  && ok "the file on disk (what the gate reads) has the invariant" \
+  || no "the file on disk lacks the invariant, the gate would not protect it"
 
-# ── B. $ROOT já está no canônico ────────────────────────────────────────────
-echo "[B] \$ROOT já está no canônico"
+# B. $ROOT already on the canonical branch.
+echo "[B] \$ROOT already on the canonical branch"
 B="$TMP/b"; mk_repo "$B"
-add_inv "$B" "invariante do caso B" >/dev/null
-no_canon "$B" "invariante do caso B" \
-  && ok "grava no canônico" || no "não gravou no canônico"
+add_inv "$B" "case B invariant" >/dev/null
+in_canon "$B" "case B invariant" \
+  && ok "records on the canonical branch" || no "did not record on the canonical branch"
 [ -z "$(git -C "$B" status --porcelain)" ] \
-  && ok "tree limpo" || no "tree sujo"
+  && ok "clean tree" || no "dirty tree"
 [ "$(git -C "$B" rev-list --count HEAD)" = "2" ] \
-  && ok "uma única commit (não duplica quando já se está no canônico)" \
-  || no "gerou $(git -C "$B" rev-list --count HEAD) commits, esperava 2"
+  && ok "a single commit (no duplicate when already on the canonical branch)" \
+  || no "produced $(git -C "$B" rev-list --count HEAD) commits, expected 2"
 
-# ── C. canônico CHECKED-OUT noutro worktree ─────────────────────────────────
-# Mover a ref por baixo de um worktree deixaria a sessão dele com um diff
-# reverso fantasma — todo arquivo da commit aparecendo como "modificado".
-echo "[C] canônico checked-out noutro worktree"
+# C. Canonical branch CHECKED OUT in another worktree: moving the ref under it
+# would leave that session with a phantom reverse diff.
+echo "[C] canonical branch checked out in another worktree"
 C="$TMP/c"; mk_repo "$C"
-git -C "$C" checkout -q -b feat/outra
+git -C "$C" checkout -q -b feat/other
 git -C "$C" worktree add -q "$TMP/c-canon" "$CANON" 2>/dev/null
-out="$(add_inv "$C" "invariante do caso C")"
-no_canon "$C" "invariante do caso C" \
-  && ok "grava no canônico mesmo com ele checked-out" || no "não gravou no canônico"
+out="$(add_inv "$C" "case C invariant")"
+in_canon "$C" "case C invariant" \
+  && ok "records on the canonical branch even while it is checked out" || no "did not record on the canonical branch"
 [ -z "$(git -C "$TMP/c-canon" status --porcelain)" ] \
-  && ok "o worktree do canônico NÃO ficou com diff fantasma" \
-  || no "sujou o worktree alheio: $(git -C "$TMP/c-canon" status --porcelain | head -2)"
+  && ok "the canonical worktree has NO phantom diff" \
+  || no "dirtied someone else's worktree: $(git -C "$TMP/c-canon" status --porcelain | head -2)"
 [ -z "$(git -C "$C" status --porcelain)" ] \
-  && ok "tree do \$ROOT limpo" || no "tree do \$ROOT sujo"
+  && ok "\$ROOT's tree clean" || no "\$ROOT's tree dirty"
 
-# ── D. honestidade quando NÃO dá pra gravar ─────────────────────────────────
-# A regressão que este e o teste anterior têm em comum não é "falhou": é
-# "falhou e disse que deu certo". Sem canônico, tem que avisar.
-echo "[D] sem canônico: precisa AVISAR, não mentir"
+# D. Honesty when recording is impossible: failing is fine, claiming success is not.
+echo "[D] no canonical branch: must WARN, not lie"
 D="$TMP/d"; mk_repo "$D"
-git -C "$D" checkout -q -b feat/sozinha
+git -C "$D" checkout -q -b feat/alone
 git -C "$D" branch -D "$CANON" >/dev/null 2>&1
-out="$(add_inv "$D" "invariante do caso D")"
+out="$(add_inv "$D" "case D invariant")"
 echo "$out" | grep -q "NÃO registrado no canônico" \
-  && ok "avisa que não registrou no canônico" \
-  || no "mentiu ou ficou mudo quando não deu pra gravar: $out"
+  && ok "warns it did not record on the canonical branch" \
+  || no "lied or stayed silent when recording was impossible: $out"
 echo "$out" | grep -q "commitado no canônico" \
-  && no "CRÍTICO: anunciou sucesso sem ter gravado (o bug original)" \
-  || ok "não anuncia sucesso falso"
-grep -q "invariante do caso D" "$D/.claude/coord/invariants.txt" \
-  && ok "mesmo falhando, o arquivo em disco fica com o invariante (gate segue protegendo)" \
-  || no "perdeu o invariante do arquivo"
+  && no "CRITICAL: announced success without recording (the original bug)" \
+  || ok "no false success"
+grep -q "case D invariant" "$D/.claude/coord/invariants.txt" \
+  && ok "even on failure the file on disk keeps the invariant (the gate still protects)" \
+  || no "lost the invariant from the file"
 
 echo
-echo "RESULTADO: $pass OK / $fail FALHAS"
+echo "RESULT: $pass OK / $fail FAILED"
 [ "$fail" -eq 0 ]

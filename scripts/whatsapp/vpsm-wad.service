@@ -12,13 +12,10 @@
 Description=vps-manager WhatsApp daemon (whatsmeow)
 After=network-online.target
 Wants=network-online.target
-# SEM limite de taxa de start. Com o default do systemd (5 starts / 10s) uma
-# rajada de `systemctl restart` — boot provisionando N usuarios, um deploy no
-# meio, um operador — deixava a unit em `start-limit-hit`, e desse estado o
-# Restart=always NAO recupera: o daemon fica MORTO ate alguem reiniciar a mao.
-# Foi o que aconteceu em 2026-08-25 20:31→21:05 (34 min sem WhatsApp, com o
-# painel ainda dizendo "connected"). Pra um daemon que segura as sessoes do
-# WhatsApp, seguir tentando e' sempre melhor que desistir em silencio.
+# NO start rate limit. With systemd's default (5 starts / 10s) a burst of
+# restarts leaves the unit in `start-limit-hit`, which Restart=always does NOT
+# recover from: the daemon stays dead until restarted by hand. For the daemon
+# holding the WhatsApp sessions, retrying is always better than giving up.
 StartLimitIntervalSec=0
 
 [Service]

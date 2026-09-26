@@ -1,34 +1,31 @@
 #!/usr/bin/env bash
-# test-canon-guard.sh — o canônico não se move em silêncio.
+# test-canon-guard.sh: the canonical branch never moves silently.
 #
-# O QUE ESTE TESTE PROTEGE
-# Avançar o canônico é a operação de maior alcance do projeto: a partir dali,
-# TODO deploy de TODA sessão passa a incluir o que foi promovido. `git fetch .
-# <branch>:refactor/foundation` faz isso sem imprimir uma linha — quem roda não
-# sabe se promoveu 1 commit ou 50. Aconteceu: um sync de rotina levou junto ~50
-# commits de outra sessão.
+# Advancing the canonical branch has the widest reach in the project: from then on
+# EVERY deploy of EVERY session includes what was promoted, and `git fetch .
+# <branch>:refactor/foundation` does it without printing a line. Checking afterwards
+# is too late, and raw git bypasses agentctl, so the barrier is a
+# reference-transaction hook that runs BEFORE the move.
 #
-# POR QUE NÃO BASTA VERIFICAR DEPOIS (como nos dois testes anteriores): quando o
-# resultado aparece, a promoção já ocorreu. A barreira tem que vir ANTES, e fora
-# do agentctl — quem usa git cru não passa por ele. Daí o hook.
+# The grep patterns below match the literal output of the hook and of agentctl,
+# which live outside this repository.
 #
-# Uso: scripts/test-canon-guard.sh [caminho-do-agentctl]
+# Usage: scripts/test-canon-guard.sh [path-to-agentctl]
 set -uo pipefail
 
-# ─── ISOLAMENTO DO AMBIENTE GIT (não remova) ────────────────────────────────
-# Sob o pre-push o git exporta GIT_DIR e cia, que sobrepõem a descoberta de
-# repositório e vencem até o `git -C`: sem limpar, as fixtures escreveriam no
-# repositório REAL (estrago concreto, já visto uma vez).
+# Git environment isolation (do not remove): under pre-push git exports GIT_DIR and
+# friends, which win even over `git -C`; without clearing them the fixtures would
+# write into the REAL repository.
 for _v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$_v"; done
 unset _v
-# Herdar a sanção do processo pai faria o teste do bloqueio passar por engano.
+# Inheriting the parent's sanction would make the blocking test pass by mistake.
 unset AGENTCTL_CANON ALLOW_RAW_CANON 2>/dev/null || true
 
-RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-AGENTCTL="${1:-$RAIZ/.claude/agentctl}"
-HOOK="$RAIZ/scripts/hooks/reference-transaction.sh"
-[ -f "$AGENTCTL" ] || { echo "não achei o agentctl em $AGENTCTL"; exit 2; }
-[ -f "$HOOK" ] || { echo "não achei o hook em $HOOK"; exit 2; }
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+AGENTCTL="${1:-$ROOT/.claude/agentctl}"
+HOOK="$ROOT/scripts/hooks/reference-transaction.sh"
+[ -f "$AGENTCTL" ] || { echo "agentctl not found at $AGENTCTL"; exit 2; }
+[ -f "$HOOK" ] || { echo "hook not found at $HOOK"; exit 2; }
 
 pass=0; fail=0
 ok() { echo "  ✓ $1"; pass=$((pass+1)); }
@@ -40,7 +37,7 @@ trap 'case "$TMP" in "${TMPDIR:-/tmp}"/vpsm-guard.*) rm -rf "$TMP";; esac' EXIT
 
 CANON="refactor/foundation"
 
-mk_repo() { # repo com canônico, hook instalado e uma branch de trabalho
+mk_repo() { # repo with the canonical branch, the hook installed and a work branch
   local d="$1" n="${2:-1}" i
   mkdir -p "$d/.claude/coord"
   git -C "$d" init -q -b "$CANON"
@@ -48,92 +45,90 @@ mk_repo() { # repo com canônico, hook instalado e uma branch de trabalho
   git -C "$d" config commit.gpgsign false
   echo base > "$d/f.txt"; git -C "$d" add -A >/dev/null 2>&1; git -C "$d" commit -q -m base
   mkdir -p "$d/.git/hooks"; ln -sf "$HOOK" "$d/.git/hooks/reference-transaction"
-  git -C "$d" checkout -q -b feat/trabalho
+  git -C "$d" checkout -q -b feat/work
   for i in $(seq 1 "$n"); do
-    echo "linha $i" >> "$d/f.txt"; git -C "$d" add -A >/dev/null 2>&1
-    git -C "$d" commit -q -m "trabalho $i"
+    echo "line $i" >> "$d/f.txt"; git -C "$d" add -A >/dev/null 2>&1
+    git -C "$d" commit -q -m "work $i"
   done
   local top; top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null || true)"
-  [ "$top" = "$(cd "$d" && pwd -P)" ] || { echo "  ✗ ABORTADO: fixture não é o repo alvo (GIT_DIR vazando?)"; exit 3; }
+  [ "$top" = "$(cd "$d" && pwd -P)" ] || { echo "  ✗ ABORTED: the fixture is not the target repo (GIT_DIR leaking?)"; exit 3; }
 }
-canon_em() { git -C "$1" rev-parse "$CANON"; }
+canon_at() { git -C "$1" rev-parse "$CANON"; }
 sync_cmd() { local d="$1"; shift; VPSM_ROOT="$d" VPSM_CANON="$CANON" bash "$AGENTCTL" canon-sync "$@" 2>&1; }
 
-# ── 1. git cru é BARRADO, e a barreira explica o alcance ────────────────────
-echo "[1] movimento cru do canônico"
+# 1. Raw git is BLOCKED, and the barrier states the reach.
+echo "[1] raw move of the canonical branch"
 A="$TMP/a"; mk_repo "$A" 3
-antes="$(canon_em "$A")"
-saida="$(git -C "$A" fetch . "feat/trabalho:$CANON" 2>&1)"
-[ "$(canon_em "$A")" = "$antes" ] \
-  && ok "git fetch cru NÃO moveu o canônico" \
-  || no "CRÍTICO: o canônico foi movido por git cru — o guard não está ativo"
-echo "$saida" | grep -q "BLOQUEADO" && ok "a recusa é explícita" || no "recusou sem explicar: $saida"
-echo "$saida" | grep -q "promoveria 3 commit" \
-  && ok "a recusa DIZ QUANTOS commits seriam promovidos (o dado que faltava)" \
-  || no "a recusa não informou o tamanho do delta"
-echo "$saida" | grep -q "canon-sync" && ok "aponta o caminho sancionado" || no "não aponta a alternativa"
+before="$(canon_at "$A")"
+output="$(git -C "$A" fetch . "feat/work:$CANON" 2>&1)"
+[ "$(canon_at "$A")" = "$before" ] \
+  && ok "raw git fetch did NOT move the canonical branch" \
+  || no "CRITICAL: raw git moved the canonical branch, the guard is not active"
+echo "$output" | grep -q "BLOQUEADO" && ok "the refusal is explicit" || no "refused without explaining: $output"
+echo "$output" | grep -q "promoveria 3 commit" \
+  && ok "the refusal SAYS HOW MANY commits would be promoted" \
+  || no "the refusal did not report the size of the delta"
+echo "$output" | grep -q "canon-sync" && ok "points to the sanctioned path" || no "does not point to the alternative"
 
-# Apagar o canônico também não passa.
-git -C "$A" checkout -q feat/trabalho
-saida="$(git -C "$A" branch -D "$CANON" 2>&1)"
+# Deleting the canonical branch does not pass either.
+git -C "$A" checkout -q feat/work
+output="$(git -C "$A" branch -D "$CANON" 2>&1)"
 git -C "$A" rev-parse --verify --quiet "$CANON" >/dev/null \
-  && ok "apagar o canônico é barrado" \
-  || no "CRÍTICO: o canônico foi APAGADO por comando cru"
+  && ok "deleting the canonical branch is blocked" \
+  || no "CRITICAL: a raw command DELETED the canonical branch"
 
-# ── 2. o caminho sancionado funciona ────────────────────────────────────────
+# 2. The sanctioned path works.
 echo "[2] agentctl canon-sync"
 B="$TMP/b"; mk_repo "$B" 2
-tip="$(git -C "$B" rev-parse feat/trabalho)"
-saida="$(sync_cmd "$B" feat/trabalho)"
+tip="$(git -C "$B" rev-parse feat/work)"
+output="$(sync_cmd "$B" feat/work)"
 git -C "$B" merge-base --is-ancestor "$tip" "$CANON" \
-  && ok "canon-sync avança o canônico" \
-  || no "canon-sync não avançou: $saida"
-echo "$saida" | grep -q "promove 2 commit" \
-  && ok "lista o delta ANTES de agir" \
-  || no "não mostrou o delta"
-echo "$saida" | grep -q "✓ $CANON" && ok "confirma o pós-estado" || no "não confirmou o pós-estado"
+  && ok "canon-sync advances the canonical branch" \
+  || no "canon-sync did not advance: $output"
+echo "$output" | grep -q "promove 2 commit" \
+  && ok "lists the delta BEFORE acting" \
+  || no "did not show the delta"
+echo "$output" | grep -q "✓ $CANON" && ok "confirms the resulting state" || no "did not confirm the resulting state"
 
-# ── 3. delta grande exige confirmação ───────────────────────────────────────
-# É o caso que originou o ticket: dezenas de commits entrando sem ninguém decidir.
-echo "[3] delta grande"
+# 3. A large delta requires confirmation.
+echo "[3] large delta"
 C="$TMP/c"; mk_repo "$C" 20
-antes="$(canon_em "$C")"
-saida="$(sync_cmd "$C" feat/trabalho)"
-[ "$(canon_em "$C")" = "$antes" ] \
-  && ok "delta de 20 commits NÃO é promovido sem confirmação" \
-  || no "CRÍTICO: promoveu 20 commits sem perguntar — é exatamente o bug do ticket"
-echo "$saida" | grep -q -- "--yes" && ok "diz como confirmar" || no "não explica como prosseguir"
-saida="$(sync_cmd "$C" feat/trabalho --yes)"
-git -C "$C" merge-base --is-ancestor "$(git -C "$C" rev-parse feat/trabalho)" "$CANON" \
-  && ok "com --yes, promove" \
-  || no "--yes não funcionou: $saida"
+before="$(canon_at "$C")"
+output="$(sync_cmd "$C" feat/work)"
+[ "$(canon_at "$C")" = "$before" ] \
+  && ok "a 20-commit delta is NOT promoted without confirmation" \
+  || no "CRITICAL: promoted 20 commits without asking"
+echo "$output" | grep -q -- "--yes" && ok "says how to confirm" || no "does not explain how to proceed"
+output="$(sync_cmd "$C" feat/work --yes)"
+git -C "$C" merge-base --is-ancestor "$(git -C "$C" rev-parse feat/work)" "$CANON" \
+  && ok "with --yes, it promotes" \
+  || no "--yes did not work: $output"
 
-# ── 4. não-fast-forward é recusado ──────────────────────────────────────────
-# Avanço não-FF reescreveria trabalho alheio — pior que promover demais.
-echo "[4] não-fast-forward"
+# 4. Non-fast-forward is refused: it would rewrite someone else's work.
+echo "[4] non-fast-forward"
 D="$TMP/d"; mk_repo "$D" 1
 git -C "$D" checkout -q "$CANON"
-echo divergente >> "$D/f.txt"; git -C "$D" add -A >/dev/null 2>&1
-AGENTCTL_CANON=1 git -C "$D" commit -q -m "commit só no canônico"
-antes="$(canon_em "$D")"
-saida="$(sync_cmd "$D" feat/trabalho)"
-[ "$(canon_em "$D")" = "$antes" ] \
-  && ok "recusa avanço não-fast-forward (não reescreve trabalho alheio)" \
-  || no "CRÍTICO: reescreveu o canônico"
+echo divergent >> "$D/f.txt"; git -C "$D" add -A >/dev/null 2>&1
+AGENTCTL_CANON=1 git -C "$D" commit -q -m "commit only on the canonical branch"
+before="$(canon_at "$D")"
+output="$(sync_cmd "$D" feat/work)"
+[ "$(canon_at "$D")" = "$before" ] \
+  && ok "refuses a non-fast-forward advance (does not rewrite others' work)" \
+  || no "CRITICAL: rewrote the canonical branch"
 
-# ── 5. o guard é cirúrgico: outras branches seguem livres ───────────────────
-echo "[5] escopo"
+# 5. The guard is surgical: other branches stay free.
+echo "[5] scope"
 E="$TMP/e"; mk_repo "$E" 1
-git -C "$E" branch outra "$CANON" 2>/dev/null
-git -C "$E" fetch . feat/trabalho:outra >/dev/null 2>&1
-[ "$(git -C "$E" rev-parse outra)" = "$(git -C "$E" rev-parse feat/trabalho)" ] \
-  && ok "branches que não são o canônico continuam livres" \
-  || no "o guard está bloqueando branch comum — atrapalharia o trabalho normal"
-ALLOW_RAW_CANON=1 git -C "$E" fetch . feat/trabalho:"$CANON" >/dev/null 2>&1
-git -C "$E" merge-base --is-ancestor "$(git -C "$E" rev-parse feat/trabalho)" "$CANON" \
-  && ok "ALLOW_RAW_CANON=1 libera o bypass consciente" \
-  || no "o escape de emergência não funciona"
+git -C "$E" branch other "$CANON" 2>/dev/null
+git -C "$E" fetch . feat/work:other >/dev/null 2>&1
+[ "$(git -C "$E" rev-parse other)" = "$(git -C "$E" rev-parse feat/work)" ] \
+  && ok "branches other than the canonical one stay free" \
+  || no "the guard is blocking an ordinary branch"
+ALLOW_RAW_CANON=1 git -C "$E" fetch . feat/work:"$CANON" >/dev/null 2>&1
+git -C "$E" merge-base --is-ancestor "$(git -C "$E" rev-parse feat/work)" "$CANON" \
+  && ok "ALLOW_RAW_CANON=1 allows the deliberate bypass" \
+  || no "the emergency escape does not work"
 
 echo
-echo "RESULTADO: $pass OK / $fail FALHAS"
+echo "RESULT: $pass OK / $fail FAILED"
 [ "$fail" -eq 0 ]

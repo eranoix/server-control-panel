@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
-"""Valida a ESTRUTURA da documentacao tecnica antes de ela virar artefato/binario.
+"""Validates the STRUCTURE of the technical docs before they become an artifact.
 
-Motivacao (3 ocorrencias reais do mesmo defeito): a doc e um single-file HTML onde
-cada topico vive num `<div class="page">` e a navegacao apenas alterna a
-visibilidade dessas paginas. Um `</div>` a mais (ou um `<div class="card">` que
-alguem esqueceu de abrir ao inserir uma entrada nova no historico) fecha a pagina
-mais cedo -> todo o conteudo seguinte vira filho direto do `#main-content` e passa
-a aparecer em CIMA DE TODAS as paginas. O HTML continua "valido" e o navegador nao
-reclama; o estrago so aparece a olho nu.
+The docs are a single-file HTML where each topic lives in a `<div class="page">`
+and navigation only toggles their visibility. One extra `</div>` closes a page
+early, so everything after it becomes a direct child of `#main-content` and shows
+on TOP OF EVERY page. The HTML stays "valid", so counting tags is not enough; a
+real parser (html.parser) checks the nesting.
 
-Contar tags nao basta: o arquivo pode ficar com saldo zero e ainda assim estar com
-o aninhamento trocado. Por isso aqui usa-se um parser de verdade (html.parser).
-
-Uso:  scripts/check-docs-structure.py [arquivo.html ...]
-Sai com codigo != 0 e explica o que consertar quando encontra problema.
+Usage:  scripts/check-docs-structure.py [file.html ...]
+Exits non-zero and explains what to fix when it finds a problem.
 """
 import sys
 from html.parser import HTMLParser
@@ -27,8 +22,8 @@ class DocStructure(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.stack = []
-        self.pages = []          # (id, linha_abre, linha_fecha)
-        self.leaks = []          # conteudo solto direto no container
+        self.pages = []          # (id, open_line, close_line)
+        self.leaks = []          # loose content directly in the container
         self.unclosed = []
 
     def handle_starttag(self, tag, attrs):
@@ -64,28 +59,28 @@ def check(path):
 
     problems = []
     if not p.pages:
-        problems.append(f'nenhum <div class="page"> encontrado (o #{CONTAINER_ID} mudou de forma?)')
+        problems.append(f'no <div class="page"> found (did #{CONTAINER_ID} change shape?)')
     for line, what in p.leaks:
         problems.append(
-            f'L{line}: {what} e filho DIRETO do #{CONTAINER_ID}, fora de qualquer .page '
-            f'-> vai aparecer em TODAS as paginas')
+            f'L{line}: {what} is a DIRECT child of #{CONTAINER_ID}, outside any .page '
+            f'-> it will show on EVERY page')
     for el in p.stack:
         if el[0] in ('div', 'section', 'table'):
-            problems.append(f'L{el[3]}: <{el[0]} class="{el[2]}"> nunca foi fechado')
+            problems.append(f'L{el[3]}: <{el[0]} class="{el[2]}"> was never closed')
 
     name = path.rsplit('/', 1)[-1]
     if problems:
-        print(f'✗ {name}: estrutura invalida')
+        print(f'✗ {name}: invalid structure')
         for pr in problems[:15]:
             print(f'    {pr}')
         if len(problems) > 15:
-            print(f'    … e mais {len(problems) - 15} ocorrencia(s)')
-        print('    Causa tipica: entrada nova no historico inserida logo APOS um '
-              '<div class="card"> ja existente, fechando com </div> proprio e '
-              'deixando o card seguinte sem tag de abertura.')
+            print(f'    … and {len(problems) - 15} more')
+        print('    Typical cause: a new history entry inserted right AFTER an existing '
+              '<div class="card">, closed with its own </div>, leaving the next card '
+              'without an opening tag.')
         return False
 
-    print(f'✓ {name}: {len(p.pages)} paginas, nenhum conteudo fora de .page')
+    print(f'✓ {name}: {len(p.pages)} pages, no content outside .page')
     return True
 
 

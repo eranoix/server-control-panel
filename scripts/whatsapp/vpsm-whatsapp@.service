@@ -1,12 +1,12 @@
 # /etc/systemd/system/vpsm-whatsapp@.service
 #
-# Templated unit — uma instância por perfil (vpsm-whatsapp@sam,
-# vpsm-whatsapp@jordan, ...). Instalado por scripts/whatsapp/install.sh.
+# Templated unit: one instance per profile (vpsm-whatsapp@sam,
+# vpsm-whatsapp@jordan, ...). Installed by scripts/whatsapp/install.sh.
 #
-# Cada instância roda um docker-compose em /var/lib/vpsm-whatsapp/%i renderizado
-# por internal/whatsapp/manager.go a partir de docker-compose.tmpl.yml.
+# Each instance runs a docker-compose in /var/lib/vpsm-whatsapp/%i rendered by
+# internal/whatsapp/manager.go from docker-compose.tmpl.yml.
 #
-# %i = o user (após o "@" no nome da unit). systemd troca pelo argumento.
+# %i = the user (after the "@" in the unit name).
 
 [Unit]
 Description=vps-manager WhatsApp gateway for %i (WAHA + GOWS)

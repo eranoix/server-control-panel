@@ -1,32 +1,31 @@
 #!/usr/bin/env bash
-# test-android-patches.sh — cobre scripts/android-patches.sh de ponta a
-# ponta, com hdiffz/hpatchz de verdade, sem depender de um build Gradle.
+# test-android-patches.sh: end-to-end coverage of scripts/android-patches.sh
+# with real hdiffz/hpatchz and no Gradle build.
 #
-# Teste 1: patch aplicado com hpatchz reconstrói bytes IDÊNTICOS ao alvo.
-# Teste 2: o artefato "completo" (base vazia) também reconstrói o alvo.
-# Teste 3: manifesto coerente — hashes/tamanhos batem com os arquivos.
-# Teste 4: idempotência — rodar de novo não regera nem corrompe nada.
-# Teste 5: RETENÇÃO — publicar a 6ª versão apaga o que saiu da janela.
-# Teste 6: uma versão do índice cujo APK sumiu não derruba a geração.
+# Test 1: a patch applied with hpatchz rebuilds bytes IDENTICAL to the target.
+# Test 2: the "full" artifact (empty base) also rebuilds the target.
+# Test 3: the manifest is consistent: hashes and sizes match the files.
+# Test 4: idempotence: running again neither regenerates nor corrupts anything.
+# Test 5: RETENTION: publishing the 6th version deletes what left the window.
+# Test 6: an index version whose APK is gone does not break generation.
 #
-# Os "APKs" aqui são arquivos binários sintéticos derivados uns dos outros
-# (é o que hdiffz enxerga: bytes). A prova com APK real assinado, incluindo
-# a verificação de que a assinatura sobrevive à reconstrução, está no
-# runbook docs/android-atualizacao-incremental.md §5.
+# The "APKs" are synthetic binaries derived from each other (hdiffz only sees
+# bytes). The check with a real signed APK, including the signature surviving
+# the rebuild, is in docs/android-incremental-updates.md §5.
 set -uo pipefail
 
-RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT="$RAIZ/scripts/android-patches.sh"
-PACOTE="tech.northwind.vpsm.app"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT="$ROOT/scripts/android-patches.sh"
+PACKAGE="tech.northwind.vpsm.app"
 
-[ -f "$SCRIPT" ] || { echo "não achei $SCRIPT"; exit 2; }
-command -v hdiffz  >/dev/null 2>&1 || { echo "hdiffz não encontrado — rode scripts/setup-hdiffpatch.sh"; exit 2; }
-command -v hpatchz >/dev/null 2>&1 || { echo "hpatchz não encontrado — rode scripts/setup-hdiffpatch.sh"; exit 2; }
-command -v python3 >/dev/null 2>&1 || { echo "python3 não encontrado"; exit 2; }
+[ -f "$SCRIPT" ] || { echo "cannot find $SCRIPT"; exit 2; }
+command -v hdiffz  >/dev/null 2>&1 || { echo "hdiffz not found; run scripts/setup-hdiffpatch.sh"; exit 2; }
+command -v hpatchz >/dev/null 2>&1 || { echo "hpatchz not found; run scripts/setup-hdiffpatch.sh"; exit 2; }
+command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; exit 2; }
 
 pass=0; fail=0
 ok() { echo "  OK: $1"; pass=$((pass+1)); }
-no() { echo "  FALHOU: $1"; fail=$((fail+1)); }
+no() { echo "  FAILED: $1"; fail=$((fail+1)); }
 echo "=== test-android-patches ==="
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/vpsm-android-patches-test.XXXXXX")" || exit 2
@@ -36,166 +35,163 @@ REPO="$TMP/repo"
 UPDATES="$TMP/updates"
 mkdir -p "$REPO" "$UPDATES"
 
-# ── fixtures ─────────────────────────────────────────────────────────────
-# Cada "APK" é 2 MiB de um padrão comum (para o patch ter o que reaproveitar)
-# mais um miolo próprio da versão (para haver diferença real de bytes).
-faz_apk() {
-  # Duas linhas de propósito: num único `local a=.. b=..$a..`, o bash expande
-  # TODAS as palavras antes de o builtin atribuir, então $a ainda não existe
-  # ao montar $b (e com `set -u` isso aborta).
+# Fixtures: each "APK" is 2 MiB of a shared pattern (so the patch has something
+# to reuse) plus a version-specific middle (so the bytes really differ).
+make_apk() {
+  # Two lines on purpose: in a single `local a=.. b=..$a..` bash expands every
+  # word before assigning, so $a would not exist yet (fatal under `set -u`).
   local code="$1"
-  local destino="$REPO/vpsmanager-$code.apk"
-  python3 - "$destino" "$code" <<'PY'
+  local dest="$REPO/vpsmanager-$code.apk"
+  python3 - "$dest" "$code" <<'PY'
 import sys
-destino, code = sys.argv[1], int(sys.argv[2])
-comum = (b"vps-manager-payload-comum-" * 4096)[:2 * 1024 * 1024]
-proprio = (("versao-%d-" % code).encode() * 4096)[:128 * 1024]
-with open(destino, "wb") as fh:
-    fh.write(comum[: 1024 * 1024])
-    fh.write(proprio)
-    fh.write(comum[1024 * 1024 :])
+dest, code = sys.argv[1], int(sys.argv[2])
+shared = (b"vps-manager-shared-payload-" * 4096)[:2 * 1024 * 1024]
+own = (("version-%d-" % code).encode() * 4096)[:128 * 1024]
+with open(dest, "wb") as fh:
+    fh.write(shared[: 1024 * 1024])
+    fh.write(own)
+    fh.write(shared[1024 * 1024 :])
 PY
 }
 
-# escreve_index <versionCode>... — monta um index-v2.json com exatamente as
-# versões pedidas, no mesmo formato que o fdroidserver produz.
-escreve_index() {
-  python3 - "$REPO/index-v2.json" "$PACOTE" "$@" <<'PY'
+# write_index <versionCode>...: builds an index-v2.json with exactly those
+# versions, in the format fdroidserver produces.
+write_index() {
+  python3 - "$REPO/index-v2.json" "$PACKAGE" "$@" <<'PY'
 import json, sys
-destino, pkg = sys.argv[1], sys.argv[2]
-versoes = {}
+dest, pkg = sys.argv[1], sys.argv[2]
+versions = {}
 for code in sys.argv[3:]:
-    versoes["v" + code] = {
+    versions["v" + code] = {
         "manifest": {"versionName": "0.1." + code, "versionCode": int(code)},
         "file": {"name": "/vpsmanager-%s.apk" % code},
     }
-with open(destino, "w", encoding="utf-8") as fh:
-    json.dump({"packages": {pkg: {"versions": versoes}}}, fh)
+with open(dest, "w", encoding="utf-8") as fh:
+    json.dump({"packages": {pkg: {"versions": versions}}}, fh)
 PY
 }
 
-roda() { FDROID_REPO_DIR="$REPO" ANDROID_UPDATES_DIR="$UPDATES" "$SCRIPT" "$@"; }
+run() { FDROID_REPO_DIR="$REPO" ANDROID_UPDATES_DIR="$UPDATES" "$SCRIPT" "$@"; }
 
-campo() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));exec("v=d"+sys.argv[2]);print(v)' "$UPDATES/manifest.json" "$1"; }
+field() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));exec("v=d"+sys.argv[2]);print(v)' "$UPDATES/manifest.json" "$1"; }
 
-# ── publicação inicial: versões 1 e 2 ────────────────────────────────────
-faz_apk 1; faz_apk 2
-escreve_index 1 2
-if ! roda > "$TMP/run1.log" 2>&1; then
-  echo "  FALHOU: primeira execução do script"; cat "$TMP/run1.log"; exit 1
+# Initial publication: versions 1 and 2.
+make_apk 1; make_apk 2
+write_index 1 2
+if ! run > "$TMP/run1.log" 2>&1; then
+  echo "  FAILED: first run of the script"; cat "$TMP/run1.log"; exit 1
 fi
 
-ALVO_SHA="$(campo '["latest"]["sha256"]')"
-FULL_FILE="$(campo '["full"]["file"]')"
-PATCH_FILE="$(campo '["patches"][0]["file"]')"
-BASE_SHA="$(campo '["patches"][0]["from_sha256"]')"
+TARGET_SHA="$(field '["latest"]["sha256"]')"
+FULL_FILE="$(field '["full"]["file"]')"
+PATCH_FILE="$(field '["patches"][0]["file"]')"
+BASE_SHA="$(field '["patches"][0]["from_sha256"]')"
 
-# ── Teste 1: patch reconstrói bytes idênticos ────────────────────────────
+# Test 1: the patch rebuilds identical bytes.
 if hpatchz "$UPDATES/apks/$BASE_SHA.apk" "$UPDATES/$PATCH_FILE" "$TMP/recon-patch.bin" >/dev/null 2>&1 \
-   && [ "$(sha256sum "$TMP/recon-patch.bin" | cut -d' ' -f1)" = "$ALVO_SHA" ]; then
-  ok "patch aplicado com hpatchz reconstrói SHA-256 idêntico ao alvo"
+   && [ "$(sha256sum "$TMP/recon-patch.bin" | cut -d' ' -f1)" = "$TARGET_SHA" ]; then
+  ok "patch applied with hpatchz rebuilds a SHA-256 identical to the target"
 else
-  no "patch NÃO reconstrói o alvo"
+  no "patch does NOT rebuild the target"
 fi
 
-# ── Teste 2: completo (base vazia) reconstrói o mesmo alvo ───────────────
+# Test 2: the full artifact (empty base) rebuilds the same target.
 if hpatchz "" "$UPDATES/$FULL_FILE" "$TMP/recon-full.bin" >/dev/null 2>&1 \
-   && [ "$(sha256sum "$TMP/recon-full.bin" | cut -d' ' -f1)" = "$ALVO_SHA" ]; then
-  ok "artefato completo (base vazia) reconstrói SHA-256 idêntico ao alvo"
+   && [ "$(sha256sum "$TMP/recon-full.bin" | cut -d' ' -f1)" = "$TARGET_SHA" ]; then
+  ok "full artifact (empty base) rebuilds a SHA-256 identical to the target"
 else
-  no "artefato completo NÃO reconstrói o alvo"
+  no "full artifact does NOT rebuild the target"
 fi
 
-# ── Teste 3: manifesto coerente com os arquivos em disco ────────────────
+# Test 3: the manifest matches the files on disk.
 if python3 - "$UPDATES" <<'PY'
 import hashlib, json, os, sys
 d = sys.argv[1]
 m = json.load(open(os.path.join(d, "manifest.json"), encoding="utf-8"))
 for art in [m["full"]] + m["patches"]:
-    caminho = os.path.join(d, art["file"])
-    if not os.path.isfile(caminho):
-        sys.exit("artefato %s nao existe" % art["file"])
-    if os.path.getsize(caminho) != art["size_bytes"]:
-        sys.exit("size_bytes de %s nao bate" % art["file"])
-    h = hashlib.sha256(open(caminho, "rb").read()).hexdigest()
+    path = os.path.join(d, art["file"])
+    if not os.path.isfile(path):
+        sys.exit("artifact %s does not exist" % art["file"])
+    if os.path.getsize(path) != art["size_bytes"]:
+        sys.exit("size_bytes of %s does not match" % art["file"])
+    h = hashlib.sha256(open(path, "rb").read()).hexdigest()
     if h != art["sha256"]:
-        sys.exit("sha256 de %s nao bate" % art["file"])
+        sys.exit("sha256 of %s does not match" % art["file"])
 if m["schema_version"] != 1 or not m["patch_tool"]:
-    sys.exit("cabecalho do manifesto incompleto")
+    sys.exit("incomplete manifest header")
 PY
-then ok "manifesto coerente: sha256/size_bytes batem com os arquivos"
-else no "manifesto incoerente com os arquivos em disco"
+then ok "consistent manifest: sha256/size_bytes match the files"
+else no "manifest inconsistent with the files on disk"
 fi
 
-# ── Teste 4: idempotência ────────────────────────────────────────────────
-antes="$(sha256sum "$UPDATES/$PATCH_FILE" | cut -d' ' -f1)"
-if roda > "$TMP/run2.log" 2>&1 \
-   && [ "$(sha256sum "$UPDATES/$PATCH_FILE" | cut -d' ' -f1)" = "$antes" ] \
-   && grep -q "já existe" "$TMP/run2.log"; then
-  ok "rodar de novo é idempotente (reaproveita os artefatos existentes)"
+# Test 4: idempotence.
+before="$(sha256sum "$UPDATES/$PATCH_FILE" | cut -d' ' -f1)"
+if run > "$TMP/run2.log" 2>&1 \
+   && [ "$(sha256sum "$UPDATES/$PATCH_FILE" | cut -d' ' -f1)" = "$before" ] \
+   && grep -q "already exists" "$TMP/run2.log"; then
+  ok "running again is idempotent (reuses the existing artifacts)"
 else
-  no "segunda execução não foi idempotente"; cat "$TMP/run2.log"
+  no "second run was not idempotent"; cat "$TMP/run2.log"
 fi
 
-# ── Teste 5: retenção ao publicar a 6ª versão ───────────────────────────
-for c in 3 4 5; do faz_apk "$c"; done
-escreve_index 1 2 3 4 5
-roda > "$TMP/run5.log" 2>&1 || { echo "  FALHOU: execução com 5 versões"; cat "$TMP/run5.log"; }
+# Test 5: retention when publishing the 6th version.
+for c in 3 4 5; do make_apk "$c"; done
+write_index 1 2 3 4 5
+run > "$TMP/run5.log" 2>&1 || { echo "  FAILED: run with 5 versions"; cat "$TMP/run5.log"; }
 
-# Com 5 versões e janela 5: alvo = 5, bases = 4,3,2,1 -> 4 patches, nada some.
+# 5 versions and a window of 5: target = 5, bases = 4,3,2,1 -> 4 patches, nothing removed.
 n_patches="$(python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))["patches"]))' "$UPDATES/manifest.json")"
-patch_da_v1="$(python3 -c '
+v1_patch="$(python3 -c '
 import json,sys
 d=json.load(open(sys.argv[1]))
 print(next((p["file"] for p in d["patches"] if p["from_version_code"]==1), ""))' "$UPDATES/manifest.json")"
-if [ "$n_patches" = "4" ] && [ -n "$patch_da_v1" ] && [ -f "$UPDATES/$patch_da_v1" ]; then
-  ok "janela de 5: 4 patches gerados, a base mais antiga ainda dentro"
+if [ "$n_patches" = "4" ] && [ -n "$v1_patch" ] && [ -f "$UPDATES/$v1_patch" ]; then
+  ok "window of 5: 4 patches generated, the oldest base still inside"
 else
-  no "janela de 5 inesperada (patches=$n_patches, patch da v1=$patch_da_v1)"
+  no "unexpected window of 5 (patches=$n_patches, v1 patch=$v1_patch)"
 fi
 
-# Agora a 6ª: a v1 sai da janela e tudo dela tem que sumir.
-sha_v1="$(sha256sum "$REPO/vpsmanager-1.apk" | cut -d' ' -f1)"
-full_antigo="$FULL_FILE"
-faz_apk 6
-escreve_index 1 2 3 4 5 6
-roda > "$TMP/run6.log" 2>&1 || { echo "  FALHOU: execução com 6 versões"; cat "$TMP/run6.log"; }
+# Now the 6th: v1 leaves the window and everything from it must go.
+v1_sha="$(sha256sum "$REPO/vpsmanager-1.apk" | cut -d' ' -f1)"
+old_full="$FULL_FILE"
+make_apk 6
+write_index 1 2 3 4 5 6
+run > "$TMP/run6.log" 2>&1 || { echo "  FAILED: run with 6 versions"; cat "$TMP/run6.log"; }
 
-erros=""
-[ -f "$UPDATES/$patch_da_v1" ] && erros="$erros patch-da-v1-sobreviveu"
-[ -f "$UPDATES/apks/$sha_v1.apk" ] && erros="$erros apk-da-v1-sobreviveu"
-[ -f "$UPDATES/$full_antigo" ] && erros="$erros full-do-alvo-antigo-sobreviveu"
+errors=""
+[ -f "$UPDATES/$v1_patch" ] && errors="$errors v1-patch-survived"
+[ -f "$UPDATES/apks/$v1_sha.apk" ] && errors="$errors v1-apk-survived"
+[ -f "$UPDATES/$old_full" ] && errors="$errors old-target-full-survived"
 python3 -c '
 import json,sys
 d=json.load(open(sys.argv[1]))
 assert d["latest"]["version_code"]==6, d["latest"]
 assert len(d["patches"])==4, len(d["patches"])
 assert sorted(p["from_version_code"] for p in d["patches"])==[2,3,4,5], d["patches"]
-' "$UPDATES/manifest.json" 2>/dev/null || erros="$erros manifesto-da-6a-errado"
+' "$UPDATES/manifest.json" 2>/dev/null || errors="$errors wrong-6th-manifest"
 
-if [ -z "$erros" ]; then
-  ok "6ª versão: patches/APK da base fora da janela apagados, manifesto só com 2..5"
+if [ -z "$errors" ]; then
+  ok "6th version: patches/APK of the base outside the window deleted, manifest only has 2..5"
 else
-  no "retenção falhou:$erros"
+  no "retention failed:$errors"
 fi
 
-# Nenhum .tmp de hdiffz interrompido pode ficar para trás.
+# No interrupted hdiffz .tmp may be left behind.
 if [ -z "$(find "$UPDATES" -name '*.tmp' -o -name '.manifest-*' 2>/dev/null)" ]; then
-  ok "nenhum arquivo temporário sobrou no diretório de updates"
+  ok "no temporary file left in the updates directory"
 else
-  no "sobraram temporários: $(find "$UPDATES" -name '*.tmp' -o -name '.manifest-*')"
+  no "temporary files left: $(find "$UPDATES" -name '*.tmp' -o -name '.manifest-*')"
 fi
 
-# ── Teste 6: versão no índice sem o APK correspondente ──────────────────
-# O operador podou um APK antigo do pacote dele. A geração não pode morrer:
-# aquela base só deixa de ter patch (o app cai no completo).
+# Test 6: an index version without its APK. The operator pruned an old APK;
+# generation must survive and only that base loses its patch.
 rm -f "$REPO/vpsmanager-2.apk" "$UPDATES/apks"/*.apk.versioncode
-if roda > "$TMP/run7.log" 2>&1; then
-  ok "APK ausente no repositório não derruba a geração (degrada só aquela base)"
+if run > "$TMP/run7.log" 2>&1; then
+  ok "missing APK in the repository does not break generation (only that base degrades)"
 else
-  no "geração morreu com um APK ausente no repositório"; cat "$TMP/run7.log"
+  no "generation died with an APK missing from the repository"; cat "$TMP/run7.log"
 fi
 
 echo
-echo "=== $pass OK, $fail falha(s) ==="
+echo "=== $pass OK, $fail failure(s) ==="
 [ "$fail" -eq 0 ] || exit 1

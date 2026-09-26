@@ -1,10 +1,9 @@
-// Harness: roda o MOTOR DO APP (libghostty-vt, o mesmo .a vendorizado) sobre um
-// arquivo de bytes crus e imprime a grade resultante. Serve para comparar, sem
-// aparelho nenhum, o que o motor do app produz com o que um emulador de
-// referencia produz a partir dos MESMOS bytes.
+// Harness: runs the APP'S ENGINE (libghostty-vt, the same vendored .a) over a file
+// of raw bytes and prints the resulting grid, to compare it, with no device, with
+// what a reference emulator produces from the SAME bytes.
 //
-// Reproduz o caminho de snapshot do ghostty_jni.cpp: begin_update/end_update,
-// iterador de linhas, selecao de celula.
+// Mirrors the snapshot path of ghostty_jni.cpp: begin_update/end_update, row
+// iterator, cell selection.
 #include <ghostty/vt.h>
 
 #include <cstdint>
@@ -35,22 +34,22 @@ static void utf8(uint32_t cp, std::string& out) {
 }
 
 int main(int argc, char** argv) {
-    const char* caminho = argc > 1 ? argv[1] : "/dev/stdin";
+    const char* path = argc > 1 ? argv[1] : "/dev/stdin";
     uint16_t cols = argc > 2 ? static_cast<uint16_t>(atoi(argv[2])) : 67;
     uint16_t rows = argc > 3 ? static_cast<uint16_t>(atoi(argv[3])) : 53;
-    size_t janela = argc > 4 ? static_cast<size_t>(atol(argv[4])) : 1500000;
-    // Tamanho do pedaco de escrita: o app replaya o log EM PEDACOS.
-    size_t pedaco = argc > 5 ? static_cast<size_t>(atol(argv[5])) : 0;
+    size_t window = argc > 4 ? static_cast<size_t>(atol(argv[4])) : 1500000;
+    // Write chunk size: the app replays the log IN CHUNKS.
+    size_t chunk = argc > 5 ? static_cast<size_t>(atol(argv[5])) : 0;
 
-    FILE* f = fopen(caminho, "rb");
-    if (!f) { fprintf(stderr, "nao abriu %s\n", caminho); return 1; }
+    FILE* f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "could not open %s\n", path); return 1; }
     fseek(f, 0, SEEK_END);
     long total = ftell(f);
-    long inicio = total > static_cast<long>(janela) ? total - static_cast<long>(janela) : 0;
-    fseek(f, inicio, SEEK_SET);
-    std::vector<uint8_t> dados(static_cast<size_t>(total - inicio));
-    size_t lidos = fread(dados.data(), 1, dados.size(), f);
-    dados.resize(lidos);
+    long start = total > static_cast<long>(window) ? total - static_cast<long>(window) : 0;
+    fseek(f, start, SEEK_SET);
+    std::vector<uint8_t> data(static_cast<size_t>(total - start));
+    size_t nread = fread(data.data(), 1, data.size(), f);
+    data.resize(nread);
     fclose(f);
 
     GhosttyTerminal terminal = 0;
@@ -64,18 +63,18 @@ int main(int argc, char** argv) {
     options.max_scrollback = 10000 * 80;
 
     if (ghostty_terminal_new(nullptr, &terminal, options) != GHOSTTY_SUCCESS) {
-        fprintf(stderr, "ghostty_terminal_new falhou\n"); return 1;
+        fprintf(stderr, "ghostty_terminal_new failed\n"); return 1;
     }
     if (ghostty_render_state_new(nullptr, &rs) != GHOSTTY_SUCCESS) return 1;
     if (ghostty_render_state_row_iterator_new(nullptr, &it) != GHOSTTY_SUCCESS) return 1;
     if (ghostty_render_state_row_cells_new(nullptr, &cells) != GHOSTTY_SUCCESS) return 1;
 
-    if (pedaco == 0) {
-        ghostty_terminal_vt_write(terminal, dados.data(), dados.size());
+    if (chunk == 0) {
+        ghostty_terminal_vt_write(terminal, data.data(), data.size());
     } else {
-        for (size_t i = 0; i < dados.size(); i += pedaco) {
-            size_t n = dados.size() - i < pedaco ? dados.size() - i : pedaco;
-            ghostty_terminal_vt_write(terminal, dados.data() + i, n);
+        for (size_t i = 0; i < data.size(); i += chunk) {
+            size_t n = data.size() - i < chunk ? data.size() - i : chunk;
+            ghostty_terminal_vt_write(terminal, data.data() + i, n);
         }
     }
 
@@ -85,8 +84,8 @@ int main(int argc, char** argv) {
     uint16_t c = 0, r = 0;
     ghostty_render_state_get(rs, GHOSTTY_RENDER_STATE_DATA_COLS, &c);
     ghostty_render_state_get(rs, GHOSTTY_RENDER_STATE_DATA_ROWS, &r);
-    printf("=== MOTOR DO APP (libghostty-vt) — %ux%u, %zu bytes, pedaco=%zu ===\n",
-           c, r, dados.size(), pedaco);
+    printf("=== APP ENGINE (libghostty-vt) — %ux%u, %zu bytes, chunk=%zu ===\n",
+           c, r, data.size(), chunk);
 
     GhosttyRenderStateRowIterator iter = it;
     ghostty_render_state_get(rs, GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR, &iter);
@@ -95,17 +94,17 @@ int main(int argc, char** argv) {
     while (y < r && ghostty_render_state_row_iterator_next(iter)) {
         GhosttyRenderStateRowCells rc = cells;
         ghostty_render_state_row_get(iter, GHOSTTY_RENDER_STATE_ROW_DATA_CELLS, &rc);
-        std::string linha;
+        std::string line;
         for (uint16_t x = 0; x < c; x++) {
             ghostty_render_state_row_cells_select(rc, x);
             GhosttyCell raw = 0;
             ghostty_render_state_row_cells_get(rc, GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_RAW, &raw);
             uint32_t cp = 0;
             ghostty_cell_get(raw, GHOSTTY_CELL_DATA_CODEPOINT, &cp);
-            utf8(cp, linha);
+            utf8(cp, line);
         }
-        while (!linha.empty() && linha.back() == ' ') linha.pop_back();
-        printf("%02u|%s\n", y, linha.c_str());
+        while (!line.empty() && line.back() == ' ') line.pop_back();
+        printf("%02u|%s\n", y, line.c_str());
         y++;
     }
     return 0;

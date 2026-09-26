@@ -1,22 +1,22 @@
-"""Replaya os bytes CRUS da sessao num emulador de terminal de REFERENCIA.
+"""Replays the session's RAW bytes through a REFERENCE terminal emulator.
 
-Se a tela sair corrompida aqui, os bytes se contradizem sozinhos e o app e
-inocente. Se sair limpa, quem diverge e o emulador do app.
+If the screen comes out corrupted here, the bytes contradict themselves and the
+app is innocent. If it comes out clean, the app's emulator is what diverges.
 """
 import sys
 
 import pyte
 
-LOG = "/opt/panel/data/users/sam/session-logs/Aplicativo.log"
+LOG = "/opt/panel/data/users/sam/session-logs/App.log"
 COLS, ROWS = 67, 53
-JANELA = int(sys.argv[1]) if len(sys.argv) > 1 else 1_500_000
+WINDOW = int(sys.argv[1]) if len(sys.argv) > 1 else 1_500_000
 
-dados = open(LOG, "rb").read()[-JANELA:]
+data = open(LOG, "rb").read()[-WINDOW:]
 
-tela = pyte.Screen(COLS, ROWS)
-fluxo = pyte.Stream(tela)
-fluxo.feed(dados.decode("utf-8", errors="replace"))
+screen = pyte.Screen(COLS, ROWS)
+stream = pyte.Stream(screen)
+stream.feed(data.decode("utf-8", errors="replace"))
 
-print(f"=== emulador de REFERENCIA (pyte) — {COLS}x{ROWS}, ultimos {len(dados)} bytes ===")
-for i, linha in enumerate(tela.display):
-    print(f"{i:02d}|{linha.rstrip()}")
+print(f"=== REFERENCE emulator (pyte), {COLS}x{ROWS}, last {len(data)} bytes ===")
+for i, line in enumerate(screen.display):
+    print(f"{i:02d}|{line.rstrip()}")

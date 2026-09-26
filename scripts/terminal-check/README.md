@@ -1,32 +1,29 @@
-# Provar de que lado está o defeito do terminal, sem aparelho
+# Finding which side a terminal defect is on, without a device
 
-Quando o dono relatar a tela do terminal errada — embaralhada, duplicada,
-espremida — **rode isto ANTES de formular qualquer hipótese**. São dois
-instrumentos, e juntos eles separam as três camadas em que o defeito pode
-morar: os **bytes**, o **motor** e o **desenho**.
+When the terminal screen is reported wrong (scrambled, duplicated, squeezed),
+**run this BEFORE forming any hypothesis**. These are two instruments, and
+together they separate the three layers where the defect can live: the
+**bytes**, the **engine** and the **drawing**.
 
-Foi a falta deles que fez duas correções especulativas serem publicadas em
-2026-09-10, e foi a presença deles que achou a causa em vinte minutos.
+## 1. Do the bytes contradict themselves? (`replay.py`)
 
-## 1. Os bytes se contradizem? (`replay.py`)
-
-Passa o log cru da sessão por um emulador de terminal **de referência**
-(`pyte`), independente do nosso.
+Feeds the session's raw log through a **reference** terminal emulator
+(`pyte`), independent from ours.
 
 ```sh
 python3 -m venv /tmp/vt && /tmp/vt/bin/pip install pyte
 /tmp/vt/bin/python replay.py 1500000
 ```
 
-- Tela **corrompida** → os bytes se contradizem sozinhos; o app é fiel e o
-  problema é do lado do servidor ou do programa remoto.
-- Tela **limpa** → os bytes estão certos. Siga para o passo 2.
+- **Corrupted** screen: the bytes contradict themselves; the app is faithful and
+  the problem is on the server side or in the remote program.
+- **Clean** screen: the bytes are right. Go to step 2.
 
-## 2. O motor do app diverge? (`harness.cpp`)
+## 2. Does the app's engine diverge? (`harness.cpp`)
 
-Roda o **mesmo `libghostty-vt.a` que vai no aparelho** aqui na VPS. O `.a` é
-compilado para bionic, então falta só `__errno` — é o que `shim_errno.cpp`
-fornece.
+Runs the **same `libghostty-vt.a` that ships on the device**, here on the VPS.
+The `.a` is built for bionic, so only `__errno` is missing, which is what
+`shim_errno.cpp` provides.
 
 ```sh
 g++ -std=c++17 -O1 \
@@ -35,37 +32,37 @@ g++ -std=c++17 -O1 \
     ../../android/terminal-engine/vendor/x86_64/libghostty-vt.a \
     -o harness
 
-./harness /opt/panel/data/users/sam/session-logs/<Sessao>.log 67 53 1500000
+./harness /opt/panel/data/users/sam/session-logs/<Session>.log 67 53 1500000
 ```
 
-Argumentos: `<log> <colunas> <linhas> <janela-em-bytes> [tamanho-do-pedaco]`.
-O último reproduz o replay **em pedaços** que o app faz no primer.
+Arguments: `<log> <columns> <rows> <window-in-bytes> [chunk-size]`.
+The last one reproduces the **chunked** replay the app does in the primer.
 
-- Diverge do `pyte` → o defeito é do motor ou do shim JNI.
-- Igual ao `pyte` (as duas limpas) → **o defeito está no que o app ALIMENTA no
-  motor**, ou no desenho. Siga para o passo 3.
+- Differs from `pyte`: the defect is in the engine or the JNI shim.
+- Same as `pyte` (both clean): **the defect is in what the app FEEDS the
+  engine**, or in the drawing. Go to step 3.
 
-## 3. O app alimenta errado?
+## 3. Does the app feed it wrong?
 
-Foi aqui que o defeito de 2026-09-10 estava. Componha uma entrada que imite a
-suspeita e passe pelo `harness`. Para a duplicata que o primer causava:
+Build an input that imitates the suspicion and run it through `harness`. For
+the duplicate the primer used to cause:
 
 ```sh
 python3 -c "
 import io
-d = io.open('/opt/.../Aplicativo.log','rb').read()[-1500000:]
-io.open('sobreposto.bin','wb').write(d + d[-2000:])"
-./harness sobreposto.bin 67 53 99999999
+d = io.open('/opt/.../App.log','rb').read()[-1500000:]
+io.open('overlapped.bin','wb').write(d + d[-2000:])"
+./harness overlapped.bin 67 53 99999999
 ```
 
-**Atenção ao tamanho da sobreposição.** 2 KiB corrompem; 20 KiB e 100 KiB não —
-um pedaço grande repinta um quadro inteiro por cima e a tela se recompõe, e é o
-pedaço curto, meio quadro, que fica. Testar só com valores grandes conclui
-"não é isso" e está errado.
+**Mind the overlap size.** 2 KiB corrupts; 20 KiB and 100 KiB do not: a large
+chunk repaints a whole frame on top and the screen recovers, while the short,
+half-frame chunk is what sticks. Testing only with large values concludes
+"it is not this", and that is wrong.
 
-## A armadilha que custou uma versão publicada
+## The trap
 
-O log da sessão contém **o que a própria sessão escreveu na tela**. Se você
-descreve o texto corrompido numa mensagem, ele aparece no log — e um `grep`
-depois o devolve como se fosse evidência. **Antes de tratar um trecho do log
-como prova, confirme que não é eco do que você mesmo escreveu.**
+The session log contains **what the session itself wrote on screen**. If you
+describe the corrupted text in a message, it appears in the log, and a later
+`grep` returns it as if it were evidence. **Before treating a log excerpt as
+proof, confirm it is not an echo of what you wrote yourself.**

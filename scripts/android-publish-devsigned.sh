@@ -1,212 +1,185 @@
 #!/usr/bin/env bash
-# android-publish-devsigned.sh <versionName> <versionCode> [apk] — publica uma
-# release assinada com a CHAVE DE DESENVOLVIMENTO nos DOIS lugares que precisam
-# saber dela.
+# android-publish-devsigned.sh <versionName> <versionCode> [apk]: publishes a
+# release signed with the DEVELOPMENT KEY to BOTH places that need to know it.
 #
-# ## Por que existe, e o que ele conserta
+# `scripts/android-publish.sh` is the operator path: it needs the offline-signed
+# APK and an F-Droid index regenerated with the repokey, neither of which exists
+# on this server by design (docs/android-signing-keystore.md). Until the release
+# key is used, working builds are signed with the throwaway key from
+# docs/android-dev-key.md and published from here.
 #
-# `scripts/android-publish.sh` é o caminho do operador: exige o APK assinado
-# offline e o índice F-Droid já regenerado com a repokey, nenhum dos quais
-# existe nesta VPS por desenho (docs/android-signing-keystore.md). Enquanto a
-# chave de release não sai da máquina do operador, as versões de trabalho saem
-# daqui assinadas com a chave descartável de `docs/android-chave-dev.md` — e
-# esse caminho vinha sendo feito por um rascunho fora do repositório que
-# publicava SÓ no repositório F-Droid.
+# Publishing only to the F-Droid repository is not enough: the app checks the
+# INCREMENTAL CHANNEL (`data/android-updates/manifest.json`, served by
+# `/api/mobile/v1/app/update`), a separate artifact built by
+# `scripts/android-patches.sh`. This script does both.
 #
-# Publicar só ali é publicar pela metade, e o sintoma é exato: o aplicativo
-# não oferece a atualização, porque o que ele consulta é o CANAL INCREMENTAL
-# (`data/android-updates/manifest.json`, servido por `/api/mobile/v1/app/update`),
-# que é outro artefato, produzido por `scripts/android-patches.sh`. Faltando
-# esse passo, a única saída é baixar o APK à mão — que é exatamente o que este
-# script existe para nunca mais ser necessário.
+# The index keeps a window of versions, not only the new one: android-patches.sh
+# builds its patch window from the versions in `index-v2.json`. With one version
+# the channel only has the full artifact (~10 MB); with the window an update is
+# an incremental patch (~1.5 MB measured).
 #
-# ## Por que o índice mantém uma janela, e não só a versão nova
+# Old .apk files still leave the public directory: android-patches.sh reads the
+# old bytes from `data/android-updates/apks/` (its own archive, by hash). The
+# index keeps the MEMORY of the versions; the public disk keeps only the current one.
 #
-# `android-patches.sh` monta a janela de patches a partir das versões listadas
-# em `index-v2.json`. Um índice com uma versão só produz um canal com apenas o
-# artefato completo (~10 MB); com a janela, a atualização vira um patch
-# incremental (~1,5 MB medido). Numa internet ruim essa é a diferença entre
-# atualizar e desistir — é a razão inteira do canal incremental existir.
-#
-# O ARQUIVO .apk das versões antigas continua saindo do diretório público: o
-# `android-patches.sh` já lê os bytes antigos de `data/android-updates/apks/`
-# (o arquivo dele, por hash), então a janela não depende de manter binários
-# velhos servidos. O índice guarda a MEMÓRIA das versões; o disco público
-# guarda só a atual.
-#
-# Variáveis de ambiente (override para teste): FDROID_REPO_DIR, UPDATES_DIR,
-# PACKAGE_ID, JANELA, APKSIGNER.
+# Environment overrides (for tests): FDROID_REPO_DIR, UPDATES_DIR, PACKAGE_ID,
+# JANELA (window size), APKSIGNER.
 set -euo pipefail
 
-fail_cedo() { echo "ERRO: $*" >&2; exit 1; }
+fail_early() { echo "ERROR: $*" >&2; exit 1; }
 
-VERSION_NAME="${1:?uso: scripts/android-publish-devsigned.sh <versionName> <versionCode> [apk]}"
-VERSION_CODE="${2:?uso: scripts/android-publish-devsigned.sh <versionName> <versionCode> [apk]}"
+VERSION_NAME="${1:?usage: scripts/android-publish-devsigned.sh <versionName> <versionCode> [apk]}"
+VERSION_CODE="${2:?usage: scripts/android-publish-devsigned.sh <versionName> <versionCode> [apk]}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APK="${3:-$ROOT_DIR/android/app/build/outputs/apk/release/app-release.apk}"
 
-# O ALVO É O data/ QUE O SERVIDOR SERVE, nunca o do diretório em que se está.
-#
-# Isto não é detalhe de caminho: cada ticket trabalha num worktree próprio
-# (`.claude/worktrees/<ticket>`), e cada worktree tem um `data/` de verdade,
-# vazio. Um caminho relativo à raiz do repositório publica, em silêncio e com
-# saída de sucesso, num diretório que nada serve — o aplicativo continua sem
-# ver a versão nova e não há erro nenhum para investigar. Aconteceu na
-# primeira execução deste script.
-#
-# O binário no ar sempre roda com DataDir em VPSM_HOME; o código-fonte pode
-# estar em qualquer worktree. São coisas diferentes e o script trata como tais.
+# The target is the data/ THE SERVER SERVES, never the one under the current
+# directory: every worktree has its own empty data/, and a repo-relative path
+# would "succeed" into a directory nothing serves. The running binary always
+# uses VPSM_HOME as its DataDir.
 VPSM_HOME="${VPSM_HOME:-/opt/panel}"
-[ -d "$VPSM_HOME/data" ] || fail_cedo "VPSM_HOME=$VPSM_HOME não tem data/ — aponte VPSM_HOME para a instalação servida"
+[ -d "$VPSM_HOME/data" ] || fail_early "VPSM_HOME=$VPSM_HOME has no data/; point VPSM_HOME at the served installation"
 FDROID_REPO_DIR="${FDROID_REPO_DIR:-$VPSM_HOME/data/fdroid/repo}"
 UPDATES_DIR="${UPDATES_DIR:-$VPSM_HOME/data/android-updates}"
-JANELA="${JANELA:-5}"
+WINDOW="${JANELA:-5}"
 APKSIGNER="${APKSIGNER:-apksigner}"
 
-fail() { echo "ERRO: $*" >&2; exit 1; }
+fail() { echo "ERROR: $*" >&2; exit 1; }
 
-[ -f "$APK" ] || fail "APK não encontrado: $APK"
+[ -f "$APK" ] || fail "APK not found: $APK"
 
 default_package_id() {
   sed -n 's/^vpsmanager\.applicationId=//p' "$ROOT_DIR/android/gradle.properties" | head -1 | tr -d '[:space:]'
 }
 PACKAGE_ID="${PACKAGE_ID:-$(default_package_id)}"
-[ -n "$PACKAGE_ID" ] || fail "PACKAGE_ID vazio"
+[ -n "$PACKAGE_ID" ] || fail "PACKAGE_ID is empty"
 
-# Um APK NÃO ASSINADO é o erro silencioso caro deste caminho: o Gradle produz
-# `app-release-unsigned.apk` quando a property da chave de dev não é passada, o
-# nome é parecido, e o aparelho só recusa no fim de um download inteiro. Vale um
-# gate aqui.
+# An UNSIGNED APK is the expensive silent mistake here: Gradle produces
+# `app-release-unsigned.apk` when the dev-key property is missing, and the device
+# only refuses it after a full download.
 if command -v "$APKSIGNER" >/dev/null 2>&1; then
-  "$APKSIGNER" verify "$APK" >/dev/null 2>&1 || fail "o APK não está assinado (ou a assinatura é inválida): $APK"
+  "$APKSIGNER" verify "$APK" >/dev/null 2>&1 || fail "the APK is not signed (or the signature is invalid): $APK"
 else
-  echo "aviso: apksigner ausente — assinatura não verificada" >&2
+  echo "warning: apksigner missing; signature not verified" >&2
 fi
 
 mkdir -p "$FDROID_REPO_DIR"
 
-# O NOME DE ARQUIVO e o versionName são coisas diferentes, de propósito.
+# The FILE NAME and the versionName differ on purpose. The dev build appends
+# "-devsigned" to the versionName so a throwaway-key artifact identifies itself
+# everywhere, but the public file name is `vpsm-<version>.apk` because it becomes
+# a link that must keep its shape.
 #
-# O build de dev acrescenta "-devsigned" ao versionName (app/build.gradle.kts),
-# para que um artefato assinado com a chave descartável se identifique como tal
-# em `aapt2 dump badging`, na tela de sobre e em qualquer índice. Mas o NOME do
-# arquivo público é `vpsm-<versão>.apk` — é ele que vira link, e um link já
-# divulgado não pode mudar de forma.
-#
-# O versionName vem do PRÓPRIO APK, nunca do argumento: o app compara o que o
-# índice diz com o que ele tem instalado, e um índice que anuncia "0.1.24" para
-# um APK que se chama "0.1.24-devsigned" faz a faixa de atualização mentir
-# sobre o que vai ser instalado.
-NOME_ARQUIVO="vpsm-$VERSION_NAME.apk"
-VERSION_NAME_REAL="$VERSION_NAME"
+# The versionName comes from the APK itself, never from the argument: the app
+# compares the index with what is installed, and an index announcing "0.1.24"
+# for an APK named "0.1.24-devsigned" would make the update banner lie.
+FILE_NAME="vpsm-$VERSION_NAME.apk"
+REAL_VERSION_NAME="$VERSION_NAME"
 AAPT2="${AAPT2:-$(command -v aapt2 || ls /opt/android-sdk/build-tools/*/aapt2 2>/dev/null | sort -r | head -1)}"
 if [ -n "${AAPT2:-}" ] && [ -x "$AAPT2" ]; then
-  lido="$("$AAPT2" dump badging "$APK" 2>/dev/null | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)"
-  [ -n "$lido" ] && VERSION_NAME_REAL="$lido"
-  lido_code="$("$AAPT2" dump badging "$APK" 2>/dev/null | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" | head -1)"
-  if [ -n "$lido_code" ] && [ "$lido_code" != "$VERSION_CODE" ]; then
-    fail "o APK tem versionCode=$lido_code, mas você pediu $VERSION_CODE — publicar assim faria o canal mentir"
+  read_name="$("$AAPT2" dump badging "$APK" 2>/dev/null | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)"
+  [ -n "$read_name" ] && REAL_VERSION_NAME="$read_name"
+  read_code="$("$AAPT2" dump badging "$APK" 2>/dev/null | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" | head -1)"
+  if [ -n "$read_code" ] && [ "$read_code" != "$VERSION_CODE" ]; then
+    fail "the APK has versionCode=$read_code but you asked for $VERSION_CODE; publishing it would make the channel lie"
   fi
 else
-  echo "aviso: aapt2 ausente — versionName não conferido contra o APK" >&2
+  echo "warning: aapt2 missing; versionName not checked against the APK" >&2
 fi
 
 python3 - "$FDROID_REPO_DIR" "$UPDATES_DIR" "$PACKAGE_ID" "$APK" \
-         "$NOME_ARQUIVO" "$VERSION_NAME_REAL" "$VERSION_CODE" "$JANELA" <<'PY'
+         "$FILE_NAME" "$REAL_VERSION_NAME" "$VERSION_CODE" "$WINDOW" <<'PY'
 # -*- coding: utf-8 -*-
-"""Atualiza o registro de versões e reescreve o índice a partir dele."""
+"""Updates the version registry and rewrites the index from it."""
 import hashlib, json, io, os, sys
 
-repo, updates, pkg, apk, nome, ver, code, janela = sys.argv[1:9]
-code, janela = int(code), int(janela)
+repo, updates, pkg, apk, name, ver, code, window = sys.argv[1:9]
+code, window = int(code), int(window)
 
-def sha256(caminho):
+def sha256(path):
     h = hashlib.sha256()
-    with open(caminho, "rb") as fh:
-        for bloco in iter(lambda: fh.read(1 << 20), b""):
-            h.update(bloco)
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
     return h.hexdigest()
 
-# ── o registro: a memória das versões, independente do que está em disco ────
-# Sem ele, cada publicação apagaria a janela de patches junto com os binários
-# antigos, e toda atualização voltaria a ser um download completo.
-registro_path = os.path.join(repo, "versoes.json")
-registro = []
-if os.path.exists(registro_path):
-    with io.open(registro_path, encoding="utf-8") as fh:
-        registro = json.load(fh)
+# The registry is the memory of the versions, independent of what is on disk.
+# Without it every publication would drop the patch window together with the
+# old binaries. The file name is kept as is: it is persisted in the repo dir.
+registry_path = os.path.join(repo, "versoes.json")
+registry = []
+if os.path.exists(registry_path):
+    with io.open(registry_path, encoding="utf-8") as fh:
+        registry = json.load(fh)
 
-# Semeadura na primeira execução: o canal incremental já arquivou os APKs das
-# versões anteriores (apks/<sha>.apk + .versioncode) e o manifesto guarda o
-# nome de cada base. Reconstruir o registro daí é o que evita que a primeira
-# atualização por este caminho seja um completo de 10 MB sem necessidade.
-if not registro:
-    manifesto = os.path.join(updates, "manifest.json")
-    if os.path.exists(manifesto):
-        with io.open(manifesto, encoding="utf-8") as fh:
+# First run: seed the registry from the incremental channel, which already
+# archived the previous APKs and names each base in its manifest, so the first
+# update through this path is not a needless full download.
+if not registry:
+    manifest_path = os.path.join(updates, "manifest.json")
+    if os.path.exists(manifest_path):
+        with io.open(manifest_path, encoding="utf-8") as fh:
             m = json.load(fh)
-        vistos = {}
-        alvo = m.get("latest", {})
-        if alvo.get("sha256"):
-            vistos[int(alvo["version_code"])] = (alvo["version_name"], alvo["sha256"], int(alvo.get("size_bytes") or 0))
+        seen = {}
+        target = m.get("latest", {})
+        if target.get("sha256"):
+            seen[int(target["version_code"])] = (target["version_name"], target["sha256"], int(target.get("size_bytes") or 0))
         for p in m.get("patches", []):
             if p.get("from_sha256") and p.get("from_version_code"):
                 c = int(p["from_version_code"])
-                arquivado = os.path.join(updates, "apks", p["from_sha256"] + ".apk")
-                tamanho = os.path.getsize(arquivado) if os.path.exists(arquivado) else 0
-                vistos.setdefault(c, (p.get("from_version_name", ""), p["from_sha256"], tamanho))
-        for c, (n, s, t) in vistos.items():
-            registro.append({"version_code": c, "version_name": n, "sha256": s,
+                archived = os.path.join(updates, "apks", p["from_sha256"] + ".apk")
+                size = os.path.getsize(archived) if os.path.exists(archived) else 0
+                seen.setdefault(c, (p.get("from_version_name", ""), p["from_sha256"], size))
+        for c, (n, s, t) in seen.items():
+            registry.append({"version_code": c, "version_name": n, "sha256": s,
                              "size_bytes": t, "file": "vpsm-%s.apk" % n})
-        if registro:
-            sys.stderr.write("registro semeado com %d versão(ões) do canal incremental\n" % len(registro))
+        if registry:
+            sys.stderr.write("registry seeded with %d version(s) from the incremental channel\n" % len(registry))
 
-novo = {
+new = {
     "version_code": code,
     "version_name": ver,
     "sha256": sha256(apk),
     "size_bytes": os.path.getsize(apk),
-    "file": nome,
+    "file": name,
 }
-registro = [v for v in registro if int(v["version_code"]) != code] + [novo]
-registro.sort(key=lambda v: int(v["version_code"]), reverse=True)
-registro = registro[:janela]
+registry = [v for v in registry if int(v["version_code"]) != code] + [new]
+registry.sort(key=lambda v: int(v["version_code"]), reverse=True)
+registry = registry[:window]
 
-# ── disco público: só a versão nova ────────────────────────────────────────
-# Os bytes das antigas continuam em updates/apks/ (por hash), que é de onde o
-# android-patches.sh lê. Servir binários velhos não traria nada.
+# Public disk: only the new version. Older bytes stay in updates/apks/ (by
+# hash), which is where android-patches.sh reads them.
 import shutil
-destino = os.path.join(repo, nome)
-if os.path.abspath(apk) != os.path.abspath(destino):
-    shutil.copy2(apk, destino)
-os.chmod(destino, 0o644)
+dest = os.path.join(repo, name)
+if os.path.abspath(apk) != os.path.abspath(dest):
+    shutil.copy2(apk, dest)
+os.chmod(dest, 0o644)
 for f in os.listdir(repo):
-    if f.startswith("vpsm-") and f.endswith(".apk") and f != nome:
+    if f.startswith("vpsm-") and f.endswith(".apk") and f != name:
         os.remove(os.path.join(repo, f))
 
-with io.open(registro_path, "w", encoding="utf-8") as fh:
-    json.dump(registro, fh, indent=2, ensure_ascii=False)
+with io.open(registry_path, "w", encoding="utf-8") as fh:
+    json.dump(registry, fh, indent=2, ensure_ascii=False)
 
-versoes = {}
-for v in registro:
-    versoes[v["sha256"]] = {
+versions = {}
+for v in registry:
+    versions[v["sha256"]] = {
         "manifest": {"versionCode": int(v["version_code"]), "versionName": v["version_name"]},
         "file": {"name": "/" + v["file"], "sha256": v["sha256"], "size": int(v["size_bytes"])},
     }
-idx = {"repo": {"name": "vps-manager"}, "packages": {pkg: {"versions": versoes}}}
+idx = {"repo": {"name": "vps-manager"}, "packages": {pkg: {"versions": versions}}}
 with io.open(os.path.join(repo, "index-v2.json"), "w", encoding="utf-8") as fh:
     json.dump(idx, fh, indent=2)
 
-print("publicado %s · sha %s · janela de %d versão(ões)" % (nome, novo["sha256"][:16], len(registro)))
+print("published %s · sha %s · window of %d version(s)" % (name, new["sha256"][:16], len(registry)))
 PY
 
-# ── a outra metade: o canal que o APLICATIVO consulta ──────────────────────
-# Sem esta linha o app nunca fica sabendo da versão nova. Era o passo que
-# faltava, e o motivo de a atualização só sair por download manual.
-echo "── gerando o canal incremental (android-patches.sh) ──"
+# The other half: the channel the APP checks. Without it the app never learns
+# about the new version.
+echo "── generating the incremental channel (android-patches.sh) ──"
 ANDROID_UPDATES_DIR="$UPDATES_DIR" FDROID_REPO_DIR="$FDROID_REPO_DIR" \
-  PACKAGE_ID="$PACKAGE_ID" PATCH_WINDOW="$JANELA" \
+  PACKAGE_ID="$PACKAGE_ID" PATCH_WINDOW="$WINDOW" \
   "$ROOT_DIR/scripts/android-patches.sh"
 
-echo "pronto: $VERSION_NAME_REAL ($VERSION_CODE) está no repositório E no canal do app"
+echo "done: $REAL_VERSION_NAME ($VERSION_CODE) is in the repository AND in the app channel"

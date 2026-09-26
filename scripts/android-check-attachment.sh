@@ -1,92 +1,89 @@
 #!/bin/bash
-# Prova de ponta a ponta do ANEXO pelo dock do terminal: escolher um arquivo,
-# subir em pedaços e ver o caminho aparecer DIGITADO na sessão.
+# End-to-end check of the ATTACHMENT flow from the terminal dock: pick a file,
+# upload it in chunks, and see its path TYPED into the session.
 #
-# Por que este script existe: o anexo é a única função do app entregue sem
-# nenhuma prova contra o servidor de verdade — os testes cobrem as peças
-# (pump, worker, citação do nome), nenhum cobre a COSTURA, que é exatamente
-# onde os defeitos deste projeto moram.
+# The unit tests cover the pieces (pump, worker, name quoting); only this script
+# exercises the seam between them against a real server.
 #
-# PRÉ-REQUISITO QUE NENHUM SCRIPT RESOLVE: o app precisa estar LOGADO. Nenhuma
-# sessão de agente tem senha de conta do painel, e é por isso que esta prova
-# ficou aberta. Faça o login uma vez no emulador (ou no aparelho) e rode isto
-# em seguida — a sessão sobrevive a `force-stop`.
+# PREREQUISITE NO SCRIPT CAN SOLVE: the app must be LOGGED IN. Log in once on the
+# emulator (or device) and run this afterwards; the session survives `force-stop`.
 #
-# Uso:  scripts/android-check-attachment.sh [arquivo-de-origem]
+# Usage:  scripts/android-check-attachment.sh [source-file]
 set -euo pipefail
 
 A=${ADB:-/opt/android-sdk/platform-tools/adb}
 PKG=tech.northwind.vpsm.app
 S=${SCRATCH:-/tmp}
-ORIGEM=${1:-}
+SOURCE=${1:-}
 DATA_DIR=${VPSM_DATA_DIR:-/opt/panel/data}
 INBOX="$DATA_DIR/mobile-inbox"
 STAGING="$DATA_DIR/.mobile-upload-staging"
 
-# Nome com espaço de propósito: ele vira parte de um caminho colado num shell,
-# e a citação é o que separa "um argumento" de "dois argumentos e um erro".
-if [ -z "$ORIGEM" ]; then
-  ORIGEM="$S/anexo de prova.txt"
-  head -c 300000 /dev/urandom | base64 > "$ORIGEM"
+# The space in the name is deliberate: the name becomes part of a path pasted
+# into a shell, and quoting is what separates "one argument" from "two
+# arguments and an error".
+if [ -z "$SOURCE" ]; then
+  SOURCE="$S/test attachment.txt"
+  head -c 300000 /dev/urandom | base64 > "$SOURCE"
 fi
-NOME_REMOTO="$(basename "$ORIGEM")"
-SHA_ORIGEM="$(sha256sum "$ORIGEM" | cut -d' ' -f1)"
+REMOTE_NAME="$(basename "$SOURCE")"
+SOURCE_SHA="$(sha256sum "$SOURCE" | cut -d' ' -f1)"
 
-echo "== origem: $ORIGEM ($(stat -c%s "$ORIGEM") bytes, sha256 ${SHA_ORIGEM:0:12}…)"
+echo "== source: $SOURCE ($(stat -c%s "$SOURCE") bytes, sha256 ${SOURCE_SHA:0:12}…)"
 
-echo "== 1. semeando o arquivo onde o seletor do sistema enxerga =="
-$A push "$ORIGEM" "/sdcard/Download/$NOME_REMOTO" >/dev/null
+echo "== 1. seeding the file where the system picker can see it =="
+$A push "$SOURCE" "/sdcard/Download/$REMOTE_NAME" >/dev/null
 
-echo "== 2. abrindo o terminal num estado conhecido =="
+echo "== 2. opening the terminal in a known state =="
 $A logcat -c
 $A shell am force-stop $PKG || true
 $A shell am start -n $PKG/com.vpsmanager.app.MainActivity >/dev/null
 sleep 12
-$A shell input tap 74 214;  sleep 2   # gaveta
+$A shell input tap 74 214;  sleep 2   # drawer
 $A shell input tap 254 489; sleep 5   # Terminal
 
 echo
-echo "== 3. AGORA É COM VOCÊ (o seletor de arquivos é do SISTEMA, não do app) =="
-echo "   toque no clipe na barra de teclas → escolha '$NOME_REMOTO' em Downloads"
-echo "   → espere a faixa de progresso → toque para inserir."
-echo "   Enquanto isso, isto aqui vigia os dois lados."
+echo "== 3. YOUR TURN (the file picker belongs to the SYSTEM, not the app) =="
+echo "   tap the paperclip on the key bar → pick '$REMOTE_NAME' in Downloads"
+echo "   → wait for the progress strip → tap to insert."
+echo "   Meanwhile this script watches both sides."
 echo
-read -r -p "   pressione ENTER quando tiver inserido (ou Ctrl-C para abortar) " _
+read -r -p "   press ENTER once inserted (or Ctrl-C to abort) " _
 
-echo "== 4. o arquivo chegou INTEIRO? =="
-if [ ! -f "$INBOX/$NOME_REMOTO" ]; then
-  echo "FALHOU: $INBOX/$NOME_REMOTO não existe" >&2
+echo "== 4. did the file arrive WHOLE? =="
+if [ ! -f "$INBOX/$REMOTE_NAME" ]; then
+  echo "FAILED: $INBOX/$REMOTE_NAME does not exist" >&2
   ls -la "$INBOX" || true
   exit 1
 fi
-SHA_DESTINO="$(sha256sum "$INBOX/$NOME_REMOTO" | cut -d' ' -f1)"
-if [ "$SHA_ORIGEM" != "$SHA_DESTINO" ]; then
-  echo "FALHOU: sha256 diferente — origem $SHA_ORIGEM, destino $SHA_DESTINO" >&2
+DEST_SHA="$(sha256sum "$INBOX/$REMOTE_NAME" | cut -d' ' -f1)"
+if [ "$SOURCE_SHA" != "$DEST_SHA" ]; then
+  echo "FAILED: sha256 differs: source $SOURCE_SHA, destination $DEST_SHA" >&2
   exit 1
 fi
-echo "OK: bytes idênticos"
+echo "OK: identical bytes"
 
-echo "== 5. a área de montagem ficou limpa? =="
-# Um staging com sobra significa CompleteUpload movendo por cópia em vez de
-# rename, ou sessão abandonada — os dois viram lixo que cresce sozinho.
+echo "== 5. is the staging area clean? =="
+# Leftovers mean CompleteUpload copied instead of renaming, or an abandoned
+# session; both turn into garbage that grows on its own.
 if [ -d "$STAGING" ] && [ -n "$(ls -A "$STAGING" 2>/dev/null)" ]; then
-  echo "ATENÇÃO: sobrou coisa em $STAGING:" >&2
+  echo "WARNING: leftovers in $STAGING:" >&2
   ls -la "$STAGING" >&2
 else
-  echo "OK: staging vazio"
+  echo "OK: staging empty"
 fi
 
-echo "== 6. o caminho foi DIGITADO na sessão? =="
-echo "   (confira na foto; o caminho tem de estar citado como UM argumento)"
-$A exec-out screencap -p > "$S/anexo-inserido.png"
-echo "   foto: $S/anexo-inserido.png"
+echo "== 6. was the path TYPED into the session? =="
+echo "   (check the screenshot; the path must be quoted as ONE argument)"
+$A exec-out screencap -p > "$S/attachment-inserted.png"
+echo "   screenshot: $S/attachment-inserted.png"
 
-echo "== 7. o worker reclamou de alguma coisa? =="
-$A logcat -d | grep -Ei "WM-|AnexoUpload|Could not create Worker|TransferRepository" | tail -15 || echo "   (nada)"
+echo "== 7. did the worker complain about anything? =="
+$A logcat -d | grep -Ei "WM-|AnexoUpload|Could not create Worker|TransferRepository" | tail -15 || echo "   (nothing)"
 
 echo
-echo "Os quatro casos que JÁ falharam antes e merecem uma rodada cada:"
-echo "  a) socket morto antes de inserir  → tem de avisar e MANTER a linha"
-echo "  b) nome com espaço               → tem de chegar citado, um argumento só"
-echo "  c) modo avião no meio do upload  → tem de retomar no byte confirmado"
-echo "  d) arquivo vazio                 → 'O arquivo está vazio', nunca um 413"
+echo "Four cases that have failed before and deserve a run each:"
+echo "  a) socket dead before inserting  → must warn and KEEP the line"
+echo "  b) name with a space             → must arrive quoted, as a single argument"
+echo "  c) airplane mode mid-upload      → must resume at the confirmed byte"
+echo "  d) empty file                    → 'The file is empty', never a 413"

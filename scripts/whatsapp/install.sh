@@ -12,7 +12,7 @@
 #   6. Enables (but does NOT auto-start — user clicks "Connect" in the UI)
 #
 # After this script: restart vps-manager so it reads the vault, then go to
-# /whatsapp in the panel and click "Conectar".
+# /whatsapp in the panel and click "Connect".
 
 set -euo pipefail
 
@@ -91,19 +91,19 @@ chmod 0600 "$VPSM_DATA/whatsapp/secrets.put"
 ok "$VPSM_DATA/whatsapp/secrets.put (consumed on next restart)"
 
 bold "→ systemd units"
-# Legacy single-tenant unit (v1) — desabilitada após MigrateV1ToV2.
+# Legacy single-tenant unit (v1), disabled after MigrateV1ToV2.
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
-# Templated unit (v2 multi-tenant) — instâncias vpsm-whatsapp@<user>
-# são enabled pelo Manager.Provision via Go ao criar cada user.
+# Templated unit (v2 multi-tenant): vpsm-whatsapp@<user> instances are enabled
+# by Manager.Provision when each user is created.
 install -m 0644 "$UNIT_TMPL_SRC" "$UNIT_TMPL_DST"
 systemctl daemon-reload
-# Só habilita o legado se SchemaVersion < 2 (ou config inexistente).
-# Pós-migração esta unit fica disabled; ignora silenciosamente se já passou.
+# Only enables the legacy unit if SchemaVersion < 2 (or there is no config).
+# After the migration this unit stays disabled.
 if [ ! -f "$VPSM_DATA/config.json" ] || ! grep -q '"schema_version": 2' "$VPSM_DATA/config.json" 2>/dev/null; then
   systemctl enable vpsm-whatsapp.service >/dev/null 2>&1 || true
-  ok "$UNIT_DST enabled (legacy v1 — pré-migração)"
+  ok "$UNIT_DST enabled (legacy v1, pre-migration)"
 else
-  ok "$UNIT_DST installed (v2 ativo — legacy desabilitada)"
+  ok "$UNIT_DST installed (v2 active, legacy disabled)"
 fi
 ok "$UNIT_TMPL_DST installed (template multi-tenant)"
 
@@ -117,7 +117,7 @@ echo "Next steps:"
 echo "  1) Restart vps-manager so it ingests the secrets:"
 echo "       systemctl restart vps-manager"
 echo "  2) Open the panel and navigate to the WhatsApp tab."
-echo "  3) Click \"Conectar\" — the QR will render in the UI."
+echo "  3) Click \"Connect\" — the QR will render in the UI."
 echo "  4) Scan it from your phone (WhatsApp → Settings → Linked Devices)."
 echo
 echo "Operational:"

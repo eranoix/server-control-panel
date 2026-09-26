@@ -1,49 +1,36 @@
 #!/usr/bin/env bash
-# test-canon-advance.sh — regressão do clobber SILENCIOSO do avanço do canônico
-# Rápido, hermético e sem dependência de host: só `git` em repos
-# descartáveis. Por isso pode rodar no pre-push e no CI, ao contrário da suíte
-# test-agentmesh.sh (que precisa da toolchain Tailwind e do host canônico).
+# test-canon-advance.sh: regression test for the SILENT clobber of the canonical
+# branch advance. Fast, hermetic and host-independent (only `git` in throwaway
+# repos), so it can run in pre-push and CI, unlike test-agentmesh.sh.
 #
-# O BUG: `_advance_canon_and_publish` rodava `git -C "$ROOT" merge --ff-only
-# "$br"`. Mas `git merge` age na branch CHECKED-OUT do diretório — e o $ROOT
-# (/opt/panel) vive numa branch de feature, não no canônico. O FF avançava
-# a branch ERRADA. E como o `echo` seguinte lia o SHA do canônico depois do
-# merge, imprimia "✓ refactor/foundation → <sha antigo>": sucesso reportado sem
-# ter avançado nada.
+# The bug: `_advance_canon_and_publish` ran `git -C "$ROOT" merge --ff-only "$br"`,
+# but `git merge` moves the CHECKED-OUT branch of that directory, and $ROOT lives on
+# a feature branch. The wrong branch advanced while success was reported, so the
+# next deploy from any session would converge on the stale canonical branch and
+# revert the work.
 #
-# POR QUE IMPORTA: o binário ia pro ar com a correção e o canônico ficava sem
-# ela. Como todo deploy auto-converge o canônico no build, o próximo deploy de
-# QUALQUER sessão traria o canônico velho e reverteria o trabalho — exatamente o
-# clobber que o agent-mesh existe para impedir, falhando em silêncio.
+# The test is behavioural because a structural grep passed with the bug active:
+# the REAL function is extracted from agentctl and exercised on the real topology.
 #
-# POR QUE O TESTE É COMPORTAMENTAL: asserção estrutural não bastaria — um `grep`
-# por `_advance_canon_and_publish()` passava alegremente com o bug ativo. Aqui a
-# FUNÇÃO REAL é extraída do agentctl e exercitada contra a topologia real.
-#
-# Uso: scripts/test-canon-advance.sh [caminho-do-agentctl]
+# Usage: scripts/test-canon-advance.sh [path-to-agentctl]
 set -uo pipefail
 
-# ─── ISOLAMENTO DO AMBIENTE GIT (não remova) ────────────────────────────────
-# Rodando dentro de um hook (pre-push), o git EXPORTA GIT_DIR e companhia. Essas
-# variáveis SOBREPÕEM a descoberta de repositório — inclusive `git -C <dir>`, que
-# troca o cwd mas NÃO o GIT_DIR. Sem limpar isto, o `git init` do mk() responde
-# "warning: re-init" e reinicializa o REPOSITÓRIO REAL, e todo `git -C` seguinte
-# escreve nele. Estrago real em 2026-08-18 ao publicar a main: core.bare=true
-# (quebra toda operação de working tree), user.name/email trocados para t@t
-# (commits com autoria errada), branches de fixture e worktrees fantasma no repo
-# de trabalho. O teste é inofensivo sozinho justamente porque aí não há GIT_DIR.
+# Git environment isolation (do not remove). Inside a hook (pre-push) git EXPORTS
+# GIT_DIR and friends, which override repository discovery even for `git -C <dir>`.
+# Without clearing them, mk()'s `git init` re-initializes the REAL repository and
+# every later `git -C` writes into it.
 for _v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$_v"; done
 unset _v
 
-# Aborta em vez de seguir escrevendo no lugar errado: se um repo de fixture não
-# nasceu onde devia, o isolamento furou e continuar significa mexer no repo real.
-_assert_isolado() {
+# Abort instead of writing to the wrong place: a fixture repo that was not created
+# where expected means the isolation leaked.
+_assert_isolated() {
   local dir="$1" top
   [ -d "$dir/.git" ] || {
-    echo "  ✗ ABORTADO: '$dir' não virou repositório — isolamento furado (GIT_DIR no ambiente?)"; exit 3; }
+    echo "  ✗ ABORTED: '$dir' did not become a repository, isolation leaked (GIT_DIR in the environment?)"; exit 3; }
   top="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
   [ "$top" = "$(cd "$dir" && pwd -P)" ] || {
-    echo "  ✗ ABORTADO: '$dir' resolve para '$top' — os comandos iriam para o repo errado"; exit 3; }
+    echo "  ✗ ABORTED: '$dir' resolves to '$top', commands would hit the wrong repo"; exit 3; }
 }
 
 AGENTCTL="${1:-${AGENTCTL:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.claude/agentctl}}"
@@ -53,100 +40,93 @@ ok() { echo "  ✓ $1"; pass=$((pass + 1)); }
 no() { echo "  ✗ $1"; fail=$((fail + 1)); }
 
 echo "═══ test-canon-advance ═══"
-[ -f "$AGENTCTL" ] || { echo "  ✗ agentctl não encontrado em $AGENTCTL"; exit 1; }
+[ -f "$AGENTCTL" ] || { echo "  ✗ agentctl not found at $AGENTCTL"; exit 1; }
 
-# ─── (a) estrutural: o padrão bugado não pode voltar ────────────────────────
-# Sozinhas essas asserções não protegem (ver cabeçalho), mas pegam a regressão
-# no ponto exato em que ela seria reintroduzida por um refactor descuidado.
-# O que é proibido não é o `merge` em si — é usá-lo esperando que ele mova o
-# CANÔNICO. `git merge` move sempre a branch checked-out, então `merge --ff-only
-# <branch-de-ticket>` dentro do $ROOT avança a branch do $ROOT: era o bug.
-# O sentido inverso, `merge --ff-only "$CANON"`, é legítimo e não tem como ser
-# confundido — ali a intenção É mover a branch do $ROOT até o canônico (o
-# agentctl usa isso pra adotar a commit de invariante sem criar uma gêmea).
-# Por isso a regra olha o ARGUMENTO, não só o comando.
+# (a) Structural: the buggy pattern must not come back.
+# What is forbidden is `merge --ff-only <ticket-branch>` inside $ROOT (it moves
+# $ROOT's branch). The reverse, `merge --ff-only "$CANON"`, is legitimate (it moves
+# $ROOT's branch up to the canonical one on purpose), so the rule looks at the
+# ARGUMENT, not just the command.
 if grep -E 'git -C "\$ROOT" merge --ff-only' "$AGENTCTL" | grep -qv '"\$CANON"'; then
-  no "voltou o 'git -C \$ROOT merge --ff-only <outra-branch>' (avança a branch do \$ROOT, não o canônico)"
+  no "'git -C \$ROOT merge --ff-only <other-branch>' is back (advances \$ROOT's branch, not the canonical one)"
 else
-  ok "sem 'git -C \$ROOT merge --ff-only' (o padrão que causava o clobber)"
+  ok "no 'git -C \$ROOT merge --ff-only' (the pattern that caused the clobber)"
 fi
 grep -q '_ff_canon_to()' "$AGENTCTL" \
-  && ok "helper _ff_canon_to presente" || no "helper _ff_canon_to ausente"
+  && ok "helper _ff_canon_to present" || no "helper _ff_canon_to missing"
 grep -q 'merge-base --is-ancestor "\$br_tip" "\$CANON"' "$AGENTCTL" \
-  && ok "avanço é VERIFICADO antes de imprimir ✓" \
-  || no "avanço não é verificado (foi assim que o bug passou despercebido)"
+  && ok "the advance is VERIFIED before printing ✓" \
+  || no "the advance is not verified"
 
-# ─── (b) comportamental: exercita a função REAL ─────────────────────────────
-# _ff_canon_to delega a descoberta do worktree do canônico a _canon_worktree_dir
-# (extraído depois, quando o helper passou a ser compartilhado com o
-# registro de invariantes). Extrair só a primeira deixaria a rota 2 chamando uma
-# função inexistente — o teste falharia por artefato da extração, não por bug.
+# (b) Behavioural: exercises the REAL function.
+# _ff_canon_to delegates finding the canonical worktree to _canon_worktree_dir, so
+# both are extracted; otherwise route 2 would call a missing function.
 fn="$(sed -n '/^_ff_canon_to()/,/^}/p' "$AGENTCTL")"
 helper="$(sed -n '/^_canon_worktree_dir()/,/^}/p' "$AGENTCTL")"
 if [ -z "$fn" ]; then
-  no "não consegui extrair _ff_canon_to do agentctl"
+  no "could not extract _ff_canon_to from agentctl"
 else
   [ -n "$helper" ] && eval "$helper"
   eval "$fn"
   g() { git -C "$1" "${@:2}"; }
 
-  # Monta a topologia REAL: $ROOT numa branch de feature (não no canônico) e o
-  # trabalho do ticket num worktree à frente.
+  # Builds the REAL topology: $ROOT on a feature branch (not the canonical one)
+  # and the ticket's work in a worktree ahead of it.
   mk() {
-    # O `rm -rf` abaixo só pode agir dentro do tmpdir desta execução.
-    [ -n "${1:-}" ] || { echo "  ✗ ABORTADO: mk() sem destino"; exit 3; }
-    case "$1" in "$T"/*) ;; *) echo "  ✗ ABORTADO: mk() fora do tmpdir ('$1')"; exit 3;; esac
+    # The `rm -rf` below may only act inside this run's tmpdir.
+    [ -n "${1:-}" ] || { echo "  ✗ ABORTED: mk() without a destination"; exit 3; }
+    case "$1" in "$T"/*) ;; *) echo "  ✗ ABORTED: mk() outside the tmpdir ('$1')"; exit 3;; esac
     rm -rf "$1"; mkdir -p "$1/root"
     git init -q -b "$CANON" "$1/root"
-    _assert_isolado "$1/root"
+    _assert_isolated "$1/root"
     g "$1/root" config user.email t@t; g "$1/root" config user.name t
     echo base > "$1/root/f"; g "$1/root" add f; g "$1/root" commit -qm base
     g "$1/root" checkout -q -b feat/x
     g "$1/root" worktree add -q "$1/wt" -b ticket "$CANON"
-    echo novo > "$1/wt/f"; g "$1/wt" commit -qam "trabalho do ticket"
+    echo new > "$1/wt/f"; g "$1/wt" commit -qam "ticket work"
   }
 
   T="$(mktemp -d)"
-  [ -n "$T" ] && [ -d "$T" ] || { echo "  ✗ ABORTADO: mktemp -d falhou"; exit 3; }
+  [ -n "$T" ] && [ -d "$T" ] || { echo "  ✗ ABORTED: mktemp -d failed"; exit 3; }
   trap 'rm -rf "$T"' EXIT
 
-  # Cenário 1 — o bug original: canônico não está checked-out em lugar nenhum.
+  # Scenario 1, the original bug: the canonical branch is not checked out anywhere.
   mk "$T/c1"; ROOT="$T/c1/root"
   tip="$(g "$T/c1/wt" rev-parse HEAD)"; feat_before="$(g "$ROOT" rev-parse feat/x)"
   _ff_canon_to ticket
   g "$ROOT" merge-base --is-ancestor "$tip" "$CANON" \
-    && ok "canônico avançou até o tip do ticket" \
-    || no "canônico NÃO avançou (o bug voltou)"
+    && ok "canonical branch advanced to the ticket tip" \
+    || no "canonical branch did NOT advance (the bug is back)"
   [ "$(g "$ROOT" rev-parse feat/x)" = "$feat_before" ] \
-    && ok "a branch do \$ROOT ficou intacta" \
-    || no "moveu a branch do \$ROOT — assinatura EXATA do bug"
+    && ok "\$ROOT's branch untouched" \
+    || no "moved \$ROOT's branch, the EXACT signature of the bug"
 
-  # Cenário 2 — canônico ESTÁ checked-out num worktree (rota 2 da função, onde
-  # o refspec é recusado e o FF tem de acontecer dentro daquele worktree).
+  # Scenario 2: the canonical branch IS checked out in a worktree (route 2, where
+  # the refspec is refused and the FF must happen inside that worktree).
   mk "$T/c2"; ROOT="$T/c2/root"
   g "$ROOT" worktree add -q "$T/c2/canon" "$CANON"
   tip="$(g "$T/c2/wt" rev-parse HEAD)"
   _ff_canon_to ticket
   g "$ROOT" merge-base --is-ancestor "$tip" "$CANON" \
-    && ok "avança mesmo com o canônico checked-out (rota 2)" \
-    || no "falhou com o canônico checked-out"
+    && ok "advances even with the canonical branch checked out (route 2)" \
+    || no "failed with the canonical branch checked out"
 
-  # Cenário 3 — segurança: história divergente NÃO pode reescrever o canônico.
-  # Um "FF" falso aqui apagaria trabalho alheio já publicado.
+  # Scenario 3, safety: divergent history must NOT rewrite the canonical branch
+  # (a fake FF would erase published work).
   mk "$T/c3"; ROOT="$T/c3/root"
-  g "$ROOT" checkout -q "$CANON"; echo divergente > "$ROOT/f"
-  g "$ROOT" commit -qam "commit só no canônico"; g "$ROOT" checkout -q feat/x
+  g "$ROOT" checkout -q "$CANON"; echo divergent > "$ROOT/f"
+  g "$ROOT" commit -qam "commit only on the canonical branch"; g "$ROOT" checkout -q feat/x
   canon_before="$(g "$ROOT" rev-parse "$CANON")"
   if _ff_canon_to ticket; then
-    no "aceitou avanço NÃO-fast-forward (reescreveria o canônico)"
+    no "accepted a NON-fast-forward advance (would rewrite the canonical branch)"
   else
-    ok "recusa avanço não-fast-forward"
+    ok "refuses a non-fast-forward advance"
   fi
   [ "$(g "$ROOT" rev-parse "$CANON")" = "$canon_before" ] \
-    && ok "canônico intacto após a recusa" \
-    || no "canônico foi alterado apesar da recusa"
+    && ok "canonical branch intact after the refusal" \
+    || no "canonical branch changed despite the refusal"
 fi
 
 echo "─────────────────────────────────────"
-echo "RESULTADO: $pass OK / $fail FALHAS"
+echo "RESULT: $pass OK / $fail FAILED"
 [ "$fail" -eq 0 ]

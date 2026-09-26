@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
-# Instala /etc/logrotate.d/vps-manager — rotação dos logs do control-plane.
+# Installs /etc/logrotate.d/vps-manager: rotation of the control-plane logs.
+# Idempotent.
 #
-# Idempotente: pode rodar várias vezes. Cron diário do logrotate consome.
+# Rotates:
+#   - /opt/panel/data/audit.log    append-only JSONL (auth/admin events)
+#   - /opt/panel/data/deploy.log   log of the deploy script
 #
-# Rotaciona:
-#   - /opt/panel/data/audit.log    — JSONL append-only (eventos de auth/admin)
-#   - /opt/panel/data/deploy.log   — log do scripts/deploy.sh
-#
-# Retém 14 cópias gzipped (~2 semanas), corte em 50MB ou daily (o que vier primeiro).
-# notifempty pra não criar arquivos vazios. copytruncate pra não exigir reload
-# do binário (audit logger mantém fd aberto; vai escrever no truncado).
+# copytruncate because the audit logger keeps its fd open; no binary reload needed.
 
 set -euo pipefail
 
@@ -44,7 +41,7 @@ CONF
 chmod 644 "$DEST"
 echo "Installed $DEST"
 
-# Dry-run pra validar sintaxe sem rotacionar.
+# Dry run to validate the syntax without rotating.
 if command -v logrotate >/dev/null 2>&1; then
     logrotate -d "$DEST" 2>&1 | tail -10
 fi

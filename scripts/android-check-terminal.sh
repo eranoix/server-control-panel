@@ -1,36 +1,35 @@
 #!/bin/bash
-# Prova de ponta a ponta, do zero: abre o app num estado conhecido, cria uma
-# sessao nova, enche de historico digitando NA PROPRIA GRADE (nada de EOF pelo
-# socket, que mata o shell), e fotografa com o teclado aberto e fechado.
+# End-to-end check from scratch: open the app in a known state, create a new
+# session, fill it with history by typing ON THE GRID (an EOF over the socket
+# kills the shell), and take screenshots with the keyboard open and closed.
 #
-# Comeca por `am start`, e nao por BACK: BACK a partir da Inicio SAI do app, e o
-# "teste" vira uma foto da tela inicial do Android.
+# Starts with `am start`, not BACK: BACK from the home screen LEAVES the app.
 set -e
 A=/opt/android-sdk/platform-tools/adb
-S=/tmp/claude-0/-opt-panel/019689ba-fc61-4bcc-aed1-ea24127d6047/scratchpad
-NOME=${1:-prova1}
+S=${SCRATCH:-/tmp}
+NAME=${1:-check1}
 
-foto() { $A exec-out screencap -p > "$S/$1"; echo "foto $1"; }
+shot() { $A exec-out screencap -p > "$S/$1"; echo "screenshot $1"; }
 
 $A shell am force-stop tech.northwind.vpsm.app
 $A shell am start -n tech.northwind.vpsm.app/com.vpsmanager.app.MainActivity >/dev/null
 sleep 12
 
-$A shell input tap 74 214;  sleep 2   # gaveta
+$A shell input tap 74 214;  sleep 2   # drawer
 $A shell input tap 254 489; sleep 4   # Terminal
 
-# Nova sessao com nome inedito, para nascer viva e vazia.
+# New session with an unused name, so it starts alive and empty.
 $A shell input tap 440 726; sleep 2
-$A shell input text "$NOME"; sleep 1
+$A shell input text "$NAME"; sleep 1
 $A shell input tap 905 716; sleep 9
 
-# Historico: 400 linhas digitadas na grade.
+# History: 400 lines typed on the grid.
 $A shell input tap 540 1200; sleep 3
 $A shell input text "seq%s1%s400"; sleep 1
 $A shell input keyevent 66; sleep 5
-foto "pf_aberto.png"
+shot "pf_open.png"
 
-# Fecha o teclado (aqui BACK fecha o IME, nao navega) e fotografa de novo.
+# Close the keyboard (here BACK closes the IME, it does not navigate).
 $A shell input keyevent 4; sleep 3
-foto "pf_fechado.png"
-echo "pronto"
+shot "pf_closed.png"
+echo "done"

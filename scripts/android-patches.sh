@@ -1,48 +1,34 @@
 #!/usr/bin/env bash
-# android-patches.sh — gera o catálogo de atualização incremental do app
-# Android a partir do que ACABOU de ser publicado em data/fdroid/repo/.
+# android-patches.sh: builds the Android app's incremental update catalogue from
+# what was JUST published in data/fdroid/repo/.
 #
-# É a etapa final de scripts/android-publish.sh, executada DEPOIS do gate que
-# confere o fingerprint com apksigner. A ordem não é estética: o patch é
-# gerado a partir dos bytes do APK **já assinado**, nunca do artefato
-# não-assinado do Gradle. A assinatura é offline por desenho
-# (docs/android-signing-keystore.md §1), então o único momento em que este
-# host tem em mãos os bytes finais é depois da publicação — e é exatamente aí
-# que este script roda.
+# Final step of scripts/android-publish.sh, run AFTER the apksigner fingerprint
+# gate. Patches must be built from the bytes of the ALREADY SIGNED APK; signing
+# is offline by design (docs/android-signing-keystore.md §1), so this host only
+# has the final bytes after publication.
 #
-# O QUE PRODUZ (data/android-updates/)
-#   apks/<sha256>.apk                  arquivo do APK assinado, por hash
-#   patches/<shaBase>-<shaAlvo>.hdiff  patch direto base -> versão nova
-#   full/<shaAlvo>.hdiff               reconstrução completa (base vazia)
-#   manifest.json                      índice lido por internal/androidupdate
+# OUTPUT (data/android-updates/)
+#   apks/<sha256>.apk                    archived signed APK, by hash
+#   patches/<baseSha>-<targetSha>.hdiff  direct patch base -> new version
+#   full/<targetSha>.hdiff               full rebuild (empty base)
+#   manifest.json                        index read by internal/androidupdate
 #
-# POR QUE CHAVEADO POR SHA-256, NÃO POR versionCode
-# O patch depende dos BYTES exatos da base. versionCode não deriva do
-# conteúdo — dois builds do mesmo versionCode têm bytes diferentes, e aplicar
-# o patch errado não dá erro de versão, dá arquivo corrompido. O app manda o
-# hash do APK que tem instalado; sem patch para aquele hash exato, cai para o
-# completo.
+# Keyed by SHA-256, not versionCode: a patch depends on the exact base bytes,
+# and two builds with the same versionCode differ. Applying the wrong patch
+# yields a corrupt file, not a version error. The app sends the hash of its
+# installed APK; with no patch for that exact hash it falls back to the full one.
 #
-# POR QUE PATCHES DIRETOS, NÃO EM CADEIA
-# Cada versão pulada é um ponto de falha a mais e uma aplicação de patch a
-# mais no aparelho. Pular uma versão num patch direto custou 3,0 MB (ainda
-# −70% contra o APK); uma cadeia de dois patches custaria os dois downloads e
-# duas aplicações para chegar no mesmo lugar.
+# Direct patches, not chained: every hop is one more failure point and one more
+# patch application on the device.
 #
-# POR QUE O "COMPLETO" TAMBÉM É .hdiff
-# hdiffz com base vazia produz ~10 MB (contra 31 MB do APK cru) e reconstrói
-# bytes idênticos ao APK assinado. O aparelho fica com UM caminho de código
-# (hpatchz) para os dois casos, em vez de um "baixar APK" e um "aplicar
-# patch" para manter em paralelo.
+# The "full" artifact is also .hdiff (hdiffz with an empty base, about a third of
+# the raw APK size) so the device has ONE code path (hpatchz) for both cases.
 #
-# POR QUE ARQUIVAR OS APKs EM apks/
-# A geração do patch da PRÓXIMA versão precisa dos bytes das anteriores.
-# data/fdroid/repo/ é substituído por inteiro (rsync --delete-after) pelo
-# pacote que o operador manda, então o histórico ali depende de o operador
-# não ter podado nada. Arquivar aqui (hardlink quando possível: custo zero de
-# disco enquanto os dois nomes existem) torna a geração independente disso.
+# APKs are archived under apks/ because the NEXT version's patches need the
+# previous bytes, and data/fdroid/repo/ is replaced wholesale (rsync
+# --delete-after) by the operator's upload. Hardlinks make archiving free.
 #
-# Variáveis de ambiente (override para teste; produção usa os defaults):
+# Environment overrides (for tests; production uses the defaults):
 #   FDROID_REPO_DIR, ANDROID_UPDATES_DIR, PACKAGE_ID, PATCH_WINDOW, HDIFFZ
 set -euo pipefail
 
@@ -51,61 +37,53 @@ FDROID_REPO_DIR="${FDROID_REPO_DIR:-$ROOT_DIR/data/fdroid/repo}"
 UPDATES_DIR="${ANDROID_UPDATES_DIR:-$ROOT_DIR/data/android-updates}"
 HDIFFZ="${HDIFFZ:-hdiffz}"
 
-# PACKAGE_ID default lido de android/gradle.properties — a MESMA e única
-# fonte da verdade que internal/api/handlers_android_install.go usa (e que
-# TestAndroidPackageID prende). Nunca repetir o literal aqui: a constante Go
-# nasceu errada exatamente assim, e a página de instalação passou a dizer
-# "nenhuma versão publicada" para sempre, sem nenhum erro visível.
+# The default PACKAGE_ID comes from android/gradle.properties, the single source
+# of truth also used by internal/api/handlers_android_install.go (pinned by
+# TestAndroidPackageID). Never repeat the literal here.
 default_package_id() {
   sed -n 's/^vpsmanager\.applicationId=//p' "$ROOT_DIR/android/gradle.properties" | head -1 | tr -d '[:space:]'
 }
 PACKAGE_ID="${PACKAGE_ID:-$(default_package_id)}"
 
-# PATCH_WINDOW é o número de versões MAIS NOVAS mantidas no catálogo,
-# incluindo o alvo. Com 5: o alvo + 4 bases, e tudo cuja base saiu da janela
-# é apagado. Segurar mais que isso é pagar disco por uma base que quase
-# ninguém tem instalada.
+# PATCH_WINDOW is how many of the NEWEST versions stay in the catalogue,
+# including the target. With 5: the target plus 4 bases; everything whose base
+# left the window is deleted.
 PATCH_WINDOW="${PATCH_WINDOW:-5}"
 
-# Opções de compressão. Medido neste projeto sobre 0.1.5 -> 0.1.6:
+# Compression options, measured on this project (0.1.5 -> 0.1.6):
 #   -c-zstd-21-24     1 583 566 B      -c-lzma2-9-64m     1 415 213 B
-#   -SD -c-zstd-21-24 1 551 505 B      -SD -c-lzma2-9-64m 1 400 329 B  <-- escolhido
-# e no completo (base vazia): -SD -c-lzma2-9-64m = 10 029 237 B contra
-# 31 135 416 B do APK cru (−68%).
+#   -SD -c-zstd-21-24 1 551 505 B      -SD -c-lzma2-9-64m 1 400 329 B  <-- chosen
+# Full artifact (empty base): -SD -c-lzma2-9-64m = 10 029 237 B vs 31 135 416 B raw.
 #
-# -SD (single compressed diff, HDIFFSF20) além de ser o menor, é o formato
-# que o hpatchz aplica com UM só buffer de descompressão e suporta aplicação
-# passo-a-passo durante o download — as duas coisas que importam num
-# aparelho. Verificado que o libhpatchz.so pré-compilado do SDK Android
-# oficial (v5.1.3, arm64-v8a) traz lzma2 e o modo -SD; se isso mudar, a
-# string abaixo e o campo patch_tool do manifesto são o ponto único de
-# ajuste.
+# -SD (single compressed diff) is also what hpatchz applies with a single
+# decompression buffer and step by step during download. The prebuilt
+# libhpatchz.so of the official Android SDK (v5.1.3, arm64-v8a) supports lzma2
+# and -SD; if that changes, this line and the manifest's patch_tool field are
+# the single point of adjustment.
 HDIFF_OPTS=(-SD -c-lzma2-9-64m)
 
-fail() { echo "ERRO: $*" >&2; exit 1; }
+fail() { echo "ERROR: $*" >&2; exit 1; }
 
-command -v "$HDIFFZ" >/dev/null 2>&1 || fail "hdiffz não encontrado (\$HDIFFZ=$HDIFFZ) — rode scripts/setup-hdiffpatch.sh"
-command -v python3 >/dev/null 2>&1 || fail "python3 não encontrado"
-command -v sha256sum >/dev/null 2>&1 || fail "sha256sum não encontrado"
+command -v "$HDIFFZ" >/dev/null 2>&1 || fail "hdiffz not found (\$HDIFFZ=$HDIFFZ); run scripts/setup-hdiffpatch.sh"
+command -v python3 >/dev/null 2>&1 || fail "python3 not found"
+command -v sha256sum >/dev/null 2>&1 || fail "sha256sum not found"
 
 INDEX_JSON="$FDROID_REPO_DIR/index-v2.json"
-[ -f "$INDEX_JSON" ] || fail "$INDEX_JSON não existe — nada publicado ainda; rode scripts/android-publish.sh antes"
+[ -f "$INDEX_JSON" ] || fail "$INDEX_JSON does not exist: nothing published yet; run scripts/android-publish.sh first"
 
-[ -n "$PACKAGE_ID" ] || fail "PACKAGE_ID vazio e android/gradle.properties não define vpsmanager.applicationId"
+[ -n "$PACKAGE_ID" ] || fail "PACKAGE_ID is empty and android/gradle.properties does not define vpsmanager.applicationId"
 
 mkdir -p "$UPDATES_DIR/apks" "$UPDATES_DIR/patches" "$UPDATES_DIR/full"
 
-# hdiffz sem argumentos imprime o banner de uso e sai com status != 0 — sob
-# `set -e -o pipefail` isso abortaria o script aqui, silenciosamente. O
-# `|| true` é o que torna a leitura da versão inofensiva.
+# hdiffz with no arguments prints its usage banner and exits non-zero, which
+# would silently abort under `set -e -o pipefail`; hence the `|| true`.
 HDIFF_VERSION="$({ "$HDIFFZ" 2>&1 || true; } | head -1 | tr -d '\r')"
 PATCH_TOOL="$HDIFF_VERSION ${HDIFF_OPTS[*]}"
 
-# ── 1. janela de versões, da mais nova para a mais velha ──────────────────
-# Saída: uma linha por versão, "versionCode<TAB>versionName<TAB>arquivoAPK".
-# A ordenação é feita em Python (numérica por versionCode) e não em sort(1)
-# para não depender de locale.
-VERSOES="$(python3 - "$INDEX_JSON" "$PACKAGE_ID" "$PATCH_WINDOW" <<'PY'
+# 1. Version window, newest first.
+# One line per version: "versionCode<TAB>versionName<TAB>apkFile". Sorted in
+# Python (numerically by versionCode) so it does not depend on the locale.
+VERSIONS="$(python3 - "$INDEX_JSON" "$PACKAGE_ID" "$PATCH_WINDOW" <<'PY'
 import json, sys
 idx_path, pkg_id, window = sys.argv[1], sys.argv[2], int(sys.argv[3])
 with open(idx_path, encoding="utf-8") as fh:
@@ -113,191 +91,184 @@ with open(idx_path, encoding="utf-8") as fh:
 pkg = idx.get("packages", {}).get(pkg_id)
 if not pkg:
     sys.stderr.write(
-        "ERRO: index-v2.json nao tem o pacote %r.\n"
-        "      Pacotes presentes: %s\n" % (pkg_id, ", ".join(sorted(idx.get("packages", {}))) or "(nenhum)")
+        "ERROR: index-v2.json does not contain package %r.\n"
+        "       Packages present: %s\n" % (pkg_id, ", ".join(sorted(idx.get("packages", {}))) or "(none)")
     )
     sys.exit(3)
-vistos = {}
+seen = {}
 for v in pkg.get("versions", {}).values():
     man = v.get("manifest", {})
     code = man.get("versionCode")
-    arquivo = (v.get("file", {}) or {}).get("name", "").lstrip("/")
-    if code is None or not arquivo:
+    apk_file = (v.get("file", {}) or {}).get("name", "").lstrip("/")
+    if code is None or not apk_file:
         continue
-    # Mesmo versionCode aparecendo duas vezes: fica o primeiro; o indice do
-    # fdroidserver nao deveria produzir isso, e adivinhar qual vale seria pior
-    # que ser deterministico.
-    vistos.setdefault(int(code), (man.get("versionName", ""), arquivo))
-for code in sorted(vistos, reverse=True)[:window]:
-    nome, arquivo = vistos[code]
-    print("%d\t%s\t%s" % (code, nome, arquivo))
+    # A repeated versionCode keeps the first entry: deterministic beats guessing.
+    seen.setdefault(int(code), (man.get("versionName", ""), apk_file))
+for code in sorted(seen, reverse=True)[:window]:
+    name, apk_file = seen[code]
+    print("%d\t%s\t%s" % (code, name, apk_file))
 PY
-)" || fail "não consegui ler as versões de $INDEX_JSON"
+)" || fail "could not read the versions from $INDEX_JSON"
 
-[ -n "$VERSOES" ] || fail "nenhuma versão de $PACKAGE_ID em $INDEX_JSON"
+[ -n "$VERSIONS" ] || fail "no version of $PACKAGE_ID in $INDEX_JSON"
 
-# ── 2. arquiva cada APK da janela sob apks/<sha256>.apk ───────────────────
-# TSV de trabalho: sha256, versionCode, versionName, tamanho.
-TRABALHO="$(mktemp "${TMPDIR:-/tmp}/vpsm-android-patches.XXXXXX")"
-trap 'rm -f "$TRABALHO" "$TRABALHO.manifest"' EXIT
+# 2. Archive every APK in the window as apks/<sha256>.apk.
+# Work TSV: sha256, versionCode, versionName, size.
+WORK="$(mktemp "${TMPDIR:-/tmp}/vpsm-android-patches.XXXXXX")"
+trap 'rm -f "$WORK" "$WORK.manifest"' EXIT
 
-while IFS=$'\t' read -r code nome arquivo; do
+while IFS=$'\t' read -r code name apk_file; do
   [ -n "$code" ] || continue
-  origem="$FDROID_REPO_DIR/$arquivo"
-  if [ ! -f "$origem" ]; then
-    # A versão está no índice mas o APK não veio no pacote do operador.
-    # Se já arquivamos numa publicação anterior, seguimos com o arquivado;
-    # senão essa base simplesmente não gera patch (o app cai no completo).
-    # O arquivo .versioncode ao lado de cada APK arquivado existe só para
-    # este caso: reencontrar, pelo versionCode do índice, a cópia que
-    # guardamos por hash (o hash não pode ser recalculado sem o arquivo
-    # original, que é justamente o que falta aqui).
-    encontrado=""
+  src="$FDROID_REPO_DIR/$apk_file"
+  if [ ! -f "$src" ]; then
+    # The version is in the index but the operator's upload lacks the APK. Use
+    # the archived copy if there is one, found through the .versioncode file
+    # next to it (the hash cannot be recomputed without the original);
+    # otherwise that base gets no patch and the app falls back to the full one.
+    found=""
     for cand in "$UPDATES_DIR/apks"/*.apk; do
       [ -f "$cand" ] || continue
       cand_code="$(cat "$cand.versioncode" 2>/dev/null || true)"
-      if [ "$cand_code" = "$code" ]; then encontrado="$cand"; break; fi
+      if [ "$cand_code" = "$code" ]; then found="$cand"; break; fi
     done
-    if [ -z "$encontrado" ]; then
-      echo "AVISO: versionCode $code está no índice mas $origem não existe e não há cópia arquivada — sem patch a partir dessa base" >&2
+    if [ -z "$found" ]; then
+      echo "WARNING: versionCode $code is in the index but $src does not exist and there is no archived copy; no patch from that base" >&2
       continue
     fi
-    origem="$encontrado"
+    src="$found"
   fi
-  sha="$(sha256sum "$origem" | cut -d' ' -f1)"
-  tamanho="$(stat -c%s "$origem")"
-  destino="$UPDATES_DIR/apks/$sha.apk"
-  if [ ! -f "$destino" ]; then
-    # hardlink primeiro: mesmo filesystem, custo zero de disco. O rsync
-    # --delete-after de uma publicação futura remove o nome em fdroid/repo,
-    # mas o inode sobrevive pelo nome daqui.
-    ln "$origem" "$destino" 2>/dev/null || cp -f "$origem" "$destino"
+  sha="$(sha256sum "$src" | cut -d' ' -f1)"
+  size="$(stat -c%s "$src")"
+  dest="$UPDATES_DIR/apks/$sha.apk"
+  if [ ! -f "$dest" ]; then
+    # Hardlink first (same filesystem, no extra disk): a later rsync
+    # --delete-after removes the fdroid/repo name, the inode survives here.
+    ln "$src" "$dest" 2>/dev/null || cp -f "$src" "$dest"
   fi
-  printf '%s\n' "$code" > "$destino.versioncode"
-  printf '%s\t%s\t%s\t%s\n' "$sha" "$code" "$nome" "$tamanho" >> "$TRABALHO"
-done <<< "$VERSOES"
+  printf '%s\n' "$code" > "$dest.versioncode"
+  printf '%s\t%s\t%s\t%s\n' "$sha" "$code" "$name" "$size" >> "$WORK"
+done <<< "$VERSIONS"
 
-[ -s "$TRABALHO" ] || fail "nenhum APK da janela pôde ser localizado — nada a gerar"
+[ -s "$WORK" ] || fail "no APK in the window could be located; nothing to generate"
 
-# ── 3. alvo = primeira linha (maior versionCode) ──────────────────────────
-IFS=$'\t' read -r ALVO_SHA ALVO_CODE ALVO_NOME ALVO_TAM < "$TRABALHO"
-ALVO_APK="$UPDATES_DIR/apks/$ALVO_SHA.apk"
+# 3. Target = first line (highest versionCode).
+IFS=$'\t' read -r TARGET_SHA TARGET_CODE TARGET_NAME TARGET_SIZE < "$WORK"
+TARGET_APK="$UPDATES_DIR/apks/$TARGET_SHA.apk"
 
-echo "==> alvo: $ALVO_NOME (versionCode $ALVO_CODE) sha256=$ALVO_SHA"
+echo "==> target: $TARGET_NAME (versionCode $TARGET_CODE) sha256=$TARGET_SHA"
 
-# ── 4. reconstrução completa (base vazia) ────────────────────────────────
-FULL_REL="full/$ALVO_SHA.hdiff"
+# 4. Full rebuild (empty base).
+FULL_REL="full/$TARGET_SHA.hdiff"
 FULL_ABS="$UPDATES_DIR/$FULL_REL"
 if [ -s "$FULL_ABS" ]; then
-  echo "    completo já existe: $FULL_REL"
+  echo "    full artifact already exists: $FULL_REL"
 else
-  echo "    gerando completo (base vazia)..."
-  # Grava em .tmp e move: um Ctrl-C no meio nunca deixa um .hdiff truncado
-  # com nome definitivo, que o manifesto seguinte publicaria como bom.
-  "$HDIFFZ" "${HDIFF_OPTS[@]}" "" "$ALVO_APK" "$FULL_ABS.tmp" >/dev/null \
-    || fail "hdiffz falhou gerando o artefato completo"
+  echo "    generating full artifact (empty base)..."
+  # Write to .tmp and rename, so an interrupted run never leaves a truncated
+  # .hdiff under its final name for the next manifest to publish.
+  "$HDIFFZ" "${HDIFF_OPTS[@]}" "" "$TARGET_APK" "$FULL_ABS.tmp" >/dev/null \
+    || fail "hdiffz failed generating the full artifact"
   mv -f "$FULL_ABS.tmp" "$FULL_ABS"
 fi
 
-# ── 5. um patch direto de cada base da janela ────────────────────────────
-: > "$TRABALHO.manifest"
-printf 'full\t%s\t\t\t\n' "$FULL_REL" >> "$TRABALHO.manifest"
+# 5. One direct patch from every base in the window.
+: > "$WORK.manifest"
+printf 'full\t%s\t\t\t\n' "$FULL_REL" >> "$WORK.manifest"
 
-while IFS=$'\t' read -r sha code nome tamanho; do
-  [ "$sha" = "$ALVO_SHA" ] && continue
+while IFS=$'\t' read -r sha code name size; do
+  [ "$sha" = "$TARGET_SHA" ] && continue
   base_apk="$UPDATES_DIR/apks/$sha.apk"
   [ -f "$base_apk" ] || continue
-  rel="patches/$sha-$ALVO_SHA.hdiff"
+  rel="patches/$sha-$TARGET_SHA.hdiff"
   abs="$UPDATES_DIR/$rel"
   if [ -s "$abs" ]; then
-    echo "    patch já existe: $nome ($code)"
+    echo "    patch already exists: $name ($code)"
   else
-    echo "    gerando patch de $nome ($code)..."
-    "$HDIFFZ" "${HDIFF_OPTS[@]}" "$base_apk" "$ALVO_APK" "$abs.tmp" >/dev/null \
-      || fail "hdiffz falhou gerando o patch de $sha"
+    echo "    generating patch from $name ($code)..."
+    "$HDIFFZ" "${HDIFF_OPTS[@]}" "$base_apk" "$TARGET_APK" "$abs.tmp" >/dev/null \
+      || fail "hdiffz failed generating the patch from $sha"
     mv -f "$abs.tmp" "$abs"
   fi
-  printf 'patch\t%s\t%s\t%s\t%s\n' "$rel" "$sha" "$nome" "$code" >> "$TRABALHO.manifest"
-done < "$TRABALHO"
+  printf 'patch\t%s\t%s\t%s\t%s\n' "$rel" "$sha" "$name" "$code" >> "$WORK.manifest"
+done < "$WORK"
 
-# ── 6. manifest.json, escrito atomicamente ───────────────────────────────
-python3 - "$UPDATES_DIR" "$PACKAGE_ID" "$PATCH_TOOL" "$ALVO_SHA" "$ALVO_CODE" "$ALVO_NOME" "$ALVO_TAM" "$TRABALHO.manifest" <<'PY'
+# 6. manifest.json, written atomically.
+python3 - "$UPDATES_DIR" "$PACKAGE_ID" "$PATCH_TOOL" "$TARGET_SHA" "$TARGET_CODE" "$TARGET_NAME" "$TARGET_SIZE" "$WORK.manifest" <<'PY'
 import hashlib, json, os, sys, tempfile, time
 
-(updates_dir, package_id, patch_tool, alvo_sha, alvo_code,
- alvo_nome, alvo_tam, linhas_path) = sys.argv[1:9]
+(updates_dir, package_id, patch_tool, target_sha, target_code,
+ target_name, target_size, lines_path) = sys.argv[1:9]
 
 
-def descreve(rel):
-    caminho = os.path.join(updates_dir, rel)
+def describe(rel):
+    path = os.path.join(updates_dir, rel)
     h = hashlib.sha256()
-    with open(caminho, "rb") as fh:
-        for bloco in iter(lambda: fh.read(1 << 20), b""):
-            h.update(bloco)
-    return h.hexdigest(), os.path.getsize(caminho)
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest(), os.path.getsize(path)
 
 
 full = None
 patches = []
-with open(linhas_path, encoding="utf-8") as fh:
-    for linha in fh:
-        if not linha.strip():
+with open(lines_path, encoding="utf-8") as fh:
+    for line in fh:
+        if not line.strip():
             continue
-        kind, rel, from_sha, from_nome, from_code = (linha.rstrip("\n").split("\t") + [""] * 5)[:5]
-        sha, tamanho = descreve(rel)
-        art = {"kind": kind, "file": rel, "size_bytes": tamanho, "sha256": sha}
+        kind, rel, from_sha, from_name, from_code = (line.rstrip("\n").split("\t") + [""] * 5)[:5]
+        sha, size = describe(rel)
+        art = {"kind": kind, "file": rel, "size_bytes": size, "sha256": sha}
         if kind == "full":
             full = art
         else:
             art["from_sha256"] = from_sha
-            art["from_version_name"] = from_nome
+            art["from_version_name"] = from_name
             art["from_version_code"] = int(from_code)
             patches.append(art)
 
 if full is None:
-    sys.exit("ERRO: artefato completo ausente ao montar o manifesto")
+    sys.exit("ERROR: full artifact missing while building the manifest")
 
-# Ordem estavel (base mais nova primeiro) para o manifesto nao mudar de bytes
-# sem que o conteudo tenha mudado.
+# Stable order (newest base first) so the manifest bytes only change when the
+# content does.
 patches.sort(key=lambda a: a["from_version_code"], reverse=True)
 
-manifesto = {
+manifest = {
     "schema_version": 1,
     "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     "package_id": package_id,
     "patch_tool": patch_tool,
     "latest": {
-        "version_name": alvo_nome,
-        "version_code": int(alvo_code),
-        "sha256": alvo_sha,
-        "size_bytes": int(alvo_tam),
+        "version_name": target_name,
+        "version_code": int(target_code),
+        "sha256": target_sha,
+        "size_bytes": int(target_size),
     },
     "full": full,
     "patches": patches,
 }
 
-destino = os.path.join(updates_dir, "manifest.json")
+dest = os.path.join(updates_dir, "manifest.json")
 fd, tmp = tempfile.mkstemp(dir=updates_dir, prefix=".manifest-", suffix=".json")
 try:
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        json.dump(manifesto, fh, indent=2, ensure_ascii=False, sort_keys=True)
+        json.dump(manifest, fh, indent=2, ensure_ascii=False, sort_keys=True)
         fh.write("\n")
         fh.flush()
         os.fsync(fh.fileno())
     os.chmod(tmp, 0o644)
-    # Rename atomico: um leitor concorrente (o servidor) ve o manifesto
-    # antigo inteiro ou o novo inteiro, nunca um meio-termo.
-    os.replace(tmp, destino)
+    # Atomic rename: a concurrent reader (the server) sees the whole old
+    # manifest or the whole new one, never a mix.
+    os.replace(tmp, dest)
 except BaseException:
     if os.path.exists(tmp):
         os.unlink(tmp)
     raise
-print("    manifest.json: %d patch(es) + completo" % len(patches))
+print("    manifest.json: %d patch(es) + full" % len(patches))
 PY
 
-# ── 7. retenção: apaga tudo que o manifesto novo não referencia ──────────
-# Inclui os patches cuja BASE saiu da janela (é o caso que mais consome
-# disco) e o artefato completo de qualquer alvo anterior.
+# 7. Retention: delete everything the new manifest does not reference,
+# including patches whose BASE left the window and older targets' full artifacts.
 python3 - "$UPDATES_DIR" <<'PY'
 import json, os, sys
 
@@ -305,30 +276,30 @@ updates_dir = sys.argv[1]
 with open(os.path.join(updates_dir, "manifest.json"), encoding="utf-8") as fh:
     m = json.load(fh)
 
-manter = {m["full"]["file"]}
-manter.update(p["file"] for p in m["patches"])
-apks_vivos = {m["latest"]["sha256"] + ".apk"}
-apks_vivos.update(p["from_sha256"] + ".apk" for p in m["patches"])
+keep = {m["full"]["file"]}
+keep.update(p["file"] for p in m["patches"])
+live_apks = {m["latest"]["sha256"] + ".apk"}
+live_apks.update(p["from_sha256"] + ".apk" for p in m["patches"])
 
-removidos = 0
+removed = 0
 for sub in ("patches", "full"):
     d = os.path.join(updates_dir, sub)
-    for nome in os.listdir(d):
-        rel = sub + "/" + nome
-        if rel in manter:
+    for name in os.listdir(d):
+        rel = sub + "/" + name
+        if rel in keep:
             continue
-        os.unlink(os.path.join(d, nome))
-        removidos += 1
+        os.unlink(os.path.join(d, name))
+        removed += 1
 
 d = os.path.join(updates_dir, "apks")
-for nome in os.listdir(d):
-    base = nome[:-len(".versioncode")] if nome.endswith(".versioncode") else nome
-    if base in apks_vivos:
+for name in os.listdir(d):
+    base = name[:-len(".versioncode")] if name.endswith(".versioncode") else name
+    if base in live_apks:
         continue
-    os.unlink(os.path.join(d, nome))
-    removidos += 1
+    os.unlink(os.path.join(d, name))
+    removed += 1
 
-print("    retencao: %d arquivo(s) fora da janela removido(s)" % removidos)
+print("    retention: %d file(s) outside the window removed" % removed)
 PY
 
-echo "OK: catálogo de atualização incremental em $UPDATES_DIR"
+echo "OK: incremental update catalogue in $UPDATES_DIR"

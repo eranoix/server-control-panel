@@ -1,68 +1,63 @@
 #!/usr/bin/env bash
-# setup-hdiffpatch.sh — provisiona hdiffz/hpatchz (HDiffPatch, licença MIT)
-# nesta VPS. Idempotente: seguro rodar de novo a qualquer momento.
+# setup-hdiffpatch.sh: installs hdiffz/hpatchz (HDiffPatch, MIT license) on this
+# server. Idempotent: safe to run again at any time.
 #
-# hdiffz é a ferramenta que scripts/android-patches.sh usa para produzir os
-# patches binários entre APKs assinados. hpatchz é o par que aplica — no
-# aparelho é o libhpatchz.so do SDK Android oficial, mas ter o binário aqui
-# permite VERIFICAR, no próprio servidor, que o patch gerado reconstrói bytes
-# idênticos ao APK assinado antes de publicá-lo.
+# hdiffz produces the binary patches between signed APKs (scripts/android-patches.sh).
+# hpatchz applies them; on the device that is libhpatchz.so, but having it here
+# lets the server VERIFY that a patch rebuilds bytes identical to the signed APK
+# before publishing it.
 #
-# POR QUE BINÁRIO OFICIAL E NÃO BUILD DA FONTE
-# O build da fonte exige os submódulos (lzma, zstd, libmd5) que o tarball do
-# GitHub não traz; um clone recursivo em cada máquina é mais frágil, não
-# menos, que um artefato oficial verificado por SHA-256 fixado aqui. O
-# binário é estático (sem dependência de libc do host) e a checagem de hash
-# abaixo é o que garante que o que foi baixado é o que foi auditado.
-#
-# Verificação de integridade: SHA-256 conferido contra o valor fixado abaixo.
-# Ao subir de versão, atualize VERSAO e SHA256_ESPERADO juntos — e regere os
-# patches, porque o formato de saída pode mudar entre versões maiores.
+# Official static binary rather than a source build: the source build needs
+# submodules (lzma, zstd, libmd5) the GitHub tarball lacks, and the pinned
+# SHA-256 below guarantees the download is what was audited.
+# When upgrading, change VERSION and EXPECTED_SHA256 together and regenerate the
+# patches, since the output format may change between major versions.
 set -euo pipefail
 
-VERSAO="v5.1.3"
-ARQUIVO="hdiffpatch_${VERSAO}_bin_linux64.zip"
-URL="https://github.com/sisong/HDiffPatch/releases/download/${VERSAO}/${ARQUIVO}"
-SHA256_ESPERADO="628963bf2ee9108a97260fa5eef44acd9ec94369b76090a957c9182b3abbb558"
-DESTINO="${DESTINO:-/usr/local/bin}"
+VERSION="v5.1.3"
+ARCHIVE="hdiffpatch_${VERSION}_bin_linux64.zip"
+URL="https://github.com/sisong/HDiffPatch/releases/download/${VERSION}/${ARCHIVE}"
+EXPECTED_SHA256="628963bf2ee9108a97260fa5eef44acd9ec94369b76090a957c9182b3abbb558"
+# DESTINO is the install-dir override read from the environment.
+DEST="${DESTINO:-/usr/local/bin}"
 
-fail() { echo "ERRO: $*" >&2; exit 1; }
+fail() { echo "ERROR: $*" >&2; exit 1; }
 
-# hdiffz/hpatchz sem argumentos imprimem o banner de uso e saem com status
-# != 0; sob `set -e -o pipefail` isso abortaria o script. Daí o `|| true`.
-versao_de() { { "$1" 2>&1 || true; } | head -1; }
+# hdiffz/hpatchz with no arguments print the usage banner and exit non-zero,
+# which would abort under `set -e -o pipefail`; hence the `|| true`.
+version_of() { { "$1" 2>&1 || true; } | head -1; }
 
 if command -v hdiffz >/dev/null 2>&1 && command -v hpatchz >/dev/null 2>&1; then
-  instalada="$(versao_de hdiffz)"
-  case "$instalada" in
-    *"${VERSAO#v}"*)
-      echo "already provisioned: $instalada"
+  installed="$(version_of hdiffz)"
+  case "$installed" in
+    *"${VERSION#v}"*)
+      echo "already provisioned: $installed"
       exit 0
       ;;
   esac
-  echo "AVISO: hdiffz presente mas em outra versão ($instalada); reinstalando ${VERSAO}"
+  echo "WARNING: hdiffz present but a different version ($installed); reinstalling ${VERSION}"
 fi
 
-command -v curl >/dev/null 2>&1 || fail "curl não encontrado"
-command -v unzip >/dev/null 2>&1 || fail "unzip não encontrado"
-command -v sha256sum >/dev/null 2>&1 || fail "sha256sum não encontrado"
+command -v curl >/dev/null 2>&1 || fail "curl not found"
+command -v unzip >/dev/null 2>&1 || fail "unzip not found"
+command -v sha256sum >/dev/null 2>&1 || fail "sha256sum not found"
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/vpsm-hdiffpatch.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
-echo "==> baixando ${ARQUIVO}"
-curl -fsSL -o "$TMP/$ARQUIVO" "$URL" || fail "download falhou: $URL"
+echo "==> downloading ${ARCHIVE}"
+curl -fsSL -o "$TMP/$ARCHIVE" "$URL" || fail "download failed: $URL"
 
-obtido="$(sha256sum "$TMP/$ARQUIVO" | cut -d' ' -f1)"
-[ "$obtido" = "$SHA256_ESPERADO" ] \
-  || fail "SHA-256 do download NÃO confere — esperado $SHA256_ESPERADO, obtido $obtido. Nada foi instalado."
-echo "OK: SHA-256 confere"
+got="$(sha256sum "$TMP/$ARCHIVE" | cut -d' ' -f1)"
+[ "$got" = "$EXPECTED_SHA256" ] \
+  || fail "download SHA-256 does NOT match: expected $EXPECTED_SHA256, got $got. Nothing was installed."
+echo "OK: SHA-256 matches"
 
-unzip -q -o "$TMP/$ARQUIVO" -d "$TMP/extraido"
+unzip -q -o "$TMP/$ARCHIVE" -d "$TMP/extracted"
 for bin in hdiffz hpatchz; do
-  origem="$TMP/extraido/linux64/$bin"
-  [ -f "$origem" ] || fail "$bin não veio no pacote"
-  install -m 0755 "$origem" "$DESTINO/$bin"
+  src="$TMP/extracted/linux64/$bin"
+  [ -f "$src" ] || fail "$bin is missing from the package"
+  install -m 0755 "$src" "$DEST/$bin"
 done
 
-echo "OK: $(versao_de "$DESTINO/hdiffz") e $(versao_de "$DESTINO/hpatchz") instalados em $DESTINO"
+echo "OK: $(version_of "$DEST/hdiffz") and $(version_of "$DEST/hpatchz") installed in $DEST"

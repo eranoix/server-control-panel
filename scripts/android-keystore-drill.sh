@@ -1,28 +1,19 @@
 #!/usr/bin/env bash
-# android-keystore-drill.sh — valida o procedimento de geração + backup
-# cifrado + restauração + verificação de fingerprint descrito em
-# docs/android-signing-keystore.md, sem tocar em nenhum material de chave
-# real.
+# android-keystore-drill.sh: rehearses the generate + encrypted backup + restore
+# + fingerprint check procedure from docs/android-signing-keystore.md without
+# touching any real key material.
 #
-# O que faz: roda inteiramente dentro de um diretório temporário descartável
-# (mktemp -d, apagado por um trap no EXIT), gera um keystore JATOP com os
-# MESMOS parâmetros de segurança da seção 3 do runbook (RSA 4096, validade
-# 10000 dias, PKCS12, alias vpsmanager), cifra o resultado com uma senha
-# aleatória (openssl aes-256-cbc), restaura essa cópia cifrada em outro
-# diretório, e compara programaticamente o fingerprint SHA-256 do original
-# com o do restaurado. Sai com código != 0 se o fingerprint divergir, se
-# faltar alguma ferramenta, ou se algo no meio do caminho falhar.
+# Everything runs in a throwaway temp dir (removed by an EXIT trap). The keystore
+# uses the SAME security parameters as section 3 of the runbook (RSA 4096,
+# 10000 days, PKCS12, alias vpsmanager); only -dname/-storepass:env/-keypass:env
+# are added so it runs without a TTY. Exits non-zero if the fingerprints differ,
+# a tool is missing, or any step fails.
 #
-# Difere do comando interativo da seção 3 apenas por acrescentar
-# -dname/-storepass:env/-keypass:env para rodar sem TTY — os parâmetros que
-# importam para a chave (alias, algoritmo, tamanho, validade, formato) são
-# idênticos.
+# No password or key material is ever printed; only the SHA-256 fingerprint,
+# which is not secret.
 #
-# Nenhuma senha ou material de chave é impresso em nenhum momento; o único
-# valor que aparece na saída é o fingerprint SHA-256, que não é secreto.
-#
-# Uso: scripts/android-keystore-drill.sh
-# Requer: keytool, openssl (ambos padrão em qualquer JDK 17+ / Linux).
+# Usage: scripts/android-keystore-drill.sh
+# Requires: keytool, openssl.
 
 set -euo pipefail
 
@@ -30,7 +21,7 @@ ALIAS="vpsmanager"
 
 for bin in keytool openssl; do
   if ! command -v "$bin" >/dev/null 2>&1; then
-    echo "ERRO: $bin não encontrado no PATH — não dá para rodar o drill" >&2
+    echo "ERROR: $bin not found in PATH; cannot run the drill" >&2
     exit 1
   fi
 done
@@ -38,11 +29,10 @@ done
 WORKDIR="$(mktemp -d -t android-keystore-drill.XXXXXX)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
-echo "== drill de keystore descartável — diretório temporário: $WORKDIR =="
+echo "== throwaway keystore drill, temp dir: $WORKDIR =="
 
-# Senhas de descarte, geradas aleatoriamente e nunca literais em nenhum
-# argumento de shell (ficariam no histórico/ps aux) — passadas ao keytool
-# via variável de ambiente (-storepass:env / -keypass:env).
+# Throwaway passwords go through the environment, never as literal shell
+# arguments (they would show up in history and ps aux).
 STORE_PASS="$(openssl rand -base64 24)"
 KEY_PASS="$(openssl rand -base64 24)"
 ENC_PASS="$(openssl rand -base64 24)"
@@ -54,7 +44,7 @@ RESTORE_DIR="$WORKDIR/restore"
 mkdir -p "$RESTORE_DIR"
 RESTORED_KEYSTORE="$RESTORE_DIR/drill-keystore.jks"
 
-echo "== gerando keystore descartável (mesmos parâmetros da seção 3 do runbook) =="
+echo "== generating a throwaway keystore (same parameters as runbook section 3) =="
 keytool -genkeypair -v \
   -keystore "$KEYSTORE" \
   -alias "$ALIAS" \
@@ -76,28 +66,28 @@ extract_sha256() {
 }
 
 FP_ORIGINAL="$(extract_sha256 "$KEYSTORE")"
-echo "fingerprint original  : $FP_ORIGINAL"
+echo "original fingerprint : $FP_ORIGINAL"
 
-echo "== cifrando backup (openssl aes-256-cbc, pbkdf2, senha de descarte) =="
+echo "== encrypting the backup (openssl aes-256-cbc, pbkdf2, throwaway password) =="
 openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:ENC_PASS \
   -in "$KEYSTORE" -out "$BACKUP_ENC"
 
-echo "== restaurando o backup cifrado em outro diretório =="
+echo "== restoring the encrypted backup into another directory =="
 openssl enc -d -aes-256-cbc -pbkdf2 -pass env:ENC_PASS \
   -in "$BACKUP_ENC" -out "$RESTORED_KEYSTORE"
 
 FP_RESTORED="$(extract_sha256 "$RESTORED_KEYSTORE")"
-echo "fingerprint restaurado : $FP_RESTORED"
+echo "restored fingerprint : $FP_RESTORED"
 
 if [ -z "$FP_ORIGINAL" ] || [ -z "$FP_RESTORED" ]; then
-  echo "ERRO: não foi possível extrair um fingerprint SHA-256 válido" >&2
+  echo "ERROR: could not extract a valid SHA-256 fingerprint" >&2
   exit 1
 fi
 
 if [ "$FP_ORIGINAL" != "$FP_RESTORED" ]; then
-  echo "ERRO: fingerprint divergente entre original e restaurado — drill FALHOU" >&2
+  echo "ERROR: fingerprint differs between original and restored copy; drill FAILED" >&2
   exit 1
 fi
 
-echo "OK: geração + backup cifrado + restauração + verificação de fingerprint bateram."
-echo "(artefato inteiramente descartável — diretório temporário será apagado ao sair)"
+echo "OK: generation + encrypted backup + restore + fingerprint check all match."
+echo "(fully throwaway: the temp dir is removed on exit)"
