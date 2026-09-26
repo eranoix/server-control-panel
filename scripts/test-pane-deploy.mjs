@@ -124,12 +124,12 @@ scenario({ ...ALL_CLEAR, hiddenSince: undefined }) === false
   if (!m) no('could not find the backoff table');
   else {
     const fn = new Function('state', 'return ' + m[1].replace(/^state\._restarting \? /, 'state._restarting ? ') + ';');
-    const comRestart = fn({ _restarting: true });
-    const semRestart = fn({ _restarting: false });
-    comRestart[0] < semRestart[0]
-      ? ok(`an announced restart probes sooner (${comRestart[0]}ms vs ${semRestart[0]}ms)`)
+    const withRestart = fn({ _restarting: true });
+    const noRestart = fn({ _restarting: false });
+    withRestart[0] < noRestart[0]
+      ? ok(`an announced restart probes sooner (${withRestart[0]}ms vs ${noRestart[0]}ms)`)
       : no('backoff did not get more aggressive on an announced restart');
-    comRestart.length > semRestart.length
+    withRestart.length > noRestart.length
       ? ok('an announced restart insists more times before going exponential')
       : no('restart did not gain the extra fast attempts');
   }

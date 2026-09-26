@@ -48,8 +48,8 @@ if (!m) {
   // replay, so it cannot duplicate or misalign), the raw log only as the fallback
   // for an old session that has no history file yet.
   const iHist = body.indexOf("/api/terminal/historico");
-  const iCru = body.indexOf("/api/terminal/log-bruto");
-  (iHist >= 0 && iCru > iHist)
+  const iRaw = body.indexOf("/api/terminal/log-bruto");
+  (iHist >= 0 && iRaw > iHist)
     ? ok('panel: fetches the rendered history first and the raw log as the fallback')
     : no('panel: wrong source order — the raw log must not come before the history');
 

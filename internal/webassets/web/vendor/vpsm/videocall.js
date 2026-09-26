@@ -850,7 +850,7 @@
     // motor e o unico ponto por onde TODAS as entradas passam (lobby,
     // pular-lobby, recovery, convidado), entao a rede de seguranca fica aqui.
     const plan = [];
-    const semId = (c) => {
+    const noId = (c) => {
       if (!c || typeof c !== 'object') return c;
       const cp = Object.assign({}, c);
       delete cp.deviceId; delete cp.facingMode;
@@ -859,10 +859,10 @@
     const step = (a, v, note) => { if (a || v) plan.push({ audio: a, video: v, nota: note }); };
     step(audio, video, '');
     const hasFixedId = (audio && audio.deviceId) || (video && (video.deviceId || video.facingMode));
-    if (hasFixedId) step(semId(audio), semId(video), 'o dispositivo salvo não existe mais — entrei com o padrão do sistema');
+    if (hasFixedId) step(noId(audio), noId(video), 'o dispositivo salvo não existe mais — entrei com o padrão do sistema');
     if (audio && video) {
-      step(semId(audio), false, 'sem câmera disponível — entrei só com áudio');
-      step(false, semId(video), 'sem microfone disponível — você entrou, mas ninguém vai te ouvir');
+      step(noId(audio), false, 'sem câmera disponível — entrei só com áudio');
+      step(false, noId(video), 'sem microfone disponível — você entrou, mas ninguém vai te ouvir');
     }
     let lastError = null;
     this.degradedNote = '';

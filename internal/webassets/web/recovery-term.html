@@ -149,9 +149,9 @@
   <button onclick="doLogout()">Sign out</button>
 </div>
 <div class="tabs">
-  <button id="aba-host" class="on" onclick="showTab('host')">Host shell</button>
-  <button id="aba-claude" onclick="showTab('claude')">Claude (independent)</button>
-  <span class="hint" id="aba-hint"></span>
+  <button id="tab-host" class="on" onclick="showTab('host')">Host shell</button>
+  <button id="tab-claude" onclick="showTab('claude')">Claude (independent)</button>
+  <span class="hint" id="tab-hint"></span>
   <span class="hint" style="margin-left:.75rem" title="recovery console shortcuts">Ctrl+Alt+1/2 · Ctrl+Alt+R reconnects</span>
 </div>
 <div id="banner" hidden></div>
@@ -263,7 +263,7 @@ function degraded(e) {
     + 'Detail: ' + ((e && e.message) || e || 'unknown'), 'aviso');
 }
 
-function temXterm() {
+function hasXterm() {
   try {
     return typeof Terminal === 'function'
         && typeof FitAddon === 'object' && FitAddon !== null
@@ -353,8 +353,8 @@ function createSimpleEngine() {
         pre.textContent = text;
         // Only sticks to the bottom if the operator was already at the bottom —
         // otherwise reading the history during continuous output would be impossible.
-        const noFim = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
-        if (noFim) pre.scrollTop = pre.scrollHeight;
+        const atEnd = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
+        if (atEnd) pre.scrollTop = pre.scrollHeight;
       } catch (_) {}
       if (cb) { try { cb(); } catch (_) {} }
     },
@@ -421,13 +421,13 @@ const st = {
   rtt: 0, eco: 0, sentAt: 0, ecoTimer: 0, serverEchoes: null,
 };
 
-// The engine choice is wrapped in try/catch, not merely checked: `temXterm()`
+// The engine choice is wrapped in try/catch, not merely checked: `hasXterm()`
 // says the lib is there, but the construction can still throw (WebGL, font,
 // blocked canvas). Falling back to simple mode is always better than a black
 // page — on this screen more than on any other in the project.
 let term, fitAddon;
 try {
-  if (!temXterm()) throw new Error('xterm missing');
+  if (!hasXterm()) throw new Error('xterm missing');
   term = new Terminal({
     cursorBlink: true,
     fontFamily: 'ui-monospace, "JetBrains Mono", "Fira Code", Consolas, monospace',
@@ -822,7 +822,7 @@ return {
   repinta() { paint(); },
   // Reconnect NOW, without waiting for the backoff: when the operator knows the
   // network is back, spending 5 s staring at "no connection" is wasted time at the worst moment.
-  jaVai() { st.attempts = 0; if (st.timerRecon) { clearTimeout(st.timerRecon); st.timerRecon = 0; } open(); },
+  alreadyGoing() { st.attempts = 0; if (st.timerRecon) { clearTimeout(st.timerRecon); st.timerRecon = 0; } open(); },
   // The screen, as text, for the post-mortem evidence.
   capture() {
     try {
@@ -864,8 +864,8 @@ let currentTab = 'host';
 host.open();
 function showTab(which) {
   currentTab = which;
-  document.getElementById('aba-host').classList.toggle('on', which === 'host');
-  document.getElementById('aba-claude').classList.toggle('on', which === 'claude');
+  document.getElementById('tab-host').classList.toggle('on', which === 'host');
+  document.getElementById('tab-claude').classList.toggle('on', which === 'claude');
   document.getElementById('term').hidden = which !== 'host';
   document.getElementById('term-claude').hidden = which !== 'claude' || !claudeUnlocked;
   document.getElementById('claude-off').hidden = which !== 'claude' || claudeUnlocked;
@@ -876,7 +876,7 @@ function showTab(which) {
   (which === 'host' ? host : claude).repinta();
   if (which === 'host') {
     host.adjust(); host.focus();
-    document.getElementById('aba-hint').textContent = '';
+    document.getElementById('tab-hint').textContent = '';
   } else {
     checkClaude();
   }
@@ -897,14 +897,14 @@ document.addEventListener('keydown', (e) => {
 // Reconnects BOTH tabs: whoever clicks this has just seen the network come back, and
 // does not want to find out later that the other tab was left behind.
 function reconnectNow() {
-  host.jaVai();
-  if (claudeUnlocked) claude.jaVai();
+  host.alreadyGoing();
+  if (claudeUnlocked) claude.alreadyGoing();
 }
 
 // The container's state BEFORE trying to connect. This is what turns a mute
 // "it will not connect" into an actionable sentence.
 async function checkClaude() {
-  const hint = document.getElementById('aba-hint');
+  const hint = document.getElementById('tab-hint');
   hint.textContent = 'checking the container…';
   let d = {};
   try {
@@ -944,7 +944,7 @@ let recheque = 0;
 
 async function startClaude() {
   const btn = document.getElementById('claude-off-btn');
-  const hint = document.getElementById('aba-hint');
+  const hint = document.getElementById('tab-hint');
   btn.disabled = true; hint.textContent = 'starting…';
   try {
     const r = await fetch('/recovery/action/claude-up', {

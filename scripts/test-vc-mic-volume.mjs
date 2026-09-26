@@ -325,8 +325,8 @@ const proc = await aLocal(() => window.VPSMVideoCall.setMicProcessing({ echoCanc
 proc && proc.echoCancellation === true && proc.noiseSuppression === false
   ? ok('processamento: setMicProcessing aplicou so a key pedida')
   : no('processamento: retorno inesperado ' + JSON.stringify(proc));
-const comEco = await received();
-comEco > -40 ? ok(`processamento: audio segue chegando after de reabrir o mic (${comEco.toFixed(1)} dBFS)`) : no(`processamento: audio gone after do setMicProcessing (${comEco.toFixed(1)} dBFS)`);
+const withEcho = await received();
+withEcho > -40 ? ok(`processamento: audio segue chegando after de reabrir o mic (${withEcho.toFixed(1)} dBFS)`) : no(`processamento: audio gone after do setMicProcessing (${withEcho.toFixed(1)} dBFS)`);
 await aLocal((p) => window.VPSMVideoCall.setMicProcessing(p), SEM_PROC);
 
 // ── 5b. 100% e neutro ───────────────────────────────────────────────────
@@ -337,9 +337,9 @@ await aLocal((p) => window.VPSMVideoCall.setMicProcessing(p), SEM_PROC);
   await aLocal(() => { window.VPSMVideoCall.setSubtitles(true, { backend: 'web-speech', lang: 'pt-BR' }); });
   await new Promise((r) => setTimeout(r, 400));
   const n = await aLocal(async () => {
-    const cru = window.__sttStarts[window.__sttStarts.length - 1].getAudioTracks()[0];
+    const raw = window.__sttStarts[window.__sttStarts.length - 1].getAudioTracks()[0];
     const sent = document.querySelector('[data-vc-local="1"]').srcObject.getAudioTracks()[0];
-    return window.__difDb(cru, sent, 1200);
+    return window.__difDb(raw, sent, 1200);
   });
   await aLocal(() => { window.VPSMVideoCall.setSubtitles(false); });
   await new Promise((r) => setTimeout(r, 600)); // guard de toggle rapido (500 ms)
@@ -357,16 +357,16 @@ const stt = await aLocal(async () => {
   const t = s && s.getAudioTracks()[0];
   const sent = document.querySelector('[data-vc-local="1"]').srcObject.getAudioTracks()[0];
   const par = await window.__difDb(t, sent, 1200);
-  return { tem: !!t, same: t === sent, dbStt: par.a, dif: par.dif };
+  return { has: !!t, same: t === sent, dbStt: par.a, dif: par.dif };
 });
-stt.tem ? ok('stt: a chamada entregou um track pra transcricao') : no('stt: nenhum track entregue ao STT');
+stt.has ? ok('stt: a chamada entregou um track pra transcricao') : no('stt: nenhum track entregue ao STT');
 !stt.same ? ok('stt: o track da transcricao NAO e o enviado (nao passa pelo volume)') : no('stt: transcricao lendo o track sent');
 near(stt.dif, 6.02, 0.5)
   ? ok(`stt: com volume em 200%, a transcricao le o cru (enviado +${stt.dif.toFixed(2)} dB sobre ele)`)
   : no(`stt: sent ${stt.dif.toFixed(2)} dB sobre o track da transcricao — expected +6.0`);
 near(stt.dbStt, -13, 2)
   ? ok('stt: nivel do cru bate com o tom do microfone (~-13 dBFS RMS)')
-  : no(`stt: level do cru ${stt.dbStt.toFixed(1)} dBFS, expected ~-13`);
+  : no(`stt: level do raw ${stt.dbStt.toFixed(1)} dBFS, expected ~-13`);
 
 // ── 7. Mutado nao transcreve ────────────────────────────────────────────
 // Antes: o cru seguia enabled e o Whisper transcrevia — e mandava como

@@ -81,9 +81,9 @@ const output = (p) => p.written.join('');
     app._predictEcho.call(app, p, 'x');
     output(p) === '' ? ok('does not predict: ' + nome) : no('PREDICTED where it must not: ' + nome);
   }
-  const semEco = newPane(); semEco._serverEchoes = false;
-  app._predictEcho.call(app, semEco, 'x');
-  output(semEco) === '' ? ok('does not predict: the server stopped echoing (a password is being typed)')
+  const noEcho = newPane(); noEcho._serverEchoes = false;
+  app._predictEcho.call(app, noEcho, 'x');
+  output(noEcho) === '' ? ok('does not predict: the server stopped echoing (a password is being typed)')
                        : no('PREDICTED with the server in no-echo mode — that would leak a password');
 
   const control = newPane();

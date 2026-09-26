@@ -94,7 +94,7 @@ function extractBalancedTemplate(html, literalOpening, apartirDe) {
   let depth = 0, m;
   while ((m = reTag.exec(html))) {
     depth += m[0] === '</template>' ? -1 : 1;
-    if (depth === 0) return { html: html.slice(iOpen, reTag.lastIndex), fim: reTag.lastIndex };
+    if (depth === 0) return { html: html.slice(iOpen, reTag.lastIndex), end: reTag.lastIndex };
   }
   return null;
 }
@@ -114,7 +114,7 @@ if (!/typeof pvxStaleStyle==='function'/.test(realBlock.html)) {
   process.exit(1);
 }
 
-const fallbackBlock = extractBalancedTemplate(html, ABRE_TEMPLATE, realBlock.fim);
+const fallbackBlock = extractBalancedTemplate(html, ABRE_TEMPLATE, realBlock.end);
 if (!fallbackBlock) { console.error('FAILED: could not find the fallback <template x-if> (module not loaded) of the Proxmox tab in index.html'); process.exit(1); }
 
 const section = realBlock.html + '\n' + fallbackBlock.html;

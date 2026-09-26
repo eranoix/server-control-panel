@@ -78,20 +78,20 @@ for (const theme of ['dark', 'light']) {
     document.querySelectorAll('.fm-modal[data-i]').forEach((mod) => {
       const h = mod.querySelector('h3');
       if (!h) return;
-      out.push({ i: mod.dataset.i, cor: getComputedStyle(h).color, background: getComputedStyle(mod).backgroundColor });
+      out.push({ i: mod.dataset.i, color: getComputedStyle(h).color, background: getComputedStyle(mod).backgroundColor });
     });
     const pg = document.querySelector('#danger h3');
     const btn = document.querySelector('#danger .fm-modal-close');
     return { titles: out, danger: getComputedStyle(pg).color,
              normal: getComputedStyle(document.querySelector('.fm-modal[data-i] h3')).color,
              dangerBackground: getComputedStyle(document.querySelector('#danger')).backgroundColor,
-             btnCor: getComputedStyle(btn).color };
+             btnColor: getComputedStyle(btn).color };
   });
-  const ruins = r.titles.map((t, k) => ({ k, ln: headers[t.i] ? headers[t.i].line : '?', cr: ratio(t.cor, t.background) }))
+  const ruins = r.titles.map((t, k) => ({ k, ln: headers[t.i] ? headers[t.i].line : '?', cr: ratio(t.color, t.background) }))
                          .filter((x) => x.cr < 4.5);
   ruins.length === 0
     ? ok('theme ' + theme + ': all ' + r.titles.length + ' titles pass AA (worst = ' +
-         Math.min(...r.titles.map((t) => ratio(t.cor, t.background))).toFixed(1) + ':1)')
+         Math.min(...r.titles.map((t) => ratio(t.color, t.background))).toFixed(1) + ':1)')
     : no('theme ' + theme + ': ' + ruins.length + ' title(s) fail AA — lines ' + ruins.map((x) => x.ln).join(', '));
 
   const crP = ratio(r.danger, r.dangerBackground);

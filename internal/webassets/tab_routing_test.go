@@ -60,7 +60,7 @@ func block(t *testing.T, source, nome string) string {
 	return source[i : i+j]
 }
 
-// resolverAba reimplements tabToView from 00-shell.js.
+// resolveTab reimplements tabToView from 00-shell.js.
 //
 // The rule: the CANONICAL key of a tab is the one with the SAME NAME as the tab;
 // aliases (several keys for the same destination) are a fallback. Without that
@@ -71,15 +71,15 @@ func block(t *testing.T, source, nome string) string {
 // the file, not assumed. If somebody reverts the JS to the naive scan, this
 // resolver reverts with it and the test fails NAMING the tab that goes black —
 // instead of staying green because the right rule lives only in the Go.
-func resolverAba(remap map[string][2]string, order []string, group, aba string, canonicalFirst bool) string {
+func resolveTab(remap map[string][2]string, order []string, group, tab string, canonicalFirst bool) string {
 	if canonicalFirst {
-		if c, ok := remap[aba]; ok && c[0] == group && c[1] == aba {
-			return aba
+		if c, ok := remap[tab]; ok && c[0] == group && c[1] == tab {
+			return tab
 		}
 	}
 	for _, view := range order {
 		c := remap[view]
-		if c[0] == group && c[1] == aba {
+		if c[0] == group && c[1] == tab {
 			return view
 		}
 	}
@@ -132,7 +132,7 @@ func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 	tabs := map[string]bool{}
 	var navigations []string
 	for _, line := range reTabLine.FindAllStringSubmatch(index, -1) {
-		aba := line[1]
+		tab := line[1]
 		g := reGroupInLine.FindStringSubmatch(line[0])
 		if g == nil {
 			// A setTab without `tabs.<group>` on the line is not the DECLARATION of a
@@ -140,10 +140,10 @@ func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 			// shortcut, or a mention inside a comment). We keep the target to check
 			// just below that it exists as a real tab — navigating to a tab nobody
 			// declares leads nowhere.
-			navigations = append(navigations, aba)
+			navigations = append(navigations, tab)
 			continue
 		}
-		tabs[g[1]+"|"+aba] = true
+		tabs[g[1]+"|"+tab] = true
 	}
 	declared := map[string]bool{}
 	for par := range tabs {
@@ -174,14 +174,14 @@ func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 	checked := 0
 	for _, p := range pares {
 		parts := strings.SplitN(p, "|", 2)
-		group, aba := parts[0], parts[1]
-		if _, temDefault := defaults[group]; !temDefault {
+		group, tab := parts[0], parts[1]
+		if _, hasDefault := defaults[group]; !hasDefault {
 			continue // group with no tabs: currentView is the page itself
 		}
 		checked++
-		view := resolverAba(remap, order, group, aba, canonicalFirst)
+		view := resolveTab(remap, order, group, tab, canonicalFirst)
 		if !sections[view] {
-			broken = append(broken, fmt.Sprintf("%s → %s  resolves to currentView=%q, and NO section x-show matches (the screen opens BLACK)", group, aba, view))
+			broken = append(broken, fmt.Sprintf("%s → %s  resolves to currentView=%q, and NO section x-show matches (the screen opens BLACK)", group, tab, view))
 		}
 	}
 	if checked < 30 {
@@ -223,7 +223,7 @@ func TestPageRemapAliasesStayAlive(t *testing.T) {
 	for _, m := range reRemapEntry.FindAllStringSubmatch(block(t, shell, "PAGE_REMAP"), -1) {
 		remap[m[1]] = [2]string{m[2], m[3]}
 	}
-	for _, alias := range []struct{ key, group, aba string }{
+	for _, alias := range []struct{ key, group, tab string }{
 		{"nodes", "operations", "proxmox"},
 	} {
 		got, ok := remap[alias.key]
@@ -231,8 +231,8 @@ func TestPageRemapAliasesStayAlive(t *testing.T) {
 			t.Errorf("the alias %q disappeared from PAGE_REMAP — an old link, a bookmark and the command palette now land nowhere", alias.key)
 			continue
 		}
-		if got[0] != alias.group || got[1] != alias.aba {
-			t.Errorf("the alias %q points at %v, expected [%s %s]", alias.key, got, alias.group, alias.aba)
+		if got[0] != alias.group || got[1] != alias.tab {
+			t.Errorf("the alias %q points at %v, expected [%s %s]", alias.key, got, alias.group, alias.tab)
 		}
 	}
 }

@@ -38,7 +38,7 @@ const srcShell = fs.readFileSync(FONTE_SHELL, 'utf8');
 
 // Hardware stub: decides what getUserMedia does per requested kind. Reproduces the
 // real browser semantics — a COMBINED request fails if EITHER side is missing.
-const STUB = (temAudio, temVideo) => `
+const STUB = (hasAudio, hasVideo) => `
   window.__gumCalls = [];
   const fakeTrack = (kind) => ({
     kind, enabled: true, id: kind + '-fake', label: kind + ' fake',
@@ -50,8 +50,8 @@ const STUB = (temAudio, temVideo) => `
     getUserMedia: async (c) => {
       window.__gumCalls.push({ audio: !!c.audio, video: !!c.video });
       const querAudio = !!c.audio, querVideo = !!c.video;
-      if (querAudio && !${temAudio}) { const e = new Error('no mic'); e.name = 'NotFoundError'; throw e; }
-      if (querVideo && !${temVideo}) { const e = new Error('no cam'); e.name = 'NotFoundError'; throw e; }
+      if (querAudio && !${hasAudio}) { const e = new Error('no mic'); e.name = 'NotFoundError'; throw e; }
+      if (querVideo && !${hasVideo}) { const e = new Error('no cam'); e.name = 'NotFoundError'; throw e; }
       const tracks = [];
       if (querAudio) tracks.push(fakeTrack('audio'));
       if (querVideo) tracks.push(fakeTrack('video'));
@@ -60,8 +60,8 @@ const STUB = (temAudio, temVideo) => `
                removeTrack(){}, addTrack(){} };
     },
     enumerateDevices: async () => [
-      ...(${temAudio} ? [{ deviceId: 'mic1', kind: 'audioinput',  label: 'Fake mic',  groupId: 'g1' }] : []),
-      ...(${temVideo} ? [{ deviceId: 'cam1', kind: 'videoinput',  label: 'Fake cam',  groupId: 'g2' }] : []),
+      ...(${hasAudio} ? [{ deviceId: 'mic1', kind: 'audioinput',  label: 'Fake mic',  groupId: 'g1' }] : []),
+      ...(${hasVideo} ? [{ deviceId: 'cam1', kind: 'videoinput',  label: 'Fake cam',  groupId: 'g2' }] : []),
       { deviceId: 'spk1', kind: 'audiooutput', label: 'Fake output', groupId: 'g3' },
     ],
     addEventListener(){}, removeEventListener(){},
@@ -71,10 +71,10 @@ const STUB = (temAudio, temVideo) => `
   Object.defineProperty(navigator, 'permissions', { configurable: true, value: { query: async () => ({ state: 'prompt' }) } });
 `;
 
-async function scenario(browser, nome, temAudio, temVideo) {
+async function scenario(browser, nome, hasAudio, hasVideo) {
   const page = await browser.newPage();
   await page.goto('about:blank');
-  await page.addInitScript(STUB(temAudio, temVideo));
+  await page.addInitScript(STUB(hasAudio, hasVideo));
   await page.goto('about:blank');
   await page.addScriptTag({ content: srcVC });
   const r = await page.evaluate(async () => {
@@ -302,9 +302,9 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
     await build(page, { audio: true, video: true }, theme);
     const c = await page.evaluate(() => {
       const t = document.getElementById('dlg-vc-lobby-title');
-      return { cor: getComputedStyle(t).color, background: getComputedStyle(t.closest('.fm-modal')).backgroundColor };
+      return { color: getComputedStyle(t).color, background: getComputedStyle(t.closest('.fm-modal')).backgroundColor };
     });
-    const cr = ratio(c.cor, c.background);
+    const cr = ratio(c.color, c.background);
     cr >= 4.5 ? ok('lobby: title legible in the ' + theme + ' theme (' + cr.toFixed(1) + ':1)')
               : no('lobby: title at contrast ' + cr.toFixed(2) + ':1 in theme ' + theme);
   }
@@ -349,7 +349,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
                visibleLabel: rot ? rot.getBoundingClientRect().width > 2 : false,
                upperLabel: rot ? getComputedStyle(rot).textTransform : '',
                rowBackground: cs ? cs.backgroundColor : '', rowColor: cs ? cs.color : '',
-               corTit: tit ? getComputedStyle(tit).color : '', modalBackground: getComputedStyle(document.querySelector('.fm-modal')).backgroundColor };
+               titleColor: tit ? getComputedStyle(tit).color : '', modalBackground: getComputedStyle(document.querySelector('.fm-modal')).backgroundColor };
     });
     if (theme === 'dark') {
       r.n === 3 ? ok('in-call: 3 device lines') : no('in-call: ' + r.n + ' lines');
@@ -359,7 +359,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
       r.visibleLabel ? ok('in-call: label visible (mic and output carry the same device name)') : no('in-call: label invisible — mic and output cannot be told apart');
       r.upperLabel === 'none' ? ok('in-call: label without the uppercase from .fm-modal-body label') : no('in-call: label with text-transform:' + r.upperLabel);
     }
-    const crT = ratio(r.corTit, r.modalBackground);
+    const crT = ratio(r.titleColor, r.modalBackground);
     crT >= 4.5 ? ok('in-call: title legible in the ' + theme + ' theme (' + crT.toFixed(1) + ':1)') : no('in-call: title ' + crT.toFixed(2) + ':1 in theme ' + theme);
     const crL = ratio(r.rowColor, r.rowBackground);
     crL >= 4.5 ? ok('in-call: line text legible in the ' + theme + ' theme (' + crL.toFixed(1) + ':1)') : no('in-call: line ' + crL.toFixed(2) + ':1 in theme ' + theme);

@@ -101,24 +101,24 @@ func TestIndexServesBrotliWhenClientAccepts(t *testing.T) {
 	// The compression runs off the request path (otherwise the first load after
 	// each deploy would pay ~2.3 s), so the test waits for the warm-up instead of
 	// assuming the first response already comes compressed.
-	comBr := requestWithBrotli(t)
+	withBr := requestWithBrotli(t)
 
-	semBr := httptest.NewRecorder()
-	indexServer().ServeHTTP(semBr, httptest.NewRequest("GET", "/", nil))
+	noBr := httptest.NewRecorder()
+	indexServer().ServeHTTP(noBr, httptest.NewRequest("GET", "/", nil))
 
-	if enc := comBr.Header().Get("Content-Encoding"); enc != "br" {
+	if enc := withBr.Header().Get("Content-Encoding"); enc != "br" {
 		t.Fatalf("Content-Encoding = %q, wanted \"br\"", enc)
 	}
-	if semBr.Header().Get("Content-Encoding") != "" {
+	if noBr.Header().Get("Content-Encoding") != "" {
 		t.Error("a client that did not ask for br received an encoded body")
 	}
-	if comBr.Body.Len() >= semBr.Body.Len() {
-		t.Errorf("brotli shrank nothing: %d vs %d bytes", comBr.Body.Len(), semBr.Body.Len())
+	if withBr.Body.Len() >= noBr.Body.Len() {
+		t.Errorf("brotli shrank nothing: %d vs %d bytes", withBr.Body.Len(), noBr.Body.Len())
 	}
-	if !strings.Contains(comBr.Header().Get("Vary"), "Accept-Encoding") {
+	if !strings.Contains(withBr.Header().Get("Vary"), "Accept-Encoding") {
 		t.Error("no Vary: Accept-Encoding — an intermediate cache would serve br to someone who does not accept it")
 	}
-	if comBr.Header().Get("ETag") == semBr.Header().Get("ETag") {
+	if withBr.Header().Get("ETag") == noBr.Header().Get("ETag") {
 		t.Error("the two variants share an ETag — a cross revalidation would return 304 for an unreadable body")
 	}
 }

@@ -10587,7 +10587,7 @@
                         :class="pvx.segment === '' ? 'pvx-chip-on' : ''"
                         :aria-checked="pvx.segment === '' ? 'true' : 'false'"
                         @click="pvxSetSegment('')"
-                        x-text="'Total ' + pvxNos().length"></button>
+                        x-text="'Total ' + pvxNodes().length"></button>
                 <template x-for="seg in pvxScreenSegments()" :key="'seg-' + seg.key">
                   <button class="pvx-chip" role="radio"
                           :class="pvx.segment === seg.key ? 'pvx-chip-on' : ''"
@@ -10649,7 +10649,7 @@
             <div x-show="!pvx.forbidden" class="rounded-b mb-5" style="background:var(--surface-1);border:1px solid var(--border);border-top:0"
                  @scroll="pvxScrolled()">
 
-              <template x-if="pvx.firstLoad && !pvxNos().length">
+              <template x-if="pvx.firstLoad && !pvxNodes().length">
                 <div class="divide-y" style="border-color:var(--border)">
                   <template x-for="i in 6" :key="'skel-' + i">
                     <div class="flex items-center gap-3 px-4 py-3">
@@ -10841,8 +10841,8 @@
                            x-show="pvxLabSummary().unknown > 0" x-cloak
                            x-text="pvxLabSummary().unknown + ' no fresh observation — the panel cannot see'"></div>
                       <div class="text-[11px] opacity-60 mt-1"
-                           x-show="pvxLabSummary().semDado > 0" x-cloak
-                           x-text="pvxLabSummary().semDado + ' no observed data'"></div>
+                           x-show="pvxLabSummary().noData > 0" x-cloak
+                           x-text="pvxLabSummary().noData + ' no observed data'"></div>
                     </div>
 
                     <div class="rounded px-4 py-3" style="background:var(--surface-1);border:1px solid var(--border)">
@@ -10927,7 +10927,7 @@
                   <div class="h-2 rounded overflow-hidden mt-1" style="background:var(--surface-1)"
                        role="progressbar" aria-label="Hypervisor RAM" aria-valuemin="0" aria-valuemax="100"
                        :aria-valuenow="pvx.health ? pvxPct(pvxField(pvx.health, 'mem_used'), pvxField(pvx.health, 'mem_total')) : 0">
-                    <div class="h-full" :style="pvxUsoStyle(pvx.health ? pvxPct(pvxField(pvx.health, 'mem_used'), pvxField(pvx.health, 'mem_total')) : 0)"></div>
+                    <div class="h-full" :style="pvxUsageStyle(pvx.health ? pvxPct(pvxField(pvx.health, 'mem_used'), pvxField(pvx.health, 'mem_total')) : 0)"></div>
                   </div>
                   <div class="text-[10px] opacity-50 mt-1"
                        x-text="pvx.health ? ('swap ' + pvxBytes(pvxField(pvx.health, 'swap_used')) + ' / ' + pvxBytes(pvxField(pvx.health, 'swap_total')) + ' · KSM ' + pvxBytes(pvxField(pvx.health, 'ksm_shared'))) : ''"></div>
@@ -10943,7 +10943,7 @@
                   <div class="h-2 rounded overflow-hidden mt-1" style="background:var(--surface-1)"
                        role="progressbar" aria-label="hypervisor rootfs" aria-valuemin="0" aria-valuemax="100"
                        :aria-valuenow="pvx.health ? pvxPct(pvxField(pvx.health, 'root_used'), pvxField(pvx.health, 'root_total')) : 0">
-                    <div class="h-full" :style="pvxUsoStyle(pvx.health ? pvxPct(pvxField(pvx.health, 'root_used'), pvxField(pvx.health, 'root_total')) : 0)"></div>
+                    <div class="h-full" :style="pvxUsageStyle(pvx.health ? pvxPct(pvxField(pvx.health, 'root_used'), pvxField(pvx.health, 'root_total')) : 0)"></div>
                   </div>
                 </div>
                 <div class="text-xs opacity-60">
@@ -11503,7 +11503,7 @@
                                 :title="pvxLifespan(d).motivo" x-text="pvxLifespan(d).text"></span>
 
                           <span x-show="d.used" x-cloak class="opacity-70"
-                                x-text="'uso: ' + d.used"></span>
+                                x-text="'usage: ' + d.used"></span>
                           <span class="font-mono opacity-40 ml-auto" x-text="d.serial || 'no serial'"></span>
                         </div>
 
@@ -11570,7 +11570,7 @@
                         </div>
 
                         <div class="h-2 rounded overflow-hidden mt-2" style="background:var(--surface-2)">
-                          <span class="block h-full" :style="pvxUsoStyle(p.used_pct)"></span>
+                          <span class="block h-full" :style="pvxUsageStyle(p.used_pct)"></span>
                         </div>
 
                         <!-- The link with the layer below: a `zfspool` datastore
@@ -11628,7 +11628,7 @@
                         </div>
 
                         <div class="h-2 rounded overflow-hidden mt-2" style="background:var(--surface-2)">
-                          <span class="block h-full" :style="pvxUsoStyle(pvxPct(p.alloc, p.size))"></span>
+                          <span class="block h-full" :style="pvxUsageStyle(pvxPct(p.alloc, p.size))"></span>
                         </div>
 
                         <div class="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-[11px] opacity-60">
@@ -11729,14 +11729,14 @@
                       <div class="rounded px-3 py-2" style="background:var(--surface-1);border:1px solid var(--border)">
                         <div class="flex items-baseline gap-2 mb-1">
                           <span class="text-xs font-semibold" x-text="m.rot"></span>
-                          <span class="font-mono tabular-nums text-xs" :style="'color:' + m.cor"
+                          <span class="font-mono tabular-nums text-xs" :style="'color:' + m.color"
                                 x-text="pvxMetricValue(m, pvxDrawing(m).last)"></span>
                           <span class="ml-auto text-[10px] opacity-50 font-mono"
-                                x-show="pvxDrawing(m).temDado" x-cloak
+                                x-show="pvxDrawing(m).hasData" x-cloak
                                 x-text="'max ' + pvxMetricValue(m, pvxDrawing(m).max)"></span>
                         </div>
 
-                        <template x-if="pvxDrawing(m).temDado">
+                        <template x-if="pvxDrawing(m).hasData">
                           <svg :viewBox="'0 0 ' + GW + ' ' + GH" preserveAspectRatio="none"
                                class="w-full block" style="height:76px" role="img"
                                :aria-label="m.rot + ': ' + pvxMetricValue(m, pvxDrawing(m).last) + ' in the window of ' + pvxWindowLabel()">
@@ -11767,25 +11767,25 @@
                             <line x1="0" :x2="GW" :y1="GH * 0.75" :y2="GH * 0.75"
                                   stroke="currentColor" stroke-width="1" opacity=".12"
                                   vector-effect="non-scaling-stroke"></line>
-                            <path :d="pvxDrawing(m).area" :fill="m.cor" opacity=".16"></path>
+                            <path :d="pvxDrawing(m).area" :fill="m.color" opacity=".16"></path>
                             <!-- The stroke still BREAKS at the hole: each `M`
                                  opens a new subpath, and the renderer does not
                                  join the end of one to the start of the next. The same
                                  drawing as before, without the loop. -->
-                            <path :d="pvxDrawing(m).stroke" fill="none" :stroke="m.cor" stroke-width="1.6"
+                            <path :d="pvxDrawing(m).stroke" fill="none" :stroke="m.color" stroke-width="1.6"
                                   stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
                             <!-- Isolated samples: zero-length subpaths
                                  with a round cap become dots. -->
-                            <path :d="pvxDrawing(m).pontos" fill="none" :stroke="m.cor" stroke-width="4"
+                            <path :d="pvxDrawing(m).pontos" fill="none" :stroke="m.color" stroke-width="4"
                                   stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
                             <!-- highlighted end point: where the series IS right now -->
-                            <circle :cx="pvxDrawing(m).fimX" :cy="pvxDrawing(m).fimY" r="3"
-                                    :fill="m.cor" stroke="var(--surface-1)" stroke-width="1.5"
+                            <circle :cx="pvxDrawing(m).endX" :cy="pvxDrawing(m).endY" r="3"
+                                    :fill="m.color" stroke="var(--surface-1)" stroke-width="1.5"
                                     vector-effect="non-scaling-stroke"></circle>
                           </svg>
                         </template>
 
-                        <div x-show="!pvxDrawing(m).temDado" x-cloak
+                        <div x-show="!pvxDrawing(m).hasData" x-cloak
                              class="text-[11px] opacity-50" style="height:76px;display:flex;align-items:center">
                           no sample in this window
                         </div>

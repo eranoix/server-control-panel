@@ -116,7 +116,7 @@ await page.waitForTimeout(400);
 // ── 2. the reported bug: Claude tab with the container DOWN ─────────────────
 // The screenshot showed the host terminal AND the Claude notice splitting the
 // height, with the host action bar present in the wrong tab.
-await clica('#aba-claude');
+await clica('#tab-claude');
 {
   const t = await visible('#term'), off = await visible('#claude-off');
   (!t && off) ? ok('Claude tab (container down): shows the notice and HIDES the host terminal')
@@ -129,7 +129,7 @@ await clica('#aba-claude');
 }
 
 // ── 3. back to the host ─────────────────────────────────────────────────────
-await clica('#aba-host');
+await clica('#tab-host');
 {
   const t = await visible('#term'), off = await visible('#claude-off'), bar = await visible('.action-bar');
   (t && !off && bar) ? ok('going back to the host restores terminal + bar and hides the notice')
@@ -138,7 +138,7 @@ await clica('#aba-host');
 
 // ── 4. with the container UP, the tab shows the Claude terminal ─────────────
 containerRunning = true;
-await clica('#aba-claude');
+await clica('#tab-claude');
 await page.waitForTimeout(400);
 {
   const c = await visible('#term-claude'), off = await visible('#claude-off'), t = await visible('#term');

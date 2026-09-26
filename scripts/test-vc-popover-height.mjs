@@ -113,14 +113,14 @@ for (const [larg, alt] of [[1015, 800], [1280, 720], [1400, 1080]]) {
 
   // Counter-check: without the panel measurement the bug comes back. If THIS
   // passes, the pin has stopped testing what the fix fixes.
-  const semVar = await page.evaluate(() => {
+  const noVar = await page.evaluate(() => {
     const root = document.getElementById('vc-call-root');
     root.style.removeProperty('--vc-root-h');
     const pop = document.querySelector('.vc-popover-wide');
     return pop.getBoundingClientRect().top - root.getBoundingClientRect().top;
   });
-  semVar < -0.5
-    ? ok(tag + ': counter-check — without --vc-root-h the menu overflows by ' + Math.round(-semVar) + 'px (the fix is what holds it)')
+  noVar < -0.5
+    ? ok(tag + ': counter-check — without --vc-root-h the menu overflows by ' + Math.round(-noVar) + 'px (the fix is what holds it)')
     : no(tag + ': inert counter-check — the menu already fitted without the fix, the pin proves nothing here');
 
   await page.close();

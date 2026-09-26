@@ -74,8 +74,8 @@ const dec = new TextDecoder();
 const newPane = (readyState) => ({
   id: 'p1',
   ws: {
-    readyState, sent: [], cru: [],
-    send(b){ this.cru.push(b); this.sent.push(typeof b === 'string' ? b : dec.decode(b)); },
+    readyState, sent: [], raw: [],
+    send(b){ this.raw.push(b); this.sent.push(typeof b === 'string' ? b : dec.decode(b)); },
   },
 });
 
@@ -159,7 +159,7 @@ const fakeTerm = (written, line) => ({
   const p = newPane(1);
   _paneSendInput(p, 'a');
   await tick();
-  const b = p.ws.cru[0];
+  const b = p.ws.raw[0];
   (b instanceof Uint8Array && b.length === 1 && !/type/.test(dec.decode(b)))
     ? ok('the send is raw binary (no JSON envelope per keystroke)')
     : no('the per-keystroke JSON envelope is back: ' + JSON.stringify(String(b)));
@@ -171,9 +171,9 @@ const fakeTerm = (written, line) => ({
   const p = newPane(1);
   for (const c of ['g','i','t',' ','p','u','l','l']) _paneSendInput(p, c);
   await tick();
-  (p.ws.cru.length === 1 && p.ws.sent.join('') === 'git pull')
+  (p.ws.raw.length === 1 && p.ws.sent.join('') === 'git pull')
     ? ok('a burst from one tick becomes 1 frame, in the right order')
-    : no('coalescing failed: ' + p.ws.cru.length + ' frames, ' + JSON.stringify(p.ws.sent.join('')));
+    : no('coalescing failed: ' + p.ws.raw.length + ' frames, ' + JSON.stringify(p.ws.sent.join('')));
 }
 
 // 9) with no socket, the keystroke APPEARS on screen (dimmed) instead of
@@ -255,15 +255,15 @@ const fakeTerm = (written, line) => ({
   if (!mp) { no('could not extract _viewportNeedsRepaint'); }
   else {
     const needs = new Function('term', mp[1]);
-    const termCom = (lines) => ({
+    const termWith = (lines) => ({
       rows: lines.length,
       buffer: { active: { viewportY: 0, getLine: (i) => lines[i] === undefined ? null
         : { translateToString: () => lines[i] } } },
     });
-    needs(termCom(['', '  $ ls', ''])) === false
+    needs(termWith(['', '  $ ls', ''])) === false
       ? ok('screen WITH content → no escalation (no more jolt on deploy)')
       : no('it would escalate with a good screen — the jolt would be back');
-    needs(termCom(['', '   ', ''])) === true
+    needs(termWith(['', '   ', ''])) === true
       ? ok('blank screen → escalates to the wobble (the original bug covered)')
       : no('a black screen would NOT escalate — the original bug is back');
     needs({ rows: 3, buffer: null }) === true

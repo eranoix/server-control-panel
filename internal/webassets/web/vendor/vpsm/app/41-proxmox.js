@@ -149,7 +149,7 @@
         // Master-detail. The operator chose layout A2 and ONLY it; A5 — which was A2
         // plus a fixed exceptions band — was rejected. So there is NO exceptions band
         // on this screen.
-        aba: '',            // active tab of the right-hand panel
+        tab: '',            // active tab of the right-hand panel
         paused: false,     // live cycle suspended?
         pauseReason: '',    // why, in plain words, so the screen can say it
         focusFilter: false,  // does the filter have the cursor inside it?
@@ -208,7 +208,7 @@
       // screen owes him is the CONCRETE CONSEQUENCE up front, not a generic warning:
       // how many guests fall, which ones, and that the way back is physical.
       pvxRunningGuests() {
-        return this.pvxNos().filter((n) => {
+        return this.pvxNodes().filter((n) => {
           if (!this.pvxEhGuest(n)) return false;
           const st = (n.status && n.status.value) || '';
           return st === 'running' || st === 'online';
@@ -339,25 +339,25 @@
       // or scaled to the observed maximum — scaling a percentage would make 2% CPU
       // look like a spike, and that is the classic automatic-charting mistake.
       METRICAS_NO: [
-        { id: 'cpu',        rot: 'CPU',        pct: true,  cor: '#38bdf8', fmt: 'pct' },
-        { id: 'iowait',     rot: 'IO delay',   pct: true,  cor: '#f59e0b', fmt: 'pct' },
-        { id: 'loadavg',    rot: 'Load',       pct: false, cor: '#a78bfa', fmt: 'num' },
-        { id: 'memused',    rot: 'Memory',    pct: false, cor: '#22c55e', fmt: 'bytes', cap: 'memtotal' },
-        { id: 'arcsize',    rot: 'ZFS ARC', pct: false, cor: '#2dd4bf', fmt: 'bytes', cap: 'memtotal' },
-        { id: 'rootused',   rot: 'Disk /',    pct: false, cor: '#94a3b8', fmt: 'bytes', cap: 'roottotal' },
-        { id: 'netin',      rot: 'Network ↓',     pct: false, cor: '#38bdf8', fmt: 'rate' },
-        { id: 'netout',     rot: 'Network ↑',     pct: false, cor: '#f472b6', fmt: 'rate' },
-        { id: 'pressureiosome',     rot: 'IO pressure',     pct: true, cor: '#fb923c', fmt: 'pct' },
-        { id: 'pressurememorysome', rot: 'Memory pressure', pct: true, cor: '#e879f9', fmt: 'pct' },
+        { id: 'cpu',        rot: 'CPU',        pct: true,  color: '#38bdf8', fmt: 'pct' },
+        { id: 'iowait',     rot: 'IO delay',   pct: true,  color: '#f59e0b', fmt: 'pct' },
+        { id: 'loadavg',    rot: 'Load',       pct: false, color: '#a78bfa', fmt: 'num' },
+        { id: 'memused',    rot: 'Memory',    pct: false, color: '#22c55e', fmt: 'bytes', cap: 'memtotal' },
+        { id: 'arcsize',    rot: 'ZFS ARC', pct: false, color: '#2dd4bf', fmt: 'bytes', cap: 'memtotal' },
+        { id: 'rootused',   rot: 'Disk /',    pct: false, color: '#94a3b8', fmt: 'bytes', cap: 'roottotal' },
+        { id: 'netin',      rot: 'Network ↓',     pct: false, color: '#38bdf8', fmt: 'rate' },
+        { id: 'netout',     rot: 'Network ↑',     pct: false, color: '#f472b6', fmt: 'rate' },
+        { id: 'pressureiosome',     rot: 'IO pressure',     pct: true, color: '#fb923c', fmt: 'pct' },
+        { id: 'pressurememorysome', rot: 'Memory pressure', pct: true, color: '#e879f9', fmt: 'pct' },
       ],
       METRICAS_GUEST: [
-        { id: 'cpu',       rot: 'CPU',      pct: true,  cor: '#38bdf8', fmt: 'pct' },
-        { id: 'mem',       rot: 'Memory',  pct: false, cor: '#22c55e', fmt: 'bytes', cap: 'maxmem' },
-        { id: 'disk',      rot: 'Disk',    pct: false, cor: '#94a3b8', fmt: 'bytes', cap: 'maxdisk' },
-        { id: 'netin',     rot: 'Network ↓',   pct: false, cor: '#38bdf8', fmt: 'rate' },
-        { id: 'netout',    rot: 'Network ↑',   pct: false, cor: '#f472b6', fmt: 'rate' },
-        { id: 'diskread',  rot: 'Read',  pct: false, cor: '#a78bfa', fmt: 'rate' },
-        { id: 'diskwrite', rot: 'Write',  pct: false, cor: '#fb923c', fmt: 'rate' },
+        { id: 'cpu',       rot: 'CPU',      pct: true,  color: '#38bdf8', fmt: 'pct' },
+        { id: 'mem',       rot: 'Memory',  pct: false, color: '#22c55e', fmt: 'bytes', cap: 'maxmem' },
+        { id: 'disk',      rot: 'Disk',    pct: false, color: '#94a3b8', fmt: 'bytes', cap: 'maxdisk' },
+        { id: 'netin',     rot: 'Network ↓',   pct: false, color: '#38bdf8', fmt: 'rate' },
+        { id: 'netout',    rot: 'Network ↑',   pct: false, color: '#f472b6', fmt: 'rate' },
+        { id: 'diskread',  rot: 'Read',  pct: false, color: '#a78bfa', fmt: 'rate' },
+        { id: 'diskwrite', rot: 'Write',  pct: false, color: '#fb923c', fmt: 'rate' },
       ],
       pvxMetrics() {
         const n = this.pvxOpenNode();
@@ -400,14 +400,14 @@
       pvxDrawing(metric) {
         const d = this.pvx.series;
         // 🔴 ONE SHAPE ONLY, always. The previous version returned TWO different
-        // objects: the full one had `fimX`/`fimY`, the empty one did not. The template
-        // reads `:cx="pvxDrawing(m).fimX"` outside any guard, so in the empty state
+        // objects: the full one had `endX`/`endY`, the empty one did not. The template
+        // reads `:cx="pvxDrawing(m).endX"` outside any guard, so in the empty state
         // the attribute got `undefined` and the SVG refused it with
         // "attribute cx: Unexpected end of attribute". The same disease as state born
         // null, one level down — in the return value of a function.
         const empty = {
-          temDado: false, area: '', stroke: '', pontos: '',
-          cap: 1, max: 0, min: 0, last: null, fimX: 0, fimY: 0, gaps: 0, n: 0,
+          hasData: false, area: '', stroke: '', pontos: '',
+          cap: 1, max: 0, min: 0, last: null, endX: 0, endY: 0, gaps: 0, n: 0,
         };
         if (!d || !Array.isArray(d.pontos) || !d.pontos.length) return empty;
         const pts = d.pontos;
@@ -482,7 +482,7 @@
           .map((s) => `M${s[0][0].toFixed(1)} ${s[0][1].toFixed(1)} L${s[0][0].toFixed(1)} ${s[0][1].toFixed(1)}`)
           .join(' ');
         return {
-          temDado: true,
+          hasData: true,
           stroke,
           pontos: points,
           area,
@@ -490,8 +490,8 @@
           max: Math.max(...present),
           min: Math.min(...present),
           last: vals[lastIdx],
-          fimX: X(pts[lastIdx].time),
-          fimY: Y(vals[lastIdx]),
+          endX: X(pts[lastIdx].time),
+          endY: Y(vals[lastIdx]),
           gaps,
           n: present.length,
         };
@@ -655,8 +655,8 @@
       pvxCertStyle(c) {
         const days = this.pvxCertDays(c);
         if (days === null) return 'background:#64748b22;color:#94a3b8;border:1px solid #64748b66';
-        const cor = days <= 7 ? '#ef4444' : days <= 30 ? '#f59e0b' : '#22c55e';
-        return `background:${cor}22;color:${cor};border:1px solid ${cor}66`;
+        const color = days <= 7 ? '#ef4444' : days <= 30 ? '#f59e0b' : '#22c55e';
+        return `background:${color}22;color:${color};border:1px solid ${color}66`;
       },
       pvxFilteredPackages() {
         const ps = (this.pvx.pacotes && this.pvx.pacotes.pacotes) || [];
@@ -702,15 +702,15 @@
       // the same visual channel and neither would be trustworthy. That is why the
       // type lives in a hue family outside the semantic one.
       TYPES: {
-        node:    { abbrev: 'NODE',  label: 'hypervisor',        cor: '#94a3b8' },
-        lxc:     { abbrev: 'CT',  label: 'LXC container',     cor: '#38bdf8' },
-        qemu:    { abbrev: 'VM',  label: 'virtual machine',   cor: '#a78bfa' },
-        externo: { abbrev: 'EXT', label: 'outside the hypervisor', cor: '#2dd4bf' },
+        node:    { abbrev: 'NODE',  label: 'hypervisor',        color: '#94a3b8' },
+        lxc:     { abbrev: 'CT',  label: 'LXC container',     color: '#38bdf8' },
+        qemu:    { abbrev: 'VM',  label: 'virtual machine',   color: '#a78bfa' },
+        externo: { abbrev: 'EXT', label: 'outside the hypervisor', color: '#2dd4bf' },
         // 🔴 Do NOT use #64748b here: it is the colour of the "parado" state. The
         // collision pin caught it — an unknown type would show up in the same colour as
         // a powered-off guest, which is exactly the confusion that separating the two
         // palettes exists to prevent.
-        '?':     { abbrev: '?',   label: 'unknown type', cor: '#a1887f' },
+        '?':     { abbrev: '?',   label: 'unknown type', color: '#a1887f' },
       },
       pvxTypeKey(n) {
         if (!n) return '?';
@@ -729,7 +729,7 @@
         return { ...t, key: this.pvxTypeKey(n), modelo: !!(n && n.template) };
       },
       pvxTypeStyle(n) {
-        const c = this.pvxType(n).cor;
+        const c = this.pvxType(n).color;
         return `background:${c}1f;color:${c};border:1px solid ${c}55`;
       },
       // Badge title: the long text the short badge has no room for. A template is not
@@ -744,7 +744,7 @@
       // anyone to count row by row.
       pvxCountByType() {
         const count = {};
-        for (const n of this.pvxNos()) {
+        for (const n of this.pvxNodes()) {
           const k = this.pvxTypeKey(n);
           count[k] = (count[k] || 0) + 1;
         }
@@ -803,11 +803,11 @@
         const n = this.pvxOpenNode();
         if (!n) return '';
         const tabs = this.pvxNodeTabs(n);
-        return tabs.some((a) => a.id === this.pvx.aba) ? this.pvx.aba : 'summary';
+        return tabs.some((a) => a.id === this.pvx.tab) ? this.pvx.tab : 'summary';
       },
-      pvxGoTo(aba) {
-        this.pvx.aba = aba;
-        if (aba === 'console') {
+      pvxGoTo(tab) {
+        this.pvx.tab = tab;
+        if (tab === 'console') {
           const n = this.pvxOpenNode();
           if (n) this.pvxOpenConsole(n.id);
         } else {
@@ -816,38 +816,38 @@
         // Loads on demand, the first time the tab is opened. That is what makes the
         // screen cheap: before, EVERY visit fetched tasks, disks, storage, ZFS and
         // permissions, even if all you wanted was to look at one guest.
-        if (aba === 'tarefas' && !this.pvx.tasks.length) this.pvxLoadTasks();
-        if (aba === 'discos' && !this.pvx.disks.length) this.pvxLoadDisks();
-        if (aba === 'storage' && !this.pvx.storage) this.pvxLoadStorage();
-        if (aba === 'zfs' && !this.pvx.zfs) this.pvxLoadZfs();
+        if (tab === 'tarefas' && !this.pvx.tasks.length) this.pvxLoadTasks();
+        if (tab === 'discos' && !this.pvx.disks.length) this.pvxLoadDisks();
+        if (tab === 'storage' && !this.pvx.storage) this.pvxLoadStorage();
+        if (tab === 'zfs' && !this.pvx.zfs) this.pvxLoadZfs();
         // The topology serves ALL THREE storage tabs: it is what ties physical disk,
         // pool and datastore into a single story.
-        if ((aba === 'zfs' || aba === 'discos' || aba === 'storage') && !this.pvx.loaded.topology) this.pvxLoadTopology();
-        if (aba === 'perms' && !this.pvx.perms && !this.pvx.permsOpen) this.pvxLoadPerms();
-        if (aba === 'charts') this.pvxLoadSeries();
-        if ((aba === 'rede' || aba === 'sistema') && !this.pvx.loaded.sistema) this.pvxLoadSystem();
+        if ((tab === 'zfs' || tab === 'discos' || tab === 'storage') && !this.pvx.loaded.topology) this.pvxLoadTopology();
+        if (tab === 'perms' && !this.pvx.perms && !this.pvx.permsOpen) this.pvxLoadPerms();
+        if (tab === 'charts') this.pvxLoadSeries();
+        if ((tab === 'rede' || tab === 'sistema') && !this.pvx.loaded.sistema) this.pvxLoadSystem();
         // The HOST Summary shows the timezone, and the timezone comes from /sistema.
         // Without this it would be born an em-dash and would only appear after the
         // operator visited another tab — a datum that exists, hidden by navigation order.
-        if (aba === 'summary' && !this.pvx.loaded.sistema && !this.pvxEhGuest(this.pvxOpenNode())) this.pvxLoadSystem();
+        if (tab === 'summary' && !this.pvx.loaded.sistema && !this.pvxEhGuest(this.pvxOpenNode())) this.pvxLoadSystem();
         // The note is the BODY of the summary, so it loads together with the tab — not
         // after a second click.
-        if (aba === 'summary') this.pvxLoadNote(this.pvx.open);
+        if (tab === 'summary') this.pvxLoadNote(this.pvx.open);
         // The Copies tab NEEDS the storage list to know where the copy can go. Without
         // this it only had the list if the operator had visited the Storage tab first —
         // and then the button said "no storage accepts backups", which is a lie about
         // the hypervisor.
-        if (aba === 'snaps' && !this.pvx.storage) this.pvxLoadStorage();
-        if (aba === 'pacotes' && !this.pvx.loaded.pacotes) this.pvxLoadPackages();
-        if (aba === 'registry' && !this.pvx.loaded.registry) this.pvxLoadRegistry();
+        if (tab === 'snaps' && !this.pvx.storage) this.pvxLoadStorage();
+        if (tab === 'pacotes' && !this.pvx.loaded.pacotes) this.pvxLoadPackages();
+        if (tab === 'registry' && !this.pvx.loaded.registry) this.pvxLoadRegistry();
       },
       pvxSelect(n) {
         if (!n) return;
         if (this.pvx.open === n.id) { this.pvxClearSelection(); return; }
-        this.pvx.aba = 'summary';
+        this.pvx.tab = 'summary';
         this.pvxOpen(n);
       },
-      pvxClearSelection() { this.pvx.aba = ''; this.pvxClose(); },
+      pvxClearSelection() { this.pvx.tab = ''; this.pvxClose(); },
       pvxHasSelection() { return !!this.pvx.open; },
 
       // ── lab summary: the right-hand panel when NOTHING is selected ───────
@@ -857,11 +857,11 @@
       // operator rejected along with layout A5.
       //
       // 🔴 Sums only what was ACTUALLY observed. A guest whose datum has no timestamp
-      // goes into `semDado`, never in as zero: adding absence up as zero is the
+      // goes into `noData`, never in as zero: adding absence up as zero is the
       // classic way for a panel to lie that everything is roomy.
       pvxLabSummary() {
-        const guests = this.pvxNos().filter((n) => this.pvxEhGuest(n));
-        let memU = 0, memT = 0, cpuSum = 0, cpuN = 0, semDado = 0, running = 0, unknown = 0;
+        const guests = this.pvxNodes().filter((n) => this.pvxEhGuest(n));
+        let memU = 0, memT = 0, cpuSum = 0, cpuN = 0, noData = 0, running = 0, unknown = 0;
         for (const g of guests) {
           const st = (g.status && g.status.value) || '';
           // 🔴 "POWERED ON" IS A CLAIM ABOUT RIGHT NOW, AND DEMANDS OBSERVING RIGHT NOW.
@@ -883,14 +883,14 @@
           if (!observed) unknown++;
           else if (st === 'running' || st === 'online') running++;
           const mu = g.mem_used, mt = g.mem_total, cf = g.cpu_frac;
-          if (!mu || !mu.observed_at || !mt || !(Number(mt.value) > 0)) semDado++;
+          if (!mu || !mu.observed_at || !mt || !(Number(mt.value) > 0)) noData++;
           else { memU += Number(mu.value); memT += Number(mt.value); }
           if (cf && cf.observed_at && Number(cf.value) >= 0) { cpuSum += Number(cf.value); cpuN++; }
         }
         const pools = this.pvxZfsPools();
         const poolBad = pools.filter((p) => p && !p.saudavel).length;
         return {
-          guests: guests.length, running, semDado, unknown,
+          guests: guests.length, running, noData, unknown,
           memUsed: memU, memTotal: memT,
           memPct: memT > 0 ? (memU / memT) * 100 : null,
           cpuPct: cpuN ? (cpuSum / cpuN) * 100 : null,
@@ -952,24 +952,24 @@
       // deploy, when a boolean would have painted the live layer as disarmed.
       pvxBackupState(ds) {
         const i = this.pvxBackupAge(ds);
-        if (ds.erro) return { key: 'erro', label: 'error', cor: '#ef4444', nota: ds.erro };
+        if (ds.erro) return { key: 'erro', label: 'error', color: '#ef4444', nota: ds.erro };
         if (ds.agendamento === 'desarmado') {
-          return { key: 'desarmado', label: 'disarmed', cor: '#94a3b8',
+          return { key: 'desarmado', label: 'disarmed', color: '#94a3b8',
                    nota: 'schedule turned off' + (ds.schedule ? ' (era ' + ds.schedule + ')' : '') + ' — this is not a failure' };
         }
-        if (i.vazio) return { key: 'vazio', label: 'no copy yet', cor: '#ef4444', nota: '' };
+        if (i.vazio) return { key: 'vazio', label: 'no copy yet', color: '#ef4444', nota: '' };
         const limitH = ds.storage === 'pbs' ? 36 : 24 * 10;
         const h = i.seg / 3600;
-        const cor = h <= limitH ? '#22c55e' : h <= limitH * 2 ? '#f59e0b' : '#ef4444';
+        const color = h <= limitH ? '#22c55e' : h <= limitH * 2 ? '#f59e0b' : '#ef4444';
         return {
-          key: 'active', label: i.text, cor,
+          key: 'active', label: i.text, color,
           nota: ds.agendamento === 'fora-do-pve'
             ? 'scheduled outside PVE — the panel does not know by whom'
             : (ds.schedule ? 'daily at ' + ds.schedule : ''),
         };
       },
       pvxBackupStyle(ds) {
-        const c = this.pvxBackupState(ds).cor;
+        const c = this.pvxBackupState(ds).color;
         return `background:${c}22;color:${c};border:1px solid ${c}66`;
       },
       async pvxLoadBackup() {
@@ -1014,11 +1014,11 @@
         if (reason) return;
         if (typeof this.loadNodes === 'function') this.loadNodes();
         this.pvxLoadHealth();
-        const aba = this.pvxActiveTab();
-        if (aba === 'tarefas') this.pvxLoadTasks();
-        if (aba === 'discos') this.pvxLoadDisks();
-        if (aba === 'storage') this.pvxLoadStorage();
-        if (aba === 'zfs') this.pvxLoadZfs();
+        const tab = this.pvxActiveTab();
+        if (tab === 'tarefas') this.pvxLoadTasks();
+        if (tab === 'discos') this.pvxLoadDisks();
+        if (tab === 'storage') this.pvxLoadStorage();
+        if (tab === 'zfs') this.pvxLoadZfs();
       },
       pvxRefreshAge() {
         const p = this.nodes && this.nodes.poll;
@@ -1265,10 +1265,10 @@
       pvxStoragePools() { return (this.pvx.storage && this.pvx.storage.pools) || []; },
       pvxZfsPools() { return (this.pvx.zfs && this.pvx.zfs.pools) || []; },
 
-      // pvxUsoStyle colours the bar by usage band. The cut at 85% is not cosmetic: the
+      // pvxUsageStyle colours the bar by usage band. The cut at 85% is not cosmetic: the
       // pool in this lab is SINGLE-DISK, with no redundancy, and filling it up is one
       // of the few ways to lose data without any hardware failing.
-      pvxUsoStyle(pct) {
+      pvxUsageStyle(pct) {
         const v = Math.max(0, Math.min(100, Number(pct) || 0));
         const c = v >= 85 ? '#ef4444' : (v >= 70 ? '#f59e0b' : '#22c55e');
         return `width:${v}%;background:${c}`;
@@ -1468,7 +1468,7 @@
         // palette, the browser console) was enough to open the WebSocket against a guest
         // with no token, and the error would only show up coming back from the server.
         // A screen guard is a convenience; a function guard is the rule.
-        const g = this.pvxNos().find(x => x.id === nodeId);
+        const g = this.pvxNodes().find(x => x.id === nodeId);
         if (g && !this.pvxConsoleCan(g)) {
           this.pvx.con = { guest: '', estado: 'erro', erro: this.pvxConsoleReason(g) };
           this.showToast(this.pvxConsoleReason(g), 'err');
@@ -2222,16 +2222,16 @@
 
       // ---- bridge between the pure functions and the component ------------
 
-      pvxNos() {
+      pvxNodes() {
         // The list comes from 40-nodes.js, which is what talks to /api/nodes. This module
         // draws; it neither fetches nodes nor translates credentials.
         return (this.nodes && this.nodes.list) ? this.nodes.list : [];
       },
 
       pvxFilteredNodes() {
-        return this.pvxFilterNodes(this.pvxNos(), this.pvx.filter, this.pvx.segment, this.pvxNodeState);
+        return this.pvxFilterNodes(this.pvxNodes(), this.pvx.filter, this.pvx.segment, this.pvxNodeState);
       },
-      pvxHost() { return this.pvxNos().filter(n => n.kind === 'host'); },
+      pvxHost() { return this.pvxNodes().filter(n => n.kind === 'host'); },
 
       // 🔴 EVERY filter change goes through here, and that is why the re-scoping cannot
       // be forgotten on one of the paths: there is no second path.
@@ -2269,10 +2269,10 @@
         return parts.join(' · ');
       },
       pvxCount() {
-        return `${this.pvxFilteredNodes().length} of ${this.pvxNos().length}`;
+        return `${this.pvxFilteredNodes().length} of ${this.pvxNodes().length}`;
       },
       pvxScreenSegments() {
-        return this.pvxSegments(this.pvxNos(), this.pvxNodeState);
+        return this.pvxSegments(this.pvxNodes(), this.pvxNodeState);
       },
 
       // ---- gauges ---------------------------------------------------------
@@ -2394,7 +2394,7 @@
       },
       pvxOpenNode() {
         const id = this.pvx.open;
-        return id ? (this.pvxNos().find(n => n.id === id) || null) : null;
+        return id ? (this.pvxNodes().find(n => n.id === id) || null) : null;
       },
 
       // ---- selection and bulk action -------------------------------------
@@ -2412,9 +2412,9 @@
         this.pvx.sel = (this.pvx.sel.length === visible.length) ? [] : visible;
       },
       pvxBulk() { return this.pvx.sel.length > 0; },
-      pvxSelNos() {
+      pvxSelNodes() {
         const ids = this.pvx.sel;
-        return this.pvxNos().filter(n => ids.indexOf(n.id) >= 0);
+        return this.pvxNodes().filter(n => ids.indexOf(n.id) >= 0);
       },
 
       // 🔴 pvxPowerBulk ENUMERATES what is going to happen, and enumerates what is
@@ -2423,7 +2423,7 @@
       // operator only finds out afterwards, counting who came up.
       pvxPowerBulk(action) {
         const labels = { start: 'Turn on', shutdown: 'Shut down gracefully', stop: 'Cut the power' };
-        const sel = this.pvxSelNos();
+        const sel = this.pvxSelNodes();
         const targets = sel.filter(n => this.pvxActionState(n, action).can);
         const fora = sel.filter(n => !this.pvxActionState(n, action).can);
         if (!targets.length) {
@@ -2552,7 +2552,7 @@
       // the band disappears entirely when the laboratory is fine — a permanent header
       // saying "0 problems" is noise that teaches the eye to skip the region.
       pvxNeedYou() {
-        return this.pvxNos().filter(n => {
+        return this.pvxNodes().filter(n => {
           const e = this.pvxNodeState(n);
           // `sumiu` deliberately does NOT enter here: there is nothing to do about a node
           // the hypervisor no longer lists, and counting it as pending is exactly the noise
@@ -2570,7 +2570,7 @@
       pvxEmpty() {
         if (this.pvx.forbidden || (this.nodes && this.nodes.forbidden)) return 'sem-permissao';
         if (this.nodes && this.nodes.lastError) return 'falhou';
-        if (!this.pvxNos().length) return 'nada';
+        if (!this.pvxNodes().length) return 'nada';
         if (!this.pvxFilteredNodes().length) return 'filtrado';
         return '';
       },

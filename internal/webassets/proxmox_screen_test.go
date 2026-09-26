@@ -75,11 +75,11 @@ func TestNoTemplateInsideSVG(t *testing.T) {
 	}
 	findings := 0
 	for _, s := range svgs {
-		fim := strings.Index(html[s[0]:], "</svg>")
-		if fim < 0 {
+		end := strings.Index(html[s[0]:], "</svg>")
+		if end < 0 {
 			continue
 		}
-		block := html[s[0] : s[0]+fim]
+		block := html[s[0] : s[0]+end]
 		for _, m := range regexp.MustCompile(`(?i)<template\b`).FindAllStringIndex(block, -1) {
 			line := strings.Count(html[:s[0]+m[0]], "\n") + 1
 			t.Errorf("index.html:%d — <template> DENTRO de <svg>. No namespace SVG isso "+

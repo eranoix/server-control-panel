@@ -95,11 +95,11 @@ function quadro(mark) {
 }
 // Repaint the way a TUI repaints: go up the N lines IT counted having written,
 // clear from there to the end of the screen, redraw.
-window.__cenario = async (comResize) => {
+window.__cenario = async (withResize) => {
   term.reset();
   term.resize(COLS, ROWS);
   await escreve(quadro('A'));
-  if (comResize) term.resize(COLS - 1, ROWS);   // the spurious +-1 column
+  if (withResize) term.resize(COLS - 1, ROWS);   // the spurious +-1 column
   await escreve('\\x1b[' + (LINHAS - 1) + 'A\\r\\x1b[J');
   await escreve(quadro('A'));
   // Count COPIES of the frame: buffer lines that START with the token. Counting
@@ -156,16 +156,16 @@ await page.waitForFunction('window.__pronto === true', null, { timeout: 15000 })
 
 // ── 1. THE DAMAGE IS REAL ───────────────────────────────────────────────────
 // Without this the rest would be a guard against an undemonstrated problem.
-const semResize = await page.evaluate('window.__cenario(false)');
-const comResize = await page.evaluate('window.__cenario(true)');
+const noResize = await page.evaluate('window.__cenario(false)');
+const withResize = await page.evaluate('window.__cenario(true)');
 
-semResize === 1
+noResize === 1
   ? ok('control: with no column change, the repaint REPLACES the frame (1 copy)')
-  : no('control: the repaint already duplicates with no resize (' + semResize + ' copies) — invalid scenario');
+  : no('control: the repaint already duplicates with no resize (' + noResize + ' copies) — invalid scenario');
 
-comResize > semResize
-  ? ok('reproduction: ONE column less between paint and repaint leaves ' + comResize + ' copies (was ' + semResize + ') — repeated text, exactly as reported')
-  : no('reproduction: the ±1 column did not corrupt (' + comResize + ' copies) — the scenario does not exercise the reflow');
+withResize > noResize
+  ? ok('reproduction: ONE column less between paint and repaint leaves ' + withResize + ' copies (was ' + noResize + ') — repeated text, exactly as reported')
+  : no('reproduction: the ±1 column did not corrupt (' + withResize + ' copies) — the scenario does not exercise the reflow');
 
 // ── 2. THE PANEL GUARD, with the real xterm ─────────────────────────────────
 // The fit is stubbed because it is the thing that MEASURES — and measuring is
@@ -196,21 +196,21 @@ const wobble = await guard(`
   await wait(120);
   step(56, 30);                    // and gives it back, before the 300ms
   await wait(450);
-  return { logo, fim: t.cols };
+  return { logo, end: t.cols };
 `);
-wobble.logo === 56 && wobble.fim === 56
+wobble.logo === 56 && wobble.end === 56
   ? ok('panel: a ±1 column oscillation that undoes itself does NOT reach xterm (cols stayed 56)')
-  : no('panel: the oscillation got through (immediate=' + wobble.logo + ', final=' + wobble.fim + ') — reflow happens');
+  : no('panel: the oscillation got through (immediate=' + wobble.logo + ', final=' + wobble.end + ') — reflow happens');
 
 const sustained = await guard(`
   step(55, 30);
   const logo = t.cols;
   await wait(450);                // the second measurement agrees
-  return { logo, fim: t.cols };
+  return { logo, end: t.cols };
 `);
-sustained.logo === 56 && sustained.fim === 55
+sustained.logo === 56 && sustained.end === 55
   ? ok('panel: a SUSTAINED ±1 column is applied on the second measurement (56 → 55)')
-  : no('panel: a real 1 column change was not applied (immediate=' + sustained.logo + ', final=' + sustained.fim + ')');
+  : no('panel: a real 1 column change was not applied (immediate=' + sustained.logo + ', final=' + sustained.end + ')');
 
 const large = await guard(`
   step(40, 30);                    // rotation / split: real intent
@@ -246,13 +246,13 @@ const rec = await page.evaluate(`(async () => {
   await wait(120);
   prop = { cols: 56, rows: 30 }; safeFit();
   await wait(450);
-  const fim = t.cols;
+  const end = t.cols;
   prop = { cols: 40, rows: 30 }; safeFit();
-  return { logo, fim, grande: t.cols };
+  return { logo, end, grande: t.cols };
 })()`);
-rec.logo === 56 && rec.fim === 56
+rec.logo === 56 && rec.end === 56
   ? ok('recovery: a ±1 column oscillation does not reach xterm')
-  : no('recovery: the oscillation got through (immediate=' + rec.logo + ', final=' + rec.fim + ')');
+  : no('recovery: the oscillation got through (immediate=' + rec.logo + ', final=' + rec.end + ')');
 rec.grande === 40
   ? ok('recovery: a change of ≥2 columns goes through at once')
   : no('recovery: a real change got stuck (cols=' + rec.grande + ')');
@@ -271,14 +271,14 @@ srv.close();
     ? ok('recovery: no raw fitAddon.fit() outside safeFit')
     : no('recovery: ' + fora.length + ' raw fit() outside the guard:' + fora.map(l => '\n      ' + l.trim()).join(''));
 
-  const cruShell = shell.split('\n')
+  const rawShell = shell.split('\n')
     .filter(l => /\bfit\.fit\(\)/.test(l))
     .filter(l => !/_safeFit/.test(l));
   // The only legitimate fit.fit() calls are the ones INSIDE _safeFit.
   const inside = (panelSafeFitBody.match(/fit\.fit\(\)/g) || []).length;
-  cruShell.length === inside
+  rawShell.length === inside
     ? ok('panel: all ' + inside + ' existing fit.fit() calls are inside _safeFit')
-    : no('panel: there is a fit.fit() outside _safeFit (' + cruShell.length + ' in the file, ' + inside + ' in the guard)');
+    : no('panel: there is a fit.fit() outside _safeFit (' + rawShell.length + ' in the file, ' + inside + ' in the guard)');
 }
 
 // ── 5. The usable width of the terminal (the desktop side of the same bug) ──

@@ -127,7 +127,7 @@
   });
   const CRED_OK = { token_id: 'lab@pve!node-x', expire: 1802645875, state: 'ok' };
   const CRED_MISSING = { token_id: '', expire: 0, state: 'ausente' };
-  const NOS = [
+  const NODES = [
     guest('lxc/204', 'lab', 204, 'running', CRED_OK),
     guest('lxc/205', 'observ', 205, 'stopped', CRED_OK),
     guest('lxc/202', 'pbs', 202, 'running', CRED_MISSING),
@@ -176,8 +176,8 @@
     C().pvx.series = d;
   };
 
-  const open = (id, aba) => {
-    const n = C().pvxNos().find((x) => x.id === id);
+  const open = (id, tab) => {
+    const n = C().pvxNodes().find((x) => x.id === id);
     if (!n) throw new Error('nó inexistente no fixture: ' + id);
     C().pvx.open = '';
     // 🔴 ABRE EXATAMENTE COMO UM CLIQUE ABRE, e nada além disso.
@@ -194,7 +194,7 @@
     // sessão; os outros dois foram `pvx.aberto` sem `pvx.guestSel` e cravar
     // `pvx.aba` sem carregar nada.
     C().pvxSelect(n);
-    if (aba !== 'summary') C().pvxGoTo(aba);
+    if (tab !== 'summary') C().pvxGoTo(tab);
   };
 
   const expectCharts = (howMany, check) => () => {
@@ -211,7 +211,7 @@
   window.__script = [
     { nome: 'the section opens and the hypervisor is chosen', step: () => {
         C().page = 'operations'; C().tabs.operations = 'proxmox';
-        C().nodes = C().nodes || {}; C().nodes.list = NOS;
+        C().nodes = C().nodes || {}; C().nodes.list = NODES;
         open('node/pve', 'summary');
       }, expect: () => {
         if (!visible(document.querySelector('section'))) return { erro: 'a seção Proxmox não ficou visível' };
@@ -219,7 +219,7 @@
       } },
 
     { nome: 'Charts with NO series — the state the screen ALWAYS opens in', step: () => {
-        C().pvx.aba = 'charts';
+        C().pvx.tab = 'charts';
       }, expect: () => {
         if (svgs().length) return { erro: 'sem série não deveria desenhar SVG' };
         const av = Array.from(document.querySelectorAll('div')).filter((d) => !d.children.length && d.textContent.trim() === 'no sample in this window');
@@ -532,17 +532,17 @@
       } },
 
     { nome: 'RUNNING · a node that LEFT the hypervisor does not count as running either', step: () => {
-        C().nodes.list = NOS.map(n => n.id === 'lxc/204'
+        C().nodes.list = NODES.map(n => n.id === 'lxc/204'
           ? Object.assign({}, n, { ausente_desde: 1787200000 })
           : n);
       }, expect: () => {
         const r = C().pvxLabSummary();
-        const lab = C().pvxNos().find(x => x.id === 'lxc/204');
+        const lab = C().pvxNodes().find(x => x.id === 'lxc/204');
         if (!lab || !lab.ausente_desde) return { erro: 'o fixture não marcou o nó como ausente' };
         if (r.unknown < 1) return { erro: 'nó ausente contado como se fosse observável: ' + JSON.stringify(r) };
         // GIVES BACK the original list: a step that dirties the next one is the
         // defect that already broke the console proof this morning.
-        C().nodes.list = NOS;
+        C().nodes.list = NODES;
         return { nota: r.running + ' running, ' + r.unknown + ' unknown(s)' };
       } },
   );
@@ -553,7 +553,7 @@
         open('node/pve', 'summary');
       }, expect: () => {
         const c = C();
-        const n = c.pvxNos().find(x => x.id === 'lxc/101');
+        const n = c.pvxNodes().find(x => x.id === 'lxc/101');
         if (!n) return { erro: 'o fixture perdeu o nó ausente' };
         const e = c.pvxNodeState(n);
         if (e !== 'gone') return { erro: 'estado = ' + e + ', quer "sumiu" — ele tem carimbo de ausência' };
@@ -577,7 +577,7 @@
 
     { nome: 'GONE · does not count as an attention item', step: () => {}, expect: () => {
         const c = C();
-        const n = c.pvxNos().find(x => x.id === 'lxc/101');
+        const n = c.pvxNodes().find(x => x.id === 'lxc/101');
         // pvxPrecisaAtencao lives in the lab summary’s count; what is asserted
         // here is that the "sumiu" state does not enter the three pending keys.
         const e = c.pvxNodeState(n);
@@ -798,8 +798,8 @@
         if (C().pvx.clone.nome !== 'lab-copy') return { erro: 'sugestão de nome = ' + C().pvx.clone.nome };
         // The id must NOT be a typeable field: it is a reading.
         const inputs = Array.from(document.querySelectorAll('input')).filter(visible);
-        const digitavelComID = inputs.filter(i => String(i.value) === '991');
-        if (digitavelComID.length) return { erro: 'o id de destino está num campo DIGITÁVEL — ele é lido do hipervisor' };
+        const typableWithID = inputs.filter(i => String(i.value) === '991');
+        if (typableWithID.length) return { erro: 'o id de destino está num campo DIGITÁVEL — ele é lido do hipervisor' };
         if (!document.body.innerText.includes('991')) return { erro: 'o id lido não aparece na tela' };
         if (document.body.innerText.indexOf('crash-consistent') < 0)
           return { erro: 'guest ligado e nenhum aviso de cópia consistente-de-queda' };

@@ -46,7 +46,7 @@ function newEl(id) {
   return el;
 }
 
-function buildCtx({ comXterm }) {
+function buildCtx({ withXterm }) {
   const elements = {};
   const listeners = {};
   const sockets = [];
@@ -87,8 +87,8 @@ function buildCtx({ comXterm }) {
   };
 
   const ctx = {
-    Terminal: comXterm ? function () { return termXterm; } : undefined,
-    FitAddon: comXterm ? { FitAddon: function () { return { fit() {} }; } } : undefined,
+    Terminal: withXterm ? function () { return termXterm; } : undefined,
+    FitAddon: withXterm ? { FitAddon: function () { return { fit() {} }; } } : undefined,
     WebSocket: FakeWS, TextEncoder, TextDecoder,
     document: doc,
     window: { addEventListener: (ev, f) => { (listeners[ev] ||= []).push(f); } },
@@ -125,7 +125,7 @@ function run(ctx) {
 //    a black screen on a page whose purpose is to work when the assets break.
 // ════════════════════════════════════════════════════════════════════════════
 {
-  const ctx = buildCtx({ comXterm: false });
+  const ctx = buildCtx({ withXterm: false });
   let api = null;
   try { api = run(ctx); ok('no xterm: the page script still runs end to end'); }
   catch (e) { no('with no xterm the whole page dies: ' + e.message); }
@@ -194,7 +194,7 @@ function run(ctx) {
 //    as a red error — inviting a second click on `rollback`.
 // ════════════════════════════════════════════════════════════════════════════
 {
-  const ctx = buildCtx({ comXterm: true });
+  const ctx = buildCtx({ withXterm: true });
   const api = run(ctx);
   const m = ctx.__meta;
 
@@ -247,7 +247,7 @@ function run(ctx) {
 // 3. The session: expiring silently is worse than expiring.
 // ════════════════════════════════════════════════════════════════════════════
 {
-  const ctx = buildCtx({ comXterm: true });
+  const ctx = buildCtx({ withXterm: true });
   const api = run(ctx);
   const m = ctx.__meta;
 
@@ -264,7 +264,7 @@ function run(ctx) {
 
   // Coming back to the tab is when the session is closest to dying — the 5 min
   // interval does not run while the tab is hidden.
-  const ctx2 = buildCtx({ comXterm: true });
+  const ctx2 = buildCtx({ withXterm: true });
   const api2 = run(ctx2);
   const m2 = ctx2.__meta;
   m2.setResponse((url) => (url.includes('/recovery/renew')
@@ -291,7 +291,7 @@ function run(ctx) {
 //    reading "connected" from a terminal that dropped is worse than nothing.
 // ════════════════════════════════════════════════════════════════════════════
 {
-  const ctx = buildCtx({ comXterm: true });
+  const ctx = buildCtx({ withXterm: true });
   const api = run(ctx);
   const m = ctx.__meta;
   m.sockets[0].open();
@@ -323,7 +323,7 @@ function run(ctx) {
 //    exactly the case most likely to need it.
 // ════════════════════════════════════════════════════════════════════════════
 {
-  const ctx = buildCtx({ comXterm: true });
+  const ctx = buildCtx({ withXterm: true });
   ctx.Terminal = function () {
     return Object.assign({}, ctx.__meta.termXterm, {
       open() { throw new Error('canvas blocked'); },

@@ -227,7 +227,7 @@ check('index.html: the datastore block exists and iterates the pools',
   /pvxActiveTab\(\)==='storage'/.test(index) && /x-for="p in pvxStoragePools\(\)"/.test(index));
 check('index.html: the ZFS pool block exists and iterates the pools',
   /pvxActiveTab\(\)==='zfs'/.test(index) && /x-for="p in pvxZfsPools\(\)"/.test(index));
-check('index.html: usage bar per storage', /pvxUsoStyle\(p\.used_pct\)/.test(index));
+check('index.html: usage bar per storage', /pvxUsageStyle\(p\.used_pct\)/.test(index));
 check('index.html: capacity has an age OF ITS OWN on screen',
   /pvxFormatAge\(pvx\.storage \? pvx\.storage\.age_seconds : null\)/.test(index),
   'without its own age the block would inherit the health badge and lie in green');
@@ -243,13 +243,13 @@ check('ONLINE is green', zfsStyleFn({ health: 'ONLINE', saudavel: true }).includ
 
 // The usage bar saturates, and the red band starts at 85% — filling a pool with
 // no redundancy is one of the few ways to lose data with no hardware failing.
-const usoStyle = extract(pvxJs, '41-proxmox.js', 'pvxUsoStyle', 'pct');
-const usoFn = new Function('pct', usoStyle);
-check('bar: 90% is red', usoFn(90).includes('#ef4444'));
-check('bar: 75% is amber', usoFn(75).includes('#f59e0b'));
-check('bar: 7% is green', usoFn(6.87).includes('#22c55e'));
-check('bar: an absurd value saturates at 100%', usoFn(9999).includes('width:100%'));
-check('bar: null does not become NaN', usoFn(null).includes('width:0%'));
+const usageStyle = extract(pvxJs, '41-proxmox.js', 'pvxUsageStyle', 'pct');
+const usageFn = new Function('pct', usageStyle);
+check('bar: 90% is red', usageFn(90).includes('#ef4444'));
+check('bar: 75% is amber', usageFn(75).includes('#f59e0b'));
+check('bar: 7% is green', usageFn(6.87).includes('#22c55e'));
+check('bar: an absurd value saturates at 100%', usageFn(9999).includes('width:100%'));
+check('bar: null does not become NaN', usageFn(null).includes('width:0%'));
 
 // ── remote console and rollback ────────────────────────────────────────────
 //
@@ -476,16 +476,16 @@ check('a zeroed total does not become a division by zero',
   pct({ disk_used: stamp(10), disk_total: stamp(0) }, 'disco') === null);
 
 // ── the gauge goes GREY when the node is not live ─────────────────────────
-const cor = new Function('m', extract(pvxJs, '41-proxmox.js', 'pvxGaugeColor', 'm'));
+const color = new Function('m', extract(pvxJs, '41-proxmox.js', 'pvxGaugeColor', 'm'));
 const GRAY = '#64748b';
 check('🔴 the gauge of a STALE/stopped node goes GREY, even with a low value',
-  cor({ measured: true, live: false, tier: 'ok' }) === GRAY,
+  color({ measured: true, live: false, tier: 'ok' }) === GRAY,
   'a coloured bar over dead data asserts a measurement nobody made');
 check('🔴 the gauge of a stale node goes grey even while CRITICAL',
-  cor({ measured: true, live: false, tier: 'critico' }) === GRAY);
-check('a gauge with no measurement goes grey', cor({ measured: false, live: true, tier: 'ok' }) === GRAY);
-check('a live and critical gauge is red', cor({ measured: true, live: true, tier: 'critico' }) === '#ef4444');
-check('a live and ok gauge is green', cor({ measured: true, live: true, tier: 'ok' }) === '#22c55e');
+  color({ measured: true, live: false, tier: 'critico' }) === GRAY);
+check('a gauge with no measurement goes grey', color({ measured: false, live: true, tier: 'ok' }) === GRAY);
+check('a live and critical gauge is red', color({ measured: true, live: true, tier: 'critico' }) === '#ef4444');
+check('a live and ok gauge is green', color({ measured: true, live: true, tier: 'ok' }) === '#22c55e');
 
 // 🔴 No RENDERING expression may write to reactive state.
 //
@@ -569,7 +569,7 @@ const fakeComponent = () => {
   turnOn('pvxNodeState', ['n']);
   turnOn('pvxFilterNodes', ['list', 'text', 'segment', 'stateOf']);
   turnOn('pvxReescopa', ['sel', 'visible']);
-  turnOn('pvxNos', []);
+  turnOn('pvxNodes', []);
   turnOn('pvxFilteredNodes', []);
   turnOn('pvxSetFilter', ['text']);
   turnOn('pvxSetSegment', ['key']);
@@ -706,9 +706,9 @@ check('the bulk confirmation ENUMERATES who will be affected AND who is left out
 
 // ── a control without permission: DISABLED WITH A REASON, never gone ──────
 const action = new Function('n', 'action', extract(pvxJs, '41-proxmox.js', 'pvxActionState', 'n, action'));
-const semCred = { kind: 'guest', vmid: 202, status: { value: 'running' }, credential: { state: 'ausente' } };
+const noCred = { kind: 'guest', vmid: 202, status: { value: 'running' }, credential: { state: 'ausente' } };
 check('🔴 no credential: the control closes WITH A REASON',
-  action(semCred, 'start').can === false && /no node token in the vault/.test(action(semCred, 'start').motivo),
+  action(noCred, 'start').can === false && /no node token in the vault/.test(action(noCred, 'start').motivo),
   'Portainer removes the button (`if (!authorized) return null`); Coolify disables it and explains');
 // 🔴 The list of actions being walked has to be FULL. Measured by mutation:
 // swapping the `x-for` for an empty list kept the reason expression in the file
@@ -758,7 +758,7 @@ check('a stopped guest WITH a credential accepts start',
 check('an EXPIRED credential can still be revoked (revoking is cleanup)',
   action({ kind: 'guest', vmid: 208, status: { value: 'running' }, credential: { state: 'expirada' } }, 'revoke').can === true);
 check('a MISSING credential has nothing to revoke, and the screen says so',
-  action(semCred, 'revoke').can === false && /there is no credential to revoke/.test(action(semCred, 'revoke').motivo));
+  action(noCred, 'revoke').can === false && /there is no credential to revoke/.test(action(noCred, 'revoke').motivo));
 
 // ── the TWO clocks on the screen ──────────────────────────────────────────
 check('🔴 the screen shows the POLLER clock (when it last tried)',
@@ -805,7 +805,7 @@ check('a failure fetching disks does not clear either',
 const empty = new Function('pvx', 'nodes', 'list', 'filtrados',
   extract(pvxJs, '41-proxmox.js', 'pvxEmpty', '')
     .replace(/this\.pvxFilteredNodes\(\)/g, 'filtrados')
-    .replace(/this\.pvxNos\(\)/g, 'list')
+    .replace(/this\.pvxNodes\(\)/g, 'list')
     .replace(/this\.pvx\./g, 'pvx.')
     .replace(/this\.nodes/g, 'nodes'));
 check('🔴 empty: no permission is a diagnosis of its own',

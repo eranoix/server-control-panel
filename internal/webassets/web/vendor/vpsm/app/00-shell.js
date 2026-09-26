@@ -7328,7 +7328,7 @@ function app() {
       };
       this.jiraDetailTab = 'overview';
       try {
-        const [rIss, rTr, rCom] = await Promise.all([
+        const [rIss, rTr, rWith] = await Promise.all([
           this.api('/api/jira/issue/'+iss.key),
           this.api('/api/jira/issue/'+iss.key+'/transitions'),
           this.api('/api/jira/issue/'+iss.key+'/comments'),
@@ -7336,8 +7336,8 @@ function app() {
         this.jiraDetail.issue = await rIss.json();
         const dTr = await rTr.json();
         this.jiraDetail.transitions = dTr.transitions || [];
-        const dCom = await rCom.json();
-        this.jiraDetail.comments = dCom.comments || [];
+        const dWith = await rWith.json();
+        this.jiraDetail.comments = dWith.comments || [];
         this.loadJiraWatchers();
         this.loadJiraVotes();
         this.loadJiraProjectMeta();
@@ -14129,8 +14129,8 @@ function app() {
     // and the server deduplicates a repeated size.
     _reconcileSizes(){
       const now = Date.now();
-      if (this._reconcTamEm && (now - this._reconcTamEm) < 400) return;
-      this._reconcTamEm = now;
+      if (this._reconcSizeAt && (now - this._reconcSizeAt) < 400) return;
+      this._reconcSizeAt = now;
       (this.terms && this.terms.panes || []).forEach(p => {
         if (!p || !p.term) return;
         try { this._safeFit(p.fit); } catch(_){}

@@ -60,17 +60,17 @@ ok('no host tab shows up with a guest selected',
    !comp.pvxNodeTabs(guest).some(a=>['discos','storage','zfs','perms'].includes(a.id)));
 
 // a tab inherited from another type falls back to Summary, not an empty panel
-comp.pvx.open = 'qemu/208'; comp.pvx.aba = 'zfs';
+comp.pvx.open = 'qemu/208'; comp.pvx.tab = 'zfs';
 ok('a "zfs" tab inherited on a guest normalises to "summary"', comp.pvxActiveTab() === 'summary',
    comp.pvxActiveTab());
-comp.pvx.aba = 'console';
+comp.pvx.tab = 'console';
 ok('a valid guest tab is respected', comp.pvxActiveTab() === 'console');
 
 // ── lab summary ───────────────────────────────────────────────────────────
 comp.pvx.open = '';
 const r = comp.pvxLabSummary();
 ok('counts 3 guests, 2 running', r.guests===3 && r.running===2, `${r.guests}/${r.running}`);
-ok('a guest with no timestamp goes into semDado, not in as a zero', r.semDado===1, String(r.semDado));
+ok('a guest with no timestamp goes into noData, not in as a zero', r.noData===1, String(r.noData));
 ok('summed memory IGNORES the one with no data (it does not dilute the average)',
    Math.abs(r.memTotal - (17.18e9+8.59e9)) < 1e6, (r.memTotal/1e9).toFixed(2)+' GB');
 ok('the memory percentage matches the sum of the observed ones',
@@ -145,7 +145,7 @@ ok('the memory percentage matches the sum of the observed ones',
   const disarmed = { storage: 'backupusb', total: 5, ultimo_ctime: 1_000_000 - 340 * 3600,
                       guests: [1, 2, 3], agendamento: 'desarmado', schedule: '03:30' };
   const eD = comp.pvxBackupState(disarmed);
-  ok('a DISARMED layer does not come out red', !vermelho(comp.pvxBackupStyle(disarmed)), eD.cor);
+  ok('a DISARMED layer does not come out red', !vermelho(comp.pvxBackupStyle(disarmed)), eD.color);
   ok('and it says the label "desarmado", not an alarming age', eD.label === 'disarmed', eD.label);
   ok('and it explains WHY, with the time it used to run', /schedule turned off/.test(eD.nota) && /03:30/.test(eD.nota), eD.nota);
   ok('and it says outright that this is not a failure', /this is not a failure/.test(eD.nota));
@@ -158,7 +158,7 @@ ok('the memory percentage matches the sum of the observed ones',
   const foraDoPve = { storage: 'pbs', total: 65, ultimo_ctime: 1_000_000 - 3 * 3600,
                       guests: [1], agendamento: 'fora-do-pve' };
   const eF = comp.pvxBackupState(foraDoPve);
-  ok('a fresh layer with NO job in PVE stays green', verde(comp.pvxBackupStyle(foraDoPve)), eF.cor);
+  ok('a fresh layer with NO job in PVE stays green', verde(comp.pvxBackupStyle(foraDoPve)), eF.color);
   ok('and the screen admits it does not know who schedules it', /does not know by whom/.test(eF.nota), eF.nota);
 
   // A layer that is ACTIVE and old is still a failure — otherwise the fix would
@@ -255,7 +255,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
     nodesStatusStyle: () => '', nodesTransportBadge: () => '', nodesCredStyle: () => '',
     nodesCredLabel: () => '', nodesCredExpiry: () => '', nodesCredExpiryUrgent: () => false,
   });
-  emptyComp.pvx.open = ''; emptyComp.pvx.detail = null; emptyComp.pvx.aba = '';
+  emptyComp.pvx.open = ''; emptyComp.pvx.detail = null; emptyComp.pvx.tab = '';
 
   const exprs = new Set();
   // 🔴 THE ATTRIBUTE LIST WAS AN ALLOWLIST, AND IT AGED IN SILENCE. When the screen
@@ -485,7 +485,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   // Colour = state; letter = type. If the two palettes collided, neither would be
   // trustworthy — the green "ok" badge and a green type would fight over the same
   // visual channel.
-  const typeColors = ['node', 'lxc', 'qemu', 'externo', '?'].map((k) => comp.TYPES[k].cor.toLowerCase());
+  const typeColors = ['node', 'lxc', 'qemu', 'externo', '?'].map((k) => comp.TYPES[k].color.toLowerCase());
   const stateColors = ['ok', 'atencao', 'critico', 'vencido', 'sem-credencial', 'parado']
     .map((e) => comp.pvxStateColor(e).toLowerCase());
   const collision = typeColors.filter((c) => stateColors.includes(c));
