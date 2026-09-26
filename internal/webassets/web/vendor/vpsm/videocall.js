@@ -1722,7 +1722,7 @@
     const n = (this._peerRebuilds[remoteId] || 0) + 1;
     if (n > 3) {
       console.warn('[vpsm:vc] conexao com ' + remoteId.slice(-6) + ' nao rise apos 3 recriacoes — desisto');
-      this.cbError('Não consegui ligar o áudio/vídeo com ' + (old.remoteUser || 'o participante') + '. Saia e entre de novo.');
+      this.cbError('Não consegui ligar o áudio/vídeo com ' + (old.remoteUser || 'o participante') + '. Saia e entre de fresh.');
       return;
     }
     this._peerRebuilds[remoteId] = n;

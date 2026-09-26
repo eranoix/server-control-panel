@@ -1580,7 +1580,7 @@ function app() {
       // They resolve synonyms/terms the label does not have: 'limpeza'->Prune,
       // 'dev/shell'->Terminal, 'senhas'->Secrets. Accents are already handled by _norm.
       pages: [
-        {label:'Dashboard',           kind:'page', page:'dashboard',  hint:'g+d', kw:'inicio home visao geral painel'},
+        {label:'Dashboard',           kind:'page', page:'dashboard',  hint:'g+d', kw:'inicio home visao geral panel'},
         {label:'History',           kind:'page', page:'history',    hint:'g+h', kw:'history charts series'},
         {label:'Alerts',             kind:'page', page:'alerts',     hint:'g+l', kw:'alerts alarmes avisos rules'},
         {label:'Metrics',            kind:'page', page:'metrics',                kw:'metrics cpu memoria ram disco carga'},
@@ -1792,10 +1792,10 @@ function app() {
     // saved from back then carries that name in localStorage; without migrating it
     // ON READ, the button disappears from their bar (the saved list beats the
     // default). Map it and move on.
-    termBarButtons: (function(){ const PADRAO = ['aa','clear','reconnect','sessoes','hide'];
+    termBarButtons: (function(){ const DEFAULTS = ['aa','clear','reconnect','sessoes','hide'];
       try { const v = JSON.parse(localStorage.getItem('vpsm_term_bar')||'null');
-        return Array.isArray(v) ? v.map(k => k === 'tmux' ? 'sessoes' : k) : PADRAO.slice();
-      } catch(_) { return PADRAO.slice(); } })(),
+        return Array.isArray(v) ? v.map(k => k === 'tmux' ? 'sessoes' : k) : DEFAULTS.slice();
+      } catch(_) { return DEFAULTS.slice(); } })(),
     // PWA: captures beforeinstallprompt so we can show a custom "Install app" button.
     // On iOS the native prompt does not exist — we show manual instructions instead.
     pwaPrompt: null,
@@ -3115,7 +3115,7 @@ function app() {
     // who wants something the dropdowns do not cover).
 
     GS_DOW: [
-      { v: 0, label: 'domingo' }, { v: 1, label: 'segunda' }, { v: 2, label: 'terca' },
+      { v: 0, label: 'domingo' }, { v: 1, label: 'second' }, { v: 2, label: 'terca' },
       { v: 3, label: 'quarta' }, { v: 4, label: 'quinta' }, { v: 5, label: 'sexta' },
       { v: 6, label: 'sabado' },
     ],
@@ -3400,7 +3400,7 @@ function app() {
 
     // Categories in the order that makes sense to a player, not alphabetically.
     gameTrainerCategories() {
-      const ordem = ['Jogador', 'Dano e Defesa', 'Inventário', 'Inventario',
+      const order = ['Jogador', 'Dano e Defesa', 'Inventário', 'Inventario',
                      'Estatísticas', 'Estatisticas'];
       const cats = [];
       for (const c of this.games.trCatalog) {
@@ -3408,7 +3408,7 @@ function app() {
         if (!cats.includes(c.category)) cats.push(c.category);
       }
       return cats.sort((a, b) => {
-        const ia = ordem.indexOf(a), ib = ordem.indexOf(b);
+        const ia = order.indexOf(a), ib = order.indexOf(b);
         return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
       });
     },
@@ -4193,7 +4193,7 @@ function app() {
 
       w('aiTab',         (v) => { if (self.currentView === 'ai')         self._telSub('dev.ai.' + v); });
       w('jiraView',      (v) => { if (self.currentView === 'manutencao') self._telSub('operacoes.tarefas.jira.' + v); });
-      w('jiraDetailTab', (v) => { if (self.currentView === 'manutencao') self._telSub('operacoes.tarefas.jira.detalhe.' + v); });
+      w('jiraDetailTab', (v) => { if (self.currentView === 'manutencao') self._telSub('operacoes.tarefas.jira.detail.' + v); });
       w('git.view',      (v) => { self._telSub('operacoes.git.' + v); });
       w('git.inspect.kind', (v) => { self._telSub('operacoes.git.' + v); });
       w('git.prView',    (v) => { self._telSub('operacoes.git.prs.' + v); });
@@ -9364,7 +9364,7 @@ function app() {
     async uploadFiles(files){ if(!files||!files.length) return; this.fileBusy=true; const dir=this.fileList?.path||'/'; let ok=0,fail=0; for(const f of files){ try{ const fd=new FormData(); fd.append('file',f); const r=await this.api('/api/files/upload?path='+encodeURIComponent(dir),{method:'POST',body:fd}); const d=await r.json(); if(d.ok) ok++; else fail++; }catch(e){fail++;} } this.fileBusy=false; this.showToast(`upload: ${ok} ok, ${fail} failed`,fail?'err':'ok'); this.refresh(); },
     async downloadEntry(name){ const p=this.absPath(name); try{ const r=await this.api('/api/files/download?path='+encodeURIComponent(p)); const blob=await r.blob(); const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(u),5000); }catch(e){ this.showToast('download error: '+e.message,'err'); } },
     async previewEntry(e){ const p=this.absPath(e.name); const l=e.name.toLowerCase(); let kind='other'; if(l.match(/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/)) kind='image'; else if(l.match(/\.(mp4|webm|mkv|mov)$/)) kind='video'; else if(l.match(/\.(mp3|wav|ogg|flac|m4a)$/)) kind='audio'; else if(l.endsWith('.pdf')) kind='pdf'; try{ const r=await this.api('/api/files/preview?path='+encodeURIComponent(p)); const blob=await r.blob(); this.filePreview={ url: URL.createObjectURL(blob), name: e.name, kind }; }catch(err){ this.showToast('preview unavailable: '+err.message,'err'); } },
-    async renamePrompt(name){ const novo=await this.askInput({ title:'Rename', label:'Rename to:', value:name }); if(!novo||novo===name) return; const from=this.absPath(name), to=this.absPath(novo); try{ const r=await this.api('/api/files/rename',{method:'POST',body:JSON.stringify({from,to})}); const d=await r.json(); if(d.ok){this.showToast('renomeado','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
+    async renamePrompt(name){ const fresh=await this.askInput({ title:'Rename', label:'Rename to:', value:name }); if(!fresh||fresh===name) return; const from=this.absPath(name), to=this.absPath(fresh); try{ const r=await this.api('/api/files/rename',{method:'POST',body:JSON.stringify({from,to})}); const d=await r.json(); if(d.ok){this.showToast('renomeado','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
     async trashEntry(name){ if(!(await this.confirmAsync('Move '+name+' to the trash?'))) return; const path=this.absPath(name); try{ const r=await this.api('/api/files/trash',{method:'POST',body:JSON.stringify({path})}); const d=await r.json(); if(d.ok){this.showToast('moved to trash','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
     // Honest toast for batch operations: green only when EVERYTHING passed,
     // a warning on partial, an error when nothing passed — always saying how many.
@@ -11037,10 +11037,10 @@ function app() {
               if (state.ws && state.ws.readyState === 1) return;   // already back
               state.reconnect.noticed = true;
               const secs = Math.round((Date.now() - (state.reconnect.downSince || Date.now()))/1000);
-              const texto = state._restarting
+              const text = state._restarting
                 ? '[server update taking longer than usual — '+secs+'s; reconnecting…]'
                 : '['+codeMsg+' — no connection for '+secs+'s, reconnecting… click ↻ to try now]';
-              try { state.term.write('\r\n\x1b[33m'+texto+'\x1b[0m\r\n'); } catch(_){}
+              try { state.term.write('\r\n\x1b[33m'+text+'\x1b[0m\r\n'); } catch(_){}
             }, QUIET_MS);
           }
           state.reconnect.timer = setTimeout(open, delay);
@@ -11135,8 +11135,8 @@ function app() {
     },
     // A light record of what the primer did — it shows in the diagnostic pill of the
     // pill and in the problem report, without polluting the screen.
-    _markPrimer(state, texto){
-      state._primerInfo = texto;
+    _markPrimer(state, text){
+      state._primerInfo = text;
     },
 
     // ------------------ Pane container (host terminal) ------------------
@@ -12255,9 +12255,9 @@ function app() {
       }
       // Guard 2: writing empty over something that was NOT empty is
       // destructive and almost always accidental. It asks for explicit confirmation.
-      const novo = String(this.cron.content || '');
+      const fresh = String(this.cron.content || '');
       const old = String(this.cron.serverContent || '');
-      if (!novo.trim() && old.trim()) {
+      if (!fresh.trim() && old.trim()) {
         const linhas = old.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
         const ok = await this.confirmAsync(
           'Delete the WHOLE root crontab?\n\nYou are saving empty content over '
@@ -12268,11 +12268,11 @@ function app() {
       }
       this.cron.saving = true;
       try {
-        const r = await this.api('/api/system/cron', {method:'POST', body: JSON.stringify({content: novo})});
+        const r = await this.api('/api/system/cron', {method:'POST', body: JSON.stringify({content: fresh})});
         const d = await r.json();
         if (d.error) { this.showToast('crontab rejected: '+d.error, 'err'); return; }
         // Saved: the server now holds this content — it becomes the new baseline.
-        this.cron.serverContent = novo;
+        this.cron.serverContent = fresh;
         this.showToast('crontab saved','ok');
       } catch(e){ this.showToast('error saving the crontab: '+e.message,'err'); }
       finally { this.cron.saving = false; }
@@ -13486,8 +13486,8 @@ function app() {
         case 'reconnect': this.hostTermReconnectNow(); break;
         case 'rename': {
           (async () => {
-            const novo = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic):', value: pane.sessionName || '' })) || '').trim();
-            if (novo) { pane.sessionName = novo; this.renderPaneLayout(); this.saveState(); }
+            const fresh = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic):', value: pane.sessionName || '' })) || '').trim();
+            if (fresh) { pane.sessionName = fresh; this.renderPaneLayout(); this.saveState(); }
           })();
           break;
         }
@@ -13516,7 +13516,7 @@ function app() {
                       '<button class="pane-load" title="Load a session into this panel" style="opacity:0.6;padding:0 4px;">📋</button>' +
                       '<button class="pane-split-h" title="Split horizontal (stacks panes)" style="opacity:0.6;padding:0 4px;">⬓</button>' +
                       '<button class="pane-split-v" title="Split vertical (side by side)" style="opacity:0.6;padding:0 4px;">⬔</button>' +
-                      '<button class="pane-close" title="Fechar painel" style="opacity:0.6;padding:0 4px;color:#f43f5e;">✕</button>';
+                      '<button class="pane-close" title="Fechar panel" style="opacity:0.6;padding:0 4px;color:#f43f5e;">✕</button>';
       // Button listeners. Stop propagation on mousedown so the wrap does not
       // capture it (a re-render destroyed the button before the click). Buttons carry
       // draggable=false to stop the draggable of the bar from stealing the gesture.
@@ -13765,8 +13765,8 @@ function app() {
       if (this._lastTyping && (now - this._lastTyping) < 10 * 60 * 1000) return false;
       // Nothing may be sitting in the outgoing queue: reloading would discard what the
       // user typed during an outage and that has not gone up yet.
-      const pendente = (this.terms.panes || []).some(p => p._outbox && p._outbox.length);
-      if (pendente) return false;
+      const pending = (this.terms.panes || []).some(p => p._outbox && p._outbox.length);
+      if (pending) return false;
       // Uploads in flight and open dialogs also mean live work.
       if (document.querySelector('[role="dialog"]')) return false;
       clearInterval(this._reloadTimer); this._reloadTimer = null;
@@ -13871,9 +13871,9 @@ function app() {
     _looksLikePasswordLine(pane){
       try {
         const buf = pane.term.buffer.active;
-        const linha = buf.getLine(buf.baseY + buf.cursorY);
-        if (!linha) return true;
-        const txt = linha.translateToString(true);
+        const line = buf.getLine(buf.baseY + buf.cursorY);
+        if (!line) return true;
+        const txt = line.translateToString(true);
         // Two conditions, because one alone gets it wrong: real prompts almost always END
         // in ':' or '?' ("[sudo] password for sam:", "Enter passphrase for key
         // '/root/.ssh/id_rsa':", "Password:"), but the keyword can be far
@@ -13910,8 +13910,8 @@ function app() {
     _predictEcho(pane, d){
       if (!this._canPredict(pane, d)) return;
       const term = pane.term, buf = term.buffer.active;
-      const p = pane._pred || (pane._pred = { txt:'', col:0, linha:0 });
-      if (!p.txt) { p.col = buf.cursorX; p.linha = buf.baseY + buf.cursorY; }
+      const p = pane._pred || (pane._pred = { txt:'', col:0, line:0 });
+      if (!p.txt) { p.col = buf.cursorX; p.line = buf.baseY + buf.cursorY; }
       if (buf.cursorX + d.length >= term.cols - 1) return;
       p.txt += d;
       try { term.write('\x1b[2m' + d + '\x1b[22m'); } catch(_){ p.txt = ''; return; }
@@ -13965,7 +13965,7 @@ function app() {
       if (!buf || buf.type === 'alternate') { p.txt = ''; return; }
       // The server changed line (Enter, scroll, repaint): the guess lost its
       // anchor and dies here — whatever is in flight shows up when it echoes.
-      if ((buf.baseY + buf.cursorY) !== p.linha) { p.txt = ''; return; }
+      if ((buf.baseY + buf.cursorY) !== p.line) { p.txt = ''; return; }
       const advance = buf.cursorX - p.col;
       if (advance < 0) { p.txt = ''; return; }
       const rest = p.txt.slice(advance);
@@ -15021,8 +15021,8 @@ function app() {
           break;
         case 'rename': {
           (async () => {
-            const novo = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic — the session keeps its name):', value: pane.sessionName || '' })) || '').trim();
-            if (novo) { pane.sessionName = novo; this.renderPaneLayout(); this.saveState(); }
+            const fresh = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic — the session keeps its name):', value: pane.sessionName || '' })) || '').trim();
+            if (fresh) { pane.sessionName = fresh; this.renderPaneLayout(); this.saveState(); }
           })();
           break;
         }
@@ -15408,8 +15408,8 @@ function app() {
     // Renames (cosmetically) the name of the panel. Used by the tab manager and the radial menu.
     async renamePane(pane){
       if (!pane) return;
-      const novo = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic — the session keeps its name):', value: pane.sessionName || '' })) || '').trim();
-      if (novo) { pane.sessionName = novo; this.renderPaneLayout(); this.saveState(); }
+      const fresh = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic — the session keeps its name):', value: pane.sessionName || '' })) || '').trim();
+      if (fresh) { pane.sessionName = fresh; this.renderPaneLayout(); this.saveState(); }
     },
     hostTermClear(){ const p = this.activePane(); if (p && p.term) p.term.clear(); },
     toggleFocusMode(){
@@ -15858,8 +15858,8 @@ function app() {
         case 'pane-rename': {
           if (!pane) break;
           (async () => {
-            const novo = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic — the server keeps the name):', value: pane.sessionName || '' })) || '').trim();
-            if (novo) { pane.sessionName = novo; this.renderPaneLayout(); this.saveState(); }
+            const fresh = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic — the server keeps the name):', value: pane.sessionName || '' })) || '').trim();
+            if (fresh) { pane.sessionName = fresh; this.renderPaneLayout(); this.saveState(); }
           })();
           break;
         }
@@ -16617,9 +16617,9 @@ function app() {
         const fs = inp.files;
         // Reset BEFORE uploading: picking the same file twice in a row does not
         // fire 'change' if the value stays filled in.
-        const copia = Array.from(fs || []);
+        const copy = Array.from(fs || []);
         inp.value = '';
-        if (copia.length) this._sendFilesToPane(state, copia).catch(()=>{});
+        if (copy.length) this._sendFilesToPane(state, copy).catch(()=>{});
       };
       inp.click();
     },

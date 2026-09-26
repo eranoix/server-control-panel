@@ -24,8 +24,8 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
-const alvo = process.argv[2] || join(raiz, 'internal/webassets/web/index.html');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const alvo = process.argv[2] || join(root, 'internal/webassets/web/index.html');
 const html = readFileSync(alvo, 'utf8');
 
 let pass = 0, fail = 0;
@@ -45,7 +45,7 @@ if (!chrome) { console.log('  ⚠ no Chrome — test skipped (not a failure)'); 
 // 14px outside the viewport in a test meant to reflect the real screen.
 let reset = '';
 for (const cand of [join(dirname(alvo), 'tailwind.css'),
-                    join(raiz, 'internal/webassets/web/tailwind.css')]) {
+                    join(root, 'internal/webassets/web/tailwind.css')]) {
   try { reset = readFileSync(cand, 'utf8'); break; } catch {}
 }
 reset

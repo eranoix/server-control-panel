@@ -19,8 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 
-const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
-const alvo = process.argv[2] || join(raiz, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const alvo = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
 const src = readFileSync(alvo, 'utf8');
 
 let pass = 0, fail = 0;
@@ -52,7 +52,7 @@ const filesBody  = extract('_clipboardFiles', ['ev']);
 }
 
 // ── Browser ─────────────────────────────────────────────────────────────────
-const require_ = createRequire(join(raiz, '.tools', 'package.json'));
+const require_ = createRequire(join(root, '.tools', 'package.json'));
 let chromium;
 try { ({ chromium } = require_('playwright-core')); }
 catch { console.error('FAILED: playwright-core missing from .tools/ — this pin needs a browser.'); process.exit(1); }
@@ -72,7 +72,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
 const page = await browser.newPage();
 await page.setContent('<div id="el"><textarea class="xterm-helper-textarea"></textarea></div>');
 
-const resultado = await page.evaluate(({ guardBody, filesBody }) => {
+const result = await page.evaluate(({ guardBody, filesBody }) => {
   // Rebuild the app around the TWO real methods from the product.
   const app = {
     _pasteHandled: new Function('ev', 'files', guardBody),
@@ -104,10 +104,10 @@ const resultado = await page.evaluate(({ guardBody, filesBody }) => {
     rise(files);
   });
 
-  const evPaste = (files, texto) => {
+  const evPaste = (files, text) => {
     const dt = new DataTransfer();
     for (const [nome, tipo] of files) dt.items.add(new File(['x'], nome, { type: tipo }));
-    if (texto !== undefined) dt.setData('text/plain', texto);
+    if (text !== undefined) dt.setData('text/plain', text);
     return new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
   };
 
@@ -161,29 +161,29 @@ const resultado = await page.evaluate(({ guardBody, filesBody }) => {
 
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-eq(resultado.umPaste, ['shot.png'])
+eq(result.umPaste, ['shot.png'])
   ? ok('one pasted screenshot = one upload')
-  : no('one pasted screenshot should upload 1 file, it uploaded: ' + JSON.stringify(resultado.umPaste));
+  : no('one pasted screenshot should upload 1 file, it uploaded: ' + JSON.stringify(result.umPaste));
 
-eq(resultado.withIntruder, ['intruso.png'])
+eq(result.withIntruder, ['intruso.png'])
   ? ok('the bug topology (capture on the ancestor + capture on the descendant) yields a single upload')
-  : no('the bug topology yielded ' + resultado.withIntruder.length + ' uploads: ' + JSON.stringify(resultado.withIntruder));
+  : no('the bug topology yielded ' + result.withIntruder.length + ' uploads: ' + JSON.stringify(result.withIntruder));
 
-eq(resultado.withText, [])
+eq(result.withText, [])
   ? ok('a paste with text/plain (Excel/Word) stays text, no upload')
-  : no('a paste with text uploaded a file: ' + JSON.stringify(resultado.withText));
+  : no('a paste with text uploaded a file: ' + JSON.stringify(result.withText));
 
-eq(resultado.twoEvents, ['dup.png'])
+eq(result.twoEvents, ['dup.png'])
   ? ok('two distinct events with the same content inside the window = one upload')
-  : no('two events with the same content yielded: ' + JSON.stringify(resultado.twoEvents));
+  : no('two events with the same content yielded: ' + JSON.stringify(result.twoEvents));
 
-eq(resultado.twoDifferent, ['a.png', 'b.png'])
+eq(result.twoDifferent, ['a.png', 'b.png'])
   ? ok('different files in sequence both go up (the guard is not blind)')
-  : no('different files yielded: ' + JSON.stringify(resultado.twoDifferent));
+  : no('different files yielded: ' + JSON.stringify(result.twoDifferent));
 
-eq(resultado.multi, ['x.pdf', 'y.csv'])
+eq(result.multi, ['x.pdf', 'y.csv'])
   ? ok('multi-file in a single paste uploads all of them')
-  : no('multi-file yielded: ' + JSON.stringify(resultado.multi));
+  : no('multi-file yielded: ' + JSON.stringify(result.multi));
 
 await browser.close();
 console.log(`\n${pass} passed, ${fail} failed`);

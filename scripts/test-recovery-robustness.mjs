@@ -10,8 +10,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
-const html = readFileSync(join(raiz, 'internal/webassets/web/recovery-term.html'), 'utf8');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const html = readFileSync(join(root, 'internal/webassets/web/recovery-term.html'), 'utf8');
 const script = (html.match(/<script>([\s\S]*?)<\/script>/) || [])[1];
 
 let pass = 0, fail = 0;
@@ -79,7 +79,7 @@ function buildCtx({ comXterm }) {
   const doc = {
     getElementById: (id) => (elements[id] ||= newEl(id)),
     querySelector: (sel) => (elements['sel:' + sel] ||= newEl(sel)),
-    createElement: (tag) => { const e = newEl('novo:' + tag); e.tag = tag; created.push(e); return e; },
+    createElement: (tag) => { const e = newEl('fresh:' + tag); e.tag = tag; created.push(e); return e; },
     addEventListener: (ev, f) => { (listeners[ev] ||= []).push(f); },
     cookie: 'vpsm_recovery_user=sam',
     hidden: false,
@@ -177,10 +177,10 @@ function run(ctx) {
       // wrong, the '\r' of the CRLF erases the whole line — shell output vanishes.
       // (the scrollback of the engine accumulates on purpose — we check the suffix)
       const antes = pre.textContent;
-      api.host.term.write('primeira\r');
+      api.host.term.write('first\r');
       api.host.term.write('\nsegunda\r\n');
       const t2 = pre.textContent.slice(antes.length);
-      (t2 === 'primeira\nsegunda\n')
+      (t2 === 'first\nsegunda\n')
         ? ok('no xterm: a CRLF split across two chunks does not swallow the line')
         : no('a split CRLF corrupted the output: ' + JSON.stringify(t2));
     } else no('the simple mode created no output <pre>');

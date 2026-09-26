@@ -78,13 +78,13 @@ func Run(t *testing.T, script string, env ...string) {
 // confere applies the same verdict to both runners, including the vacuity
 // guard: a harness that prints no PASS may have exited 0 without running a
 // single assertion (broken import, empty file, early return).
-func verify(t *testing.T, script, texto string, err error) {
+func verify(t *testing.T, script, text string, err error) {
 	t.Helper()
 	if err != nil {
-		t.Errorf("%s reprovou:\n%s", script, texto)
+		t.Errorf("%s reprovou:\n%s", script, text)
 		return
 	}
-	if !strings.Contains(texto, "PASS") {
-		t.Errorf("%s saiu com código 0 mas não imprimiu PASS — provavelmente não asseverou nada:\n%s", script, texto)
+	if !strings.Contains(text, "PASS") {
+		t.Errorf("%s saiu com código 0 mas não imprimiu PASS — provavelmente não asseverou nada:\n%s", script, text)
 	}
 }

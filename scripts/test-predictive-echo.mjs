@@ -16,8 +16,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
-const alvo = process.argv[2] || join(raiz, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const alvo = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
 const src = readFileSync(alvo, 'utf8');
 
 let pass = 0, fail = 0;
@@ -43,7 +43,7 @@ const app = {
 };
 
 // Fake terminal with a cursor and a single line — all the prediction consults.
-function newPane({ linha = '$ ', cursorX = 2, tipo = 'normal', eco = 300, cols = 80 } = {}) {
+function newPane({ line = '$ ', cursorX = 2, tipo = 'normal', eco = 300, cols = 80 } = {}) {
   const written = [];
   const pane = {
     eco, written,
@@ -52,7 +52,7 @@ function newPane({ linha = '$ ', cursorX = 2, tipo = 'normal', eco = 300, cols =
       write(x){ written.push(x); },
       buffer: { active: {
         type: tipo, baseY: 0, cursorY: 0, cursorX,
-        getLine: () => ({ translateToString: () => linha }),
+        getLine: () => ({ translateToString: () => line }),
       } },
     },
   };
@@ -73,7 +73,7 @@ const output = (p) => p.written.join('');
 {
   const cases = [
     ['alternate screen (vim/htop repaints the whole screen)', newPane({ tipo: 'alternate' })],
-    ['password prompt on the cursor line',              newPane({ linha: '[sudo] password for sam:' })],
+    ['password prompt on the cursor line',              newPane({ line: '[sudo] password for sam:' })],
     ['good network (below the threshold the risk is not worth it)', newPane({ eco: 20 })],
     ['edge of the line (\\b does not move up a line)',         newPane({ cursorX: 79 })],
   ];

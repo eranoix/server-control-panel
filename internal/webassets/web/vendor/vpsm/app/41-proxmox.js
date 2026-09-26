@@ -117,7 +117,7 @@
         storage: null,      // { pools, datastore_audit:{value,observed_at}, age_seconds, stale }
         zfs: null,          // { pools, age_seconds, stale }
         perms: null,        // { permissions, storage_visivel }
-        permsAberto: false,
+        permsOpen: false,
         snaps: [],
         newSnap: '',       // name typed for the new snapshot
         guestSel: '',       // guest id ("lxc/204")
@@ -132,7 +132,7 @@
         segment: '',       // active health-band segment; '' = none
         sel: [],            // ids selected for bulk action
         open: '',         // id of the node whose side panel is open
-        detalhe: null,      // { node, services, deployments, jobs } of the open node
+        detail: null,      // { node, services, deployments, jobs } of the open node
         // 🔴 `rolando` is a BOOLEAN armed by setTimeout, never an instant.
         // The temptation was to store "do not refresh until T" and compare it with
         // the clock — and this file reads no clock at all, because the rule that
@@ -564,12 +564,12 @@
       // between calm and panic.
       pvxLifespan(d) {
         if (!d || d.wearout_pct === null || d.wearout_pct === undefined) {
-          return { measured: false, texto: 'not reported', motivo: 'this disk exposes no wear indicator (common on spinning disks and USB enclosures)' };
+          return { measured: false, text: 'not reported', motivo: 'this disk exposes no wear indicator (common on spinning disks and USB enclosures)' };
         }
         const pct = Number(d.wearout_pct);
         return {
           measured: true, pct,
-          texto: pct.toFixed(0) + '% of life left',
+          text: pct.toFixed(0) + '% of life left',
           motivo: 'SMART: ' + (100 - pct).toFixed(0) + '% of the endurance already used',
         };
       },
@@ -589,14 +589,14 @@
       // most needs the screen to be right.
       pvxRedundancy(nomePool) {
         const t = this.pvxTopologyOf(nomePool);
-        if (!t) return { known: false, texto: 'topology not read', style: 'background:#64748b22;color:#94a3b8;border:1px solid #64748b66' };
+        if (!t) return { known: false, text: 'topology not read', style: 'background:#64748b22;color:#94a3b8;border:1px solid #64748b66' };
         if (t.redundante) {
           const types = [...new Set((t.vdevs || []).filter((v) => v.redundante).map((v) => v.tipo))];
-          return { known: true, isProtected: true, texto: types.join(' + ') + ' · survives the loss of one disk',
+          return { known: true, isProtected: true, text: types.join(' + ') + ' · survives the loss of one disk',
                    style: 'background:#22c55e22;color:#22c55e;border:1px solid #22c55e66' };
         }
         return { known: true, isProtected: false,
-                 texto: t.n_dispositivos === 1 ? 'single disk · NO redundancy' : t.n_dispositivos + ' striped disks · NO redundancy',
+                 text: t.n_dispositivos === 1 ? 'single disk · NO redundancy' : t.n_dispositivos + ' striped disks · NO redundancy',
                  style: 'background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b66' };
       },
       // Error counters. In a pool with no mirror, any non-zero one is lost data:
@@ -604,7 +604,7 @@
       pvxPoolErrors(nomePool) {
         const t = this.pvxTopologyOf(nomePool);
         if (!t) return { known: false };
-        return { known: true, n: t.erros_contados || 0, texto: t.erros || '' };
+        return { known: true, n: t.erros_contados || 0, text: t.erros || '' };
       },
       pvxPoolDevices(nomePool) {
         const t = this.pvxTopologyOf(nomePool);
@@ -823,7 +823,7 @@
         // The topology serves ALL THREE storage tabs: it is what ties physical disk,
         // pool and datastore into a single story.
         if ((aba === 'zfs' || aba === 'discos' || aba === 'storage') && !this.pvx.loaded.topology) this.pvxLoadTopology();
-        if (aba === 'perms' && !this.pvx.perms && !this.pvx.permsAberto) this.pvxLoadPerms();
+        if (aba === 'perms' && !this.pvx.perms && !this.pvx.permsOpen) this.pvxLoadPerms();
         if (aba === 'charts') this.pvxLoadSeries();
         if ((aba === 'rede' || aba === 'sistema') && !this.pvx.loaded.sistema) this.pvxLoadSystem();
         // The HOST Summary shows the timezone, and the timezone comes from /sistema.
@@ -932,7 +932,7 @@
         if (ds.erro) return { known: false, erro: ds.erro };
         if (!ds.total) return { known: true, vazio: true };
         const seg = Math.max(0, Number(d.observed_at) - Number(ds.ultimo_ctime));
-        return { known: true, vazio: false, seg, texto: this.pvxFormatAge(seg) };
+        return { known: true, vazio: false, seg, text: this.pvxFormatAge(seg) };
       },
       // The threshold is per datastore because the layers have different cadences: PBS
       // runs every day, the external-HD rotation is "whenever I remember to swap the
@@ -962,7 +962,7 @@
         const h = i.seg / 3600;
         const cor = h <= limitH ? '#22c55e' : h <= limitH * 2 ? '#f59e0b' : '#ef4444';
         return {
-          key: 'active', label: i.texto, cor,
+          key: 'active', label: i.text, cor,
           nota: ds.agendamento === 'fora-do-pve'
             ? 'scheduled outside PVE — the panel does not know by whom'
             : (ds.schedule ? 'daily at ' + ds.schedule : ''),
@@ -1293,8 +1293,8 @@
       // ---- permissions -----------------------------------------------------
 
       async pvxLoadPerms() {
-        this.pvx.permsAberto = !this.pvx.permsAberto;
-        if (!this.pvx.permsAberto || this.pvx.perms) return;
+        this.pvx.permsOpen = !this.pvx.permsOpen;
+        if (!this.pvx.permsOpen || this.pvx.perms) return;
         try {
           const r = await this.api('/api/proxmox/permissions');
           this.pvx.perms = await r.json();
@@ -1704,8 +1704,8 @@
       // the whole term. Discarding the restriction nobody understood would return MORE
       // rows than the operator asked for, silently — the worst possible error in a
       // filter, because the list looks like it obeyed.
-      pvxFilterNodes(list, texto, segment, stateOf) {
-        const terms = String(texto || '').toLowerCase().split(/\s+/).filter(Boolean);
+      pvxFilterNodes(list, text, segment, stateOf) {
+        const terms = String(text || '').toLowerCase().split(/\s+/).filter(Boolean);
         return (list || []).filter(function (n) {
           if (segment && stateOf(n) !== segment) return false;
           const st = (n.status && n.status.value) || '';
@@ -1766,14 +1766,14 @@
         // `sumiu` goes at the END, next to `parado`: the band is read left to right by
         // urgency, and a node that left the hypervisor does not compete with a critical
         // one.
-        const ordem = ['vencido', 'sem-credencial', 'critico', 'atencao', 'parado', 'gone', 'ok'];
+        const order = ['vencido', 'sem-credencial', 'critico', 'atencao', 'parado', 'gone', 'ok'];
         const count = {};
-        ordem.forEach(function (k) { count[k] = 0; });
+        order.forEach(function (k) { count[k] = 0; });
         (list || []).forEach(function (n) {
           const e = stateOf(n);
           if (count[e] !== undefined) count[e]++;
         });
-        return ordem.map(function (k) { return { key: k, n: count[k] }; });
+        return order.map(function (k) { return { key: k, n: count[k] }; });
       },
 
       // ---- the confirmation ladder, in three rungs -----------------------
@@ -2235,8 +2235,8 @@
 
       // 🔴 EVERY filter change goes through here, and that is why the re-scoping cannot
       // be forgotten on one of the paths: there is no second path.
-      pvxSetFilter(texto) {
-        this.pvx.filter = texto;
+      pvxSetFilter(text) {
+        this.pvx.filter = text;
         this.pvx.sel = this.pvxReescopa(this.pvx.sel, this.pvxFilteredNodes());
       },
       pvxSetSegment(key) {
@@ -2288,9 +2288,9 @@
 
       pvxGauge(n, which) {
         const pct = pvxGaugePct(n, which);
-        const vivo = this.pvxGaugeLive(n);
+        const live = this.pvxGaugeLive(n);
         if (pct === null) {
-          return { measured: false, vivo, pct: 0, tier: 'ok', texto: '—', motivo: pvxNoMeasureReason(n, which) };
+          return { measured: false, live, pct: 0, tier: 'ok', text: '—', motivo: pvxNoMeasureReason(n, which) };
         }
         // 🔴 The hysteresis memory does NOT live in Alpine’s state, and that is no
         // detail: `pvxGauge` is called from inside rendering expressions (x-text,
@@ -2302,10 +2302,10 @@
         const key = (n.id || '') + ':' + which;
         const tier = this.pvxTier(pct, tiersDeHisterese.get(key));
         tiersDeHisterese.set(key, tier);
-        return { measured: true, vivo, pct, tier, texto: pvxGaugeText(this, n, which, pct), motivo: '' };
+        return { measured: true, live, pct, tier, text: pvxGaugeText(this, n, which, pct), motivo: '' };
       },
       pvxGaugeColor(m) {
-        if (!m || !m.measured || !m.vivo) return '#64748b';
+        if (!m || !m.measured || !m.live) return '#64748b';
         return m.tier === 'critico' ? '#ef4444' : (m.tier === 'atencao' ? '#f59e0b' : '#22c55e');
       },
       pvxGaugeStyle(m) {
@@ -2363,12 +2363,12 @@
         if (this.pvx.open === n.id) { this.pvxClose(); return; }
         this.pvxCloseConsole();
         this.pvx.open = n.id;
-        this.pvx.detalhe = null;
+        this.pvx.detail = null;
         this.pvx.snaps = [];
         this.pvx.guestSel = (n.kind === 'guest' && n.vmid > 0) ? n.id : '';
         try {
           const r = await this.api('/api/nodes/' + n.id);
-          this.pvx.detalhe = await r.json().catch(() => null);
+          this.pvx.detail = await r.json().catch(() => null);
         } catch (e) {
           this.pvx.lastError = this._errText(e);
         }
@@ -2388,7 +2388,7 @@
       pvxClose() {
         this.pvxCloseConsole();
         this.pvx.open = '';
-        this.pvx.detalhe = null;
+        this.pvx.detail = null;
         this.pvx.snaps = [];
         this.pvx.guestSel = '';
       },

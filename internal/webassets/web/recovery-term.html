@@ -80,7 +80,7 @@
   }
   .tabs button.on { background: #0a0e1a; border-color: #1f2937; color: #e5e7eb; }
   .tabs .hint { margin-left: auto; font-size: .68rem; color: #6b7280; padding-bottom: .35rem; }
-  .painel { flex: 1; padding: .5rem; overflow: hidden; }
+  .panel { flex: 1; padding: .5rem; overflow: hidden; }
   .aviso { flex: 1; display: flex; flex-direction: column; align-items: center;
            justify-content: center; gap: .9rem; text-align: center; padding: 2rem; }
   .aviso h3 { margin: 0; font-size: 1rem; }
@@ -180,8 +180,8 @@
   </div>
   <pre id="console-txt"></pre>
 </div>
-<div id="term" class="painel"></div>
-<div id="term-claude" class="painel" hidden></div>
+<div id="term" class="panel"></div>
+<div id="term-claude" class="panel" hidden></div>
 <!-- Shown when the Claude container is not up. In an emergency,
      "it will not connect" without saying why is the worst possible outcome — so
      the tab says what happened and offers the action that fixes it. -->
@@ -302,7 +302,7 @@ function createSimpleEngine() {
 
   const dec = new TextDecoder('utf-8', { fatal: false });
   const CAP = 200 * 1024;          // scrollback: ceiling so the tab does not grow forever
-  let texto = '';
+  let text = '';
   let aoDado = null, aoResize = null;
   let cols = 80, rows = 24;
 
@@ -312,7 +312,7 @@ function createSimpleEngine() {
   // feels like, and that boundary lands inside a CRLF very easily.
   let crPending = false;
   function carriageReturn() {      // back to the start of the line: whatever comes next overwrites
-    texto = texto.slice(0, texto.lastIndexOf('\n') + 1);
+    text = text.slice(0, text.lastIndexOf('\n') + 1);
   }
   function apply(s) {
     s = String(s).replace(RE_ANSI, '');
@@ -323,19 +323,19 @@ function createSimpleEngine() {
       // line — all the shell's normal output vanished from the screen.
       if (s[0] === '\n') s = s.slice(1);
       else carriageReturn();
-      texto += '\n';
+      text += '\n';
     }
     if (s.endsWith('\r')) { crPending = true; s = s.slice(0, -1); }
     s = s.replace(/\r\n/g, '\n');
     // Fast path: the overwhelming majority of chunks have no loose \r and no \b.
-    if (s.indexOf('\r') < 0 && s.indexOf('\b') < 0 && s.indexOf('\x07') < 0) { texto += s; return; }
+    if (s.indexOf('\r') < 0 && s.indexOf('\b') < 0 && s.indexOf('\x07') < 0) { text += s; return; }
     for (let i = 0; i < s.length; i++) {
       const c = s[i];
       if (c === '\r') carriageReturn();
       else if (c === '\b') {
-        if (texto.length && texto[texto.length - 1] !== '\n') texto = texto.slice(0, -1);
+        if (text.length && text[text.length - 1] !== '\n') text = text.slice(0, -1);
       } else if (c === '\x07') {   // bell
-      } else texto += c;
+      } else text += c;
     }
   }
 
@@ -349,8 +349,8 @@ function createSimpleEngine() {
     write(dados, cb) {
       try {
         apply(typeof dados === 'string' ? dados : dec.decode(dados, { stream: true }));
-        if (texto.length > CAP) texto = texto.slice(-CAP);
-        pre.textContent = texto;
+        if (text.length > CAP) text = text.slice(-CAP);
+        pre.textContent = text;
         // Only sticks to the bottom if the operator was already at the bottom —
         // otherwise reading the history during continuous output would be impossible.
         const noFim = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
@@ -365,14 +365,14 @@ function createSimpleEngine() {
     // Buffer shim: only what the client actually queries (password prompt detection).
     buffer: { active: {
       type: 'normal', baseY: 0, cursorY: 0,
-      get cursorX() { return texto.length - texto.lastIndexOf('\n') - 1; },
+      get cursorX() { return text.length - text.lastIndexOf('\n') - 1; },
       getLine() {
-        const l = texto.slice(texto.lastIndexOf('\n') + 1);
+        const l = text.slice(text.lastIndexOf('\n') + 1);
         return { translateToString: () => l };
       },
     } },
     // Hands the screen back for the evidence (xterm has the equivalent by sweeping the buffer).
-    _capture() { return texto; },
+    _capture() { return text; },
   };
 
   function send(d) { if (aoDado) { try { aoDado(d); } catch (_) {} } }
@@ -415,9 +415,9 @@ let ws = null;
 
 const st = {
   attempts: 0, timerRecon: 0, hb: 0, lastMsg: 0, pingEm: 0,
-  queue: [], queueBytes: 0, rafId: 0, pendente: 0, paused: false,
+  queue: [], queueBytes: 0, rafId: 0, pending: 0, paused: false,
   outbox: [], outboxBytes: 0, echoPainted: 0,
-  pred: { txt: '', col: 0, linha: 0, timer: 0 },
+  pred: { txt: '', col: 0, line: 0, timer: 0 },
   rtt: 0, eco: 0, sentAt: 0, ecoTimer: 0, serverEchoes: null,
 };
 
@@ -495,12 +495,12 @@ safeFit();
 
 // There is only one pill and both tabs write to it; without this filter, the tab
 // nobody is looking at would overwrite the state of the one in front.
-function conn(estado, texto) {
+function conn(estado, text) {
   // ALWAYS store, paint only if this is the front tab. Without storing, switching
   // tabs left the pill frozen on the OTHER tab's state until the next event —
   // in an emergency, reading "connected" from a terminal that went down is worse
   // than reading nothing. With the state stored, showTab() can repaint at once.
-  st.estado = estado; st.texto = texto;
+  st.estado = estado; st.text = text;
   if (!elConn) return;
   if (cfg.ativo && !cfg.ativo()) return;
   paint();
@@ -511,7 +511,7 @@ function paint() {
   // during the outage stayed invisible and looked lost.
   const queue = st.outbox.length ? ' · ' + st.outboxBytes + ' queued' : '';
   elConn.dataset.e = st.estado;
-  elConn.textContent = (cfg.label ? cfg.label + ': ' : '') + st.texto + queue;
+  elConn.textContent = (cfg.label ? cfg.label + ': ' : '') + st.text + queue;
 }
 
 // ── output: one write per frame + backpressure ──────────────────────────────
@@ -519,7 +519,7 @@ function paint() {
 // the server stops reading the PTY, the program blocks on write and nothing is lost.
 const FC_ALTO = 256 * 1024, FC_LOW = 32 * 1024;
 function checkFlow() {
-  const emVoo = st.queueBytes + st.pendente;
+  const emVoo = st.queueBytes + st.pending;
   if (!st.paused && emVoo >= FC_ALTO) {
     st.paused = true;
     try { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pause' })); } catch (_) {}
@@ -536,11 +536,11 @@ function flush() {
   // The screen returns to the server's truth BEFORE applying bytes from it — that
   // is what makes the predictive echo's guess safe (see preve()).
   eraseGuess();
-  st.pendente += bytes;
+  st.pending += bytes;
   const ult = q.length - 1;
   for (let i = 0; i < ult; i++) term.write(q[i]);
   term.write(q[ult], () => {
-    st.pendente = Math.max(0, st.pendente - bytes);
+    st.pending = Math.max(0, st.pending - bytes);
     checkFlow();
     repreve();
   });
@@ -554,9 +554,9 @@ function flush() {
 function looksLikePassword() {
   try {
     const buf = term.buffer.active;
-    const linha = buf.getLine(buf.baseY + buf.cursorY);
-    if (!linha) return true;
-    const txt = linha.translateToString(true);
+    const line = buf.getLine(buf.baseY + buf.cursorY);
+    if (!line) return true;
+    const txt = line.translateToString(true);
     if (!/[:?]$/.test(txt)) return false;
     return /(senha|password|passwd|passphrase|palavra[- ]passe|\bpin\b|token|secret|segredo)/i.test(txt);
   } catch (_) { return true; }
@@ -576,7 +576,7 @@ function canPredict(d) {
 function predict(d) {
   if (!canPredict(d)) return;
   const buf = term.buffer.active;
-  if (!st.pred.txt) { st.pred.col = buf.cursorX; st.pred.linha = buf.baseY + buf.cursorY; }
+  if (!st.pred.txt) { st.pred.col = buf.cursorX; st.pred.line = buf.baseY + buf.cursorY; }
   if (buf.cursorX + d.length >= term.cols - 1) return;
   st.pred.txt += d;
   try { term.write('\x1b[2m' + d + '\x1b[22m'); } catch (_) { st.pred.txt = ''; return; }
@@ -599,7 +599,7 @@ function repreve() {
   let buf;
   try { buf = term.buffer.active; } catch (_) { st.pred.txt = ''; return; }
   if (!buf || buf.type === 'alternate') { st.pred.txt = ''; return; }
-  if ((buf.baseY + buf.cursorY) !== st.pred.linha) { st.pred.txt = ''; return; }
+  if ((buf.baseY + buf.cursorY) !== st.pred.line) { st.pred.txt = ''; return; }
   const advance = buf.cursorX - st.pred.col;
   if (advance < 0) { st.pred.txt = ''; return; }
   const rest = st.pred.txt.slice(advance);
@@ -666,7 +666,7 @@ function open() {
 
   s.onopen = () => {
     st.attempts = 0; st.lastMsg = Date.now();
-    st.queue = []; st.queueBytes = 0; st.pendente = 0; st.paused = false;
+    st.queue = []; st.queueBytes = 0; st.pending = 0; st.paused = false;
     conn('open', 'connected');
     safeFit();
     if (term.cols >= 2 && term.rows >= 1) {
@@ -742,10 +742,10 @@ function open() {
     // asks after the second attempt: a network blink does not deserve a
     // request at all.
     if (st.attempts === 2 || st.attempts % 4 === 0) probeSession();
-    const rapido = [300, 700, 1500];
-    const base = st.attempts <= rapido.length
-      ? rapido[st.attempts - 1]
-      : Math.min(5000, 3000 * Math.pow(2, st.attempts - rapido.length - 1));
+    const fast = [300, 700, 1500];
+    const base = st.attempts <= fast.length
+      ? fast[st.attempts - 1]
+      : Math.min(5000, 3000 * Math.pow(2, st.attempts - fast.length - 1));
     const wait = Math.floor(base * (0.8 + Math.random() * 0.4));
     conn('down', 'no connection — retrying');
     st.timerRecon = setTimeout(open, wait);
@@ -967,10 +967,10 @@ window.addEventListener('resize', () => { host.adjust(); claude.adjust(); });
 // Notices about the session (expired, about to expire) do not belong to the content of
 // the terminal: writing them into xterm dirtied the scrollback of the conversation with Claude,
 // which is exactly what the operator is trying to read in an emergency.
-function notifySession(texto, tom) {
+function notifySession(text, tom) {
   const el = document.getElementById('banner');
   if (!el) return;
-  el.textContent = texto;
+  el.textContent = text;
   el.dataset.tom = tom || 'erro';
   el.hidden = false;
 }

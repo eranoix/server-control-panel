@@ -168,7 +168,7 @@ const browser = await chromium.launch({
          '--disable-features=WebRtcHideLocalIpsWithMdns'],
 });
 // ── Relay de sinalizacao ────────────────────────────────────────────────
-let ctx, pages, ordem, queue;
+let ctx, pages, order, queue;
 async function delivery(id, obj) {
   const p = pages[id];
   if (p) await p.evaluate((s) => window.__wsIn(s), JSON.stringify(obj)).catch(() => {});
@@ -184,8 +184,8 @@ async function open(id, lock) {
   const relay = async (id, s) => {
     let m; try { m = JSON.parse(s); } catch { return; }
     if (m.type === '__hello') {
-      const others = ordem.filter((x) => x !== id);
-      ordem.push(id);
+      const others = order.filter((x) => x !== id);
+      order.push(id);
       await delivery(id, { type: 'joined', payload: { peer_id: id, peers: others.map((o) => ({ id: o, user: o })) } });
       for (const o of others) await delivery(o, { type: 'peer-joined', from: id, payload: JSON.stringify({ user: id }) });
       return;
@@ -193,7 +193,7 @@ async function open(id, lock) {
     if (m.type === 'ping') { await delivery(id, { type: 'pong' }); return; }
     m.from = id;
     if (m.to) await delivery(m.to, m);
-    else for (const o of ordem) if (o !== id) await delivery(o, m);
+    else for (const o of order) if (o !== id) await delivery(o, m);
   };
   await page.addInitScript(INIT);
   await page.goto(PAGE);
@@ -225,7 +225,7 @@ async function buildCall(lock) {
   if (ctx) await ctx.close().catch(() => {});
   ctx = await browser.newContext();
   await ctx.route(PAGE, (r) => r.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body></body></html>' }));
-  pages = {}; ordem = []; queue = Promise.resolve();
+  pages = {}; order = []; queue = Promise.resolve();
   const A = await open('A', lock);
   const B = await open('B');
   await connect(A, 'A', { micGain: 2, micProcessing: SEM_PROC });
@@ -290,7 +290,7 @@ await aLocal(() => window.VPSMVideoCall.setMicGain(0.5));
 const em50 = await received();
 near(em100 - em50, 6.02, 1.5)
   ? ok(`volume ao vivo: 50% chega ${(em100 - em50).toFixed(1)} dB abaixo de 100%`)
-  : no(`volume ao vivo: 50% vs 100% deu ${(em100 - em50).toFixed(1)} dB (expected ~6)`);
+  : no(`volume ao live: 50% vs 100% deu ${(em100 - em50).toFixed(1)} dB (expected ~6)`);
 
 // ── 3. Limitador ────────────────────────────────────────────────────────
 // Tom a -10 dBFS × 400% = +2 dBFS: sem limitador, clipava. Com ele, o
@@ -388,11 +388,11 @@ mute.voltou === true ? ok('mute: desmutar religa o track da transcricao') : no('
 // ── 8. Troca de mic reinicia a transcricao no track novo ────────────────
 const restart = await aLocal(async () => {
   const antes = window.__sttStarts.length;
-  const velho = window.__sttStarts[antes - 1].getAudioTracks()[0];
+  const old = window.__sttStarts[antes - 1].getAudioTracks()[0];
   await window.VPSMVideoCall.setMicDevice('default');
   await new Promise((r) => setTimeout(r, 300));
-  const novo = window.__sttStarts[window.__sttStarts.length - 1].getAudioTracks()[0];
-  return { newOnes: window.__sttStarts.length - antes, oldState: velho.readyState, newState: novo.readyState, equal: velho === novo };
+  const fresh = window.__sttStarts[window.__sttStarts.length - 1].getAudioTracks()[0];
+  return { newOnes: window.__sttStarts.length - antes, oldState: old.readyState, newState: fresh.readyState, equal: old === fresh };
 });
 (restart.newOnes >= 1 && !restart.equal && restart.newState === 'live')
   ? ok('stt: troca de mic reinicia a transcricao no track novo (vivo)')

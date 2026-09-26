@@ -22,9 +22,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
-const shell = readFileSync(join(raiz, 'internal/webassets/web/vendor/vpsm/app/00-shell.js'), 'utf8');
-const recovery = readFileSync(join(raiz, 'internal/webassets/web/recovery-term.html'), 'utf8');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const shell = readFileSync(join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js'), 'utf8');
+const recovery = readFileSync(join(root, 'internal/webassets/web/recovery-term.html'), 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };

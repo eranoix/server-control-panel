@@ -68,8 +68,8 @@ function findBrowser() {
 
 // The fixture password. The hash below is of it; the instance listens on
 // 127.0.0.1 on an ephemeral port and dies at the end of the test.
-const PASSWORD = 'primer-teste-164';
-const HASH = '$2b$10$hks7R40N0Nvnoi7G93AeWOcVcJ7RLoJs07NLywXcS0FLBAvRWrTRu';
+const PASSWORD = 'primer-test-164';
+const HASH = '$2b$10$NNDNlUzV7QQA/nXilNQ8P.F7xwyH4sYn9BsMBkz9epA./5aF1nQpu';
 const SESSION = 'prova-primer';
 
 let pass = 0, fail = 0;

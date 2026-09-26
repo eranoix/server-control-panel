@@ -414,12 +414,12 @@ const nodeState = new Function('n', extract(pvxJs, '41-proxmox.js', 'pvxNodeStat
   // precedence. The measurement rules have checks of their own further down.
   .replace('pvxGaugePct(n, which)', '(n.__pct ? n.__pct[which] : null)'));
 
-const vivo = (extra) => Object.assign({
+const live = (extra) => Object.assign({
   stale: false, transport: 'pve-api', kind: 'guest', vmid: 207,
   status: { value: 'running', observed_at: 1 }, credential: { state: 'ok' }, __pct: {},
 }, extra || {});
 
-check('state: a healthy node is `ok`', nodeState(vivo()) === 'ok');
+check('state: a healthy node is `ok`', nodeState(live()) === 'ok');
 // 🔴 And the screen has to OBEY: the function returning 'ok' does not stop the
 // template drawing a green badge on every row. Measured by mutation: deleting
 // the x-show sailed straight past the check above.
@@ -429,17 +429,17 @@ check('🔴 an `ok` node draws NO state badge on the row',
 check('🔴 nor in the side panel',
   /x-show="pvxNodeState\(pvxOpenNode\(\)\) !== 'ok'"/.test(pvxSection));
 check('🔴 state: STALE data beats everything — nothing else can be asserted',
-  nodeState(vivo({ stale: true, credential: { state: 'ausente' }, __pct: { ram: 99 } })) === 'vencido');
+  nodeState(live({ stale: true, credential: { state: 'ausente' }, __pct: { ram: 99 } })) === 'vencido');
 check('state: no credential beats "parado" (it is what explains why it will not start)',
-  nodeState(vivo({ status: { value: 'stopped' }, credential: { state: 'ausente' } })) === 'sem-credencial');
+  nodeState(live({ status: { value: 'stopped' }, credential: { state: 'ausente' } })) === 'sem-credencial');
 check('🔴 state: a STOPPED guest is not judged by a gauge',
-  nodeState(vivo({ status: { value: 'stopped' }, __pct: { ram: 99 } })) === 'parado',
+  nodeState(live({ status: { value: 'stopped' }, __pct: { ram: 99 } })) === 'parado',
   'a gauge on a switched-off guest means nothing at all');
-check('state: 90% on any gauge is critical', nodeState(vivo({ __pct: { ram: 90 } })) === 'critico');
-check('state: 70% is attention', nodeState(vivo({ __pct: { ram: 70 } })) === 'atencao');
-check('state: 69.9% is still ok', nodeState(vivo({ __pct: { ram: 69.9 } })) === 'ok');
+check('state: 90% on any gauge is critical', nodeState(live({ __pct: { ram: 90 } })) === 'critico');
+check('state: 70% is attention', nodeState(live({ __pct: { ram: 70 } })) === 'atencao');
+check('state: 69.9% is still ok', nodeState(live({ __pct: { ram: 69.9 } })) === 'ok');
 check('state: the WORST gauge wins (cpu ok + disk critical = critical)',
-  nodeState(vivo({ __pct: { cpu: 1, disco: 95 } })) === 'critico');
+  nodeState(live({ __pct: { cpu: 1, disco: 95 } })) === 'critico');
 
 // ── thresholds with hysteresis ────────────────────────────────────────────
 const tier = new Function('pct', 'anterior', extract(pvxJs, '41-proxmox.js', 'pvxTier', 'pct, anterior'));
@@ -479,13 +479,13 @@ check('a zeroed total does not become a division by zero',
 const cor = new Function('m', extract(pvxJs, '41-proxmox.js', 'pvxGaugeColor', 'm'));
 const GRAY = '#64748b';
 check('🔴 the gauge of a STALE/stopped node goes GREY, even with a low value',
-  cor({ measured: true, vivo: false, tier: 'ok' }) === GRAY,
+  cor({ measured: true, live: false, tier: 'ok' }) === GRAY,
   'a coloured bar over dead data asserts a measurement nobody made');
 check('🔴 the gauge of a stale node goes grey even while CRITICAL',
-  cor({ measured: true, vivo: false, tier: 'critico' }) === GRAY);
-check('a gauge with no measurement goes grey', cor({ measured: false, vivo: true, tier: 'ok' }) === GRAY);
-check('a live and critical gauge is red', cor({ measured: true, vivo: true, tier: 'critico' }) === '#ef4444');
-check('a live and ok gauge is green', cor({ measured: true, vivo: true, tier: 'ok' }) === '#22c55e');
+  cor({ measured: true, live: false, tier: 'critico' }) === GRAY);
+check('a gauge with no measurement goes grey', cor({ measured: false, live: true, tier: 'ok' }) === GRAY);
+check('a live and critical gauge is red', cor({ measured: true, live: true, tier: 'critico' }) === '#ef4444');
+check('a live and ok gauge is green', cor({ measured: true, live: true, tier: 'ok' }) === '#22c55e');
 
 // 🔴 No RENDERING expression may write to reactive state.
 //
@@ -502,8 +502,8 @@ check('the hysteresis memory lives outside the component (a Map in the closure)'
   /tiersDeHisterese\.set/.test(gaugeBody));
 
 // ── the `field:value` filter ──────────────────────────────────────────────
-const filter = new Function('list', 'texto', 'segment', 'stateOf',
-  extract(pvxJs, '41-proxmox.js', 'pvxFilterNodes', 'list, texto, segment, stateOf'));
+const filter = new Function('list', 'text', 'segment', 'stateOf',
+  extract(pvxJs, '41-proxmox.js', 'pvxFilterNodes', 'list, text, segment, stateOf'));
 // The list is the real lab, cut down: `games` healthy, `pbs` (CT 202) with no
 // node token — which is its REAL state in the vault —, `dev` stopped and the
 // hypervisor itself. `transport` matters: `pvxNodeState` only demands a
@@ -567,11 +567,11 @@ const fakeComponent = () => {
     comp[nome] = function (...a) { return f.apply(comp, a); };
   };
   turnOn('pvxNodeState', ['n']);
-  turnOn('pvxFilterNodes', ['list', 'texto', 'segment', 'stateOf']);
+  turnOn('pvxFilterNodes', ['list', 'text', 'segment', 'stateOf']);
   turnOn('pvxReescopa', ['sel', 'visible']);
   turnOn('pvxNos', []);
   turnOn('pvxFilteredNodes', []);
-  turnOn('pvxSetFilter', ['texto']);
+  turnOn('pvxSetFilter', ['text']);
   turnOn('pvxSetSegment', ['key']);
   turnOn('pvxClearFilter', []);
   turnOn('pvxSelAll', []);

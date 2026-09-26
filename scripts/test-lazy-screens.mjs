@@ -143,8 +143,8 @@ const count = (screen) => page.evaluate((t) => document.querySelectorAll(`sectio
 const sizes = {};
 for (const t of SCREENS) {
   await page.evaluate((screen) => {
-    const raiz = document.querySelector('[x-data]');
-    const app = Alpine.$data(raiz);
+    const root = document.querySelector('[x-data]');
+    const app = Alpine.$data(root);
     app.currentView = screen;
     app._triggerViewLoaders(screen);
   }, t);

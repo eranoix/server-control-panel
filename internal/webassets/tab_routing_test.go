@@ -71,13 +71,13 @@ func block(t *testing.T, source, nome string) string {
 // the file, not assumed. If somebody reverts the JS to the naive scan, this
 // resolver reverts with it and the test fails NAMING the tab that goes black —
 // instead of staying green because the right rule lives only in the Go.
-func resolverAba(remap map[string][2]string, ordem []string, grupo, aba string, canonicalFirst bool) string {
+func resolverAba(remap map[string][2]string, order []string, grupo, aba string, canonicalFirst bool) string {
 	if canonicalFirst {
 		if c, ok := remap[aba]; ok && c[0] == grupo && c[1] == aba {
 			return aba
 		}
 	}
-	for _, view := range ordem {
+	for _, view := range order {
 		c := remap[view]
 		if c[0] == grupo && c[1] == aba {
 			return view
@@ -101,10 +101,10 @@ func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 	index := readSource(t, indexFile)
 
 	remap := map[string][2]string{}
-	var ordem []string
+	var order []string
 	for _, m := range reRemapEntry.FindAllStringSubmatch(block(t, shell, "PAGE_REMAP"), -1) {
 		remap[m[1]] = [2]string{m[2], m[3]}
-		ordem = append(ordem, m[1])
+		order = append(order, m[1])
 	}
 	defaults := map[string]string{}
 	for _, m := range reDefaultsEntry.FindAllStringSubmatch(block(t, shell, "GROUP_DEFAULTS"), -1) {
@@ -131,9 +131,9 @@ func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 	}
 	tabs := map[string]bool{}
 	var navigations []string
-	for _, linha := range reTabLine.FindAllStringSubmatch(index, -1) {
-		aba := linha[1]
-		g := reGroupInLine.FindStringSubmatch(linha[0])
+	for _, line := range reTabLine.FindAllStringSubmatch(index, -1) {
+		aba := line[1]
+		g := reGroupInLine.FindStringSubmatch(line[0])
 		if g == nil {
 			// A setTab without `tabs.<group>` on the line is not the DECLARATION of a
 			// tab: it is NAVIGATION to it (a "Go to Compose" button, a tooltip
@@ -170,7 +170,7 @@ func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 	}
 	sort.Strings(pares)
 
-	var quebradas []string
+	var broken []string
 	checked := 0
 	for _, p := range pares {
 		parts := strings.SplitN(p, "|", 2)
@@ -179,16 +179,16 @@ func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 			continue // group with no tabs: currentView is the page itself
 		}
 		checked++
-		view := resolverAba(remap, ordem, grupo, aba, canonicalFirst)
+		view := resolverAba(remap, order, grupo, aba, canonicalFirst)
 		if !sections[view] {
-			quebradas = append(quebradas, fmt.Sprintf("%s → %s  resolves to currentView=%q, and NO section x-show matches (the screen opens BLACK)", grupo, aba, view))
+			broken = append(broken, fmt.Sprintf("%s → %s  resolves to currentView=%q, and NO section x-show matches (the screen opens BLACK)", grupo, aba, view))
 		}
 	}
 	if checked < 30 {
 		t.Fatalf("only %d tabs checked — coverage too thin for this guard to be worth anything", checked)
 	}
-	if len(quebradas) > 0 {
-		t.Errorf("%d of %d tabs render nothing:\n  %s", len(quebradas), checked, strings.Join(quebradas, "\n  "))
+	if len(broken) > 0 {
+		t.Errorf("%d of %d tabs render nothing:\n  %s", len(broken), checked, strings.Join(broken, "\n  "))
 		return // do not announce "all resolve" right below a failure
 	}
 	t.Logf("%d tabs checked against %d sections (shell rule: canonical-first=%v); all of them resolve", checked, len(sections), canonicalFirst)

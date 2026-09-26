@@ -146,7 +146,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
     let erro = '';
     try {
       await window.VPSMVideoCall.connect({
-        roomId: 'x', token: 't', displayName: 'teste',
+        roomId: 'x', token: 't', displayName: 'test',
         videosEl: document.createElement('div'),
         onState: (ev) => events.push(ev),
       });
@@ -215,7 +215,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
         const el = document.querySelector('.vc-lobby-aviso');
         if (!el) return { existe: false };
         return { existe: true, display: getComputedStyle(el).display, className: el.className,
-                 texto: ((el.querySelector('.txt') || {}).textContent || '').trim(),
+                 text: ((el.querySelector('.txt') || {}).textContent || '').trim(),
                  height: Math.round(el.getBoundingClientRect().height),
                  button: !!el.querySelector('.action') };
       });
@@ -225,7 +225,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
         continue;
       }
       if (!visible) { no('notice/' + c.n + ': the band vanished'); continue; }
-      r.texto ? ok('notice/' + c.n + ': has text') : no('notice/' + c.n + ': no text');
+      r.text ? ok('notice/' + c.n + ': has text') : no('notice/' + c.n + ': no text');
       r.button ? ok('notice/' + c.n + ': has "Test again"') : no('notice/' + c.n + ': no retry button');
       r.height <= 60 ? ok('notice/' + c.n + ': compact (' + r.height + 'px)') : no('notice/' + c.n + ': ' + r.height + 'px — it became a block again');
       r.className.includes(c.sev) ? ok('notice/' + c.n + ': severity ' + c.sev) : no('notice/' + c.n + ': ' + r.className + ' (expected ' + c.sev + ')');
@@ -336,16 +336,16 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
     await page.addScriptTag({ content: alpine });
     await page.waitForTimeout(250);
     const r = await page.evaluate(() => {
-      const linhas = [...document.querySelectorAll('.vc-pill.is-linha')].filter(e => e.offsetParent !== null);
-      const level = document.querySelector('.vc-pill.is-linha .level');
-      const teste = document.querySelector('.vc-pill.is-linha .teste');
+      const linhas = [...document.querySelectorAll('.vc-pill.is-line')].filter(e => e.offsetParent !== null);
+      const level = document.querySelector('.vc-pill.is-line .level');
+      const test = document.querySelector('.vc-pill.is-line .test');
       const rot = document.querySelector('.vc-pill label.label');
       const tit = document.getElementById('dlg-vc-settings-title');
       const cs = linhas[0] ? getComputedStyle(linhas[0]) : null;
-      const ct = teste ? getComputedStyle(teste) : null;
+      const ct = test ? getComputedStyle(test) : null;
       return { n: linhas.length,
                levelPct: level && linhas[1] ? level.getBoundingClientRect().width / linhas[1].getBoundingClientRect().width : -1,
-               hasTest: !!teste, testBorder: ct ? ct.borderTopColor : '', testBackground: ct ? ct.backgroundColor : '',
+               hasTest: !!test, testBorder: ct ? ct.borderTopColor : '', testBackground: ct ? ct.backgroundColor : '',
                visibleLabel: rot ? rot.getBoundingClientRect().width > 2 : false,
                upperLabel: rot ? getComputedStyle(rot).textTransform : '',
                rowBackground: cs ? cs.backgroundColor : '', rowColor: cs ? cs.color : '',

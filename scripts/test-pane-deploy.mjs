@@ -17,8 +17,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
-const alvo = process.argv[2] || join(raiz, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const alvo = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
 const src = readFileSync(alvo, 'utf8');
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('  ✓ ' + m); pass++; };
@@ -155,7 +155,7 @@ scenario({ ...ALL_CLEAR, hiddenSince: undefined }) === false
 
 // ── 4. The server really does have to warn ─────────────────────────────────
 {
-  const main = readFileSync(join(raiz, 'cmd/server/main.go'), 'utf8');
+  const main = readFileSync(join(root, 'cmd/server/main.go'), 'utf8');
   // Look for the CALL, not the mention: the comment just above names srv.Shutdown
   // and a naive indexOf matches that instead, inverting the order and failing
   // correct code.

@@ -52,8 +52,8 @@ const headers = [];
 const re = /<div class="fm-modal-head">([\s\S]*?)<\/div>/g;
 let m;
 while ((m = re.exec(html)) !== null) {
-  const linha = html.slice(0, m.index).split('\n').length;
-  headers.push({ linha, html: m[0].replace(/<h3([^>]*)>\s*<\/h3>/, '<h3$1>Title</h3>') });
+  const line = html.slice(0, m.index).split('\n').length;
+  headers.push({ line, html: m[0].replace(/<h3([^>]*)>\s*<\/h3>/, '<h3$1>Title</h3>') });
 }
 if (headers.length < 10) { no('only ' + headers.length + ' headers found — did the regex stop matching?'); }
 else ok(headers.length + ' modal headers found in index.html');
@@ -87,7 +87,7 @@ for (const theme of ['dark', 'light']) {
              dangerBackground: getComputedStyle(document.querySelector('#danger')).backgroundColor,
              btnCor: getComputedStyle(btn).color };
   });
-  const ruins = r.titles.map((t, k) => ({ k, ln: headers[t.i] ? headers[t.i].linha : '?', cr: ratio(t.cor, t.background) }))
+  const ruins = r.titles.map((t, k) => ({ k, ln: headers[t.i] ? headers[t.i].line : '?', cr: ratio(t.cor, t.background) }))
                          .filter((x) => x.cr < 4.5);
   ruins.length === 0
     ? ok('theme ' + theme + ': all ' + r.titles.length + ' titles pass AA (worst = ' +

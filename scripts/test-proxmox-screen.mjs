@@ -222,16 +222,16 @@ ok('the network row gained a label instead of two loose arrows',
 const cpuText = comp.pvxGauge(
   { id:'x', kind:'guest', vmid:1, status:obs('running'),
     cpu_frac:obs(0.008), cpu_cores:obs(2) }, 'cpu');
-ok('the CPU text does NOT repeat the percentage', !cpuText.texto.includes('%'), cpuText.texto);
-ok('the CPU text states the cores', /core/.test(cpuText.texto), cpuText.texto);
+ok('the CPU text does NOT repeat the percentage', !cpuText.text.includes('%'), cpuText.text);
+ok('the CPU text states the cores', /core/.test(cpuText.text), cpuText.text);
 const noCores = comp.pvxGauge(
   { id:'y', kind:'guest', vmid:2, status:obs('running'), cpu_frac:obs(0.5) }, 'cpu');
 ok('with no cores reported, it says so instead of inventing them',
-   /cores not reported/.test(noCores.texto), noCores.texto);
+   /cores not reported/.test(noCores.text), noCores.text);
 
 // The absolute value belongs to the wide panel, not to the narrow column.
 ok('the right-hand panel shows the absolute value (Summary tab)',
-   /pvxActiveTab\(\) === 'summary'[\s\S]{0,2500}pvxGauge\(pvxOpenNode\(\), which\)\.texto/.test(section));
+   /pvxActiveTab\(\) === 'summary'[\s\S]{0,2500}pvxGauge\(pvxOpenNode\(\), which\)\.text/.test(section));
 
 
 // ── no template expression throws with NOTHING selected ──────────────────────
@@ -255,7 +255,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
     nodesStatusStyle: () => '', nodesTransportBadge: () => '', nodesCredStyle: () => '',
     nodesCredLabel: () => '', nodesCredExpiry: () => '', nodesCredExpiryUrgent: () => false,
   });
-  emptyComp.pvx.open = ''; emptyComp.pvx.detalhe = null; emptyComp.pvx.aba = '';
+  emptyComp.pvx.open = ''; emptyComp.pvx.detail = null; emptyComp.pvx.aba = '';
 
   const exprs = new Set();
   // 🔴 THE ATTRIBUTE LIST WAS AN ALLOWLIST, AND IT AGED IN SILENCE. When the screen
@@ -410,15 +410,15 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 // name, flex-wrap broke the row into three in a 240px column, and the age stamp
 // ended up ON TOP of the disk bar.
 {
-  const linha = (() => {
+  const line = (() => {
     const i = section.indexOf('@click="pvxSelect(n)"');
     return i < 0 ? '' : section.slice(Math.max(0, i - 900), i + 3200);
   })();
-  ok('the node row was located', linha.length > 1000, linha.length + ' chars');
+  ok('the node row was located', line.length > 1000, line.length + ' chars');
 
   ok('no fixed width reserved on the node row',
-     !/class="w-\d+"/.test(linha),
-     (linha.match(/class="w-\d+"/g) || ['none']).join(', '));
+     !/class="w-\d+"/.test(line),
+     (line.match(/class="w-\d+"/g) || ['none']).join(', '));
 
   // (The POSITION pin that used to be here was removed: it compared indices inside
   // a fixed-size window of text and started failing on its own as soon as the row
@@ -435,10 +435,10 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   // comparison. Relative position is weak; the real property is BELONGING to the
   // strip. The pin now cuts out the title strip and demands the stamp inside it.
   const bannerTitle = (() => {
-    const a = linha.indexOf('<div class="flex items-center gap-2 min-w-0">');
+    const a = line.indexOf('<div class="flex items-center gap-2 min-w-0">');
     if (a < 0) return '';
-    const b = linha.indexOf('</div>', a);
-    return b < 0 ? '' : linha.slice(a, b);
+    const b = line.indexOf('</div>', a);
+    return b < 0 ? '' : line.slice(a, b);
   })();
   ok('the title strip was cut out', bannerTitle.length > 200, bannerTitle.length + ' chars');
   ok('the age stamp is INSIDE the title strip',
@@ -446,9 +446,9 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   ok('and so is the state badge',
      bannerTitle.includes('pvxStateLabel(pvxNodeState(n))'));
 
-  ok('the badge goes away when the node is ok', linha.includes("pvxNodeState(n) !== 'ok'"));
+  ok('the badge goes away when the node is ok', line.includes("pvxNodeState(n) !== 'ok'"));
   ok('and it does not flash before Alpine starts (x-cloak)',
-     /pvxNodeState\(n\) !== 'ok'"[\s\S]{0,40}x-cloak/.test(linha));
+     /pvxNodeState\(n\) !== 'ok'"[\s\S]{0,40}x-cloak/.test(line));
 }
 
 
@@ -501,9 +501,9 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   ];
   const compReal = Object.assign(Object.create(null), comp, { nodes: { list: realList, poll: {} } });
   const counts = compReal.pvxCountByType();
-  const mapa = Object.fromEntries(counts.map((t) => [t.abbrev, t.n]));
+  const map = Object.fromEntries(counts.map((t) => [t.abbrev, t.n]));
   ok('counts 7 CT, 2 VM, 1 NODE and 1 EXT',
-     mapa.CT === 7 && mapa.VM === 2 && mapa['NODE'] === 1 && mapa.EXT === 1, JSON.stringify(mapa));
+     map.CT === 7 && map.VM === 2 && map['NODE'] === 1 && map.EXT === 1, JSON.stringify(map));
   ok('a non-existent type does not show up with a zero',
      !counts.some((t) => t.n === 0), 'zero is not information');
 
@@ -588,7 +588,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 
   // Captures what the confirmation would say, without executing anything.
   let dlg = null;
-  compE.askConfirm = (title, texto, _fn, opts) => { dlg = { title, texto, opts }; };
+  compE.askConfirm = (title, text, _fn, opts) => { dlg = { title, text, opts }; };
   compE.pvx.open = 'node/pve';
 
   compE.pvxHostPower('shutdown');
@@ -597,25 +597,25 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
      dlg && dlg.opts ? String(dlg.opts.requireText) : 'no requireText');
   ok('marked as dangerous', dlg && dlg.opts && dlg.opts.danger === true);
   ok('it names THE GUESTS that go down with it, not just the count',
-     dlg && /games/.test(dlg.texto) && /data/.test(dlg.texto), dlg ? dlg.texto.slice(0, 60) : '');
+     dlg && /games/.test(dlg.text) && /data/.test(dlg.text), dlg ? dlg.text.slice(0, 60) : '');
   ok('it does not list an already stopped guest (noise on a confirmation trains you to ignore)',
-     dlg && !/lab/.test(dlg.texto.split('\n')[0]));
+     dlg && !/lab/.test(dlg.text.split('\n')[0]));
   ok('it says it does NOT come back on its own and that restarting is on-site',
-     dlg && /not come back on its own/i.test(dlg.texto) && /walking up to it/i.test(dlg.texto));
-  ok('it warns that the panel loses contact', dlg && /loses contact/i.test(dlg.texto));
+     dlg && /not come back on its own/i.test(dlg.text) && /walking up to it/i.test(dlg.text));
+  ok('it warns that the panel loses contact', dlg && /loses contact/i.test(dlg.text));
 
   // 🔴 The two sentences have to be DIFFERENT: restarting is betting the machine
   // comes back; shutting down is guaranteeing it does not come back on its own. One
   // text for both would make the graver one look like routine.
-  const shutdownText = dlg.texto;
+  const shutdownText = dlg.text;
   dlg = null;
   compE.pvxHostPower('reboot');
   ok('restart also asks for confirmation by typing',
      dlg && dlg.opts && dlg.opts.requireText === 'pve');
   ok('and the reboot text is DIFFERENT from the shutdown text',
-     dlg && dlg.texto !== shutdownText);
+     dlg && dlg.text !== shutdownText);
   ok('the reboot is honest about the worst case (not coming back equals a shutdown)',
-     dlg && /outcome is the same/i.test(dlg.texto));
+     dlg && /outcome is the same/i.test(dlg.text));
 
   // On a guest, the buttons do not exist.
   compE.pvx.open = 'lxc/201';

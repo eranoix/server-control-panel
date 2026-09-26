@@ -123,7 +123,7 @@ for (const larg of [320, 380, 430, 700]) {
     // backdrop-filter, so it becomes the containing block for its fixed
     // descendants: `left:8;right:8` resolved against the little bar and the sheet
     // was born its width. Without this measurement, the pin does not see the defect.
-    const painel = document.getElementById('vc-call-root').getBoundingClientRect();
+    const panel = document.getElementById('vc-call-root').getBoundingClientRect();
     const barEl = document.querySelector('.vc-bottombar');
     const bar = barEl.getBoundingClientRect();
     const barButtons = [...barEl.querySelectorAll('.vc-btn')].filter((b) => !b.closest('.vc-popover'));
@@ -132,7 +132,7 @@ for (const larg of [320, 380, 430, 700]) {
       pops.forEach((p) => { p.style.display = 'none'; });
       pop.style.display = 'block';
       const r = pop.getBoundingClientRect();
-      if (r.width < painel.width - 24) narrow.push(Math.round(r.width));
+      if (r.width < panel.width - 24) narrow.push(Math.round(r.width));
       // The sheet must not cover the controls: with flex-wrap the bar becomes 2-3
       // rows and a `bottom` fixed in px buries the first row of buttons.
       const cob = barButtons.filter((b) => {
@@ -140,7 +140,7 @@ for (const larg of [320, 380, 430, 700]) {
         return rr.top < r.bottom - 1 && rr.bottom > r.top + 1 && rr.left < r.right - 1 && rr.right > r.left + 1;
       });
       if (cob.length) covered.push(cob.length);
-      if (r.top < painel.top - 0.5) leaking.push(Math.round(painel.top - r.top));
+      if (r.top < panel.top - 0.5) leaking.push(Math.round(panel.top - r.top));
     }
     pops.forEach((p) => { p.style.display = 'none'; });
     // The touch target of the round bar buttons has to survive the fix.
@@ -165,7 +165,7 @@ for (const larg of [320, 380, 430, 700]) {
     sheet.content = Math.round(wide.scrollHeight);
     wide.style.display = 'none';
     return { pops: out, toolbar: toolbar.length, small, narrow, covered, leaking, sheet,
-             painel: Math.round(painel.width), bar: Math.round(bar.width),
+             panel: Math.round(panel.width), bar: Math.round(bar.width),
              barHeight: Math.round(bar.height), linhas: bar.height > 80 ? 2 : 1 };
   });
 
@@ -184,8 +184,8 @@ for (const larg of [320, 380, 430, 700]) {
   totOthersClipped === 0 ? ok(tag + ': os ' + totOthers + ' other popover controls (pills, primaries, accordion) fit their own text')
                       : no(tag + ': ' + totOthersClipped + ' control(s) with squeezed text — e.g.: "' + (r.pops.find((p) => p.otherSample) || {}).otherSample + '"');
   r.narrow.length === 0
-    ? ok(tag + ': as ' + r.pops.length + ' sheets fill the panel (' + r.painel + 'px), not the little bar (' + r.bar + 'px)')
-    : no(tag + ': ' + r.narrow.length + ' sheet(s) pinned to the width of the little bar — ' + r.narrow.join('/') + 'px inside a panel of ' + r.painel + 'px');
+    ? ok(tag + ': as ' + r.pops.length + ' sheets fill the panel (' + r.panel + 'px), not the little bar (' + r.bar + 'px)')
+    : no(tag + ': ' + r.narrow.length + ' sheet(s) pinned to the width of the little bar — ' + r.narrow.join('/') + 'px inside a panel of ' + r.panel + 'px');
   r.covered.length === 0
     ? ok(tag + ': no sheet covers the bar controls (bar of ' + r.barHeight + 'px, ' + r.linhas + '+ rows)')
     : no(tag + ': ' + r.covered.length + ' sheet(s) covering controls — up to ' + Math.max(...r.covered) + ' button(s) buried under the sheet');

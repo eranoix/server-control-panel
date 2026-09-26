@@ -22,8 +22,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
-const alvo = process.argv[2] || join(raiz, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const alvo = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
 const src = readFileSync(alvo, 'utf8');
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('  ✓ ' + m); pass++; };

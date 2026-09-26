@@ -9,7 +9,7 @@
       if (opts && opts.raw) return { ok: true, status: 200, json: async () => corpo };
       return corpo;
     };
-    c._apiError = async () => new Error('erro-de-teste');
+    c._apiError = async () => new Error('erro-de-test');
     c._errText = (e) => String((e && e.message) || e);
     c.showToast = () => {};
     c.askConfirm = async () => false;
@@ -52,15 +52,15 @@
     // RUNNING CT with a snapshot: the hypervisor only clones a running container
     // from a snapshot — a rule discovered by the live proof, not from the source.
     '/api/nodes/lxc/204/clone': { origem: 'lxc/204', origem_nome: 'lab', tipo: 'lxc',
-                                  next_id: 991, sugestao: 'lab-copia', ligado: true,
+                                  next_id: 991, sugestao: 'lab-copy', ligado: true,
                                   precisa_snapshot: true, snapshots: ['antes-do-upgrade', 'base'] },
     // RUNNING CT with NO snapshot: the case where there is nothing to offer.
     '/api/nodes/lxc/202/clone': { origem: 'lxc/202', origem_nome: 'pbs', tipo: 'lxc',
-                                  next_id: 993, sugestao: 'pbs-copia', ligado: true,
+                                  next_id: 993, sugestao: 'pbs-copy', ligado: true,
                                   precisa_snapshot: true, snapshots: [] },
     // STOPPED guest: no requirement at all.
     '/api/nodes/lxc/205/clone': { origem: 'lxc/205', origem_nome: 'observ', tipo: 'lxc',
-                                  next_id: 992, sugestao: 'observ-copia', ligado: false,
+                                  next_id: 992, sugestao: 'observ-copy', ligado: false,
                                   precisa_snapshot: false, snapshots: [] },
   };
 
@@ -278,8 +278,8 @@
       expect: expectCharts(7) },
 
     { nome: 'CLEARS the selection with Charts open (yesterday’s crash)', step: () => {
-        C().pvx.open = ''; C().pvx.detalhe = null;
-      }, expect: () => (svgs().length ? { erro: 'sem nó aberto ainda há ' + svgs().length + ' gráfico(s) visível(is)' } : { nota: 'painel fechou limpo' }) },
+        C().pvx.open = ''; C().pvx.detail = null;
+      }, expect: () => (svgs().length ? { erro: 'sem nó aberto ainda há ' + svgs().length + ' gráfico(s) visível(is)' } : { nota: 'panel fechou limpo' }) },
 
     { nome: 'window change', step: () => { open('node/pve', 'charts'); C().pvx.janela = 'day'; },
       expect: expectCharts(10) },
@@ -378,15 +378,15 @@
       const comp = C();
       const alvos = Array.from(document.querySelectorAll('[\\:disabled]'));
       if (alvos.length < 5) return { erro: 'só ' + alvos.length + ' elements com :disabled — vacuidade' };
-      const maus = [];
+      const bad = [];
       for (const el of alvos) {
         const expr = el.getAttribute(':disabled');
         let v;
         try { v = Function('c', 'with (c) { return (' + expr + ') }')(comp); }
-        catch (e) { maus.push(expr + ' → overflowed: ' + e.message); continue; }
-        if (typeof v !== 'boolean') maus.push(expr + ' → ' + JSON.stringify(v) + ' (' + typeof v + '), não booleano');
+        catch (e) { bad.push(expr + ' → overflowed: ' + e.message); continue; }
+        if (typeof v !== 'boolean') bad.push(expr + ' → ' + JSON.stringify(v) + ' (' + typeof v + '), não booleano');
       }
-      if (maus.length) return { erro: maus.length + ' expressão(ões) não booleana(s): ' + maus.join(' ;; ') };
+      if (bad.length) return { erro: bad.length + ' expressão(ões) não booleana(s): ' + bad.join(' ;; ') };
       return { nota: alvos.length + ' expressões :disabled, todas booleanas' };
     },
   });
@@ -437,7 +437,7 @@
         const after = consumption.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING;
         if (!after) return { erro: 'a explicação voltou para ANTES dos números' };
         // And it is the LAST thing in the panel: nothing visible about the node comes after it.
-        const painel = el.closest('[x-show]') && el.closest('div[class*="rounded"]');
+        const panel = el.closest('[x-show]') && el.closest('div[class*="rounded"]');
         const actions = Array.from(document.querySelectorAll('button')).filter(visible)
           .find(b => (b.getAttribute('@click') || '').indexOf("pvxPower(pvxOpenNode(),'start')") >= 0);
         if (actions && !(actions.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) {
@@ -493,7 +493,7 @@
           return { erro: '🔴 link com esquema executável' };
         if (el.innerText.indexOf('onerror') < 0)
           return { erro: 'o texto sumiu — filtro que APAGA esconde a nota do operador' };
-        return { nota: 'texto hostile exibido como letra, sem virar DOM' };
+        return { nota: 'text hostile exibido como letra, sem virar DOM' };
       } },
   );
 
@@ -693,7 +693,7 @@
         C().pvx.nota.rascunho = 'joguei tudo fora';
         C().pvxCancelNote();
       }, expect: () => {
-        if (C().pvx.nota.markdown !== window.__noteBefore) return { erro: 'cancelar alterou o texto em vigor' };
+        if (C().pvx.nota.markdown !== window.__noteBefore) return { erro: 'cancelar alterou o text em vigor' };
         if (C().pvx.nota.editing) return { erro: 'continuou em modo de edição' };
         const el = noteVisible();
         if (!el || el.innerText.indexOf('O que faz') < 0) return { erro: 'o texto original não voltou à tela' };
@@ -795,7 +795,7 @@
       }, expect: () => {
         if (!C().pvx.clone.open) return { erro: 'o diálogo não abriu' };
         if (C().pvx.clone.newID !== 991) return { erro: 'newID = ' + C().pvx.clone.newID + ', quer 991 (veio do hipervisor)' };
-        if (C().pvx.clone.nome !== 'lab-copia') return { erro: 'sugestão de nome = ' + C().pvx.clone.nome };
+        if (C().pvx.clone.nome !== 'lab-copy') return { erro: 'sugestão de nome = ' + C().pvx.clone.nome };
         // The id must NOT be a typeable field: it is a reading.
         const inputs = Array.from(document.querySelectorAll('input')).filter(visible);
         const digitavelComID = inputs.filter(i => String(i.value) === '991');
@@ -873,7 +873,7 @@
   for (const a of ABAS_HOST) {
     window.__script.push({ nome: 'host · tab ' + a + ' (pristine state)', step: ((ab) => () => {
       putSeries(null); C().pvx.storage = null; C().pvx.zfs = null; C().pvx.perms = null;
-      C().pvx.health = null; C().pvx.detalhe = null;
+      C().pvx.health = null; C().pvx.detail = null;
       open('node/pve', ab);
     })(a) });
   }

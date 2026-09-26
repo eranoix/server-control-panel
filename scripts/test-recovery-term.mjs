@@ -16,8 +16,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
-const html = readFileSync(join(raiz, 'internal/webassets/web/recovery-term.html'), 'utf8');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const html = readFileSync(join(root, 'internal/webassets/web/recovery-term.html'), 'utf8');
 const script = (html.match(/<script>([\s\S]*?)<\/script>/) || [])[1];
 
 let pass = 0, fail = 0;

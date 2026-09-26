@@ -91,9 +91,9 @@ for (const [larg, alt] of [[1015, 800], [1280, 720], [1400, 1080]]) {
   await page.waitForTimeout(80);
 
   const g = await page.evaluate(() => {
-    const raiz = document.getElementById('vc-call-root');
+    const root = document.getElementById('vc-call-root');
     const pop = document.querySelector('.vc-popover-wide');
-    const r = raiz.getBoundingClientRect(), p = pop.getBoundingClientRect();
+    const r = root.getBoundingClientRect(), p = pop.getBoundingClientRect();
     return { topRoot: r.top, baseRoot: r.bottom, popTop: p.top, popBase: p.bottom,
              rolavel: pop.scrollHeight > pop.clientHeight + 1,
              content: pop.scrollHeight, visible: pop.clientHeight };
@@ -114,10 +114,10 @@ for (const [larg, alt] of [[1015, 800], [1280, 720], [1400, 1080]]) {
   // Counter-check: without the panel measurement the bug comes back. If THIS
   // passes, the pin has stopped testing what the fix fixes.
   const semVar = await page.evaluate(() => {
-    const raiz = document.getElementById('vc-call-root');
-    raiz.style.removeProperty('--vc-root-h');
+    const root = document.getElementById('vc-call-root');
+    root.style.removeProperty('--vc-root-h');
     const pop = document.querySelector('.vc-popover-wide');
-    return pop.getBoundingClientRect().top - raiz.getBoundingClientRect().top;
+    return pop.getBoundingClientRect().top - root.getBoundingClientRect().top;
   });
   semVar < -0.5
     ? ok(tag + ': counter-check — without --vc-root-h the menu overflows by ' + Math.round(-semVar) + 'px (the fix is what holds it)')

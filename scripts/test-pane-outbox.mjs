@@ -16,11 +16,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Optional target via argv: lets the test run against a MUTATED COPY of
 // 00-shell.js and prove it fails when the bug comes back (a test that only ever
 // passes proves nothing).
-const alvo = process.argv[2] || join(raiz, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const alvo = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
 const src = readFileSync(alvo, 'utf8');
 
 let pass = 0, fail = 0;
@@ -80,10 +80,10 @@ const newPane = (readyState) => ({
 });
 
 // Fake terminal: only what the local echo uses — write and the cursor line.
-const fakeTerm = (written, linha) => ({
+const fakeTerm = (written, line) => ({
   write(x){ written.push(x); },
   buffer: { active: { baseY: 0, cursorY: 0,
-    getLine: () => ({ translateToString: () => linha }) } },
+    getLine: () => ({ translateToString: () => line }) } },
 });
 
 // 1) socket open → goes straight out, nothing queued
@@ -99,8 +99,8 @@ const fakeTerm = (written, linha) => ({
 // 2) socket down → does NOT drop: it queues instead of discarding (the bug)
 {
   const p = newPane(3);                       // 3 = CLOSED
-  const r = _paneSendInput(p, 'meu comando');
-  r === false && (p._outbox||[]).join('') === 'meu comando' && p.ws.sent.length === 0
+  const r = _paneSendInput(p, 'meu command');
+  r === false && (p._outbox||[]).join('') === 'meu command' && p.ws.sent.length === 0
     ? ok('socket down: queues instead of discarding (the original bug)')
     : no('socket down: the keystroke was LOST');
 }

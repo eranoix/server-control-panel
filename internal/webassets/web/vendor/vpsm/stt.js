@@ -50,7 +50,7 @@
 
       // Fonte: com opts.stream, reconhece ESSE track (Chrome 135+ desktop,
       // SpeechRecognition.start(track)) — na chamada, o mic cru escolhido.
-      // Sem isso o Web Speech ouvia o microfone PADRAO do sistema, que pode
+      // Sem isso o Web Speech ouvia o microfone DEFAULTS do sistema, que pode
       // nem ser o da chamada. Onde start(track) lanca (plataforma sem
       // suporte), cai de vez no start() sem argumento.
       const srcTrack = opts.stream && opts.stream.getAudioTracks ? (opts.stream.getAudioTracks()[0] || null) : null;

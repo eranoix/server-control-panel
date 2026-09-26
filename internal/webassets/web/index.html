@@ -2906,11 +2906,11 @@
   .vc-pill .level { position:absolute;left:0;top:0;bottom:0;z-index:0;border-radius:999px;
                     background:linear-gradient(90deg,rgba(16,185,129,.55),rgba(16,185,129,.18));
                     transition:width .09s linear; }
-  .vc-pill .teste { flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:22px;height:22px;
+  .vc-pill .test { flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:22px;height:22px;
                     border-radius:50%;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);
                     color:inherit;cursor:pointer;transition:background .15s ease; }
-  .vc-pill .teste:hover { background:rgba(255,255,255,.16); }
-  .vc-pill .teste.is-playing { background:var(--success);border-color:var(--success);color:#04120c; }
+  .vc-pill .test:hover { background:rgba(255,255,255,.16); }
+  .vc-pill .test.is-playing { background:var(--success);border-color:var(--success);color:#04120c; }
 
   /* The same pill, outside the video. Two variants, because the call's device
      modal has no image behind it: the lobby's dark glass would be illegible over
@@ -2919,23 +2919,23 @@
      to fill the width like a list row. */
   .vc-pill.is-surface { background:var(--surface-2);border-color:var(--surface-3);color:var(--text-primary);
                            -webkit-backdrop-filter:none;backdrop-filter:none; }
-  .vc-pill.is-linha { width:100%;height:42px;border-radius:9px;padding:0 8px 0 12px;gap:9px; }
-  .vc-pill.is-linha select { flex:1 1 auto;max-width:none;padding:0;min-width:0; }
+  .vc-pill.is-line { width:100%;height:42px;border-radius:9px;padding:0 8px 0 12px;gap:9px; }
+  .vc-pill.is-line select { flex:1 1 auto;max-width:none;padding:0;min-width:0; }
   /* Outside the video the arrow joins the flow: the absolute version sticks to
      the right edge and would collide with the test button. */
-  .vc-pill.is-linha .arrow { position:static;flex:0 0 auto;margin-left:auto; }
-  .vc-pill.is-linha .level { border-radius:9px; }
+  .vc-pill.is-line .arrow { position:static;flex:0 0 auto;margin-left:auto; }
+  .vc-pill.is-line .level { border-radius:9px; }
   /* Here the label goes BACK to being visible — unlike in the lobby, these rows
      are stacked and the microphone and the output often carry the SAME device
      name ("Headset (Sonos Ace)"); the icon alone does not disambiguate. */
   .vc-pill label.label { flex:0 0 auto;display:block;margin:0;font-size:11px;line-height:1;font-weight:500;
                           text-transform:none;letter-spacing:0;color:var(--text-muted);cursor:pointer; }
-  .vc-pill.is-linha .teste { width:26px;height:26px; }
+  .vc-pill.is-line .test { width:26px;height:26px; }
   /* The test button uses translucent white so it works over video.
      Outside the video that is white-on-white in the light theme — it disappears. */
-  .vc-pill.is-surface .teste { border-color:var(--surface-3);background:var(--surface-1);color:var(--text-primary); }
-  .vc-pill.is-surface .teste:hover { background:var(--surface-3); }
-  .vc-pill.is-surface .teste.is-playing { background:var(--success);border-color:var(--success);color:#04120c; }
+  .vc-pill.is-surface .test { border-color:var(--surface-3);background:var(--surface-1);color:var(--text-primary); }
+  .vc-pill.is-surface .test:hover { background:var(--surface-3); }
+  .vc-pill.is-surface .test.is-playing { background:var(--success);border-color:var(--success);color:#04120c; }
 
   /* Narrow screens: the bar comes off the top of the video and becomes a band
      underneath — an overlaid pill would be illegible at 360px wide. */
@@ -10786,7 +10786,7 @@
                           <template x-for="which in ['cpu','ram','disco']" :key="n.id + which">
                             <template x-if="true">
                               <span class="contents"
-                                    :title="(pvxGauge(n, which).measured ? pvxGauge(n, which).texto : pvxGauge(n, which).motivo)">
+                                    :title="(pvxGauge(n, which).measured ? pvxGauge(n, which).text : pvxGauge(n, which).motivo)">
                                 <span class="text-[10px] uppercase tracking-wider opacity-50 self-center"
                                       x-text="which === 'disco' ? 'disco' : which"></span>
                                 <span class="font-mono tabular-nums text-[11px] self-center text-right pr-1.5"
@@ -10796,7 +10796,7 @@
                                       role="progressbar" aria-valuemin="0" aria-valuemax="100"
                                       :aria-label="which + ' of ' + (n.name || n.id)"
                                       :aria-valuenow="pvxGauge(n, which).measured ? Math.round(pvxGauge(n, which).pct) : 0"
-                                      :aria-valuetext="pvxGauge(n, which).measured ? pvxGauge(n, which).texto : pvxGauge(n, which).motivo">
+                                      :aria-valuetext="pvxGauge(n, which).measured ? pvxGauge(n, which).text : pvxGauge(n, which).motivo">
                                   <span class="block h-full" :style="pvxGaugeStyle(pvxGauge(n, which))"></span>
                                 </span>
                               </span>
@@ -11029,7 +11029,7 @@
                                             ? pvxGauge(pvxOpenNode(), which).pct.toFixed(1) + '%' : '—'"></span>
                               <span class="opacity-60 ml-auto text-right"
                                     x-text="pvxGauge(pvxOpenNode(), which).measured
-                                            ? pvxGauge(pvxOpenNode(), which).texto
+                                            ? pvxGauge(pvxOpenNode(), which).text
                                             : pvxGauge(pvxOpenNode(), which).motivo"></span>
                             </div>
                             <div class="h-2 rounded overflow-hidden" style="background:var(--surface-2)"
@@ -11037,7 +11037,7 @@
                                  :aria-label="which + ' of ' + (pvxOpenNode()?.name || pvxOpenNode()?.id)"
                                  :aria-valuenow="pvxGauge(pvxOpenNode(), which).measured ? Math.round(pvxGauge(pvxOpenNode(), which).pct) : 0"
                                  :aria-valuetext="pvxGauge(pvxOpenNode(), which).measured
-                                                  ? pvxGauge(pvxOpenNode(), which).texto
+                                                  ? pvxGauge(pvxOpenNode(), which).text
                                                   : pvxGauge(pvxOpenNode(), which).motivo">
                               <span class="block h-full" :style="pvxGaugeStyle(pvxGauge(pvxOpenNode(), which))"></span>
                             </div>
@@ -11324,28 +11324,28 @@
                     </div>
 
                     <!-- WHAT THE PANEL ALREADY MANAGES ON THIS NODE --------- -->
-                    <template x-if="pvx.detalhe && pvx.detalhe?.node && pvx.detalhe?.node.id === pvx.open">
+                    <template x-if="pvx.detail && pvx.detail?.node && pvx.detail?.node.id === pvx.open">
                       <div class="px-4 py-3 text-xs grid grid-cols-3 gap-3">
                         <div>
                           <div class="font-semibold mb-1 opacity-70">Services</div>
-                          <template x-for="s in pvx.detalhe?.services" :key="s.id">
+                          <template x-for="s in pvx.detail?.services" :key="s.id">
                             <div class="font-mono truncate" x-text="s.unit || s.name"></div>
                           </template>
-                          <div x-show="!pvx.detalhe?.services.length" class="opacity-50">—</div>
+                          <div x-show="!pvx.detail?.services.length" class="opacity-50">—</div>
                         </div>
                         <div>
                           <div class="font-semibold mb-1 opacity-70">Posts</div>
-                          <template x-for="d in pvx.detalhe?.deployments" :key="d.id">
+                          <template x-for="d in pvx.detail?.deployments" :key="d.id">
                             <div class="font-mono truncate" x-text="d.project_id + ' @ ' + (d.branch||'')"></div>
                           </template>
-                          <div x-show="!pvx.detalhe?.deployments.length" class="opacity-50">—</div>
+                          <div x-show="!pvx.detail?.deployments.length" class="opacity-50">—</div>
                         </div>
                         <div>
                           <div class="font-semibold mb-1 opacity-70">Jobs</div>
-                          <template x-for="j in pvx.detalhe?.jobs" :key="j.id">
+                          <template x-for="j in pvx.detail?.jobs" :key="j.id">
                             <div class="font-mono truncate" x-text="j.kind + ' · ' + j.id"></div>
                           </template>
-                          <div x-show="!pvx.detalhe?.jobs.length" class="opacity-50">—</div>
+                          <div x-show="!pvx.detail?.jobs.length" class="opacity-50">—</div>
                         </div>
                       </div>
                     </template>
@@ -11500,7 +11500,7 @@
                                would invert the meaning and make a brand-new disk
                                look like it was at the end of its life. -->
                           <span class="px-1.5 py-px rounded" :style="pvxLifeStyle(d)"
-                                :title="pvxLifespan(d).motivo" x-text="pvxLifespan(d).texto"></span>
+                                :title="pvxLifespan(d).motivo" x-text="pvxLifespan(d).text"></span>
 
                           <span x-show="d.used" x-cloak class="opacity-70"
                                 x-text="'uso: ' + d.used"></span>
@@ -11514,7 +11514,7 @@
                             <span class="font-mono font-semibold ml-1" x-text="nome"></span>
                             <span class="ml-2 px-1.5 py-px rounded"
                                   :style="pvxRedundancy(nome).style"
-                                  x-text="pvxRedundancy(nome).texto"></span>
+                                  x-text="pvxRedundancy(nome).text"></span>
                           </div>
                         </template>
                         <div x-show="pvx.topology && !pvxPoolsDoDisco(d).length" x-cloak
@@ -11580,7 +11580,7 @@
                         <div class="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-[11px]">
                           <template x-if="pvxTopologyOf(p.id)">
                             <span class="px-1.5 py-px rounded" :style="pvxRedundancy(p.id).style"
-                                  x-text="'pool ' + p.id + ' · ' + pvxRedundancy(p.id).texto"></span>
+                                  x-text="'pool ' + p.id + ' · ' + pvxRedundancy(p.id).text"></span>
                           </template>
                           <span x-show="!pvxTopologyOf(p.id)" x-cloak class="opacity-50"
                                 x-text="p.type === 'pbs' ? 'remote backup server — the topology lives on that side'
@@ -11622,7 +11622,7 @@
                                needs the screen to be right. -->
                           <span class="text-[10px] px-1.5 py-px rounded"
                                 :style="pvxRedundancy(p.name).style"
-                                x-text="pvxRedundancy(p.name).texto"></span>
+                                x-text="pvxRedundancy(p.name).text"></span>
                           <span class="ml-auto font-mono tabular-nums text-xs"
                                 x-text="pvxUsageText({used_pct: pvxPct(p.alloc, p.size), used: p.alloc, total: p.size})"></span>
                         </div>
@@ -11635,7 +11635,7 @@
                           <span x-text="'free ' + pvxBytes(p.free)"></span>
                           <span x-text="pvxZfsFrag(p)"></span>
                           <span x-show="pvxPoolErrors(p.name).known" x-cloak
-                                x-text="pvxPoolErrors(p.name).texto"></span>
+                                x-text="pvxPoolErrors(p.name).text"></span>
                         </div>
 
                         <!-- 🔴 ERROR COUNTERS PER DEVICE. In a pool with no
@@ -11676,9 +11676,9 @@
               <div class="flex items-center gap-3 px-4 py-3 cursor-pointer" @click="pvxLoadPerms()">
                 <span class="font-semibold">What this token can do</span>
                 <span class="text-xs opacity-60">— what the panel can see of the hypervisor, by measurement</span>
-                <span class="ml-auto opacity-50" x-text="pvx.permsAberto ? '▾' : '▸'"></span>
+                <span class="ml-auto opacity-50" x-text="pvx.permsOpen ? '▾' : '▸'"></span>
               </div>
-              <div x-show="pvx.permsAberto" class="px-4 pb-4 border-t" style="border-color:var(--border)">
+              <div x-show="pvx.permsOpen" class="px-4 pb-4 border-t" style="border-color:var(--border)">
                 <div class="text-xs my-3" x-show="pvx.perms">
                   <span x-show="!pvx.perms || !pvx.perms.storage_visivel">
                     This token <strong>does not have <code>Datastore.Audit</code></strong> — measured now, not assumed. That is why the
@@ -16881,7 +16881,7 @@
                         <option :value="d.deviceId" x-text="d.label || ('Output ' + (d.deviceId||'').slice(0,6))"></option>
                       </template>
                     </select>
-                    <button type="button" class="teste" :class="videocall.lobbyTone ? 'is-playing' : ''"
+                    <button type="button" class="test" :class="videocall.lobbyTone ? 'is-playing' : ''"
                             @click="vcLobbyTestSpeaker()" title="Play a test beep on this output" aria-label="Play a test beep on this output">
                       <span x-text="videocall.lobbyTone ? '✓' : '▶'" style="font-size:10px;line-height:1"></span>
                     </button>
@@ -16937,7 +16937,7 @@
 
                 <div class="flex flex-col gap-2">
                   <!-- Camera -->
-                  <div class="vc-pill is-surface is-linha">
+                  <div class="vc-pill is-surface is-line">
                     <span class="ico" aria-hidden="true">
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
                         <rect x="2" y="6" width="13" height="12" rx="2"/><path d="M15 11l7-4v10l-7-4z"/>
@@ -16954,7 +16954,7 @@
                   </div>
 
                   <!-- Microphone: the same meter-inside-the-control as the lobby -->
-                  <div class="vc-pill is-surface is-linha">
+                  <div class="vc-pill is-surface is-line">
                     <span class="level" :style="'width:'+Math.max(0,Math.min(100,videocall.settingsMicLevel||0))+'%'" aria-hidden="true"></span>
                     <span class="ico" aria-hidden="true">
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
@@ -17002,7 +17002,7 @@
                   </div>
 
                   <!-- Audio output + test with confirmation -->
-                  <div class="vc-pill is-surface is-linha" x-show="videocall.sinkIdSupported">
+                  <div class="vc-pill is-surface is-line" x-show="videocall.sinkIdSupported">
                     <span class="ico" aria-hidden="true">
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
                         <path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M17 9a4 4 0 0 1 0 6"/>
@@ -17016,7 +17016,7 @@
                       </template>
                     </select>
                     <svg class="arrow" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg>
-                    <button type="button" class="teste" :class="videocall.settingsTone ? 'is-playing' : ''"
+                    <button type="button" class="test" :class="videocall.settingsTone ? 'is-playing' : ''"
                             @click="vcSettingsTestSpeaker()" title="Play a test beep on this output" aria-label="Play a test beep on this output">
                       <span x-text="videocall.settingsTone ? '✓' : '▶'" style="font-size:10px;line-height:1"></span>
                     </button>

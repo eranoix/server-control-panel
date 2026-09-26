@@ -21,14 +21,14 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
-const shell = readFileSync(join(raiz, 'internal/webassets/web/vendor/vpsm/app/00-shell.js'), 'utf8');
-const api = readFileSync(join(raiz, 'internal/api/api.go'), 'utf8');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const shell = readFileSync(join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js'), 'utf8');
+const api = readFileSync(join(root, 'internal/api/api.go'), 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
-console.log('=== test-primer-do-painel ===');
+console.log('=== test-primer-do-panel ===');
 
 // The route exists on the server side — without it the primer fetches nothing.
 /\/api\/terminal\/log-bruto/.test(api)

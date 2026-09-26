@@ -38,9 +38,9 @@ func TestIndexRevalidatesWithETagInsteadOfNoCache(t *testing.T) {
 }
 
 func TestIndexReturns304WhenBuildUnchanged(t *testing.T) {
-	primeira := httptest.NewRecorder()
-	indexServer().ServeHTTP(primeira, httptest.NewRequest("GET", "/", nil))
-	etag := primeira.Header().Get("ETag")
+	first := httptest.NewRecorder()
+	indexServer().ServeHTTP(first, httptest.NewRequest("GET", "/", nil))
+	etag := first.Header().Get("ETag")
 	if etag == "" {
 		t.Fatal("the first response came with no ETag")
 	}
@@ -126,11 +126,11 @@ func TestIndexServesBrotliWhenClientAccepts(t *testing.T) {
 func TestIndexBrotliRevalidatesAgainstItsOwnETag(t *testing.T) {
 	etag := requestWithBrotli(t).Header().Get("ETag")
 
-	segunda := httptest.NewRequest("GET", "/", nil)
-	segunda.Header.Set("Accept-Encoding", "br")
-	segunda.Header.Set("If-None-Match", etag)
+	second := httptest.NewRequest("GET", "/", nil)
+	second.Header.Set("Accept-Encoding", "br")
+	second.Header.Set("If-None-Match", etag)
 	rec2 := httptest.NewRecorder()
-	indexServer().ServeHTTP(rec2, segunda)
+	indexServer().ServeHTTP(rec2, second)
 	if rec2.Code != http.StatusNotModified {
 		t.Fatalf("br revalidation → %d, wanted 304", rec2.Code)
 	}

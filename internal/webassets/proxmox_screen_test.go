@@ -81,12 +81,12 @@ func TestNoTemplateInsideSVG(t *testing.T) {
 		}
 		block := html[s[0] : s[0]+fim]
 		for _, m := range regexp.MustCompile(`(?i)<template\b`).FindAllStringIndex(block, -1) {
-			linha := strings.Count(html[:s[0]+m[0]], "\n") + 1
+			line := strings.Count(html[:s[0]+m[0]], "\n") + 1
 			t.Errorf("index.html:%d — <template> DENTRO de <svg>. No namespace SVG isso "+
 				"não é HTMLTemplateElement: não tem .content, não é inerte, o x-for do Alpine "+
 				"estoura no importNode e os filhos renderizam com a variável do laço fora de "+
 				"escopo. Use vários subcaminhos num <path> só (cada M abre um subcaminho novo) "+
-				"ou escreva os elementos, se forem poucos e constantes.", linha)
+				"ou escreva os elementos, se forem poucos e constantes.", line)
 			findings++
 		}
 	}

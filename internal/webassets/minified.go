@@ -99,14 +99,14 @@ func verify(sub fs.FS, source, min string) bool {
 func readStamp(b []byte) (string, bool) {
 	linhas := bytes.Split(b, []byte("\n"))
 	for i := len(linhas) - 1; i >= 0; i-- {
-		linha := bytes.TrimSpace(linhas[i])
-		if len(linha) == 0 {
+		line := bytes.TrimSpace(linhas[i])
+		if len(line) == 0 {
 			continue
 		}
-		if !bytes.HasPrefix(linha, []byte(stampPrefix)) {
+		if !bytes.HasPrefix(line, []byte(stampPrefix)) {
 			return "", false // last useful line is not a stamp => no provenance
 		}
-		hash := string(bytes.TrimPrefix(linha, []byte(stampPrefix)))
+		hash := string(bytes.TrimPrefix(line, []byte(stampPrefix)))
 		if len(hash) != hex.EncodedLen(sha256.Size) {
 			return "", false
 		}
