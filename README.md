@@ -10,13 +10,13 @@ A single Go binary that replaces SSH, a terminal multiplexer, `docker`, `crontab
 `journalctl` and a folder of shell scripts with one web page, plus a native
 Android client that speaks the same API.
 
-<p align="center"><img src="docs/screenshots/01-dashboard.png" width="49%" alt="Dashboard of the read-only demo: CPU, memory, load, uptime, disks, network and Docker cards"> <img src="docs/screenshots/01-dashboard-dark.png" width="49%" alt="The same dashboard in the dark theme (dark)"></p>
+<p align="center"><img src="docs/screenshots/01-dashboard.png" width="49%" alt="Dashboard of the read-only demo: CPU, memory, load, uptime, disks, network and Docker cards"> <img src="docs/screenshots/01-dashboard-dark.png" width="49%" alt="The same dashboard in the dark theme"></p>
 
 ## Try the demo
 
 All you need is Docker with the Compose plugin (`docker compose version` should
-answer). Nothing else is installed on your machine: Go and the build happen
-inside the image. From a clone of this repository:
+answer). Go and the build run inside the image, so nothing else is installed on
+your machine. From a clone of this repository:
 
 ```bash
 docker compose up
@@ -29,7 +29,10 @@ If port 8765 is already taken, the same demo runs on 18767 with
 (Compose 2.24 or newer). Stop it with Ctrl+C, or `docker compose down`.
 
 The demo is read-only on purpose: writes, terminals and shell access are
-refused, and it resets itself on every restart.
+refused, and it resets itself on every restart. Its inventory is made up, while
+CPU and memory are read live from the demo container. A few panels are empty in
+there by design: there is no Docker socket to read and no real disk to list, and
+each of those panels says so instead of failing.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/02-history-dark.png"><img src="docs/screenshots/02-history.png" alt="History view: two minutes of CPU, memory, load and disk samples charted"></picture>
 
@@ -42,7 +45,7 @@ refused, and it resets itself on every restart.
 ## Why this exists
 
 Administering a server means keeping a dozen tools in your head and a terminal
-open on every one of them. This collapses that into one page, and, more to the
+open on every one of them. This collapses that into one page and, more to the
 point, into one artifact: a static binary with the entire front end compiled
 into it. Deployment is copying a file.
 
@@ -71,69 +74,97 @@ exactly when you need it, since that is when you open it.
 `DEMO_MODE` installs a single wrapper in `Router.ServeHTTP` and refuses
 everything except an explicit allowlist. Three independent rules: method
 (GET/HEAD plus login), WebSocket upgrade (checked by header, so it holds on any
-path), and path family. 266 routes are registered today; a denylist would have
-meant the 267th arrived unguarded.
+path), and path family. More than 250 routes are registered; with a denylist,
+the next one added would arrive unguarded.
 → `internal/api/demo_mode.go`
 
 **There is a way back in when the panel will not start.**
-A separate CLI administers the same data directory with no web UI: reset
+`panelctl` administers the same data directory with no web UI: reset
 credentials, inspect state, rotate secrets. The failure it exists for is the one
 where a web-only administration story leaves you locked out of your own machine.
 → `cmd/panelctl/`
+
+## What is in the repository
+
+| | |
+|---|---|
+| `cmd/server` | The control plane: HTTP API, web UI and the mobile back end in one binary |
+| `cmd/panelctl` | Local admin and recovery CLI, works when the web UI does not |
+| `cmd/node-agent` | Small agent for other machines, serving a closed list of named operations behind a per-node token |
+| `cmd/wad` | WhatsApp daemon used by the messaging panel |
+| `cmd/mobile-openapi-gen`, `cmd/sdui-contract`, `cmd/sdui-compat` | Generators and checks for the contract between server and app |
+| `android/` | The Android client |
+| `demo/`, `Dockerfile`, `docker-compose.yml` | The read-only demo |
 
 ## Stack
 
 | | |
 |---|---|
-| Backend | Go 1.25, standard-library `net/http`; the one framework is huma v2, and only for the mobile BFF's OpenAPI surface |
+| Backend | Go 1.25, standard-library `net/http`; the one framework is huma v2, and only for the mobile back end's OpenAPI surface |
 | Front end | Alpine.js, xterm.js, Monaco, Chart.js, no build step for app code |
 | Storage | JSON files + SQLite (pure-Go driver, so `CGO_ENABLED=0` holds) |
 | Auth | JWT in an HttpOnly cookie, WebAuthn passkeys, optional TOTP |
-| Mobile | Kotlin + Compose, 17-module Gradle composite build |
-| Image | Static binary on Alpine; the 23 MB front end ships inside it via `go:embed` |
+| Mobile | Kotlin + Compose, 17-module Gradle build |
+| Image | Static binary on Alpine; the front end ships inside it via `go:embed` |
 
 ### Languages
 
-Thirteen of them, because a control plane is not one program. The percentages are
-what GitHub counts, after `.gitattributes` corrects what its heuristics get
-wrong here: the front end lives under a directory called `vendor/` (that is
-where the asset server reads from) and was being discarded as third-party
-code, and the Gradle build and Android resources are classified as data rather
-than as source.
+A control plane is not one program, so the repository mixes several. GitHub's
+count only makes sense after `.gitattributes` corrects its heuristics: the front
+end lives under a directory called `vendor/` (that is where the asset server
+reads from) and would otherwise be discarded as third-party code.
 
-| | | |
-|---|---|---|
-| Go | 45.4% | The control plane. 65 packages, almost all of it bare `net/http` |
-| Kotlin | 25.5% | Android client: Compose UI and a VT terminal engine |
-| JavaScript | 15.5% | Panel front end, plus browser tests driven over CDP |
-| HTML | 10.7% | `index.html` is the panel: one Alpine template, not a shell |
-| Shell | 1.4% | Build, release and test harnesses |
-| Gradle (Kotlin DSL) | 0.5% | 17-module composite build with a convention plugin |
-| XML | 0.4% | Android manifests, themes, file provider and backup rules |
-| C++ | 0.3% | JNI bridge from Kotlin to `libghostty-vt` |
-| Makefile | 0.1% | Top-level targets and the NDK build for the patch engine |
-| Dockerfile | <0.1% | Multi-stage; the final image is a static binary on Alpine |
-| Python | <0.1% | Doc-structure check and a VT session replayer |
-| CMake / Go Template | <0.1% | Native terminal build; TURN server config |
+| | |
+|---|---|
+| Go | The control plane, almost all of it bare `net/http` |
+| Kotlin | Android client: Compose UI and a VT terminal engine |
+| JavaScript | Panel front end, plus browser tests driven over CDP |
+| HTML | `index.html` is the panel: one Alpine template, not a shell |
+| Shell | Build, release and test harnesses |
+| Gradle (Kotlin DSL) | Multi-module build with a convention plugin |
+| C++ | JNI bridge from Kotlin to `libghostty-vt` |
+| Python | Doc-structure check and a VT session replayer |
 
 Third-party code shipped in-tree (Monaco, xterm.js, mermaid, zstd, HDiffPatch)
-is marked vendored and excluded, which is why 19 MB of JavaScript and 2.3 MB of
-C do not appear above. Neither does `tailwind.css`: it is build output.
+is marked vendored and left out of that count, and so is `tailwind.css`, which
+is build output.
 
 ## Android client
 
-`android/` is a standalone Gradle composite build with its own terminal engine:
-a VT parser driving a Compose renderer, rather than a web view around the same
-page. Point it at a server with one property:
+`android/` is a standalone Gradle build with its own terminal engine: a VT
+parser driving a Compose renderer, rather than a web view around the same page.
+The package is `dev.servercontrolpanel` and the application id is
+`tech.northwind.servercontrolpanel`.
 
-```properties
-# android/gradle.properties
-servercontrolpanel.defaultServerUrl=https://your-server.example
+You need JDK 17, the Android SDK (platform 37 and build-tools) and, for the
+terminal engine, git, curl and python3. The engine links `libghostty-vt`, a
+static library that is built from a pinned Ghostty commit rather than
+committed. One script builds it for both ABIs; it downloads the pinned Zig
+release (checked against its sha256) and installs NDK 27.3.13750724 with
+`sdkmanager` if you do not have them:
+
+```bash
+cd android
+echo "sdk.dir=$ANDROID_HOME" > local.properties
+terminal-engine/build-libghostty.sh   # once; a few minutes, about 2 GB of disk
+./gradlew assembleDebug
 ```
 
-The prebuilt `libghostty-vt` static libraries are not committed here (they carry
-absolute build paths and 30 MB of debug sections). Build them from upstream, or
-run the rest of the modules without `:terminal-engine`.
+The APK lands in `app/build/outputs/apk/debug/`. Run the unit tests (Robolectric,
+no emulator) with `./gradlew test`.
+
+The app asks for the server address on first launch. To build one that already
+points at your server, set the property in `android/gradle.properties` or pass it
+on the command line:
+
+```bash
+./gradlew assembleDebug -Pservercontrolpanel.defaultServerUrl=https://your-server.example
+```
+
+The demo is enough to try the app. Start it as above, then on a phone on the
+same network enter `http://<your computer's LAN address>:8765` and tick
+"Allow http:// (local development only)". Only debug builds accept plain
+http; a release build needs the server behind HTTPS.
 
 ## Documentation
 
@@ -198,10 +229,21 @@ adding the socket's group:
       - "999"   # the output of: stat -c %g /var/run/docker.sock
 ```
 
-Configuration is one JSON file (`PANEL_CONFIG`, default
-`/opt/panel/data/config.json`; the image sets it to `/app/data/config.json`).
-The first start without one generates it, including the random admin password
-written to `INITIAL_CREDENTIALS.txt` beside it.
+Configuration is one JSON file. The first start without one generates it,
+including the random admin password written to `INITIAL_CREDENTIALS.txt`
+beside it. A few settings come from the environment:
+
+| Variable | Effect |
+|---|---|
+| `PANEL_CONFIG` | Path of the config file. Default `/opt/panel/data/config.json`; the image sets `/app/data/config.json` |
+| `DEMO_MODE` | Any value other than empty, `0` or `false` turns on the read-only demo |
+| `PANEL_DEPLOY_COMMAND` | Command the "deploy this server" action in the app runs (through `sh -c`). Unset, the action explains that it is not configured |
+| `PANEL_ROLLBACK_COMMAND` | Command `panelctl rollback` runs to restore the previous binary |
+| `PANEL_DETACH_JOBS` | `0` keeps long jobs inside the server process instead of a separate systemd scope |
+
+Outside Docker, `make build` puts `server-control-panel-new`, `panelctl-new` and
+`wad-new` in `bin/`, and `make node-agent` builds the agent on its own. `make`
+with no target lists the rest.
 
 ## Tests
 
@@ -212,19 +254,19 @@ an older Go download the right one by itself.
 go test $(go list ./... | grep -v /internal/webassets)
 ```
 
-That is exactly what CI runs: the 45 packages whose tests need nothing but Go.
-47 packages have tests in total. Six tests cover the demo gate alone, including
-one asserting that an *unknown* route is denied, the property an allowlist has
-and a denylist cannot.
+That is what CI runs: the 45 packages whose tests need nothing but Go, out of
+47 with tests. Six tests cover the demo gate alone, including one asserting that
+an *unknown* route is denied, the property an allowlist has and a denylist
+cannot.
 
-The other two packages hold front-end tests that render pages in a real
-browser. They need Node.js with npm, Google Chrome or Chromium, and `dtach`
-(one of them shares a terminal session between two windows, and terminal
-sessions are dtach sessions):
+The two `internal/webassets` packages hold front-end tests that render pages in
+a real browser. They need Node.js with npm, Google Chrome or Chromium, and
+`dtach` (one of them shares a terminal session between two windows, and
+terminal sessions are dtach sessions):
 
 ```bash
-make tools        # installs esbuild and playwright-core into .tools/
-go test ./...     # everything, browser tests included
+make tools                            # installs esbuild and playwright-core into .tools/
+go test -p 1 ./internal/webassets/... # one package at a time, so only one browser runs
 ```
 
 Without `make tools` those tests fail loudly rather than skip, which is
@@ -232,16 +274,12 @@ deliberate: the screens they cover broke twice in production while a skipped
 test reported green. The same goes for a missing `dtach`.
 
 A few tests read the machine around them (a CLI binary found on the `PATH`, a
-system configuration directory) and can fail on a developer box that happens to
-have those installed. CI runs on a clean runner, where they pass.
+system configuration directory, a local listener) and can fail on a developer
+box that happens to have those. CI runs on a clean runner, where they pass.
 
-## Honest notes
+The Android tests run with `./gradlew test` from `android/`, and
+`make sdui-check` verifies that the server's screen contract is still
+compatible with every published app version.
 
-- Inside the demo container some panels have nothing to show: the Docker panel
-  reports that it cannot reach the daemon (there is no socket in there) and
-  the disk card is empty. That is the fail-soft behaviour described above,
-  not a broken build.
-- The demo seeds fabricated inventory and reads live CPU/memory from its own
-  container, so those numbers are real but describe the demo host.
-- This is a working system, not a product. It assumes one operator who trusts
-  the machine it runs on.
+This is a working system, not a product: it assumes one operator who trusts the
+machine it runs on.
