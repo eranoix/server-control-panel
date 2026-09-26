@@ -11,7 +11,6 @@ import (
 
 // maintenance.go — reboot, clone, and order a backup copy.
 //
-// ────────────────────────────────────────────────────────────────────────────
 // 🔴 THE THREE DO NOT USE THE SAME CREDENTIAL, AND THAT IS DESIGN, NOT NEGLECT.
 //
 // Rebooting is the node acting ON ITSELF: it requires VM.PowerMgmt on
@@ -26,7 +25,6 @@ import (
 //     on /storage/<name>, where the node token also has nothing.
 // Measured at /access/permissions, not deduced. Those two go through the panel
 // token, which has Administrator at the root.
-// ────────────────────────────────────────────────────────────────────────────
 
 // Reboot restarts the guest FROM THE INSIDE (the hypervisor asks init/ACPI),
 // without cutting power. It is not stop followed by start: a guest that ignores
@@ -279,7 +277,7 @@ func (c *Client) VZDump(ctx context.Context, node string, vmid int, storage, mod
 // one. A second description written here would become the second truth — and
 // the two would diverge on the first day somebody edited the Proxmox one.
 
-// Descricao returns the note of the guest (vmid > 0) or of the node itself
+// Description returns the note of the guest (vmid > 0) or of the node itself
 // (vmid <= 0).
 //
 // Absence is NOT an error: a guest with no note is a guest nobody has described

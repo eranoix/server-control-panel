@@ -15,7 +15,7 @@ package vt10x
 // scrollback. Here they are the product: they are the session's true history.
 //
 // (`charmbracelet/x/vt` has scrollback in its API and was the first choice. It
-// does not render — measured: fed "ola mundo" it returns an empty screen, which
+// does not render — measured: fed "hello world" it returns an empty screen, which
 // matches the warning the package itself carries in its own documentation.)
 //
 // The patch is ten lines with a single entry point. Preferring that to a fork
@@ -28,7 +28,7 @@ import (
 	"unicode"
 )
 
-// Novo returns a screen emulator ready to receive pty bytes. It does what the
+// New returns a screen emulator ready to receive pty bytes. It does what the
 // original package's `newTerminal` did, without dragging along the pty-attached
 // terminal that came with it.
 func New(cols, rows int) *State {
@@ -88,7 +88,7 @@ func (t *State) Write(p []byte) (int, error) {
 	return written, nil
 }
 
-// Redimensiona fits the emulator's grid to the session's effective size.
+// Resize fits the emulator's grid to the session's effective size.
 func (t *State) Resize(cols, rows int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -128,7 +128,7 @@ func (t *State) LockedCursorVisible() bool {
 	return t.mode&ModeHide == 0
 }
 
-// Tamanho returns the screen's grid — the SESSION's grid, which is what each
+// LockedSize returns the screen's grid — the SESSION's grid, which is what each
 // client's crop is computed against.
 func (t *State) LockedSize() (cols, rows int) {
 	t.mu.Lock()
@@ -136,10 +136,10 @@ func (t *State) LockedSize() (cols, rows int) {
 	return t.cols, t.rows
 }
 
-// EmAltScreen reports whether the alternate screen is in use (vim, htop). While
+// InAltScreen reports whether the alternate screen is in use (vim, htop). While
 // it is on, what scrolls is not session history — it is a full-screen program's
 // scratch, and recording it into the history would fill the file with junk.
-func (t *State) EmAltScreen() bool {
+func (t *State) InAltScreen() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.mode&ModeAltScreen != 0

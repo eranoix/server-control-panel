@@ -21,7 +21,7 @@ import (
 //	3. every constant of type OpName is in AllOps   → ORPHAN constant, invisible to 1 and 2
 //
 // Item 3 is the one that is almost always missing. Without it, somebody
-// declares `OpExec OpName = "manutencao.rodar"`, leaves it out of AllOps,
+// declares `OpExec OpName = "maintenance.run"`, leaves it out of AllOps,
 // and the first two tests stay green forever.
 
 // repoRoot walks up to the go.mod.
@@ -140,10 +140,8 @@ func TestClosedCatalogDeclaredConstantsMatchAllOps(t *testing.T) {
 // forbidden comparison does not even appear in this comment, because the
 // acceptance criterion matches by fixed text and does not discount comments —
 // the same trap that has already caught this project once).
-// Freezing a count is a defect this house has already lived through:
-// test_invariantes_d.sh stayed stuck at 21 when there were already 65, and
-// nobody noticed because the number looked intentional. On top of that,
-// freezing the count would break the M5 negative control, which adds a
+// A frozen count goes stale silently, and it would break the M5 negative
+// control, which adds a
 // LEGITIMATE operation and has to pass.
 func TestCatalogNamesWellFormed(t *testing.T) {
 	seen := map[gameservers.OpName]bool{}

@@ -19,7 +19,7 @@ import (
 
 type opKey struct{ name, result string }
 
-// Metricas accumulates what the agent publishes.
+// Metrics accumulates what the agent publishes.
 type Metrics struct {
 	No    string
 	start time.Time
@@ -32,8 +32,9 @@ func NewMetrics(no string) *Metrics {
 	return &Metrics{No: no, start: time.Now(), ops: map[opKey]uint64{}}
 }
 
-// Conta records one execution by operation name and outcome
-// (ok / erro / desconhecida / grande).
+// Count records one execution by operation name and outcome. The outcome
+// label values (ok / erro / desconhecida / grande: ok, error, unknown, too
+// large) are part of the published metrics.
 func (m *Metrics) Count(name, result string) {
 	if m == nil {
 		return

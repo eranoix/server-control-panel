@@ -19,33 +19,14 @@ import (
 	"server-control-panel/internal/inventory"
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WHAT THIS HARNESS PROVES — AND WHAT IT DOES NOT
-//
-// IT PROVES: the CONTRACT. That the two back-ends, given the same envelope,
-// return the same value and the same error class; that the Handle is opaque and
-// never turns into a path; that the token never leaves the header; that the
-// factory chooses by the node's transport.
-//
-// IT DOES NOT PROVE that the agent works live. The HTTP side brings the
-// lab-agent up IN PROCESS (httptest.Server), with the local back-end behind it —
-// there is no real network, no bridge, no bearer crossing a bind, no systemd.
-// The proof against the real node, over the bridge's network, is a separate step.
-//
-// The distinction is not pedantry: "a green build is not a green live" was the
-// false green paid for before, with four cases. An in-process harness is
-// legitimate for parity — and mistaking it for proof of live is how you pay again.
-//
-// The HONEST LIMIT of the parity: the HTTP side talks to the SAME BackendLocal
-// as the local side. So the test proves that the TRANSPORT does not alter the
-// result — serialization, status codes, error classes, limits. It does NOT prove
-// that two independent implementations of the same operation agree, because there
-// are not two: the generic forwarder design (see the header of backend_http.go)
-// is exactly what makes the second implementation nonexistent, and therefore
-// impossible to diverge.
-// ─────────────────────────────────────────────────────────────────────────────
+// This harness proves the CONTRACT: given the same envelope, both back ends
+// return the same value and error class, the Handle stays opaque, the token
+// stays in the header, and the factory chooses by the node's transport. The
+// HTTP side runs the lab-agent IN PROCESS over the same BackendLocal, so it
+// proves the transport does not alter results; it does not prove the agent
+// works live on the real node.
 
-// ambiente assembles a test Manager with a fake server, without docker and
+// setupEnv assembles a test Manager with a fake server, without docker and
 // without a sampler (New() fires a StartSampler that would outlive the test).
 func setupEnv(t *testing.T) (*Manager, Server) {
 	t.Helper()
@@ -57,15 +38,15 @@ func setupEnv(t *testing.T) (*Manager, Server) {
 func setupEnvAt(t *testing.T, root string) (*Manager, Server) {
 	t.Helper()
 	srv := Server{
-		ID: "jogo-teste", Name: "Teste", Game: "enshrouded",
-		Container: "nao-existe", Root: root,
+		ID: "test-game", Name: "Test", Game: "enshrouded",
+		Container: "missing", Root: root,
 	}
-	if err := os.MkdirAll(filepath.Join(root, "worlds", "alfa"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "worlds", "alpha"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// A world in the format ImportWorld is required to recognize.
 	for _, n := range []string{"11111-index", "11111", "11111_info"} {
-		if err := os.WriteFile(filepath.Join(root, "worlds", "alfa", n), []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, "worlds", "alpha", n), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -80,7 +61,7 @@ func setupEnvAt(t *testing.T, root string) (*Manager, Server) {
 	}
 	// `gameSettings` has to HAVE the key the patch will change: the adapter's
 	// allowlist refuses an unknown field, and it is that refusal the narrowing keeps.
-	cfg := `{"name":"servidor de teste","password":"","slotCount":16,` +
+	cfg := `{"name":"test server","password":"","slotCount":16,` +
 		`"gameSettingsPreset":"Default",` +
 		`"gameSettings":{"playerHealthFactor":1},` +
 		`"userGroups":[` +
@@ -92,7 +73,7 @@ func setupEnvAt(t *testing.T, root string) (*Manager, Server) {
 
 	// A minimal docker-compose.yml, so runtime.get returns options instead of
 	// "could not find the compose".
-	compose := "services:\n  enshrouded:\n    image: exemplo\n    environment:\n" +
+	compose := "services:\n  enshrouded:\n    image: example\n    environment:\n" +
 		"      - BACKUP_MAX_COUNT=5\n      - RESTART_CRON=\n"
 	if err := os.WriteFile(filepath.Join(root, "docker-compose.yml"), []byte(compose), 0o644); err != nil {
 		t.Fatal(err)
@@ -122,8 +103,8 @@ func setupEnvAt(t *testing.T, root string) (*Manager, Server) {
 // why the route test that counts lives in internal/labagent/exec_test.go.
 func backendPair(t *testing.T, m *Manager) (*BackendLocal, *BackendHTTP, *httptest.Server, *[]string) {
 	t.Helper()
-	local := NewBackendLocal(m, "no-teste")
-	const token = "token-de-teste-nao-e-segredo"
+	local := NewBackendLocal(m, "test-node")
+	const token = "test-token-not-a-secret"
 
 	var seenURLs []string
 	mux := http.NewServeMux()
@@ -131,7 +112,7 @@ func backendPair(t *testing.T, m *Manager) (*BackendLocal, *BackendHTTP, *httpte
 		seenURLs = append(seenURLs, r.URL.String())
 		if r.Header.Get("Authorization") != "Bearer "+token {
 			w.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(w).Encode(map[string]any{"erro": "nao autorizado"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"erro": "unauthorized"})
 			return
 		}
 		name := OpName(r.PathValue("op"))
@@ -169,20 +150,19 @@ func backendPair(t *testing.T, m *Manager) (*BackendLocal, *BackendHTTP, *httpte
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 
-	remote, err := NewBackendHTTP(ts.URL, token, "no-teste")
+	remote, err := NewBackendHTTP(ts.URL, token, "test-node")
 	if err != nil {
 		t.Fatalf("NewBackendHTTP: %v", err)
 	}
 	return local, remote, ts, &seenURLs
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // THE CONTRACT BATTERY — one table, two back-ends
 
 type contractCase struct {
 	op   OpName
 	body string
-	// mutante marks the cases that CHANGE state. They run against separate
+	// mutating marks the cases that CHANGE state. They run against separate
 	// environments, otherwise the second back-end would see the world the first
 	// one left behind and the "divergence" would be nothing but execution order.
 	mutating bool
@@ -193,7 +173,7 @@ type contractCase struct {
 // The coverage is checked by TestContractCoversAllOps against AllOps —
 // not by a hand-written count, which is itself the defect.
 func contractCases() []contractCase {
-	const target = `"servidor":"jogo-teste"`
+	const target = `"servidor":"test-game"`
 	return []contractCase{
 		{op: OpServerList, body: `{}`},
 		{op: OpServerStatus, body: `{` + target + `}`},
@@ -201,12 +181,12 @@ func contractCases() []contractCase {
 		{op: OpServerLogs, body: `{` + target + `}`},
 
 		{op: OpWorldList, body: `{` + target + `}`},
-		{op: OpWorldSwitch, body: `{` + target + `,"mundo":"alfa"}`, mutating: true},
-		{op: OpWorldExport, body: `{` + target + `,"mundo":"alfa"}`, mutating: true},
-		{op: OpWorldImport, body: `{` + target + `,"nome":"beta","handle":"nao-existe"}`, mutating: true},
-		{op: OpWorldRename, body: `{` + target + `,"de":"alfa","para":"gama"}`, mutating: true},
-		{op: OpWorldDuplicate, body: `{` + target + `,"de":"alfa","para":"copia"}`, mutating: true},
-		{op: OpWorldDelete, body: `{` + target + `,"mundo":"inexistente"}`, mutating: true},
+		{op: OpWorldSwitch, body: `{` + target + `,"mundo":"alpha"}`, mutating: true},
+		{op: OpWorldExport, body: `{` + target + `,"mundo":"alpha"}`, mutating: true},
+		{op: OpWorldImport, body: `{` + target + `,"nome":"beta","handle":"missing"}`, mutating: true},
+		{op: OpWorldRename, body: `{` + target + `,"de":"alpha","para":"gamma"}`, mutating: true},
+		{op: OpWorldDuplicate, body: `{` + target + `,"de":"alpha","para":"copy"}`, mutating: true},
+		{op: OpWorldDelete, body: `{` + target + `,"mundo":"nonexistent"}`, mutating: true},
 
 		{op: OpSettingsGet, body: `{` + target + `}`},
 		// settings.patch writes FOR REAL into enshrouded_server.json — the target of
@@ -220,8 +200,8 @@ func contractCases() []contractCase {
 
 		{op: OpBackupList, body: `{` + target + `}`},
 		{op: OpBackupCreate, body: `{` + target + `}`, mutating: true},
-		{op: OpBackupRestore, body: `{` + target + `,"arquivo":"nao-existe.zip"}`, mutating: true},
-		{op: OpBackupDownload, body: `{` + target + `,"arquivo":"nao-existe.zip"}`},
+		{op: OpBackupRestore, body: `{` + target + `,"arquivo":"missing.zip"}`, mutating: true},
+		{op: OpBackupDownload, body: `{` + target + `,"arquivo":"missing.zip"}`},
 
 		{op: OpTrainerStatus, body: `{}`},
 		{op: OpTrainerApply, body: `{}`, mutating: true},
@@ -257,7 +237,7 @@ func TestContractCoversAllOps(t *testing.T) {
 // Failing is allowed (there is no docker in the test); landing in the default is not.
 func TestBackendLocalServesAllOps(t *testing.T) {
 	m, _ := setupEnv(t)
-	b := NewBackendLocal(m, "no-teste")
+	b := NewBackendLocal(m, "test-node")
 	for _, c := range contractCases() {
 		_, err := b.Execute(context.Background(), c.op, json.RawMessage(c.body))
 		if err != nil && strings.Contains(err.Error(), notImplemented) {
@@ -295,7 +275,7 @@ func TestContractParity(t *testing.T) {
 				mB = mA
 			}
 
-			locA := NewBackendLocal(mA, "no-teste")
+			locA := NewBackendLocal(mA, "test-node")
 			resLocal, errLocal := locA.Execute(context.Background(), c.op, json.RawMessage(c.body))
 
 			_, remote, _, _ := backendPair(t, mB)
@@ -303,8 +283,8 @@ func TestContractParity(t *testing.T) {
 
 			withoutRoot := func(txt string) string {
 				if rootA != "" {
-					txt = strings.ReplaceAll(txt, rootA, "<RAIZ>")
-					txt = strings.ReplaceAll(txt, rootB, "<RAIZ>")
+					txt = strings.ReplaceAll(txt, rootA, "<ROOT>")
+					txt = strings.ReplaceAll(txt, rootB, "<ROOT>")
 				}
 				return txt
 			}
@@ -342,7 +322,7 @@ func sameJSON(t *testing.T, a, b json.RawMessage) bool {
 	return fmt.Sprint(normalize(va)) == fmt.Sprint(normalize(vb))
 }
 
-// normaliza zeroes the fields that are volatile by nature: the handle (random by
+// normalize zeroes the fields that are volatile by nature: the handle (random by
 // definition) and a file stamped with the current second.
 func normalize(v any) any {
 	m, ok := v.(map[string]any)
@@ -353,9 +333,9 @@ func normalize(v any) any {
 	for k, val := range m {
 		switch k {
 		case "handle":
-			out[k] = "<opaco>"
+			out[k] = "<opaque>"
 		case "arquivo":
-			out[k] = "<carimbado>"
+			out[k] = "<stamped>"
 		default:
 			out[k] = normalize(val)
 		}
@@ -363,15 +343,14 @@ func normalize(v any) any {
 	return out
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // HANDLE
 
 func TestHandleDoesNotRevealPath(t *testing.T) {
 	m, srv := setupEnv(t)
-	b := NewBackendLocal(m, "no-teste")
+	b := NewBackendLocal(m, "test-node")
 
 	res, err := b.Execute(context.Background(), OpWorldExport,
-		json.RawMessage(`{"servidor":"jogo-teste","mundo":"alfa"}`))
+		json.RawMessage(`{"servidor":"test-game","mundo":"alpha"}`))
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -428,18 +407,18 @@ func TestHandleDoesNotRevealPath(t *testing.T) {
 
 func TestForgedHandleIsRejected(t *testing.T) {
 	m, _ := setupEnv(t)
-	b := NewBackendLocal(m, "no-teste")
+	b := NewBackendLocal(m, "test-node")
 
 	forged := []struct {
 		name string
 		h    Handle
 	}{
-		{"string arbitraria", "eu-inventei-este"},
-		{"vazio", ""},
-		{"caminho real absoluto", "/etc/passwd"},
-		{"caminho relativo com travessia", "../../etc/passwd"},
-		{"caminho do proprio inventario", Handle(m.path)},
-		{"hex com o tamanho certo", Handle(strings.Repeat("ab", 32))},
+		{"arbitrary string", "i-made-this-up"},
+		{"empty", ""},
+		{"real absolute path", "/etc/passwd"},
+		{"relative path with traversal", "../../etc/passwd"},
+		{"the inventory's own path", Handle(m.path)},
+		{"hex of the right length", Handle(strings.Repeat("ab", 32))},
 	}
 	for _, f := range forged {
 		t.Run(f.name, func(t *testing.T) {
@@ -458,10 +437,10 @@ func TestForgedHandleIsRejected(t *testing.T) {
 // TestHandleIsScopedByServer: one server's handle does not resolve for another.
 func TestHandleIsScopedByServer(t *testing.T) {
 	m, _ := setupEnv(t)
-	b := NewBackendLocal(m, "no-teste")
+	b := NewBackendLocal(m, "test-node")
 
 	res, err := b.Execute(context.Background(), OpWorldExport,
-		json.RawMessage(`{"servidor":"jogo-teste","mundo":"alfa"}`))
+		json.RawMessage(`{"servidor":"test-game","mundo":"alpha"}`))
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -470,10 +449,10 @@ func TestHandleIsScopedByServer(t *testing.T) {
 	}
 	_ = json.Unmarshal(res, &env)
 
-	if _, err := b.vault.resolver(Handle(env.Handle), "jogo-teste"); err != nil {
+	if _, err := b.vault.resolver(Handle(env.Handle), "test-game"); err != nil {
 		t.Fatalf("the handle does not resolve to its own server: %v", err)
 	}
-	if _, err := b.vault.resolver(Handle(env.Handle), "outro-jogo"); err == nil {
+	if _, err := b.vault.resolver(Handle(env.Handle), "other-game"); err == nil {
 		t.Error("THE HANDLE CROSSED THE SCOPE: it resolved to a server that is not the owner")
 	}
 }
@@ -485,19 +464,19 @@ func TestHandleExpires(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	c.now = func() time.Time { return now }
 
-	file := filepath.Join(t.TempDir(), "artefato.bin")
-	if err := os.WriteFile(file, []byte("dados"), 0o600); err != nil {
+	file := filepath.Join(t.TempDir(), "artifact.bin")
+	if err := os.WriteFile(file, []byte("data"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	h, err := c.Mint("jogo-teste", file, false)
+	h, err := c.Mint("test-game", file, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.resolver(h, "jogo-teste"); err != nil {
+	if _, err := c.resolver(h, "test-game"); err != nil {
 		t.Fatalf("a freshly minted handle should resolve: %v", err)
 	}
 	now = now.Add(11 * time.Minute)
-	if _, err := c.resolver(h, "jogo-teste"); err == nil {
+	if _, err := c.resolver(h, "test-game"); err == nil {
 		t.Error("THE HANDLE DID NOT EXPIRE: a file-read token valid forever")
 	}
 }
@@ -505,10 +484,10 @@ func TestHandleExpires(t *testing.T) {
 // TestEphemeralHandleDeletedOnClose: the export zip must not leak into /tmp.
 func TestEphemeralHandleDeletedOnClose(t *testing.T) {
 	m, _ := setupEnv(t)
-	b := NewBackendLocal(m, "no-teste")
+	b := NewBackendLocal(m, "test-node")
 
 	res, err := b.Execute(context.Background(), OpWorldExport,
-		json.RawMessage(`{"servidor":"jogo-teste","mundo":"alfa"}`))
+		json.RawMessage(`{"servidor":"test-game","mundo":"alpha"}`))
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -516,7 +495,7 @@ func TestEphemeralHandleDeletedOnClose(t *testing.T) {
 		Handle string `json:"handle"`
 	}
 	_ = json.Unmarshal(res, &env)
-	a, err := b.vault.resolver(Handle(env.Handle), "jogo-teste")
+	a, err := b.vault.resolver(Handle(env.Handle), "test-game")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,12 +510,11 @@ func TestEphemeralHandleDeletedOnClose(t *testing.T) {
 	if _, err := os.Stat(a.path); !os.IsNotExist(err) {
 		t.Errorf("TEMPORARY ZIP LEAKED: %s still exists after the download", a.path)
 	}
-	if _, err := b.vault.resolver(Handle(env.Handle), "jogo-teste"); err == nil {
+	if _, err := b.vault.resolver(Handle(env.Handle), "test-game"); err == nil {
 		t.Error("the ephemeral handle stayed valid after being served")
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // HTTP BACK-END
 
 func TestBackendHTTPNeverSendsTokenInQuery(t *testing.T) {
@@ -563,7 +541,7 @@ func TestBackendHTTPPropagatesAuthError(t *testing.T) {
 	m, _ := setupEnv(t)
 	_, remote, ts, _ := backendPair(t, m)
 
-	wrong, err := NewBackendHTTP(ts.URL, "token-errado", "no-teste")
+	wrong, err := NewBackendHTTP(ts.URL, "wrong-token", "test-node")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -590,7 +568,7 @@ func TestBackendHTTPRejectsOpOutsideCatalog(t *testing.T) {
 	m, _ := setupEnv(t)
 	_, remote, _, urls := backendPair(t, m)
 
-	_, err := remote.Execute(context.Background(), OpName("manutencao.qualquercoisa"), json.RawMessage(`{}`))
+	_, err := remote.Execute(context.Background(), OpName("maintenance.anything"), json.RawMessage(`{}`))
 	var unknown *UnknownOperationError
 	if !errors.As(err, &unknown) {
 		t.Fatalf("expected UnknownOperationError, got: %v (%T)", err, err)
@@ -601,13 +579,13 @@ func TestBackendHTTPRejectsOpOutsideCatalog(t *testing.T) {
 }
 
 func TestBackendHTTPRequiresToken(t *testing.T) {
-	if _, err := NewBackendHTTP("http://127.0.0.1:1", "", "no-teste"); err == nil {
+	if _, err := NewBackendHTTP("http://127.0.0.1:1", "", "test-node"); err == nil {
 		t.Error("an http back end with no token should fail at construction")
 	}
-	if _, err := NewBackendHTTP("", "tok", "no-teste"); err == nil {
+	if _, err := NewBackendHTTP("", "tok", "test-node"); err == nil {
 		t.Error("an empty base should fail")
 	}
-	if _, err := NewBackendHTTP("nao-e-url", "tok", "no-teste"); err == nil {
+	if _, err := NewBackendHTTP("not-a-url", "tok", "test-node"); err == nil {
 		t.Error("a base with no scheme should fail")
 	}
 }
@@ -621,7 +599,7 @@ func TestBackendHTTPTimeoutAndBodyLimit(t *testing.T) {
 			}
 		}))
 		defer ts.Close()
-		b, err := NewBackendHTTP(ts.URL, "tok", "no-teste")
+		b, err := NewBackendHTTP(ts.URL, "tok", "test-node")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -640,7 +618,7 @@ func TestBackendHTTPTimeoutAndBodyLimit(t *testing.T) {
 		}))
 		defer func() { close(released); ts.Close() }()
 
-		b, err := NewBackendHTTP(ts.URL, "tok", "no-teste")
+		b, err := NewBackendHTTP(ts.URL, "tok", "test-node")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -686,7 +664,6 @@ func TestBackendHTTPHasNoLiteralOperationName(t *testing.T) {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // FACTORY
 
 func TestSelectionByTransport(t *testing.T) {
@@ -706,12 +683,12 @@ func TestSelectionByTransport(t *testing.T) {
 		wantType string
 		wantErr  bool
 	}{
-		{"agente vira http", NodeTarget{Name: "games", Transport: TransportAgent, Base: "http://127.0.0.1:9977", Token: "tok"}, "*gameservers.BackendHTTP", false},
-		{"pve-api vira local", NodeTarget{Name: "apps", Transport: TransportPVEAPI}, "*gameservers.BackendLocal", false},
-		{"ssh vira local", NodeTarget{Name: "dev", Transport: TransportSSH}, "*gameservers.BackendLocal", false},
-		{"vazio e erro", NodeTarget{Name: "orfao"}, "", true},
-		{"invalido e erro", NodeTarget{Name: "torto", Transport: "banana"}, "", true},
-		{"agente sem token e erro", NodeTarget{Name: "games", Transport: TransportAgent, Base: "http://127.0.0.1:9977"}, "", true},
+		{"agent becomes http", NodeTarget{Name: "games", Transport: TransportAgent, Base: "http://127.0.0.1:9977", Token: "tok"}, "*gameservers.BackendHTTP", false},
+		{"pve-api becomes local", NodeTarget{Name: "apps", Transport: TransportPVEAPI}, "*gameservers.BackendLocal", false},
+		{"ssh becomes local", NodeTarget{Name: "dev", Transport: TransportSSH}, "*gameservers.BackendLocal", false},
+		{"empty is an error", NodeTarget{Name: "orphan"}, "", true},
+		{"invalid is an error", NodeTarget{Name: "crooked", Transport: "banana"}, "", true},
+		{"agent without token is an error", NodeTarget{Name: "games", Transport: TransportAgent, Base: "http://127.0.0.1:9977"}, "", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -735,8 +712,8 @@ func TestSelectionByTransport(t *testing.T) {
 	}
 }
 
-// TestBackendsSatisfazemAInterface is a compile-time assertion plus the guarantee
-// that Descrever tells the two apart — a back-end that cannot say who it is
+// Compile-time assertion that both back ends satisfy Backend, plus the guarantee
+// that Describe tells the two apart — a back-end that cannot say who it is
 // shows up in the log as the other one.
 var (
 	_ Backend = (*BackendLocal)(nil)
@@ -771,9 +748,9 @@ func TestDiskEffectParity(t *testing.T) {
 	mA, _ := setupEnvAt(t, rootA)
 	mB, _ := setupEnvAt(t, rootB)
 
-	const patch = `{"servidor":"jogo-teste","jogo":{"playerHealthFactor":1.5}}`
+	const patch = `{"servidor":"test-game","jogo":{"playerHealthFactor":1.5}}`
 
-	local := NewBackendLocal(mA, "no-teste")
+	local := NewBackendLocal(mA, "test-node")
 	if _, err := local.Execute(context.Background(), OpSettingsPatch, json.RawMessage(patch)); err != nil {
 		t.Fatalf("local write: %v", err)
 	}

@@ -475,7 +475,6 @@ func readJSONFile(path string) (map[string]interface{}, error) {
 	return m, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // BACK-END FACTORY — the choice by the node's transport
 //
 // No new concept: `Transport` and `TransportAgent` are the selector already

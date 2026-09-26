@@ -40,13 +40,12 @@ import (
 //	                the earlier scan: there the unresolvable was ignored, here
 //	                it IS the danger.
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // RESIDUAL RISK THAT STILL STANDS — declared, not hidden behind the green
 //
 // Inherited from internal/pve/shellout_test.go, and still valid:
 //
 //   - a literal coming from ANOTHER file or package. Resolution is
-//     intra-function; `bin := pkg.Constante` does not resolve and, with
+//     intra-function; `bin := pkg.Constant` does not resolve and, with
 //     RequireLiteralArgv, FAILS — which is conservative, but produces a false
 //     positive on legitimate code that centralises binary names in a package
 //     constant. If that shows up, the fix is to declare the wrapper, not to
@@ -60,8 +59,6 @@ import (
 //     build dependency in the gate's path and makes the pin sensitive to
 //     somebody else's compile error. This house's stance is to declare the
 //     risk; hiding it behind a green is what is not done here.
-//
-// ─────────────────────────────────────────────────────────────────────────────
 
 // allowedRoutes is the EXACT allowlist. An extra route fails (new surface
 // without review); a MISSING route fails too — a vanished route is a surface
@@ -86,7 +83,7 @@ var allowedRoutes = []string{
 // watchedWrappers are the IN-HOUSE functions that run a process without going
 // through exec.Command at the call site. `trainerRun(ctx, stdin, args
 // ...string)` from internal/gameservers/trainer.go is the measured case: a new
-// op calling `trainerRun(ctx, body, req.Verbo)` would slip past a naive detector.
+// op calling `trainerRun(ctx, body, req.Verb)` would slip past a naive detector.
 var watchedWrappers = []string{"trainerRun"}
 
 // declaredRoutes extracts the patterns passed to mux.Handle/HandleFunc.
@@ -110,7 +107,7 @@ func declaredRoutes(t *testing.T, file string) (map[string]int, bool) {
 	//
 	// Matching by the selector's NAME makes `gameservers.Handle(x)` — a TYPE
 	// CONVERSION to the opaque Handle — read as a route declaration, and the pin
-	// failed with "<padrao nao literal>". A false positive is what makes somebody
+	// failed with "<non-literal pattern>". A false positive is what makes somebody
 	// turn the pin off, so the fix goes in the detector, not in the code.
 	//
 	// The fix: first find out WHICH identifiers are multiplexers (assigned from
@@ -120,7 +117,7 @@ func declaredRoutes(t *testing.T, file string) (map[string]int, bool) {
 	muxes := map[string]bool{}
 	// (a) by DECLARED TYPE — a parameter, field or var of type *http.ServeMux.
 	//     It is the exact path, and it is what recognises
-	//     `func monta(mux *http.ServeMux)` in the mutation fixtures, where the
+	//     `func mount(mux *http.ServeMux)` in the mutation fixtures, where the
 	//     mux is never constructed in the file.
 	isServeMux := func(e ast.Expr) bool {
 		star, ok := e.(*ast.StarExpr)
@@ -188,7 +185,7 @@ func declaredRoutes(t *testing.T, file string) (map[string]int, bool) {
 		if !ok || lit.Kind != token.STRING {
 			// A route pattern that is not a literal is suspect in itself: an
 			// allowlist of routes assembled at run time cannot be audited.
-			foundRoutes["<padrao nao literal>"] = fset.Position(call.Pos()).Line
+			foundRoutes["<non-literal pattern>"] = fset.Position(call.Pos()).Line
 			return true
 		}
 		if v, err := strconv.Unquote(lit.Value); err == nil {
@@ -349,13 +346,13 @@ func TestNoFreeExecScannedSomething(t *testing.T) {
 		t.Fatalf("Scan: %v", err)
 	}
 	if res.Scanned <= 0 {
-		t.Fatalf("Varridos=%d — the scan opened no file at all", res.Scanned)
+		t.Fatalf("Scanned=%d: the scan opened no file at all", res.Scanned)
 	}
 	// A concrete floor: the two packages add up to more than ten files today. If
 	// it drops below that, either the path broke or the scope shrank without
 	// anybody having decided so.
 	if res.Scanned < 10 {
-		t.Errorf("Varridos=%d, below the floor of 10 — the scope of the scan shrank with no decision behind it", res.Scanned)
+		t.Errorf("Scanned=%d, below the floor of 10: the scope of the scan shrank with no decision behind it", res.Scanned)
 	}
 }
 
@@ -369,7 +366,6 @@ func sortedNames(m map[string]int) []string {
 	return out
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // TEST OF THE TEST — the five mutations.
 //
 // Four that MUST bite and one that must NOT. Without the fifth, a pin that
@@ -379,7 +375,6 @@ func sortedNames(m map[string]int) []string {
 // Each case asserts the LINE, not just the count: a detector that fails the
 // right file for the wrong reason will fail the wrong file at the next
 // refactor. A finding with no line is a guess.
-// ─────────────────────────────────────────────────────────────────────────────
 
 func fixture(name string) string { return filepath.Join("testdata", name) }
 
@@ -527,7 +522,7 @@ func TestPinSparesTypeConversion(t *testing.T) {
 	if !hasMux {
 		t.Fatalf("the fixture declares `mux *http.ServeMux`; the detector should recognize it")
 	}
-	if _, blind := routes["<padrao nao literal>"]; blind {
+	if _, blind := routes["<non-literal pattern>"]; blind {
 		t.Errorf("FALSE POSITIVE: a type conversion read as a route — routes seen: %v", routes)
 	}
 	if len(routes) != 1 {
@@ -570,7 +565,7 @@ func TestPinSparesLegitimate(t *testing.T) {
 		t.Errorf("FALSE POSITIVE: the agent will legitimately run docker and the guard has to approve it: %+v", res.Findings)
 	}
 	if res.Scanned != 1 {
-		t.Errorf("Varridos=%d, want 1", res.Scanned)
+		t.Errorf("Scanned=%d, want 1", res.Scanned)
 	}
 }
 

@@ -304,7 +304,6 @@ func (c *Client) Permissions(ctx context.Context) (map[string]map[string]int, er
 	return m, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Time series
 //
 // 🔴 The graph is the centrepiece of the Proxmox screen, and it is what
@@ -404,7 +403,6 @@ func (c *Client) RRDGuest(ctx context.Context, node string, vmid int, typ string
 	return pts, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Node system
 //
 // 🔴 The four routes below only started answering once the operator granted
@@ -441,7 +439,7 @@ type DNSInfo struct {
 
 // TimeInfo is /nodes/{n}/time. `Localtime` and `Time` differ by the timezone,
 // and the difference between them IS the information: a server on UTC and one
-// on São Paulo produce backup windows that never meet — that is how this lab's
+// on UTC-3 produce backup windows that never meet — that is how this lab's
 // off-site chain died for 14 days.
 type TimeInfo struct {
 	Time      int64  `json:"time"`
@@ -449,7 +447,7 @@ type TimeInfo struct {
 	Timezone  string `json:"timezone"`
 }
 
-// Certificado is one entry of /nodes/{n}/certificates/info.
+// Certificate is one entry of /nodes/{n}/certificates/info.
 type Certificate struct {
 	Filename      string   `json:"filename"`
 	Subject       string   `json:"subject"`
@@ -462,7 +460,7 @@ type Certificate struct {
 	SAN           []string `json:"san"`
 }
 
-// Pacote is one entry of /nodes/{n}/apt/versions.
+// PackageInfo is one entry of /nodes/{n}/apt/versions.
 type PackageInfo struct {
 	Package      string `json:"Package"`
 	Title        string `json:"Title"`
@@ -520,7 +518,6 @@ func (c *Client) Syslog(ctx context.Context, node string, limit int) ([]SyslogLi
 	return out, c.do(ctx, http.MethodGet, p, &out)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // HYPERVISOR power
 //
 // 🔴 THE ONLY PANEL ACTION WHOSE MISTAKE HAS NO REMOTE UNDO.

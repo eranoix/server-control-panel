@@ -7,24 +7,24 @@ import "testing"
 // call "disarmed" a layer that runs every day — and a screen that says there is
 // no backup when there is is the most expensive lie it can tell.
 func TestJobScheduled(t *testing.T) {
-	um, zero := 1, 0
+	one, zero := 1, 0
 	cases := []struct {
 		name string
 		j    BackupJob
 		want bool
 	}{
-		{"ligado explicitamente", BackupJob{Enabled: &um, Schedule: "03:30"}, true},
+		{"explicitly on", BackupJob{Enabled: &one, Schedule: "03:30"}, true},
 		// 🔴 The case the first version of this test GOT WRONG: I wrote in the comment
 		// that absent means on and then asserted `false` in the table, contradicting
 		// myself. Absent is ON (Backup.pm:132-137).
-		{"enabled AUSENTE é ligado (default => 1)", BackupJob{Schedule: "03:30"}, true},
-		{"desligado explicitamente", BackupJob{Enabled: &zero, Schedule: "03:30"}, false},
-		{"ligado mas sem horário não dispara", BackupJob{Enabled: &um}, false},
-		{"ausente e sem horário também não", BackupJob{}, false},
+		{"MISSING enabled is on (default => 1)", BackupJob{Schedule: "03:30"}, true},
+		{"explicitly off", BackupJob{Enabled: &zero, Schedule: "03:30"}, false},
+		{"on but with no schedule does not fire", BackupJob{Enabled: &one}, false},
+		{"missing and with no schedule does not either", BackupJob{}, false},
 	}
 	for _, c := range cases {
 		if got := c.j.IsScheduled(); got != c.want {
-			t.Errorf("%s: Agendado() = %v, want %v", c.name, got, c.want)
+			t.Errorf("%s: IsScheduled() = %v, want %v", c.name, got, c.want)
 		}
 	}
 }

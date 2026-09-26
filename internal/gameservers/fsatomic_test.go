@@ -41,7 +41,7 @@ type mark struct {
 	mode     os.FileMode
 }
 
-func (m mark) String() string { return fmt.Sprintf("uid=%d gid=%d modo=%04o", m.uid, m.gid, m.mode) }
+func (m mark) String() string { return fmt.Sprintf("uid=%d gid=%d mode=%04o", m.uid, m.gid, m.mode) }
 
 func statRaw(p string) (mark, error) {
 	fi, err := os.Stat(p)
@@ -65,8 +65,6 @@ func requireMark(t *testing.T, p string, want mark) {
 		t.Errorf("%s: stat expected %s, got %s", p, want, got)
 	}
 }
-
-// ── the pin, with a pluggable reporter for the negative case ───────────────
 
 // reporter is what makes it possible to run the SAME pin against a defective
 // writer and assert that it fails. Without it the pin would prove that it labels,
@@ -97,11 +95,11 @@ func checkPreservation(r reporter, dir, name string, writer func(path string, co
 		return
 	}
 	if err := os.Chmod(path, 0o640); err != nil {
-		r.Errorf("preparo chmod: %v", err)
+		r.Errorf("setup chmod: %v", err)
 		return
 	}
 	if err := os.Chown(path, gameUID, gameGID); err != nil {
-		r.Errorf("preparo chown: %v", err)
+		r.Errorf("setup chown: %v", err)
 		return
 	}
 	before, err := statRaw(path)
@@ -111,22 +109,22 @@ func checkPreservation(r reporter, dir, name string, writer func(path string, co
 	}
 	fresh := []byte(`{"v":2}`)
 	if err := writer(path, fresh); err != nil {
-		r.Errorf("escritor falhou: %v", err)
+		r.Errorf("writer failed: %v", err)
 		return
 	}
 	after, err = statRaw(path)
 	if err != nil {
-		r.Errorf("stat depois: %v", err)
+		r.Errorf("stat after: %v", err)
 		return
 	}
 	if after.uid != before.uid || after.gid != before.gid {
-		r.Errorf("dono NÃO preservado: antes %d:%d, depois %d:%d", before.uid, before.gid, after.uid, after.gid)
+		r.Errorf("owner NOT preserved: before %d:%d, after %d:%d", before.uid, before.gid, after.uid, after.gid)
 	}
 	if after.mode != before.mode {
-		r.Errorf("modo NÃO preservado: antes %04o, depois %04o", before.mode, after.mode)
+		r.Errorf("mode NOT preserved: before %04o, after %04o", before.mode, after.mode)
 	}
 	if b, err := os.ReadFile(path); err != nil || string(b) != string(fresh) {
-		r.Errorf("conteúdo não é o novo: %q (err=%v)", string(b), err)
+		r.Errorf("content is not the new one: %q (err=%v)", string(b), err)
 	}
 	return
 }
@@ -134,7 +132,7 @@ func checkPreservation(r reporter, dir, name string, writer func(path string, co
 // writerWithoutChown reproduces the DEFECTIVE idiom that existed in the seven
 // sites: tmp + WriteFile + Chmod + Rename, with no Chown. It is the pin's bite.
 func writerWithoutChown(path string, content []byte) error {
-	tmp := path + ".antigo-tmp"
+	tmp := path + ".old-tmp"
 	if err := os.WriteFile(tmp, content, 0o644); err != nil {
 		return err
 	}
@@ -149,7 +147,7 @@ func TestWriteAtomicPreservesOwnerAndMode(t *testing.T) {
 	requireRoot(t)
 
 	t.Run("preserves", func(t *testing.T) {
-		before, after := checkPreservation(t, t.TempDir(), "alvo.json", func(p string, c []byte) error {
+		before, after := checkPreservation(t, t.TempDir(), "target.json", func(p string, c []byte) error {
 			return writeAtomic(p, c, "")
 		})
 		t.Logf("stat BEFORE: %s", before)
@@ -160,11 +158,11 @@ func TestWriteAtomicPreservesOwnerAndMode(t *testing.T) {
 	// If it does NOT fail, the pin is decorative and the whole test is a false green.
 	t.Run("bites_when_chown_is_missing", func(t *testing.T) {
 		c := &collector{}
-		checkPreservation(c, t.TempDir(), "alvo.json", writerWithoutChown)
+		checkPreservation(c, t.TempDir(), "target.json", writerWithoutChown)
 		if len(c.errs) == 0 {
 			t.Fatal("the guard did NOT fail a writer without Chown — it labels, it does not detect")
 		}
-		if !c.has("dono NÃO preservado") {
+		if !c.has("owner NOT preserved") {
 			t.Fatalf("the guard failed for another reason, not the owner: %v", c.errs)
 		}
 		t.Logf("the guard failed as it should: %v", c.errs)
@@ -176,7 +174,7 @@ func TestWriteAtomicNewFileUsesRef(t *testing.T) {
 	requireRoot(t)
 	dir := t.TempDir()
 
-	ref := filepath.Join(dir, "referencia")
+	ref := filepath.Join(dir, "reference")
 	if err := os.WriteFile(ref, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -184,14 +182,14 @@ func TestWriteAtomicNewFileUsesRef(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fresh := filepath.Join(dir, "nao-existia.json")
+	fresh := filepath.Join(dir, "did-not-exist.json")
 	if err := writeAtomic(fresh, []byte(`{"a":1}`), ref); err != nil {
 		t.Fatalf("writeAtomic: %v", err)
 	}
 	requireMark(t, fresh, mark{uid: gameUID, gid: gameGID, mode: 0o644})
 
 	t.Run("dir_ref_does_not_inherit_the_execute_bit", func(t *testing.T) {
-		sub := filepath.Join(dir, "raiz")
+		sub := filepath.Join(dir, "root")
 		if err := os.Mkdir(sub, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -199,14 +197,14 @@ func TestWriteAtomicNewFileUsesRef(t *testing.T) {
 			t.Fatal(err)
 		}
 		target := filepath.Join(sub, ".active")
-		if err := writeAtomic(target, []byte("mundo1\n"), sub); err != nil {
+		if err := writeAtomic(target, []byte("world1\n"), sub); err != nil {
 			t.Fatalf("writeAtomic: %v", err)
 		}
 		requireMark(t, target, mark{uid: gameUID, gid: gameGID, mode: 0o644})
 	})
 
 	t.Run("no_ref_and_no_file_errors_naming_the_path", func(t *testing.T) {
-		target := filepath.Join(dir, "orfao.json")
+		target := filepath.Join(dir, "orphan.json")
 		err := writeAtomic(target, []byte("x"), "")
 		if err == nil {
 			t.Fatal("expected an error: with no existing file and no ref there is nowhere to take the owner from")
@@ -256,17 +254,17 @@ func TestWriteAtomicLeavesNoGarbage(t *testing.T) {
 		dir := t.TempDir()
 		// The target is a NON-EMPTY DIRECTORY: the Rename fails (ENOTEMPTY) after
 		// the temporary already exists. It is the path that proves the cleanup.
-		p := filepath.Join(dir, "alvo")
+		p := filepath.Join(dir, "target")
 		if err := os.Mkdir(p, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(p, "ocupa"), []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(p, "occupant"), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if err := writeAtomic(p, []byte("2"), ""); err == nil {
 			t.Fatal("expected an error renaming over a non-empty directory")
 		}
-		if l := tmpLeftovers(t, dir, "alvo"); len(l) != 0 {
+		if l := tmpLeftovers(t, dir, "target"); len(l) != 0 {
 			t.Fatalf("junk left behind after failure: %v", l)
 		}
 	})
@@ -276,7 +274,7 @@ func TestWriteAtomicTmpNameIsUnpredictable(t *testing.T) {
 	needsRoot(t)
 	requireRoot(t)
 	dir := t.TempDir()
-	p := filepath.Join(dir, "concorrido.json")
+	p := filepath.Join(dir, "contended.json")
 	if err := os.WriteFile(p, []byte("0"), 0o640); err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +285,7 @@ func TestWriteAtomicTmpNameIsUnpredictable(t *testing.T) {
 	// A third party pre-creates the predictable name. If the writer used
 	// path+".tmp", it would write over this file — and this content would vanish.
 	decoy := p + ".tmp"
-	if err := os.WriteFile(decoy, []byte("ISCA"), 0o600); err != nil {
+	if err := os.WriteFile(decoy, []byte("BAIT"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -298,7 +296,7 @@ func TestWriteAtomicTmpNameIsUnpredictable(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			errs[i] = writeAtomic(p, []byte(fmt.Sprintf("escritor-%d", i)), "")
+			errs[i] = writeAtomic(p, []byte(fmt.Sprintf("writer-%d", i)), "")
 		}(i)
 	}
 	wg.Wait()
@@ -312,16 +310,16 @@ func TestWriteAtomicTmpNameIsUnpredictable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the bait %s vanished — the writer used the predictable name: %v", decoy, err)
 	}
-	if string(b) != "ISCA" {
+	if string(b) != "BAIT" {
 		t.Fatalf("the bait was overwritten: %q — the writer used path+\".tmp\"", string(b))
 	}
 
 	requireMark(t, p, mark{uid: gameUID, gid: gameGID, mode: 0o640})
 	final, _ := os.ReadFile(p)
-	if !strings.HasPrefix(string(final), "escritor-") {
+	if !strings.HasPrefix(string(final), "writer-") {
 		t.Fatalf("final content corrupted: %q", string(final))
 	}
-	if l := tmpLeftovers(t, dir, "concorrido.json"); len(l) != 1 || l[0] != filepath.Base(decoy) {
+	if l := tmpLeftovers(t, dir, "contended.json"); len(l) != 1 || l[0] != filepath.Base(decoy) {
 		t.Fatalf("temporary residue beyond the bait: %v", l)
 	}
 }
@@ -331,8 +329,8 @@ func TestChownAsRefDerivesFromDisk(t *testing.T) {
 	requireRoot(t)
 	dir := t.TempDir()
 
-	root := filepath.Join(dir, "servidor")
-	tree := filepath.Join(root, "worlds", "mundo1")
+	root := filepath.Join(dir, "server")
+	tree := filepath.Join(root, "worlds", "world1")
 	if err := os.MkdirAll(tree, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -399,14 +397,12 @@ func TestNoHardcodedUID(t *testing.T) {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // One pin PER converted site.
 //
 // Each one creates the target with a known owner and a known mode, calls the
 // PUBLIC METHOD that writes, and asserts an identical `stat`. Calling the public
 // method (and not writeAtomic directly) is what makes the pin able to catch a
 // regression of the kind "somebody reintroduced WriteFile in this path".
-// ─────────────────────────────────────────────────────────────────────────────
 
 // otherUID is deliberately DIFFERENT from 4711. A test written with 4711 would
 // pass even with the old code, because the old code nailed 4711 down — it would
@@ -424,7 +420,7 @@ func enshroudedTree(t *testing.T) Server {
 	root := t.TempDir()
 	for _, d := range []string{
 		filepath.Join("data", "server"),
-		filepath.Join("worlds", "mundo1"),
+		filepath.Join("worlds", "world1"),
 		"backups",
 	} {
 		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
@@ -432,16 +428,16 @@ func enshroudedTree(t *testing.T) Server {
 		}
 	}
 	cfg := `{
-    "name": "servidor",
+    "name": "server",
     "slotCount": 16,
     "gameSettings": {"playerHealthFactor": 1},
-    "userGroups": [{"name":"Admin","password":"senha-admin","canKickBan":true,"canAccessInventories":true,"canEditWorld":true,"canEditBase":true,"canExtendBase":true,"reservedSlots":0}],
+    "userGroups": [{"name":"Admin","password":"admin-password","canKickBan":true,"canAccessInventories":true,"canEditWorld":true,"canEditBase":true,"canExtendBase":true,"reservedSlots":0}],
     "bannedAccounts": []
 }`
 	if err := os.WriteFile(enshConfigPath(Server{Root: root}), []byte(cfg), 0o640); err != nil {
 		t.Fatalf("setup config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".active"), []byte("mundo1\n"), 0o640); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".active"), []byte("world1\n"), 0o640); err != nil {
 		t.Fatalf("setup .active: %v", err)
 	}
 	// The WHOLE tree ends up with the game's owner — including the root, which is
@@ -449,7 +445,7 @@ func enshroudedTree(t *testing.T) Server {
 	if err := chownTree(root, otherUID, otherGID); err != nil {
 		t.Fatalf("chown setup of the tree: %v", err)
 	}
-	return Server{ID: "ensh-teste", Game: "enshrouded", Root: root}
+	return Server{ID: "ensh-test", Game: "enshrouded", Root: root}
 }
 
 func requireGameOwner(t *testing.T, path, what string) {
@@ -482,7 +478,7 @@ func TestSitesPreserveOwnerAndMode(t *testing.T) {
 		s := enshroudedTree(t)
 		p := enshConfigPath(s)
 		before, _ := statRaw(p)
-		gs := []Group{{Name: "Admin", Password: "senha-admin"}, {Name: "Guest", Password: "senha-guest"}}
+		gs := []Group{{Name: "Admin", Password: "admin-password"}, {Name: "Guest", Password: "guest-password"}}
 		if err := a.SaveGroups(s, gs); err != nil {
 			t.Fatalf("SaveGroups: %v", err)
 		}
@@ -524,15 +520,15 @@ func TestActiveDoesNotBecomeRoot(t *testing.T) {
 			t.Fatalf("setup: %v", err)
 		}
 		// The expression identical to the one in adapter_server_settings.go.
-		if err := writeAtomic(active, []byte("mundo2\n"), s.Root); err != nil {
+		if err := writeAtomic(active, []byte("world2\n"), s.Root); err != nil {
 			t.Fatalf("writeAtomic: %v", err)
 		}
 		requireGameOwner(t, active, "creation of .active")
 
 		// Negative control: the OLD idiom, in the same scenario, produces root.
 		// Without this half there would be no proof that the one above measures anything.
-		old := filepath.Join(s.Root, ".active-idioma-antigo")
-		if err := os.WriteFile(old, []byte("mundo2\n"), 0o644); err != nil {
+		old := filepath.Join(s.Root, ".active-old-idiom")
+		if err := os.WriteFile(old, []byte("world2\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		m, err := statRaw(old)
@@ -553,10 +549,10 @@ func TestActiveDoesNotBecomeRoot(t *testing.T) {
 		if err != nil {
 			t.Fatalf("stat before: %v", err)
 		}
-		if err := a.RenameWorld(s, "mundo1", "mundo2"); err != nil {
+		if err := a.RenameWorld(s, "world1", "world2"); err != nil {
 			t.Fatalf("RenameWorld: %v", err)
 		}
-		if got := a.ActiveWorld(s); got != "mundo2" {
+		if got := a.ActiveWorld(s); got != "world2" {
 			t.Fatalf("the active world pointer did not follow: %q", got)
 		}
 		requireMark(t, active, before)
@@ -609,9 +605,7 @@ func TestInventorySurvivesHelper(t *testing.T) {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // The owner comes from the disk, never from a constant.
-// ─────────────────────────────────────────────────────────────────────────────
 
 // TestChownTreeUsesServerOwner is the pin that proves the change is REAL and
 // not cosmetic: the tree is 5000:5000, and with the old code (chownTree nailed to
@@ -619,7 +613,7 @@ func TestInventorySurvivesHelper(t *testing.T) {
 func TestChownTreeUsesServerOwner(t *testing.T) {
 	needsRoot(t)
 	s := enshroudedTree(t)
-	fresh := filepath.Join(s.Root, "worlds", "importado")
+	fresh := filepath.Join(s.Root, "worlds", "imported")
 	if err := os.MkdirAll(fresh, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -645,7 +639,7 @@ func TestChownAsRefFailsClearlyWithoutRef(t *testing.T) {
 	needsRoot(t)
 	requireRoot(t)
 	target := t.TempDir()
-	nonexistent := filepath.Join(target, "raiz-que-nao-existe")
+	nonexistent := filepath.Join(target, "root-that-does-not-exist")
 	err := chownLikeRef(target, nonexistent, true)
 	if err == nil {
 		t.Fatal("chownLikeRef accepted a nonexistent reference — it would silently fall back to an invented default")

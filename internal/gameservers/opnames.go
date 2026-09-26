@@ -10,7 +10,6 @@ package gameservers
 // organization — if a future session "tidies it up" by moving it into
 // `labagent`, the cycle shows up on the spot.
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // TRIAGE: the 27 `case` arms of internal/api/handlers_gameservers.go
 //
 // Every line of the original file has its destination declared below, INCLUDING
@@ -20,13 +19,13 @@ package gameservers
 //	line   case                    destination
 //	─────  ──────────────────────  ────────────────────────────────────────────
 //	  72   action                  server.action
-//	  84   start|stop|restart      value of Verbo in server.action (not a route)
+//	  84   start|stop|restart      value of Verb in server.action (not a route)
 //	  95   connection              FIELD of server.status
 //	  98   groups                  section of settings.get / settings.patch
 //	 131   bans                    section of settings.get / settings.patch
 //	 157   history                 history.list
 //	 166   build                   FIELD of server.status
-//	 169   update                  value of Verbo in server.action
+//	 169   update                  value of Verb in server.action
 //	 179   rawconfig               settings.get (read) / settings.patch (write)
 //	 209   trainer                 trainer.status / trainer.apply / trainer.desired
 //	 254   runtime                 runtime.get / runtime.patch
@@ -54,7 +53,7 @@ package gameservers
 //     instead of three times.
 //
 //  2. `update` does NOT become an operation of its own — it is a value of the
-//     closed `Verbo` set in `server.action`. The code itself already documents
+//     closed `Verb` set in `server.action`. The code itself already documents
 //     that updating IS restarting: steamcmd runs at container start, there is no
 //     "update without restarting" path.
 //
@@ -89,14 +88,14 @@ type OpName string
 
 // The 23 operations, in 7 families.
 //
-// The shape is always `familia.verbo`. There is NO free-execution operation, and
+// The shape is always `family.verb`. There is NO free-execution operation, and
 // there is no "other" — adding capability requires adding a constant HERE plus a
 // registry entry, and the exhaustiveness test demands both sides.
 const (
 	// server — the process lifecycle and state.
 	OpServerList   OpName = "server.list"   // the node's server inventory
 	OpServerStatus OpName = "server.status" // state + connection + build, in a single fetch
-	OpServerAction OpName = "server.action" // start|stop|restart|update, via Verbo
+	OpServerAction OpName = "server.action" // start|stop|restart|update, via Verb
 	OpServerLogs   OpName = "server.logs"   // tail of the container logs
 
 	// world — worlds/saves. The family the acceptance criteria exercise.
@@ -150,7 +149,7 @@ var ValidFamilies = map[string]bool{
 // that is deliberate: an absolute count is itself the defect — an invariants
 // script once stayed stuck at 21 when there were already 65, and nobody noticed
 // because the number looked intentional. What gets asserted is a PROPERTY (every
-// name distinct, shape `familia.verbo`, family in the closed set, constant and
+// name distinct, shape `family.verb`, family in the closed set, constant and
 // registry entry in correspondence), never a number.
 var AllOps = []OpName{
 	OpServerList, OpServerStatus, OpServerAction, OpServerLogs,

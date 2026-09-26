@@ -97,8 +97,8 @@ func SpawnLoginShell(sessionName, claudeConfigDir string) (string, error) {
 	if claudeConfigDir != "" {
 		return sessionName, SessionCreateDetached(sessionName, []string{shell, "-l"}, claudeConfigEnv(claudeConfigDir), "")
 	}
-	// Default account: HOME mode. Strip any leaked CLAUDE_CONFIG_DIR. Feito via
-	// `env -u CLAUDE_CONFIG_DIR` no argv — o dtach exec o comando direto.
+	// Default account: HOME mode. Strip any leaked CLAUDE_CONFIG_DIR, via
+	// `env -u CLAUDE_CONFIG_DIR` in the argv (dtach execs the command directly).
 	return sessionName, SessionCreateDetached(sessionName, []string{"env", "-u", "CLAUDE_CONFIG_DIR", shell, "-l"}, claudeConfigEnv(""), "")
 }
 
@@ -122,7 +122,7 @@ const sessionTerm = "xterm-256color"
 // exec the CLI DIRECTLY (dtach → claude, no shell in between), so no
 // profile runs and TERM arrives EMPTY. With an empty TERM, Claude Code's
 // supports-color resolves level 0 and the pane comes up MONOCHROME — that was the symptom of
-// the Jira "Trabalhar agora" button, black-and-white while the ordinary terminal (born
+// the Jira "Work now" button, black-and-white while the ordinary terminal (born
 // from `bash -l`) was in colour. Declaring it here is the fix at the root: it covers
 // all four spawners (work/jira, fork, restart, login) at once.
 func claudeConfigEnv(dir string) []string {

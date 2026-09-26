@@ -72,12 +72,12 @@ func TestTLSPinning(t *testing.T) {
 func TestTLSBadCA(t *testing.T) {
 	dir := t.TempDir()
 
-	if _, err := newTransport(filepath.Join(dir, "nao-existe.pem"), "hypervisor.local", ""); err == nil {
+	if _, err := newTransport(filepath.Join(dir, "missing.pem"), "hypervisor.local", ""); err == nil {
 		t.Error("a nonexistent CA file was accepted")
 	}
 
-	bad := filepath.Join(dir, "ruim.pem")
-	if err := os.WriteFile(bad, []byte("isto nao e um certificado\n"), 0o600); err != nil {
+	bad := filepath.Join(dir, "bad.pem")
+	if err := os.WriteFile(bad, []byte("this is not a certificate\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := newTransport(bad, "hypervisor.local", "")
@@ -103,10 +103,10 @@ func TestResolveDial(t *testing.T) {
 		addr    string
 		want    string
 	}{
-		{"troca o host, mantém a porta", "198.51.100.20", "hypervisor.local:8006", "198.51.100.20:8006"},
-		{"outra porta", "198.51.100.20", "hypervisor.local:443", "198.51.100.20:443"},
-		{"sem resolve, passa reto", "", "hypervisor.local:8006", "hypervisor.local:8006"},
-		{"endereço sem porta passa reto", "198.51.100.20", "hypervisor.local", "hypervisor.local"},
+		{"swaps the host, keeps the port", "198.51.100.20", "hypervisor.local:8006", "198.51.100.20:8006"},
+		{"other port", "198.51.100.20", "hypervisor.local:443", "198.51.100.20:443"},
+		{"no resolve, passes through", "", "hypervisor.local:8006", "hypervisor.local:8006"},
+		{"address without port passes through", "198.51.100.20", "hypervisor.local", "hypervisor.local"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

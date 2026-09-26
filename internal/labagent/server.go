@@ -18,12 +18,12 @@ const (
 	// envelope; a large body is a symptom, not a use.
 	maxBody = 1 << 20 // 1 MiB
 
-	// headerReadTimeout fecha o slowloris trivial.
+	// headerReadTimeout closes off trivial slowloris.
 	headerReadTimeout = 10 * time.Second
 )
 
-// Servidor is the agent, ready to listen.
-type ServerID struct {
+// Server is the agent, ready to listen.
+type Server struct {
 	Ag      *Agent
 	Secret  Secret
 	Met     *Metrics
@@ -37,8 +37,8 @@ type ServerID struct {
 // of capabilities is exactly the `registry` map, in one place, walkable by a
 // test. With N routes, the list becomes "whatever happens to be in the
 // ServeMux", which nobody can assert from the outside.
-func NewServer(ag *Agent, secret Secret, met *Metrics) *ServerID {
-	s := &ServerID{Ag: ag, Secret: secret, Met: met}
+func NewServer(ag *Agent, secret Secret, met *Metrics) *Server {
+	s := &Server{Ag: ag, Secret: secret, Met: met}
 
 	mux := http.NewServeMux()
 	// Method-and-path patterns (Go 1.22+). No external router: there are three
@@ -53,7 +53,7 @@ func NewServer(ag *Agent, secret Secret, met *Metrics) *ServerID {
 	// the diff, not an impossible one.
 	//
 	// Why it needs to exist: a file stream does not fit in a JSON document, so
-	// Backend.Abrir is the only point where bytes cross the boundary. Without
+	// Backend.Open is the only point where bytes cross the boundary. Without
 	// this route, `world.export` and `backup.download` would return a Handle
 	// nobody can open over the network, and the world and backup round-trip the
 	// acceptance criterion demands would have no way to happen.
@@ -73,7 +73,7 @@ func NewServer(ag *Agent, secret Secret, met *Metrics) *ServerID {
 }
 
 // Handler exposes the assembled routing (used in tests with httptest).
-func (s *ServerID) Handler() http.Handler { return s.handler }
+func (s *Server) Handler() http.Handler { return s.handler }
 
 // healthz is a PROCESS probe, not a data surface.
 //
@@ -82,19 +82,19 @@ func (s *ServerID) Handler() http.Handler { return s.handler }
 // NOTHING beyond liveness: no server name, no path, no version, no hint of
 // whether a secret is provisioned. Whoever is on the outside learns only that
 // the process answered.
-func (s *ServerID) healthz(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
-func (s *ServerID) metrics(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	_, _ = io.WriteString(w, s.Met.Render())
 }
 
 // runOp resolves the name against the registry and delegates.
-func (s *ServerID) runOp(w http.ResponseWriter, r *http.Request) {
+func (s *Server) runOp(w http.ResponseWriter, r *http.Request) {
 	name := gameservers.OpName(r.PathValue("op"))
 
 	op, exists := Lookup(name)
@@ -140,7 +140,7 @@ func (s *ServerID) runOp(w http.ResponseWriter, r *http.Request) {
 // file name in the response: the name is the dashboard's business, and it
 // already received it alongside the handle. Echoing back here a name the client
 // sent is how header injection gets in.
-func (s *ServerID) openArtifact(w http.ResponseWriter, r *http.Request) {
+func (s *Server) openArtifact(w http.ResponseWriter, r *http.Request) {
 	h := gameservers.Handle(r.PathValue("handle"))
 	if s.Ag == nil || s.Ag.Back == nil {
 		s.Met.Count("artefato", "erro")
@@ -172,7 +172,7 @@ func (s *ServerID) openArtifact(w http.ResponseWriter, r *http.Request) {
 //
 // The real limit belongs to the back-end (maxReceived); all that is guaranteed
 // here is that the body is not read without a ceiling before it gets there.
-func (s *ServerID) receiveArtifact(w http.ResponseWriter, r *http.Request) {
+func (s *Server) receiveArtifact(w http.ResponseWriter, r *http.Request) {
 	if s.Ag == nil || s.Ag.Back == nil {
 		s.Met.Count("artefato-in", "erro")
 		respond(w, http.StatusInternalServerError, map[string]any{"erro": "agent has no back end configured"})
@@ -194,11 +194,10 @@ func respond(w http.ResponseWriter, code int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // BIND
 //
 // The agent listens on TWO EXPLICIT listeners: loopback and the IP of the
-// internal bridge it was handed. Never `":porta"`, never `0.0.0.0`.
+// internal bridge it was handed. Never `":port"`, never `0.0.0.0`.
 //
 // Why two explicit listeners and not a wildcard with a filter afterwards:
 // binding on a wildcard leaves the port EXISTING for whoever arrives by any
@@ -227,7 +226,6 @@ func respond(w http.ResponseWriter, code int, body any) {
 // The rest of the rule goes on applying in full — in particular the per-node
 // bearer with ConstantTimeCompare: with no encryption on the wire, security
 // rests ENTIRELY on the bearer, and that is why the mitigations are mandatory.
-// ─────────────────────────────────────────────────────────────────────────────
 
 // listenAddrs validates and returns the two addresses.
 func listenAddrs(bridgeIP string, port int) ([]string, error) {
@@ -249,13 +247,13 @@ func listenAddrs(bridgeIP string, port int) ([]string, error) {
 	}, nil
 }
 
-// Escuta opens both listeners and serves.
+// Listen opens both listeners and serves.
 //
 // A failure of EITHER one brings the agent down at start-up. Better not to come
 // up than to come up listening on less than was asked for (the node is
 // unreachable and somebody notices) or on more than was asked for (nobody
 // notices, which is the dangerous case).
-func (s *ServerID) Listen(ctx context.Context, bridgeIP string, port int) error {
+func (s *Server) Listen(ctx context.Context, bridgeIP string, port int) error {
 	addrs, err := listenAddrs(bridgeIP, port)
 	if err != nil {
 		return err

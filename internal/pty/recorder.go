@@ -58,7 +58,7 @@ import (
 	"github.com/creack/pty"
 )
 
-// gravador is the `dtach -a` client that only records.
+// recorder is the `dtach -a` client that only records.
 type recorder struct {
 	cmd  *exec.Cmd
 	ptmx *os.File
@@ -231,7 +231,7 @@ func StopRecorder(dataDir, user, name string) {
 // already exists. Called at boot: without it, a session that survived a deploy
 // would have no recorder until somebody opened a tab on it — and the hole in the
 // log would come back in exactly the window where nobody is watching.
-// `primario` receives the sessions with no registered owner: by the adoption rule
+// `primary` receives the sessions with no registered owner: by the adoption rule
 // (`config.Primary`), a session without a prefix belongs to its pool and only it
 // can adopt the session — so the log is its log. Without that, a session in those
 // conditions had no recorder until someone attached, which is the usual hole.

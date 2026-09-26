@@ -149,7 +149,7 @@ func TestPasteCtrlMsgContentWithQuotesAndSlashes(t *testing.T) {
 	rwc := newFakeRWC()
 	cli := dialProxy(t, rwc)
 
-	payload := "ela disse \"oi\" e mandou C:\\Users\\ana\\notas.txt de brinde\ntchau"
+	payload := "she said \"hi\" and sent C:\\Users\\ana\\notes.txt as a bonus\nbye"
 	frame, err := json.Marshal(ctrlMsg{Type: "paste", Data: payload})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -177,7 +177,7 @@ func TestPasteCtrlMsgUnknownTypeDoesNotWrite(t *testing.T) {
 	bogus, _ := json.Marshal(struct {
 		Type string `json:"type"`
 		Data string `json:"data"`
-	}{Type: "bogus", Data: "isto não pode chegar ao pty"})
+	}{Type: "bogus", Data: "this must not reach the pty"})
 	if err := cli.WriteMessage(websocket.TextMessage, bogus); err != nil {
 		t.Fatalf("write bogus: %v", err)
 	}

@@ -16,7 +16,6 @@ import (
 // implemented against a contract that is already written, instead of discovering
 // the shape by exploring the code — which is how the two sides drift apart.
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // NO FILE SEMANTICS CROSSES THIS BOUNDARY
 //
 // No parameter and no result here is a `path`, `mode`, `uid`, `gid` or
@@ -39,7 +38,7 @@ import (
 // was never offered.
 type Handle string
 
-// Verbo is the CLOSED set of lifecycle actions of server.action.
+// Verb is the CLOSED set of lifecycle actions of server.action.
 //
 // Its own type instead of a free string: this is what stops `server.action` from
 // turning into free execution on the inside. An unknown verb is refused by the
@@ -63,23 +62,23 @@ var ValidVerbs = map[Verb]bool{
 
 // Backend executes named operations from the catalog.
 //
-// Executar's signature is deliberately poor: a catalog name and a JSON document.
+// Execute's signature is deliberately poor: a catalog name and a JSON document.
 // There is no `[]string` of argv, no `string` of command, no path. An operation
 // that wanted to be free execution would have to CHANGE THIS SIGNATURE — and it
 // is that change of shape that the pin detects. Searching for the string "exec"
 // is trivially circumvented; requiring the shape is not.
 type Backend interface {
-	// Executar runs a catalog operation and returns the response document.
+	// Execute runs a catalog operation and returns the response document.
 	// A name outside AllOps is refused by the recipient.
 	Execute(ctx context.Context, op OpName, body json.RawMessage) (json.RawMessage, error)
 
-	// Abrir returns the content of an artifact previously referenced by a Handle.
-	// Separate from Executar because a stream does not fit in a JSON document —
+	// Open returns the content of an artifact previously referenced by a Handle.
+	// Separate from Execute because a stream does not fit in a JSON document —
 	// and it is the only point where file bytes cross the boundary.
 	// The caller closes.
 	Open(ctx context.Context, h Handle) (io.ReadCloser, error)
 
-	// Receber is the REVERSE path of Abrir: the client hands over bytes and gets
+	// Receive is the REVERSE path of Open: the client hands over bytes and gets
 	// back a Handle to reference them in a later operation (world.import is the case).
 	//
 	// It takes no file name and no path — the world's name travels in the
@@ -90,11 +89,10 @@ type Backend interface {
 	// Added afterwards, closing the gap the first implementation had declared.
 	Receive(ctx context.Context, r io.Reader) (Handle, error)
 
-	// Descrever identifies the recipient, for diagnostics and for the screen.
+	// Describe identifies the recipient, for diagnostics and for the screen.
 	Describe() string
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // ERROR CLASSES OF THE CONTRACT
 //
 // The two back-ends have to fail the SAME way, otherwise the parity is only on

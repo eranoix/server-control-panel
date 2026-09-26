@@ -123,16 +123,16 @@ func testSession(t *testing.T, name string) func() *testClient {
 // and "the text duplicates" (it wraps lines at one width while the xterm draws
 // at another).
 func TestE2E_SessionNotStuckAtDepartedClientSize(t *testing.T) {
-	dial := testSession(t, "e2e-preso")
+	dial := testSession(t, "e2e-stuck")
 
-	big := dial() // o PC novo
+	big := dial() // the new PC
 	big.resize(120, 40)
 	time.Sleep(1600 * time.Millisecond)
 	if r, c := big.programSize(); r != "40" || c != "120" {
 		t.Fatalf("with a single client, the program sees %sx%s; wanted 40x120", r, c)
 	}
 
-	small := dial() // a aba esquecida aberta no PC antigo
+	small := dial() // the tab left open on the old PC
 	small.resize(80, 24)
 	time.Sleep(1600 * time.Millisecond)
 	if r, c := big.programSize(); r != "24" || c != "80" {
@@ -158,7 +158,7 @@ func TestE2E_SessionNotStuckAtDepartedClientSize(t *testing.T) {
 // session's grid, and told again when it changes. Without the re-notice, the big
 // client draws a grid the program is not painting for.
 func TestE2E_LargeClientNotifiedWhenSmallJoinsAndLeaves(t *testing.T) {
-	dial := testSession(t, "e2e-avisos")
+	dial := testSession(t, "e2e-notices")
 
 	big := dial()
 	big.resize(120, 40)
@@ -167,7 +167,7 @@ func TestE2E_LargeClientNotifiedWhenSmallJoinsAndLeaves(t *testing.T) {
 	small := dial()
 	small.resize(80, 24)
 	time.Sleep(1500 * time.Millisecond)
-	big.programSize() // drena o socket, coletando avisos
+	big.programSize() // drains the socket, collecting notices
 
 	warnings := big.receivedNotices()
 	if len(warnings) == 0 {
@@ -192,7 +192,7 @@ func TestE2E_LargeClientNotifiedWhenSmallJoinsAndLeaves(t *testing.T) {
 // fixed that was the repaint-wobble, by accident — and the wobble leaves the
 // stage for a client that primes its own screen (`replay=0`).
 func TestE2E_NewcomerIsSizedWithoutWobble(t *testing.T) {
-	dial := testSession(t, "e2e-chegada")
+	dial := testSession(t, "e2e-arrival")
 
 	first := dial()
 	first.resize(90, 28)

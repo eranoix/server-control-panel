@@ -24,7 +24,7 @@ type Agent struct {
 	Back gameservers.Backend
 }
 
-// delega is the common body: all 23 handlers are the same sentence.
+// delegate is the common body: all 23 handlers are the same sentence.
 //
 // Having ONE delegation function, instead of 23 look-alike bodies, is what
 // keeps a handler from picking up logic of its own by accident — there is
@@ -35,8 +35,6 @@ func (a *Agent) delegate(ctx context.Context, op gameservers.OpName, body json.R
 	}
 	return a.Back.Execute(ctx, op, body)
 }
-
-// ── server ───────────────────────────────────────────────────────────────────
 
 func (a *Agent) opServerList(ctx context.Context, c json.RawMessage) (any, error) {
 	return a.delegate(ctx, gameservers.OpServerList, c)
@@ -50,8 +48,6 @@ func (a *Agent) opServerAction(ctx context.Context, c json.RawMessage) (any, err
 func (a *Agent) opServerLogs(ctx context.Context, c json.RawMessage) (any, error) {
 	return a.delegate(ctx, gameservers.OpServerLogs, c)
 }
-
-// ── world ────────────────────────────────────────────────────────────────────
 
 func (a *Agent) opWorldList(ctx context.Context, c json.RawMessage) (any, error) {
 	return a.delegate(ctx, gameservers.OpWorldList, c)
@@ -75,8 +71,6 @@ func (a *Agent) opWorldDelete(ctx context.Context, c json.RawMessage) (any, erro
 	return a.delegate(ctx, gameservers.OpWorldDelete, c)
 }
 
-// ── settings ─────────────────────────────────────────────────────────────────
-
 func (a *Agent) opSettingsGet(ctx context.Context, c json.RawMessage) (any, error) {
 	return a.delegate(ctx, gameservers.OpSettingsGet, c)
 }
@@ -84,16 +78,12 @@ func (a *Agent) opSettingsPatch(ctx context.Context, c json.RawMessage) (any, er
 	return a.delegate(ctx, gameservers.OpSettingsPatch, c)
 }
 
-// ── runtime ──────────────────────────────────────────────────────────────────
-
 func (a *Agent) opRuntimeGet(ctx context.Context, c json.RawMessage) (any, error) {
 	return a.delegate(ctx, gameservers.OpRuntimeGet, c)
 }
 func (a *Agent) opRuntimePatch(ctx context.Context, c json.RawMessage) (any, error) {
 	return a.delegate(ctx, gameservers.OpRuntimePatch, c)
 }
-
-// ── backup ───────────────────────────────────────────────────────────────────
 
 func (a *Agent) opBackupList(ctx context.Context, c json.RawMessage) (any, error) {
 	return a.delegate(ctx, gameservers.OpBackupList, c)
@@ -108,8 +98,6 @@ func (a *Agent) opBackupDownload(ctx context.Context, c json.RawMessage) (any, e
 	return a.delegate(ctx, gameservers.OpBackupDownload, c)
 }
 
-// ── trainer ──────────────────────────────────────────────────────────────────
-
 func (a *Agent) opTrainerStatus(ctx context.Context, c json.RawMessage) (any, error) {
 	return a.delegate(ctx, gameservers.OpTrainerStatus, c)
 }
@@ -119,8 +107,6 @@ func (a *Agent) opTrainerApply(ctx context.Context, c json.RawMessage) (any, err
 func (a *Agent) opTrainerDesired(ctx context.Context, c json.RawMessage) (any, error) {
 	return a.delegate(ctx, gameservers.OpTrainerDesired, c)
 }
-
-// ── history ──────────────────────────────────────────────────────────────────
 
 func (a *Agent) opHistoryList(ctx context.Context, c json.RawMessage) (any, error) {
 	return a.delegate(ctx, gameservers.OpHistoryList, c)

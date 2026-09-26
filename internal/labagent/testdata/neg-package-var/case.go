@@ -1,4 +1,4 @@
-package caso
+package fixture
 
 import "os/exec"
 
@@ -6,8 +6,8 @@ import "os/exec"
 // as a literal — it is reassignable at runtime (init, a test, any function).
 // Treating it as a literal would open the very hole the pin exists to close.
 // This fixture MUST fail.
-var binDoJogo = "/usr/local/bin/algo"
+var gameBin = "/usr/local/bin/algo"
 
-func roda() error {
-	return exec.Command(binDoJogo, "start").Run()
+func run() error {
+	return exec.Command(gameBin, "start").Run()
 }

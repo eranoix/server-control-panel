@@ -48,7 +48,7 @@ import (
 // file-reading credential dangling for the life of the process.
 const defaultHandleTTL = 30 * time.Minute
 
-// artefato is what a Handle references. It stays on the node side, always.
+// artifact is what a Handle references. It stays on the node side, always.
 type artifact struct {
 	path      string
 	server    string // scope: the handle only resolves for THIS server
@@ -66,7 +66,7 @@ type handleVault struct {
 	items map[Handle]artifact
 	ttl   time.Duration
 
-	// agora is injectable so the expiry test does not have to wait on a clock
+	// now is injectable so the expiry test does not have to wait on a clock
 	// (a criterion you satisfy by waiting is a defect in the criterion).
 	now func() time.Time
 }
@@ -78,7 +78,7 @@ func newHandleVault(ttl time.Duration) *handleVault {
 	return &handleVault{items: map[Handle]artifact{}, ttl: ttl, now: time.Now}
 }
 
-// Cunhar registers an artifact and returns the opaque token.
+// Mint registers an artifact and returns the opaque token.
 //
 // The token comes from crypto/rand, never from math/rand and never from the
 // path: 32 hexadecimal bytes. It is not guessable and carries no information at
@@ -137,9 +137,9 @@ func (c *handleVault) resolver(h Handle, serverID string) (artifact, error) {
 	return a, nil
 }
 
-// Abrir resolves the handle and returns the content.
+// Open resolves the handle and returns the content.
 //
-// It takes no serverID: the caller here is Backend.Abrir, which is already the
+// It takes no serverID: the caller here is Backend.Open, which is already the
 // boundary. The per-server scope is checked in `resolver`, where the caller does
 // know which server it is talking about.
 func (c *handleVault) Open(h Handle) (io.ReadCloser, error) {

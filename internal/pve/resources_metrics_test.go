@@ -83,7 +83,7 @@ func TestClusterResourcesBringsPerGuestCounters(t *testing.T) {
 // installed), this test fails and forces a REVIEW of the "not reported" rule
 // instead of leaving it lying in silence.
 //
-// Measured on both QEMU guests of this house (qemu/100 `painel` and qemu/208
+// Measured on both QEMU guests of this house (qemu/100 `panel` and qemu/208
 // `dev`): `disk: 0` with a real `maxdisk`. On the EIGHT LXC, real disk.
 func TestQemuDiskIsZeroAtSource(t *testing.T) {
 	raw, err := os.ReadFile(fixtureToken)

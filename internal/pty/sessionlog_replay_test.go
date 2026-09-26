@@ -13,13 +13,13 @@ func TestSessionInAltScreen(t *testing.T) {
 		data string
 		want bool
 	}{
-		{"vazio", "", false},
-		{"shell puro", "$ ls\r\nfoo bar\r\n$ ", false},
-		{"entrou e ficou (TUI vivo)", "prompt\r\n\x1b[?1049hclaude desenhando", true},
-		{"entrou e saiu (voltou pro shell)", "\x1b[?1049hTUI\x1b[?1049l\r\n$ ", false},
-		{"varias trocas, ultima é enter", "\x1b[?1049hA\x1b[?1049l\x1b[?1049hB", true},
-		{"varias trocas, ultima é leave", "\x1b[?1049hA\x1b[?1049lB\x1b[?1049hC\x1b[?1049l$ ", false},
-		{"variante ?47h", "x\x1b[?47hvim", true},
+		{"empty", "", false},
+		{"plain shell", "$ ls\r\nfoo bar\r\n$ ", false},
+		{"entered and stayed (live TUI)", "prompt\r\n\x1b[?1049hclaude drawing", true},
+		{"entered and left (back to the shell)", "\x1b[?1049hTUI\x1b[?1049l\r\n$ ", false},
+		{"several switches, last is enter", "\x1b[?1049hA\x1b[?1049l\x1b[?1049hB", true},
+		{"several switches, last is leave", "\x1b[?1049hA\x1b[?1049lB\x1b[?1049hC\x1b[?1049l$ ", false},
+		{"?47h variant", "x\x1b[?47hvim", true},
 	}
 	for _, c := range cases {
 		if got := sessionInAltScreen([]byte(c.data)); got != c.want {
@@ -37,15 +37,15 @@ func TestAttachReplay(t *testing.T) {
 	}
 
 	// (1) a normal shell → the replay returns the content.
-	if err := os.WriteFile(logp, []byte("$ echo oi\r\noi\r\n$ "), 0o600); err != nil {
+	if err := os.WriteFile(logp, []byte("$ echo hi\r\nhi\r\n$ "), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if rep := attachReplay(dir, user, name); len(rep) == 0 || !strings.Contains(string(rep), "oi") {
+	if rep := attachReplay(dir, user, name); len(rep) == 0 || !strings.Contains(string(rep), "hi") {
 		t.Errorf("normal shell: expected a replay with the history, got %q", string(rep))
 	}
 
 	// (2) a TUI session (alt-screen open) → replay skipped (nil).
-	if err := os.WriteFile(logp, []byte("$ claude\r\n\x1b[?1049hquadro do claude"), 0o600); err != nil {
+	if err := os.WriteFile(logp, []byte("$ claude\r\n\x1b[?1049hclaude frame"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if rep := attachReplay(dir, user, name); rep != nil {
@@ -60,10 +60,10 @@ func TestAttachReplay(t *testing.T) {
 	// (3b) rotation: the alt-screen ENTER stayed in .1, the tail in .log → it must
 	// detect alt-screen (scanning .1+.log) and SKIP the replay (otherwise it throws
 	// garbage into a TUI).
-	if err := os.WriteFile(logp+".1", []byte("$ claude\r\n\x1b[?1049hquadro antigo do claude"), 0o600); err != nil {
+	if err := os.WriteFile(logp+".1", []byte("$ claude\r\n\x1b[?1049hold claude frame"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(logp, []byte("\x1b[2Jmais desenho do TUI sem enter aqui"), 0o600); err != nil {
+	if err := os.WriteFile(logp, []byte("\x1b[2Jmore TUI drawing with no enter here"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if rep := attachReplay(dir, user, name); rep != nil {
@@ -72,7 +72,7 @@ func TestAttachReplay(t *testing.T) {
 	_ = os.Remove(logp + ".1")
 
 	// (4) byte ceiling: it starts on a line boundary and respects the cap.
-	big := strings.Repeat("linha de scrollback aqui\r\n", 20000) // ~ 500 KiB
+	big := strings.Repeat("scrollback line goes here\r\n", 20000) // ~ 500 KiB
 	if err := os.WriteFile(logp, []byte(big), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -95,9 +95,8 @@ func TestStripMouseReports(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"texto puro passa intacto", "olá mundo\n", "olá mundo\n"},
-		{"SGR press e release somem", "a\x1b[<35;80;24Mb\x1b[<35;80;24mc", "abc"},
-		// ── X10 LEFT THE FILTER ──────────────────────────────────────
+		{"plain text passes intact", "hello world\n", "hello world\n"},
+		{"SGR press and release vanish", "a\x1b[<35;80;24Mb\x1b[<35;80;24mc", "abc"},
 		// `ESC [ M` is indistinguishable from `CSI M`, which in ECMA-48 is DL
 		// (Delete Line) — an everyday editor sequence. The old branch
 		// ate the sequence AND THE THREE FOLLOWING BYTES, which in a DL are
@@ -105,12 +104,12 @@ func TestStripMouseReports(t *testing.T) {
 		// X10 only shows up if some program asks for tracking mode 9,
 		// which practically nothing has asked for in decades; DL comes out of any editor.
 		// Measured across the 28 logs on this machine: ZERO occurrences of `ESC[M`.
-		{"CSI M (Delete Line) passa intacto com o conteudo dele", "a\x1b[M 0@b", "a\x1b[M 0@b"},
-		{"CSI M no fim tambem passa", "a\x1b[M ", "a\x1b[M "},
-		{"SGR truncado no fim some inteiro", "a\x1b[<35;80;", "a"},
-		{"CSI que NÃO é mouse fica", "a\x1b[31mvermelho\x1b[0m", "a\x1b[31mvermelho\x1b[0m"},
-		{"CSI com letra no meio dos números fica", "a\x1b[<35;8x0M", "a\x1b[<35;8x0M"},
-		{"várias seguidas somem todas", "\x1b[<0;1;1M\x1b[<0;2;2M\x1b[<0;3;3mfim", "fim"},
+		{"CSI M (Delete Line) passes intact with its content", "a\x1b[M 0@b", "a\x1b[M 0@b"},
+		{"CSI M at the end also passes", "a\x1b[M ", "a\x1b[M "},
+		{"SGR truncated at the end vanishes entirely", "a\x1b[<35;80;", "a"},
+		{"CSI that is NOT mouse stays", "a\x1b[31mred\x1b[0m", "a\x1b[31mred\x1b[0m"},
+		{"CSI with a letter among the digits stays", "a\x1b[<35;8x0M", "a\x1b[<35;8x0M"},
+		{"several in a row all vanish", "\x1b[<0;1;1M\x1b[<0;2;2M\x1b[<0;3;3mend", "end"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -126,7 +125,7 @@ func TestStripMouseReports(t *testing.T) {
 // with no mouse byte at all, and it must not pay for a 128 KiB copy on every
 // attach.
 func TestStripMouseReports_NoAllocWhenNotNeeded(t *testing.T) {
-	entry := []byte("linha 1\nlinha 2\n\x1b[32mverde\x1b[0m\n")
+	entry := []byte("line 1\nline 2\n\x1b[32mgreen\x1b[0m\n")
 	output := stripMouseReports(entry)
 	if &entry[0] != &output[0] {
 		t.Error("with no mouse report, the buffer has to come back as it arrived (same memory)")

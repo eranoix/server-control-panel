@@ -2,7 +2,6 @@ package pve
 
 // console.go — the remote console of a hypervisor guest.
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // 🔴 THE RULE OF THIS FILE: the `ticket` and the `port` DO NOT LEAVE HERE.
 //
 // termproxy hands back a ticket that IS a console credential — whoever holds
@@ -17,7 +16,6 @@ package pve
 // mistake. It is the same principle as the header of client.go ("the secret
 // never leaves here"), applied to the second secret this package came to
 // handle.
-// ─────────────────────────────────────────────────────────────────────────────
 //
 // The protocol below was MEASURED against the home hypervisor, on both kinds of
 // guest — `lxc/204`, `lxc/205`, `lxc/207` and `qemu/208`, all 200 on termproxy:
@@ -26,7 +24,7 @@ package pve
 //	   → {"data":{"port":"5900","ticket":"PVEVNC:…","user":"lab@pve!node-lab",
 //	      "upid":"UPID:pve:…:vncproxy:204:lab@pve!node-lab:"}}
 //
-//	2) GET /api2/json/nodes/{no}/{tipo}/{vmid}/vncwebsocket?port=&vncticket=
+//	2) GET /api2/json/nodes/{node}/{type}/{vmid}/vncwebsocket?port=&vncticket=
 //	   Upgrade: websocket · Sec-WebSocket-Protocol: binary   → 101
 //
 //	3) FIRST frame from the client: "user:ticket\n"  → the server answers "OK"
@@ -169,7 +167,6 @@ func (c *Client) ConsoleAttachNode(ctx context.Context, node string) (ConsoleCon
 // whole protocol; duplicating it would be two truths about the same handshake,
 // and the second would age in silence.
 func (c *Client) consoleAt(ctx context.Context, base string) (ConsoleConn, string, error) {
-	// ── step 1: termproxy ─────────────────────────────────────────────────
 	//
 	// A 403 here is the end of the road, and on purpose: trying the upgrade
 	// afterwards would spend a connection to receive another 403, and the Kind
@@ -186,7 +183,6 @@ func (c *Client) consoleAt(ctx context.Context, base string) (ConsoleConn, strin
 			Err: errors.New("termproxy answered without port/ticket/user")}
 	}
 
-	// ── step 2: upgrade to WebSocket ─────────────────────────────────────
 	wsURL, err := c.consoleWSURL(base, tp.Port, tp.Ticket)
 	if err != nil {
 		return nil, "", err
@@ -206,7 +202,6 @@ func (c *Client) consoleAt(ctx context.Context, base string) (ConsoleConn, strin
 	}
 	conn.SetReadLimit(consoleMaxFrame)
 
-	// ── step 3: the auth frame, and the "OK" that STAYS HERE ─────────────
 	_ = conn.SetWriteDeadline(time.Now().Add(consoleOKTimeout))
 	if err := conn.WriteMessage(websocket.BinaryMessage, []byte(tp.User+":"+tp.Ticket+"\n")); err != nil {
 		_ = conn.Close()
@@ -290,11 +285,11 @@ func kindFromStatus(status int, err error) Kind {
 //
 // 🔴 THE LENGTH IS IN BYTES, and that was measured, not deduced. Against CT 204:
 //
-//	"0:2:é" (2 bytes)     → the terminal received 0xC3 0xA9  ✅
-//	"0:1:é" (1 character) → the terminal received 0xC3       ❌ half a character
+//	"0:2:ñ" (2 bytes)     → the terminal received 0xC3 0xB1  ✅
+//	"0:1:ñ" (1 character) → the terminal received 0xC3       ❌ half a character
 //
 // It is this line that forces the translation to live on the SERVER:
-// `data.length` in JavaScript counts UTF-16 units, so "ç", "é" and emoji typed
+// `data.length` in JavaScript counts UTF-16 units, so "ñ", "ü" and emoji typed
 // in the browser would arrive cut. The browser sends text; the one who counts
 // bytes is Go.
 func InputFrame(data []byte) []byte {

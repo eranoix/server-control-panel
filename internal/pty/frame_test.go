@@ -32,9 +32,9 @@ func withoutEscapes(b []byte) string { return stripANSI(string(b)) }
 // whatever was on its screen corresponds to nothing.
 func TestFrameFirstIsFull(t *testing.T) {
 	q := newClientFrame(20, 3)
-	output := q.update(screenWithText(40, "primeira", "segunda", "terceira"), vt10x.Cursor{X: 0, Y: 0}, true)
+	output := q.update(screenWithText(40, "first", "second", "third"), vt10x.Cursor{X: 0, Y: 0}, true)
 	text := withoutEscapes(output)
-	for _, target := range []string{"primeira", "segunda", "terceira"} {
+	for _, target := range []string{"first", "second", "third"} {
 		if !strings.Contains(text, target) {
 			t.Errorf("the first frame did not bring %q: %q", target, text)
 		}
@@ -51,7 +51,7 @@ func TestFrameFirstIsFull(t *testing.T) {
 // prevent.
 func TestFrameSendsOnlyChangedLine(t *testing.T) {
 	q := newClientFrame(20, 3)
-	screen := screenWithText(40, "alfa", "beta", "gama")
+	screen := screenWithText(40, "alpha", "beta", "gamma")
 	q.update(screen, vt10x.Cursor{}, true)
 
 	// Nothing changed: nothing to send.
@@ -60,13 +60,13 @@ func TestFrameSendsOnlyChangedLine(t *testing.T) {
 	}
 
 	// Only the middle one changed.
-	screen2 := screenWithText(40, "alfa", "BETA!", "gama")
+	screen2 := screenWithText(40, "alpha", "BETA!", "gamma")
 	output := q.update(screen2, vt10x.Cursor{}, true)
 	text := withoutEscapes(output)
 	if !strings.Contains(text, "BETA!") {
 		t.Errorf("the line that changed was not sent: %q", text)
 	}
-	if strings.Contains(text, "alfa") || strings.Contains(text, "gama") {
+	if strings.Contains(text, "alpha") || strings.Contains(text, "gamma") {
 		t.Errorf("sent a line that did not change: %q", text)
 	}
 	if !bytes.Contains(output, []byte("\x1b[2;1H")) {
@@ -78,7 +78,7 @@ func TestFrameSendsOnlyChangedLine(t *testing.T) {
 // into ITS own scrollback), instead of the whole screen being repainted.
 func TestFrameScrollDoesNotRepaintWholeScreen(t *testing.T) {
 	q := newClientFrame(20, 4)
-	q.update(screenWithText(40, "um", "dois", "tres", "quatro"), vt10x.Cursor{}, true)
+	q.update(screenWithText(40, "one", "two", "three", "four"), vt10x.Cursor{}, true)
 
 	scroll := q.scrolled(1)
 	if !bytes.Contains(scroll, []byte("\x1b[4;1H")) || !bytes.Contains(scroll, []byte("\r\n")) {
@@ -87,12 +87,12 @@ func TestFrameScrollDoesNotRepaintWholeScreen(t *testing.T) {
 
 	// After scrolling by 1, the session shows two/three/four/five. The client
 	// ALREADY HAS the first three (they scrolled up on its own screen).
-	output := q.update(screenWithText(40, "dois", "tres", "quatro", "cinco"), vt10x.Cursor{}, true)
+	output := q.update(screenWithText(40, "two", "three", "four", "five"), vt10x.Cursor{}, true)
 	text := withoutEscapes(output)
-	if !strings.Contains(text, "cinco") {
+	if !strings.Contains(text, "five") {
 		t.Errorf("the new line was not sent: %q", text)
 	}
-	for _, old := range []string{"dois", "tres", "quatro"} {
+	for _, old := range []string{"two", "three", "four"} {
 		if strings.Contains(text, old) {
 			t.Errorf("repainted %q, which the client already had after scrolling: %q", old, text)
 		}
@@ -139,11 +139,11 @@ func TestFrameShiftStaysWithinBounds(t *testing.T) {
 // another size writes a line in the wrong place.
 func TestFrameResizeRepaintsEverything(t *testing.T) {
 	q := newClientFrame(20, 2)
-	screen := screenWithText(40, "alfa", "beta")
+	screen := screenWithText(40, "alpha", "beta")
 	q.update(screen, vt10x.Cursor{}, true)
 	q.resize(30, 2)
 	output := withoutEscapes(q.update(screen, vt10x.Cursor{}, true))
-	if !strings.Contains(output, "alfa") || !strings.Contains(output, "beta") {
+	if !strings.Contains(output, "alpha") || !strings.Contains(output, "beta") {
 		t.Errorf("after resizing, the frame has to come whole: %q", output)
 	}
 }
@@ -180,12 +180,12 @@ func TestFrameCursorFollowsShift(t *testing.T) {
 // the design mistake that only showed up in the browser.
 func TestFrameVerticalCropTakesEnd(t *testing.T) {
 	q := newClientFrame(20, 2)
-	screen := screenWithText(40, "um", "dois", "tres", "quatro", "cinco")
+	screen := screenWithText(40, "one", "two", "three", "four", "five")
 	text := withoutEscapes(q.update(screen, vt10x.Cursor{X: 0, Y: 4}, true))
-	if !strings.Contains(text, "quatro") || !strings.Contains(text, "cinco") {
+	if !strings.Contains(text, "four") || !strings.Contains(text, "five") {
 		t.Errorf("the crop has to bring the LAST lines: %q", text)
 	}
-	if strings.Contains(text, "um") || strings.Contains(text, "dois") {
+	if strings.Contains(text, "one") || strings.Contains(text, "two") {
 		t.Errorf("the crop brought a line from the top: %q", text)
 	}
 }
@@ -194,7 +194,7 @@ func TestFrameVerticalCropTakesEnd(t *testing.T) {
 // window, it comes out on line 2 of the client.
 func TestFrameCursorFollowsVerticalCrop(t *testing.T) {
 	q := newClientFrame(20, 2)
-	screen := screenWithText(40, "um", "dois", "tres", "quatro", "cinco")
+	screen := screenWithText(40, "one", "two", "three", "four", "five")
 	output := q.update(screen, vt10x.Cursor{X: 3, Y: 4}, true)
 	if !bytes.Contains(output, []byte("\x1b[2;4H")) {
 		t.Errorf("cursor on line 5 of the session, window of 2, has to come out on line 2: %q", output)
@@ -207,9 +207,9 @@ func TestFrameCursorFollowsVerticalCrop(t *testing.T) {
 func TestFrameWithEmptyBottomShowsTop(t *testing.T) {
 	q := newClientFrame(20, 3)
 	// A 10-line session, content only on the first two, cursor on the second.
-	screen := screenWithText(40, "prompt$ echo oi", "oi", "", "", "", "", "", "", "", "")
+	screen := screenWithText(40, "prompt$ echo hi", "hi", "", "", "", "", "", "", "", "")
 	text := withoutEscapes(q.update(screen, vt10x.Cursor{X: 0, Y: 1}, true))
-	if !strings.Contains(text, "prompt$ echo oi") || !strings.Contains(text, "oi") {
+	if !strings.Contains(text, "prompt$ echo hi") || !strings.Contains(text, "hi") {
 		t.Errorf("with the cursor at the top, the crop has to show the top: %q", text)
 	}
 }
@@ -218,7 +218,7 @@ func TestFrameWithEmptyBottomShowsTop(t *testing.T) {
 // it shifts every line and costs a full repaint per new line.
 func TestFrameAnchorDoesNotMoveNeedlessly(t *testing.T) {
 	q := newClientFrame(20, 3)
-	screen := screenWithText(40, "um", "dois", "tres", "quatro", "cinco")
+	screen := screenWithText(40, "one", "two", "three", "four", "five")
 	q.update(screen, vt10x.Cursor{Y: 4}, true) // anchor goes to 2 (shows 3..5)
 	anchorBefore := q.anchor
 	q.update(screen, vt10x.Cursor{Y: 3}, true) // cursor still inside the band

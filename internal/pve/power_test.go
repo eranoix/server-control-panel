@@ -35,11 +35,11 @@ func TestPowerOps(t *testing.T) {
 			return c.Start(context.Background(), "pve", 100, "qemu")
 		}, "/api2/json/nodes/pve/qemu/100/status/start"},
 		{"snapshot create lxc", func(c *Client) (string, error) {
-			return c.SnapshotCreate(context.Background(), "pve", 207, "lxc", "antes-do-cutover", "Fase 7")
+			return c.SnapshotCreate(context.Background(), "pve", 207, "lxc", "before-cutover", "Phase 7")
 		}, "/api2/json/nodes/pve/lxc/207/snapshot"},
 		{"snapshot delete qemu", func(c *Client) (string, error) {
-			return c.SnapshotDelete(context.Background(), "pve", 208, "qemu", "antes-do-cutover")
-		}, "/api2/json/nodes/pve/qemu/208/snapshot/antes-do-cutover"},
+			return c.SnapshotDelete(context.Background(), "pve", 208, "qemu", "before-cutover")
+		}, "/api2/json/nodes/pve/qemu/208/snapshot/before-cutover"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestSnapshotList(t *testing.T) {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
 		_, _ = w.Write([]byte(`{"data":[
-			{"name":"antes-do-cutover","description":"Fase 7","snaptime":1787000000},
+			{"name":"before-cutover","description":"Phase 7","snaptime":1787000000},
 			{"name":"current","description":"You are here!","digest":"abc"}
 		]}`))
 	})
@@ -99,7 +99,7 @@ func TestSnapshotList(t *testing.T) {
 	if len(snaps) != 2 {
 		t.Fatalf("snaps = %+v, want 2", snaps)
 	}
-	if snaps[0].Name != "antes-do-cutover" || snaps[0].SnapTime != 1787000000 {
+	if snaps[0].Name != "before-cutover" || snaps[0].SnapTime != 1787000000 {
 		t.Fatalf("snapshot[0] = %+v", snaps[0])
 	}
 }
@@ -233,10 +233,10 @@ func TestSnapshotInvalidName(t *testing.T) {
 	names := []string{
 		"",
 		"../../status/stop",
-		"com/barra",
-		"com espaço",
-		"acento-é",
-		"1comeca-com-digito",
+		"with/slash",
+		"with space",
+		"accent-ñ",
+		"1starts-with-digit",
 		strings.Repeat("x", 65),
 	}
 	for _, name := range names {
@@ -257,7 +257,7 @@ func TestSnapshotInvalidName(t *testing.T) {
 		called = true
 		_, _ = w.Write([]byte(`{"data":"` + fakeUPID + `"}`))
 	})
-	if _, err := c2.SnapshotCreate(context.Background(), "pve", 207, "lxc", "antes-do-cutover_v2", "ok"); err != nil {
+	if _, err := c2.SnapshotCreate(context.Background(), "pve", 207, "lxc", "before-cutover_v2", "ok"); err != nil {
 		t.Fatalf("a legitimate name was refused: %v", err)
 	}
 	if !called {
@@ -265,21 +265,12 @@ func TestSnapshotInvalidName(t *testing.T) {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Snapshot rollback
 //
-// 🔴 The privilege WAS ALREADY GRANTED and nobody saw it. The LabOperador role
-// has VM.Snapshot, and `Qemu.pm:6301` / `LXC/Snapshot.pm:275` accept VM.Snapshot
-// for ROLLBACK — not only for creating and deleting. Measured against the live
-// hypervisor:
-//
-//	GET /access/permissions with lab@pve!node-lab → {"/vms/204":{"VM.Snapshot":1,…}}
-//
-// In other words: the power to discard everything since a snapshot was there,
-// the panel did not show it, and no screen left a trace of whoever used it.
+// VM.Snapshot also authorises ROLLBACK (`Qemu.pm:6301`, `LXC/Snapshot.pm:275`),
+// not only create and delete, so the operator role already had this power.
 // Exposing it with an audit trail is safer than leaving it hidden — what is
 // hidden stays reachable by whoever holds the token, and with no record at all.
-// ─────────────────────────────────────────────────────────────────────────────
 
 // TestSnapshotRollbackPathAndVerb pins the exact path on both guest types. A
 // wrong path here does not return 404: it returns the rollback of the WRONG
@@ -291,11 +282,11 @@ func TestSnapshotRollbackPathAndVerb(t *testing.T) {
 		wantPath string
 	}{
 		{"lxc", func(c *Client) (string, error) {
-			return c.SnapshotRollback(context.Background(), "pve", 204, "lxc", "antes-do-cutover")
-		}, "/api2/json/nodes/pve/lxc/204/snapshot/antes-do-cutover/rollback"},
+			return c.SnapshotRollback(context.Background(), "pve", 204, "lxc", "before-cutover")
+		}, "/api2/json/nodes/pve/lxc/204/snapshot/before-cutover/rollback"},
 		{"qemu", func(c *Client) (string, error) {
-			return c.SnapshotRollback(context.Background(), "pve", 208, "qemu", "antes-do-cutover")
-		}, "/api2/json/nodes/pve/qemu/208/snapshot/antes-do-cutover/rollback"},
+			return c.SnapshotRollback(context.Background(), "pve", 208, "qemu", "before-cutover")
+		}, "/api2/json/nodes/pve/qemu/208/snapshot/before-cutover/rollback"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -326,7 +317,7 @@ func TestSnapshotRollbackPathAndVerb(t *testing.T) {
 // create/delete, and here it counts for more: a name that escapes its resource
 // chooses which state the guest is going to take on.
 func TestSnapshotRollbackRejectsInvalidName(t *testing.T) {
-	for _, name := range []string{"", "../../nodes/pve/qemu/100/status/stop", "com espaço", "acentuação", "9comeca-com-numero", strings.Repeat("a", 65)} {
+	for _, name := range []string{"", "../../nodes/pve/qemu/100/status/stop", "with space", "accentuation-ñ", "9starts-with-number", strings.Repeat("a", 65)} {
 		var dialed bool
 		c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 			dialed = true
@@ -348,7 +339,7 @@ func TestSnapshotRollbackWithoutPrivilegeIsTyped(t *testing.T) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"data":null}`))
 	})
-	_, err := c.SnapshotRollback(context.Background(), "pve", 204, "lxc", "antes-do-cutover")
+	_, err := c.SnapshotRollback(context.Background(), "pve", 204, "lxc", "before-cutover")
 	var pe *Error
 	if !errors.As(err, &pe) || pe.Kind != KindForbidden {
 		t.Fatalf("error = %v, want KindForbidden", err)

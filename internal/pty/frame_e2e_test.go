@@ -28,28 +28,28 @@ func TestSessionSizeIsLargestAmongFrameClients(t *testing.T) {
 		why      string
 	}{
 		{
-			"desktop e celular, os dois aceitam quadro",
+			"desktop and phone, both accept frames",
 			[]clientSize{{cols: 120, rows: 40, acceptsFrame: true}, {cols: 53, rows: 20, acceptsFrame: true}},
 			120, 40,
-			"o celular não pode mais encolher o desktop — ele recebe recorte",
+			"the phone can no longer shrink the desktop: it gets a crop",
 		},
 		{
-			"ninguém aceita quadro: a regra antiga, intacta",
+			"nobody accepts frames: the old rule, intact",
 			[]clientSize{{cols: 120, rows: 40}, {cols: 53, rows: 20}},
 			53, 20,
-			"cliente antigo só sabe desenhar o fluxo cru, então a sessão cabe nele",
+			"an old client can only draw the raw stream, so the session fits it",
 		},
 		{
-			"um aceita, outro não: quem não aceita é TETO",
+			"one accepts, the other does not: the one that does not is the CAP",
 			[]clientSize{{cols: 120, rows: 40, acceptsFrame: true}, {cols: 80, rows: 24}},
 			80, 24,
-			"o antigo desenharia lixo se a sessão passasse do tamanho dele",
+			"the old one would draw garbage if the session exceeded its size",
 		},
 		{
-			"um cliente só",
+			"a single client",
 			[]clientSize{{cols: 100, rows: 30, acceptsFrame: true}},
 			100, 30,
-			"sem disputa, a sessão é a janela dele",
+			"no contention, the session is its window",
 		},
 	}
 	for _, tc := range cases {
@@ -124,7 +124,7 @@ func TestE2EFrame_PhoneNoLongerShrinksDesktop(t *testing.T) {
 		t.Skip("no dtach on this machine")
 	}
 	dir := t.TempDir()
-	name := "quadro-e2e"
+	name := "frame-e2e"
 	own, err := LoadOwnership(dir + "/own.json")
 	if err != nil {
 		t.Fatal(err)
@@ -184,9 +184,9 @@ func TestE2EFrame_PhoneNoLongerShrinksDesktop(t *testing.T) {
 	// for the desktop to grow if the smaller one turns into a dead screen. What
 	// reaches it is the RENDERED crop — the raw stream, at that width, would land
 	// entirely in the wrong place.
-	desktop.send(map[string]any{"type": "input", "data": "echo MARCA_QUADRO\r"})
+	desktop.send(map[string]any{"type": "input", "data": "echo FRAME_MARKER\r"})
 	time.Sleep(2 * time.Second)
-	if txt := phone.text(); !strings.Contains(txt, "MARCA_QUADRO") {
+	if txt := phone.text(); !strings.Contains(txt, "FRAME_MARKER") {
 		t.Errorf("the phone did not see what was typed on the desktop; it received %d bytes: %.300q",
 			len(txt), txt)
 	}

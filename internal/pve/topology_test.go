@@ -29,7 +29,7 @@ func TestVdevType(t *testing.T) {
 		{"logs", "especial", false},
 		// 🔴 Unknown does NOT become redundant. The error in the other direction makes
 		// the operator trust a mirror that does not exist.
-		{"coisa-nova-99", "listra", false},
+		{"new-thing-99", "listra", false},
 		{"/dev/sda", "listra", false},
 	}
 	for _, c := range cases {

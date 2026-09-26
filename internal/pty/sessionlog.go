@@ -262,8 +262,8 @@ func logTail(data []byte) []byte {
 // independent reasons, both measured on the device:
 //
 //  1. The text is already WRAPPED at the width the PTY had when it was
-//     produced. The "Aplicativo" log held frames recorded at 24, 49, 67, 77
-//     and 113 columns. Reproduced on a grid of another width, every frame comes
+//     produced (one real log held frames at 24, 49, 67, 77 and 113
+//     columns). Reproduced on a grid of another width, every frame comes
 //     out squeezed — and NO terminal can undo it: the breaks are the program's
 //     `\r\n`, not terminal wraps, and reflow only rejoins lines the terminal
 //     wrapped itself (it is the universal rule; see VTE's doc/rewrap.txt).
@@ -402,7 +402,6 @@ func mouseReportLen(b []byte) int {
 	if len(b) < 3 || b[0] != 0x1b || b[1] != '[' {
 		return 0
 	}
-	// ── WHY X10 WENT AWAY FROM HERE ──────────────────────────────────────
 	//
 	// There used to be a branch for the X10 mouse report (`ESC [ M` + 3 bytes of
 	// coordinates). It is indistinguishable from `CSI M`, which in ECMA-48 is DL
@@ -430,7 +429,7 @@ func mouseReportLen(b []byte) int {
 			return 0 // it was not a mouse report — let it through whole
 		}
 	}
-	return len(b) // truncado no fim: some
+	return len(b) // truncated at the end: drop it
 }
 
 // Close closes the file (idempotent). Errors are swallowed.
@@ -461,7 +460,7 @@ const maxRawLogTailBytes = 2 * maxSessionLogBytes
 //
 // tailSessionLog cuts by LINES and optionally strips the escapes. Both of those
 // destroy the output of a program that redraws, and the measurement is direct:
-// in the real "Aplicativo" session log (6.2 MB), the last 5,000 lines of plain
+// in a real 6.2 MB session log, the last 5,000 lines of plain
 // text hold 511 non-empty lines and 150 distinct ones — almost all of them
 // spinner frames. The spinner occupies ONE cell rewritten hundreds of times;
 // without the escapes each rewrite becomes a line, and the text comes out

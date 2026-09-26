@@ -41,10 +41,10 @@ func TestDtachMasterArgs(t *testing.T) {
 		t.Errorf("the `-- <dtach>` separator is missing:\n%s", joined)
 	}
 
-	// Fallback sem systemd-run: dtach cru na frente.
+	// Fallback without systemd-run: bare dtach in front.
 	raw := dtachMasterArgs("", "/usr/bin/dtach", "/s/x.sock", []string{"/bin/bash", "-l"}, nil, "")
 	if raw[0] != "/usr/bin/dtach" || raw[1] != "-n" {
-		t.Errorf("fallback cru inesperado: %v", raw)
+		t.Errorf("unexpected bare fallback: %v", raw)
 	}
 }
 
@@ -82,7 +82,7 @@ func TestSocketPathResolve(t *testing.T) {
 // TestSocketAlive: an orphaned socket file (no listener) = dead; a real listener = alive.
 func TestSocketAlive(t *testing.T) {
 	dir := t.TempDir()
-	if socketAlive("") || socketAlive(filepath.Join(dir, "nao-existe.sock")) {
+	if socketAlive("") || socketAlive(filepath.Join(dir, "missing.sock")) {
 		t.Error("a missing socket should be dead")
 	}
 	// An ordinary file (not a socket) exists but does not listen → dead.
@@ -93,7 +93,7 @@ func TestSocketAlive(t *testing.T) {
 	if socketAlive(orphan) {
 		t.Error("an orphaned socket (no listener) should be dead")
 	}
-	// Listener unix real → vivo.
+	// A real unix listener means alive.
 	live := filepath.Join(dir, "live.sock")
 	ln, err := net.Listen("unix", live)
 	if err != nil {

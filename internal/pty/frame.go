@@ -54,13 +54,13 @@ type clientFrame struct {
 	// reach what is to the right in a window narrower than the session; without
 	// it, the right half would be unreachable.
 	offset int
-	// ancora: the first SESSION line visible in this window. It persists between
-	// frames — see the block in [atualiza].
+	// anchor: the first SESSION line visible in this window. It persists between
+	// frames; see the block in [update].
 	anchor int
 	// base: the lines the client already has, serialised and cropped. nil means
 	// "I do not know what it has" — and then the line is sent.
 	base [][]byte
-	// primeiro: nothing has been sent yet, so the whole frame goes out.
+	// first: nothing has been sent yet, so the whole frame goes out.
 	first bool
 }
 
@@ -68,7 +68,7 @@ func newClientFrame(cols, rows int) *clientFrame {
 	return &clientFrame{cols: cols, rows: rows, first: true}
 }
 
-// redimensiona adjusts the client's window. It discards what we knew: the
+// resize adjusts the client's window. It discards what we knew: the
 // coordinates have changed, and sending a diff against a base of another size
 // would write a line in the wrong place.
 func (q *clientFrame) resize(cols, rows int) {
@@ -80,7 +80,7 @@ func (q *clientFrame) resize(cols, rows int) {
 	q.first = true
 }
 
-// desloca pans the crop horizontally, clamped to the session's bounds.
+// shift pans the crop horizontally, clamped to the session's bounds.
 func (q *clientFrame) shift(stop, sessionCols int) {
 	if stop < 0 {
 		stop = 0
@@ -99,7 +99,7 @@ func (q *clientFrame) shift(stop, sessionCols int) {
 	q.first = true
 }
 
-// rolou composes a scroll of k lines: it tells the client's terminal to scroll
+// scrolled composes a scroll of k lines: it tells the client's terminal to scroll
 // (its content goes into ITS own scrollback) and shifts the base by as much.
 func (q *clientFrame) scrolled(k int) []byte {
 	if k <= 0 || q.first {
@@ -133,7 +133,7 @@ func (q *clientFrame) scrolled(k int) []byte {
 	return buf.Bytes()
 }
 
-// atualiza composes the difference between the session's screen and what the
+// update composes the difference between the session's screen and what the
 // client has. Returns nil when there is nothing to send.
 func (q *clientFrame) update(screen [][]vt10x.Glyph, cur vt10x.Cursor, cursorVisible bool) []byte {
 	if q.cols < 2 || q.rows < 1 {
@@ -148,7 +148,6 @@ func (q *clientFrame) update(screen [][]vt10x.Glyph, cur vt10x.Cursor, cursorVis
 		q.base = make([][]byte, q.rows)
 		q.first = false
 	}
-	// ── THE VERTICAL CROP FOLLOWS THE CURSOR ─────────────────────────────
 	//
 	// I got this wrong TWICE, and each mistake was caught by a different test —
 	// which is the entire argument for having both:

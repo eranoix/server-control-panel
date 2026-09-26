@@ -87,22 +87,22 @@ func TestStorageListReadsRealShape(t *testing.T) {
 		t.Errorf("local-zfs.UsedFraction = %v, want ~0.0687 (the PVE sends the fraction READY-MADE)", lz.UsedFraction)
 	}
 	// content is "images,rootdir": a string, not an array. Whoever wants a list
-	// uses Conteudos(), and that is the one the screen consumes.
+	// uses ContentList(), and that is the one the screen consumes.
 	if got := lz.ContentList(); strings.Join(got, ",") != "images,rootdir" {
-		t.Errorf("local-zfs.Conteudos() = %v, want [images rootdir] in a stable order", got)
+		t.Errorf("local-zfs.ContentList() = %v, want [images rootdir] in a stable order", got)
 	}
 	if !lz.IsActive() || !lz.IsEnabled() {
-		t.Errorf("local-zfs ativo=%v habilitado=%v — the PVE sends 1, not true", lz.IsActive(), lz.IsEnabled())
+		t.Errorf("local-zfs active=%v enabled=%v: the PVE sends 1, not true", lz.IsActive(), lz.IsEnabled())
 	}
 	pbs, ok := byID["pbs"]
 	if !ok {
 		t.Fatal("pbs missing")
 	}
 	if !pbs.IsShared() {
-		t.Error("pbs.Compartilhado() = false — the fixture carries shared=1")
+		t.Error("pbs.IsShared() = false: the fixture carries shared=1")
 	}
 	if byID["local"].IsShared() {
-		t.Error("local.Compartilhado() = true — the fixture carries shared=0")
+		t.Error("local.IsShared() = true: the fixture carries shared=0")
 	}
 }
 
@@ -206,9 +206,9 @@ func TestEmptyIsNotErrorOnNewRoutes(t *testing.T) {
 		body    string
 		wantErr bool
 	}{
-		{"lista vazia", `{"data":[]}`, false},
+		{"empty list", `{"data":[]}`, false},
 		{"data null", `{"data":null}`, false},
-		{"sem envelope", `{"nao-e-data":[]}`, true},
+		{"no envelope", `{"not-data":[]}`, true},
 	}
 	for _, cs := range cases {
 		t.Run(cs.name+"/storage", func(t *testing.T) {
@@ -267,15 +267,9 @@ func TestZFSListForbiddenStaysForbidden(t *testing.T) {
 
 // ---------------------------------------------- the privilege verdict ------
 
-// 🔴 TestCanAuditDatastoreRequiresPrivilege is the guard from that earlier
-// pass, hardened.
-//
-// That pass answered "storage visible" with `strings.HasPrefix(caminho,
-// "/storage")` — presence of a PATH. Presence of a path only says the token has
-// SOME privilege there. A token with PVEVMUser propagated from the root puts
-// /storage in the map without Datastore.Audit, the list comes back 200 with [],
-// and the screen announces "it already sees /storage" over an empty block: the
-// false-green is back, now with the guard's blessing.
+// TestCanAuditDatastoreRequiresPrivilege: the presence of a PATH is not enough.
+// A token with PVEVMUser propagated from the root has /storage in the map
+// without Datastore.Audit, and the list comes back 200 with [] (a false green).
 //
 // The correct verdict is the PRIVILEGE, on any path that covers the storage.
 func TestCanAuditDatastoreRequiresPrivilege(t *testing.T) {
@@ -284,10 +278,10 @@ func TestCanAuditDatastoreRequiresPrivilege(t *testing.T) {
 		perms map[string]map[string]int
 		want  bool
 	}{
-		{"mapa vazio", map[string]map[string]int{}, false},
+		{"empty map", map[string]map[string]int{}, false},
 		{"nil", nil, false},
 		{
-			"onda 1: só /vms e /nodes, sem storage",
+			"only /vms and /nodes, no storage",
 			map[string]map[string]int{
 				"/vms/204": {"VM.Audit": 1},
 				"/nodes":   {"Sys.Audit": 1, "VM.Audit": 1},
@@ -295,12 +289,12 @@ func TestCanAuditDatastoreRequiresPrivilege(t *testing.T) {
 			false,
 		},
 		{
-			"🔴 caminho presente SEM Datastore.Audit — presença não basta",
+			"path present WITHOUT Datastore.Audit: presence is not enough",
 			map[string]map[string]int{"/storage": {"VM.Audit": 1, "Sys.Audit": 1}},
 			false,
 		},
 		{
-			"privilégio zerado explicitamente",
+			"privilege explicitly zeroed",
 			map[string]map[string]int{"/storage": {"Datastore.Audit": 0}},
 			false,
 		},
@@ -310,22 +304,22 @@ func TestCanAuditDatastoreRequiresPrivilege(t *testing.T) {
 			true,
 		},
 		{
-			"Datastore.Audit num storage específico",
+			"Datastore.Audit on a specific storage",
 			map[string]map[string]int{"/storage/local-zfs": {"Datastore.Audit": 1}},
 			true,
 		},
 		{
-			"Datastore.Audit na RAIZ (propagação) — é o caso vivo desta onda",
+			"Datastore.Audit at the ROOT (propagation), the live case",
 			map[string]map[string]int{"/": {"Datastore.Audit": 1}},
 			true,
 		},
 		{
-			"Datastore.Allocate implica poder auditar",
+			"Datastore.Allocate implies audit",
 			map[string]map[string]int{"/storage": {"Datastore.Allocate": 1}},
 			true,
 		},
 		{
-			"🔴 caminho VIZINHO não conta (/storagefoo não é /storage/…)",
+			"a NEIGHBOUR path does not count (/storagefoo is not /storage/...)",
 			map[string]map[string]int{"/storagefoo": {"Datastore.Audit": 1}},
 			false,
 		},

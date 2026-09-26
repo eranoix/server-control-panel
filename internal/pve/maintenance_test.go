@@ -51,10 +51,10 @@ func TestCloneUsesRightNameParamPerType(t *testing.T) {
 			path = r.URL.Path
 			_, _ = w.Write([]byte(`{"data":"` + fakeUPID + `"}`))
 		})
-		if _, err := c.Clone(context.Background(), "pve", 204, cs.typ, 991, "copia-de-lab", ""); err != nil {
+		if _, err := c.Clone(context.Background(), "pve", 204, cs.typ, 991, "lab-copy", ""); err != nil {
 			t.Fatalf("%s: %v", cs.typ, err)
 		}
-		if q.Get(cs.wantKey) != "copia-de-lab" {
+		if q.Get(cs.wantKey) != "lab-copy" {
 			t.Errorf("%s: %s = %q, want the name", cs.typ, cs.wantKey, q.Get(cs.wantKey))
 		}
 		if q.Has(cs.notWant) {
@@ -83,15 +83,15 @@ func TestCloneRejectsBeforeDialing(t *testing.T) {
 		newID      int
 		targetName string
 	}{
-		{"destino igual à origem", 204, "ok"},
+		{"destination equals the source", 204, "ok"},
 		{"id zero", 0, "ok"},
-		{"id negativo", -1, "ok"},
-		{"nome com barra", 991, "../../status/stop"},
-		{"nome com espaço", 991, "com espaço"},
-		{"nome com acento", 991, "cópia"},
-		{"nome começando com hífen", 991, "-copia"},
-		{"nome terminando com hífen", 991, "copia-"},
-		{"nome longo demais", 991, strings.Repeat("a", 64)},
+		{"negative id", -1, "ok"},
+		{"name with a slash", 991, "../../status/stop"},
+		{"name with a space", 991, "with space"},
+		{"name with a non-ASCII letter", 991, "naïve"},
+		{"name starting with a hyphen", 991, "-copy"},
+		{"name ending with a hyphen", 991, "copy-"},
+		{"name too long", 991, strings.Repeat("a", 64)},
 	}
 	for _, cs := range cases {
 		var dialed bool
@@ -150,14 +150,14 @@ func TestVZDumpNeitherPrunesNorNeedsExtraPrivilege(t *testing.T) {
 // chance to send anything a future hypervisor version might come to accept there.
 func TestVZDumpRejectsOutsideAllowlist(t *testing.T) {
 	cases := []struct{ name, storage, mode, compress string }{
-		{"modo inventado", "pbs", "rapido", "zstd"},
-		{"modo com espaço", "pbs", "snapshot ", "zstd"},
-		{"modo em maiúscula", "pbs", "SNAPSHOT", "zstd"},
-		{"compressão inventada", "pbs", "snapshot", "brotli"},
-		{"storage com barra", "../../vms/100", "snapshot", "zstd"},
-		{"storage com ponto-ponto", "a..b", "snapshot", "zstd"},
-		{"storage vazio", "", "snapshot", "zstd"},
-		{"nó com barra", "pbs", "snapshot", "zstd"},
+		{"made-up mode", "pbs", "fast", "zstd"},
+		{"mode with a space", "pbs", "snapshot ", "zstd"},
+		{"mode in uppercase", "pbs", "SNAPSHOT", "zstd"},
+		{"made-up compression", "pbs", "snapshot", "brotli"},
+		{"storage with a slash", "../../vms/100", "snapshot", "zstd"},
+		{"storage with dot-dot", "a..b", "snapshot", "zstd"},
+		{"empty storage", "", "snapshot", "zstd"},
+		{"node with a slash", "pbs", "snapshot", "zstd"},
 	}
 	for i, cs := range cases {
 		var dialed bool

@@ -18,13 +18,13 @@ func TestPtyTakesSmallestClientSize(t *testing.T) {
 
 	cols, rows, changed, _ := s.registerSize(1, 120, 40, false)
 	if !changed || cols != 120 || rows != 40 {
-		t.Fatalf("first client: %dx%d mudou=%v; wanted 120x40 mudou=true", cols, rows, changed)
+		t.Fatalf("first client: %dx%d changed=%v; wanted 120x40 changed=true", cols, rows, changed)
 	}
 
 	// A SMALLER client arrives: the session shrinks to fit it, per axis.
 	cols, rows, changed, _ = s.registerSize(2, 67, 53, false)
 	if !changed || cols != 67 || rows != 40 {
-		t.Fatalf("with two clients: %dx%d mudou=%v; wanted 67x40 (smaller of each axis)", cols, rows, changed)
+		t.Fatalf("with two clients: %dx%d changed=%v; wanted 67x40 (smaller of each axis)", cols, rows, changed)
 	}
 }
 
@@ -66,7 +66,7 @@ func TestNewcomerReceivesCurrentSize(t *testing.T) {
 
 	cols, rows := s.registerApplier(2, func(uint16, uint16) {})
 	if cols != 67 || rows != 53 {
-		t.Errorf("registraAviso returned %dx%d; wanted what is already in effect, 67x53", cols, rows)
+		t.Errorf("registerApplier returned %dx%d; wanted what is already in effect, 67x53", cols, rows)
 	}
 }
 
@@ -97,7 +97,7 @@ func TestDepartingClientStopsShrinkingSession(t *testing.T) {
 
 	cols, rows, changed, _ := s.forgetSize(2)
 	if !changed || cols != 120 || rows != 40 {
-		t.Fatalf("after the exit: %dx%d mudou=%v; wanted 120x40", cols, rows, changed)
+		t.Fatalf("after the exit: %dx%d changed=%v; wanted 120x40", cols, rows, changed)
 	}
 }
 

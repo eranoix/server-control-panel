@@ -12,11 +12,10 @@ import (
 	"time"
 )
 
-// BackendHTTP is the Backend the panel uses when the node has `transport: agente`.
+// BackendHTTP is the Backend the panel uses when the node has `transport: agente` (the config value for the agent transport).
 // It talks to that node's lab-agent over the internal bridge.
 //
-// ─────────────────────────────────────────────────────────────────────────────
-// ONE FORWARDER, NOT 23 FUNCTIONS — and why
+// # ONE FORWARDER, NOT 23 FUNCTIONS — and why
 //
 // The obvious design asks for "one function per operation". That is not what is
 // written here, and the reason is the very thing that counts as this
@@ -34,7 +33,6 @@ import (
 // satisfied more strongly than it asked for: there is no operation name here at
 // all, neither as a literal nor as a constant — only the `op` that arrives as a
 // parameter, validated against the catalog before it becomes a URL.
-// ─────────────────────────────────────────────────────────────────────────────
 //
 // # THE TOKEN IS INJECTED ON THE SERVER
 //
@@ -175,11 +173,11 @@ func (b *BackendHTTP) Open(ctx context.Context, h Handle) (io.ReadCloser, error)
 		res.Body.Close()
 		return nil, &OperationError{Msg: errorMessage(body, res.StatusCode, b.no)}
 	}
-	// The caller closes (Backend.Abrir's contract).
+	// The caller closes (Backend.Open's contract).
 	return res.Body, nil
 }
 
-// Receber sends bytes to the node and receives the Handle back.
+// Receive sends bytes to the node and receives the Handle back.
 //
 // A direct stream, no multipart and no base64: the request body IS the artifact.
 // Multipart would exist in order to carry the NAME along, and the name is
@@ -217,7 +215,7 @@ func (b *BackendHTTP) Receive(ctx context.Context, r io.Reader) (Handle, error) 
 	return Handle(env.Handle), nil
 }
 
-// autoriza puts the bearer in the HEADER, never in the URL. See the file header.
+// authorize puts the bearer in the HEADER, never in the URL. See the file header.
 func (b *BackendHTTP) authorize(r *http.Request) {
 	r.Header.Set("Authorization", "Bearer "+b.token)
 }

@@ -12,7 +12,7 @@ import (
 // TestBindTwoListeners — the agent opens EXACTLY two listeners, and both are
 // explicit. Proved by connecting to each one.
 func TestBindTwoListeners(t *testing.T) {
-	s, _ := testServer(t, "o-certo")
+	s, _ := testServer(t, "the-right-one")
 
 	// A loopback IP that is not 127.0.0.1 plays the "bridge" in the test: it is
 	// a real, explicit address and does not depend on the machine's network.
@@ -38,7 +38,7 @@ func TestBindTwoListeners(t *testing.T) {
 			t.Errorf("shutdown returned an error: %v", err)
 		}
 	case <-time.After(10 * time.Second):
-		t.Error("Escuta did not return after the cancellation")
+		t.Error("Listen did not return after the cancellation")
 	}
 }
 
@@ -53,7 +53,7 @@ func TestBindRejectsWildcard(t *testing.T) {
 		{"", "empty"},
 		{"0.0.0.0", "wildcard"},
 		{"::", "wildcard"},
-		{"nao-e-ip", "IP address"},
+		{"not-an-ip", "IP address"},
 	} {
 		_, err := listenAddrs(tc.ip, 9999)
 		if err == nil {
@@ -81,7 +81,7 @@ func TestBindRejectsWildcard(t *testing.T) {
 // TestHealthzWithoutSecret — a PROCESS probe: no authentication, and revealing
 // nothing beyond liveness.
 func TestHealthzWithoutSecret(t *testing.T) {
-	s, _ := testServer(t, "o-certo")
+	s, _ := testServer(t, "the-right-one")
 	w := request(t, s, http.MethodGet, "/healthz", "", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 with no Authorization, got %d", w.Code)
@@ -90,7 +90,7 @@ func TestHealthzWithoutSecret(t *testing.T) {
 	// It must not leak the node name, a path, or whether a secret is
 	// provisioned: the health gate has to reach the route before any credential
 	// exists, and whoever reaches it must learn nothing useful for an attack.
-	for _, forbidden := range []string{"teste", "/opt", "token", "bearer", "segredo", "version"} {
+	for _, forbidden := range []string{"test", "/opt", "token", "bearer", "secret", "version"} {
 		if strings.Contains(strings.ToLower(body), forbidden) {
 			t.Errorf("/healthz leaked %q into the body: %s", forbidden, body)
 		}
@@ -98,10 +98,10 @@ func TestHealthzWithoutSecret(t *testing.T) {
 }
 
 func TestMetricsFormat(t *testing.T) {
-	s, _ := testServer(t, "o-certo")
+	s, _ := testServer(t, "the-right-one")
 	// Generate traffic so there is an operation series.
-	request(t, s, http.MethodPost, "/v1/op/server.status", "o-certo", `{}`)
-	request(t, s, http.MethodPost, "/v1/op/naoexiste", "o-certo", `{}`)
+	request(t, s, http.MethodPost, "/v1/op/server.status", "the-right-one", `{}`)
+	request(t, s, http.MethodPost, "/v1/op/nonexistent", "the-right-one", `{}`)
 
 	w := request(t, s, http.MethodGet, "/metrics", "", "")
 	if w.Code != http.StatusOK {
@@ -113,8 +113,8 @@ func TestMetricsFormat(t *testing.T) {
 	body := w.Body.String()
 	for _, required := range []string{
 		"# HELP", "# TYPE",
-		`lab_agent_ops_total{no="teste",op="server.status",resultado="ok"} 1`,
-		`lab_agent_ops_total{no="teste",op="naoexiste",resultado="desconhecida"} 1`,
+		`lab_agent_ops_total{no="test",op="server.status",resultado="ok"} 1`,
+		`lab_agent_ops_total{no="test",op="nonexistent",resultado="desconhecida"} 1`,
 		"lab_agent_uptime_seconds",
 	} {
 		if !strings.Contains(body, required) {
@@ -125,8 +125,8 @@ func TestMetricsFormat(t *testing.T) {
 
 // TestUnknownOperationIs404 — "does not exist" and "failed" never blur.
 func TestUnknownOperationIs404(t *testing.T) {
-	s, back := testServer(t, "o-certo")
-	w := request(t, s, http.MethodPost, "/v1/op/manutencao.rodar", "o-certo", `{}`)
+	s, back := testServer(t, "the-right-one")
+	w := request(t, s, http.MethodPost, "/v1/op/maintenance.run", "the-right-one", `{}`)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404 for an operation outside the catalog, got %d", w.Code)
 	}
@@ -138,9 +138,9 @@ func TestUnknownOperationIs404(t *testing.T) {
 // TestBodyLimited — 413 BEFORE the handler is called. A limit that only acts
 // after the work is no limit.
 func TestBodyLimited(t *testing.T) {
-	s, back := testServer(t, "o-certo")
+	s, back := testServer(t, "the-right-one")
 	big := `{"x":"` + strings.Repeat("a", maxBody+100) + `"}`
-	w := request(t, s, http.MethodPost, "/v1/op/server.status", "o-certo", big)
+	w := request(t, s, http.MethodPost, "/v1/op/server.status", "the-right-one", big)
 	if w.Code != http.StatusRequestEntityTooLarge {
 		t.Errorf("expected 413, got %d", w.Code)
 	}
@@ -148,8 +148,6 @@ func TestBodyLimited(t *testing.T) {
 		t.Errorf("the handler was called even though the body is over the limit: %v", back.calls)
 	}
 }
-
-// ── auxiliares ───────────────────────────────────────────────────────────────
 
 func freePort(t *testing.T) int {
 	t.Helper()

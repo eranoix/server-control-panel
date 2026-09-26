@@ -274,7 +274,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		// DETACHES; the session (the dtach master) stays
 		// alive in user.slice. A reattach picks up where it left off.
 		//
-		// ── AND THE WAIT HAS A DEADLINE ──────────────────────────────────────
 		//
 		// This used to be a bare `cmd.Process.Wait()`. A `Wait` with no deadline inside
 		// a handler is a hang waiting to happen: all it takes is the client not dying
@@ -346,7 +345,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		EnsureRecorder(dataDir, user, sessionName, reg)
 	}
 
-	// ── Scrollback priming on a FRESH attach (dtach keeps no screen) ──────────
 	// On a new attach (not a reconnect) the xterm starts empty and dtach re-emits
 	// nothing. For a plain SHELL we replay the tee-log history (the client "lands"
 	// straight into its scrollback instead of a black screen). TUI sessions
@@ -364,7 +362,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	)
 	// The same "I rebuild the screen" that decides the history also decides whether
 	// `dtach`'s attach-time clear is allowed to reach this client — see
-	// [aparadorDaLimpezaDeAttach].
+	// [dtachAttachClear].
 	clientPrimesOwnScreen := r.URL.Query().Get("replay") == "0"
 
 	if dataDir != "" && sendHistory {
@@ -374,7 +372,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		}
 	}
 
-	// ── Force-repaint on attach (terminal "black/frozen" on reattach) ─────────
 	// dtach keeps no screen; it attaches with `-r winch` (a single SIGWINCH). TUI
 	// apps whose renderer only emits on the DIFF (Ink/Claude Code) re-render into the
 	// SAME buffer when the size does not change → ZERO bytes written → the new client
@@ -393,7 +390,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		repaintOnce        sync.Once
 	)
 
-	// ── FRAME MODE: WHAT THIS CLIENT SEES, COMPOSED FOR IT ───────────────
 	//
 	// See `frame.go`. In short: when this client's window is SMALLER than the
 	// session, it stops receiving the raw stream (which is drawn for the session's
@@ -406,7 +402,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	var (
 		frameMu          sync.Mutex
 		frame            *clientFrame
-		winCols, winRows uint16 // a janela REAL deste cliente
+		winCols, winRows uint16 // this client's REAL window
 		scrolledTotal    int
 		stopFrame        func()
 	)
@@ -417,7 +413,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		return frame != nil
 	}
 
-	// ── THE SIZE BELONGS TO THE SESSION, AND IT RULES EVERY CLIENT ───────
 	//
 	// applySize puts the session's EFFECTIVE size on THIS connection, and does
 	// both halves together because they are a single decision:
@@ -473,7 +468,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 			// And the notice carries ITS window rather than being suppressed: a
 			// client that had already been told the session's grid before it
 			// shrank would stay stuck on it (the panel remembers the last notice
-			// and the FitAddon obeys — see `_gradeSessao` in 00-shell.js). Sending
+			// and the FitAddon obeys — see the session grid handling in 00-shell.js). Sending
 			// its own window is how you say "go back to drawing your own size"
 			// using the mechanism that already exists, instead of inventing another.
 			if notifyFn != nil {
@@ -489,7 +484,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 			notifyFn(cols, rows)
 		}
 	}
-	// ── THE FRAME PUMP ───────────────────────────────────────────────────
 	//
 	// It lives in a goroutine of its own on purpose: what announces that the screen
 	// changed is the RECORDER, and the recorder is the only thing feeding the
@@ -593,48 +587,12 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		// corruption). Typical on deploy: the server restarts, the session
 		// reattaches at the same size and the app's partial frame dirties the screen.
 		//
-		// ── WHY COLUMNS ARE NO LONGER PART OF THIS ──────────────────────────
-		// This wobble used to touch `Cols` as well (it was `Cols: c / 2`), and that
-		// half was the root cause of two defects the app's owner reported as if
-		// they were separate — "the text is squeezed in the history" and "the
-		// history duplicates". The proof is in the service log itself:
-		//
-		//   Sep 06 18:52:37 [pty] repaint on attach (grow and back): 49x37 → 24x18 → 49x40 (session "Aplicativo")
-		//
-		// 24 columns is exactly the width of the squeezed text in the screenshot
-		// he sent, and 18:52 is the timestamp shown in it.
-		//
-		// Width is CONTENT, not screen geometry. Dropping to 24 columns made Claude
-		// Code re-render the ENTIRE conversation wrapped at 24 columns; going back
-		// to 49 re-rendered all of it again at 49. In a renderer that repaints by
-		// walking the cursor up (Ink), a frame taller than the screen cannot erase
-		// itself — the `ESC[nA` saturates at the first line of the SCREEN and never
-		// reaches the scrollback. Both versions STAY, one below the other: that is
-		// the duplication, carrying the same timestamp on both.
-		//
-		// And the damage did not stop at the screen: all of it is teed into the
-		// session log (`sessionlog.go`), so every attach RECORDED a 24-column block
-		// that every future attach re-emitted on replay. The "Aplicativo" log held
-		// 68 stretches of width 24 and 49 of width 23 — sediment from old wobbles,
-		// which no terminal can reflow afterwards (the break is the program's
-		// own `\r\n`, not a terminal wrap).
-		//
-		// Rows have no such effect: changing `Rows` sends the same SIGWINCH and
-		// forces the same re-layout, but does NOT change where text wraps. Nothing
-		// squeezed is produced, nothing squeezed is recorded.
-		// ── AND IT GROWS, NEVER SHRINKS ──────────────────────────────────
-		//
-		// It was `rw / 2`. Shrinking is what did the damage: taking rows away MAKES
-		// THE SCREEN SCROLL — the content at the bottom leaves the active area and
-		// goes into the scrollback — and giving them back brings nothing back. The
-		// remote program then painted a 24-row frame and a 48-row one on top of it,
-		// and the two fused. Three corrupted screens reported by the owner came from that.
-		//
-		// Growing by one row sends the SAME SIGWINCH and forces the SAME re-layout,
-		// and costs nothing: the new rows appear blank at the bottom, nothing
-		// scrolls, nothing is truncated, and since rows do not change where text
-		// wraps, nothing is reflowed. The intermediate frame is the same frame one
-		// row taller, and the final repaint covers all of it.
+		// Only ROWS change, and only upwards. Changing columns makes a TUI re-render
+		// its whole history at the new width; the squeezed copy stays in the
+		// scrollback and gets teed into the session log, duplicating history.
+		// Shrinking rows scrolls content into the scrollback and fuses two frames.
+		// Growing by one row sends the same SIGWINCH, forces the same re-layout and
+		// neither scrolls nor reflows anything.
 		bigger := pty.Winsize{Cols: c, Rows: rw + 1}
 		_ = pty.Setsize(ptmx, &bigger)
 		time.Sleep(350 * time.Millisecond)
@@ -658,64 +616,12 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	// Running both would make them fight; so the server covers the fresh attach and
 	// the client covers the reattach.
 	//
-	// ── AND NEVER FOR A CLIENT THAT REBUILDS ITS OWN SCREEN ─────────────────
-	//
-	// Forcing a repaint by LYING about the geometry has already caused THREE
-	// corrupted screens reported by the operator. Two are documented just above, on
-	// `wobble` itself: halving the columns squeezed the history to 24 columns and
-	// duplicated it. The third is halving the ROWS, and its diagnosis closes the
-	// case — the pattern is not "the columns were wrong", it is that lying about
-	// the geometry is not a sane way to ask for a repaint.
-	//
-	// The proof, from the server's RAW bytes (not from the app's drawing):
-	//
-	//   data/users/sam/session-logs/Aplicativo.log, offset 2504030
-	//   ...^[[2C^[[8A A1gavetacsempreanavegou ^[[27Gcom^[[31GpopUpTo...
-	//
-	// The correct text is "A gaveta sempre navegou". The `1`, the `c` and the `a`
-	// sit in the SPACES, and they come from another frame. What emitted that was
-	// the remote program: the corrupted frame is in ITS buffer. That is what
-	// happens when it reads 26 rows, lays out and paints, and 350 ms later reads 52,
-	// lays out and paints again compositing into the same buffer with spaces treated
-	// as transparent — the two layouts fuse cell by cell.
-	//
-	// And the journal shows this is per attach, not by chance:
-	//
-	//   21:42:35 [pty] repaint-wobble on attach: 67x48 → 67x24 → 67x48
-	//   21:43:39 [pty] repaint-wobble on attach: 67x48 → 67x24 → 67x48
-	//
-	// Hence the report no other hypothesis explained: "I left and came back,
-	// it's still scrambled". Leaving and coming back is a FRESH attach — that is,
-	// the very gesture of trying to fix it is what reapplies the damage.
-	//
-	// ── AND WHY IT CAME BACK FOR CLIENTS THAT PRIME THEMSELVES ───────────
-	//
-	// I had turned the wobble off for the app, on the reasoning that it rebuilds
-	// the screen by replaying the log and therefore did not need it. The reasoning
-	// had a hole, and it only showed up by measuring the bytes the server actually
-	// delivers:
-	//
-	// The log is a cut of a LIVE stream, taken at an arbitrary instant. The stream
-	// of a differential renderer is only self-consistent at a FRAME BOUNDARY — in
-	// between, it is "I wrote twelve blank lines to make room and now I am going up
-	// to paint". Cut there, the replay rebuilds a HALF-PAINTED screen: blank, with
-	// the content pushed into the scrollback.
-	//
-	// Measured: the bytes `rawLogTail` returns for the "Aplicativo" session end in
-	// the middle of a table being drawn; fed into the app's own engine they yield
-	// four lines of content and forty-nine blank ones. That was it all along, and it
-	// is why attaching an image fixed the screen: the sheet changes the grid height,
-	// the resize reaches the PTY, and the program repaints a WHOLE frame.
-	//
-	// In a live session the hole closes by itself a second later, as the program
-	// keeps painting. In an IDLE session — which is exactly when someone opens the
-	// app to look — nothing arrives, and the screen stays like that.
-	//
-	// So the repaint is back for every fresh attach. What changes, and what makes
-	// this different from repeating the mistake, is that the nudge now GROWS instead
-	// of shrinking: see the comment in the body of `wobble`.
-	//
-	// The decision lives in [serverPriming], above, and that is where it is tested.
+	// Every fresh attach gets the repaint, including clients that prime their own
+	// screen from the log: the log is a cut of a live stream, and a replay cut
+	// mid-frame rebuilds a half-painted screen that an idle program never fixes.
+	// The nudge grows instead of shrinking (see `wobble`), because lying about a
+	// SMALLER geometry corrupts the remote program's frame. The decision lives in
+	// [serverPriming], where it is tested.
 	defer func() {
 		if stopFrame != nil {
 			stopFrame()
@@ -739,7 +645,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	// before — an old client would receive the JSON and write it to the screen.
 	wantsNotice := r.URL.Query().Get("size") == "1"
 
-	// pedido*: what THIS client last asked for. It serves only the instrumentation
+	// req*: what THIS client last asked for. It serves only the instrumentation
 	// below — what rules the pty is the session's EFFECTIVE size, kept in
 	// last* by [applySize]. Confusing the two is what made the
 	// repaint-wobble restore this client's raw request on top of the
@@ -922,32 +828,12 @@ type resizer func(cols, rows uint16)
 // would make the program redraw into a single column, which is pure garbage; the
 // ceiling keeps out the absurdities at the other end.
 //
-// ── WHAT USED TO BE HERE, AND WHY IT WENT AWAY ───────────────────────────
-//
-// There was a PER-CONNECTION `tamanhoAplicado` holding "the last size that
-// actually reached the PTY" and swallowing repeats. The name lied: it held the
-// last size THIS CONNECTION ASKED FOR, which is not what the PTY has whenever
-// there is more than one client — then the PTY sits at the SMALLEST, and the
-// bigger client has a dedup claiming its request "was already applied".
-//
-// The consequence was that there was no way back. When the small client left,
-// the session's effective size grew, but the big client could no longer speak:
-// its dedup blocked the re-assertion before it reached the session. Measured end
-// to end — after the 80x24 client closed, the program kept painting 24x80 while
-// the other drew 38x110, and the 20s heartbeat never fixed it. That is exactly
-// the defect `session_size.go` describes as "the loser COULD NO LONGER
-// CORRECT ITSELF"; it had never gone away, it had merely gained a per-session
-// reconciliation in front of it.
-//
-// What stops the repeated SIGWINCH now is two layers that do not lie:
-//
-//   - the session (`recalcula`) only reports `mudou` when the EFFECTIVE size
-//     changes;
-//   - the kernel compares the winsize in `tty_do_resize` and does not signal
-//     when it is unchanged, so reapplying the same size is inert.
-//
-// Re-asserting stays cheap, which is what the recovery path needed; what no
-// longer exists is the per-connection memory that blocked the correction.
+// There is deliberately no per-connection dedup of sizes: with several clients
+// the PTY sits at the SMALLEST, and a per-connection "already applied" memory
+// would stop the bigger client from re-asserting when the small one leaves.
+// Repeated SIGWINCH is avoided by the session (`recompute` only reports a
+// change of the EFFECTIVE size) and by the kernel (`tty_do_resize` does not
+// signal an unchanged winsize).
 func sizeIsSane(cols, rows uint16) bool {
 	return cols >= 2 && rows >= 1 && cols <= 1000 && rows <= 1000
 }
@@ -1036,7 +922,6 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 		})
 	}
 
-	// ── Flow control (backpressure) ───────────────────────────────────────
 	// The client (xterm.js) says when its write buffer is full ({type:pause}) or has
 	// drained again ({type:resume}). On pause, the PTY->WS pump STOPS reading the rwc
 	// → the OS-PTY buffer fills → the program blocks on write and stops producing
@@ -1070,7 +955,7 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 			ch := fcResume
 			fcMu.Unlock()
 			select {
-			case <-ch: // retomado
+			case <-ch: // resumed
 			case <-done:
 				return
 			case <-time.After(maxPauseDuration):
@@ -1097,7 +982,7 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 		buf := make([]byte, readChunk)
 		firstBlock := true
 		for {
-			waitIfPaused() // backpressure: bloqueia enquanto o cliente pediu pausa
+			waitIfPaused() // backpressure: blocks while the client asked for a pause
 			n, err := rwc.Read(buf)
 			if n > 0 {
 				// Tee into the session log BEFORE the WS: best-effort, error ignored

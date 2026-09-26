@@ -19,7 +19,7 @@ var (
 	activeBackend SessionBackend
 	activeDataDir string
 	activeReg     *Registry
-	activeOwn     *Ownership // posse ativa — resolve o DONO de um nome sem o caller
+	activeOwn     *Ownership // active ownership: resolves the OWNER of a name without the caller
 )
 
 // SetActiveOwnership registers the active ownership map so the package can
@@ -106,8 +106,6 @@ func activeSocket(name string) string {
 	}
 	return socketPathFor(dd, name)
 }
-
-// ── Tool-agnostic dispatchers (the handlers call these) ────────────────────
 
 // SessionHas reports whether the session exists / is alive on the active backend.
 func SessionHas(name string) (bool, error) { return ActiveBackend().Has(name) }

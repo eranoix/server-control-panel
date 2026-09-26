@@ -27,14 +27,14 @@ func TestReadTailMatchesFullRead(t *testing.T) {
 	for _, amount := range []int{1, 100, 2999, 3000, 3001, 7999, 8000, 9000} {
 		got, total := readTail(path, amount)
 		if total != len(whole) {
-			t.Fatalf("quanto=%d: total=%d; want %d", amount, total, len(whole))
+			t.Fatalf("amount=%d: total=%d; want %d", amount, total, len(whole))
 		}
 		expected := whole
 		if amount < len(whole) {
 			expected = whole[len(whole)-amount:]
 		}
 		if !bytes.Equal(got, expected) {
-			t.Errorf("quanto=%d: returned %d bytes (%q…%q); wanted %d",
+			t.Errorf("amount=%d: returned %d bytes (%q…%q); wanted %d",
 				amount, len(got), firstBytes(got), lastBytes(got), len(expected))
 		}
 	}
@@ -49,11 +49,11 @@ func TestReadTailAtEdges(t *testing.T) {
 	if d, total := readTail(path, 100); d != nil || total != 0 {
 		t.Errorf("nonexistent log returned %d bytes/total %d; wanted nothing", len(d), total)
 	}
-	if err := os.WriteFile(path, []byte("só o atual"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("only the current one"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	d, total := readTail(path, 100)
-	if string(d) != "só o atual" || total != len("só o atual") {
+	if string(d) != "only the current one" || total != len("only the current one") {
 		t.Errorf("with no earlier generation: %q/%d", d, total)
 	}
 }

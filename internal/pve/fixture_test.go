@@ -33,7 +33,7 @@ const (
 	fixtureToken = "testdata/cluster-resources-token.json"
 )
 
-// recurso is the slice of /cluster/resources that the inventory uses. Counter
+// resource is the slice of /cluster/resources that the inventory uses. Counter
 // fields are left out on purpose: what is proved here is the SHAPE.
 type resource struct {
 	ID     string `json:"id"`
@@ -161,7 +161,7 @@ func TestClientDecodesFixture(t *testing.T) {
 // green the freshness criterion exists to forbid.
 func TestMissingDataBodyFails(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"outra":[]}`))
+		_, _ = w.Write([]byte(`{"other":[]}`))
 	})
 	var rs []resource
 	err := c.do(context.Background(), http.MethodGet, "/api2/json/cluster/resources", &rs)

@@ -62,7 +62,7 @@ func serverWithRecorder(t *testing.T, name string) (dir string, dial func(string
 // It is the interval in which a person closes the laptop and moves to another
 // computer, that is, exactly the stretch they come back wanting to read.
 func TestRecorderLeavesNoLogGapWithNobodyAttached(t *testing.T) {
-	name := "gravador-buraco"
+	name := "recorder-gap"
 	dir, dial := serverWithRecorder(t, name)
 
 	c := dial("")
@@ -91,7 +91,7 @@ func TestRecorderLeavesNoLogGapWithNobodyAttached(t *testing.T) {
 // A session with the recorder attached still responds to the real client's size
 // — the recorder is invisible to the minimum rule.
 func TestSessionWithRecorderStillFollowsRealClient(t *testing.T) {
-	dial := testSession(t, "gravador-min")
+	dial := testSession(t, "recorder-min")
 
 	client := dial()
 	client.resize(100, 30)
@@ -115,11 +115,11 @@ func TestSessionWithRecorderStillFollowsRealClient(t *testing.T) {
 // `forgetSize` whose return value nobody used) that let the original defect
 // slip through a green battery — see session_size_e2e_test.go.
 func TestHistoryFlowsFromLiveSessionToPanelFetch(t *testing.T) {
-	name := "hist-cadeia"
+	name := "hist-chain"
 	dir, dial := serverWithRecorder(t, name)
 
 	// SessionHistory reads from the package's ACTIVE dataDir.
-	reg, err := LoadRegistry(dir + "/reg-ativo.json")
+	reg, err := LoadRegistry(dir + "/reg-active.json")
 	if err != nil {
 		t.Fatal(err)
 	}

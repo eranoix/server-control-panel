@@ -26,7 +26,7 @@ package pty
 //
 // And what matters is not its screen — it is what LEAVES it. A line that has
 // scrolled off is finished: the program will not touch it again. Serialised back
-// (`vt10x.EmBytes`), it is append-only text, which any terminal reproduces
+// (`vt10x.LineBytes`), it is append-only text, which any terminal reproduces
 // without ambiguity. The `<session>.hist` file is the sum of those lines: the
 // history the person saw, once each.
 //
@@ -70,19 +70,19 @@ type sessionScreen struct {
 	name string
 
 	// Whoever wants to know the screen changed — the connections in frame mode
-	// (`frame.go`). `rolou` is how many lines left during the chunk: scrolling is
+	// (`frame.go`). `scrolled` is how many lines left during the chunk: scrolling is
 	// handled as scrolling, not as a repaint.
 	subscribersMu sync.Mutex
 	subscribers   map[int64]func(scrolled int)
 	nextSubID     int64
-	// scrolledInBlock counts, WITHIN one alimenta, how many lines left.
+	// scrolledInBlock counts, WITHIN one feed, how many lines left.
 	scrolledInBlock int
-	// The notice `alimenta` left for `flushNotice` to fire outside the lock.
+	// The notice `feed` left for `flushNotice` to fire outside the lock.
 	pendingNotice    int
 	hasPendingNotice bool
 }
 
-// assina registers whoever wants to be told the screen changed. It returns how
+// subscribe registers whoever wants to be told the screen changed. It returns how
 // to cancel — call that exactly once.
 func (t *sessionScreen) subscribe(fn func(scrolled int)) func() {
 	if t == nil || fn == nil {
@@ -133,7 +133,7 @@ func (t *sessionScreen) screenAndCursor() ([][]vt10x.Glyph, vt10x.Cursor, bool) 
 	return t.vt.CurrentScreen(), t.vt.LockedCursor(), t.vt.LockedCursorVisible()
 }
 
-// tamanho returns the server screen's grid — the SESSION's grid.
+// size returns the server screen's grid — the SESSION's grid.
 func (t *sessionScreen) size() (cols, rows int) {
 	if t == nil {
 		return 0, 0
@@ -151,14 +151,14 @@ func newSessionScreen(dataDir, user, name string) *sessionScreen {
 		// Called with the emulator's lock held: serialising is cheap (it is text)
 		// and the writer is absolutely best-effort, like the rest of the tee.
 		for _, l := range lines {
-			_, _ = t.file.Write(vt10x.EmBytes(l))
+			_, _ = t.file.Write(vt10x.LineBytes(l))
 		}
 		t.scrolledInBlock += len(lines)
 	})
 	return t
 }
 
-// alimenta hands the emulator the same bytes that went into the log.
+// feed hands the emulator the same bytes that went into the log.
 //
 // It carries over the partial rune left from the previous chunk: the recorder
 // delivers whatever `read()` returned, and a multibyte character straddles that
@@ -202,8 +202,8 @@ func (t *sessionScreen) feed(p []byte) {
 	t.hasPendingNotice = true
 }
 
-// flushNotice releases the notice `alimenta` left pending. Separate because
-// `alimenta` holds the lock until it returns (the recover needs it) and
+// flushNotice releases the notice `feed` left pending. Separate because
+// `feed` holds the lock until it returns (the recover needs it) and
 // notifying while holding it would invite a deadlock with whoever is about to
 // READ the screen.
 func (t *sessionScreen) flushNotice() {
@@ -219,7 +219,7 @@ func (t *sessionScreen) flushNotice() {
 	}
 }
 
-// redimensiona puts the server's screen at the session's EFFECTIVE size — the
+// resize puts the server's screen at the session's EFFECTIVE size — the
 // same one the program is looking at. That is what makes `ESC[nA` land in the
 // right place and, in consequence, the history come out without repeated copies.
 func (t *sessionScreen) resize(cols, rows uint16) {
@@ -240,7 +240,7 @@ func (t *sessionScreen) resize(cols, rows uint16) {
 	t.vt.Resize(int(cols), int(rows))
 }
 
-// instantaneo serialises the VISIBLE lines of the screen, trimming the empty
+// snapshot serialises the VISIBLE lines of the screen, trimming the empty
 // ones at the end.
 //
 // Why this is needed even with the history: the file only receives a line once
@@ -264,17 +264,17 @@ func (t *sessionScreen) snapshot() []byte {
 	}
 	// On the alternate screen (vim, htop) the program is what redraws, in the
 	// attach repaint: painting over it would be the duplication the wobble prevents.
-	if t.vt.EmAltScreen() {
+	if t.vt.InAltScreen() {
 		return nil
 	}
 	lines := t.vt.CurrentScreen()
 	done := len(lines)
-	for done > 0 && len(bytes.TrimSpace(stripANSIBytes(vt10x.EmBytes(lines[done-1])))) == 0 {
+	for done > 0 && len(bytes.TrimSpace(stripANSIBytes(vt10x.LineBytes(lines[done-1])))) == 0 {
 		done--
 	}
 	var buf bytes.Buffer
 	for _, l := range lines[:done] {
-		buf.Write(vt10x.EmBytes(l))
+		buf.Write(vt10x.LineBytes(l))
 	}
 	return buf.Bytes()
 }

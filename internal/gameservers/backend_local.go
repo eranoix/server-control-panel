@@ -13,8 +13,7 @@ import (
 // on the node. It is today's `os.*` code, reached by operation name instead of by
 // an HTTP route of the panel.
 //
-// ─────────────────────────────────────────────────────────────────────────────
-// WHY THE ROUND-TRIP CRITERION POINTS AT THE ENSHROUDED JSON
+// # WHY THE ROUND-TRIP CRITERION POINTS AT THE ENSHROUDED JSON
 //
 // Decided by the operator and recorded in the planning notes.
 //
@@ -32,7 +31,6 @@ import (
 // synthetic `.ini` would prove something against a file no screen uses.
 //
 // That is why the round-trip points here. Palworld comes in with the merge.
-// ─────────────────────────────────────────────────────────────────────────────
 //
 // # SCOPE: WHAT IS NOT TOUCHED HERE
 //
@@ -70,13 +68,13 @@ func (b *BackendLocal) Open(_ context.Context, h Handle) (io.ReadCloser, error) 
 // a large world with room to spare and leaves no room for an infinite upload.
 const maxReceived = 600 << 20
 
-// Receber writes the bytes into a temporary on the node and returns the Handle.
+// Receive writes the bytes into a temporary on the node and returns the Handle.
 //
 // The file is EPHEMERAL and ANONYMOUS: the client chose neither the name nor the
 // directory, and it disappears once the handle is consumed or expires. That is
 // what lets `world.import` exist without the panel knowing the node's disk.
 func (b *BackendLocal) Receive(_ context.Context, r io.Reader) (Handle, error) {
-	f, err := os.CreateTemp("", "recebido-*.bin")
+	f, err := os.CreateTemp("", "received-*.bin")
 	if err != nil {
 		return "", err
 	}
@@ -105,17 +103,16 @@ func (b *BackendLocal) Receive(_ context.Context, r io.Reader) (Handle, error) {
 
 // receivedScope is the scope of the artifacts that CAME IN to the node. Its own
 // constant so that an upload handle never collides with a real server's scope.
-const receivedScope = "\x00recebido"
+const receivedScope = "\x00received"
 
-// ─────────────────────────────────────────────────────────────────────────────
 // ENVELOPES
 //
 // The operations' input documents. They live here because this is where they are
 // decoded; the HTTP back-end does not know them (it forwards bytes), and it is
 // precisely by not knowing them that it cannot diverge from them.
 //
-// Convention: every envelope that speaks of a server carries `servidor` with the
-// inventory ID. NEVER a path — that is the whole boundary.
+// Convention: every envelope that speaks of a server carries `servidor` (wire
+// key) with the inventory ID. NEVER a path: that is the whole boundary.
 
 type reqServer struct {
 	ServerID string `json:"servidor"`
@@ -155,7 +152,7 @@ type reqImport struct {
 // reqSettingsPatch covers the four sections that triage merged into settings.*:
 // game config, server options, groups and bans.
 //
-// Grupos and Banidos are POINTERS so as to separate "do not touch this section"
+// Groups and Banned are POINTERS so as to separate "do not touch this section"
 // (nil) from "empty this section" (pointer to an empty list). With a plain slice
 // the two cases are the same value, and wiping every ban by accident would be
 // indistinguishable from not sending the section at all.
@@ -184,7 +181,6 @@ type reqHistory struct {
 	Hours    int    `json:"horas"`
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // DISPATCH
 //
 // A `switch` over the catalog. The `default` is a sentinel: TestBackendLocalServesAllOps
@@ -202,7 +198,6 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 	}
 	switch op {
 
-	// ── server ───────────────────────────────────────────────────────────────
 	case OpServerList:
 		return pack(b.m.List())
 
@@ -264,7 +259,6 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		}
 		return pack(map[string]interface{}{"logs": out})
 
-	// ── world ────────────────────────────────────────────────────────────────
 	case OpWorldList:
 		s, err := b.server(body)
 		if err != nil {
@@ -307,7 +301,7 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 			return nil, err
 		}
 		// HERE is where the path STOPS. The temporary zip never leaves this
-		// process; what crosses is the token. `efemero: true` because the file is
+		// process; what crosses is the token. `ephemeral: true` because the file is
 		// ours and disappears when whoever downloaded it closes.
 		h, err := b.vault.Mint(s.ID, zip, true)
 		if err != nil {
@@ -380,7 +374,6 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		}
 		return pack(map[string]interface{}{"ok": true})
 
-	// ── settings ─────────────────────────────────────────────────────────────
 	case OpSettingsGet:
 		s, err := b.server(body)
 		if err != nil {
@@ -399,7 +392,6 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		}
 		return b.writeSettings(ctx, s, r)
 
-	// ── runtime ──────────────────────────────────────────────────────────────
 	case OpRuntimeGet:
 		s, err := b.server(body)
 		if err != nil {
@@ -425,7 +417,6 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		}
 		return pack(map[string]interface{}{"ok": true})
 
-	// ── backup ───────────────────────────────────────────────────────────────
 	case OpBackupList:
 		s, err := b.server(body)
 		if err != nil {
@@ -495,7 +486,7 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		if err != nil {
 			return nil, err
 		}
-		// `efemero: false` — the backup belongs to the user, it is not a temp of
+		// `ephemeral: false`: the backup belongs to the user, it is not a temp of
 		// ours. Deleting it when the download closes would destroy data.
 		h, err := b.vault.Mint(s.ID, p, false)
 		if err != nil {
@@ -503,7 +494,6 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		}
 		return pack(map[string]interface{}{"handle": string(h), "nome": r.File})
 
-	// ── trainer ──────────────────────────────────────────────────────────────
 	case OpTrainerStatus:
 		if !b.m.TrainerAvailable() {
 			return nil, ErrTrainerMissing
@@ -530,7 +520,6 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		}
 		return b.m.TrainerSetDesired(ctx, d)
 
-	// ── history ──────────────────────────────────────────────────────────────
 	case OpHistoryList:
 		var r reqHistory
 		if err := json.Unmarshal(body, &r); err != nil {
@@ -553,9 +542,7 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 	return nil, fmt.Errorf("%s: %s", notImplemented, string(op))
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-// servidor decodes the minimal envelope and resolves the Server.
+// server decodes the minimal envelope and resolves the Server.
 func (b *BackendLocal) server(body json.RawMessage) (Server, error) {
 	var r reqServer
 	if err := json.Unmarshal(body, &r); err != nil {
@@ -641,7 +628,7 @@ func bodyError(err error) error { return fmt.Errorf("invalid body: %w", err) }
 
 func serverNotFound(id string) error { return fmt.Errorf("server '%s' not found", id) }
 
-// empacota serializes the response. A single function so that no operation
+// pack serializes the response. A single function so that no operation
 // invents an output format of its own.
 func pack(v interface{}) (json.RawMessage, error) {
 	b, err := json.Marshal(v)

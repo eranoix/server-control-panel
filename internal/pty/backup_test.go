@@ -21,7 +21,7 @@ func TestSnapshotDtachReadsLog(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	content := "linha de contexto\noutra em \x1b[31mvermelho\x1b[0m\n"
+	content := "context line\nanother in \x1b[31mred\x1b[0m\n"
 	if err := os.WriteFile(logPath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -35,17 +35,17 @@ func TestSnapshotDtachReadsLog(t *testing.T) {
 	}
 	// dtach = 1 window / 1 pane (it does not multiplex the screen).
 	if len(snap.Windows) != 1 || len(snap.Windows[0].Panes) != 1 {
-		t.Fatalf("estrutura dtach inesperada: %+v", snap.Windows)
+		t.Fatalf("unexpected dtach structure: %+v", snap.Windows)
 	}
 	sb := snap.Windows[0].Panes[0].Scrollback
-	if !strings.Contains(sb, "linha de contexto") || !strings.Contains(sb, "vermelho") {
+	if !strings.Contains(sb, "context line") || !strings.Contains(sb, "red") {
 		t.Errorf("scrollback did not capture the log: %q", sb)
 	}
 	if strings.Contains(sb, "\x1b[") {
 		t.Errorf("scrollback should have ANSI stripped: %q", sb)
 	}
 
-	// scrollbackLines<=0 pula a captura de scrollback.
+	// scrollbackLines<=0 skips the scrollback capture.
 	re, err := SnapshotSession(name, 0)
 	if err != nil {
 		t.Fatalf("SnapshotSession(0): %v", err)

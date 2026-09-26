@@ -16,7 +16,7 @@ func TestListIncludesUnregisteredAliveSocket(t *testing.T) {
 	if err := os.MkdirAll(sox, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	// socket unix REAL escutando (socketAlive faz Dial+Close).
+	// A REAL unix socket listening (socketAlive does Dial+Close).
 	sockPath := filepath.Join(sox, "Ghost.sock")
 	l, err := net.Listen("unix", sockPath)
 	if err != nil {
@@ -33,7 +33,7 @@ func TestListIncludesUnregisteredAliveSocket(t *testing.T) {
 		}
 	}()
 
-	reg, err := LoadRegistry(filepath.Join(dir, "reg.json")) // registry VAZIO
+	reg, err := LoadRegistry(filepath.Join(dir, "reg.json")) // EMPTY registry
 	if err != nil {
 		t.Fatal(err)
 	}

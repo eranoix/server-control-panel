@@ -34,7 +34,7 @@
 //	    binary?"). Here the unresolvable IS the danger: it is exactly the way free
 //	    execution comes back under another name.
 //
-//	(c) Varridos is a field of Resultado and Scan returns an ERROR when it is zero.
+//	(c) Scanned is a field of Result and Scan returns an ERROR when it is zero.
 //	    In the precedent that was a comment plus a check each consumer had to
 //	    remember to make. Here it is API contract: scanning nothing is never
 //	    approving, and no consumer can ignore it.
@@ -79,11 +79,11 @@ var ignoredDirs = map[string]bool{
 
 // Config describes a sweep.
 type Config struct {
-	// Raiz is the directory where the sweep starts.
+	// Root is the directory where the sweep starts.
 	Root string
 
-	// Incluir, when non-empty, restricts the sweep to these subdirectories of
-	// Raiz (e.g. {"internal", "cmd"}). Empty sweeps all of Raiz.
+	// Include, when non-empty, restricts the sweep to these subdirectories of
+	// Root (e.g. {"internal", "cmd"}). Empty sweeps all of Root.
 	Include []string
 
 	// ForbiddenBins are binary names that must not be executed from this
@@ -99,9 +99,9 @@ type Config struct {
 	RequireLiteralArgv bool
 }
 
-// Achado is a located violation, with a usable message.
+// Finding is a located violation, with a usable message.
 //
-// Motivo and Trecho are not decoration: a pin that fails without saying what and
+// Reason and Snippet are not decoration: a pin that fails without saying what and
 // where is a pin someone switches off instead of fixing.
 type Finding struct {
 	File    string
@@ -110,11 +110,11 @@ type Finding struct {
 	Snippet string
 }
 
-// Resultado carries the findings AND how many files were actually parsed.
+// Result carries the findings AND how many files were actually parsed.
 type Result struct {
 	Findings []Finding
 
-	// Varridos is the anti-vacuity guard. Zero is an error, never approval.
+	// Scanned is the anti-vacuity guard. Zero is an error, never approval.
 	Scanned int
 }
 
@@ -150,7 +150,7 @@ func Scan(cfg Config) (Result, error) {
 	var dirOrder []string
 	for _, root := range roots {
 		if _, err := os.Stat(root); err != nil {
-			// A subdirectory of Incluir that does not exist is a configuration
+			// A subdirectory of Include that does not exist is a configuration
 			// error, not "nothing to sweep".
 			return res, fmt.Errorf("astcheck: root %q unreachable: %w", root, err)
 		}
@@ -335,7 +335,7 @@ func binaryIndex(call *ast.CallExpr, execName string) (int, bool) {
 	return 0, false
 }
 
-// simbolo is what is known about a local identifier.
+// symbol is what is known about a local identifier.
 type symbol struct {
 	// valor is the string literal when it is known and unique.
 	value string
@@ -473,7 +473,7 @@ func isCommandArg(arg ast.Expr, symbols map[string]*symbol) bool {
 	return false
 }
 
-// monta produces the finding with file, line, reason and rendered snippet.
+// newFinding produces the finding with file, line, reason and rendered snippet.
 func newFinding(fset *token.FileSet, path string, node ast.Node, reason string) Finding {
 	pos := fset.Position(node.Pos())
 	return Finding{
@@ -484,7 +484,7 @@ func newFinding(fset *token.FileSet, path string, node ast.Node, reason string) 
 	}
 }
 
-// renderiza returns the node's source code, so the pin's message shows the
+// render returns the node's source code, so the pin's message shows the
 // offending line instead of sending the reader off to look for it.
 func render(fset *token.FileSet, node ast.Node) string {
 	var buf bytes.Buffer
@@ -553,7 +553,7 @@ func packageConsts(files []parsedFile) map[string]*symbol {
 // indicesDeString describes, for a watched wrapper, which argument positions
 // are of type string in the DECLARATION.
 type wrapperSig struct {
-	// fixos are the non-variadic string parameter indices.
+	// fixed holds the non-variadic string parameter indices.
 	fixed map[int]bool
 	// variadicString says the variadic tail is `...string`.
 	variadicString bool
@@ -566,7 +566,7 @@ type wrapperSig struct {
 // WHY THIS EXISTS, and why the earlier heuristic was not enough: without the
 // signature, the scanner had to GUESS which arguments were the command, by
 // looking at the identifier's declared type. That let through the most dangerous
-// case of all — `trainerRun(ctx, body, req.Verbo)`, where the verb is a STRUCT
+// case of all — `trainerRun(ctx, body, req.Verb)`, where the verb is a STRUCT
 // FIELD coming from the request body, not a plain identifier. With the signature
 // in hand, the question stops being "does this argument look like a string?" and
 // becomes "is the position this argument occupies declared string?", which is

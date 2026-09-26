@@ -32,7 +32,6 @@ import (
 	"testing"
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
 // PIN: no screen may have been left on the old path
 //
 // The defect this test exists to prevent is silent by nature: a screen that keeps
@@ -165,9 +164,9 @@ func TestHandlersDoNotCallManagerDirectly(t *testing.T) {
 // TestManagerPinBites: does the pin above measure anything?
 func TestManagerPinBites(t *testing.T) {
 	dir := t.TempDir()
-	file := filepath.Join(dir, "regressao.go")
+	file := filepath.Join(dir, "regression.go")
 	source := `package api
-func (r *Router) telaEsquecida() { _ = r.gameMgr.Worlds(srv) }
+func (r *Router) forgottenScreen() { _ = r.gameMgr.Worlds(srv) }
 `
 	if err := os.WriteFile(file, []byte(source), 0o644); err != nil {
 		t.Fatal(err)

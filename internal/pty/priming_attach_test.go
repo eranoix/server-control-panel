@@ -32,16 +32,9 @@ import "testing"
 //	                         the middle of a frame it rebuilds a HALF-PAINTED
 //	                         screen.
 //
-// Measured: the bytes `rawLogTail` returns for the "Aplicativo" session end in
-// the middle of a table being drawn; fed into the app's own engine they yield
-// four lines of content and forty-nine blank ones. And that is why attaching an
-// image fixed the screen — the sheet changes the grid height, the resize reaches
-// the PTY, and the program repaints a WHOLE frame.
-//
-// What made it safe to give the repaint back was not changing my mind: it was
-// the nudge ceasing to SHRINK and starting to GROW. Shrinking scrolls the screen
-// and loses content; growing only adds blank lines at the bottom. See the body
-// of `wobble`.
+// The repaint is safe because the nudge GROWS instead of shrinking: shrinking
+// scrolls the screen and loses content; growing only adds blank lines at the
+// bottom. See the body of `wobble`.
 func TestHistoryAndRepaintAnswerDifferentQuestions(t *testing.T) {
 	cases := []struct {
 		name                   string

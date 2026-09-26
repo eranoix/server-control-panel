@@ -28,7 +28,7 @@ func TestRegistryRoundTrip(t *testing.T) {
 		t.Error("Created was not filled in by Put")
 	}
 
-	// Rename preserva socket/pid e re-chaveia.
+	// Rename keeps socket/pid and re-keys.
 	if err := reg.Rename("main", "work"); err != nil {
 		t.Fatalf("Rename: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestRegistryRoundTrip(t *testing.T) {
 		t.Fatalf("after reload: %+v ok=%v", got, ok)
 	}
 
-	// Delete idempotente.
+	// Delete is idempotent.
 	if err := reg2.Delete("work"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestRegistryRoundTrip(t *testing.T) {
 		t.Fatalf("Delete of a nonexistent record should be a no-op: %v", err)
 	}
 
-	// Receiver nil tolerado nos read-paths.
+	// A nil receiver is tolerated on the read paths.
 	var nilReg *Registry
 	if nilReg.Has("x") || nilReg.List() != nil {
 		t.Error("nil receiver did not degrade as expected")
@@ -91,7 +91,7 @@ func TestSessionLogTeeRotation(t *testing.T) {
 	// Write > maxSessionLogBytes (8 MiB) to force at least one rotation.
 	for i := 0; i < 10; i++ {
 		if n, err := w.Write(chunk); n != len(chunk) || err != nil {
-			t.Fatalf("Write best-effort quebrou: n=%d err=%v", n, err)
+			t.Fatalf("best-effort Write broke: n=%d err=%v", n, err)
 		}
 	}
 	w.Close()
@@ -106,8 +106,8 @@ func TestSessionLogTeeRotation(t *testing.T) {
 	if fi.Size() > maxSessionLogBytes {
 		t.Errorf("active log %d > ceiling %d (did not rotate)", fi.Size(), int64(maxSessionLogBytes))
 	}
-	// Sanidade do path: fica sob users/<user>/session-logs/.
+	// Path sanity: it lives under users/<user>/session-logs/.
 	if !strings.Contains(want, filepath.Join("users", "sam", "session-logs")) {
-		t.Errorf("path inesperado: %s", want)
+		t.Errorf("unexpected path: %s", want)
 	}
 }

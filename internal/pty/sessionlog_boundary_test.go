@@ -22,19 +22,19 @@ func TestDtachChatterDoesNotLeakAtBlockBoundary(t *testing.T) {
 		name   string
 		blocks []string
 	}{
-		{"despedida num bloco só", []string{"\x1b[999H\r\n[detached]\r\n\x1b[?25h"}},
-		{"despedida partida no meio da literal", []string{"\x1b[999H\r\n[deta", "ched]\r\n\x1b[?25h"}},
-		{"despedida partida antes da literal", []string{"\x1b[999H\r\n", "[detached]\r\n\x1b[?25h"}},
-		{"despedida byte a byte", func() []string {
+		{"farewell in a single chunk", []string{"\x1b[999H\r\n[detached]\r\n\x1b[?25h"}},
+		{"farewell split in the middle of the literal", []string{"\x1b[999H\r\n[deta", "ched]\r\n\x1b[?25h"}},
+		{"farewell split before the literal", []string{"\x1b[999H\r\n", "[detached]\r\n\x1b[?25h"}},
+		{"farewell byte by byte", func() []string {
 			var b []string
 			for _, r := range "\x1b[999H\r\n[detached]\r\n\x1b[?25h" {
 				b = append(b, string(r))
 			}
 			return b
 		}()},
-		{"limpeza de attach num bloco só", []string{"\x1b[H\x1b[Jconteúdo real\r\n"}},
-		{"limpeza de attach partida", []string{"\x1b[H", "\x1b[Jconteúdo real\r\n"}},
-		{"limpeza de attach byte a byte", []string{"\x1b", "[", "H", "\x1b", "[", "J", "conteúdo real\r\n"}},
+		{"attach clear in a single chunk", []string{"\x1b[H\x1b[Jreal content\r\n"}},
+		{"attach clear split", []string{"\x1b[H", "\x1b[Jreal content\r\n"}},
+		{"attach clear byte by byte", []string{"\x1b", "[", "H", "\x1b", "[", "J", "real content\r\n"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -50,8 +50,8 @@ func TestDtachChatterDoesNotLeakAtBlockBoundary(t *testing.T) {
 			got := string(d)
 			for _, junk := range []struct{ name, seq string }{
 				{"[detached]", "[detached]"},
-				{"ESC[999H (rola a tela inteira)", "\x1b[999H"},
-				{"ESC[H ESC[J (apaga a tela)", "\x1b[H\x1b[J"},
+				{"ESC[999H (scrolls the whole screen)", "\x1b[999H"},
+				{"ESC[H ESC[J (clears the screen)", "\x1b[H\x1b[J"},
 			} {
 				if strings.Contains(got, junk.seq) {
 					t.Errorf("leaked %s into the log", junk.name)
@@ -67,11 +67,11 @@ func TestRealContentSurvivesFilter(t *testing.T) {
 	dir := t.TempDir()
 	w, _, _, release := acquireSessionLog(dir, "u", "s")
 	_, _ = w.Write([]byte("\x1b[H"))
-	_, _ = w.Write([]byte("\x1b[Jolá"))
-	_, _ = w.Write([]byte(" mundo\r\n"))
+	_, _ = w.Write([]byte("\x1b[Jhello"))
+	_, _ = w.Write([]byte(" world\r\n"))
 	release()
 	d, _ := os.ReadFile(sessionLogPath(dir, "u", "s"))
-	if got, want := string(d), "olá mundo\r\n"; got != want {
+	if got, want := string(d), "hello world\r\n"; got != want {
 		t.Errorf("log = %q; want %q", got, want)
 	}
 }
@@ -85,11 +85,11 @@ func TestRealContentSurvivesFilter(t *testing.T) {
 func TestWordDetachedInProgramOutputDoesNotSilenceLog(t *testing.T) {
 	dir := t.TempDir()
 	w, _, _, release := acquireSessionLog(dir, "u", "s")
-	_, _ = w.Write([]byte("o binário do dtach escreve [detached] ao sair\r\n"))
-	_, _ = w.Write([]byte("linha seguinte, que precisa existir\r\n"))
+	_, _ = w.Write([]byte("the dtach binary writes [detached] on exit\r\n"))
+	_, _ = w.Write([]byte("next line, which must exist\r\n"))
 	release()
 	d, _ := os.ReadFile(sessionLogPath(dir, "u", "s"))
-	if !strings.Contains(string(d), "linha seguinte") {
+	if !strings.Contains(string(d), "next line") {
 		t.Error("the connection stopped recording because of a word in the program's output")
 	}
 }
@@ -97,9 +97,9 @@ func TestWordDetachedInProgramOutputDoesNotSilenceLog(t *testing.T) {
 // CSI M is DL (Delete Line), not an X10 mouse report — and the filter ate the
 // sequence plus THREE bytes of content along with it.
 func TestMouseFilterDoesNotEatDeleteLine(t *testing.T) {
-	entry := []byte("antes\x1b[Mdepois disso tudo\r\n")
+	entry := []byte("before\x1b[Mafter all of this\r\n")
 	output := stripMouseReports(entry)
-	if !bytes.Contains(output, []byte("depois disso tudo")) {
+	if !bytes.Contains(output, []byte("after all of this")) {
 		t.Errorf("the filter ate content after CSI M: %q", output)
 	}
 	if !bytes.Equal(entry, output) {
@@ -112,7 +112,7 @@ func TestMouseFilterDoesNotEatDeleteLine(t *testing.T) {
 func TestMouseFilterStillEatsSGRReport(t *testing.T) {
 	output := stripMouseReports([]byte("antes\x1b[<35;80;24Mdepois\r\n"))
 	if bytes.Contains(output, []byte("35;80;24")) {
-		t.Errorf("o relatorio SGR passou: %q", output)
+		t.Errorf("the SGR report got through: %q", output)
 	}
 	if !bytes.Contains(output, []byte("antesdepois")) {
 		t.Errorf("the filter took content with it: %q", output)
@@ -127,7 +127,7 @@ func TestAttachReplayDoesNotEndInDtachMessage(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	content := "linha de verdade\r\n" + strings.Repeat("mais texto\r\n", 20) + "\x1b[H\x1b[J"
+	content := "real line\r\n" + strings.Repeat("more text\r\n", 20) + "\x1b[H\x1b[J"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestAttachReplayDoesNotEndInDtachMessage(t *testing.T) {
 	if bytes.HasSuffix(output, dtachAttachClear) {
 		t.Error("the replay ends in \"clear the screen\" — the client paints everything and then clears it")
 	}
-	if !bytes.Contains(output, []byte("linha de verdade")) {
+	if !bytes.Contains(output, []byte("real line")) {
 		t.Error("the actual content disappeared from the replay")
 	}
 }

@@ -42,7 +42,7 @@ type Resource struct {
 	MaxCPU int     `json:"maxcpu"` // cores the guest sees
 
 	Mem    int64 `json:"mem"`    // bytes in use INSIDE the guest
-	MaxMem int64 `json:"maxmem"` // bytes configurados
+	MaxMem int64 `json:"maxmem"` // configured bytes
 	// MemHost is the RAM the HOST spends on this guest. Measured: it is only
 	// non-zero on QEMU (`dev`, 7.82 GB of host against 7.19 GB of guest); on LXC
 	// it comes back 0 because the concept does not apply — and 0 there is absence

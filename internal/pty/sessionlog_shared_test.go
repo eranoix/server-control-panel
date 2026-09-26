@@ -25,8 +25,8 @@ import (
 func TestTwoClientsOnSameSessionRecordOnce(t *testing.T) {
 	dir := t.TempDir()
 
-	app, _, _, releaseApp := acquireSessionLog(dir, "sam", "Aplicativo")
-	web, _, _, releaseWeb := acquireSessionLog(dir, "sam", "Aplicativo")
+	app, _, _, releaseApp := acquireSessionLog(dir, "sam", "App")
+	web, _, _, releaseWeb := acquireSessionLog(dir, "sam", "App")
 
 	// The PTY emits ONCE; BOTH connections receive it and tee it. That is exactly
 	// how the defect happened.
@@ -35,18 +35,18 @@ func TestTwoClientsOnSameSessionRecordOnce(t *testing.T) {
 
 	releaseWeb()
 	// The web one left; the app is still attached and the recording must not stop.
-	_, _ = app.Write([]byte("|depois"))
+	_, _ = app.Write([]byte("|after"))
 	releaseApp()
 
-	content, err := os.ReadFile(sessionLogPath(dir, "sam", "Aplicativo"))
+	content, err := os.ReadFile(sessionLogPath(dir, "sam", "App"))
 	if err != nil {
 		t.Fatalf("log was not written: %v", err)
 	}
 	if got := strings.Count(string(content), "\r\n"); got != 2 {
 		t.Errorf("wrote %d line breaks, wanted 2 — doubling the scrolls "+
-			"empurra a tela inteira para o histórico e o app abre preto", got)
+			"pushes the whole screen into the history and the app opens black", got)
 	}
-	if !strings.Contains(string(content), "|depois") {
+	if !strings.Contains(string(content), "|after") {
 		t.Error("the recording stopped when one of the connections left")
 	}
 }
@@ -87,13 +87,13 @@ func TestDoubleReleaseDoesNotCloseRemainingLog(t *testing.T) {
 	releaseSecond()
 	releaseSecond() // idempotent, on purpose
 
-	if _, err := first.Write([]byte("ainda vivo")); err != nil {
+	if _, err := first.Write([]byte("still alive")); err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
 	releaseFirst()
 
 	content, _ := os.ReadFile(sessionLogPath(dir, "sam", "s"))
-	if !strings.Contains(string(content), "ainda vivo") {
+	if !strings.Contains(string(content), "still alive") {
 		t.Error("releasing twice zeroed the count and closed the log of whoever was still attached")
 	}
 }
@@ -102,17 +102,17 @@ func TestDoubleReleaseDoesNotCloseRemainingLog(t *testing.T) {
 // other, nor may one silence the other.
 func TestDifferentSessionsEachRecordTheirOwn(t *testing.T) {
 	dir := t.TempDir()
-	a, _, _, releaseA := acquireSessionLog(dir, "sam", "uma")
-	b, _, _, releaseB := acquireSessionLog(dir, "sam", "outra")
+	a, _, _, releaseA := acquireSessionLog(dir, "sam", "one")
+	b, _, _, releaseB := acquireSessionLog(dir, "sam", "other")
 
-	_, _ = a.Write([]byte("da uma"))
-	_, _ = b.Write([]byte("da outra"))
+	_, _ = a.Write([]byte("from one"))
+	_, _ = b.Write([]byte("from other"))
 	releaseA()
 	releaseB()
 
-	umA, _ := os.ReadFile(sessionLogPath(dir, "sam", "uma"))
-	umB, _ := os.ReadFile(sessionLogPath(dir, "sam", "outra"))
-	if string(umA) != "da uma" || string(umB) != "da outra" {
+	umA, _ := os.ReadFile(sessionLogPath(dir, "sam", "one"))
+	umB, _ := os.ReadFile(sessionLogPath(dir, "sam", "other"))
+	if string(umA) != "from one" || string(umB) != "from other" {
 		t.Errorf("one=%q other=%q — one session silenced or invaded the other", umA, umB)
 	}
 }

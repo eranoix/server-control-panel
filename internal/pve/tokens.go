@@ -109,7 +109,7 @@ func (c *Client) TokenInfo(ctx context.Context, user, tokenID string) (TokenInfo
 // token ALIVE on the hypervisor — an orphan credential nobody can revoke any
 // more because nobody knows it exists.
 //
-// This package does NOT touch the vault (TestPveNaoImportaSecrets pins that):
+// This package does NOT touch the vault (TestPveDoesNotImportVault pins that):
 // putting the two halves together in a single place is what makes the order
 // verifiable.
 func (c *Client) DeleteToken(ctx context.Context, user, tokenID string) error {

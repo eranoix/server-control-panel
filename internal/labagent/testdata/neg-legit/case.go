@@ -1,11 +1,11 @@
-package caso
+package fixture
 
 import "os/exec"
 
-// Controles herdados do precedente da Fase 7. O agente VAI rodar docker
-// legitimamente; o pino tem de aprovar explicitamente.
+// Controls inherited from the earlier scan. The agent WILL legitimately run
+// docker; the pin has to approve it explicitly.
 func diskUsedPct(path string) (pct int, err error) { return 0, nil }
 
-func sobe() error {
+func up() error {
 	return exec.Command("docker", "compose", "up", "-d").Run()
 }

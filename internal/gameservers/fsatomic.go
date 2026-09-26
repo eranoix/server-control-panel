@@ -159,7 +159,7 @@ func ownerOf(p string) (int, int, error) {
 	return int(st.Uid), int(st.Gid), nil
 }
 
-// chownLikeRef applies to `alvo` the owner observed on `ref`.
+// chownLikeRef applies to `target` the owner observed on `ref`.
 //
 // It replaces the literal pair 4711, 4711: the right value is the one on disk. If
 // `ref` cannot be inspected, the error names the path — it never falls back to a

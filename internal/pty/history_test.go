@@ -67,10 +67,10 @@ func TestHistoryDoesNotDuplicateRepaintedOutput(t *testing.T) {
 	// Ink does on every keystroke.
 	for decoded := 1; decoded <= 3; decoded++ {
 		for i := 1; i <= 6; i++ {
-			screen.feed([]byte(fmt.Sprintf("quadro %d linha %d\r\n", decoded, i)))
+			screen.feed([]byte(fmt.Sprintf("frame %d line %d\r\n", decoded, i)))
 		}
 		if decoded < 3 {
-			screen.feed([]byte("\x1b[6A")) // sobe 6 linhas para repintar
+			screen.feed([]byte("\x1b[6A")) // up 6 lines to repaint
 		}
 	}
 	// Push everything off the screen so the history receives the result.
@@ -87,12 +87,12 @@ func TestHistoryDoesNotDuplicateRepaintedOutput(t *testing.T) {
 	// Only the last frame survived the repainting — the earlier ones were
 	// overwritten on the screen itself, which is what actually happened.
 	for i := 1; i <= 6; i++ {
-		target := fmt.Sprintf("quadro 3 linha %d", i)
+		target := fmt.Sprintf("frame 3 line %d", i)
 		if n := counts[target]; n != 1 {
 			t.Errorf("%q appears %d time(s) in the history; wanted exactly 1", target, n)
 		}
 	}
-	for _, deadLine := range []string{"quadro 1 linha 1", "quadro 2 linha 1"} {
+	for _, deadLine := range []string{"frame 1 line 1", "frame 2 line 1"} {
 		if n := counts[deadLine]; n != 0 {
 			t.Errorf("%q appears %d time(s); a frame repainted over is not history", deadLine, n)
 		}
@@ -108,7 +108,7 @@ func TestHistoryHandlesRuneSplitAcrossBlocks(t *testing.T) {
 	screen := newSessionScreen(dir, "u", "s")
 	screen.resize(40, 4)
 
-	text := []byte("ação não é só ção\r\n")
+	text := []byte("naïve über Straße año\r\n")
 	// Delivered byte by byte: every possible rune boundary is exercised.
 	for _, b := range text {
 		screen.feed([]byte{b})
@@ -121,12 +121,12 @@ func TestHistoryHandlesRuneSplitAcrossBlocks(t *testing.T) {
 	lines := readHistory(t, dir, "u", "s")
 	found := false
 	for _, l := range lines {
-		if l == "ação não é só ção" {
+		if l == "naïve über Straße año" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("the accented text did not survive the chunk boundary; history = %q", lines)
+		t.Errorf("the multibyte text did not survive the chunk boundary; history = %q", lines)
 	}
 }
 
@@ -137,10 +137,10 @@ func TestHistoryIgnoresAlternateScreen(t *testing.T) {
 	screen := newSessionScreen(dir, "u", "s")
 	screen.resize(40, 6)
 
-	screen.feed([]byte("antes do vim\r\n"))
-	screen.feed([]byte("\x1b[?1049h")) // entra na tela alternativa
+	screen.feed([]byte("before vim\r\n"))
+	screen.feed([]byte("\x1b[?1049h")) // enters the alternate screen
 	for i := 0; i < 30; i++ {
-		screen.feed([]byte(fmt.Sprintf("rascunho %d\r\n", i)))
+		screen.feed([]byte(fmt.Sprintf("scratch %d\r\n", i)))
 	}
 	screen.feed([]byte("\x1b[?1049l")) // sai
 	for i := 0; i < 10; i++ {
@@ -149,7 +149,7 @@ func TestHistoryIgnoresAlternateScreen(t *testing.T) {
 	screen.closeOnce()
 
 	for _, l := range readHistory(t, dir, "u", "s") {
-		if strings.HasPrefix(l, "rascunho") {
+		if strings.HasPrefix(l, "scratch") {
 			t.Errorf("the history kept %q, which is alternate-screen scratch", l)
 			break
 		}
@@ -159,10 +159,10 @@ func TestHistoryIgnoresAlternateScreen(t *testing.T) {
 // Reading the history cuts at the start of a LINE, never in the middle: half a
 // line at the top is dirt the terminal draws as though it were content.
 func TestHistoryCutsAtWholeLine(t *testing.T) {
-	if i := nextLineIndex([]byte("meio de linha\r\ninteira\r\n")); i != 15 {
+	if i := nextLineIndex([]byte("mid of a line\r\nwhole\r\n")); i != 15 {
 		t.Errorf("next-line index = %d; wanted 15", i)
 	}
-	if i := nextLineIndex([]byte("sem quebra nenhuma")); i != -1 {
+	if i := nextLineIndex([]byte("no break at all")); i != -1 {
 		t.Errorf("with no break, should return -1; returned %d", i)
 	}
 }

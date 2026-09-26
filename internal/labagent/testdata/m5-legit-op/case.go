@@ -1,4 +1,4 @@
-package caso
+package fixture
 
 import "context"
 
@@ -8,10 +8,10 @@ import "context"
 // growth and someone switches it off.
 type OpName string
 
-const OpMundoArquivar OpName = "world.archive"
+const OpWorldArchive OpName = "world.archive"
 
 type Agent struct{}
 
-func (a *Agent) opMundoArquivar(ctx context.Context, corpo []byte) (any, error) {
+func (a *Agent) opWorldArchive(ctx context.Context, body []byte) (any, error) {
 	return nil, nil
 }

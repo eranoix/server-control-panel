@@ -1,33 +1,12 @@
 package pve
 
-// storage.go — the node's two CAPACITY routes, and the privilege verdict that
-// says whether they have anything to tell.
+// storage.go: the node's two CAPACITY routes (storage and ZFS), and the
+// privilege verdict that says whether they have anything to tell.
 //
-// ─────────────────────────────────────────────────────────────────────────────
-// 🔴 WHY THESE TWO ROUTES ONLY SHOW UP NOW
-//
-// The first measurement, taken with the lab@pve!audit token and the ACL in
-// force at the time:
-//
-//	GET /nodes/pve/storage    → 200, data: []      ← NOT an error
-//	GET /nodes/pve/disks/zfs  → 403
-//
-// The first line is this whole file's problem in one: without privilege on
-// /storage the hypervisor does not refuse, it AGREES and returns nothing. A
-// screen fed only by that list would say "no storage" about a server with four
-// — and it would say it in green, with no error, no log, and no 403 for anyone
-// to investigate.
-//
-// After `pveum acl modify / --roles PVEAuditor --tokens lab@pve!audit
-// --propagate 1` (applied by the operator), both return real data: 4 storages
-// and 2 zpools. But the TRAP did not leave with the ACL — it comes back the day
-// the privilege is withdrawn, and it comes back silent. That is why
-// CanAuditDatastore is still here, and why it measures PRIVILEGE.
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// Scope: capacity and health, never content. Listing a datastore's volumes
-// (/nodes/{n}/storage/{id}/content) and backup evidence belong to separate
-// work, and both the cost and the shape of the response are different there.
+// Without Datastore.Audit on /storage the hypervisor does not refuse: it
+// returns 200 with an empty list. That is why CanAuditDatastore measures
+// PRIVILEGE instead of trusting an empty answer. Scope: capacity and health,
+// never content.
 
 import (
 	"context"
@@ -43,7 +22,7 @@ import (
 // 🔴 Active, Enabled and Shared are int because the hypervisor sends 0|1, not a
 // JSON boolean. Declaring `bool` would make the unmarshal of the WHOLE LIST
 // fail — the same disaster Disk.Wearout avoids on the other side (node.go).
-// Whoever wants a boolean uses Ativo()/Habilitado()/Compartilhado().
+// Whoever wants a boolean uses IsActive()/IsEnabled()/IsShared().
 //
 // UsedFraction arrives READY from the hypervisor (0.0686… = 6.9%). It is
 // preferred over used/total because for `pbs` storage the two are not the same
@@ -66,7 +45,7 @@ func (s Storage) IsActive() bool  { return s.Active == 1 }
 func (s Storage) IsEnabled() bool { return s.Enabled == 1 }
 func (s Storage) IsShared() bool  { return s.Shared == 1 }
 
-// Conteudos splits the `content` field into the list the screen consumes, in a
+// ContentList splits the `content` field into the list the screen consumes, in a
 // stable order. Doing this here and not in the browser is the same rule as
 // loadavg in inventory/hypervisor.go: the screen FORMATS, it does not interpret.
 func (s Storage) ContentList() []string {
@@ -154,12 +133,9 @@ var datastorePrivs = []string{
 // the rule. Two truths about the same question have already produced a measured
 // defect in this codebase (see credentialKey in internal/api/handlers_nodes.go).
 //
-// 🔴 The verdict is by PRIVILEGE, not by the presence of a path. The first
-// version answered `strings.HasPrefix(caminho, "/storage")`, and that only says
-// the token has SOME privilege there: a token with PVEVMUser propagated from the
-// root puts /storage in the map without Datastore.Audit, the list comes back 200
-// with [], and the screen would announce "it can already see /storage" over an
-// empty block. The false green is back, now stamped by the guard itself.
+// The verdict is by PRIVILEGE, not by the presence of a path: a token with
+// PVEVMUser propagated from the root has /storage in the map without
+// Datastore.Audit, and the list comes back 200 with [] (a false green).
 //
 // The paths that count are the ones that COVER storage: the root (which
 // propagates), /storage itself, and each named storage. `/storagefoo` is none of
@@ -185,7 +161,6 @@ func coversStorage(path string) bool {
 	return path == "/" || path == "/storage" || strings.HasPrefix(path, "/storage/")
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Pool topology
 //
 // 🔴 THE MISSING LINK. `ZFSList` says there is an `rpool` with 70 GB allocated;
@@ -218,7 +193,7 @@ type ZDevice struct {
 // the disks hang off the root with no group at all.
 type ZVdev struct {
 	Name      string    `json:"nome"`
-	Type      string    `json:"tipo"` // mirror | raidz1 | raidz2 | raidz3 | listra | especial
+	Type      string    `json:"tipo"` // mirror | raidz1 | raidz2 | raidz3 | listra (stripe) | especial (special); values are wire contract
 	Redundant bool      `json:"redundante"`
 	Devices   []ZDevice `json:"dispositivos"`
 }
@@ -258,7 +233,7 @@ type zfsRawDetail struct {
 
 // vdevType classifies a group by its name, the way `zpool status` writes it.
 //
-// Only mirror and raidz survive the loss of one device. `listra` (the pool
+// Only mirror and raidz survive the loss of one device. `listra` (stripe: the pool
 // hanging disks straight off the root) and anything unknown do NOT count as
 // redundancy: when in doubt the verdict is "does not protect", because the error
 // in the other direction makes the operator trust a mirror that does not exist.
@@ -284,7 +259,7 @@ func vdevType(name string) (string, bool) {
 func (c *Client) ZFSTopology(ctx context.Context, node, pool string) (ZPoolTopology, error) {
 	var out ZPoolTopology
 	if node == "" || pool == "" {
-		return out, fmt.Errorf("pve: empty node or pool in ZFSTopologia")
+		return out, fmt.Errorf("pve: empty node or pool in ZFSTopology")
 	}
 	var rawValue zfsRawDetail
 	p := "/api2/json/nodes/" + url.PathEscape(node) + "/disks/zfs/" + url.PathEscape(pool)
@@ -373,7 +348,6 @@ func SerialFromPath(path string) string {
 	return ""
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Backup freshness
 //
 // 🔴 THIS CALL DID NOT EXIST UNTIL THE ACL WAS WIDENED. Until then the panel's
@@ -408,25 +382,15 @@ type BackupFreshness struct {
 	Guests    []int  `json:"guests"`
 	Error     string `json:"erro,omitempty"`
 
-	// 🔴 Agendado separates "deliberately disarmed" from "failed", and that
-	// distinction is the difference between a panel you can trust and a permanent
-	// red that trains you to ignore it. This lab's `backupusb` has had no new copy
-	// for two weeks because the operator turned the schedule off in a deliberate,
-	// dated decision — the layer was DISARMED, it did not fail.
-	// 🔴 THREE STATES, NOT TWO — and the live proof caught this before the deploy.
+	// Scheduler separates "deliberately disarmed" from "failed", in THREE states
+	// (the values are wire contract):
 	//
-	//   "ativo"       the hypervisor job exists and is on
-	//   "desarmado"   the hypervisor job exists and is OFF (somebody decided that)
-	//   "fora-do-pve" there is NO hypervisor job for this datastore
+	//   "ativo"       active: the hypervisor job exists and is on
+	//   "desarmado"   disarmed: the hypervisor job exists and is OFF
+	//   "fora-do-pve" outside PVE: no hypervisor job for this datastore (e.g. a
+	//                 copy fed by a systemd timer on the host)
 	//
-	// The third is the one a boolean would get wrong. In this laboratory `pbs`
-	// receives a copy every day and has NO job in jobs.cfg: what feeds it is
-	// `lab-offsite.sh` on a systemd timer on the host, invisible to
-	// /cluster/backup. A boolean "scheduled" would paint a live layer as disarmed —
-	// erring in the opposite direction from the one I was trying to fix.
-	//
-	// "No job in the hypervisor" means "this panel does not know who schedules it",
-	// and saying that is more honest than asserting either of the other two.
+	// A boolean would paint a layer fed from outside the hypervisor as disarmed.
 	Scheduler string `json:"agendamento"`
 	Schedule  string `json:"schedule,omitempty"`
 
@@ -464,7 +428,6 @@ func (c *Client) DatastoreBackups(ctx context.Context, node, storage string) (Ba
 	return out, nil
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Backup jobs
 //
 // 🔴 WITHOUT THIS, THE SCREEN CONFUSES "DISARMED" WITH "FAILED" — and permanent red
@@ -494,7 +457,7 @@ type BackupJob struct {
 	All      int    `json:"all"`
 }
 
-// Agendado says whether this job actually fires. An absent `enabled` in the
+// IsScheduled says whether this job actually fires. An absent `enabled` in the
 // hypervisor means ON — the field only shows up when somebody turns it off — so
 // the read has to distinguish "explicit 0" from "field absent". Treating absence
 // as off would make the screen call a layer that runs every day disarmed.

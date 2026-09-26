@@ -1,4 +1,4 @@
-package caso
+package fixture
 
 import "context"
 
@@ -7,6 +7,6 @@ import "context"
 // literal is opening free execution under another name.
 func trainerRun(ctx context.Context, stdin []byte, args ...string) error { return nil }
 
-func Aplica(ctx context.Context, body []byte, verbo string) error {
-	return trainerRun(ctx, body, verbo)
+func Apply(ctx context.Context, body []byte, verb string) error {
+	return trainerRun(ctx, body, verb)
 }

@@ -1,4 +1,4 @@
-package caso
+package fixture
 
 import "context"
 
@@ -6,10 +6,10 @@ import "context"
 // site; the verb comes from the request body. A naive detector sails right past.
 func trainerRun(ctx context.Context, stdin []byte, args ...string) error { return nil }
 
-type pedido struct {
-	Verbo string `json:"verbo"`
+type request struct {
+	Verb string `json:"verb"`
 }
 
-func opNova(ctx context.Context, req pedido, body []byte) error {
-	return trainerRun(ctx, body, req.Verbo)
+func newOp(ctx context.Context, req request, body []byte) error {
+	return trainerRun(ctx, body, req.Verb)
 }

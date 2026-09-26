@@ -1,1 +1,1 @@
-Diretório sem nenhum arquivo .go, de propósito: varrer nada nunca é aprovar.
+A directory with no .go file, on purpose: scanning nothing is never approving.

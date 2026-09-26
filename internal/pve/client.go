@@ -51,7 +51,7 @@ const (
 // they are sentinels, not text.
 var (
 	// ErrInvalidToken marks a vault value that is NOT in the
-	// "USER@REALM!NOME=SEGREDO" format. The secret was once stored bare and every
+	// "USER@REALM!NAME=SECRET" format. The secret was once stored bare and every
 	// offline pin stayed green until the first live call took a 401.
 	ErrInvalidToken = errors.New("pve: token must be USER@REALM!NAME=SECRET")
 	// ErrBaseURL marks a base_url that is missing or impossible to interpret.
@@ -141,7 +141,7 @@ type Config struct {
 	Resolve    string        // 198.51.100.20 — the address to dial; SNI and verification follow ServerName
 	ServerName string        // hypervisor.local — the cert's SAN does NOT cover .250 nor 100.x
 	CAFile     string        // data/pve/pve-root-ca.pem
-	TokenID    string        // lab@pve!audit, or the whole value from the vault "lab@pve!audit=<segredo>"
+	TokenID    string        // lab@pve!audit, or the whole value from the vault "lab@pve!audit=<secret>"
 	Secret     string        // empty when TokenID already carries the whole value
 	Timeout    time.Duration // 0 = floor of 10 s; a value below the floor is RAISED
 }
@@ -169,7 +169,7 @@ type Client struct {
 }
 
 // SplitTokenValue splits the value kept in the vault, in the
-// "USER@REALM!NOME=SEGREDO" format. It is the format the PVEAPIToken header
+// "USER@REALM!NAME=SECRET" format. It is the format the PVEAPIToken header
 // requires, and the format the vault started keeping after the bare-secret
 // defect.
 func SplitTokenValue(v string) (tokenID, secret string, err error) {
@@ -273,7 +273,7 @@ func (c *Client) do(ctx context.Context, method, path string, out any) error {
 		return &Error{Kind: KindUnreachable, Path: path, Err: err}
 	}
 	// Exact format required by the hypervisor, with no space after "PVEAPIToken=":
-	//   PVEAPIToken=USER@REALM!NOME=SEGREDO
+	//   PVEAPIToken=USER@REALM!NAME=SECRET
 	// An API token does not need the session anti-forgery header
 	// (HTTPServer.pm:122-129): that is only required of cookie sessions. Do not
 	// invent any header beyond these two — the test asserts their absence.

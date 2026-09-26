@@ -41,18 +41,18 @@ func (b *backendDouble) Receive(_ context.Context, r io.Reader) (gameservers.Han
 		return "", err
 	}
 	b.received = n
-	return gameservers.Handle("handle-de-teste"), nil
+	return gameservers.Handle("test-handle"), nil
 }
-func (b *backendDouble) Describe() string { return "duplo de teste" }
+func (b *backendDouble) Describe() string { return "test double" }
 
-func testServer(t *testing.T, token string) (*ServerID, *backendDouble) {
+func testServer(t *testing.T, token string) (*Server, *backendDouble) {
 	t.Helper()
 	b := &backendDouble{}
-	ag := &Agent{No: "teste", Back: b}
-	return NewServer(ag, SecretFromText(token), NewMetrics("teste")), b
+	ag := &Agent{No: "test", Back: b}
+	return NewServer(ag, SecretFromText(token), NewMetrics("test")), b
 }
 
-func request(t *testing.T, s *ServerID, method, target, bearer string, body string) *httptest.ResponseRecorder {
+func request(t *testing.T, s *Server, method, target, bearer string, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	var reader *strings.Reader
 	if body == "" {
@@ -78,7 +78,7 @@ func request(t *testing.T, s *ServerID, method, target, bearer string, body stri
 // possible in this work, and it would be a silent one.
 func TestAuthWithoutSecretIsInert(t *testing.T) {
 	s, back := testServer(t, "")
-	for _, bearer := range []string{"", "qualquer-coisa", "o-bearer-de-outro-no"} {
+	for _, bearer := range []string{"", "anything", "another-nodes-bearer"} {
 		w := request(t, s, http.MethodPost, "/v1/op/server.status", bearer, `{}`)
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("bearer %q: expected 401, got %d — an agent with no secret canNOT accept anything", bearer, w.Code)
@@ -90,8 +90,8 @@ func TestAuthWithoutSecretIsInert(t *testing.T) {
 }
 
 func TestAuthWrongToken(t *testing.T) {
-	s, back := testServer(t, "o-certo")
-	if w := request(t, s, http.MethodPost, "/v1/op/server.status", "o-errado", `{}`); w.Code != http.StatusUnauthorized {
+	s, back := testServer(t, "the-right-one")
+	if w := request(t, s, http.MethodPost, "/v1/op/server.status", "the-wrong-one", `{}`); w.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", w.Code)
 	}
 	if len(back.calls) != 0 {
@@ -100,8 +100,8 @@ func TestAuthWrongToken(t *testing.T) {
 }
 
 func TestAuthRightToken(t *testing.T) {
-	s, back := testServer(t, "o-certo")
-	w := request(t, s, http.MethodPost, "/v1/op/server.status", "o-certo", `{}`)
+	s, back := testServer(t, "the-right-one")
+	w := request(t, s, http.MethodPost, "/v1/op/server.status", "the-right-one", `{}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d — body: %s", w.Code, w.Body.String())
 	}
@@ -116,11 +116,11 @@ func TestAuthRightToken(t *testing.T) {
 // access log, into Referer and into the browser history. Here, with no header,
 // it is 401 — no matter what comes in the URL.
 func TestAuthRejectsQueryString(t *testing.T) {
-	s, back := testServer(t, "o-certo")
+	s, back := testServer(t, "the-right-one")
 	for _, target := range []string{
-		"/v1/op/server.status?token=o-certo",
-		"/v1/op/server.status?t=o-certo",
-		"/v1/op/server.status?access_token=o-certo",
+		"/v1/op/server.status?token=the-right-one",
+		"/v1/op/server.status?t=the-right-one",
+		"/v1/op/server.status?access_token=the-right-one",
 	} {
 		if w := request(t, s, http.MethodPost, target, "", `{}`); w.Code != http.StatusUnauthorized {
 			t.Errorf("%s: expected 401, got %d — a token in the query string is being accepted", target, w.Code)
@@ -175,26 +175,26 @@ func TestAuthComparesFixedSizeHash(t *testing.T) {
 
 	// The matching behaviour: tokens of VERY different lengths take the same
 	// path and both are refused.
-	s := SecretFromText("token-de-tamanho-medio")
+	s := SecretFromText("medium-length-token")
 	for _, attempt := range []string{"x", strings.Repeat("y", 4000)} {
 		if s.matches(attempt) {
 			t.Errorf("accepted a wrong %d-byte credential", len(attempt))
 		}
 	}
-	if !s.matches("token-de-tamanho-medio") {
+	if !s.matches("medium-length-token") {
 		t.Error("refused the correct credential")
 	}
 }
 
-// TestMissingSecretNeverMatches — a zero Segredo refuses even the empty string.
+// TestMissingSecretNeverMatches: a zero Secret refuses even the empty string.
 func TestMissingSecretNeverMatches(t *testing.T) {
 	var s Secret
 	if s.Present() {
-		t.Error("a zero Segredo claims to be present")
+		t.Error("a zero Secret claims to be present")
 	}
-	for _, attempt := range []string{"", "qualquer"} {
+	for _, attempt := range []string{"", "anything"} {
 		if s.matches(attempt) {
-			t.Errorf("a missing Segredo matched %q", attempt)
+			t.Errorf("a missing Secret matched %q", attempt)
 		}
 	}
 }

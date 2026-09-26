@@ -11,7 +11,7 @@ import (
 // instrument.
 //
 //	go test ./internal/pty/ -run TestDumpsServedCrop -v \
-//	  -args-nao-existe   (use the env: VPSM_DUMP_SESSAO, VPSM_DUMP_SAIDA)
+//	  (no args: use the env VPSM_DUMP_SESSAO for the session and VPSM_DUMP_SAIDA for the output)
 func TestDumpsServedCrop(t *testing.T) {
 	session := os.Getenv("VPSM_DUMP_SESSAO")
 	output := os.Getenv("VPSM_DUMP_SAIDA")

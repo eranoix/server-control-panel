@@ -31,7 +31,7 @@ func TestSessionTermMatchesTerminalClient(t *testing.T) {
 func TestClaudeConfigEnvKeepsAccountAndPath(t *testing.T) {
 	env := claudeConfigEnv("/srv/agent-accounts/sam")
 	if !hasEnv(env, "CLAUDE_CONFIG_DIR=/srv/agent-accounts/sam") {
-		t.Fatalf("CLAUDE_CONFIG_DIR sumiu: %v", env)
+		t.Fatalf("CLAUDE_CONFIG_DIR is gone: %v", env)
 	}
 	if hasEnv(claudeConfigEnv(""), "CLAUDE_CONFIG_DIR=") {
 		t.Fatalf("an empty dir must not pin an account")

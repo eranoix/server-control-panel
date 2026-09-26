@@ -220,8 +220,6 @@ func (m *Manager) ImportWorld(s Server, name, zipPath string) error {
 	return chownLikeRef(dst, s.Root, true)
 }
 
-// ── Server inventory ───────────────────────────────────────────────────────
-
 // SaveInventory replaces gameservers.json and reloads it in memory.
 func (m *Manager) SaveInventory(list []Server) error {
 	seen := map[string]bool{}
@@ -250,12 +248,8 @@ func (m *Manager) SaveInventory(list []Server) error {
 		}
 		// The root is checked on disk ONLY when the server lives on THIS host.
 		//
-		// 🔴 The unconditional `os.Stat` that used to be here made it impossible to
-		// register a server that lives on ANOTHER node — which is exactly the model
-		// this work exists to build. CT 201's `/opt/jogo-b` path does not exist on
-		// the panel's disk, and should not: the one who sees it is the agent there.
-		// The check refused the registration with "the folder does not exist", a
-		// message that was true about the WRONG machine.
+		// No unconditional `os.Stat`: a server on ANOTHER node has a root that
+		// does not exist on the panel's disk; only that node's agent can see it.
 		//
 		// Kept for a server with no node (the local case), because there it catches
 		// the typo at registration time, far from the "restart" that would only fail

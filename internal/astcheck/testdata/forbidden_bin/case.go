@@ -1,6 +1,6 @@
-package caso
+package fixture
 
 import "os/exec"
 
 // Synthetic violation: a hypervisor binary invoked through a direct literal.
-func Roda() { _ = exec.Command("pct", "start", "201") }
+func Run() { _ = exec.Command("pct", "start", "201") }

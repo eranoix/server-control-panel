@@ -39,10 +39,10 @@ func TestErrorClassification(t *testing.T) {
 		body   string
 		want   Kind
 	}{
-		{"401 revogado", http.StatusUnauthorized, "authentication failure", KindNoCredential},
-		{"403 sem ACL", http.StatusForbidden, "Permission check failed (/vms/206, VM.Audit)", KindForbidden},
-		{"500 hipervisor", http.StatusInternalServerError, "internal error", KindHypervisor},
-		{"400 hipervisor", http.StatusBadRequest, "parameter verification failed", KindHypervisor},
+		{"401 revoked", http.StatusUnauthorized, "authentication failure", KindNoCredential},
+		{"403 without ACL", http.StatusForbidden, "Permission check failed (/vms/206, VM.Audit)", KindForbidden},
+		{"500 hypervisor", http.StatusInternalServerError, "internal error", KindHypervisor},
+		{"400 hypervisor", http.StatusBadRequest, "parameter verification failed", KindHypervisor},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -117,7 +117,7 @@ func TestErrorClassification(t *testing.T) {
 }
 
 // TestAuthHeader asserts the header byte by byte. The hypervisor requires
-// "PVEAPIToken=USER@REALM!ID=SEGREDO" with no space, and a token does not need
+// "PVEAPIToken=USER@REALM!ID=SECRET" with no space, and a token does not need
 // CSRFPreventionToken (HTTPServer.pm:122-129).
 func TestAuthHeader(t *testing.T) {
 	var seen http.Header
@@ -162,9 +162,9 @@ func TestTimeoutFloor(t *testing.T) {
 		in   time.Duration
 		want time.Duration
 	}{
-		{"zero vira o piso", 0, minTimeout},
-		{"curto é ELEVADO ao piso", 2 * time.Second, minTimeout},
-		{"folgado é respeitado", 30 * time.Second, 30 * time.Second},
+		{"zero becomes the floor", 0, minTimeout},
+		{"short is RAISED to the floor", 2 * time.Second, minTimeout},
+		{"generous is respected", 30 * time.Second, 30 * time.Second},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

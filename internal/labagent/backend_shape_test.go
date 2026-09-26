@@ -20,7 +20,7 @@ import (
 
 // forbiddenTerms matches by identifier name (parameter/result) and by the
 // written type.
-var forbiddenTerms = []string{"path", "caminho", "mode", "modo", "uid", "gid", "filemode"}
+var forbiddenTerms = []string{"path", "mode", "uid", "gid", "filemode"}
 
 // scanBackendInterface returns the violations found in the given file.
 // Kept separate from the test so the NEGATIVE CONTROL can reuse exactly the
@@ -67,11 +67,11 @@ func scanBackendInterface(t *testing.T, file string) (violations []string, metho
 		for _, field := range fields.List {
 			kind := typeText(field.Type)
 			if suspicious(kind) {
-				violations = append(violations, method+": "+where+" de tipo "+kind)
+				violations = append(violations, method+": "+where+" of type "+kind)
 			}
 			for _, name := range field.Names {
 				if suspicious(name.Name) {
-					violations = append(violations, method+": "+where+" chamado "+name.Name)
+					violations = append(violations, method+": "+where+" named "+name.Name)
 				}
 			}
 		}
@@ -88,8 +88,8 @@ func scanBackendInterface(t *testing.T, file string) (violations []string, metho
 				continue
 			}
 			methodCount++
-			matches(ft.Params, "parâmetro", m.Names[0].Name)
-			matches(ft.Results, "resultado", m.Names[0].Name)
+			matches(ft.Params, "parameter", m.Names[0].Name)
+			matches(ft.Results, "result", m.Names[0].Name)
 		}
 		return true
 	})
@@ -103,8 +103,8 @@ func TestBackendDoesNotLeakFileSemantics(t *testing.T) {
 		t.Fatal("no interface method scanned — green by ABSENCE")
 	}
 	if len(violations) > 0 {
-		t.Errorf("fronteira violada — semântica de arquivo atravessando a fronteira:\n  %s\n"+
-			"Caminho que atravessa é caminho que o cliente escolhe. Use Handle opaco.",
+		t.Errorf("boundary violated: file semantics crossing the boundary:\n  %s\n"+
+			"A path that crosses is a path the client chooses. Use an opaque Handle.",
 			strings.Join(violations, "\n  "))
 	}
 	t.Logf("%d interface methods scanned, 0 violations", methodCount)
@@ -119,11 +119,11 @@ func TestBackendDoesNotLeakFileSemantics(t *testing.T) {
 func TestBackendScanBitesAndControlsNegative(t *testing.T) {
 	dir := t.TempDir()
 
-	bad := filepath.Join(dir, "ruim.go")
+	bad := filepath.Join(dir, "bad.go")
 	if err := os.WriteFile(bad, []byte(`package x
 import "os"
 type Backend interface {
-	Gravar(path string, modo os.FileMode) error
+	Write(path string, mode os.FileMode) error
 }
 `), 0o644); err != nil {
 		t.Fatal(err)
@@ -139,7 +139,7 @@ type Backend interface {
 import "context"
 type World struct{}
 type Backend interface {
-	Mundos(ctx context.Context, id string) ([]World, error)
+	Worlds(ctx context.Context, id string) ([]World, error)
 }
 `), 0o644); err != nil {
 		t.Fatal(err)

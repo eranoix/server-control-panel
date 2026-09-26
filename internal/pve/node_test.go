@@ -58,7 +58,7 @@ func TestNodeStatusReadsRealFields(t *testing.T) {
 	  "swap":   {"total": 8000000000,  "used": 1000000,     "free": 7999000000},
 	  "rootfs": {"total": 100000000000,"used": 20000000000, "avail": 80000000000, "free": 80000000000},
 	  "ksm":    {"shared": 4096},
-	  "cpuinfo": {"cpus": 12, "model": "irrelevante para o recorte"},
+	  "cpuinfo": {"cpus": 12, "model": "irrelevant for this slice"},
 	  "wait": 0.001, "idle": 0
 	}}`
 	c, seenURL := captureURL(t, body)
@@ -126,12 +126,12 @@ func TestTaskListClampsLimitServerSide(t *testing.T) {
 		want    []string
 		mustNot []string
 	}{
-		{"limit ausente vira o padrão", TaskListOptions{}, []string{"limit=50"}, []string{"errors=", "typefilter=", "vmid="}},
-		{"limit absurdo é clampado", TaskListOptions{Limit: 9999}, []string{"limit=200"}, []string{"limit=9999"}},
-		{"limit negativo vira o padrão", TaskListOptions{Limit: -3}, []string{"limit=50"}, []string{"limit=-3"}},
-		{"limit no teto passa", TaskListOptions{Limit: 200}, []string{"limit=200"}, nil},
-		{"só-erros emite errors=1", TaskListOptions{ErrorsOnly: true}, []string{"errors=1"}, nil},
-		{"typefilter e vmid vão quando pedidos", TaskListOptions{TypeFilter: "vzdump", VMID: 204},
+		{"missing limit becomes the default", TaskListOptions{}, []string{"limit=50"}, []string{"errors=", "typefilter=", "vmid="}},
+		{"absurd limit is clamped", TaskListOptions{Limit: 9999}, []string{"limit=200"}, []string{"limit=9999"}},
+		{"negative limit becomes the default", TaskListOptions{Limit: -3}, []string{"limit=50"}, []string{"limit=-3"}},
+		{"limit at the cap passes", TaskListOptions{Limit: 200}, []string{"limit=200"}, nil},
+		{"errors-only emits errors=1", TaskListOptions{ErrorsOnly: true}, []string{"errors=1"}, nil},
+		{"typefilter and vmid go when asked", TaskListOptions{TypeFilter: "vzdump", VMID: 204},
 			[]string{"typefilter=vzdump", "vmid=204"}, nil},
 	}
 	for _, tc := range cases {
@@ -200,7 +200,7 @@ func TestTaskLogIgnoresCallerLimit(t *testing.T) {
 		t.Fatalf("TaskLog has %d parameters (counting the receiver), want 4 — a caller-set limit is forbidden (A-3)", got)
 	}
 
-	c, seenURL := captureURL(t, `{"data":[{"n":2,"t":"segunda"},{"n":1,"t":"primeira"},{"n":3,"t":"terceira"}]}`)
+	c, seenURL := captureURL(t, `{"data":[{"n":2,"t":"second"},{"n":1,"t":"first"},{"n":3,"t":"third"}]}`)
 	upid := "UPID:pve:0000AAAA:00BBBB:68A00000:vzsnapshot:204:lab@pve!node-lab:"
 	lines, err := c.TaskLog(context.Background(), "pve", upid)
 	if err != nil {
@@ -212,7 +212,7 @@ func TestTaskLogIgnoresCallerLimit(t *testing.T) {
 	if !strings.Contains(*seenURL, "/tasks/") || !strings.Contains(*seenURL, "/log") {
 		t.Errorf("URL = %q, want /nodes/pve/tasks/{upid}/log", *seenURL)
 	}
-	if fmt.Sprint(lines) != "[primeira segunda terceira]" {
+	if fmt.Sprint(lines) != "[first second third]" {
 		t.Errorf("lines = %v, want them in n order", lines)
 	}
 }
@@ -248,7 +248,7 @@ func TestDisksListNormalizesWearout(t *testing.T) {
 		t.Errorf("wearout[0] = (%v,%v), want (100,true)", v, ok)
 	}
 	if _, ok := ds[1].WearoutPct(); ok {
-		t.Error(`wearout "N/A" foi lido como número — a tela mostraria 0% de vida útil num disco que não reporta nada`)
+		t.Error(`wearout "N/A" was read as a number: the screen would show 0% life left on a disk that reports nothing`)
 	}
 }
 

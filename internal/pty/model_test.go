@@ -7,7 +7,7 @@ import "testing"
 // it (including an attempted shell/flag injection) returns an error instead of being
 // concatenated into the command the shell word-splits.
 func TestValidatedModel(t *testing.T) {
-	// aceitos
+	// accepted
 	for _, in := range []string{"", "  ", "haiku", "sonnet", "opus"} {
 		if _, err := validatedModel(in); err != nil {
 			t.Errorf("validatedModel(%q) unexpected error: %v", in, err)

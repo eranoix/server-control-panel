@@ -41,22 +41,22 @@ func TestStalledScribeIsReplaced(t *testing.T) {
 	defer releaseLive()
 
 	// The zombie takes the lease by writing the first chunk.
-	_, _ = zombie.Write([]byte("antes"))
+	_, _ = zombie.Write([]byte("before"))
 	// ...and stops. The connection does NOT leave — that is what the earlier version missed.
 
 	// The live one tries to write inside the lease: suppressed, or it would duplicate.
-	_, _ = live.Write([]byte("|cedo"))
+	_, _ = live.Write([]byte("|early"))
 
 	// Once the lease has expired, the live one takes over with nobody having left.
 	*now = now.Add(leaseValidity + time.Millisecond)
-	_, _ = live.Write([]byte("|depois"))
+	_, _ = live.Write([]byte("|after"))
 
 	content, err := os.ReadFile(sessionLogPath(dir, "sam", "Vpsm"))
 	if err != nil {
 		t.Fatalf("log was not written: %v", err)
 	}
-	if got := string(content); got != "antes|depois" {
-		t.Errorf("log = %q, want \"antes|depois\"", got)
+	if got := string(content); got != "before|after" {
+		t.Errorf("log = %q, want \"before|after\"", got)
 	}
 }
 
@@ -85,7 +85,7 @@ func TestTwoLiveConnectionsDoNotDoubleLog(t *testing.T) {
 	content, _ := os.ReadFile(sessionLogPath(dir, "sam", "s"))
 	if got := strings.Count(string(content), "\r\n"); got != 10 {
 		t.Errorf("wrote %d line breaks, wanted 10 — doubling the ones scrolled"+
-			"empurra a tela inteira para o histórico e o app abre preto", got)
+			" pushes the whole screen into the history and the app opens black", got)
 	}
 }
 
@@ -131,7 +131,7 @@ func TestDtachAttachClearStaysOutOfLog(t *testing.T) {
 	defer release()
 
 	// dtach's first chunk: the clear, glued to the start of the real output.
-	n, err := w.Write(append([]byte("\x1b[H\x1b[J"), []byte("ola")...))
+	n, err := w.Write(append([]byte("\x1b[H\x1b[J"), []byte("hey")...))
 	if err != nil {
 		t.Fatalf("write failed: %v", err)
 	}
@@ -139,10 +139,10 @@ func TestDtachAttachClearStaysOutOfLog(t *testing.T) {
 		t.Errorf("reported %d bytes; whoever writes into the tee must not be able to tell we trimmed", n)
 	}
 	// After the first chunk, a real clear from the PROGRAM does go through.
-	_, _ = w.Write([]byte("\x1b[H\x1b[J|dele"))
+	_, _ = w.Write([]byte("\x1b[H\x1b[J|its"))
 
 	content, _ := os.ReadFile(sessionLogPath(dir, "sam", "Vpsm"))
-	if got := string(content); got != "ola\x1b[H\x1b[J|dele" {
+	if got := string(content); got != "hey\x1b[H\x1b[J|its" {
 		t.Errorf("log = %q", got)
 	}
 }
@@ -189,7 +189,7 @@ func TestDtachFarewellStaysOutOfLog(t *testing.T) {
 	w, _, _, release := acquireSessionLog(dir, "sam", "Vpsm")
 	defer release()
 
-	_, _ = w.Write([]byte("o que o programa pintou"))
+	_, _ = w.Write([]byte("what the program painted"))
 	// The farewell, exactly as dtach sends it: all in one chunk.
 	n, err := w.Write([]byte("\x1b[999H\r\n[detached]\r\n\x1b[?25h"))
 	if err != nil {
@@ -199,10 +199,10 @@ func TestDtachFarewellStaysOutOfLog(t *testing.T) {
 		t.Errorf("reported %d bytes; whoever writes into the tee must not be able to tell we trimmed", n)
 	}
 	// And nothing after it goes through.
-	_, _ = w.Write([]byte("resto do adeus"))
+	_, _ = w.Write([]byte("rest of the goodbye"))
 
 	content, _ := os.ReadFile(sessionLogPath(dir, "sam", "Vpsm"))
-	if got := string(content); got != "o que o programa pintou" {
+	if got := string(content); got != "what the program painted" {
 		t.Errorf("log = %q — the pipe's goodbye got into the program's record", got)
 	}
 }
@@ -215,10 +215,10 @@ func TestContentBeforeFarewellIsPreserved(t *testing.T) {
 	w, _, _, release := acquireSessionLog(dir, "sam", "s")
 	defer release()
 
-	_, _ = w.Write([]byte("ultima linha do programa\x1b[999H\r\n[detached]\r\n"))
+	_, _ = w.Write([]byte("last line of the program\x1b[999H\r\n[detached]\r\n"))
 
 	content, _ := os.ReadFile(sessionLogPath(dir, "sam", "s"))
-	if got := string(content); got != "ultima linha do programa" {
+	if got := string(content); got != "last line of the program" {
 		t.Errorf("log = %q", got)
 	}
 }
@@ -231,8 +231,8 @@ func TestContentBeforeFarewellIsPreserved(t *testing.T) {
 func TestServedTailDoesNotEndInDtachNoise(t *testing.T) {
 	// Exactly the tail measured on the "Vpsm" session: two clears and the goodbye.
 	tail := "\x1b[H\x1b[J\x1b[H\x1b[J\x1b[999H\r\n[detached]\r\n\x1b[?25h"
-	got := string(trimTrailingDtachNoise([]byte("o que o programa pintou" + tail)))
-	if got != "o que o programa pintou" {
+	got := string(trimTrailingDtachNoise([]byte("what the program painted" + tail)))
+	if got != "what the program painted" {
 		t.Errorf("slice = %q", got)
 	}
 }
@@ -240,7 +240,7 @@ func TestServedTailDoesNotEndInDtachNoise(t *testing.T) {
 // An OLD `[detached]`, with real output after it, is legitimate history and has
 // to stay: trimming the middle would change what the person saw.
 func TestOldFarewellMidLogIsNotTrimmed(t *testing.T) {
-	log := "antes\x1b[999H\r\n[detached]\r\n" + strings.Repeat("saida real depois ", 5)
+	log := "before\x1b[999H\r\n[detached]\r\n" + strings.Repeat("real output after ", 5)
 	got := string(trimTrailingDtachNoise([]byte(log)))
 	if got != log {
 		t.Errorf("trimmed the middle of the log; slice = %q", got)

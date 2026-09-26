@@ -173,7 +173,7 @@
       "maxmem": 4294967296,
       "mem": 1574977536,
       "memhost": 2018656256,
-      "name": "painel",
+      "name": "panel",
       "netin": 1343947662,
       "netout": 524354511,
       "node": "pve",

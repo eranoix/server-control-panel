@@ -95,7 +95,7 @@ func TestOwnsSessionManagementGate(t *testing.T) {
 	_ = o.Assign("shared", AudienceAll)
 	_ = o.Claim("sams", "sam")
 
-	// Admin gerencia tudo.
+	// Admin manages everything.
 	if !OwnsSession("jordan", "sams", true, o) {
 		t.Errorf("admin should manage another's session")
 	}

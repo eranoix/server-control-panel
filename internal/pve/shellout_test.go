@@ -66,9 +66,9 @@ import (
 var hypervisorBinaries = map[string]string{
 	"pct":   "use POST /nodes/{node}/lxc/{vmid}/status/{verb} (internal/pve/power.go)",
 	"qm":    "use POST /nodes/{node}/qemu/{vmid}/status/{verb} (internal/pve/power.go)",
-	"pvesh": "use o cliente internal/pve — do() é o construtor único",
-	"pvesm": "storage do PVE também é API: /nodes/{node}/storage",
-	"pveum": "usuário/ACL/token são /access/** — ver bin/pve-credencial",
+	"pvesh": "use the internal/pve client: do() is the single constructor",
+	"pvesm": "PVE storage is API too: /nodes/{node}/storage",
+	"pveum": "user/ACL/token are /access/**",
 }
 
 // allowlist is the list of DECLARED exceptions: path → reason. It is empty
@@ -86,7 +86,7 @@ type hit struct {
 	File   string
 	Line   int
 	Binary string
-	How    string // "literal" or "variável"
+	How    string // "literal" or "variable"
 }
 
 // scanHypervisorShellOut walks the tree starting at root and returns every call
@@ -238,7 +238,7 @@ func resolveString(e ast.Expr, literals map[string]string) (value, how string, o
 	}
 	if id, isID := e.(*ast.Ident); isID {
 		if s, found := literals[id.Name]; found {
-			return s, "variável " + id.Name, true
+			return s, "variable " + id.Name, true
 		}
 	}
 	return "", "", false
@@ -282,28 +282,28 @@ func TestNoHypervisorShellOutBites(t *testing.T) {
 		how    string
 	}{
 		{
-			name: "literal direto",
+			name: "direct literal",
 			source: `package x
 import "os/exec"
 func f() { _ = exec.Command("pct", "exec", "207", "--", "ls") }`,
 			finds: true, binary: "pct", how: "literal",
 		},
 		{
-			name: "comando vindo de VARIAVEL (o furo da regex)",
+			name: "command coming from a VARIABLE (the regex's blind spot)",
 			source: `package x
 import "os/exec"
 func f() { bin := "pct"; _ = exec.Command(bin, "start", "207") }`,
-			finds: true, binary: "pct", how: "variável bin",
+			finds: true, binary: "pct", how: "variable bin",
 		},
 		{
-			name: "escondido atras de ssh (argumento do meio)",
+			name: "hidden behind ssh (middle argument)",
 			source: `package x
 import "os/exec"
 func f() { _ = exec.Command("ssh", "hypervisor-01", "qm", "start", "208") }`,
 			finds: true, binary: "qm", how: "literal",
 		},
 		{
-			name: "caminho absoluto",
+			name: "absolute path",
 			source: `package x
 import ctx "context"
 import xc "os/exec"
@@ -314,7 +314,7 @@ func f() { _ = xc.CommandContext(ctx.TODO(), "/usr/sbin/pvesh", "get", "/cluster
 			// Negative control 1: the false positive MEASURED in the real tree
 			// (internal/queue/runners_watchdog.go:45). If this case fails, the pin is
 			// of the kind somebody turns off.
-			name: "identificador diskUsedPct nao e chamada",
+			name: "identifier diskUsedPct is not a call",
 			source: `package x
 // pct here is just a word in a comment: pct, qm, pvesh.
 func diskUsedPct(path string) (pct int, err error) { return 0, nil }`,
@@ -323,7 +323,7 @@ func diskUsedPct(path string) (pct int, err error) { return 0, nil }`,
 		{
 			// Negative control 2: a legitimate exec.Command stays allowed — the panel
 			// runs git, docker and systemctl all the time.
-			name: "exec.Command legitimo passa",
+			name: "legitimate exec.Command passes",
 			source: `package x
 import "os/exec"
 func f() { _ = exec.Command("systemctl", "restart", "vps-manager") }`,

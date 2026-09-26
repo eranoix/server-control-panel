@@ -121,7 +121,7 @@ type sessionWriter struct {
 	// straddles a chunk boundary can still be recognised.
 	tail []byte
 
-	// Whether `dtach`'s goodbye has already shown up — see [despedidaDoDtach].
+	// Whether `dtach`'s goodbye has already shown up — see [dtachExitMark].
 	saidFarewell bool
 }
 
@@ -154,29 +154,15 @@ type sessionWriter struct {
 // frame — nothing next to the guaranteed black screen the cut prevents.
 var dtachAttachClear = []byte("\x1b[H\x1b[J")
 
-// despedidaDoDtach is what `dtach` writes when the client DETACHES:
+// dtachExitMark and dtachExitText are what `dtach` writes when the client
+// DETACHES:
 //
 //	ESC[999H \r\n [detached] \r\n ESC[?25h
 //
-// `ESC[999H` throws the cursor to the last line (the terminal saturates at the
-// last one that exists), writes `[detached]`, and the `\n` ON THE LAST LINE
-// scrolls the whole screen up. Both literals live inside the `dtach` binary.
-//
-// On the screen of whoever is leaving, that is a useful message. In the SESSION
-// LOG it is the same class of poison as the attach-time clear, and worse: it does
-// not only erase, it SCROLLS. The app rebuilds the screen by replaying the log
-// and reproduced this faithfully — a dark screen with the text one scroll above,
-// which was exactly the owner's report, more than once.
-//
-// Measured on the "Vpsm" session: the app's own engine, fed with the log, came
-// back with 52 blank lines and `[detached]` on line 51.
-//
-// ## The principle, which is bigger than these two sequences
-//
-// The session log is the record of what the PROGRAM painted. `dtach` is the
-// pipe, and the pipe talks to ONE client — "start clean", "you left". Those
-// phrases are true for that screen and lies for the record. Anything new the
-// multiplexer starts saying to the client joins this same list.
+// The `\n` on the last line scrolls the whole screen up. That message is meant
+// for the leaving client's screen only; in the SESSION LOG it would replay as a
+// blank screen with the text one scroll above. The session log records only
+// what the PROGRAM painted, never what the pipe says to one client.
 var (
 	dtachExitMark = []byte("\x1b[999H")
 	dtachExitText = []byte("[detached]")
@@ -220,7 +206,6 @@ func (e *sessionWriter) Write(p []byte) (int, error) {
 		return n, nil
 	}
 
-	// ── The attach-time clear, which can also arrive split ───────────────
 	// While the start of this connection may still be `dtach`'s "erase the screen",
 	// the bytes wait: there are at most 6 of them, and this is the only moment where
 	// holding them is correct (nobody is reading the log in that millisecond).
@@ -228,7 +213,7 @@ func (e *sessionWriter) Write(p []byte) (int, error) {
 		e.start = append(e.start, p...)
 		if len(e.start) < len(dtachAttachClear) {
 			if bytes.HasPrefix(dtachAttachClear, e.start) {
-				return n, nil // ainda pode ser a limpeza: espera o resto
+				return n, nil // may still be the clear: wait for the rest
 			}
 		}
 		e.firstBlock = false
@@ -236,7 +221,6 @@ func (e *sessionWriter) Write(p []byte) (int, error) {
 		e.start = nil
 	}
 
-	// ── The goodbye, recognised ACROSS the boundary ──────────────────────
 	// The search runs over tail+p. When the match starts in the tail, part of the
 	// literal HAS ALREADY BEEN WRITTEN: the writer undoes exactly those bytes. That
 	// is what makes the filter a rule about the STREAM, and not about the chunk.
@@ -255,7 +239,7 @@ func (e *sessionWriter) Write(p []byte) (int, error) {
 		}
 		if cut >= 0 {
 			e.saidFarewell = true
-			alreadyWritten := len(e.tail) - cut // pode ser <= 0 se o corte cai em p
+			alreadyWritten := len(e.tail) - cut // may be <= 0 if the cut falls inside p
 			if alreadyWritten > 0 {
 				e.shared.w.dropLast(alreadyWritten)
 				p = nil

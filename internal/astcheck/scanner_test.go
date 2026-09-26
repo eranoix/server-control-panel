@@ -37,7 +37,7 @@ func requireOneFinding(t *testing.T, cfg Config, wantFile string) Finding {
 		t.Fatalf("Scan(%s): %v", cfg.Root, err)
 	}
 	if res.Scanned < 1 {
-		t.Fatalf("Varridos=%d — the scan parsed nothing, the green would be by ABSENCE", res.Scanned)
+		t.Fatalf("Scanned=%d: the scan parsed nothing, the green would be by ABSENCE", res.Scanned)
 	}
 	if len(res.Findings) != 1 {
 		t.Fatalf("FALSE NEGATIVE: want exactly 1 finding, got %d: %+v", len(res.Findings), res.Findings)
@@ -113,7 +113,7 @@ func TestScanWatchedWrapper(t *testing.T) {
 			t.Fatalf("FALSE POSITIVE on the legitimate use of the wrapper: %+v", res.Findings)
 		}
 		if res.Scanned != 1 {
-			t.Fatalf("Varridos=%d, want 1", res.Scanned)
+			t.Fatalf("Scanned=%d, want 1", res.Scanned)
 		}
 	})
 }
@@ -152,7 +152,7 @@ func TestScanNegativeControl(t *testing.T) {
 			t.Fatalf("FALSE POSITIVE: %+v", res.Findings)
 		}
 		if res.Scanned != 1 {
-			t.Fatalf("Varridos=%d, want 1", res.Scanned)
+			t.Fatalf("Scanned=%d, want 1", res.Scanned)
 		}
 	})
 
@@ -171,7 +171,7 @@ func TestScanNegativeControl(t *testing.T) {
 			t.Fatalf("FALSE POSITIVE: %+v", res.Findings)
 		}
 		if res.Scanned != 1 {
-			t.Fatalf("Varridos=%d, want 1", res.Scanned)
+			t.Fatalf("Scanned=%d, want 1", res.Scanned)
 		}
 	})
 }
@@ -188,7 +188,7 @@ func TestScanEmptySweepIsError(t *testing.T) {
 		t.Fatal("Scan returned err=nil scanning a directory with no .go at all — green by ABSENCE")
 	}
 	if res.Scanned != 0 {
-		t.Fatalf("Varridos=%d, want 0", res.Scanned)
+		t.Fatalf("Scanned=%d, want 0", res.Scanned)
 	}
 	if len(res.Findings) != 0 {
 		t.Fatalf("findings in an empty scan: %+v", res.Findings)
@@ -211,7 +211,7 @@ func TestScanSkipsOwnTestdata(t *testing.T) {
 		t.Fatalf("Scan of the real tree: %v", err)
 	}
 	if real.Scanned < 50 {
-		t.Fatalf("Varridos=%d on the real tree — the scan is too small to be the tree", real.Scanned)
+		t.Fatalf("Scanned=%d on the real tree: the scan is too small to be the tree", real.Scanned)
 	}
 	for _, a := range real.Findings {
 		if strings.Contains(a.File, "testdata") {

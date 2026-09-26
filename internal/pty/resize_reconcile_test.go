@@ -19,7 +19,7 @@ import (
 // "clear the screen and repaint". The dedup here is what makes reassertion possible,
 // and that is why it is the guarantee this test protects.
 //
-// The test exercises the REAL DECISION (tamanhoAplicado.aceita) — replicating the rule
+// The test exercises the REAL DECISION (see decideResizes); replicating the rule
 // inside the test would keep it passing after someone removed the dedup from
 // the code, which is exactly the regression to protect against.
 type appliedSize struct{ cols, rows uint16 }
@@ -31,12 +31,7 @@ type appliedSize struct{ cols, rows uint16 }
 //
 // Replicating the rule inside the test would keep it passing after
 // someone removed the dedup from the code, which is exactly the regression to protect against.
-//
-// NOTE: this used to exercise a PER-CONNECTION dedup. It was
-// removed — it kept the last size the CONNECTION asked for, not the one the PTY
-// actually had, and with two clients that stopped the large client from recovering the
-// session after the small one left. The guarantees below are the same; what now
-// enforces them is the session.
+
 func decideResizes(t *testing.T, messages []string) []appliedSize {
 	t.Helper()
 	session := &sharedLog{}
@@ -102,9 +97,9 @@ func TestRealChangeStillReachesPty(t *testing.T) {
 // Without the dedup, this same sequence would bombard the PTY.
 func TestDivergenceIsFixedOnReassertion(t *testing.T) {
 	msgs := []string{
-		`{"type":"resize","cols":80,"rows":24}`,  // estado inicial
+		`{"type":"resize","cols":80,"rows":24}`,  // initial state
 		`{"type":"resize","cols":120,"rows":40}`, // user switched windows; this one gets through
-		`{"type":"resize","cols":120,"rows":40}`, // heartbeat reafirma
+		`{"type":"resize","cols":120,"rows":40}`, // heartbeat reasserts
 		`{"type":"resize","cols":120,"rows":40}`, // coming back to the window reasserts it
 	}
 	applied := decideResizes(t, msgs)

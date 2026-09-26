@@ -26,7 +26,7 @@ func TestListTokens(t *testing.T) {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
 		_, _ = w.Write([]byte(`{"data":[
-			{"tokenid":"audit","privsep":1,"expire":1802000000,"comment":"descoberta"},
+			{"tokenid":"audit","privsep":1,"expire":1802000000,"comment":"discovery"},
 			{"tokenid":"admin","privsep":0,"expire":0}
 		]}`))
 	})
@@ -84,15 +84,15 @@ func TestExpiresIn(t *testing.T) {
 		days    int
 		expires bool
 	}{
-		{"nunca vence", 0, 0, false},
-		{"vence em 30 dias", now + 30*86400, 30, true},
-		{"ja venceu (1 dia cravado)", now - 86400, -1, true},
+		{"never expires", 0, 0, false},
+		{"expires in 30 days", now + 30*86400, 30, true},
+		{"already expired (exactly 1 day)", now - 86400, -1, true},
 		// 🔴 Expired ONE HOUR ago. Integer division in Go truncates towards zero:
 		// -3600/86400 == 0, and the screen would say "expires today" for a credential
 		// that is ALREADY returning 401. Only a remainder that is not a multiple of
 		// 86400 separates truncating from rounding down.
-		{"venceu ha uma hora", now - 3600, -1, true},
-		{"vence em 12 horas", now + 43200, 0, true},
+		{"expired one hour ago", now - 3600, -1, true},
+		{"expires in 12 hours", now + 43200, 0, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -141,7 +141,7 @@ func TestDeleteTokenSeparateKinds(t *testing.T) {
 		t.Run(tc.want.String(), func(t *testing.T) {
 			c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tc.status)
-				_, _ = w.Write([]byte("erro do pve"))
+				_, _ = w.Write([]byte("pve error"))
 			})
 			err := c.DeleteToken(context.Background(), "lab@pve", "x")
 			pe, ok := err.(*Error)

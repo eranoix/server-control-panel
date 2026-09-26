@@ -30,7 +30,7 @@ import (
 // maxHeaderSize caps the Authorization header before any work happens.
 const maxHeaderSize = 4096
 
-// Segredo holds the hash of the bearer expected for this node.
+// Secret holds the hash of the bearer expected for this node.
 //
 // It is the HASH that is kept, not the token: the process does not need the
 // plaintext in memory after boot, and a memory dump then gives up less.
@@ -40,7 +40,7 @@ type Secret struct {
 }
 
 // SecretFromFile reads the bearer from a file (the same one systemd
-// provisions with mode 0600). A missing or empty file yields an ABSENT Segredo
+// provisions with mode 0600). A missing or empty file yields an ABSENT Secret
 // — and an agent with no secret is INERT, never open.
 func SecretFromFile(path string) (Secret, error) {
 	b, err := os.ReadFile(path)
@@ -53,7 +53,7 @@ func SecretFromFile(path string) (Secret, error) {
 	return SecretFromText(strings.TrimSpace(string(b))), nil
 }
 
-// SecretFromText builds the Segredo from the token in plaintext.
+// SecretFromText builds the Secret from the token in plaintext.
 func SecretFromText(token string) Secret {
 	if token == "" {
 		return Secret{}
@@ -61,10 +61,10 @@ func SecretFromText(token string) Secret {
 	return Secret{hash: sha256.Sum256([]byte(token)), present: true}
 }
 
-// Presente reports whether a secret has been provisioned.
+// Present reports whether a secret has been provisioned.
 func (s Secret) Present() bool { return s.present }
 
-// confere compares in constant time.
+// matches compares in constant time.
 //
 // WHY HASH BOTH SIDES, instead of ConstantTimeCompare straight on the token:
 // ConstantTimeCompare returns early when the LENGTHS differ, which leaks the
@@ -119,5 +119,5 @@ func unauthorized(w http.ResponseWriter, _ string) {
 	w.Header().Set("WWW-Authenticate", `Bearer realm="lab-agent"`)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	_, _ = w.Write([]byte(`{"erro":"nao autorizado"}`))
+	_, _ = w.Write([]byte(`{"erro":"unauthorized"}`))
 }

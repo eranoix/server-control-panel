@@ -19,7 +19,7 @@ import (
 // what was MEASURED against the home hypervisor, on both kinds of guest
 // (lxc/204, lxc/205, lxc/207 and qemu/208, all 200 on termproxy):
 //
-//	POST /nodes/pve/{tipo}/{vmid}/termproxy   → {port, user, ticket, upid}
+//	POST /nodes/pve/{type}/{vmid}/termproxy   → {port, user, ticket, upid}
 //	GET  .../vncwebsocket?port=&vncticket=    → 101, subprotocol "binary"
 //	1st frame from the client: "user:ticket\n" → the server answers "OK"
 //
@@ -28,15 +28,14 @@ import (
 // to the browser would write a phantom "OK" on the first line of every console.
 
 const (
-	fakeConsoleTicket = "PVEVNC:AAAAAA==::ticket-medido-de-361-bytes"
+	fakeConsoleTicket = "PVEVNC:AAAAAA==::ticket-measured-at-361-bytes"
 	fakeConsoleUser   = "lab@pve!node-lab"
 	fakeConsoleUPID   = "UPID:pve:003D8997:0492E623:6A868978:vncproxy:204:lab@pve!node-lab:"
 )
 
 // consoleServer builds the complete fake hypervisor (termproxy +
 // vncwebsocket). repliesOK says whether the server confirms the auth frame the
-// way the real hypervisor confirms it; recebido returns, at the end, what the
-// server saw arrive.
+// way the real hypervisor confirms it.
 type consoleServer struct {
 	srv *httptest.Server
 
@@ -204,7 +203,7 @@ func TestConsoleAttachWithoutPrivilegeSkipsUpgrade(t *testing.T) {
 // would make the screen spin forever instead of saying what happened — the
 // symptom the operator reported on CT 204's vncproxy.
 func TestConsoleAttachRequiresHandshakeOK(t *testing.T) {
-	cli, _ := newConsoleServer(t, consoleOptions{repliesOK: false, initialOutput: "ERRO"})
+	cli, _ := newConsoleServer(t, consoleOptions{repliesOK: false, initialOutput: "ERROR"})
 
 	conn, _, err := cli.ConsoleAttach(context.Background(), "pve", 204, "lxc")
 	if err == nil {
@@ -233,7 +232,7 @@ func TestConsoleAttachRejectsInvalidType(t *testing.T) {
 // whoever holds it opens a shell. It cannot show up in an error, which turns
 // into screen text and a log line.
 func TestConsoleErrorLeaksNoTicketOrSecret(t *testing.T) {
-	cli, _ := newConsoleServer(t, consoleOptions{repliesOK: false, initialOutput: "algo que não é OK"})
+	cli, _ := newConsoleServer(t, consoleOptions{repliesOK: false, initialOutput: "something that is not OK"})
 	_, _, err := cli.ConsoleAttach(context.Background(), "pve", 204, "lxc")
 	if err == nil {
 		t.Fatal("expected an error")
@@ -250,11 +249,11 @@ func TestConsoleErrorLeaksNoTicketOrSecret(t *testing.T) {
 // 🔴 TestInputFrameCountsBYTES is the trap measured live: termproxy reads N
 // BYTES after "0:N:". Measured against CT 204:
 //
-//	"0:2:é" (2 bytes) → the terminal received 0xC3 0xA9  ✅
-//	"0:1:é" (1 char)  → the terminal received 0xC3       ❌ half a character
+//	"0:2:ñ" (2 bytes) → the terminal received 0xC3 0xB1  ✅
+//	"0:1:ñ" (1 char)  → the terminal received 0xC3       ❌ half a character
 //
 // That is why the translation lives on the SERVER: `data.length` in JavaScript
-// counts UTF-16 units, so a "ç" typed in the browser would arrive cut in half.
+// counts UTF-16 units, so an "ñ" typed in the browser would arrive cut in half.
 func TestInputFrameCountsBYTES(t *testing.T) {
 	cases := []struct {
 		name string
@@ -262,9 +261,9 @@ func TestInputFrameCountsBYTES(t *testing.T) {
 		want string
 	}{
 		{"ascii", "ls\n", "0:3:ls\n"},
-		{"acento", "é", "0:2:é"},
+		{"non-ascii", "ñ", "0:2:ñ"},
 		{"emoji", "🔴", "0:4:🔴"},
-		{"vazio", "", "0:0:"},
+		{"empty", "", "0:0:"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -306,7 +305,7 @@ func TestConsoleTranslatesFramesToHypervisor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConsoleAttach: %v", err)
 	}
-	for _, f := range [][]byte{ResizeFrame(120, 40), InputFrame([]byte("é\n")), KeepaliveFrame()} {
+	for _, f := range [][]byte{ResizeFrame(120, 40), InputFrame([]byte("ñ\n")), KeepaliveFrame()} {
 		if err := conn.WriteMessage(websocket.BinaryMessage, f); err != nil {
 			t.Fatalf("writing %q: %v", f, err)
 		}
@@ -323,7 +322,7 @@ func TestConsoleTranslatesFramesToHypervisor(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	want := []string{"1:120:40:", "0:3:é\n", "2"}
+	want := []string{"1:120:40:", "0:3:ñ\n", "2"}
 	if len(frames) < 3 {
 		t.Fatalf("frames received = %q, want %q", frames, want)
 	}

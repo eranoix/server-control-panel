@@ -19,7 +19,7 @@ func (f fakeSource) NodeByID(id string) (NodeTarget, bool) {
 func TestInventoryMigrationIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gameservers.json")
-	original := `[{"id":"jogo-b","name":"Enshrouded","game":"enshrouded","container":"jogo-b","root":"/opt/jogo-b","address":""}]`
+	original := `[{"id":"game-b","name":"Enshrouded","game":"enshrouded","container":"game-b","root":"/opt/game-b","address":""}]`
 	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -59,9 +59,9 @@ func TestInventoryMigrationIdempotent(t *testing.T) {
 func TestMigrationPreservesUnknownFields(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gameservers.json")
-	// `campoDoFuturo` does not exist in the Server struct. Decoding into []Server
+	// `futureField` does not exist in the Server struct. Decoding into []Server
 	// and re-serializing would ERASE it — that is the defect this test watches.
-	original := `[{"id":"jogo-b","game":"enshrouded","campoDoFuturo":{"a":1,"b":[2,3]},"notes":"nao me apague"}]`
+	original := `[{"id":"game-b","game":"enshrouded","futureField":{"a":1,"b":[2,3]},"notes":"do not delete me"}]`
 	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestMigrationPreservesUnknownFields(t *testing.T) {
 	if len(records) != 1 {
 		t.Fatalf("expected 1 record, saw %d", len(records))
 	}
-	fut, has := records[0]["campoDoFuturo"]
+	fut, has := records[0]["futureField"]
 	if !has {
 		t.Fatalf("UNKNOWN FIELD LOST IN THE MIGRATION — silent data loss: %s", after)
 	}
@@ -90,7 +90,7 @@ func TestMigrationPreservesUnknownFields(t *testing.T) {
 	if _, ok := v["b"]; !ok {
 		t.Errorf("unknown field arrived incomplete: %s", fut)
 	}
-	if string(records[0]["notes"]) != `"nao me apague"` {
+	if string(records[0]["notes"]) != `"do not delete me"` {
 		t.Errorf("known field altered: %s", records[0]["notes"])
 	}
 }
@@ -99,8 +99,8 @@ func TestMigrationKeepsCopyAndMissingFileIsNotError(t *testing.T) {
 	dir := t.TempDir()
 
 	// Absent: a no-op, not an error. The Manager already comes up empty here.
-	if changed, err := MigrateInventoryToNode(filepath.Join(dir, "nao-existe.json")); err != nil || changed {
-		t.Errorf("a missing file should be a silent no-op, got mudou=%v err=%v", changed, err)
+	if changed, err := MigrateInventoryToNode(filepath.Join(dir, "missing.json")); err != nil || changed {
+		t.Errorf("a missing file should be a silent no-op, got changed=%v err=%v", changed, err)
 	}
 
 	path := filepath.Join(dir, "gameservers.json")
@@ -139,18 +139,17 @@ func TestMigrationDoesNotWriteInvalidJSON(t *testing.T) {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // RESOLUTION
 
 func TestServerWithoutNodeRejected(t *testing.T) {
 	source := fakeSource{"games": {Name: "games", Transport: TransportAgent, Base: "http://x:1", Token: "t"}}
-	s := Server{ID: "jogo-b", Name: "Enshrouded"} // no No
+	s := Server{ID: "game-b", Name: "Enshrouded"} // no node
 
 	_, err := ResolveTarget(s, source)
 	if err == nil {
 		t.Fatal("SERVER WITH NO NODE WAS ACCEPTED — the operation would go to a node chosen by omission")
 	}
-	if !strings.Contains(err.Error(), "jogo-b") {
+	if !strings.Contains(err.Error(), "game-b") {
 		t.Errorf("the error has to NAME the server, so the operator knows which one to register: %v", err)
 	}
 	if !strings.Contains(err.Error(), "node") {
@@ -164,7 +163,7 @@ func TestResolveServerToNode(t *testing.T) {
 		"apps":  {Name: "apps", Transport: TransportPVEAPI},
 	}
 	t.Run("existing node", func(t *testing.T) {
-		d, err := ResolveTarget(Server{ID: "jogo-b", No: "games"}, source)
+		d, err := ResolveTarget(Server{ID: "game-b", No: "games"}, source)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -173,16 +172,16 @@ func TestResolveServerToNode(t *testing.T) {
 		}
 	})
 	t.Run("a nonexistent node names the id it looked for", func(t *testing.T) {
-		_, err := ResolveTarget(Server{ID: "jogo-b", No: "fantasma"}, source)
+		_, err := ResolveTarget(Server{ID: "game-b", No: "ghost"}, source)
 		if err == nil {
 			t.Fatal("a nonexistent node should fail")
 		}
-		if !strings.Contains(err.Error(), "fantasma") {
+		if !strings.Contains(err.Error(), "ghost") {
 			t.Errorf("the error has to name the ID it looked for: %v", err)
 		}
 	})
 	t.Run("no source", func(t *testing.T) {
-		if _, err := ResolveTarget(Server{ID: "jogo-b", No: "games"}, nil); err == nil {
+		if _, err := ResolveTarget(Server{ID: "game-b", No: "games"}, nil); err == nil {
 			t.Error("a nil source should fail, not fall back to local")
 		}
 	})
@@ -190,13 +189,13 @@ func TestResolveServerToNode(t *testing.T) {
 
 func TestNodeWithInvalidTransport(t *testing.T) {
 	cases := map[string]string{
-		"valor torto": "banana",
-		"vazio":       "",
+		"crooked value": "banana",
+		"empty":         "",
 	}
 	for name, transport := range cases {
 		t.Run(name, func(t *testing.T) {
 			source := fakeSource{"games": {Name: "games", Transport: transport}}
-			_, err := ResolveTarget(Server{ID: "jogo-b", No: "games"}, source)
+			_, err := ResolveTarget(Server{ID: "game-b", No: "games"}, source)
 			if err == nil {
 				t.Fatalf("transport %q should fail instead of picking a back end", transport)
 			}
@@ -215,9 +214,9 @@ func TestResolverHasNoImplicitDefault(t *testing.T) {
 		s      Server
 		source NodeSource
 	}{
-		{"tudo vazio", Server{}, fakeSource{}},
-		{"so id", Server{ID: "x"}, fakeSource{}},
-		{"no vazio com fonte cheia", Server{ID: "x"}, fakeSource{"games": {Name: "games", Transport: TransportAgent, Base: "http://x:1", Token: "t"}}},
+		{"all empty", Server{}, fakeSource{}},
+		{"id only", Server{ID: "x"}, fakeSource{}},
+		{"empty node with a full source", Server{ID: "x"}, fakeSource{"games": {Name: "games", Transport: TransportAgent, Base: "http://x:1", Token: "t"}}},
 	}
 	for _, c := range empties {
 		t.Run(c.name, func(t *testing.T) {
@@ -249,8 +248,8 @@ func TestSaveInventoryAcceptsServerOnOtherNode(t *testing.T) {
 
 	// With a node: the root belongs to ANOTHER machine and cannot be checked here.
 	remote := []Server{{
-		ID: "remoto", Name: "Remoto", Game: "enshrouded",
-		Container: "c-remoto", Root: "/opt/nao-existe-neste-host", No: "games",
+		ID: "remote", Name: "Remote", Game: "enshrouded",
+		Container: "c-remote", Root: "/opt/does-not-exist-on-this-host", No: "games",
 	}}
 	if err := m.SaveInventory(remote); err != nil {
 		t.Fatalf("a server with a node should be accepted (the root lives on the node, not here): %v", err)
@@ -260,7 +259,7 @@ func TestSaveInventoryAcceptsServerOnOtherNode(t *testing.T) {
 	// typo caught at registration, and not at the first click on "restart".
 	local := []Server{{
 		ID: "local", Name: "Local", Game: "enshrouded",
-		Container: "c-local", Root: "/opt/tambem-nao-existe", No: "",
+		Container: "c-local", Root: "/opt/also-does-not-exist", No: "",
 	}}
 	err := m.SaveInventory(local)
 	if err == nil {

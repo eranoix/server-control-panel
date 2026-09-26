@@ -11,17 +11,17 @@ import (
 func writeLog(t *testing.T, prevGeneration, current string) string {
 	t.Helper()
 	dd := t.TempDir()
-	path := sessionLogPath(dd, "sam", "Aplicativo")
+	path := sessionLogPath(dd, "sam", "App")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	if prevGeneration != "" {
 		if err := os.WriteFile(path+".1", []byte(prevGeneration), 0o600); err != nil {
-			t.Fatalf("escreve .1: %v", err)
+			t.Fatalf("write .1: %v", err)
 		}
 	}
 	if err := os.WriteFile(path, []byte(current), 0o600); err != nil {
-		t.Fatalf("escreve log: %v", err)
+		t.Fatalf("write log: %v", err)
 	}
 	return dd
 }
@@ -29,11 +29,11 @@ func writeLog(t *testing.T, prevGeneration, current string) string {
 // A log that fits entirely in the request comes out whole, and Total is the real
 // size — Total is how the app can say "this is all there is".
 func TestRawLogTail_WholeLogWhenItFits(t *testing.T) {
-	dd := writeLog(t, "velho\n", "novo\n")
+	dd := writeLog(t, "old\n", "new\n")
 
-	data, total := rawLogTail(dd, "sam", "Aplicativo", 1<<20)
+	data, total := rawLogTail(dd, "sam", "App", 1<<20)
 
-	if got := string(data); got != "velho\nnovo\n" {
+	if got := string(data); got != "old\nnew\n" {
 		t.Fatalf("data = %q, wanted the two generations concatenated", got)
 	}
 	if total != len(data) {
@@ -46,13 +46,13 @@ func TestRawLogTail_WholeLogWhenItFits(t *testing.T) {
 // text). The cut advances past the first line break, and this test proves the
 // split sequence does not survive.
 func TestRawLogTail_CutsAtNewlineNeverMidEscape(t *testing.T) {
-	full := strings.Repeat("preenchimento\n", 100) + "\x1b[31mvermelho\x1b[0m\nfim\n"
+	full := strings.Repeat("padding\n", 100) + "\x1b[31mred\x1b[0m\nend\n"
 	dd := writeLog(t, "", full)
 
 	// A ceiling that lands INSIDE the "\x1b[31m" if nobody fixes the start.
-	target := len("vermelho\x1b[0m\nfim\n") + 4
+	target := len("red\x1b[0m\nend\n") + 4
 
-	data, total := rawLogTail(dd, "sam", "Aplicativo", target)
+	data, total := rawLogTail(dd, "sam", "App", target)
 
 	if total != len(full) {
 		t.Fatalf("total = %d, wanted %d (the total is the log's, not the slice's)", total, len(full))
@@ -65,7 +65,7 @@ func TestRawLogTail_CutsAtNewlineNeverMidEscape(t *testing.T) {
 	}
 	if strings.Contains(string(data), "\n") {
 		// If any break survived, whatever follows it has to be intact.
-		if !strings.HasSuffix(string(data), "fim\n") {
+		if !strings.HasSuffix(string(data), "end\n") {
 			t.Fatalf("slice did not end at the end of the log: %q", string(data))
 		}
 	}
@@ -73,7 +73,7 @@ func TestRawLogTail_CutsAtNewlineNeverMidEscape(t *testing.T) {
 
 // A session with no log at all (it never had a client attached) is a normal case, not an error.
 func TestRawLogTail_NoLogReturnsEmpty(t *testing.T) {
-	data, total := rawLogTail(t.TempDir(), "sam", "nunca-existiu", 1<<20)
+	data, total := rawLogTail(t.TempDir(), "sam", "never-existed", 1<<20)
 	if data != nil || total != 0 {
 		t.Fatalf("want (nil, 0), got (%q, %d)", string(data), total)
 	}
