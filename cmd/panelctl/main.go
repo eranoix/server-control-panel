@@ -7,7 +7,7 @@
 // Subcommands:
 //
 //	panelctl status                 — service state + last login summary
-//	panelctl rollback               — run $PANEL_ROLLBACK_COMMAND
+//	panelctl rollback               (runs $PANEL_ROLLBACK_COMMAND)
 //	panelctl health                 — run the same checks the server does at -check
 //	panelctl reset-password <user>  — set a new password (prompted)
 //	panelctl disable-2fa <user>     — clear TOTP secret for a user
