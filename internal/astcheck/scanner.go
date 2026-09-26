@@ -550,7 +550,7 @@ func packageConsts(files []parsedFile) map[string]*symbol {
 	return tab
 }
 
-// indicesDeString describes, for a watched wrapper, which argument positions
+// wrapperSig describes, for a watched wrapper, which argument positions
 // are of type string in the DECLARATION.
 type wrapperSig struct {
 	// fixed holds the non-variadic string parameter indices.

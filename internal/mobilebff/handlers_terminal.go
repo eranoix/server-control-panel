@@ -152,7 +152,7 @@ type RawLogResponse struct {
 //
 // Replaying the raw log into a fresh grid duplicates: the `ESC[nA` of a program
 // that repaints saturates at the top of the SCREEN and never reaches the
-// scrollback, so the earlier copy stays. It is the defect that `ReplayDeAttach`'s
+// scrollback, so the earlier copy stays. It is the defect that `AttachReplay`'s
 // KDoc describes as unfixable — and it is: there is no fix on the READING side.
 // The server fixes it on the WRITING side, by keeping a live emulator on the
 // session's grid.

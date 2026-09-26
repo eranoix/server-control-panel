@@ -10852,7 +10852,7 @@ function app() {
               // It REMEMBERS, does not merely apply: the ResizeObserver wakes up on the
               // very term.resize below and schedules a fit, and without this memory the
               // FitAddon undid the announcement ~140ms later. See _safeFit.
-              state._gradeSession = { cols: _av.cols, rows: _av.rows };
+              state._gridSession = { cols: _av.cols, rows: _av.rows };
               try {
                 if (state.term.cols !== _av.cols || state.term.rows !== _av.rows) {
                   state.term.resize(_av.cols, _av.rows);
@@ -14296,7 +14296,7 @@ function app() {
         // from then on the program wrapped its lines at one width while the
         // xterm drew at another — text in the wrong place and repainting that does not
         // erase the previous copy.
-        const gs = fit._panelState && fit._panelState._gradeSession;
+        const gs = fit._panelState && fit._panelState._gridSession;
         if (gs && (gs.cols !== d.cols || gs.rows !== d.rows)) {
           if (term.cols !== gs.cols || term.rows !== gs.rows) {
             try { term.resize(gs.cols, gs.rows); } catch (_) {}

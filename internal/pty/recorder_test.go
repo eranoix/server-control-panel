@@ -129,7 +129,7 @@ func TestHistoryFlowsFromLiveSessionToPanelFetch(t *testing.T) {
 	time.Sleep(1500 * time.Millisecond)
 	// Write more lines than fit on the screen (24): the excess scrolls off and
 	// that is what becomes history.
-	cmd := `for i in $(seq 1 60); do echo LINE_DE_HISTORY_$i; done` + "\r"
+	cmd := `for i in $(seq 1 60); do echo HISTORY_LINE_$i; done` + "\r"
 	_ = c.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"type":"input","data":%q}`, cmd)))
 	time.Sleep(3 * time.Second)
 	_ = c.Close()
@@ -142,7 +142,7 @@ func TestHistoryFlowsFromLiveSessionToPanelFetch(t *testing.T) {
 	text := stripANSI(string(data))
 	missing := 0
 	for i := 1; i <= 20; i++ { // the first ones have certainly scrolled out by now
-		if !strings.Contains(text, fmt.Sprintf("LINE_DE_HISTORY_%d", i)) {
+		if !strings.Contains(text, fmt.Sprintf("HISTORY_LINE_%d", i)) {
 			missing++
 		}
 	}

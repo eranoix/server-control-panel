@@ -92,7 +92,7 @@ func (k Kind) String() string {
 	case KindNoCredential:
 		return "no_credential"
 	case KindForbidden:
-		return "sem_permission"
+		return "no_permission"
 	case KindUnreachable:
 		return "unreachable"
 	case KindHypervisor:
