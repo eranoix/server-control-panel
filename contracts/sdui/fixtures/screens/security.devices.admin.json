@@ -1,0 +1,94 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "security.devices",
+    "title": "Devices (VLESS)",
+    "components": [
+      {
+        "type": "table",
+        "id": "devices-table",
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "kind": "text"
+          },
+          {
+            "key": "exit",
+            "label": "Exit",
+            "kind": "badge",
+            "badge_map": {
+              "casa": "success",
+              "vps": "neutral"
+            }
+          },
+          {
+            "key": "datasaver",
+            "label": "Datasaver",
+            "kind": "badge",
+            "badge_map": {
+              "no": "neutral",
+              "yes": "warning"
+            }
+          },
+          {
+            "key": "created",
+            "label": "Created",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/security/devices"
+        },
+        "row_actions": [
+          {
+            "action_id": "security.device.rename",
+            "label": "Rename",
+            "style": "secondary"
+          },
+          {
+            "action_id": "security.device.set_exit",
+            "label": "Change exit",
+            "style": "secondary"
+          },
+          {
+            "action_id": "security.device.set_datasaver",
+            "label": "Toggle datasaver",
+            "style": "secondary"
+          },
+          {
+            "action_id": "security.device.remove",
+            "label": "Remove",
+            "style": "destructive"
+          }
+        ],
+        "empty_state": {
+          "text": "The devices allowed to use the VLESS tunnel, each with its own UUID and exit. Empty is the initial state: with no paired device, the tunnel accepts no one. Give the device a name in the form below to create the first one."
+        }
+      },
+      {
+        "type": "form",
+        "id": "device-add-form",
+        "fields": [
+          {
+            "key": "name",
+            "label": "Device name",
+            "kind": "text",
+            "required": true
+          }
+        ],
+        "submit_action": {
+          "action_id": "security.device.add",
+          "label": "Add",
+          "style": "primary"
+        }
+      },
+      {
+        "type": "confirm_destructive",
+        "id": "device-remove-confirm",
+        "action_id": "security.device.remove",
+        "message": "This device loses access to the tunnel immediately. Its configuration stops working."
+      }
+    ]
+  }
+}

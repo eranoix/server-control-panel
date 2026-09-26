@@ -1,0 +1,47 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "docker.prune",
+    "title": "Docker cleanup",
+    "components": [
+      {
+        "type": "form",
+        "id": "prune-form",
+        "fields": [
+          {
+            "key": "containers",
+            "label": "Stopped containers",
+            "kind": "bool"
+          },
+          {
+            "key": "images",
+            "label": "Unused images",
+            "kind": "bool"
+          },
+          {
+            "key": "volumes",
+            "label": "Unused volumes",
+            "kind": "bool"
+          },
+          {
+            "key": "build_cache",
+            "label": "Build cache",
+            "kind": "bool"
+          }
+        ],
+        "submit_action": {
+          "action_id": "docker.prune.run",
+          "label": "Clean up",
+          "style": "destructive"
+        }
+      },
+      {
+        "type": "confirm_destructive",
+        "id": "prune-confirm",
+        "action_id": "docker.prune.run",
+        "message": "This permanently removes the unused Docker data in the selected categories. It cannot be undone.",
+        "require_typed_confirmation": "PRUNE"
+      }
+    ]
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "fixture.all",
+    "title": "Todos os componentes",
+    "components": [
+      {
+        "type": "table",
+        "id": "containers-table",
+        "columns": [
+          { "key": "name", "label": "Nome", "kind": "text" },
+          {
+            "key": "status",
+            "label": "Status",
+            "kind": "badge",
+            "badge_map": { "running": "success", "exited": "neutral" }
+          }
+        ],
+        "rows_source": { "endpoint": "/api/mobile/v1/docker/containers", "method": "GET" },
+        "row_actions": [
+          { "action_id": "container.restart" },
+          { "action_id": "container.kill" }
+        ],
+        "empty_state": { "text": "Nenhum container em execução" }
+      },
+      {
+        "type": "form",
+        "id": "notify-rule-form",
+        "fields": [
+          { "key": "name", "label": "Nome da regra", "kind": "text", "required": true },
+          {
+            "key": "channel",
+            "label": "Canal",
+            "kind": "select",
+            "options_source": { "endpoint": "/api/mobile/v1/notify/channels" }
+          }
+        ],
+        "submit_action": { "action_id": "notify.rule.create" }
+      },
+      {
+        "type": "list",
+        "id": "notify-inbox",
+        "item_template": "notification_card",
+        "rows_source": { "endpoint": "/api/mobile/v1/notify/inbox" }
+      },
+      {
+        "type": "detail",
+        "id": "container-detail",
+        "data_source": { "endpoint": "/api/mobile/v1/docker/containers/{id}" },
+        "fields": [
+          { "key": "image", "label": "Imagem" },
+          { "key": "created_at", "label": "Criado em", "kind": "datetime" }
+        ]
+      },
+      {
+        "type": "action",
+        "id": "deploy-trigger",
+        "label": "Deploy",
+        "action_id": "deploy.trigger",
+        "style": "primary"
+      },
+      {
+        "type": "chart",
+        "id": "cpu-chart",
+        "chart_kind": "line",
+        "series_source": { "endpoint": "/api/mobile/v1/system/history?metric=cpu" },
+        "x_key": "ts",
+        "y_key": "value"
+      },
+      {
+        "type": "confirm_destructive",
+        "id": "kill-container-confirm",
+        "action_id": "container.kill",
+        "message": "Isso vai matar o container permanentemente.",
+        "require_typed_confirmation": "meu-container"
+      }
+    ]
+  }
+}

@@ -1,0 +1,386 @@
+{
+  "sdui_version": 1,
+  "generated_from": "internal/mobilebff/sdui (gerado por cmd/sdui-contract, nunca escrito à mão)",
+  "component_types": {
+    "action": {
+      "fields": {
+        "action_id": {
+          "json_type": "string",
+          "required": true
+        },
+        "critical": {
+          "json_type": "boolean",
+          "required": false
+        },
+        "id": {
+          "json_type": "string",
+          "required": true
+        },
+        "label": {
+          "json_type": "string",
+          "required": true
+        },
+        "permission_hint": {
+          "json_type": "string",
+          "required": false
+        },
+        "style": {
+          "json_type": "string",
+          "required": false
+        },
+        "type": {
+          "json_type": "string",
+          "required": true,
+          "const": "action"
+        }
+      }
+    },
+    "chart": {
+      "fields": {
+        "chart_kind": {
+          "json_type": "string",
+          "required": true
+        },
+        "critical": {
+          "json_type": "boolean",
+          "required": false
+        },
+        "id": {
+          "json_type": "string",
+          "required": true
+        },
+        "permission_hint": {
+          "json_type": "string",
+          "required": false
+        },
+        "series_source": {
+          "json_type": "object",
+          "required": true,
+          "ref": "DataSource"
+        },
+        "type": {
+          "json_type": "string",
+          "required": true,
+          "const": "chart"
+        },
+        "x_key": {
+          "json_type": "string",
+          "required": true
+        },
+        "y_key": {
+          "json_type": "string",
+          "required": true
+        }
+      }
+    },
+    "confirm_destructive": {
+      "fields": {
+        "action_id": {
+          "json_type": "string",
+          "required": true
+        },
+        "critical": {
+          "json_type": "boolean",
+          "required": false
+        },
+        "id": {
+          "json_type": "string",
+          "required": true
+        },
+        "message": {
+          "json_type": "string",
+          "required": true
+        },
+        "permission_hint": {
+          "json_type": "string",
+          "required": false
+        },
+        "require_typed_confirmation": {
+          "json_type": "string",
+          "required": false
+        },
+        "type": {
+          "json_type": "string",
+          "required": true,
+          "const": "confirm_destructive"
+        }
+      }
+    },
+    "detail": {
+      "fields": {
+        "critical": {
+          "json_type": "boolean",
+          "required": false
+        },
+        "data_source": {
+          "json_type": "object",
+          "required": true,
+          "ref": "DataSource"
+        },
+        "fields": {
+          "json_type": "array",
+          "required": true,
+          "item_ref": "DetailField"
+        },
+        "id": {
+          "json_type": "string",
+          "required": true
+        },
+        "permission_hint": {
+          "json_type": "string",
+          "required": false
+        },
+        "type": {
+          "json_type": "string",
+          "required": true,
+          "const": "detail"
+        }
+      }
+    },
+    "form": {
+      "fields": {
+        "critical": {
+          "json_type": "boolean",
+          "required": false
+        },
+        "fields": {
+          "json_type": "array",
+          "required": true,
+          "item_ref": "FormField"
+        },
+        "id": {
+          "json_type": "string",
+          "required": true
+        },
+        "permission_hint": {
+          "json_type": "string",
+          "required": false
+        },
+        "submit_action": {
+          "json_type": "object",
+          "required": true,
+          "ref": "ActionRef"
+        },
+        "type": {
+          "json_type": "string",
+          "required": true,
+          "const": "form"
+        }
+      }
+    },
+    "list": {
+      "fields": {
+        "critical": {
+          "json_type": "boolean",
+          "required": false
+        },
+        "id": {
+          "json_type": "string",
+          "required": true
+        },
+        "item_template": {
+          "json_type": "string",
+          "required": true
+        },
+        "permission_hint": {
+          "json_type": "string",
+          "required": false
+        },
+        "rows_source": {
+          "json_type": "object",
+          "required": true,
+          "ref": "DataSource"
+        },
+        "type": {
+          "json_type": "string",
+          "required": true,
+          "const": "list"
+        }
+      }
+    },
+    "table": {
+      "fields": {
+        "columns": {
+          "json_type": "array",
+          "required": true,
+          "item_ref": "TableColumn"
+        },
+        "critical": {
+          "json_type": "boolean",
+          "required": false
+        },
+        "empty_state": {
+          "json_type": "object",
+          "required": false,
+          "ref": "EmptyState"
+        },
+        "id": {
+          "json_type": "string",
+          "required": true
+        },
+        "permission_hint": {
+          "json_type": "string",
+          "required": false
+        },
+        "row_actions": {
+          "json_type": "array",
+          "required": false,
+          "item_ref": "ActionRef"
+        },
+        "rows_source": {
+          "json_type": "object",
+          "required": true,
+          "ref": "DataSource"
+        },
+        "type": {
+          "json_type": "string",
+          "required": true,
+          "const": "table"
+        }
+      }
+    }
+  },
+  "objects": {
+    "ActionRef": {
+      "fields": {
+        "action_id": {
+          "json_type": "string",
+          "required": true
+        },
+        "label": {
+          "json_type": "string",
+          "required": false
+        },
+        "style": {
+          "json_type": "string",
+          "required": false
+        }
+      }
+    },
+    "DataSource": {
+      "fields": {
+        "endpoint": {
+          "json_type": "string",
+          "required": true
+        },
+        "method": {
+          "json_type": "string",
+          "required": false
+        }
+      }
+    },
+    "DetailField": {
+      "fields": {
+        "key": {
+          "json_type": "string",
+          "required": true
+        },
+        "kind": {
+          "json_type": "string",
+          "required": false
+        },
+        "label": {
+          "json_type": "string",
+          "required": true
+        }
+      }
+    },
+    "EmptyState": {
+      "fields": {
+        "text": {
+          "json_type": "string",
+          "required": true
+        }
+      }
+    },
+    "FormField": {
+      "fields": {
+        "key": {
+          "json_type": "string",
+          "required": true
+        },
+        "kind": {
+          "json_type": "string",
+          "required": true
+        },
+        "label": {
+          "json_type": "string",
+          "required": true
+        },
+        "options": {
+          "json_type": "array",
+          "required": false
+        },
+        "options_source": {
+          "json_type": "object",
+          "required": false,
+          "ref": "DataSource"
+        },
+        "placeholder": {
+          "json_type": "string",
+          "required": false
+        },
+        "required": {
+          "json_type": "boolean",
+          "required": false
+        },
+        "value": {
+          "json_type": "string",
+          "required": false
+        }
+      }
+    },
+    "TableColumn": {
+      "fields": {
+        "badge_map": {
+          "json_type": "object",
+          "required": false
+        },
+        "key": {
+          "json_type": "string",
+          "required": true
+        },
+        "kind": {
+          "json_type": "string",
+          "required": true
+        },
+        "label": {
+          "json_type": "string",
+          "required": true
+        }
+      }
+    }
+  },
+  "action_descriptor": {
+    "fields": {
+      "action_id": {
+        "json_type": "string",
+        "required": true
+      },
+      "body_template": {
+        "json_type": "any",
+        "required": false
+      },
+      "destructive": {
+        "json_type": "boolean",
+        "required": false
+      },
+      "endpoint": {
+        "json_type": "string",
+        "required": true
+      },
+      "method": {
+        "json_type": "string",
+        "required": true
+      },
+      "permission": {
+        "json_type": "string",
+        "required": true
+      },
+      "require_typed_confirmation": {
+        "json_type": "string",
+        "required": false
+      }
+    }
+  }
+}

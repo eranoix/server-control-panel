@@ -1,0 +1,20 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "fixture.unknown-critical",
+    "title": "Tipo desconhecido, crítico",
+    "components": [
+      {
+        "type": "action",
+        "id": "deploy-trigger",
+        "label": "Deploy",
+        "action_id": "deploy.trigger"
+      },
+      {
+        "type": "gantt",
+        "id": "g1",
+        "critical": true
+      }
+    ]
+  }
+}

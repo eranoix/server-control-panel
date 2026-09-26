@@ -1,0 +1,53 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "system.systemd",
+    "title": "Services (systemd)",
+    "components": [
+      {
+        "type": "table",
+        "id": "systemd-table",
+        "columns": [
+          {
+            "key": "name",
+            "label": "Unit",
+            "kind": "text"
+          },
+          {
+            "key": "load",
+            "label": "Load",
+            "kind": "text"
+          },
+          {
+            "key": "active",
+            "label": "Active",
+            "kind": "badge",
+            "badge_map": {
+              "activating": "warning",
+              "active": "success",
+              "deactivating": "warning",
+              "failed": "danger",
+              "inactive": "neutral"
+            }
+          },
+          {
+            "key": "sub",
+            "label": "Sub",
+            "kind": "text"
+          },
+          {
+            "key": "description",
+            "label": "Description",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/system/units"
+        },
+        "empty_state": {
+          "text": "The systemd .service units, active or not, with load, state and description. No host with systemd has zero services — even if it were only ssh.service. An empty list is an incomplete answer from systemctl, not a server without services."
+        }
+      }
+    ]
+  }
+}

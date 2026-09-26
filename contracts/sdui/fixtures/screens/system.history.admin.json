@@ -1,0 +1,46 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "system.history",
+    "title": "System history",
+    "components": [
+      {
+        "type": "table",
+        "id": "history-table",
+        "columns": [
+          {
+            "key": "ts",
+            "label": "Time",
+            "kind": "text"
+          },
+          {
+            "key": "cpu",
+            "label": "CPU %",
+            "kind": "text"
+          },
+          {
+            "key": "mem",
+            "label": "Memory %",
+            "kind": "text"
+          },
+          {
+            "key": "load1",
+            "label": "Load (1m)",
+            "kind": "text"
+          },
+          {
+            "key": "disk",
+            "label": "Disk %",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/system/history"
+        },
+        "empty_state": {
+          "text": "CPU, memory, load and disk samples, one per minute, oldest first. Empty means the panel restarted recently: this history lives in memory and starts over on every restart. The first rows appear within a few minutes, with nothing for you to do."
+        }
+      }
+    ]
+  }
+}

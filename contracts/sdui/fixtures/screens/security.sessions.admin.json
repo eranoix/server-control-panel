@@ -1,0 +1,68 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "security.sessions",
+    "title": "Sessions",
+    "components": [
+      {
+        "type": "table",
+        "id": "sessions-table",
+        "columns": [
+          {
+            "key": "user",
+            "label": "Username",
+            "kind": "text"
+          },
+          {
+            "key": "ip",
+            "label": "IP",
+            "kind": "text"
+          },
+          {
+            "key": "user_agent",
+            "label": "Device",
+            "kind": "text"
+          },
+          {
+            "key": "issued_at",
+            "label": "Created",
+            "kind": "text"
+          },
+          {
+            "key": "last_seen",
+            "label": "Last seen",
+            "kind": "text"
+          },
+          {
+            "key": "is_current",
+            "label": "Current session",
+            "kind": "badge",
+            "badge_map": {
+              "no": "neutral",
+              "yes": "warning"
+            }
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/security/sessions"
+        },
+        "row_actions": [
+          {
+            "action_id": "security.session.revoke",
+            "label": "Revoke",
+            "style": "destructive"
+          }
+        ],
+        "empty_state": {
+          "text": "Each row is an active sign-in to the panel: user, IP, browser and last access. This screen is never empty — the session you are using right now shows up marked as current. Empty means the session registry did not respond."
+        }
+      },
+      {
+        "type": "confirm_destructive",
+        "id": "session-revoke-confirm",
+        "action_id": "security.session.revoke",
+        "message": "This session will be revoked immediately. If it is your current session (see the 'Current session' column), you will be signed out right now."
+      }
+    ]
+  }
+}

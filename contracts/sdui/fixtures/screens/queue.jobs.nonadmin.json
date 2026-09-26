@@ -1,0 +1,63 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "queue.jobs",
+    "title": "Job queue",
+    "components": [
+      {
+        "type": "table",
+        "id": "queue-jobs-table",
+        "columns": [
+          {
+            "key": "kind",
+            "label": "Type",
+            "kind": "text"
+          },
+          {
+            "key": "status",
+            "label": "Status",
+            "kind": "badge"
+          },
+          {
+            "key": "progress",
+            "label": "Progress",
+            "kind": "text"
+          },
+          {
+            "key": "owner",
+            "label": "Owner",
+            "kind": "text"
+          },
+          {
+            "key": "queued",
+            "label": "Queued",
+            "kind": "datetime"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/queue/jobs"
+        },
+        "row_actions": [
+          {
+            "action_id": "queue.job.retry",
+            "label": "Retry"
+          },
+          {
+            "action_id": "queue.job.cancel",
+            "label": "Cancel",
+            "style": "destructive"
+          }
+        ],
+        "empty_state": {
+          "text": "The queue of the panel's heavy tasks: app deploys, backups, package updates. It also keeps the finished ones, so empty means no task has been started yet. Nothing is created here — jobs come in on their own when you trigger a long-running action on another screen."
+        }
+      },
+      {
+        "type": "confirm_destructive",
+        "id": "queue-job-cancel-confirm",
+        "action_id": "queue.job.cancel",
+        "message": "This signals cancellation to the running job. Work already done is not undone."
+      }
+    ]
+  }
+}

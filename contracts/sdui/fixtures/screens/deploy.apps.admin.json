@@ -1,0 +1,98 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "deploy.apps",
+    "title": "App deploys",
+    "components": [
+      {
+        "type": "table",
+        "id": "deploy-apps-table",
+        "columns": [
+          {
+            "key": "name",
+            "label": "App",
+            "kind": "text"
+          },
+          {
+            "key": "domain",
+            "label": "Domain",
+            "kind": "text"
+          },
+          {
+            "key": "branch",
+            "label": "Branch",
+            "kind": "text"
+          },
+          {
+            "key": "last_status",
+            "label": "Last deploy",
+            "kind": "badge"
+          },
+          {
+            "key": "updated",
+            "label": "Updated",
+            "kind": "datetime"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/deploy/apps"
+        },
+        "row_actions": [
+          {
+            "action_id": "deploy.app.redeploy",
+            "label": "Redeploy"
+          },
+          {
+            "action_id": "deploy.app.delete",
+            "label": "Delete",
+            "style": "destructive"
+          }
+        ],
+        "empty_state": {
+          "text": "Each row is an app this server hosts: domain, production branch and the status of the last deploy. Empty means no app has been created yet — the server does not discover apps on its own. Create the first one in the form below; the name becomes the DNS slug."
+        }
+      },
+      {
+        "type": "form",
+        "id": "deploy-app-create-form",
+        "fields": [
+          {
+            "key": "name",
+            "label": "Name (DNS slug)",
+            "kind": "text",
+            "required": true,
+            "placeholder": "my-app"
+          },
+          {
+            "key": "domain",
+            "label": "Domain (optional)",
+            "kind": "text"
+          },
+          {
+            "key": "branch",
+            "label": "Production branch",
+            "kind": "text",
+            "placeholder": "main"
+          },
+          {
+            "key": "compose_file",
+            "label": "Compose file (optional)",
+            "kind": "text",
+            "placeholder": "docker-compose.yml"
+          }
+        ],
+        "submit_action": {
+          "action_id": "deploy.app.create",
+          "label": "Create app",
+          "style": "primary"
+        }
+      },
+      {
+        "type": "confirm_destructive",
+        "id": "deploy-app-delete-confirm",
+        "action_id": "deploy.app.delete",
+        "message": "This takes down the app's containers, removes nginx/env and deletes the bare repository. It cannot be undone."
+      }
+    ]
+  }
+}

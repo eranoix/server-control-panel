@@ -1,0 +1,120 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "scheduler.jobs",
+    "title": "Scheduler",
+    "components": [
+      {
+        "type": "table",
+        "id": "jobs-table",
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "kind": "text"
+          },
+          {
+            "key": "schedule",
+            "label": "Schedule",
+            "kind": "text"
+          },
+          {
+            "key": "kind",
+            "label": "Type",
+            "kind": "text"
+          },
+          {
+            "key": "last_status",
+            "label": "Last status",
+            "kind": "badge",
+            "badge_map": {
+              "failed": "danger",
+              "ok": "success",
+              "skipped": "neutral"
+            }
+          },
+          {
+            "key": "next_fire",
+            "label": "Next run",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/scheduler/jobs"
+        },
+        "row_actions": [
+          {
+            "action_id": "scheduler.job.run_now",
+            "label": "Run now",
+            "style": "secondary"
+          },
+          {
+            "action_id": "scheduler.job.delete",
+            "label": "Delete",
+            "style": "destructive"
+          }
+        ],
+        "empty_state": {
+          "text": "Scheduler jobs run on their own at the time you set, in cron syntax. Empty means nothing is scheduled: no recurring task fires until the first one is created. Fill in name, schedule (e.g. */15 * * * *) and type in the form below."
+        }
+      },
+      {
+        "type": "form",
+        "id": "job-form",
+        "fields": [
+          {
+            "key": "name",
+            "label": "Name",
+            "kind": "text",
+            "required": true
+          },
+          {
+            "key": "schedule",
+            "label": "Schedule (cron)",
+            "kind": "text",
+            "required": true,
+            "placeholder": "*/15 * * * *"
+          },
+          {
+            "key": "kind",
+            "label": "Type",
+            "kind": "select",
+            "required": true,
+            "options": [
+              "docker_prune",
+              "system_reboot"
+            ]
+          },
+          {
+            "key": "enabled",
+            "label": "Enabled",
+            "kind": "bool"
+          },
+          {
+            "key": "run_as_root",
+            "label": "Run as root",
+            "kind": "bool"
+          }
+        ],
+        "submit_action": {
+          "action_id": "scheduler.job.save",
+          "label": "Save",
+          "style": "primary"
+        }
+      },
+      {
+        "type": "action",
+        "id": "refresh-jobs",
+        "label": "Refresh",
+        "action_id": "scheduler.jobs.refresh",
+        "style": "secondary"
+      },
+      {
+        "type": "confirm_destructive",
+        "id": "job-delete-confirm",
+        "action_id": "scheduler.job.delete",
+        "message": "This job will be deleted permanently. This action cannot be undone."
+      }
+    ]
+  }
+}

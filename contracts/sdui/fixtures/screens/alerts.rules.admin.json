@@ -1,0 +1,106 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "alerts.rules",
+    "title": "Alerts",
+    "components": [
+      {
+        "type": "table",
+        "id": "rules-table",
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "kind": "text"
+          },
+          {
+            "key": "condition",
+            "label": "Condition",
+            "kind": "text"
+          },
+          {
+            "key": "channel",
+            "label": "Channel",
+            "kind": "text"
+          },
+          {
+            "key": "enabled",
+            "label": "Enabled",
+            "kind": "bool"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/alerts/rules"
+        },
+        "row_actions": [
+          {
+            "action_id": "alerts.rule.delete",
+            "label": "Delete",
+            "style": "destructive"
+          }
+        ],
+        "empty_state": {
+          "text": "Alert rules decide what notifies you and through which channel: high CPU, a failed deploy, a filling disk. Empty is the factory state — until there is a rule, no event becomes a notification. Build the first one in the form below (condition, minimum severity and channel) and save it."
+        }
+      },
+      {
+        "type": "form",
+        "id": "rule-form",
+        "fields": [
+          {
+            "key": "name",
+            "label": "Name",
+            "kind": "text",
+            "required": true
+          },
+          {
+            "key": "condition",
+            "label": "Condition",
+            "kind": "select",
+            "required": true,
+            "options": [
+              "",
+              "job.failed"
+            ]
+          },
+          {
+            "key": "threshold",
+            "label": "Minimum severity",
+            "kind": "select",
+            "required": true,
+            "options": [
+              "info",
+              "warning",
+              "critical"
+            ]
+          },
+          {
+            "key": "channel",
+            "label": "Notification channel",
+            "kind": "select",
+            "required": true,
+            "options": [
+              "chan-golden-webhook"
+            ]
+          },
+          {
+            "key": "enabled",
+            "label": "Enabled",
+            "kind": "bool"
+          }
+        ],
+        "submit_action": {
+          "action_id": "alerts.rule.save",
+          "label": "Save",
+          "style": "primary"
+        }
+      },
+      {
+        "type": "confirm_destructive",
+        "id": "rule-delete-confirm",
+        "action_id": "alerts.rule.delete",
+        "message": "This alert rule will be deleted. The events it covered stop notifying until a new rule covers them."
+      }
+    ]
+  }
+}

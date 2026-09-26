@@ -1,0 +1,46 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "security.audit",
+    "title": "Audit log",
+    "components": [
+      {
+        "type": "table",
+        "id": "audit-table",
+        "columns": [
+          {
+            "key": "time",
+            "label": "When",
+            "kind": "text"
+          },
+          {
+            "key": "user",
+            "label": "Username",
+            "kind": "text"
+          },
+          {
+            "key": "action",
+            "label": "Action",
+            "kind": "text"
+          },
+          {
+            "key": "target",
+            "label": "Target",
+            "kind": "text"
+          },
+          {
+            "key": "ip",
+            "label": "IP",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/security/audit"
+        },
+        "empty_state": {
+          "text": "The trail of who did what in the panel: sign-ins, account creation, destructive actions. Empty means nothing has happened yet — an unavailable audit log shows up as a load error, not as an empty table. There is nothing to configure here: rows come in on their own."
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "docker.containers",
+    "title": "Containers",
+    "components": [
+      {
+        "type": "table",
+        "id": "containers-table",
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "kind": "text"
+          },
+          {
+            "key": "image",
+            "label": "Image",
+            "kind": "text"
+          },
+          {
+            "key": "status",
+            "label": "Status",
+            "kind": "badge",
+            "badge_map": {
+              "created": "neutral",
+              "dead": "danger",
+              "exited": "neutral",
+              "paused": "neutral",
+              "restarting": "warning",
+              "running": "success"
+            }
+          },
+          {
+            "key": "created",
+            "label": "Created",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/docker/containers"
+        },
+        "row_actions": [
+          {
+            "action_id": "docker.container.start",
+            "label": "Start",
+            "style": "secondary"
+          },
+          {
+            "action_id": "docker.container.stop",
+            "label": "Stop",
+            "style": "secondary"
+          },
+          {
+            "action_id": "docker.container.restart",
+            "label": "Restart",
+            "style": "secondary"
+          }
+        ],
+        "empty_state": {
+          "text": "Containers are the units Docker runs on this server; the list shows the running ones and the stopped ones too. Empty is unusual here, because the panel itself runs in a container — it usually means the stack was taken down. In Docker › Compose you can bring a whole stack back up."
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "security.ufw",
+    "title": "Firewall (UFW)",
+    "components": [
+      {
+        "type": "detail",
+        "id": "ufw-status-detail",
+        "data_source": {
+          "endpoint": "/api/mobile/v1/security/ufw/status"
+        },
+        "fields": [
+          {
+            "key": "enabled",
+            "label": "Status",
+            "kind": "text"
+          },
+          {
+            "key": "output",
+            "label": "Rules (ufw status numbered)",
+            "kind": "text"
+          }
+        ]
+      },
+      {
+        "type": "form",
+        "id": "ufw-rule-form",
+        "fields": [
+          {
+            "key": "action",
+            "label": "Action",
+            "kind": "select",
+            "required": true,
+            "options": [
+              "allow",
+              "deny",
+              "reject",
+              "delete",
+              "enable",
+              "disable"
+            ]
+          },
+          {
+            "key": "spec",
+            "label": "Rule",
+            "kind": "text",
+            "placeholder": "e.g. 22/tcp — empty for enable/disable"
+          }
+        ],
+        "submit_action": {
+          "action_id": "security.ufw.apply",
+          "label": "Apply",
+          "style": "destructive"
+        }
+      },
+      {
+        "type": "confirm_destructive",
+        "id": "ufw-rule-confirm",
+        "action_id": "security.ufw.apply",
+        "message": "This changes the firewall immediately. A wrong rule (or disabling the firewall) can lock you out of your own remote access."
+      }
+    ]
+  }
+}

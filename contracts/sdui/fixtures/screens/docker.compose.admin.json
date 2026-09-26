@@ -1,0 +1,55 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "docker.compose",
+    "title": "Compose",
+    "components": [
+      {
+        "type": "table",
+        "id": "compose-table",
+        "columns": [
+          {
+            "key": "stack",
+            "label": "Stack",
+            "kind": "text"
+          },
+          {
+            "key": "status",
+            "label": "Status",
+            "kind": "badge",
+            "badge_map": {
+              "partial": "warning",
+              "running": "success",
+              "stopped": "neutral",
+              "unknown": "neutral"
+            }
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/docker/compose"
+        },
+        "row_actions": [
+          {
+            "action_id": "docker.compose.up",
+            "label": "Up",
+            "style": "secondary"
+          },
+          {
+            "action_id": "docker.compose.down",
+            "label": "Down",
+            "style": "destructive"
+          }
+        ],
+        "empty_state": {
+          "text": "Each row is a Compose project, grouping the containers that came up together. The list is discovered from container labels, not from files on disk: a docker-compose.yml that never came up does not appear here. Bring the stack up on the host and it joins the list, with the actions your permission allows on the row itself."
+        }
+      },
+      {
+        "type": "confirm_destructive",
+        "id": "compose-down-confirm",
+        "action_id": "docker.compose.down",
+        "message": "This stack will be taken down (docker compose down). The containers of its services stop and are removed."
+      }
+    ]
+  }
+}

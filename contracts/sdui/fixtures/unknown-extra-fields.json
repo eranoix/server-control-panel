@@ -1,0 +1,19 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "fixture.unknown-extra-fields",
+    "title": "Campos extras de um servidor mais novo",
+    "components": [
+      {
+        "type": "table",
+        "id": "containers-table",
+        "columns": [
+          { "key": "name", "label": "Nome", "kind": "text", "sticky": true }
+        ],
+        "rows_source": { "endpoint": "/api/mobile/v1/docker/containers" },
+        "sort_default": "name",
+        "density": "compact"
+      }
+    ]
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "security.economia",
+    "title": "Network usage",
+    "components": [
+      {
+        "type": "table",
+        "id": "usage-table",
+        "columns": [
+          {
+            "key": "name",
+            "label": "Device",
+            "kind": "text"
+          },
+          {
+            "key": "port",
+            "label": "Port",
+            "kind": "text"
+          },
+          {
+            "key": "total_bytes",
+            "label": "Total",
+            "kind": "text"
+          },
+          {
+            "key": "rate_bps",
+            "label": "Rate",
+            "kind": "text"
+          },
+          {
+            "key": "active_conns",
+            "label": "Active connections",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/security/economia"
+        },
+        "empty_state": {
+          "text": "How much of the tunnel each paired device has used, measured by conntrack. Empty means no traffic since the last reading — a collector that is down shows up as a load error, not as an empty table. Start by pairing a device under Devices (VLESS)."
+        }
+      }
+    ]
+  }
+}

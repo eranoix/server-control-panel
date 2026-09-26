@@ -1,0 +1,46 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "system.ports",
+    "title": "Ports",
+    "components": [
+      {
+        "type": "table",
+        "id": "ports-table",
+        "columns": [
+          {
+            "key": "proto",
+            "label": "Protocol",
+            "kind": "text"
+          },
+          {
+            "key": "local",
+            "label": "Local",
+            "kind": "text"
+          },
+          {
+            "key": "peer",
+            "label": "Peer",
+            "kind": "text"
+          },
+          {
+            "key": "state",
+            "label": "State",
+            "kind": "text"
+          },
+          {
+            "key": "process",
+            "label": "Process",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/system/ports"
+        },
+        "empty_state": {
+          "text": "Each row is a listening socket: who answers on this server, on which port and through which process. Empty is suspicious — at the very least SSH and the panel itself should be here. It usually means the ss command answered with no data, not that the server stopped answering."
+        }
+      }
+    ]
+  }
+}

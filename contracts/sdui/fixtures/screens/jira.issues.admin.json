@@ -1,0 +1,133 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "jira.issues",
+    "title": "Jira",
+    "components": [
+      {
+        "type": "table",
+        "id": "issues-table",
+        "columns": [
+          {
+            "key": "key",
+            "label": "Key",
+            "kind": "text"
+          },
+          {
+            "key": "summary",
+            "label": "Summary",
+            "kind": "text"
+          },
+          {
+            "key": "status",
+            "label": "Status",
+            "kind": "badge"
+          },
+          {
+            "key": "assignee",
+            "label": "Assignee",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/jira/issues"
+        },
+        "row_actions": [
+          {
+            "action_id": "jira.issue.select",
+            "label": "View"
+          }
+        ],
+        "empty_state": {
+          "text": "The issues your Jira connection brings in: those of the configured project or, with no fixed project, the ones assigned to you. Empty means the search worked and returned nothing — not that the connection dropped. Issues are created in Jira; here you move and comment on the ones that show up."
+        }
+      },
+      {
+        "type": "detail",
+        "id": "issue-detail",
+        "data_source": {
+          "endpoint": "/api/mobile/v1/jira/issue-detail"
+        },
+        "fields": [
+          {
+            "key": "key",
+            "label": "Key",
+            "kind": "text"
+          },
+          {
+            "key": "summary",
+            "label": "Summary",
+            "kind": "text"
+          },
+          {
+            "key": "status",
+            "label": "Status",
+            "kind": "text"
+          },
+          {
+            "key": "assignee",
+            "label": "Assignee",
+            "kind": "text"
+          },
+          {
+            "key": "reporter",
+            "label": "Reporter",
+            "kind": "text"
+          },
+          {
+            "key": "description",
+            "label": "Description",
+            "kind": "text"
+          },
+          {
+            "key": "created",
+            "label": "Created",
+            "kind": "text"
+          },
+          {
+            "key": "updated",
+            "label": "Updated",
+            "kind": "text"
+          }
+        ]
+      },
+      {
+        "type": "form",
+        "id": "issue-transition-form",
+        "fields": [
+          {
+            "key": "transition_id",
+            "label": "Move to",
+            "kind": "select",
+            "required": true,
+            "options_source": {
+              "endpoint": "/api/mobile/v1/jira/issue-transitions"
+            }
+          }
+        ],
+        "submit_action": {
+          "action_id": "jira.issue.transition",
+          "label": "Move",
+          "style": "primary"
+        }
+      },
+      {
+        "type": "form",
+        "id": "issue-comment-form",
+        "fields": [
+          {
+            "key": "comment",
+            "label": "Comment",
+            "kind": "text",
+            "required": true
+          }
+        ],
+        "submit_action": {
+          "action_id": "jira.issue.comment",
+          "label": "Comment",
+          "style": "primary"
+        }
+      }
+    ]
+  }
+}

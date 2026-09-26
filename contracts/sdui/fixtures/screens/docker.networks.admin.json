@@ -1,0 +1,36 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "docker.networks",
+    "title": "Networks",
+    "components": [
+      {
+        "type": "table",
+        "id": "networks-table",
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "kind": "text"
+          },
+          {
+            "key": "driver",
+            "label": "Driver",
+            "kind": "text"
+          },
+          {
+            "key": "scope",
+            "label": "Scope",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/docker/networks"
+        },
+        "empty_state": {
+          "text": "Docker networks decide which containers can see which. This list should never be empty: Docker keeps bridge, host and none even on a server with nothing running. Empty means an incomplete answer from Docker — check docker.service under Services (systemd)."
+        }
+      }
+    ]
+  }
+}

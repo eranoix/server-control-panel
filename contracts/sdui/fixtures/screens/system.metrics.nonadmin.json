@@ -1,0 +1,61 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "system.metrics",
+    "title": "Metrics",
+    "components": [
+      {
+        "type": "form",
+        "id": "metrics-window-form",
+        "fields": [
+          {
+            "key": "window",
+            "label": "Window",
+            "kind": "select",
+            "options": [
+              "30m",
+              "1h",
+              "2h"
+            ],
+            "value": "30m"
+          }
+        ],
+        "submit_action": {
+          "action_id": "system.metrics.window",
+          "label": "Apply",
+          "style": "secondary"
+        }
+      },
+      {
+        "type": "chart",
+        "id": "cpu-chart",
+        "chart_kind": "line",
+        "series_source": {
+          "endpoint": "/api/mobile/v1/system/metrics/cpu"
+        },
+        "x_key": "ts",
+        "y_key": "value"
+      },
+      {
+        "type": "chart",
+        "id": "mem-chart",
+        "chart_kind": "line",
+        "series_source": {
+          "endpoint": "/api/mobile/v1/system/metrics/mem"
+        },
+        "x_key": "ts",
+        "y_key": "value"
+      },
+      {
+        "type": "chart",
+        "id": "disk-chart",
+        "chart_kind": "line",
+        "series_source": {
+          "endpoint": "/api/mobile/v1/system/metrics/disk"
+        },
+        "x_key": "ts",
+        "y_key": "value"
+      }
+    ]
+  }
+}

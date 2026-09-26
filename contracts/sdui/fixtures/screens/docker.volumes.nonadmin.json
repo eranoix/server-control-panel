@@ -1,0 +1,36 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "docker.volumes",
+    "title": "Volumes",
+    "components": [
+      {
+        "type": "table",
+        "id": "volumes-table",
+        "columns": [
+          {
+            "key": "name",
+            "label": "Name",
+            "kind": "text"
+          },
+          {
+            "key": "driver",
+            "label": "Driver",
+            "kind": "text"
+          },
+          {
+            "key": "size",
+            "label": "Size",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/docker/volumes"
+        },
+        "empty_state": {
+          "text": "Volumes are the piece of disk that outlives the container: database, uploads, cache. Empty is normal when the stack only uses bind mounts of host folders. There is no way to create a volume here — it is born with the container that declares it."
+        }
+      }
+    ]
+  }
+}

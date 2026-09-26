@@ -1,0 +1,120 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "security.users",
+    "title": "Users",
+    "components": [
+      {
+        "type": "table",
+        "id": "users-table",
+        "columns": [
+          {
+            "key": "username",
+            "label": "Username",
+            "kind": "text"
+          },
+          {
+            "key": "role",
+            "label": "Role",
+            "kind": "badge",
+            "badge_map": {
+              "admin": "success",
+              "user": "neutral"
+            }
+          },
+          {
+            "key": "has_totp",
+            "label": "2FA",
+            "kind": "badge",
+            "badge_map": {
+              "no": "neutral",
+              "yes": "success"
+            }
+          },
+          {
+            "key": "sessions",
+            "label": "Active sessions",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/security/users"
+        },
+        "row_actions": [
+          {
+            "action_id": "security.user.delete",
+            "label": "Remove",
+            "style": "destructive"
+          }
+        ],
+        "empty_state": {
+          "text": "The accounts that can sign in to the panel, and which of them are administrators. This list should never be empty: your own account is in it. To create another, fill in username and password in the form right below and save."
+        }
+      },
+      {
+        "type": "form",
+        "id": "user-form",
+        "fields": [
+          {
+            "key": "username",
+            "label": "Username",
+            "kind": "text",
+            "required": true
+          },
+          {
+            "key": "password",
+            "label": "Password (only when creating)",
+            "kind": "text",
+            "placeholder": "at least 8 characters — ignored when editing"
+          },
+          {
+            "key": "admin",
+            "label": "Administrator",
+            "kind": "bool"
+          }
+        ],
+        "submit_action": {
+          "action_id": "security.user.save",
+          "label": "Save",
+          "style": "primary"
+        }
+      },
+      {
+        "type": "form",
+        "id": "user-password-reset-form",
+        "fields": [
+          {
+            "key": "username",
+            "label": "Username",
+            "kind": "text",
+            "required": true
+          },
+          {
+            "key": "password",
+            "label": "New password",
+            "kind": "text",
+            "required": true,
+            "placeholder": "at least 8 characters"
+          }
+        ],
+        "submit_action": {
+          "action_id": "security.user.reset_password",
+          "label": "Reset password",
+          "style": "destructive"
+        }
+      },
+      {
+        "type": "confirm_destructive",
+        "id": "user-delete-confirm",
+        "action_id": "security.user.delete",
+        "message": "This user will be removed permanently, together with their active sessions. You cannot remove yourself or the primary user."
+      },
+      {
+        "type": "confirm_destructive",
+        "id": "user-password-reset-confirm",
+        "action_id": "security.user.reset_password",
+        "message": "This user's current password will be replaced immediately."
+      }
+    ]
+  }
+}

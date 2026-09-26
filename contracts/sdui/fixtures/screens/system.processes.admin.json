@@ -1,0 +1,64 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "system.processes",
+    "title": "Processes",
+    "components": [
+      {
+        "type": "table",
+        "id": "processes-table",
+        "columns": [
+          {
+            "key": "pid",
+            "label": "PID",
+            "kind": "text"
+          },
+          {
+            "key": "name",
+            "label": "Process",
+            "kind": "text"
+          },
+          {
+            "key": "user",
+            "label": "User",
+            "kind": "text"
+          },
+          {
+            "key": "cpu",
+            "label": "CPU %",
+            "kind": "text"
+          },
+          {
+            "key": "mem",
+            "label": "Memory %",
+            "kind": "text"
+          },
+          {
+            "key": "status",
+            "label": "Status",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/system/processes"
+        },
+        "row_actions": [
+          {
+            "action_id": "system.process.kill",
+            "label": "Terminate",
+            "style": "destructive"
+          }
+        ],
+        "empty_state": {
+          "text": "Everything running on the server right now, with the CPU and memory use of each process. A running server never has zero processes, so an empty list here is a read failure, not an idle server. Reload the screen; if it stays empty, the problem is on the host, not in the app."
+        }
+      },
+      {
+        "type": "confirm_destructive",
+        "id": "process-kill-confirm",
+        "action_id": "system.process.kill",
+        "message": "This process will receive SIGTERM. Critical system processes are protected and the attempt will be refused."
+      }
+    ]
+  }
+}

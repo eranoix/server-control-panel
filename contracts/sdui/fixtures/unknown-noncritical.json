@@ -1,0 +1,27 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "fixture.unknown-noncritical",
+    "title": "Tipo desconhecido, não crítico",
+    "components": [
+      {
+        "type": "table",
+        "id": "containers-table",
+        "columns": [
+          { "key": "name", "label": "Nome", "kind": "text" }
+        ],
+        "rows_source": { "endpoint": "/api/mobile/v1/docker/containers" }
+      },
+      {
+        "type": "gantt",
+        "id": "deploy-timeline"
+      },
+      {
+        "type": "action",
+        "id": "deploy-trigger",
+        "label": "Deploy",
+        "action_id": "deploy.trigger"
+      }
+    ]
+  }
+}

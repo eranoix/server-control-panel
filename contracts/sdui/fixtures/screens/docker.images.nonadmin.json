@@ -1,0 +1,36 @@
+{
+  "sdui_version": 1,
+  "screen": {
+    "id": "docker.images",
+    "title": "Images",
+    "components": [
+      {
+        "type": "table",
+        "id": "images-table",
+        "columns": [
+          {
+            "key": "repo_tag",
+            "label": "Repository:Tag",
+            "kind": "text"
+          },
+          {
+            "key": "size",
+            "label": "Size",
+            "kind": "text"
+          },
+          {
+            "key": "created",
+            "label": "Created",
+            "kind": "text"
+          }
+        ],
+        "rows_source": {
+          "endpoint": "/api/mobile/v1/docker/images"
+        },
+        "empty_state": {
+          "text": "Images are the template every container is born from; here is what has already been pulled or built on this server. With no image, no container starts — normally there are at least the ones of the running stack. They come back on their own with the next pull or build of a Compose stack."
+        }
+      }
+    ]
+  }
+}
