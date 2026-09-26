@@ -74,7 +74,7 @@ var validMinified = sync.OnceValue(func() map[string]string {
 	return valid
 })
 
-// confere reads the pair and answers whether the minified file was generated from THIS source.
+// verify reads the pair and answers whether the minified file was generated from THIS source.
 func verify(sub fs.FS, source, min string) bool {
 	bMin, err := fs.ReadFile(sub, min)
 	if err != nil {
@@ -119,7 +119,7 @@ func readStamp(b []byte) (string, bool) {
 }
 
 // MinifiedOf returns the path of the minified file to serve in place of
-// `fonte` (both relative to the SubFS, e.g. "vendor/vpsm/app/00-shell.js").
+// `source` (both relative to the SubFS, e.g. "vendor/vpsm/app/00-shell.js").
 //
 // ok=false when there is no minified file, when it carries no stamp, or when the
 // stamp does not match the current source — in those cases the caller serves the original.

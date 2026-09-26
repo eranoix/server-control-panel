@@ -1,18 +1,14 @@
 #!/usr/bin/env node
-// test-vc-mic-volume.mjs — o volume do microfone tem que chegar DO OUTRO LADO,
-// e a transcricao tem que ler o microfone cru.
+// test-vc-mic-volume.mjs: the mic volume must reach THE OTHER SIDE, and the
+// transcription must read the raw mic.
 //
-// O slider "Sensibilidade do mic" existia e nunca fez nada: setMicGain nao
-// estava exportado em window.VPSMVideoCall, o valor salvo nao entrava no
-// Call, e a troca de microfone jogava o track cru direto nos senders. Tudo
-// isso passava em qualquer leitura do codigo — o slider mexia, o numero
-// mudava. Por isso este pino nao le fonte: ele faz uma chamada WebRTC REAL
-// entre duas abas (relay de sinalizacao no Node, mic falso do Chromium
-// tocando um tom continuo) e MEDE em dB, na aba B, o audio que chegou da A.
+// Reading the source cannot prove this, so the pin makes a REAL WebRTC call
+// between two tabs (signalling relay in Node, Chromium fake mic playing a
+// steady tone) and MEASURES in dB, in tab B, the audio that arrived from A.
 //
-// Cobre: volume inicial salvo, volume ao vivo (±6 dB), limitador, troca de
-// microfone mantendo o volume, troca de processamento sem derrubar o audio,
-// e a fonte da transcricao (cru, independente do volume, calada no mute).
+// Covers: saved initial volume, live volume (±6 dB), limiter, mic switch
+// keeping the volume, processing switch without dropping audio, and the
+// transcription source (raw, volume-independent, silent when muted).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -24,8 +20,8 @@ const require_ = createRequire(path.join(ROOT, '.tools/'));
 let chromium;
 try { ({ chromium } = require_('playwright-core')); }
 catch {
-  console.error('FALHA: playwright-core ausente em .tools/. Este pino RODA a chamada — pular seria fingir cobertura.');
-  console.error('       Instale com: make tools');
+  console.error('FAILED: playwright-core missing from .tools/. This pin RUNS the call; skipping would be faking coverage.');
+  console.error('       Install with: make tools');
   process.exit(1);
 }
 
@@ -37,8 +33,8 @@ const near = (v, target, tol) => Math.abs(v - target) <= tol;
 const srcVC = fs.readFileSync(path.join(WEB, 'vendor', 'vpsm', 'videocall.js'), 'utf8');
 const srcSTT = fs.readFileSync(path.join(WEB, 'vendor', 'vpsm', 'stt.js'), 'utf8');
 
-// Tom de 440 Hz a -10 dBFS, continuo. Um tom estavel e o que deixa medir
-// diferenca de volume em dB; a fala sintetica padrao do Chromium sao bipes.
+// Steady 440 Hz tone at -10 dBFS: a stable tone is what makes a dB volume
+// difference measurable (Chromium's default fake audio is beeps).
 function writeTone(arq) {
   const sr = 48000, seg = 4, n = sr * seg, amp = Math.pow(10, -10 / 20);
   const b = Buffer.alloc(44 + n * 2);
@@ -61,10 +57,10 @@ function findBrowser() {
   return null;
 }
 
-// WebSocket falso: tudo que o motor manda sai por __wsOut (relay no Node);
-// o que o relay entrega entra por __wsIn. Mesmo contrato do servidor Go:
-// `joined` com o snapshot, `peer-joined` pros outros, repasse por `to` com
-// `from` carimbado.
+// Fake WebSocket: everything the engine sends goes out via __wsOut (Node
+// relay); relay deliveries come in via __wsIn. Same contract as the Go
+// server: `joined` with the snapshot, `peer-joined` to the others, forwarding
+// by `to` with `from` stamped.
 const INIT = `
   class FakeWS {
     constructor(url) {
@@ -77,9 +73,9 @@ const INIT = `
   }
   FakeWS.CONNECTING = 0; FakeWS.OPEN = 1; FakeWS.CLOSING = 2; FakeWS.CLOSED = 3;
   window.WebSocket = FakeWS;
-  // Travamento simulado: com __travaPrimeiroPC, o 1o RTCPeerConnection da aba
-  // nasce sem como gerar candidato local (relay sem TURN) — o mesmo sintoma
-  // medido na corrida real: ICE parado em 'new', zero candidatos locais.
+  // Simulated stall: with __travaPrimeiroPC the tab's first RTCPeerConnection
+  // cannot gather a local candidate (relay without TURN), so ICE stays in
+  // 'new' with zero local candidates, as seen in real runs.
   window.__pcsCreated = 0;
   const RPC0 = window.RTCPeerConnection;
   window.RTCPeerConnection = function (cfg) {
@@ -89,16 +85,15 @@ const INIT = `
   };
   window.RTCPeerConnection.prototype = RPC0.prototype;
   window.__wsIn = (s) => { const w = window.__ws; if (w && w.onmessage) w.onmessage({ data: s }); };
-  // Stub do motor de STT: guarda o stream que a chamada entrega pra transcricao.
+  // STT engine stub: records the stream the call hands to transcription.
   window.__sttStarts = [];
   window.VPSMSTT = {
     start(o) { window.__sttStarts.push(o.stream); return { stop() {} }; },
     setBackend() {}, probeWhisperLocal: async () => false,
   };
-  // dBFS de um track num intervalo: MEDIANA do RMS por quadro (~43 ms). Tom
-  // estavel da o mesmo valor em todo quadro; a mediana descarta os quadros
-  // zerados por underrun do thread de audio (headless sob carga), que numa
-  // media simples puxavam a leitura 2-3 dB pra baixo.
+  // dBFS of a track over an interval: MEDIAN of per-frame RMS (~43 ms). The
+  // median discards frames zeroed by audio-thread underruns (headless under
+  // load), which would drag a plain mean 2-3 dB down.
   window.__levelDb = async (track, ms) => {
     const ctx = new AudioContext();
     const src = ctx.createMediaStreamSource(new MediaStream([track]));
@@ -119,10 +114,10 @@ const INIT = `
     quadros.sort((a, b) => a - b);
     return quadros[Math.floor(quadros.length / 2)];
   };
-  // Diferenca em dB entre dois tracks medidos JUNTOS (mesmo AudioContext,
-  // mesmos quadros): mediana de (b - a) por quadro. Um underrun atinge os
-  // dois ao mesmo tempo e se cancela — medir um depois do outro deixava ~1 dB
-  // de ruido sob carga, o bastante pra esconder o makeup gain de 1.7 dB.
+  // dB difference between two tracks measured TOGETHER (same AudioContext,
+  // same frames): median of (b - a) per frame. An underrun hits both at once
+  // and cancels out; measuring them one after the other left ~1 dB of noise,
+  // enough to hide the 1.7 dB makeup gain.
   window.__difDb = async (a, b, ms) => {
     const ctx = new AudioContext();
     const mk = (t) => { const an = ctx.createAnalyser(); an.fftSize = 2048; ctx.createMediaStreamSource(new MediaStream([t])).connect(an); return an; };
@@ -142,10 +137,8 @@ const INIT = `
     const med = (v) => { if (!v.length) return NaN; v.sort((p, q) => p - q); return v[Math.floor(v.length / 2)]; };
     return { dif: med(difs), a: med(nivA) };
   };
-  // Referencia do microfone: captura propria, sem processamento (o mesmo
-  // arquivo de tom que alimenta a chamada).
+  // Mic reference: own unprocessed capture (the same tone file that feeds the call).
   window.__refMic = async () => (await navigator.mediaDevices.getUserMedia({ audio: { noiseSuppression: false, echoCancellation: false, autoGainControl: false } })).getAudioTracks()[0];
-  // Audio que chegou do peer (tile remoto montado pelo motor).
   window.__remote = () => {
     const v = document.querySelector('video[data-vc-peer]');
     const s = v && v.srcObject;
@@ -154,10 +147,10 @@ const INIT = `
 `;
 
 const exe = findBrowser();
-if (!exe) { console.error('FALHA: nenhum Chromium encontrado — pular seria fingir cobertura.'); process.exit(1); }
+if (!exe) { console.error('FAILED: no Chromium found; skipping would be faking coverage.'); process.exit(1); }
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vc-micvol-'));
-const tom = path.join(tmp, 'tom.wav');
-// localhost e contexto seguro (about:blank nao: sem navigator.mediaDevices).
+const tom = path.join(tmp, 'tone.wav');
+// localhost is a secure context (about:blank is not: no navigator.mediaDevices).
 const PAGE = 'http://localhost:9/vc';
 writeTone(tom);
 
@@ -167,7 +160,6 @@ const browser = await chromium.launch({
          '--use-file-for-fake-audio-capture=' + tom, '--autoplay-policy=no-user-gesture-required',
          '--disable-features=WebRtcHideLocalIpsWithMdns'],
 });
-// ── Relay de sinalizacao ────────────────────────────────────────────────
 let ctx, pages, order, queue;
 async function delivery(id, obj) {
   const p = pages[id];
@@ -177,9 +169,9 @@ async function open(id, lock) {
   const page = await ctx.newPage();
   if (lock) await page.addInitScript('window.__travaPrimeiroPC = true;');
   page.on('pageerror', (e) => console.log('  [' + id + ' pageerror] ' + e.message));
-  // Fila unica: o servidor real entrega em ordem (um WS por cliente). Sem
-  // ela, cada __wsOut e uma chamada async solta e oferta/ICE/resposta podiam
-  // chegar trocados.
+  // Single queue: the real server delivers in order (one WS per client).
+  // Without it each __wsOut is a loose async call and offer/ICE/answer could
+  // arrive out of order.
   await page.exposeFunction('__wsOut', (s) => { queue = queue.then(() => relay(id, s)).catch(() => {}); });
   const relay = async (id, s) => {
     let m; try { m = JSON.parse(s); } catch { return; }
@@ -212,15 +204,15 @@ async function connect(page, id, extra) {
   }, { id, extra });
 }
 
-// Processamento desligado em A: supressao de ruido comeria o tom estavel e o
-// ganho automatico andaria sozinho — a medida precisa de um sinal parado.
+// Processing off: noise suppression would eat the steady tone and automatic
+// gain would drift, and the measurement needs a stable signal.
 const SEM_PROC = { noiseSuppression: false, echoCancellation: false, autoGainControl: false };
 
-// Monta a chamada A↔B e espera o AUDIO de A soar em B (nao so o track vivo:
-// um track remoto nasce 'live' e mudo antes de qualquer RTP chegar). Sem
-// remontar: a negociacao tem que se resolver sozinha — inclusive a corrida de
-// ofertas simultaneas e o RTCPeerConnection que trava sem candidato ICE (o
-// motor recria o par). `trava` forca esse travamento em A.
+// Sets up the A↔B call and waits for A's AUDIO to sound in B (not just a live
+// track: a remote track is born 'live' and silent before any RTP arrives).
+// No retries: negotiation must resolve by itself, including simultaneous
+// offers and a peer connection stalled without ICE candidates (the engine
+// recreates the pair). `lock` forces that stall in A.
 async function buildCall(lock) {
   if (ctx) await ctx.close().catch(() => {});
   ctx = await browser.newContext();
@@ -238,34 +230,32 @@ async function buildCall(lock) {
   return null;
 }
 
-// ── 0. Conexao travada se recupera sozinha ──────────────────────────────
-// Antes: ICE parado em 'new' pra sempre (o restart so disparava em
-// 'failed'), chamada muda sem volta. Agora o lado travado recria o par e
-// pede ao outro (mensagem `reset`) que recrie o dele.
+// ── 0. A stalled connection recovers by itself ──────────────────────────
+// ICE stuck in 'new' never reaches 'failed', so the stalled side must
+// recreate its pair and ask the other (a `reset` message) to do the same.
 {
   const m = await buildCall(true);
   const pcs = m ? await m.A.evaluate(() => window.__pcsCreated) : 0;
-  m ? ok(`recuperacao: conexao travada de A religou sozinha em ${m.seg.toFixed(1)}s`) : no('recuperacao: conexao travada de A nao religou em 20s');
-  pcs >= 2 ? ok(`recuperacao: A recriou o RTCPeerConnection (${pcs} created)`) : no('recuperacao: A nao recriou o RTCPeerConnection (' + pcs + ')');
+  m ? ok(`recovery: A's stalled connection reconnected by itself in ${m.seg.toFixed(1)}s`) : no('recovery: A\'s stalled connection did not reconnect within 20s');
+  pcs >= 2 ? ok(`recovery: A recreated the RTCPeerConnection (${pcs} created)`) : no('recovery: A did not recreate the RTCPeerConnection (' + pcs + ')');
 }
 
 const mounted = await buildCall(false);
 if (!mounted) {
-  no('chamada: o audio de A nunca chegou em B em 20s');
+  no('call: A\'s audio never reached B within 20s');
   await browser.close(); fs.rmSync(tmp, { recursive: true, force: true });
   console.log(`\n${pass} PASS, ${fail} FAIL`); process.exit(1);
 }
 const { A, B } = mounted;
-ok(`chamada: WebRTC real entre as abas, audio de A soando em B em ${mounted.seg.toFixed(1)}s`);
+ok(`call: real WebRTC between the tabs, A's audio sounding in B after ${mounted.seg.toFixed(1)}s`);
 
 const received = () => B.evaluate(() => window.__levelDb(window.__remote(), 2500));
 const aLocal = (fn, arg) => A.evaluate(fn, arg);
 
-// ── 1. Volume salvo entra na chamada ─────────────────────────────────────
-// Entrou com micGain=2. (a) No track ENVIADO, medido antes de qualquer
-// setMicGain: o tom e -13 dBFS RMS, entao 200% tem que sair a ~-7 — antes o
-// Call ignorava o valor salvo e saia sempre a 100%. (b) Do outro lado: baixar
-// pra 100% derruba o recebido em ~6 dB.
+// ── 1. The saved volume is applied to the call ──────────────────────────
+// Joined with micGain=2. (a) On the SENT track, before any setMicGain: the
+// tone is -13 dBFS RMS, so 200% must come out at ~-7. (b) On the other side:
+// lowering to 100% drops the received level by ~6 dB.
 {
   const r = await aLocal(async () => {
     const ref = await window.__refMic();
@@ -274,27 +264,27 @@ const aLocal = (fn, arg) => A.evaluate(fn, arg);
     return out;
   });
   near(r.dif, 6.02, 0.5)
-    ? ok(`volume salvo: 200% aplicado desde o connect (sent +${r.dif.toFixed(2)} dB sobre o mic)`)
-    : no(`volume salvo: sent ${r.dif.toFixed(2)} dB sobre o mic no connect — expected +6.0 (200%)`);
+    ? ok(`saved volume: 200% applied from connect (sent +${r.dif.toFixed(2)} dB over the mic)`)
+    : no(`saved volume: sent ${r.dif.toFixed(2)} dB over the mic at connect, expected +6.0 (200%)`);
 }
-await new Promise((r) => setTimeout(r, 3000)); // Opus/jitter buffer assentar
+await new Promise((r) => setTimeout(r, 3000)); // let the Opus/jitter buffer settle
 const em200 = await received();
 await aLocal(() => window.VPSMVideoCall.setMicGain(1));
 const em100 = await received();
 near(em200 - em100, 6.02, 1.5)
-  ? ok(`volume ao vivo: 200% chega ${(em200 - em100).toFixed(1)} dB acima de 100% do outro lado`)
-  : no(`volume ao vivo: 200% vs 100% deu ${(em200 - em100).toFixed(1)} dB no receptor (esperado ~6)`);
+  ? ok(`live volume: 200% arrives ${(em200 - em100).toFixed(1)} dB above 100% on the other side`)
+  : no(`live volume: 200% vs 100% gave ${(em200 - em100).toFixed(1)} dB at the receiver (expected ~6)`);
 
-// ── 2. Volume ao vivo pra baixo ─────────────────────────────────────────
+// ── 2. Live volume down ─────────────────────────────────────────────────
 await aLocal(() => window.VPSMVideoCall.setMicGain(0.5));
 const em50 = await received();
 near(em100 - em50, 6.02, 1.5)
-  ? ok(`volume ao vivo: 50% chega ${(em100 - em50).toFixed(1)} dB abaixo de 100%`)
-  : no(`volume ao live: 50% vs 100% deu ${(em100 - em50).toFixed(1)} dB (expected ~6)`);
+  ? ok(`live volume: 50% arrives ${(em100 - em50).toFixed(1)} dB below 100%`)
+  : no(`live volume: 50% vs 100% gave ${(em100 - em50).toFixed(1)} dB (expected ~6)`);
 
-// ── 3. Limitador ────────────────────────────────────────────────────────
-// Tom a -10 dBFS × 400% = +2 dBFS: sem limitador, clipava. Com ele, o
-// medidor acusa `limiting` e o pico enviado fica abaixo de 0 dBFS.
+// ── 3. Limiter ──────────────────────────────────────────────────────────
+// Tone at -10 dBFS × 400% = +2 dBFS would clip without a limiter. With it,
+// the meter reports `limiting` and the sent peak stays below 0 dBFS.
 await aLocal(() => window.VPSMVideoCall.setMicGain(4));
 await new Promise((r) => setTimeout(r, 400));
 const lim = await aLocal(async () => {
@@ -306,32 +296,32 @@ const lim = await aLocal(async () => {
   }
   return { limiting, peak };
 });
-lim.limiting ? ok('limitador: 400% num signal forte acende o aviso "limitando"') : no('limitador: getMicLevel().limiting nunca ficou true a 400%');
-lim.peak < 1.0 ? ok(`limitador: peak sent ${lim.peak.toFixed(2)} < 1.0 (sem clip)`) : no(`limitador: peak sent ${lim.peak.toFixed(2)} — clipando`);
+lim.limiting ? ok('limiter: 400% on a strong signal lights the "limiting" warning') : no('limiter: getMicLevel().limiting never became true at 400%');
+lim.peak < 1.0 ? ok(`limiter: peak sent ${lim.peak.toFixed(2)} < 1.0 (no clipping)`) : no(`limiter: peak sent ${lim.peak.toFixed(2)}, clipping`);
 await aLocal(() => window.VPSMVideoCall.setMicGain(2));
 
-// ── 4. Troca de microfone mantem o volume ───────────────────────────────
-// Antes: o track novo ia CRU pros senders e o volume voltava a 100%.
+// ── 4. Switching mics keeps the volume ──────────────────────────────────
+// The new track must go through the gain chain, not RAW to the senders.
 const beforeSwap = await received();
 const swapped = await aLocal(() => window.VPSMVideoCall.setMicDevice('default'));
 const afterSwap = await received();
-swapped ? ok('troca de mic: setMicDevice concluiu') : no('troca de mic: setMicDevice falhou');
+swapped ? ok('mic switch: setMicDevice completed') : no('mic switch: setMicDevice failed');
 near(afterSwap, beforeSwap, 1.5)
-  ? ok(`troca de mic: volume mantido do outro lado (${beforeSwap.toFixed(1)} → ${afterSwap.toFixed(1)} dBFS)`)
-  : no(`troca de mic: recebido foi de ${beforeSwap.toFixed(1)} pra ${afterSwap.toFixed(1)} dBFS — volume perdido na troca`);
+  ? ok(`mic switch: volume kept on the other side (${beforeSwap.toFixed(1)} → ${afterSwap.toFixed(1)} dBFS)`)
+  : no(`mic switch: received level went from ${beforeSwap.toFixed(1)} to ${afterSwap.toFixed(1)} dBFS, volume lost in the switch`);
 
-// ── 5. Troca de processamento nao derruba o audio ───────────────────────
+// ── 5. Switching processing does not drop the audio ─────────────────────
 const proc = await aLocal(() => window.VPSMVideoCall.setMicProcessing({ echoCancellation: true }));
 proc && proc.echoCancellation === true && proc.noiseSuppression === false
-  ? ok('processamento: setMicProcessing aplicou so a key pedida')
-  : no('processamento: retorno inesperado ' + JSON.stringify(proc));
+  ? ok('processing: setMicProcessing applied only the requested key')
+  : no('processing: unexpected return ' + JSON.stringify(proc));
 const withEcho = await received();
-withEcho > -40 ? ok(`processamento: audio segue chegando after de reabrir o mic (${withEcho.toFixed(1)} dBFS)`) : no(`processamento: audio gone after do setMicProcessing (${withEcho.toFixed(1)} dBFS)`);
+withEcho > -40 ? ok(`processing: audio keeps arriving after reopening the mic (${withEcho.toFixed(1)} dBFS)`) : no(`processing: audio gone after setMicProcessing (${withEcho.toFixed(1)} dBFS)`);
 await aLocal((p) => window.VPSMVideoCall.setMicProcessing(p), SEM_PROC);
 
-// ── 5b. 100% e neutro ───────────────────────────────────────────────────
-// O compressor do Web Audio soma makeup gain automatico (+1.7 dB aqui); o
-// pipeline compensa. Sem isso "100%" saia mais alto que o proprio microfone.
+// ── 5b. 100% is neutral ─────────────────────────────────────────────────
+// The Web Audio compressor adds automatic makeup gain (+1.7 dB here) and the
+// pipeline compensates; otherwise "100%" would be louder than the mic itself.
 {
   await aLocal(() => window.VPSMVideoCall.setMicGain(1));
   await aLocal(() => { window.VPSMVideoCall.setSubtitles(true, { backend: 'web-speech', lang: 'pt-BR' }); });
@@ -342,14 +332,14 @@ await aLocal((p) => window.VPSMVideoCall.setMicProcessing(p), SEM_PROC);
     return window.__difDb(raw, sent, 1200);
   });
   await aLocal(() => { window.VPSMVideoCall.setSubtitles(false); });
-  await new Promise((r) => setTimeout(r, 600)); // guard de toggle rapido (500 ms)
+  await new Promise((r) => setTimeout(r, 600)); // fast-toggle guard (500 ms)
   near(n.dif, 0, 0.3)
-    ? ok(`neutro: 100% send o same level do microfone (${n.dif >= 0 ? '+' : ''}${n.dif.toFixed(2)} dB)`)
-    : no(`neutro: a 100% o sent ficou ${n.dif.toFixed(2)} dB do microfone (makeup gain do limitador?)`);
+    ? ok(`neutral: 100% sends the same level as the mic (${n.dif >= 0 ? '+' : ''}${n.dif.toFixed(2)} dB)`)
+    : no(`neutral: at 100% the sent level was ${n.dif.toFixed(2)} dB off the mic (limiter makeup gain?)`);
   await aLocal(() => window.VPSMVideoCall.setMicGain(2));
 }
 
-// ── 6. Transcricao le o cru ─────────────────────────────────────────────
+// ── 6. Transcription reads the raw mic ──────────────────────────────────
 await aLocal(() => { window.VPSMVideoCall.setSubtitles(true, { backend: 'web-speech', lang: 'pt-BR' }); });
 await new Promise((r) => setTimeout(r, 400));
 const stt = await aLocal(async () => {
@@ -359,18 +349,18 @@ const stt = await aLocal(async () => {
   const par = await window.__difDb(t, sent, 1200);
   return { has: !!t, same: t === sent, dbStt: par.a, dif: par.dif };
 });
-stt.has ? ok('stt: a chamada entregou um track pra transcricao') : no('stt: nenhum track entregue ao STT');
-!stt.same ? ok('stt: o track da transcricao NAO e o enviado (nao passa pelo volume)') : no('stt: transcricao lendo o track sent');
+stt.has ? ok('stt: the call handed a track to transcription') : no('stt: no track handed to STT');
+!stt.same ? ok('stt: the transcription track is NOT the sent one (volume does not apply)') : no('stt: transcription reading the sent track');
 near(stt.dif, 6.02, 0.5)
-  ? ok(`stt: com volume em 200%, a transcricao le o cru (enviado +${stt.dif.toFixed(2)} dB sobre ele)`)
-  : no(`stt: sent ${stt.dif.toFixed(2)} dB sobre o track da transcricao — expected +6.0`);
+  ? ok(`stt: with volume at 200%, transcription reads the raw mic (sent +${stt.dif.toFixed(2)} dB over it)`)
+  : no(`stt: sent ${stt.dif.toFixed(2)} dB over the transcription track, expected +6.0`);
 near(stt.dbStt, -13, 2)
-  ? ok('stt: nivel do cru bate com o tom do microfone (~-13 dBFS RMS)')
-  : no(`stt: level do raw ${stt.dbStt.toFixed(1)} dBFS, expected ~-13`);
+  ? ok('stt: raw level matches the mic tone (~-13 dBFS RMS)')
+  : no(`stt: raw level ${stt.dbStt.toFixed(1)} dBFS, expected ~-13`);
 
-// ── 7. Mutado nao transcreve ────────────────────────────────────────────
-// Antes: o cru seguia enabled e o Whisper transcrevia — e mandava como
-// legenda — o que a pessoa falava mutada.
+// ── 7. Muted is not transcribed ─────────────────────────────────────────
+// The raw track must be disabled on mute, or speech while muted would be
+// transcribed and sent as captions.
 const mute = await aLocal(async () => {
   window.VPSMVideoCall.setMuted(true);
   const t = window.__sttStarts[window.__sttStarts.length - 1].getAudioTracks()[0];
@@ -381,11 +371,11 @@ const mute = await aLocal(async () => {
   r.voltou = t.enabled;
   return r;
 });
-mute.enabled === false ? ok('mute: o track da transcricao fica off') : no('mute: track da transcricao seguiu ligado — transcreveria fala mutada');
-mute.level === 0 ? ok('mute: medidor do que sai vai a zero') : no('mute: medidor em ' + mute.level + ' com o mic mutado');
-mute.voltou === true ? ok('mute: desmutar religa o track da transcricao') : no('mute: desmutar nao religou o track da transcricao');
+mute.enabled === false ? ok('mute: the transcription track goes off') : no('mute: transcription track stayed on, it would transcribe muted speech');
+mute.level === 0 ? ok('mute: the outgoing level meter drops to zero') : no('mute: meter at ' + mute.level + ' with the mic muted');
+mute.voltou === true ? ok('mute: unmuting turns the transcription track back on') : no('mute: unmuting did not turn the transcription track back on');
 
-// ── 8. Troca de mic reinicia a transcricao no track novo ────────────────
+// ── 8. Switching mics restarts transcription on the new track ───────────
 const restart = await aLocal(async () => {
   const antes = window.__sttStarts.length;
   const old = window.__sttStarts[antes - 1].getAudioTracks()[0];
@@ -395,21 +385,20 @@ const restart = await aLocal(async () => {
   return { newOnes: window.__sttStarts.length - antes, oldState: old.readyState, newState: fresh.readyState, equal: old === fresh };
 });
 (restart.newOnes >= 1 && !restart.equal && restart.newState === 'live')
-  ? ok('stt: troca de mic reinicia a transcricao no track novo (vivo)')
-  : no('stt: depois da troca de mic a transcricao ficou no track ' + restart.oldState + ' (' + JSON.stringify(restart) + ')');
+  ? ok('stt: a mic switch restarts transcription on the new (live) track')
+  : no('stt: after the mic switch transcription stayed on the ' + restart.oldState + ' track (' + JSON.stringify(restart) + ')');
 await aLocal(() => { window.VPSMVideoCall.setSubtitles(false); });
 
-// ── 9. Web Speech reconhece o track entregue ────────────────────────────
-// SpeechRecognition.start(track) (Chrome 135+). Sem ele, ouvia o mic padrao
-// do sistema — que pode nem ser o da chamada. Onde start(track) lanca, cai
-// no start() sem argumento.
+// ── 9. Web Speech recognizes the handed-over track ──────────────────────
+// SpeechRecognition.start(track) (Chrome 135+); where start(track) throws,
+// it falls back to start() with no argument.
 {
   const page = await ctx.newPage();
   await page.addInitScript(`
     window.__srArgs = [];
     window.SpeechRecognition = window.webkitSpeechRecognition = class {
       start(t) {
-        if (t !== undefined && window.__srRejectTrack) throw new TypeError('sem suporte');
+        if (t !== undefined && window.__srRejectTrack) throw new TypeError('unsupported');
         window.__srArgs.push(t === undefined ? 'nada' : (t && t.kind));
         setTimeout(() => this.onstart && this.onstart(), 0);
       }
@@ -426,8 +415,8 @@ await aLocal(() => { window.VPSMVideoCall.setSubtitles(false); });
     h2 && h2.stop && h2.stop();
     return window.__srArgs;
   });
-  r[0] === 'audio' ? ok('web-speech: start(track) receive o track da chamada') : no('web-speech: start recebeu ' + r[0] + ' em vez do track');
-  r[1] === 'nada' ? ok('web-speech: sem suporte a track, cai no start() do mic padrao') : no('web-speech: fallback recebeu ' + r[1]);
+  r[0] === 'audio' ? ok('web-speech: start(track) receives the call track') : no('web-speech: start received ' + r[0] + ' instead of the track');
+  r[1] === 'nada' ? ok('web-speech: without track support, falls back to start() on the default mic') : no('web-speech: fallback received ' + r[1]);
   await page.close();
 }
 

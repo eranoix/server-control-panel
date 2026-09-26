@@ -67,7 +67,7 @@ const fixture = `
   window.app = function(){
     const o = appReal();
     o.init = function(){};      // no timers, no loading: the pin measures the DOM
-    o.token = 'pino';
+    o.token = 'pin';
     return o;
   };
 `;

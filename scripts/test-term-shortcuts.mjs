@@ -36,7 +36,7 @@ const build = ({ selection, ctrlV }) => {
   // navigator is read-only on Node 22 → inject it as a parameter
   const navigator = { clipboard: { writeText: (t) => { termState.copied = t; return Promise.resolve(); } } };
   const fn = new Function('ev', 'term', 'self', 'state', 'c', 'navigator',
-    block[0] + '\n return "PASSOU_ADIANTE";');
+    block[0] + '\n return "FELL_THROUGH";');
   const run = (ev) => fn(ev, term, self, state, ev.ctrlKey || ev.metaKey, navigator);
   return { run, estado: termState };
 };
@@ -46,7 +46,7 @@ const ev = (key, extra = {}) => ({ type: 'keydown', key, ctrlKey: true, shiftKey
 {
   const { run, estado: state } = build({ selection: '', ctrlV: true });
   const r = run(ev('c'));
-  (r === 'PASSOU_ADIANTE' || r === true) && state.copied === null
+  (r === 'FELL_THROUGH' || r === true) && state.copied === null
     ? ok('Ctrl+C with no selection → passes through as SIGINT (does not swallow the ^C)')
     : no('Ctrl+C with no selection was INTERCEPTED — the user lost the SIGINT');
 }
@@ -81,7 +81,7 @@ const ev = (key, extra = {}) => ({ type: 'keydown', key, ctrlKey: true, shiftKey
   const r = run(e);
   r === false
     ? ok('Ctrl+V returns false → xterm does NOT consume the key → the native paste fires')
-    : no(r === true || r === 'PASSOU_ADIANTE'
+    : no(r === true || r === 'FELL_THROUGH'
         ? 'Ctrl+V returned true/passed → xterm sends ^V and calls preventDefault: NOTHING pastes'
         : 'Ctrl+V returned an unexpected value: ' + JSON.stringify(r));
   !blocked
@@ -95,7 +95,7 @@ const ev = (key, extra = {}) => ({ type: 'keydown', key, ctrlKey: true, shiftKey
 {
   const { run, estado: state } = build({ selection: '', ctrlV: false });
   const r = run(ev('v'));
-  (r === 'PASSOU_ADIANTE' || r === true) && !state.pasted
+  (r === 'FELL_THROUGH' || r === true) && !state.pasted
     ? ok('Ctrl+V (toggle off) → the literal ^V reaches the app (vim visual-block)')
     : no('with the toggle off the literal ^V was not delivered');
 }
@@ -103,7 +103,7 @@ const ev = (key, extra = {}) => ({ type: 'keydown', key, ctrlKey: true, shiftKey
 {
   const { run } = build({ selection: 'x', ctrlV: true });
   const r = run(ev('C', { shiftKey: true }));
-  (r === 'PASSOU_ADIANTE' || r === true)
+  (r === 'FELL_THROUGH' || r === true)
     ? ok('Ctrl+Shift+C is not swallowed here (the legacy fallback is intact)')
     : no('Ctrl+Shift+C was captured by the new block');
 }

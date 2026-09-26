@@ -989,7 +989,6 @@
   .fm-hit-path { color: var(--accent); font-size: var(--fs-xs); font-family:ui-monospace,monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .fm-hit-snippet { color: var(--text-muted); font-size: var(--fs-xs); margin-top:2px; }
 
-  /* ── Table — refinada ─────────────────────────────────────────── */
   table { width:100%; border-collapse: collapse; }
   th {
     text-align: left;
@@ -2579,9 +2578,9 @@
   .vc-popover-item-tight { padding: 6px 16px; font-size: 11px; }
   .vc-popover-item:disabled { opacity: .5; cursor: progress; }
 
-  /* Volume de envio do mic. O medidor vive ATRAS do slider (como no Discord):
-     arrastar e ver a voz encher a barra e o mesmo gesto. Medidor = o que sai
-     pros peers (depois do volume e do limitador), em dBFS. */
+  /* Mic send volume. The meter sits BEHIND the slider (as in Discord), so
+     dragging and watching the voice fill the bar is one gesture. The meter shows
+     what goes out to peers (after volume and limiter), in dBFS. */
   .vc-micvol-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
                     font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
   .vc-micvol-sub { font-weight: 400; color: var(--text-muted); font-size: 11px; }
@@ -2608,8 +2607,8 @@
   .vc-micvol-hint.is-quente { color: var(--warning); }
   .vc-micvol-op { display: flex; flex-direction: column; gap: 1px; min-width: 0; line-height: 1.25; }
   .vc-micvol-op small { font-size: 10.5px; color: var(--text-muted); }
-  /* No modal de dispositivos os itens herdam o visual do popover, mas sem o
-     recuo lateral dele — a linha ja esta dentro do padding do modal. */
+  /* In the devices modal the items inherit the popover look without its side
+     inset: the row is already inside the modal's padding. */
   .vc-micvol-modal .vc-popover-item { padding-left: 2px; padding-right: 2px; }
   @media (prefers-reduced-motion: reduce) { .vc-micvol-level { transition: none; } }
 
@@ -2915,7 +2914,7 @@
   /* The same pill, outside the video. Two variants, because the call's device
      modal has no image behind it: the lobby's dark glass would be illegible over
      the modal's surface (and invisible in the light theme).
-     is-superficie swaps the glass for theme tokens; is-linha stretches the pill
+     is-surface swaps the glass for theme tokens; is-line stretches the pill
      to fill the width like a list row. */
   .vc-pill.is-surface { background:var(--surface-2);border-color:var(--surface-3);color:var(--text-primary);
                            -webkit-backdrop-filter:none;backdrop-filter:none; }
@@ -4548,7 +4547,7 @@
              @click="setPage('operations')" title="Operations" role="button" tabindex="0" @keydown.enter.prevent="setPage('operations')" @keydown.space.prevent="setPage('operations')">
           <span class="nav-icon" x-html="icons.operations"></span>
           <span>Operations</span>
-          <!-- Aggregate badge: prioridade overdue (red) > jobs running (cyan) > failed-24h (red) -->
+          <!-- Aggregate badge: overdue TODOs (red) > jobs running (cyan) > failed-24h (red) -->
           <span class="ml-auto" x-show="(todosSummary.overdue||0)>0"
                 :title="(todosSummary.overdue||0)+' overdue TODOs'"
                 style="background:var(--danger);width:7px;height:7px;border-radius:50%;box-shadow:0 0 6px var(--danger);"></span>
@@ -5113,25 +5112,23 @@
             this.dashboardsLoading = true;
             this.dashboardsError = '';
             try {
-              // /grafana/api/search retorna lista de dashboards visíveis pro user logado.
-              // SSO já está ativo (cookie vpsm_token → ForwardAuth → header X-WEBAUTH-USER).
+              // Lists the dashboards visible to the logged-in user; SSO is already
+              // active (cookie vpsm_token → ForwardAuth → header X-WEBAUTH-USER).
               const r = await fetch('/grafana/api/search?type=dash-db', {credentials: 'same-origin', headers: {'Accept':'application/json'}});
               if (!r.ok) throw new Error('HTTP ' + r.status + (r.status===401?' (session expired — sign in again)':r.status===502||r.status===503?' (dashboard app unavailable)':''));
               const list = await r.json();
-              // Ordena: vpsm-overview primeiro, resto alfabético — UX estável independente da ordem que Grafana retorna.
+              // vpsm-overview first, then alphabetical: stable whatever order Grafana returns.
               const sorted = list.slice().sort((a,b) => {
                 if (a.uid === 'vpsm-overview') return -1;
                 if (b.uid === 'vpsm-overview') return 1;
                 return (a.title||'').localeCompare(b.title||'');
               });
-              // Inclui slug derivado de d.url (formato /d/UID/slug) pra montar
-              // URL canonica no iframe e evitar o redirect interno do Grafana
-              // de /d/UID -> /d/UID/slug.
+              // Keep the slug from d.url (/d/UID/slug) to build the canonical iframe
+              // URL and avoid Grafana's internal redirect from /d/UID to /d/UID/slug.
               this.dashboards = sorted.map(d => {
                 const m = /\/d\/[^/]+\/([^?#/]+)/.exec(d.url || '');
                 return {uid: d.uid, name: d.title, slug: m ? m[1] : ''};
               });
-              // Se o dash salvo não existe mais, cai pro primeiro disponível.
               if (this.dashboards.length && !this.dashboards.find(d => d.uid === this.grafanaDash)) {
                 this.grafanaDash = this.dashboards[0].uid;
                 localStorage.setItem('vpsm_grafana_dash', this.grafanaDash);
@@ -5142,8 +5139,8 @@
               this.dashboardsLoading = false;
             }
           },
-          // Slug do dashboard ativo (vazio se ainda não carregou) — usado pra
-          // montar URL canônica /d/UID/slug e evitar redirect interno do Grafana.
+          // Slug of the active dashboard ('' until loaded), used to build the
+          // canonical /d/UID/slug URL and avoid Grafana's internal redirect.
           currentSlug() {
             const d = this.dashboards.find(x => x.uid === this.grafanaDash);
             return d && d.slug ? '/' + d.slug : '';
@@ -5546,7 +5543,7 @@
               </div>
               <div class="ntf-row" style="margin-left:0">
                 <label for="f-notify-channelForm-name" class="ntf-row-label">Destination name</label>
-                <input id="f-notify-channelForm-name" type="text" x-model="notify.channelForm.name" class="ntf-input" :placeholder="'ex: '+notifyChannelTypeMeta(notify.channelForm.type).label">
+                <input id="f-notify-channelForm-name" type="text" x-model="notify.channelForm.name" class="ntf-input" :placeholder="'e.g. '+notifyChannelTypeMeta(notify.channelForm.type).label">
               </div>
               <template x-for="f in notifyChannelTypeFields(notify.channelForm.type)" :key="f.key">
                 <div class="ntf-row" style="margin-left:0">
@@ -5772,7 +5769,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mb-3">
               <div>
                 <label for="f-composeForm-project-name" class="uppercase text-gray-400 text-[10px]">Project name *</label>
-                <input id="f-composeForm-project-name" x-model="composeForm.project_name" placeholder="ex: nginx-proxy" class="input w-full mono text-xs py-1" aria-label="ex: nginx-proxy"/>
+                <input id="f-composeForm-project-name" x-model="composeForm.project_name" placeholder="e.g. nginx-proxy" class="input w-full mono text-xs py-1" aria-label="e.g. nginx-proxy"/>
               </div>
               <div>
                 <label for="f-composeForm-dir" class="uppercase text-gray-400 text-[10px]">Directory (default: /opt/compose/&lt;name&gt;)</label>
@@ -6090,7 +6087,7 @@
                       class="btn btn-ghost text-sm" style="width:88px; text-align:center; flex-shrink:0"
                       x-text="procsLive?'⏸ pause':'▶ live'"></button>
               <button aria-label="Refresh the processes" @click="procsRefreshOnce()" class="btn btn-ghost text-sm" style="width:36px; flex-shrink:0">↻</button>
-              <button @click="exportListCSV((procs?.procs||[]), {pid:'PID',ppid:'PPID',name:'Name',user:'User',cpu:'CPU %',memory:'MEM %',rss:'RSS',status:'Status',cmdline:'Cmdline'}, 'processos')" class="btn btn-ghost text-sm" title="Download processes as CSV" aria-label="Download processes as CSV">⬇ CSV</button>
+              <button @click="exportListCSV((procs?.procs||[]), {pid:'PID',ppid:'PPID',name:'Name',user:'User',cpu:'CPU %',memory:'MEM %',rss:'RSS',status:'Status',cmdline:'Cmdline'}, 'processes')" class="btn btn-ghost text-sm" title="Download processes as CSV" aria-label="Download processes as CSV">⬇ CSV</button>
               <!-- Save/Saved: identical fixed width in both states. Only the colour changes. -->
               <button @click="procsLayoutSave()" :class="procsLayoutDirty ? 'btn btn-primary text-sm' : 'btn btn-ghost text-sm'"
                       style="width:140px; text-align:center; flex-shrink:0"
@@ -6205,7 +6202,7 @@
                   <input x-model="portsFilter.text" placeholder="filter process/port…" class="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-0.5 text-xs" style="width:200px" aria-label="Text filter" />
                   <button x-show="portsFilter.text" @click="portsFilter.text=''" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); padding:0 4px" class="text-muted hover:text-white" aria-label="Clear">×</button>
                 </div>
-                <button @click="exportListCSV(filteredListening(), {Proto:'Proto',Local:'Local',Process:'Process',PID:'PID'}, 'portas-ouvindo')" class="btn btn-ghost btn-sm" title="Download listening ports as CSV" aria-label="Download listening ports as CSV">⬇ CSV</button>
+                <button @click="exportListCSV(filteredListening(), {Proto:'Proto',Local:'Local',Process:'Process',PID:'PID'}, 'listening-ports')" class="btn btn-ghost btn-sm" title="Download listening ports as CSV" aria-label="Download listening ports as CSV">⬇ CSV</button>
               </div>
             </div>
             <!-- table-layout:fixed + colgroup so it does not jump -->
@@ -6248,7 +6245,7 @@
                 Active connections
                 <span class="text-muted mono" style="font-variant-numeric:tabular-nums" x-text="'(' + filteredConnections().length + (filteredConnections().length !== connections.length ? ' / ' + connections.length : '') + ')'"></span>
                 <!-- truncation warning -->
-                <span x-show="filteredConnections().length > connsLimit" class="text-amber-400 text-[11px] ml-2" x-text="'showing ' + connsLimit + ', ' + (filteredConnections().length - connsLimit) + ' ocultas'"></span>
+                <span x-show="filteredConnections().length > connsLimit" class="text-amber-400 text-[11px] ml-2" x-text="'showing ' + connsLimit + ', ' + (filteredConnections().length - connsLimit) + ' hidden'"></span>
               </div>
               <div class="ml-auto flex items-center gap-2" style="flex-wrap:wrap">
                 <select x-model="connsFilter.proto" class="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-0.5 text-xs" aria-label="Proto filter">
@@ -6256,7 +6253,7 @@
                   <option value="tcp">tcp</option>
                   <option value="tcp6">tcp6</option>
                 </select>
-                <select x-model="connsFilter.state" class="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-0.5 text-xs" aria-label="Filtro state">
+                <select x-model="connsFilter.state" class="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-0.5 text-xs" aria-label="State filter">
                   <option value="">states</option>
                   <option value="ESTAB">ESTAB</option>
                   <option value="LISTEN">LISTEN</option>
@@ -6268,7 +6265,7 @@
                   <input x-model="connsFilter.text" placeholder="filter local/peer…" class="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-0.5 text-xs" style="width:200px" aria-label="Text filter" />
                   <button x-show="connsFilter.text" @click="connsFilter.text=''" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); padding:0 4px" class="text-muted hover:text-white" aria-label="Clear">×</button>
                 </div>
-                <button @click="exportListCSV(filteredConnections(), {Proto:'Proto',Local:'Local',Peer:'Peer',State:'State'}, 'conexoes-ativas')" class="btn btn-ghost btn-sm" title="Download active connections as CSV" aria-label="Download active connections as CSV">⬇ CSV</button>
+                <button @click="exportListCSV(filteredConnections(), {Proto:'Proto',Local:'Local',Peer:'Peer',State:'State'}, 'active-connections')" class="btn btn-ghost btn-sm" title="Download active connections as CSV" aria-label="Download active connections as CSV">⬇ CSV</button>
                 <select x-model.number="connsLimit" class="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-0.5 text-xs" aria-label="Limit">
                   <option :value="100">100</option><option :value="200">200</option>
                   <option :value="500">500</option><option :value="1000">1000</option>
@@ -6382,8 +6379,8 @@
                   <button @click="askConfirm('Start ' + selectedUnit, 'Start the unit ' + selectedUnit + '?', () => unitAction(selectedUnit,'start'))" class="btn btn-ok btn-sm">Start</button>
                   <button @click="askConfirm('Stop ' + selectedUnit, 'Stop the unit ' + selectedUnit + '?', () => unitAction(selectedUnit,'stop'), {danger:true})" class="btn btn-warn btn-sm">Stop</button>
                   <button @click="askConfirm('Restart ' + selectedUnit, 'Restart the unit ' + selectedUnit + '?', () => unitAction(selectedUnit,'restart'))" class="btn btn-warn btn-sm">Restart</button>
-                  <button @click="askConfirm('Enable ' + selectedUnit, 'Habilitar ' + selectedUnit + ' no boot?', () => unitAction(selectedUnit,'enable'))" class="btn btn-ghost btn-sm">Enable</button>
-                  <button @click="askConfirm('Disable ' + selectedUnit, 'Desabilitar ' + selectedUnit + ' do boot?', () => unitAction(selectedUnit,'disable'))" class="btn btn-ghost btn-sm">Disable</button>
+                  <button @click="askConfirm('Enable ' + selectedUnit, 'Enable ' + selectedUnit + ' at boot?', () => unitAction(selectedUnit,'enable'))" class="btn btn-ghost btn-sm">Enable</button>
+                  <button @click="askConfirm('Disable ' + selectedUnit, 'Disable ' + selectedUnit + ' at boot?', () => unitAction(selectedUnit,'disable'))" class="btn btn-ghost btn-sm">Disable</button>
                 </div>
               </div>
               <pre class="logs" x-text="unitOutput||'no content'" style="max-height:60vh; overflow:auto"></pre>
@@ -6461,8 +6458,8 @@
               <!-- A long placeholder broke the layout on a small viewport.
                    Shortened; the full hint lives in title (hover tooltip). -->
               <input aria-label="New Spec" x-model="ufw.newSpec"
-                     placeholder='regra (ex: 22/tcp)'
-                     title='Exemplos: "22/tcp", "from 10.0.0.0/8", "8765/tcp", "from 192.168.0.0/24 to any port 80", ou número da regra (1, 2…) ao deletar'
+                     placeholder='rule (e.g. 22/tcp)'
+                     title='Examples: "22/tcp", "from 10.0.0.0/8", "8765/tcp", "from 192.168.0.0/24 to any port 80", or the rule number (1, 2…) when deleting'
                      class="input flex-1 py-1 text-xs mono" style="min-width:0" aria-label="ufw specification"/>
               <button @click="ufwRule(ufw.newAction, ufw.newSpec)" :disabled="ufwBusy" class="btn btn-primary btn-sm" x-text="ufwBusy?'Applying…':'Apply'">Apply</button>
             </div>
@@ -6512,7 +6509,7 @@
             </div>
             <div class="flex gap-2 items-center shrink-0">
               <!-- correct aria-label (it used to duplicate the placeholder) -->
-              <input x-model="filePath" @keydown.enter="browseFiles(filePath)" class="input mono" style="width:300px" placeholder="/caminho" aria-label="Directory path"/>
+              <input x-model="filePath" @keydown.enter="browseFiles(filePath)" class="input mono" style="width:300px" placeholder="/path" aria-label="Directory path"/>
               <button @click="browseFiles(filePath)" class="btn btn-primary btn-sm">Open</button>
               <button @click="refresh()" class="btn btn-ghost btn-sm" title="Refresh" aria-label="Refresh the listing">⟳</button>
               <button @click="openTerminalAtPath(filePath)" class="btn btn-ghost btn-sm" title="Open a terminal in this folder" aria-label="Open a terminal here">▶ Terminal here</button>
@@ -6595,7 +6592,7 @@
                 </div>
                 <!-- cap + show more (same pattern as connsLimit) -->
                 <div x-show="(fileList?.entries?.length||0) > fileLimit" class="p-2 flex items-center justify-center gap-2" style="flex-wrap:wrap">
-                  <span class="text-amber-400 text-[11px]" x-text="'showing ' + fileLimit + ', ' + ((fileList?.entries?.length||0) - fileLimit) + ' ocultas'"></span>
+                  <span class="text-amber-400 text-[11px]" x-text="'showing ' + fileLimit + ', ' + ((fileList?.entries?.length||0) - fileLimit) + ' hidden'"></span>
                   <button class="fm-tool" @click="fileLimit += 200"><span class="fm-tool-ico">▾</span>show 200 more</button>
                   <button class="fm-tool" @click="fileLimit = (fileList?.entries?.length||0)">show all</button>
                 </div>
@@ -7060,7 +7057,7 @@
                 </div>
                 <div>
                   <label for="f-hostTermAlertPattern" class="text-gray-400 uppercase">Alert by default (regex)</label>
-                  <input id="f-hostTermAlertPattern" type="text" x-model="hostTermAlertPattern" @change="applyTermAlertPattern()" placeholder="ex: ERROR|FATAL|panic:" class="input w-full mt-1 mono text-xs" aria-label="Regex pattern for the alert"/>
+                  <input id="f-hostTermAlertPattern" type="text" x-model="hostTermAlertPattern" @change="applyTermAlertPattern()" placeholder="e.g. ERROR|FATAL|panic:" class="input w-full mt-1 mono text-xs" aria-label="Regex pattern for the alert"/>
                   <p class="text-[10px] text-muted mt-1">When output matches, raises a visual notification.</p>
                 </div>
                 <div>
@@ -7301,7 +7298,7 @@
                 <div x-show="!sessionMgr.loadError && (sessionMgr.sessions||[]).length===0" class="text-sm text-muted py-6 text-center italic">No sessions. Create one with "+ New session".</div>
                 <div x-show="sessionMgr.loadError && (sessionMgr.sessions||[]).length===0" class="text-sm py-6 text-center" style="color:var(--warn,#f59e0b)">
                   <div class="font-medium">⚠ Could not load the list — this does NOT mean a session was lost.</div>
-                  <div class="text-[11px] mt-1 opacity-80" x-text="'(' + sessionMgr.loadError + ') — suas sessões continuam vivas no servidor'"></div>
+                  <div class="text-[11px] mt-1 opacity-80" x-text="'(' + sessionMgr.loadError + '), your sessions are still alive on the server'"></div>
                   <button @click="sessionMgrLoad()" class="btn btn-ghost btn-sm mt-2">↻ Try again</button>
                 </div>
                 <div class="space-y-1">
@@ -7435,7 +7432,7 @@
                 <div class="flex items-center gap-2 bg-[var(--surface-1)] rounded px-2 py-1.5">
                   <span class="w-1.5 h-1.5 rounded-full" :class="s.attached?'bg-emerald-400':'bg-gray-500'"></span>
                   <span class="text-sm mono flex-1 truncate" x-text="s.name"></span>
-                  <span class="text-[10px] text-muted" x-text="s.attached?'ativa':'detached'"></span>
+                  <span class="text-[10px] text-muted" x-text="s.attached?'attached':'detached'"></span>
                   <button @click="reattachSession(s.name)" class="btn btn-ghost btn-sm" title="Open in this session" aria-label="Open in this session">↩</button>
                   <button @click="killSessionByName(s.name)" class="btn btn-ghost btn-sm text-rose-400" title="Kill session" aria-label="Kill session">✕</button>
                 </div>
@@ -7563,7 +7560,7 @@
               <form @submit.prevent="usersModal.mode==='create' ? userCreate() : userResetPassword()" class="space-y-3">
                 <div x-show="usersModal.mode==='create'">
                   <label for="f-usersModal-form-username" class="text-xs text-gray-400 uppercase">User</label>
-                  <input id="f-usersModal-form-username" type="text" x-model="usersModal.form.username" class="input w-full mt-1 mono" required pattern="[A-Za-z0-9_-]{1,40}" placeholder="ex: dev1" autocomplete="username" name="username" aria-label="ex: dev1"/>
+                  <input id="f-usersModal-form-username" type="text" x-model="usersModal.form.username" class="input w-full mt-1 mono" required pattern="[A-Za-z0-9_-]{1,40}" placeholder="e.g. dev1" autocomplete="username" name="username" aria-label="e.g. dev1"/>
                 </div>
                 <!-- On a reset it supplies a readonly username so the password manager associates the credential correctly -->
                 <input x-show="usersModal.mode!=='create'" type="text" :value="usersModal.form.username" autocomplete="username" name="username" style="display:none" tabindex="-1" readonly aria-hidden="true"/>
@@ -7609,7 +7606,7 @@
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 mb-4">
             <div class="card rede-kpi p-4" :class="adguardLoaded && adguard.protection_enabled ? 'on':''">
               <div class="flex items-center gap-2 text-xs font-semibold text-gray-400" style="text-transform:uppercase;letter-spacing:.05em"><span class="kic" style="background:rgba(52,211,153,.13);color:#34d399">🛡️</span> DNS filter</div>
-              <div class="text-2xl font-bold mt-2" style="line-height:1" x-text="!adguardLoaded ? '—' : (adguard.protection_enabled ? 'On' : 'Pausado')"></div>
+              <div class="text-2xl font-bold mt-2" style="line-height:1" x-text="!adguardLoaded ? '—' : (adguard.protection_enabled ? 'On' : 'Paused')"></div>
               <div class="text-xs text-gray-500 mt-1"><span x-show="adguardLoaded"><b class="text-gray-300" x-text="(adguard.blocked_pct||0).toFixed(1)+'%'"></b> blocked · <span x-text="(adguard.num_queries||0).toLocaleString('pt-BR')"></span> queries</span></div>
             </div>
             <div class="card rede-kpi p-4" :class="dsLoaded ? 'on':''">
@@ -8026,7 +8023,7 @@
               <div><label for="f-jiraSetup-site" class="text-xs text-gray-400 block mb-1">Site *</label><input id="f-jiraSetup-site" aria-label="Site" type="text" x-model="jiraSetup.site" placeholder="jordan.atlassian.net" autocomplete="url" class="w-full bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-1.5 text-sm font-mono" /></div>
               <div><label for="f-jiraSetup-email" class="text-xs text-gray-400 block mb-1">Email *</label><input id="f-jiraSetup-email" aria-label="Email" type="email" x-model="jiraSetup.email" autocomplete="username" class="w-full bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-1.5 text-sm" /></div>
               <div><label for="f-jiraSetup-token" class="text-xs text-gray-400 block mb-1">API Token *</label><input id="f-jiraSetup-token" aria-label="API Token" type="password" x-model="jiraSetup.token" placeholder="ATATT..." autocomplete="current-password" class="w-full bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-1.5 text-sm font-mono" /></div>
-              <div><label for="f-jiraSetup-project-key" class="text-xs text-gray-400 block mb-1">Project key (opcional)</label><input id="f-jiraSetup-project-key" aria-label="Project key (opcional)" type="text" x-model="jiraSetup.project_key" placeholder="TTW" autocomplete="off" class="w-full bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-1.5 text-sm font-mono uppercase" /></div>
+              <div><label for="f-jiraSetup-project-key" class="text-xs text-gray-400 block mb-1">Project key (optional)</label><input id="f-jiraSetup-project-key" aria-label="Project key (optional)" type="text" x-model="jiraSetup.project_key" placeholder="TTW" autocomplete="off" class="w-full bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-1.5 text-sm font-mono uppercase" /></div>
             </div>
             <div class="mt-4 flex gap-2"><button type="submit" class="btn btn-primary">Connect</button></div>
             </form>
@@ -8096,11 +8093,11 @@
                       </div>
                       <input aria-label="Jira Custom JQL" type="text" x-show="jiraFilter==='custom'"
                              x-model.debounce.500ms="jiraCustomJQL" @input="loadJiraBoard()"
-                             placeholder="ex: assignee = currentUser() AND status != Done"
+                             placeholder="e.g. assignee = currentUser() AND status != Done"
                              title="Custom JQL query sent to Jira"
                              class="mt-2 w-full bg-[var(--surface-0)] border border-[var(--border-default)] rounded-md px-2 py-1 text-[11px] font-mono focus:border-cyan-500/40 focus:outline-none" />
                       <div class="text-[10px] text-muted mt-2 px-1 border-t border-[var(--border-default)] pt-1.5">
-                        <span class="text-cyan-300 font-semibold" x-text="jiraFilteredIssues().length"></span> de <span x-text="jiraIssues.length"></span> issues
+                        <span class="text-cyan-300 font-semibold" x-text="jiraFilteredIssues().length"></span> of <span x-text="jiraIssues.length"></span> issues
                       </div>
                     </div>
                   </div>
@@ -8240,7 +8237,7 @@
                                 <span :class="jobStatusChip(jiraIssueJob(iss.key)?.status)" class="px-1 py-0.5 rounded shrink-0"
                                       x-text="jiraIssueJob(iss.key)?.status==='running'
                                                 ? '🤖 IA · '+boardJobProgress(jiraIssueJob(iss.key))+'%'
-                                                : '🤖 na queue'"></span>
+                                                : '🤖 in queue'"></span>
                                 <span class="text-muted truncate"
                                       x-show="jiraIssueJob(iss.key)?.status==='running' && boardJobStep(jiraIssueJob(iss.key))"
                                       x-text="boardJobStep(jiraIssueJob(iss.key))"></span>
@@ -8465,7 +8462,7 @@
                           class="btn btn-ok btn-sm"
                           title="Opens a session already pointed at the project repo with the ticket loaded" aria-label="Opens a session already pointed at the project repo with the ticket loaded">
                     <span x-show="!jiraWorkBusy">▶ Work on it now</span>
-                    <span x-show="jiraWorkBusy">▶ abrindo terminal…</span>
+                    <span x-show="jiraWorkBusy">▶ opening terminal…</span>
                   </button>
                   <button @click="startJiraAI()" :disabled="jiraAIBusy"
                           class="btn btn-ghost btn-sm text-cyan-300"
@@ -8529,7 +8526,7 @@
                                 @change="updateJiraIssue({issue_type: $event.target.value})"
                                 class="bg-[var(--surface-0)] border border-[var(--border-default)] rounded px-1.5 py-0.5 text-xs hover:border-cyan-500/40">
                           <template x-if="jiraDetail.issue?.issuetype && !jiraDetailIssueTypes.find(t=>t.name===jiraDetail.issue.issuetype.name)">
-                            <option :value="jiraDetail.issue?.issuetype?.name" x-text="(jiraDetail.issue?.issuetype?.name||'') + ' (atual)'"></option>
+                            <option :value="jiraDetail.issue?.issuetype?.name" x-text="(jiraDetail.issue?.issuetype?.name||'') + ' (current)'"></option>
                           </template>
                           <template x-for="t in jiraDetailIssueTypes" :key="t.id">
                             <option :value="t.name" x-text="t.name"></option>
@@ -8552,7 +8549,7 @@
                           <!-- Guarantees that the current assignee appears even when they are not
                                in the paginated list of assignables (Jira only returns 20). -->
                           <template x-if="jiraDetail.issue?.assignee && jiraDetail.issue.assignee.accountId !== jiraHealth.me?.accountId && !jiraAssignableUsers.find(u => u.accountId === jiraDetail.issue.assignee.accountId)">
-                            <option :value="jiraDetail.issue?.assignee?.accountId" x-text="(jiraDetail.issue?.assignee?.displayName||'') + ' (atual)'"></option>
+                            <option :value="jiraDetail.issue?.assignee?.accountId" x-text="(jiraDetail.issue?.assignee?.displayName||'') + ' (current)'"></option>
                           </template>
                           <template x-for="u in jiraAssignableUsers" :key="u.accountId">
                             <option :value="u.accountId"
@@ -8941,7 +8938,7 @@
                 <label for="f-jobLauncher-kind" class="text-xs text-gray-400 block mb-1">Type</label>
                 <select id="f-jobLauncher-kind" aria-label="Kind" x-model="jobLauncher.kind" class="w-full bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-1.5 text-sm">
                   <option value="apt_upgrade">apt-get update + upgrade (primary)</option>
-                  <option value="docker_pull">docker pull (imagem)</option>
+                  <option value="docker_pull">docker pull (image)</option>
                   <option value="docker_compose_pull">docker compose pull (dir)</option>
                   <option value="image_prune">docker image prune -af</option>
                   <option value="backup_now">backup (primary)</option>
@@ -9204,7 +9201,7 @@
                 <div class="ntf-step-head"><span class="ntf-step-num">2</span><span class="t">When</span></div>
                 <div class="ntf-row" style="margin-bottom:.9rem">
                   <label for="f-schedForm-j-name" class="ntf-row-label">Name *</label>
-                  <input id="f-schedForm-j-name" type="text" x-model="schedForm.j.name" class="ntf-input" placeholder="ex.: Backup semanal" aria-label="Schedule name" />
+                  <input id="f-schedForm-j-name" type="text" x-model="schedForm.j.name" class="ntf-input" placeholder="e.g. Weekly backup" aria-label="Schedule name" />
                 </div>
                 <div class="ntf-row" style="margin-bottom:.7rem">
                   <label class="ntf-row-label">Frequency</label>
@@ -9252,7 +9249,7 @@
                   <div class="flex items-center gap-2 flex-wrap">
                     <span class="text-xs text-gray-400">Every day</span>
                     <input type="number" min="1" max="31" x-model.number="schedForm.sched.dom" @input="schedSyncCron()" class="ntf-input" style="width:5rem" aria-label="Day of month" />
-                    <span class="text-xs text-gray-400">às</span>
+                    <span class="text-xs text-gray-400">at</span>
                     <input type="time" x-model="schedForm.sched.time" @input="schedSyncCron()" class="ntf-input" style="width:auto" aria-label="Time" />
                   </div>
                 </div>
@@ -9872,7 +9869,7 @@
             <!-- Per-account usage (metrics from the Claude transcripts) -->
             <div class="mt-4 pt-3" style="border-top:1px solid rgba(255,255,255,.06)">
               <div class="flex items-center justify-between mb-2">
-                <div class="text-[10px] uppercase text-muted">Usage per account <span class="text-muted" style="text-transform:none">· tokens · custo equivalente API (estimado)</span></div>
+                <div class="text-[10px] uppercase text-muted">Usage per account <span class="text-muted" style="text-transform:none">· tokens · equivalent API cost (estimated)</span></div>
                 <button @click="loadClaudeAccountsUsage()" :disabled="claudeUsageBusy" class="btn btn-ghost btn-sm" title="Reload the usage" aria-label="Reload the usage">↻</button>
               </div>
               <div x-show="claudeUsageBusy && (claudeUsage.accounts||[]).length===0" class="text-[11px] text-muted py-2 text-center">calculating usage…</div>
@@ -9905,7 +9902,7 @@
                       </div>
                     </div>
                     <div class="text-[10px] text-muted mt-1" x-show="u.inferred_tokens"
-                         x-text="'· ' + _fmtTok(u.inferred_tokens) + ' inferidos por session-env (deduzido, não medido)'"></div>
+                         x-text="'· ' + _fmtTok(u.inferred_tokens) + ' inferred from session-env (deduced, not measured)'"></div>
                     <div class="mt-2 flex flex-wrap gap-1" x-show="(u.by_model||[]).length">
                       <template x-for="m in (u.by_model||[]).slice(0,4)" :key="'m'+u.account_id+m.model">
                         <span class="chip text-[10px]" x-text="(m.model||'').replace('claude-','') + ' · ' + _fmtTok((m.input_tokens||0)+(m.output_tokens||0)+(m.cache_creation_tokens||0)+(m.cache_read_tokens||0))"></span>
@@ -9996,7 +9993,7 @@
                     <select class="input shrink-0" style="min-width:9rem;width:auto" x-model="aiModels.config[tier.key]">
                       <template x-for="opt in (aiModels.allowed||[''])" :key="'opt'+tier.key+opt">
                         <!-- "" = use the TIER default (Suggest→haiku; the rest→Opus), it does not force Opus -->
-                        <option :value="opt" x-text="opt==='' ? ('Padrão ('+(aiModels.defaults[tier.key]||'opus')+')') : opt"></option>
+                        <option :value="opt" x-text="opt==='' ? ('Default ('+(aiModels.defaults[tier.key]||'opus')+')') : opt"></option>
                       </template>
                     </select>
                   </div>
@@ -10119,10 +10116,10 @@
             <div class="flex gap-2 flex-wrap items-center">
               <button @click="forkClaudeSession('')" :disabled="claudeBusy" class="btn btn-primary btn-sm">+ New session</button>
               <!-- This session's model: an optional explicit choice. Empty = it inherits the model predefined in settings.json (Opus / full window) — interactive panels are not tiered. -->
-              <label class="text-[10px] text-muted flex items-center gap-1" title="Modelo desta sessão. Vazio = herda o modelo do settings.json (hoje claude-opus-5-5[1m], janela de 1M). Escolher um apelido (haiku/sonnet/opus) usa a janela padrão de 200k. Em --resume/--continue o Claude Code pode manter o modelo do histórico.">
+              <label class="text-[10px] text-muted flex items-center gap-1" title="Model for this session. Empty = inherits the model from settings.json (currently claude-opus-5-5[1m], 1M window). Picking an alias (haiku/sonnet/opus) uses the default 200k window. On --resume/--continue Claude Code may keep the model from the history.">
                 model
                 <select class="input shrink-0" style="min-width:8rem;width:auto" x-model="claudeForkModel">
-                  <option value="">Padrão — Opus 5.5 · 1M</option>
+                  <option value="">Default: Opus 5.5 · 1M</option>
                   <option value="haiku">haiku</option>
                   <option value="sonnet">sonnet</option>
                   <option value="opus">opus (5.5 · 200k)</option>
@@ -10215,7 +10212,7 @@
                proxy; the admin token comes from the secrets vault). -->
           <div x-show="aiTab==='tokens'" x-cloak>
             <p class="text-sm text-gray-400 mb-4">
-              Access tokens for <b>API privada</b> (private-ai-api) — endpoints
+              Access tokens for the <b>private API</b> (private-ai-api) — endpoints
               compatible with OpenAI/Anthropic, served by the Claude Max subscription.
               Each token is an independent API key, with limits of its own.
             </p>
@@ -10232,7 +10229,7 @@
                 <div class="text-xs uppercase text-gray-400 mb-2">OAuth (Claude Max)</div>
                 <div class="flex items-center gap-2">
                   <span class="w-2 h-2 rounded-full shrink-0" :class="privStatus?.oauth?.accessTokenValid ? 'bg-emerald-400' : 'bg-red-400'"></span>
-                  <span class="text-sm font-medium" x-text="privStatus?.oauth?.accessTokenValid ? 'access token valid' : (privStatus?.oauth ? 'token expirado' : 'no credentials')"></span>
+                  <span class="text-sm font-medium" x-text="privStatus?.oauth?.accessTokenValid ? 'access token valid' : (privStatus?.oauth ? 'token expired' : 'no credentials')"></span>
                 </div>
                 <div class="text-[11px] text-muted mt-2 leading-relaxed">
                   <div x-show="privStatus?.oauth?.expiresInSeconds!=null">expires in <span class="mono" x-text="_privDur(privStatus?.oauth?.expiresInSeconds)"></span><span x-show="privStatus?.oauth?.isLongLived"> · long-lived</span></div>
@@ -10313,7 +10310,7 @@
                 <div class="font-semibold text-sm">Tokens <span class="text-muted" x-text="'('+(privTokens?.length||0)+')'"></span></div>
                 <button @click="loadPrivateApiTokens(); loadPrivateApiStatus()" :disabled="privBusy" class="btn btn-ghost btn-sm" title="Reload" aria-label="Reload">↻</button>
               </div>
-              <div x-show="!privTokens || privTokens.length===0" class="text-[11px] text-muted py-3 text-center" x-text="privError ? '—' : 'Nenhum token ainda.'"></div>
+              <div x-show="!privTokens || privTokens.length===0" class="text-[11px] text-muted py-3 text-center" x-text="privError ? '—' : 'No tokens yet.'"></div>
               <div class="overflow-x-auto" x-show="privTokens && privTokens.length>0">
                 <table class="w-full text-sm" style="border-collapse:collapse">
                   <thead>
@@ -10375,7 +10372,7 @@
                   <div class="flex items-center gap-2">
                     <input id="f-privConn-baseUrl" type="text" x-model="privConn.baseUrl" spellcheck="false"
                            class="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-1 text-sm mono flex-1" />
-                    <button @click="_pcCopy(_pcBase(),'Base URL copiada')" class="btn btn-ghost btn-sm" title="Copy" aria-label="Copy">Copy</button>
+                    <button @click="_pcCopy(_pcBase(),'Base URL copied')" class="btn btn-ghost btn-sm" title="Copy" aria-label="Copy">Copy</button>
                   </div>
                 </div>
                 <!-- Full endpoint -->
@@ -10442,7 +10439,7 @@
 
               <!-- Generated code block -->
               <div class="relative">
-                <button @click="_pcCopy(privSnippet(),'Exemplo copied')" class="btn btn-primary btn-sm"
+                <button @click="_pcCopy(privSnippet(),'Example copied')" class="btn btn-primary btn-sm"
                         style="position:absolute;right:8px;top:8px;z-index:1" title="Copy the example" aria-label="Copy the example">Copy</button>
                 <pre class="mono text-[12px] leading-relaxed bg-[var(--surface-1)] border border-[var(--border-default)] rounded p-3 pr-16 overflow-x-auto" style="white-space:pre" x-text="privSnippet()"></pre>
               </div>
@@ -10452,7 +10449,7 @@
                 The certificate is <b>self-signed</b>. Download it once and point the client at it:
                 <div class="flex items-center gap-2 mt-1">
                   <code class="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-1 mono text-[11px] truncate flex-1" x-text="privCertCmd()"></code>
-                  <button @click="_pcCopy(privCertCmd(),'Comando copied')" class="btn btn-ghost btn-sm" title="Copy" aria-label="Copy">Copy</button>
+                  <button @click="_pcCopy(privCertCmd(),'Command copied')" class="btn btn-ghost btn-sm" title="Copy" aria-label="Copy">Copy</button>
                 </div>
                 <div class="mt-1">Fingerprint SHA-256: <span class="mono text-gray-400" x-text="privCertFp"></span></div>
               </div>
@@ -10508,7 +10505,7 @@
               <h2 class="text-lg font-semibold">Lab</h2>
 <!-- 🔴 It only appears during the PAUSE. Outside it this badge read the SAME
                    source as the "poller: checked" right beside it — two badges saying
-                   the same number, and one of them still showed "sem carimbo" in the
+                   the same number, and one of them still showed "no stamp" in the
                    first 15s because the age was only stamped on the tick. Three
                    clocks where there are two subjects is noise. -->
               <span x-show="pvx.paused" x-cloak class="text-xs px-2 py-0.5 rounded font-mono"
@@ -10620,7 +10617,7 @@
             <div x-show="!pvx.forbidden" class="flex flex-wrap items-center gap-3 mb-3">
               <label class="text-xs opacity-60" for="pvx-filter">Filter</label>
               <input id="pvx-filter" @focus="pvx.focusFilter=true" @blur="pvx.focusFilter=false" class="input input-sm" style="min-width:320px"
-                     placeholder="ex.: estado:critico  tipo:ct  node:games"
+                     placeholder="e.g. estado:critico  tipo:ct  node:games"
                      :value="pvx.filter" @input="pvxSetFilter($event.target.value)"
                      aria-describedby="pvx-filter-ajuda">
               <span id="pvx-filter-ajuda" class="text-[11px] opacity-50">
@@ -10708,7 +10705,7 @@
                        style="border-color:var(--border)">
                     <input type="checkbox" :checked="pvx.sel.length && pvx.sel.length === pvxFilteredNodes().length"
                            @change="pvxSelAll()" aria-label="Select every visible node">
-                    <span>nós</span>
+                    <span>nodes</span>
                     <!-- It answers "what do I have?" without forcing you to count row by
                          row. A type that does not exist disappears: zero is not information. -->
                     <span class="flex gap-1.5 normal-case">
@@ -10773,7 +10770,7 @@
                              stacked and the operator deducing from the unit, when
                              "456.4 MB / 16.0 GB" could be disk, RAM or swap.
 
-                             The absolute value lives in the Resumo tab, which has width. This
+                             The absolute value lives in the Summary tab, which has width. This
                              column is for SCANNING (which node is unwell?); the right-hand side is for
                              READING (how much, exactly?). -->
                         <!-- The cap lives on the GRID, not on the bar's column: that way the
@@ -10890,8 +10887,8 @@
                           <span x-show="!ds.erro && !pvxBackupAge(ds).vazio" x-cloak class="opacity-60"
                                 x-text="ds.total + ' copies · ' + (ds.guests || []).length + ' guests'"></span>
                           <!-- The NOTE is what prevents the permanent red: it says
-                               WHY the layer is the way it is. "Desarmado" with the
-                               reason is information; "há 340 h" in red, without the
+                               WHY the layer is the way it is. "disarmed" with the
+                               reason is information; "340h ago" in red, without the
                                reason, is an alarm that never switches off. -->
                           <span class="opacity-50 text-[11px] w-full"
                                 x-show="pvxBackupState(ds).nota" x-cloak
@@ -10972,8 +10969,8 @@
 
                 <!-- ══ CONTEXTUAL TABS ═════════════════════════════════════
                      The set changes with the TYPE of the node, the way Proxmox does.
-                     Host: Resumo · Tasks · Disks · Storage · ZFS · Permissions.
-                     Guest: Resumo · Console · Cópias · Tasks.
+                     Host: Summary · Tasks · Disks · Storage · ZFS · Permissions.
+                     Guest: Summary · Console · Copies · Tasks.
 
                      This is what replaces the six stacked blocks: nothing appears
                      unless you ask for it, and the task history gets out of the way
@@ -11046,11 +11043,11 @@
 
 <!-- Network: explicit label. Before, they were two loose arrows at the
                              end of the row, "↓ 1.9 KB/s ↑ 2…", truncated and without saying
-                             that they were network. "sem base" when there has only been one
+                             that they were network. "no baseline" when there has only been one
                              observation — a rate needs two, and pretending 0 B/s
                              would be saying the network is idle. -->
                         <div class="flex items-baseline gap-2 text-xs pt-1">
-                          <span class="uppercase tracking-wider opacity-60" style="min-width:3.2rem">rede</span>
+                          <span class="uppercase tracking-wider opacity-60" style="min-width:3.2rem">net</span>
                           <span class="font-mono tabular-nums opacity-80"
                                 x-text="'↓ ' + pvxRate(pvxObs(pvxOpenNode()?.net_in_rate))"></span>
                           <span class="font-mono tabular-nums opacity-80"
@@ -11305,7 +11302,7 @@
                           <select class="input input-sm" style="max-width:150px" x-model="pvx.bkp.modo" aria-label="dump mode">
                             <option value="snapshot">a snapshot — it does not stop</option>
                             <option value="suspend">suspend — freezes</option>
-                            <option value="stop">stop — desliga e religa</option>
+                            <option value="stop">stop: powers off and back on</option>
                           </select>
                           <button class="btn btn-primary btn-sm"
                                   :disabled="!pvxActionState(pvxOpenNode(),'backup').can || pvxBusy()"
@@ -11410,7 +11407,7 @@
                         </div>
                         <div class="text-[11px] opacity-60">
                           Markdown: <span class="font-mono">##</span> title ·
-                          <span class="font-mono">**negrito**</span> ·
+                          <span class="font-mono">**bold**</span> ·
                           <span class="font-mono">`code`</span> ·
                           <span class="font-mono">- list</span> ·
                           <span class="font-mono">---</span> rule.
@@ -11825,7 +11822,7 @@
                           <span class="text-[10px] px-1.5 py-px rounded"
                                 :style="i.active ? 'background:#22c55e22;color:#22c55e;border:1px solid #22c55e66'
                                                  : 'background:#64748b22;color:#94a3b8;border:1px solid #64748b66'"
-                                x-text="i.active ? 'ativa' : 'inactive'"></span>
+                                x-text="i.active ? 'active' : 'inactive'"></span>
                           <span x-show="!i.autostart" x-cloak class="text-[10px] opacity-60">no autostart</span>
                           <span class="ml-auto font-mono tabular-nums opacity-80"
                                 x-text="i.cidr || i.address || '—'"></span>
@@ -11980,7 +11977,7 @@
                         <span class="block h-full" :style="pvxBar(pvxFracPct('cpu'))"></span>
                       </div>
                       <div class="text-[11px] opacity-60 mt-1"
-                           x-text="(pvxVal('cpu_cores') || '—') + ' núcleos · ' + (pvxVal('cpu_model') || 'modelo não reportado')"></div>
+                           x-text="(pvxVal('cpu_cores') || '—') + ' cores · ' + (pvxVal('cpu_model') || 'model not reported')"></div>
                     </div>
 
                     <!-- 🔴 IO DELAY. It is what separates "the machine is busy" from
@@ -12227,7 +12224,7 @@
                   <div class="flex items-center gap-1.5 px-2 py-1 rounded text-[12px]" style="background:var(--surface-1);border:1px solid var(--border)">
                     <span class="font-mono font-semibold" x-text="p.port"></span>
                     <span style="color:var(--text-secondary)" x-text="p.proc||p.addr"></span>
-                    <button class="btn btn-ghost btn-sm" @click="deployOpenPort(p.port)" title="abrir" aria-label="Open the port in the browser">↗</button>
+                    <button class="btn btn-ghost btn-sm" @click="deployOpenPort(p.port)" title="open" aria-label="Open the port in the browser">↗</button>
                     <button class="btn btn-ghost btn-sm" @click="deployCopyPortURL(p.port)" title="copy the URL" aria-label="Copy the port URL">⧉</button>
                   </div>
                 </template>
@@ -12712,7 +12709,7 @@
                      title="Go to the uncommitted changes">
                   <span class="git-ava" style="background:var(--warning);color:#000">✱</span>
                   <span style="flex:1">Uncommitted changes <span class="git-row__meta" x-text="'('+(git.status?git.status.entries.length:0)+')'"></span></span>
-                  <span class="git-row__meta">abrir →</span>
+                  <span class="git-row__meta">open →</span>
                 </div>
                 <div class="git-graph">
                   <template x-if="!git.graph || git.graph.commits.length===0">
@@ -13158,7 +13155,7 @@
                 <button class="git-pill-btn" title="Increase font size" @click="git.settings.fontSize=Math.min(22,git.settings.fontSize+1); gitApplySettings()" aria-label="Increase font size">A+</button>
                 <button class="git-pill-btn" title="Line wrap" :style="git.settings.wordWrap==='on'?'color:var(--accent,#7ab)':''" @click="git.settings.wordWrap=git.settings.wordWrap==='on'?'off':'on'; gitApplySettings()" aria-label="Line wrap">⏎</button>
                 <button class="git-pill-btn" title="Toggle the theme" @click="git.settings.editorTheme=git.settings.editorTheme==='vs-dark'?'vs':'vs-dark'; gitApplySettings()" aria-label="Toggle the theme">◐</button>
-                <button class="git-pill-btn" x-show="git.editor.mode==='diff'" :title="git.settings.diffSideBySide?'Inline diff (unified)':'Side-by-side diff'" @click="gitToggleDiffLayout()" x-text="git.settings.diffSideBySide?'≡ Inline':'⇆ Lado a lado'" :aria-label="git.settings.diffSideBySide?'Inline diff (unified)':'Side-by-side diff'"></button>
+                <button class="git-pill-btn" x-show="git.editor.mode==='diff'" :title="git.settings.diffSideBySide?'Inline diff (unified)':'Side-by-side diff'" @click="gitToggleDiffLayout()" x-text="git.settings.diffSideBySide?'≡ Inline':'⇆ Side by side'" :aria-label="git.settings.diffSideBySide?'Inline diff (unified)':'Side-by-side diff'"></button>
                 <button class="git-pill-btn" x-show="git.editor.mode==='edit'" :style="git.settings.inlineBlame?'color:var(--accent,#7ab)':''" title="Inline blame (author per line)" @click="gitToggleInlineBlame()" aria-label="Inline blame (author per line)">👤</button>
                 <button class="git-pill-btn" x-show="git.editor.mode==='edit'" title="Line blame (full view)" @click="gitBlame(git.editor.path)" aria-label="Line blame (full view)">📋</button>
                 <button class="git-pill-btn" x-show="git.editor.mode==='edit'" title="File history" @click="gitFileHistory(git.editor.path)" aria-label="File history">📜</button>
@@ -13207,7 +13204,7 @@
                           </template>
                           <template x-if="git.inspect.blame.length > git.blameLimit">
                             <tr><td colspan="3" style="text-align:center;padding:8px">
-                              <span class="text-amber-400 text-[11px]" x-text="'showing ' + git.blameLimit + ', ' + (git.inspect.blame.length - git.blameLimit) + ' ocultas'"></span>
+                              <span class="text-amber-400 text-[11px]" x-text="'showing ' + git.blameLimit + ', ' + (git.inspect.blame.length - git.blameLimit) + ' hidden'"></span>
                               <button class="git-pill-btn" style="margin-left:6px" @click="git.blameLimit += 500" aria-label="Show more lines">↓ 500 more</button>
                               <button class="git-pill-btn" style="margin-left:6px" @click="git.blameLimit = git.inspect.blame.length" aria-label="Show every line">all</button>
                             </td></tr>
@@ -13236,7 +13233,7 @@
                         </template>
                         <template x-if="git.inspect.filelog.length > git.filelogLimit">
                           <div style="text-align:center;padding:8px">
-                            <span class="text-amber-400 text-[11px]" x-text="'showing ' + git.filelogLimit + ', ' + (git.inspect.filelog.length - git.filelogLimit) + ' ocultas'"></span>
+                            <span class="text-amber-400 text-[11px]" x-text="'showing ' + git.filelogLimit + ', ' + (git.inspect.filelog.length - git.filelogLimit) + ' hidden'"></span>
                             <button class="git-pill-btn" style="margin-left:6px" @click="git.filelogLimit += 200" aria-label="Show more">↓ 200 more</button>
                             <button class="git-pill-btn" style="margin-left:6px" @click="git.filelogLimit = git.inspect.filelog.length" aria-label="Show everything">all</button>
                           </div>
@@ -13263,7 +13260,7 @@
                         </template>
                         <template x-if="git.inspect.hunks.length > git.hunksLimit">
                           <div style="text-align:center;padding:8px">
-                            <span class="text-amber-400 text-[11px]" x-text="'showing ' + git.hunksLimit + ', ' + (git.inspect.hunks.length - git.hunksLimit) + ' ocultos'"></span>
+                            <span class="text-amber-400 text-[11px]" x-text="'showing ' + git.hunksLimit + ', ' + (git.inspect.hunks.length - git.hunksLimit) + ' hidden'"></span>
                             <button class="git-pill-btn" style="margin-left:6px" @click="git.hunksLimit += 200" aria-label="Show more">↓ 200 more</button>
                             <button class="git-pill-btn" style="margin-left:6px" @click="git.hunksLimit = git.inspect.hunks.length" aria-label="Show everything">all</button>
                           </div>
@@ -13288,7 +13285,7 @@
                         </template>
                         <template x-if="git.inspect.reflog.length > git.reflogLimit">
                           <div style="text-align:center;padding:8px">
-                            <span class="text-amber-400 text-[11px]" x-text="'showing ' + git.reflogLimit + ', ' + (git.inspect.reflog.length - git.reflogLimit) + ' ocultas'"></span>
+                            <span class="text-amber-400 text-[11px]" x-text="'showing ' + git.reflogLimit + ', ' + (git.inspect.reflog.length - git.reflogLimit) + ' hidden'"></span>
                             <button class="git-pill-btn" style="margin-left:6px" @click="git.reflogLimit += 200" aria-label="Show more">↓ 200 more</button>
                             <button class="git-pill-btn" style="margin-left:6px" @click="git.reflogLimit = git.inspect.reflog.length" aria-label="Show everything">all</button>
                           </div>
@@ -13392,7 +13389,7 @@
                             </template>
                             <template x-if="(git.inspect.compare.files||[]).length > git.cmpFilesLimit">
                               <div style="text-align:center;padding:8px">
-                                <span class="text-amber-400 text-[11px]" x-text="'showing ' + git.cmpFilesLimit + ', ' + ((git.inspect.compare.files||[]).length - git.cmpFilesLimit) + ' ocultos'"></span>
+                                <span class="text-amber-400 text-[11px]" x-text="'showing ' + git.cmpFilesLimit + ', ' + ((git.inspect.compare.files||[]).length - git.cmpFilesLimit) + ' hidden'"></span>
                                 <button class="git-pill-btn" style="margin-left:6px" @click="git.cmpFilesLimit += 200" aria-label="Show more">↓ 200 more</button>
                                 <button class="git-pill-btn" style="margin-left:6px" @click="git.cmpFilesLimit = (git.inspect.compare.files||[]).length" aria-label="Show everything">all</button>
                               </div>
@@ -13410,7 +13407,7 @@
                             </template>
                             <template x-if="(git.inspect.compare.commits||[]).length > git.cmpCommitsLimit">
                               <div style="text-align:center;padding:8px">
-                                <span class="text-amber-400 text-[11px]" x-text="'showing ' + git.cmpCommitsLimit + ', ' + ((git.inspect.compare.commits||[]).length - git.cmpCommitsLimit) + ' ocultos'"></span>
+                                <span class="text-amber-400 text-[11px]" x-text="'showing ' + git.cmpCommitsLimit + ', ' + ((git.inspect.compare.commits||[]).length - git.cmpCommitsLimit) + ' hidden'"></span>
                                 <button class="git-pill-btn" style="margin-left:6px" @click="git.cmpCommitsLimit += 200" aria-label="Show more">↓ 200 more</button>
                                 <button class="git-pill-btn" style="margin-left:6px" @click="git.cmpCommitsLimit = (git.inspect.compare.commits||[]).length" aria-label="Show everything">all</button>
                               </div>
@@ -13517,7 +13514,7 @@
                             <option value="compact">compact</option><option value="comfortable">comfortable</option><option value="spacious">spacious</option></select></label>
                         <label style="display:block;margin-bottom:7px">Date
                           <select class="input" style="width:100%" x-model="git.settings.dateFormat" @change="gitSaveSettings(); gitDecorateGraph()">
-                            <option value="rel">relative (2h, 3d)</option><option value="abs">absoluta</option></select></label>
+                            <option value="rel">relative (2h, 3d)</option><option value="abs">absolute</option></select></label>
                         <label style="display:block;margin-bottom:7px">Commits loaded
                           <select class="input" style="width:100%" x-model.number="git.settings.limit" @change="gitSaveSettings(); gitLoadGraph()">
                             <option :value="200">200</option><option :value="400">400</option><option :value="1000">1000</option><option :value="2000">2000</option></select></label>
@@ -13959,7 +13956,7 @@
                             <template x-for="h in 24" :key="h"><option :value="h-1" x-text="String(h-1).padStart(2,'0')+'h'"></option></template>
                           </select>
                         </template>
-                        <select class="input" style="width:5.5rem" x-model.number="gsSched(o.key).minute" @change="gsSyncCron(o.key)" aria-label="Minuto">
+                        <select class="input" style="width:5.5rem" x-model.number="gsSched(o.key).minute" @change="gsSyncCron(o.key)" aria-label="Minute">
                           <template x-for="m in [0,10,15,20,30,40,45,50]" :key="m"><option :value="m" x-text="String(m).padStart(2,'0')"></option></template>
                         </select>
                       </span>
@@ -14801,7 +14798,7 @@
                  class="absolute inset-x-0 bottom-0 flex flex-col page-gutter-x pb-3 pt-2"
                  style="top: var(--section-top, 52px)"
                  x-data="{ gp:'vps-manager', gview:'force', graphs:[
-                    {g:'Apps próprios', items:[
+                    {g:'Own apps', items:[
                        {v:'vps-manager', n:'vps-manager'},
                        {v:'northwind-web', n:'northwind-web'},
                        {v:'acme-booking', n:'acme-booking'},
@@ -14823,7 +14820,6 @@
                   </optgroup>
                 </template>
               </select>
-              <!-- View selector: Força (vis-network) / Call-flow (Mermaid) -->
               <div class="inline-flex rounded overflow-hidden" style="border:1px solid var(--border-default)" title="How to arrange the graph">
                 <template x-for="v in [{k:'force',n:'Force'},{k:'callflow',n:'Call-flow'}]" :key="v.k">
                   <button type="button" @click="gview=v.k" x-text="v.n"
@@ -14887,7 +14883,7 @@
 
           <div class="card p-4 mb-3" style="border-color:#3a2a12;background:#160f06">
             <div class="text-xs leading-relaxed" style="color:var(--text-secondary)">
-              <strong style="color:var(--warning)">How it works:</strong> each prompt has a <em>preamble</em> editable (the "brain" — make it smarter, deeper, more adversarial) and an <em>output contract</em> <strong>managed by the system</strong> (the headers <code>## ✅ Veredicto</code>, <code>## 🎯 Certeza</code> etc. that the parsers read back). The contract is inserted wherever you leave the marker <code>{{OUTPUT_CONTRACT}}</code> — it is mandatory in the audit/verification prompts and cannot be removed, otherwise the convergence loop would never reach 85%.
+              <strong style="color:var(--warning)">How it works:</strong> each prompt has a <em>preamble</em> editable (the "brain" — make it smarter, deeper, more adversarial) and an <em>output contract</em> <strong>managed by the system</strong> (the headers <code>## ✅ Verdict</code>, <code>## 🎯 Confidence of Success</code> etc. that the parsers read back). The contract is inserted wherever you leave the marker <code>{{OUTPUT_CONTRACT}}</code> — it is mandatory in the audit/verification prompts and cannot be removed, otherwise the convergence loop would never reach 85%.
             </div>
           </div>
 
@@ -14996,7 +14992,7 @@
                        :class="tab.id===browserActive ? 'bg-[var(--surface-1)] text-gray-100 border-[var(--border-default)] border-b-transparent' : 'bg-transparent text-gray-400 hover:text-gray-200 hover:bg-[var(--surface-1)]'"
                        class="group flex items-center gap-2 py-1.5 rounded-t-md border border-transparent cursor-pointer"
                        :style="tab.pinned ? 'width:38px;padding:6px 6px;justify-content:center' : 'padding:6px 10px;max-width:220px;min-width:120px'"
-                       :title="browserTabTitle(tab) + (tab.pinned?' (fixada)':'')">
+                       :title="browserTabTitle(tab) + (tab.pinned?' (pinned)':'')">
                     <!-- Favicon-letter (turns into a spinner while loading) -->
                     <span x-show="isPaneLoading(tab.id,0)" class="w-4 h-4 inline-block flex-shrink-0 animate-spin text-gray-300 text-[12px] leading-none flex items-center justify-center">⟳</span>
                     <span x-show="!isPaneLoading(tab.id,0)"
@@ -15226,7 +15222,6 @@
                     </button>
                   </div>
                 </div>
-                <!-- Category tabs: All / Não lidas / Grupos / Favoritos -->
                 <div class="flex gap-1 px-3 py-2 border-b border-[var(--border-default)]" style="background:var(--surface-1)">
                   <template x-for="t in [{k:'all',label:'All'},{k:'unread',label:'Unread'},{k:'groups',label:'Groups'},{k:'archived',label:'Archived'},{k:'status',label:'Status'}]" :key="t.k">
                     <button @click="whatsapp.filter = t.k; if (t.k==='status') whatsappLoadStatus()"
@@ -15473,7 +15468,7 @@
                                   <button class="flex items-center gap-2 mb-1 px-3 py-2 bg-black/20 rounded hover:bg-black/30 cursor-pointer disabled:opacity-50 disabled:cursor-wait w-full" :disabled="item.m._downloading" @click="whatsappDownloadMedia(item.m)">
                                     <span class="text-2xl flex-shrink-0" x-text="whatsappMediaIcon(item.m.type)"></span>
                                     <span class="text-[13px] flex-1 text-left">
-                                      <span x-show="!item.m._downloading && !item.m._downloadErr" x-text="'Baixar ' + whatsappMediaLabel(item.m.type)"></span>
+                                      <span x-show="!item.m._downloading && !item.m._downloadErr" x-text="'Download ' + whatsappMediaLabel(item.m.type)"></span>
                                       <span x-show="item.m._downloading">Downloading…</span>
                                       <span x-show="item.m._downloadErr" class="text-rose-300" x-text="item.m._downloadErr"></span>
                                     </span>
@@ -15934,7 +15929,7 @@
                           <span class="icon">🔴</span><span class="label">High</span>
                         </button>
                       </div>
-                      <div class="vc-mode-summary" x-text="videocall.qualityMode==='phone' ? '📞 No video · Opus DTX · ~15 kbps' : videocall.qualityMode==='low' ? '🐢 160×90@8 · Opus DTX · ~40 kbps' : videocall.qualityMode==='economy' ? '🟢 320×180@15 · Opus DTX · ~80 kbps' : videocall.qualityMode==='medium' ? '🟡 640×360@24 · Opus FEC · ~500 kbps' : videocall.qualityMode==='high' ? '🔴 1280×720@30 · Opus FEC · ~2 Mbps' : '⚙ Personalizado'"></div>
+                      <div class="vc-mode-summary" x-text="videocall.qualityMode==='phone' ? '📞 No video · Opus DTX · ~15 kbps' : videocall.qualityMode==='low' ? '🐢 160×90@8 · Opus DTX · ~40 kbps' : videocall.qualityMode==='economy' ? '🟢 320×180@15 · Opus DTX · ~80 kbps' : videocall.qualityMode==='medium' ? '🟡 640×360@24 · Opus FEC · ~500 kbps' : videocall.qualityMode==='high' ? '🔴 1280×720@30 · Opus FEC · ~2 Mbps' : '⚙ Custom'"></div>
 
                       <div class="mt-4">
                         <button class="vc-mode-card w-full" :class="videocall.qualityMode==='custom' ? 'is-active' : ''" @click="vcSetQuality('custom')" style="flex-direction:row;padding:8px 12px;justify-content:flex-start;gap:8px;">
@@ -16224,34 +16219,32 @@
                   </button>
                   <button class="vc-btn" @click="vcToggleAudioPop()" style="width:24px;border-radius:0 12px 12px 0;margin-left:-2px;font-size:11px;" title="Choose microphone / output" aria-label="Choose microphone / output">▲</button>
                   <div x-show="videocall.audioPopOpen" class="vc-popover" style="bottom:60px;left:0;min-width:300px;">
-                    <!-- Volume de envio (estilo Discord): medidor do que SAI atrás do
-                         slider. Escala log2 — 100% no meio, 25%..400%. -->
                     <div class="vc-micvol" style="padding:4px 16px 8px;" @click.stop>
                       <div class="vc-micvol-head">
-                        <span>Seu volume <span class="vc-micvol-sub">— o que os outros ouvem</span></span>
+                        <span>Your volume <span class="vc-micvol-sub">(what others hear)</span></span>
                         <output x-text="vcMicGainPct()"></output>
                       </div>
                       <div class="vc-micvol-track">
                         <span class="vc-micvol-level" :class="videocall.micLimiting ? 'is-quente' : ''" :style="'width:'+Math.max(0,Math.min(100,videocall.micLevel||0))+'%'" aria-hidden="true"></span>
                         <span class="vc-micvol-marco" aria-hidden="true"></span>
                         <input type="range" min="-2" max="2" step="0.05" :value="vcMicGainPos()" @input="vcSetMicGainPos(parseFloat($event.target.value))" @dblclick="vcSetMicGain(1.0)"
-                               aria-label="Volume do microfone" :aria-valuetext="vcMicGainPct()"/>
+                               aria-label="Microphone volume" :aria-valuetext="vcMicGainPct()"/>
                       </div>
                       <div class="vc-micvol-scale" aria-hidden="true"><span>25%</span><span>100%</span><span>400%</span></div>
-                      <div class="vc-micvol-hint is-quente" x-show="videocall.micLimiting">Alto demais — o limitador está segurando os picos. Baixe um pouco.</div>
-                      <div class="vc-micvol-hint" x-show="!videocall.micLimiting && videocall.muted">Mutado — o medidor mostra o que sai, e agora não sai nada.</div>
+                      <div class="vc-micvol-hint is-quente" x-show="videocall.micLimiting">Too loud: the limiter is holding back the peaks. Turn it down a little.</div>
+                      <div class="vc-micvol-hint" x-show="!videocall.micLimiting && videocall.muted">Muted: the meter shows what goes out, and right now nothing does.</div>
                     </div>
                     <button class="vc-popover-item" @click.stop="vcSetMicProc('noiseSuppression', !videocall.micProc.noiseSuppression)" :disabled="videocall.micProcBusy">
-                      <span class="vc-popover-icon vc-check" :class="videocall.micProc.noiseSuppression ? 'is-on' : ''" aria-hidden="true"></span><span class="vc-micvol-op">Supressão de ruído<small>tira ventilador e teclado do fundo</small></span>
+                      <span class="vc-popover-icon vc-check" :class="videocall.micProc.noiseSuppression ? 'is-on' : ''" aria-hidden="true"></span><span class="vc-micvol-op">Noise suppression<small>removes fan and keyboard noise from the background</small></span>
                     </button>
                     <button class="vc-popover-item" @click.stop="vcSetMicProc('echoCancellation', !videocall.micProc.echoCancellation)" :disabled="videocall.micProcBusy">
-                      <span class="vc-popover-icon vc-check" :class="videocall.micProc.echoCancellation ? 'is-on' : ''" aria-hidden="true"></span><span class="vc-micvol-op">Cancelamento de eco<small>desligue só se estiver de fone</small></span>
+                      <span class="vc-popover-icon vc-check" :class="videocall.micProc.echoCancellation ? 'is-on' : ''" aria-hidden="true"></span><span class="vc-micvol-op">Echo cancellation<small>turn off only if you are on headphones</small></span>
                     </button>
                     <button class="vc-popover-item" @click.stop="vcSetMicProc('autoGainControl', !videocall.micProc.autoGainControl)" :disabled="videocall.micProcBusy">
-                      <span class="vc-popover-icon vc-check" :class="videocall.micProc.autoGainControl ? 'is-on' : ''" aria-hidden="true"></span><span class="vc-micvol-op">Ganho automático<small>o navegador nivela voz baixa e alta</small></span>
+                      <span class="vc-popover-icon vc-check" :class="videocall.micProc.autoGainControl ? 'is-on' : ''" aria-hidden="true"></span><span class="vc-micvol-op">Automatic gain<small>the browser evens out quiet and loud voices</small></span>
                     </button>
                     <button class="vc-popover-item vc-popover-item-tight" @click.stop="vcResetMicAudio()" x-show="Math.abs((videocall.micGain||1)-1) > 0.001 || !videocall.micProc.noiseSuppression || !videocall.micProc.echoCancellation || !videocall.micProc.autoGainControl">
-                      <span class="vc-popover-icon">↩</span>Restaurar padrão (100%, tudo ligado)
+                      <span class="vc-popover-icon">↩</span>Restore defaults (100%, everything on)
                     </button>
                     <div class="vc-popover-divider"></div>
                     <div class="vc-popover-section">Microphone</div>
@@ -16341,10 +16334,10 @@
                     <div id="vcgrp-quality" x-show="videocall.settingsGroups.quality">
                     <div class="vc-quality-pills" style="grid-template-columns:repeat(5,1fr);display:grid;gap:4px;">
                       <button class="vc-quality-pill" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;font-size:9px;" :class="videocall.qualityMode==='phone' ? 'is-active' : ''" @click="vcSetQuality('phone')" title="Audio only · ~15 kbps · very poor signal" aria-label="Phone mode"><span style="font-size:16px;line-height:1">📞</span><span>TEL</span></button>
-                      <button class="vc-quality-pill" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;font-size:9px;" :class="videocall.qualityMode==='low' ? 'is-active' : ''" @click="vcSetQuality('low')" title="160×90@8 · ~40 kbps · sinal fraco" aria-label="Minimum mode"><span style="font-size:16px;line-height:1">🐢</span><span>MIN</span></button>
+                      <button class="vc-quality-pill" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;font-size:9px;" :class="videocall.qualityMode==='low' ? 'is-active' : ''" @click="vcSetQuality('low')" title="160×90@8 · ~40 kbps · weak signal" aria-label="Minimum mode"><span style="font-size:16px;line-height:1">🐢</span><span>MIN</span></button>
                       <button class="vc-quality-pill" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;font-size:9px;" :class="videocall.qualityMode==='economy' ? 'is-active' : ''" @click="vcSetQuality('economy')" title="320×180@15 · ~80 kbps · 3G" aria-label="Saver mode"><span style="font-size:16px;line-height:1">🟢</span><span>ECO</span></button>
                       <button class="vc-quality-pill" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;font-size:9px;" :class="videocall.qualityMode==='medium' ? 'is-active' : ''" @click="vcSetQuality('medium')" title="640×360@24 · ~500 kbps · 4G" aria-label="Medium mode"><span style="font-size:16px;line-height:1">🟡</span><span>MED</span></button>
-                      <button class="vc-quality-pill" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;font-size:9px;" :class="videocall.qualityMode==='high' ? 'is-active' : ''" @click="vcSetQuality('high')" title="1280×720@30 · ~2000 kbps · fibra" aria-label="High mode"><span style="font-size:16px;line-height:1">🔴</span><span>HIGH</span></button>
+                      <button class="vc-quality-pill" style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;font-size:9px;" :class="videocall.qualityMode==='high' ? 'is-active' : ''" @click="vcSetQuality('high')" title="1280×720@30 · ~2000 kbps · fiber" aria-label="High mode"><span style="font-size:16px;line-height:1">🔴</span><span>HIGH</span></button>
                     </div>
                     <div style="padding:0 16px 6px;font-size:10px;color:var(--text-secondary);text-align:center;" x-text="videocall.qualityMode==='phone' ? 'Phone (no video) ~15 kbps' : videocall.qualityMode==='low' ? 'Minimum 160×90@8 ~40 kbps' : videocall.qualityMode==='economy' ? 'Saver 320×180@15 ~80 kbps' : videocall.qualityMode==='medium' ? 'Medium 640×360@24 ~500 kbps' : videocall.qualityMode==='high' ? 'High 1280×720@30 ~2 Mbps' : 'Custom'"></div>
                     <!-- Owner-only: force the mode for everyone -->
@@ -16354,7 +16347,7 @@
                       </button>
                     </div>
                     <div class="vc-quality-pills" style="padding-top:0">
-                      <button class="vc-quality-pill" :class="videocall.qualityMode==='custom' ? 'is-active' : ''" @click="vcSetQuality('custom')" style="flex:1">⚙ Personalizado</button>
+                      <button class="vc-quality-pill" :class="videocall.qualityMode==='custom' ? 'is-active' : ''" @click="vcSetQuality('custom')" style="flex:1">⚙ Custom</button>
                     </div>
                     <div x-show="videocall.qualityMode==='custom'" style="padding:0 16px 8px;">
                       <label for="vc-budget-precall" class="text-[11px] text-gray-400 block mb-1">Bandwidth (<span x-text="videocall.budgetKbps"></span> kbps)</label>
@@ -16415,11 +16408,9 @@
                       <span x-text="videocall.subtitlesShow ? 'Captions visible' : 'Show captions on the video'"></span>
                       <span class="vc-popover-meta" x-show="!videocall.subtitlesActive">requires transcription</span>
                     </button>
-                    <!-- A transcrição lê o mic cru (antes do volume, do codec e da
-                         rede) — o volume de envio mora no menu ▲ do microfone. -->
                     <div class="vc-popover-item vc-popover-item-tight" style="cursor:default;color:var(--text-muted);line-height:1.35;" @click.stop>
                       <span class="vc-popover-icon">🎙</span>
-                      <span>Transcreve a voz direto do microfone de cada um, antes da rede. Volume de envio: menu ▲ do mic.</span>
+                      <span>Transcribes each person's voice straight from their microphone, before the network. Send volume: the mic's ▲ menu.</span>
                     </div>
                     <button class="vc-popover-item" @click.stop="videocall.subtitlesLangPickerOpen = !videocall.subtitlesLangPickerOpen" :disabled="!videocall.subtitlesSupported" style="position:relative;"><span class="vc-popover-icon">🌐</span>Caption language<span class="vc-popover-meta" x-text="vcSubtitlesLangLabel()"></span></button>
                     <div x-show="videocall.subtitlesLangPickerOpen" class="vc-popover" style="bottom:auto;left:100%;top:auto;margin-left:8px;min-width:200px;" @click.stop>
@@ -16570,7 +16561,7 @@
                     <!-- File transfers (inline in the chat) -->
                     <template x-for="t in videocall.transfers" :key="t.id">
                       <div class="vc-chat-msg">
-                        <div class="who" x-text="(t.direction==='in' ? '↓ Recebendo: ' : '↑ Enviando: ') + t.name"></div>
+                        <div class="who" x-text="(t.direction==='in' ? '↓ Receiving: ' : '↑ Sending: ') + t.name"></div>
                         <div class="mt-1 h-1.5 rounded bg-[var(--surface-3)] overflow-hidden">
                           <div class="h-full bg-blue-500 transition-all" :style="'width:'+ Math.min(100, ((t.direction==='in' ? t.received : t.sent)/(t.size||1))*100) +'%'"></div>
                         </div>
@@ -16861,7 +16852,7 @@
                             :disabled="!(videocall.lobbyCaps||{audio:true}).audio" aria-label="Microphone">
                       <option value="default">Default microphone</option>
                       <template x-for="d in videocall.devices.mics" :key="d.deviceId">
-                        <option :value="d.deviceId" x-text="d.label || ('Microfone ' + (d.deviceId||'').slice(0,6))"></option>
+                        <option :value="d.deviceId" x-text="d.label || ('Microphone ' + (d.deviceId||'').slice(0,6))"></option>
                       </template>
                     </select>
                     <svg class="arrow" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg>
@@ -16965,7 +16956,7 @@
                     <select id="vc-settings-mic" :value="videocall.selectedDevices.mic" @change="vcSettingsChangeMic($event.target.value)" aria-label="Microphone">
                       <option value="default">Default microphone</option>
                       <template x-for="d in videocall.devices.mics" :key="d.deviceId">
-                        <option :value="d.deviceId" x-text="d.label || ('Microfone ' + (d.deviceId||'').slice(0,6))"></option>
+                        <option :value="d.deviceId" x-text="d.label || ('Microphone ' + (d.deviceId||'').slice(0,6))"></option>
                       </template>
                     </select>
                     <svg class="arrow" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg>
@@ -16974,30 +16965,30 @@
                   <div class="vc-micvol-modal">
                     <div class="vc-micvol" style="padding:10px 2px 2px;" @click.stop>
                       <div class="vc-micvol-head">
-                        <span>Seu volume <span class="vc-micvol-sub">— o que os outros ouvem</span></span>
+                        <span>Your volume <span class="vc-micvol-sub">(what others hear)</span></span>
                         <output x-text="vcMicGainPct()"></output>
                       </div>
                       <div class="vc-micvol-track">
                         <span class="vc-micvol-level" :class="videocall.micLimiting ? 'is-quente' : ''" :style="'width:'+Math.max(0,Math.min(100,videocall.micLevel||0))+'%'" aria-hidden="true"></span>
                         <span class="vc-micvol-marco" aria-hidden="true"></span>
                         <input type="range" min="-2" max="2" step="0.05" :value="vcMicGainPos()" @input="vcSetMicGainPos(parseFloat($event.target.value))" @dblclick="vcSetMicGain(1.0)"
-                               aria-label="Volume do microfone" :aria-valuetext="vcMicGainPct()"/>
+                               aria-label="Microphone volume" :aria-valuetext="vcMicGainPct()"/>
                       </div>
                       <div class="vc-micvol-scale" aria-hidden="true"><span>25%</span><span>100%</span><span>400%</span></div>
-                      <div class="vc-micvol-hint is-quente" x-show="videocall.micLimiting">Alto demais — o limitador está segurando os picos. Baixe um pouco.</div>
-                      <div class="vc-micvol-hint" x-show="!videocall.micLimiting && videocall.muted">Mutado — o medidor mostra o que sai, e agora não sai nada.</div>
+                      <div class="vc-micvol-hint is-quente" x-show="videocall.micLimiting">Too loud: the limiter is holding back the peaks. Turn it down a little.</div>
+                      <div class="vc-micvol-hint" x-show="!videocall.micLimiting && videocall.muted">Muted: the meter shows what goes out, and right now nothing does.</div>
                     </div>
                     <button class="vc-popover-item" @click.stop="vcSetMicProc('noiseSuppression', !videocall.micProc.noiseSuppression)" :disabled="videocall.micProcBusy">
-                      <span class="vc-popover-icon vc-check" :class="videocall.micProc.noiseSuppression ? 'is-on' : ''" aria-hidden="true"></span><span class="vc-micvol-op">Supressão de ruído<small>tira ventilador e teclado do fundo</small></span>
+                      <span class="vc-popover-icon vc-check" :class="videocall.micProc.noiseSuppression ? 'is-on' : ''" aria-hidden="true"></span><span class="vc-micvol-op">Noise suppression<small>removes fan and keyboard noise from the background</small></span>
                     </button>
                     <button class="vc-popover-item" @click.stop="vcSetMicProc('echoCancellation', !videocall.micProc.echoCancellation)" :disabled="videocall.micProcBusy">
-                      <span class="vc-popover-icon vc-check" :class="videocall.micProc.echoCancellation ? 'is-on' : ''" aria-hidden="true"></span><span class="vc-micvol-op">Cancelamento de eco<small>desligue só se estiver de fone</small></span>
+                      <span class="vc-popover-icon vc-check" :class="videocall.micProc.echoCancellation ? 'is-on' : ''" aria-hidden="true"></span><span class="vc-micvol-op">Echo cancellation<small>turn off only if you are on headphones</small></span>
                     </button>
                     <button class="vc-popover-item" @click.stop="vcSetMicProc('autoGainControl', !videocall.micProc.autoGainControl)" :disabled="videocall.micProcBusy">
-                      <span class="vc-popover-icon vc-check" :class="videocall.micProc.autoGainControl ? 'is-on' : ''" aria-hidden="true"></span><span class="vc-micvol-op">Ganho automático<small>o navegador nivela voz baixa e alta</small></span>
+                      <span class="vc-popover-icon vc-check" :class="videocall.micProc.autoGainControl ? 'is-on' : ''" aria-hidden="true"></span><span class="vc-micvol-op">Automatic gain<small>the browser evens out quiet and loud voices</small></span>
                     </button>
                     <button class="vc-popover-item vc-popover-item-tight" @click.stop="vcResetMicAudio()" x-show="Math.abs((videocall.micGain||1)-1) > 0.001 || !videocall.micProc.noiseSuppression || !videocall.micProc.echoCancellation || !videocall.micProc.autoGainControl">
-                      <span class="vc-popover-icon">↩</span>Restaurar padrão (100%, tudo ligado)
+                      <span class="vc-popover-icon">↩</span>Restore defaults (100%, everything on)
                     </button>
                   </div>
 
@@ -17151,7 +17142,7 @@
               <div class="flex items-center gap-3"><kbd class="px-2 py-1 bg-[var(--surface-3)] rounded font-mono">P</kbd> Participants</div>
               <div class="flex items-center gap-3"><kbd class="px-2 py-1 bg-[var(--surface-3)] rounded font-mono">S</kbd> Share screen</div>
               <div class="flex items-center gap-3"><kbd class="px-2 py-1 bg-[var(--surface-3)] rounded font-mono">F</kbd> Full screen</div>
-              <div class="flex items-center gap-3"><kbd class="px-2 py-1 bg-[var(--surface-3)] rounded font-mono">Space</kbd> Push-to-talk (segurar)</div>
+              <div class="flex items-center gap-3"><kbd class="px-2 py-1 bg-[var(--surface-3)] rounded font-mono">Space</kbd> Push-to-talk (hold)</div>
               <div class="flex items-center gap-3"><kbd class="px-2 py-1 bg-[var(--surface-3)] rounded font-mono">Ctrl+Shift+!</kbd> This help</div>
               <div class="flex items-center gap-3"><kbd class="px-2 py-1 bg-[var(--surface-3)] rounded font-mono">Esc</kbd> Close popovers</div>
             </div>
@@ -17390,7 +17381,7 @@
           </template>
         </div>
         <div class="text-[10px] text-muted px-3 py-1.5 border-t border-[var(--border-default)] flex justify-between">
-          <span>↑↓ navegar · ↵ executar · esc fechar</span>
+          <span>↑↓ navigate · ↵ run · esc close</span>
           <span>Ctrl+K to open · ? for shortcuts</span>
         </div>
       </div>
@@ -17604,7 +17595,7 @@
         <div class="grid grid-cols-2 gap-3 mb-3">
           <div>
             <label for="f-newSecret-group" class="text-xs text-gray-400">Group / Project</label>
-            <input id="f-newSecret-group" x-model="newSecret.group" list="secret-group-list" placeholder="ex.: northwind, infra…" class="input w-full mt-1" aria-label="newSecret group"/>
+            <input id="f-newSecret-group" x-model="newSecret.group" list="secret-group-list" placeholder="e.g. northwind, infra…" class="input w-full mt-1" aria-label="newSecret group"/>
             <datalist id="secret-group-list">
               <option x-show="amAdmin" value="system">System</option>
               <template x-for="gn in secretGroupNames" :key="gn"><option :value="gn"></option></template>
@@ -17617,7 +17608,7 @@
             </select>
           </div>
         </div>
-        <label for="f-newSecret-key" class="text-xs text-gray-400">Key</label><input id="f-newSecret-key" x-model="newSecret.key" class="input w-full mt-1 mb-3" placeholder="ex.: DB_PASSWORD" aria-label="newSecret key"/>
+        <label for="f-newSecret-key" class="text-xs text-gray-400">Key</label><input id="f-newSecret-key" x-model="newSecret.key" class="input w-full mt-1 mb-3" placeholder="e.g. DB_PASSWORD" aria-label="newSecret key"/>
         <label for="f-newSecret-value" class="text-xs text-gray-400">Value</label><textarea id="f-newSecret-value" x-model="newSecret.value" class="input w-full mt-1 mb-3" rows="4" aria-label="newSecret value"></textarea>
         <label for="f-newSecret-notes" class="text-xs text-gray-400">Notes <span class="text-muted">(optional)</span></label><input id="f-newSecret-notes" x-model="newSecret.notes" class="input w-full mt-1 mb-4" placeholder="where it is used, notes…" aria-label="newSecret notes"/>
         <div class="flex gap-2 justify-end">

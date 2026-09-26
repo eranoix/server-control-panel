@@ -46,7 +46,7 @@ var (
 	reTabToView       = regexp.MustCompile(`(?s)tabToView\(group, tab\) \{(.*?)\n    \},`)
 )
 
-// bloco slices a level-2 object literal out of the shell (`    NOME: {` up to `\n    },`).
+// block slices a level-2 object literal out of the shell (`    NAME: {` up to `\n    },`).
 func block(t *testing.T, source, nome string) string {
 	t.Helper()
 	i := strings.Index(source, nome+": {")
@@ -206,10 +206,10 @@ func TestShellTabToViewIsDeterministic(t *testing.T) {
 	}
 	body := m[1]
 	if !strings.Contains(body, "this.PAGE_REMAP[tab]") {
-		t.Errorf("tabToView voltou a varrer sem preferir a key canonical.\n"+
-			"Sem `this.PAGE_REMAP[tab]` a resposta depende da ORDEM DE ESCRITA das chaves,\n"+
-			"e uma aba com alias (hoje: nodes/proxmox) resolve para o alias em vez da\n"+
-			"canonica — que foi como a aba Proxmox abriu PRETA (quick 260820-95v).\ncorpo lido:\n%s", body)
+		t.Errorf("tabToView scans again without preferring the canonical key.\n"+
+			"Without `this.PAGE_REMAP[tab]` the answer depends on the ORDER the keys are written in,\n"+
+			"and a tab with an alias (e.g. nodes/proxmox) resolves to the alias instead of the\n"+
+			"canonical key, which renders the Proxmox tab BLACK.\nbody read:\n%s", body)
 	}
 }
 

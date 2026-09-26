@@ -38,7 +38,7 @@ catch {
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
-console.log('=== test-reflow-coluna ===');
+console.log('=== test-reflow-column ===');
 
 const shell = fs.readFileSync(path.join(WEB, 'vendor/vpsm/app/00-shell.js'), 'utf8');
 const recovery = fs.readFileSync(path.join(WEB, 'recovery-term.html'), 'utf8');
@@ -62,7 +62,7 @@ const pageHtml = `<!doctype html><meta charset="utf-8">
 <div id="t"></div>
 <script src="/vendor/xterm/xterm.js"></script>
 <script>
-window.__pronto = false;
+window.__ready = false;
 window.addEventListener('error', e => { window.__erro = String(e.message); });
 const COLS = 56, ROWS = 30;
 const term = new Terminal({ cols: COLS, rows: ROWS, scrollback: 1000, allowProposedApi: true });
@@ -121,7 +121,7 @@ window.__mkFitSeguro = () => {
     + 'return safeFit;')(window.__fitAtual, window.__termAtual);
 };
 window.__term = term;
-window.__pronto = true;
+window.__ready = true;
 </script>`;
 
 const srv = http.createServer((req, res) => {
@@ -152,7 +152,7 @@ if (!exe) { console.error('FAILURE: no Chromium found — skipping would be faki
 const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
 const page = await browser.newPage();
 await page.goto(base);
-await page.waitForFunction('window.__pronto === true', null, { timeout: 15000 });
+await page.waitForFunction('window.__ready === true', null, { timeout: 15000 });
 
 // ── 1. THE DAMAGE IS REAL ───────────────────────────────────────────────────
 // Without this the rest would be a guard against an undemonstrated problem.
@@ -287,7 +287,7 @@ srv.close();
 // nor trigger the counter-test. That is exactly what happened when it was moved.
 const indexCss = index.replace(/\/\*[\s\S]*?\*\//g, '');
 // The protection is no longer a reserved gutter, it is the impossibility of a
-// scrollbar: on the terminal screen #conteudo does not scroll, so no bar can
+// scrollbar: on the terminal screen #content does not scroll, so no bar can
 // appear and steal a column. Same bug covered, at no width cost on any page.
 /#content\.is-noscroll\s*\{[^}]*overflow:\s*hidden/.test(indexCss)
   ? ok('desktop: #content.is-noscroll does not scroll — no bar can steal a column from xterm')

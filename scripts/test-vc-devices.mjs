@@ -108,7 +108,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   probe.ok === true   ? ok('mic only: probe.ok (joining is possible)') : no('mic only: probe.ok=' + probe.ok + ' — this would lock the user out');
   probe.audio === true  ? ok('mic only: audio detected') : no('mic only: audio=' + probe.audio);
   probe.video === false ? ok('mic only: missing video reported') : no('mic only: video=' + probe.video);
-  /s.{0,3} com .udio/i.test(probe.error || '') ? ok('mic only: the message offers joining with audio alone') : no('mic only: the message does not offer audio-only: ' + probe.error);
+  /audio only/i.test(probe.error || '') ? ok('mic only: the message offers joining with audio alone') : no('mic only: the message does not offer audio-only: ' + probe.error);
   devs.mics.length === 1 ? ok('mic only: enumerateDevices lists the microphone') : no('mic only: mics=' + devs.mics.length);
 }
 
@@ -123,7 +123,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
 
 // ── 3. Neither one — the only case that blocks ───────────────────────────
 {
-  const { probe } = await scenario(browser, 'nada', false, false);
+  const { probe } = await scenario(browser, 'none', false, false);
   probe.ok === false ? ok('nothing at all: probe.ok=false (it really does block)') : no('nothing at all: probe.ok=' + probe.ok);
   (probe.audio === false && probe.video === false) ? ok('nothing at all: both sides reported missing') : no('nothing at all: audio=' + probe.audio + ' video=' + probe.video);
 }
@@ -162,7 +162,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   const last = r.gum[r.gum.length - 1] || {};
   (last.audio === true && last.video === false) ? ok('engine: fell back to audio-only') : no('engine: the last attempt was ' + JSON.stringify(last));
   // The final error must NOT be the getUserMedia one — it has to have got past it.
-  !/getUserMedia|c.mera ou microfone/i.test(r.erro) ? ok('engine: got past getUserMedia (it failed later, at the signalling)') : no('engine: stuck at getUserMedia: ' + r.erro);
+  !/getUserMedia|camera or microphone/i.test(r.erro) ? ok('engine: got past getUserMedia (it failed later, at the signalling)') : no('engine: stuck at getUserMedia: ' + r.erro);
 }
 
 // ── 6. Counter-check of the original bug, in the lobby source ────────────

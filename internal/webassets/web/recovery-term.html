@@ -248,7 +248,7 @@ const enc = new TextEncoder();
 // client (reconnect, outbox, backpressure, heartbeat, session renewal) does not
 // know which of the two is running.
 // ── degraded mode ───────────────────────────────────────────────────────────
-// Declared BEFORE the factory on purpose: `degradado()` is called while the
+// Declared BEFORE the factory on purpose: `degraded()` is called while the
 // host terminal is being created, which happens at the top of the module. With
 // the `let` further down, the call landed in the temporal dead zone and threw
 // "Cannot access 'alreadyDegraded' before initialization" — trading the xterm
@@ -534,7 +534,7 @@ function flush() {
   const bytes = st.queueBytes; st.queueBytes = 0;
   if (!q.length) return;
   // The screen returns to the server's truth BEFORE applying bytes from it — that
-  // is what makes the predictive echo's guess safe (see preve()).
+  // is what makes the predictive echo's guess safe (see predict()).
   eraseGuess();
   st.pending += bytes;
   const ult = q.length - 1;
@@ -926,11 +926,9 @@ async function checkClaude() {
     + (d.autenticado ? 'no router, its own login' : 'NOT authenticated yet: run `claude` once here');
   claude.open();
   claude.adjust(); claude.focus();
-  // Until the login has happened, the hint has to correct itself: it is
-  // queried ONCE when the tab opens, so it kept saying "FALTA
-  // autenticar" after the operator had already authenticated right there, in the
-  // tab next door. Re-queries every 15s UNTIL authenticated, then stops — the state
-  // only changes once, it is not worth hammering forever.
+  // The status is otherwise queried only when the tab opens, so the hint would
+  // stay "not authenticated" after a login in this tab. Re-query every 15s until
+  // authenticated, then stop (the state only changes once).
   if (!d.autenticado && !recheque) {
     recheque = setInterval(() => {
       if (currentTab !== 'claude' || document.hidden) return;

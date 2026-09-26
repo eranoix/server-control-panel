@@ -99,8 +99,8 @@ const fakeTerm = (written, line) => ({
 // 2) socket down → does NOT drop: it queues instead of discarding (the bug)
 {
   const p = newPane(3);                       // 3 = CLOSED
-  const r = _paneSendInput(p, 'meu command');
-  r === false && (p._outbox||[]).join('') === 'meu command' && p.ws.sent.length === 0
+  const r = _paneSendInput(p, 'my command');
+  r === false && (p._outbox||[]).join('') === 'my command' && p.ws.sent.length === 0
     ? ok('socket down: queues instead of discarding (the original bug)')
     : no('socket down: the keystroke was LOST');
 }
@@ -135,7 +135,7 @@ const fakeTerm = (written, line) => ({
 // 6) a send that throws (socket dying between check and send) is queued
 {
   const p = newPane(1);
-  p.ws.send = () => { throw new Error('socket morreu'); };
+  p.ws.send = () => { throw new Error('socket died'); };
   // The old code called send() WITHOUT try/catch: the exception escaped and
   // took down the whole typing handler. We catch it here to report a readable
   // failure instead of aborting the suite halfway.
@@ -204,7 +204,7 @@ const fakeTerm = (written, line) => ({
     const written = [];
     const p = newPane(3);
     p.term = fakeTerm(written, prompt);
-    _paneSendInput(p, 'segredo');
+    _paneSendInput(p, 'secret');
     written.length === 0
       ? ok('does not echo at ' + JSON.stringify(prompt))
       : no('ECHOED the password at ' + JSON.stringify(prompt) + ': ' + JSON.stringify(written.join('')));
@@ -225,7 +225,7 @@ const fakeTerm = (written, line) => ({
   const p2 = newPane(3);
   p2.term = fakeTerm(written2, '$ ');
   p2._serverEchoes = false;          // server stopped echoing before the outage
-  _paneSendInput(p2, 'segredo');
+  _paneSendInput(p2, 'secret');
   written2.length === 0
     ? ok('server was not echoing before the outage: no echo (the mosh rule)')
     : no('ECHOED while the server was in no-echo mode: ' + JSON.stringify(written2.join('')));

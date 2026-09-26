@@ -906,10 +906,9 @@ function app() {
       // Language for Web Speech recognition.
       subtitlesLang: localStorage.getItem('vpsm_vc_subtitles_lang') || 'pt-BR',
       subtitlesLangPickerOpen: false,
-      // Volume de envio do mic (1.0 = 100%) — o que os outros ouvem. A
-      // transcrição lê o mic cru e não é afetada. Persistido entre sessões.
+      // Outgoing mic volume (1.0 = 100%), what the others hear. Transcription
+      // reads the raw mic and is not affected. Persisted across sessions.
       micGain: Math.min(4, Math.max(0.25, parseFloat(localStorage.getItem('vpsm_vc_mic_gain') || '1.0') || 1.0)),
-      // Processamento do navegador na captura (default: tudo ligado).
       micProc: (() => {
         let p = {};
         try { p = JSON.parse(localStorage.getItem('vpsm_vc_mic_proc') || '{}') || {}; } catch (_) {}
@@ -920,7 +919,7 @@ function app() {
         };
       })(),
       micProcBusy: false,
-      // Medidor do que SAI pros peers (depois do volume): 0..100.
+      // Level of what goes OUT to the peers (after the volume): 0..100.
       micLevel: 0,
       micLimiting: false,
       // Separate toggle from the transcription itself (subtitlesActive). Default true.
@@ -1573,9 +1572,7 @@ function app() {
       // pages + actions; dynamic data (containers, sessions) is merged in getPaletteItems()
       // IMPORTANT: every `hint:'g+X'` here is a CONTRACT with the key map in
       // installGlobalHotkeys(). Announcing a g+X that is not there (or that leads to
-      // a different screen) makes the palette lie. Previously: g+j and g+m were
-      // announced without existing, and g+s was announced on Agendamentos while the
-      // handler sent you to Systemd. Fixed on both sides — do not edit one without the other.
+      // a different screen) makes the palette lie, so never edit one without the other.
       // kw: aliases concatenated to the label at match time (getPaletteItems).
       // They resolve synonyms/terms the label does not have: 'limpeza'->Prune,
       // 'dev/shell'->Terminal, 'senhas'->Secrets. Accents are already handled by _norm.
@@ -1606,7 +1603,7 @@ function app() {
         {label:'Operations · Jobs (queue)',  kind:'page', page:'jobs',        hint:'g+j', kw:'queue queue trabalhos jobs'},
         {label:'Operations · Schedules', kind:'page', page:'agendamentos',hint:'g+e', kw:'schedule cron agenda recorrente'},
         {label:'Operations · Git',          kind:'page', page:'git',                    kw:'versionamento repo repositorio commit branch'},
-        // The "Nós" entry still exists and leads to the merged screen: whoever types
+        // The "Nodes" entry still exists and leads to the merged screen: whoever types
         // "nos" in the palette is looking for the inventory, and it did not change
         // subject, it changed address. Removing the entry would make the search fail
         // for the word the operator has in mind.
@@ -1657,7 +1654,7 @@ function app() {
     sortState: safeJSON('vpsm_sort_state', {}),  // sort state for the tables
     sessions: [],
 // The active-sessions screen is where you check for an intrusion. A `catch →
-    // sessions=[]` rendered "nenhuma outra sessão ativa" — the SAME screen as a
+    // sessions=[]` rendered "no other active sessions", the SAME screen as a
     // clean system. These three flags separate loading / error / genuinely empty.
     sessionsLoading: false,
     sessionsLoaded: false,   // true only when the list came from the server
@@ -1686,7 +1683,7 @@ function app() {
     _tunnelTimer: null,
     deviceUsage: {},          // device name → {rate_bps, total_bytes, active_conns}
     _usageTimer: null,
-    // Data saver (Security tab → Economia)
+    // Data saver (Security tab)
     // The shape has to be COMPLETE, not a {} pretending to exist. `saved:{}` was
     // truthy and empty: every `dsStatus.saved ? dsStatus.saved.X : 0` in the index
     // passed the guard and returned undefined — calling `.toLocaleString()` on that
@@ -1834,7 +1831,7 @@ function app() {
     statsLoading: false,
     toasts: [],
     _toastSeq: 0,
-// Per-container transition state: id -> label ("parando…"). It feeds aria-busy
+// Per-container transition state: id -> label ("stopping…"). It feeds aria-busy
     // and the badge on the row while docker applies the SIGTERM grace period.
     pendingActions: {},
     // Progress of the batch actions: a done/total bar and the honest list of items
@@ -1989,9 +1986,9 @@ function app() {
 
       // (The guest-mode landing is already handled at the top of init — before the token check.)
 
-      // Migration: 'docs' moved out of Operações into Dev, and 'prompts' became a
+      // Migration: 'docs' moved out of Operations into Dev, and 'prompts' became a
       // sub-tab of AI. Resets stale localStorage so we do not land on an orphaned
-      // Operações tab.
+      // Operations tab.
       if (this.tabs.operations === 'docs' || this.tabs.operations === 'prompts') {
         this.tabs.operations = 'tarefas';
         try { localStorage.setItem('vpsm_tabs', JSON.stringify(this.tabs)); } catch(_){}
@@ -2523,7 +2520,7 @@ function app() {
     gsStateLabel(s) {
       if (!s) return '—';
       if (s.state === 'running') return 'online';
-      if (s.state === 'missing') return 'ausente';
+      if (s.state === 'missing') return 'missing';
       if (s.state === 'exited') return 'stopped';
       return s.state || '—';
     },
@@ -2650,8 +2647,8 @@ function app() {
       const name = await this.askInput({
         title: 'Duplicate world',
         label: 'Name of the copy of "' + w.name + '"',
-        value: w.name + '-copia',
-        placeholder: 'meu-mundo',
+        value: w.name + '-copy',
+        placeholder: 'my-world',
         validate: (v) => {
           v = String(v || '').trim();
           if (!v) return 'Enter a name';
@@ -2753,14 +2750,13 @@ function app() {
     },
     resetGameSettings() { this.games.gsDraft = JSON.parse(JSON.stringify(this.games.gsOrig || {})); },
 
-    // Agrupa os ~35 campos por assunto — 35 inputs numa lista chapada é
-    // inutilizável. Chave desconhecida cai em "Other", então jogo novo nunca
-    // perde campo.
+    // Groups the ~35 fields by subject. An unknown key falls into "Other", so a
+    // new game never loses a field.
     GS_SETTING_GROUPS: [
-      { title: 'Jogador',     match: /^player|^shroudTime|^foodBuff|^enableStarving|^fromHunger|^tombstone/ },
+      { title: 'Player',      match: /^player|^shroudTime|^foodBuff|^enableStarving|^fromHunger|^tombstone/ },
       { title: 'Progression',  match: /^experience|^perk/ },
       { title: 'Items & World', match: /^enableDurability|^mining|^plant|^resource|^factory|^weather|^fishing|^enableGlider|^dayTime|^nightTime|^curse/ },
-      { title: 'Inimigos',    match: /^enemy|^boss|^threat|^randomSpawner|^aggro|^pacify|^taming/ },
+      { title: 'Enemies',     match: /^enemy|^boss|^threat|^randomSpawner|^aggro|^pacify|^taming/ },
     ],
     gsSettingGroups() {
       const f = (this.games.settingsFilter || '').toLowerCase();
@@ -2919,9 +2915,9 @@ function app() {
       this.games.groups = [
         { name: 'Admin', password: this.gsGenPass(), canKickBan: true, canAccessInventories: true,
           canEditWorld: true, canEditBase: true, canExtendBase: true, reservedSlots: 1 },
-        { name: 'Amigo', password: this.gsGenPass(), canKickBan: false, canAccessInventories: true,
+        { name: 'Friend', password: this.gsGenPass(), canKickBan: false, canAccessInventories: true,
           canEditWorld: true, canEditBase: true, canExtendBase: true, reservedSlots: 0 },
-        { name: 'Visitante', password: this.gsGenPass(), canKickBan: false, canAccessInventories: false,
+        { name: 'Visitor', password: this.gsGenPass(), canKickBan: false, canAccessInventories: false,
           canEditWorld: false, canEditBase: false, canExtendBase: false, reservedSlots: 0 },
       ];
       this.showToast('Template applied with generated passwords — review and save', '');
@@ -3115,9 +3111,9 @@ function app() {
     // who wants something the dropdowns do not cover).
 
     GS_DOW: [
-      { v: 0, label: 'domingo' }, { v: 1, label: 'second' }, { v: 2, label: 'terca' },
-      { v: 3, label: 'quarta' }, { v: 4, label: 'quinta' }, { v: 5, label: 'sexta' },
-      { v: 6, label: 'sabado' },
+      { v: 0, label: 'Sunday' }, { v: 1, label: 'Monday' }, { v: 2, label: 'Tuesday' },
+      { v: 3, label: 'Wednesday' }, { v: 4, label: 'Thursday' }, { v: 5, label: 'Friday' },
+      { v: 6, label: 'Saturday' },
     ],
     GS_EVERY: [1, 2, 3, 4, 6, 8, 12],
 
@@ -3342,7 +3338,7 @@ function app() {
         const min = v / 60000000000;
         return v + ' (' + (Math.round(min * 10) / 10) + ' min)';
       }
-      if (typeof v === 'boolean') return v ? 'ligado' : 'off';
+      if (typeof v === 'boolean') return v ? 'on' : 'off';
       return String(v);
     },
     gsHint(k) {
@@ -3353,7 +3349,7 @@ function app() {
         bits.push((Math.round((cur / 60000000000) * 10) / 10) + ' min');
       }
       if (m.def !== undefined && JSON.stringify(cur) !== JSON.stringify(m.def)) {
-        bits.push('default: ' + (typeof m.def === 'boolean' ? (m.def ? 'ligado' : 'off') : m.def));
+        bits.push('default: ' + (typeof m.def === 'boolean' ? (m.def ? 'on' : 'off') : m.def));
       }
       return bits.join(' · ');
     },
@@ -3760,7 +3756,7 @@ function app() {
       secrets:           ['security', 'secrets'],
       sessions:          ['security', 'sessions'],
       rede:              ['security', 'rede'],
-      // AdGuard + Devices + Economia were merged into a single tab. The old keys
+      // AdGuard + Devices + Data saver were merged into a single tab. The old keys
       // become ALIASES → old links/favourites/palette entries land on the unified tab
       // (same pattern as nodes→proxmox). Deleting them would send the old ones nowhere.
       adguard:           ['security', 'rede'],
@@ -3774,7 +3770,7 @@ function app() {
       code:              ['dev', 'code'],
       git:               ['operations', 'git'],
       // 🔴 `nodes` was NOT deleted, and that is the point.
-      // The Nós tab was MERGED into the Proxmox tab, but old links, favourites,
+      // The Nodes tab was MERGED into the Proxmox tab, but old links, favourites,
       // memorised shortcuts and the palette entry all still ask for `nodes`.
       // Deleting the key would send every one of them nowhere; here they land on the
       // screen that inherited the content.
@@ -3847,7 +3843,7 @@ function app() {
     //
     // 🔴 The inverse of PAGE_REMAP is NOT a function: more than one key can point
     // at the same (group, tab). Today `nodes` and `proxmox` both point at
-    // ['operations','proxmox'], because the Nós tab was MERGED into Proxmox and the
+    // ['operations','proxmox'], because the Nodes tab was MERGED into Proxmox and the
     // legacy alias has to survive so that old links, favourites, memorised
     // shortcuts and the command-palette entry keep landing somewhere.
     //
@@ -4050,7 +4046,7 @@ function app() {
     //   `sistema.ventoinhas` — a sub-tab of the fanhub proxy, it only exists in the
     //      panel of the VM. It stays in the canonical list (the file has to be
     //      byte-identical) and comes out as 0 in the report of this fork.
-    //   `nodes` (the Nós screen) — the screen stopped existing: it was MERGED into
+    //   `nodes` (the Nodes screen) — the screen stopped existing: it was MERGED into
     //      the Proxmox tab, and `nodes` today is only a remap to `proxmox` (see
     //      PAGE_REMAP), which never becomes `currentView`. The canonical id
     //      `operacoes.nos` IS ALREADY in the allowlist since the re-edit — what is
@@ -7287,7 +7283,7 @@ function app() {
               okN++;
             } catch(e){ lastErr = e.message; }
           }
-          this.showToast(`${d.key}: ${okN}/${N} anexos`+(okN<N && lastErr ? ' — '+lastErr : ''), okN<N ? 'warn' : 'ok');
+          this.showToast(`${d.key}: ${okN}/${N} attachments`+(okN<N && lastErr ? ' — '+lastErr : ''), okN<N ? 'warn' : 'ok');
         }
 
         // the board is populated ONLY by JQL (Jira's Lucene index), which lags
@@ -8333,7 +8329,7 @@ function app() {
     // this host runs claude-opus-5-5[1m], billing the whole tier at the
     // Opus 5 rate would overstate the card by ~25%.
     _tierRollup(){
-      // [entrada, saída, multiplicador de cache-read] por MTok.
+      // [input, output, cache-read multiplier] per MTok.
       const price = { fable:[10/1e6,50/1e6,0.1], opus:[5/1e6,25/1e6,0.1], opus55:[4/1e6,20/1e6,0.05],
                       sonnet:[3/1e6,15/1e6,0.1], haiku:[1/1e6,5/1e6,0.1] };
       const tierOf = (m)=>{ m=(m||'').toLowerCase();
@@ -8342,8 +8338,7 @@ function app() {
         if(m.includes('sonnet')) return 'sonnet';
         if(m.includes('haiku'))  return 'haiku';
         return 'opus'; };
-      // opus55 é uma LINHA DE PREÇO, não um tier — o card continua com as quatro
-      // barras de sempre.
+      // opus55 is a PRICE LINE, not a tier: the card keeps its usual four bars.
       const priceOf = (m,t)=> (t==='opus' && (m||'').toLowerCase().includes('opus-5-5'))
         ? price.opus55 : (price[t]||price.opus);
       const acc = {};
@@ -8445,7 +8440,7 @@ function app() {
         this.newPrivToken = { name:'', rpm:null, tpm:null, budget:null, expiresDays:null };
         this.showToast('Token created','ok');
         await this.loadPrivateApiTokens();
-      } catch(e){ this.showToast('Error creating token: '+(e.message||'rede'),'err'); }
+      } catch(e){ this.showToast('Error creating token: '+(e.message||'network'),'err'); }
       finally { this.privBusy = false; }
     },
     async revokePrivateApiToken(t){
@@ -8458,7 +8453,7 @@ function app() {
         if (!r.ok) { this.showToast(this._errText(d.error) || ('Failed to revoke (HTTP '+r.status+')'),'err'); return; }
         this.showToast('Token revoked','ok');
         await this.loadPrivateApiTokens();
-      } catch(e){ this.showToast('Error revoking: '+(e.message||'rede'),'err'); }
+      } catch(e){ this.showToast('Error revoking: '+(e.message||'network'),'err'); }
       finally { this.privBusy = false; }
     },
     copyPrivToken(){
@@ -8682,8 +8677,8 @@ function app() {
             ? '    "x-api-key: '+tok+'", "anthropic-version: 2023-06-01", "content-type: application/json",'
             : '    "Authorization: Bearer '+tok+'", "content-type: application/json",';
           const body = anthropic
-            ? '\'{"model":"'+model+'","max_tokens":1024,"messages":[{"role":"user","content":"Olá!"}]}\''
-            : '\'{"model":"'+model+'","messages":[{"role":"user","content":"Olá!"}]}\'';
+            ? '\'{"model":"'+model+'","max_tokens":1024,"messages":[{"role":"user","content":"Hello!"}]}\''
+            : '\'{"model":"'+model+'","messages":[{"role":"user","content":"Hello!"}]}\'';
           return L([
             '<?php',
             '$ch = curl_init("'+url+'");',
@@ -8708,14 +8703,14 @@ function app() {
             '  -H "anthropic-version: 2023-06-01" \\',
             '  -H "content-type: application/json" \\',
             tlsFlag,
-            '  -d \'{"model":"'+model+'","max_tokens":1024,"messages":[{"role":"user","content":"Olá!"}]}\'',
+            '  -d \'{"model":"'+model+'","max_tokens":1024,"messages":[{"role":"user","content":"Hello!"}]}\'',
           ]);
           return L([
             'curl '+base+'/v1/chat/completions \\',
             '  -H "Authorization: Bearer '+tok+'" \\',
             '  -H "content-type: application/json" \\',
             tlsFlag,
-            '  -d \'{"model":"'+model+'","messages":[{"role":"user","content":"Olá!"}]}\'',
+            '  -d \'{"model":"'+model+'","messages":[{"role":"user","content":"Hello!"}]}\'',
           ]);
         }
       }
@@ -9359,12 +9354,12 @@ function app() {
     selectedAbs(){ return this.fileSel.map(n=>this.absPath(n)); },
     async refresh(){ if(this.fileList) await this.browseFiles(this.fileList.path); this.fileSel=[]; },
 
-    async newFolder(){ const name=await this.askInput({ title:'New folder', label:'Folder name:', placeholder:'nome' }); if(!name) return; const path=this.absPath(name); try{ const r=await this.api('/api/files/mkdir',{method:'POST',body:JSON.stringify({path})}); const d=await r.json(); if(d.ok){this.showToast('folder created','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
+    async newFolder(){ const name=await this.askInput({ title:'New folder', label:'Folder name:', placeholder:'name' }); if(!name) return; const path=this.absPath(name); try{ const r=await this.api('/api/files/mkdir',{method:'POST',body:JSON.stringify({path})}); const d=await r.json(); if(d.ok){this.showToast('folder created','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
     async newFile(){ const name=await this.askInput({ title:'New file', label:'File name:', placeholder:'name.txt' }); if(!name) return; const path=this.absPath(name); try{ const r=await this.api('/api/files/touch',{method:'POST',body:JSON.stringify({path})}); const d=await r.json(); if(d.ok){this.showToast('file created','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
     async uploadFiles(files){ if(!files||!files.length) return; this.fileBusy=true; const dir=this.fileList?.path||'/'; let ok=0,fail=0; for(const f of files){ try{ const fd=new FormData(); fd.append('file',f); const r=await this.api('/api/files/upload?path='+encodeURIComponent(dir),{method:'POST',body:fd}); const d=await r.json(); if(d.ok) ok++; else fail++; }catch(e){fail++;} } this.fileBusy=false; this.showToast(`upload: ${ok} ok, ${fail} failed`,fail?'err':'ok'); this.refresh(); },
     async downloadEntry(name){ const p=this.absPath(name); try{ const r=await this.api('/api/files/download?path='+encodeURIComponent(p)); const blob=await r.blob(); const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(u),5000); }catch(e){ this.showToast('download error: '+e.message,'err'); } },
     async previewEntry(e){ const p=this.absPath(e.name); const l=e.name.toLowerCase(); let kind='other'; if(l.match(/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/)) kind='image'; else if(l.match(/\.(mp4|webm|mkv|mov)$/)) kind='video'; else if(l.match(/\.(mp3|wav|ogg|flac|m4a)$/)) kind='audio'; else if(l.endsWith('.pdf')) kind='pdf'; try{ const r=await this.api('/api/files/preview?path='+encodeURIComponent(p)); const blob=await r.blob(); this.filePreview={ url: URL.createObjectURL(blob), name: e.name, kind }; }catch(err){ this.showToast('preview unavailable: '+err.message,'err'); } },
-    async renamePrompt(name){ const fresh=await this.askInput({ title:'Rename', label:'Rename to:', value:name }); if(!fresh||fresh===name) return; const from=this.absPath(name), to=this.absPath(fresh); try{ const r=await this.api('/api/files/rename',{method:'POST',body:JSON.stringify({from,to})}); const d=await r.json(); if(d.ok){this.showToast('renomeado','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
+    async renamePrompt(name){ const fresh=await this.askInput({ title:'Rename', label:'Rename to:', value:name }); if(!fresh||fresh===name) return; const from=this.absPath(name), to=this.absPath(fresh); try{ const r=await this.api('/api/files/rename',{method:'POST',body:JSON.stringify({from,to})}); const d=await r.json(); if(d.ok){this.showToast('renamed','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
     async trashEntry(name){ if(!(await this.confirmAsync('Move '+name+' to the trash?'))) return; const path=this.absPath(name); try{ const r=await this.api('/api/files/trash',{method:'POST',body:JSON.stringify({path})}); const d=await r.json(); if(d.ok){this.showToast('moved to trash','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
     // Honest toast for batch operations: green only when EVERYTHING passed,
     // a warning on partial, an error when nothing passed — always saying how many.
@@ -9376,7 +9371,7 @@ function app() {
       if (ok === 0) this.showToast(`${label} failed: 0/${total}`+suf, 'err');
       else this.showToast(`${label}: ${ok}/${total} — ${fail} failed`+suf, 'warn');
     },
-    async bulkTrash(){ if(!(await this.confirmAsync('Move '+this.fileSel.length+' items to the trash?'))) return; const paths=this.selectedAbs(); this.fileBusy=true; let ok=0,fail=0,lastErr=''; for(const p of paths){ try{ const r=await this.api('/api/files/trash',{method:'POST',body:JSON.stringify({path:p})}); const d=await r.json().catch(()=>({ok:true})); if(d && d.ok===false){ fail++; lastErr=d.error||lastErr; } else ok++; }catch(e){ fail++; lastErr=(e&&e.message)||lastErr; } } this.fileBusy=false; this._bulkToast('lixeira', ok, fail, lastErr); this.refresh(); },
+    async bulkTrash(){ if(!(await this.confirmAsync('Move '+this.fileSel.length+' items to the trash?'))) return; const paths=this.selectedAbs(); this.fileBusy=true; let ok=0,fail=0,lastErr=''; for(const p of paths){ try{ const r=await this.api('/api/files/trash',{method:'POST',body:JSON.stringify({path:p})}); const d=await r.json().catch(()=>({ok:true})); if(d && d.ok===false){ fail++; lastErr=d.error||lastErr; } else ok++; }catch(e){ fail++; lastErr=(e&&e.message)||lastErr; } } this.fileBusy=false; this._bulkToast('Trash', ok, fail, lastErr); this.refresh(); },
     async bulkDelete(){ if(!(await this.confirmAsync('PERMANENTLY DELETE '+this.fileSel.length+' items? (no recovery)'))) return; const paths=this.selectedAbs(); try{ const r=await this.api('/api/files/bulk-delete',{method:'POST',body:JSON.stringify({paths})}); const d=await r.json(); const fail=(d.results||[]).filter(x=>!x.ok).length; this.showToast(fail?`${fail} failure(s)`:'deleted',fail?'err':'ok'); this.refresh(); }catch(e){this.showToast(e.message,'err');} },
     async bulkMovePrompt(){ const dest=await this.askInput({ title:'Move', label:'Move to which directory?', value:this.fileList?.path||'/' }); if(!dest) return; const paths=this.selectedAbs(); try{ const r=await this.api('/api/files/bulk-move',{method:'POST',body:JSON.stringify({paths,dest_dir:dest})}); const d=await r.json(); const res=Array.isArray(d.results)?d.results:null; let ok,fail,lastErr=''; if(res){ fail=res.filter(x=>!x.ok).length; ok=res.length-fail; lastErr=(res.find(x=>!x.ok)||{}).error||''; } else if(d.ok===false){ ok=0; fail=paths.length; lastErr=d.error||''; } else { ok=paths.length; fail=0; } this._bulkToast('moved', ok, fail, lastErr); this.refresh(); }catch(e){this.showToast('move failed: '+e.message,'err');} },
     async bulkCopyPrompt(){ const dest=await this.askInput({ title:'Copy', label:'Copy to which directory?', value:this.fileList?.path||'/' }); if(!dest) return; const paths=this.selectedAbs(); this.fileBusy=true; let ok=0,fail=0; for(const p of paths){ const to=(dest+'/'+p.split('/').pop()).replace('//','/'); try{ const r=await this.api('/api/files/copy',{method:'POST',body:JSON.stringify({from:p,to})}); const d=await r.json(); if(d.ok) ok++; else fail++; }catch(e){fail++;} } this.fileBusy=false; this.showToast(`copied: ${ok} ok, ${fail} failed`, fail?'err':'ok'); this.refresh(); },
@@ -9484,7 +9479,7 @@ function app() {
       const g = {};
       for (const m of (this.metricCatalog||[])){
         if (q && !((m.key||'').toLowerCase().includes(q) || (m.label||'').toLowerCase().includes(q) || (m.category||'').toLowerCase().includes(q))) continue;
-        (g[m.category||'Outras'] = g[m.category||'Outras'] || []).push(m);
+        (g[m.category||'Other'] = g[m.category||'Other'] || []).push(m);
       }
       return Object.entries(g).sort((a,b)=> (this._catRank(a[0])-this._catRank(b[0])) || a[0].localeCompare(b[0]));
     },
@@ -9817,7 +9812,7 @@ function app() {
         default:         return cfg.chat_jid || cfg.to || cfg.url || '—';
       }
     },
-    // ── Channel "Notificação no site" → feeds the status bar's existing BELL ──
+    // In-site notification channel: feeds the status bar's existing bell.
     // Instead of a bell of its own, it pushes the in-app inbox events to
     // addNotification() (the 🔔 bell on the bottom bar). _lastInboxT avoids
     // duplicates; on the 1st load it only sets the baseline (no spamming what already passed).
@@ -10147,7 +10142,7 @@ function app() {
             if (!ev || ev.resultCount === undefined) return;
             self.hostTermSearchMatchCount = ev.resultCount > 0
               ? (ev.resultIndex + 1) + '/' + ev.resultCount
-              : 'nada';
+              : 'none';
           });
         } catch(_) {}
         try { term.loadAddon(new WebLinksAddon.WebLinksAddon()); } catch(e){}
@@ -10613,7 +10608,7 @@ function app() {
         // 128 KiB block it would re-emit over what the primer already wrote. The
         // repaint still applies — the log is a slice of a live stream and may
         // end in the middle of a frame, and only the program knows how to paint a whole
-        // frame. See primingDoServidor, in internal/pty/pty.go.
+        // frame. See the server-side priming in internal/pty/pty.go.
         const url = proto+'//'+location.host+opts.wsPath
           +(attachOnly ? (opts.wsPath.includes('?')?'&':'?')+'attach=1' : '')
           +(state._primedOk ? (opts.wsPath.includes('?')?'&':'?')+'replay=0' : '');
@@ -10624,7 +10619,7 @@ function app() {
         // onclose, onerror) can fire async AFTER loadSessionIntoPane
         // or closePane replaced state.ws with another object. Without this guard, the
         // old ws's onclose would see state.reconnect.cancelled=false (reset
-        // by the new buildTerminal) and would write "[conexão perdida — reconectando]"
+        // by the new buildTerminal) and would write "[connection lost, reconnecting]"
         // into the new terminal, even with the new WS working.
         const myWs = ws;
 
@@ -12652,7 +12647,7 @@ function app() {
       if (exit === d.exit) return;
       try {
         await this.api('/api/tunnel/devices/'+encodeURIComponent(d.uuid)+'/exit', {method:'POST', body: JSON.stringify({exit})});
-        this.showToast('exit for '+d.name+' → '+(exit==='casa'?'casa':'VPS')+' (reconnects in ~2s)','ok');
+        this.showToast('exit for '+d.name+' → '+(exit==='casa'?'home':'VPS')+' (reconnects in ~2s)','ok');
         await this.loadTunnelDevices();
       } catch(e){ this.showToast(e.message,'err'); await this.loadTunnelDevices(); }
     },
@@ -12661,7 +12656,7 @@ function app() {
       if (!name || name===d.name) return;
       try {
         await this.api('/api/tunnel/devices/'+encodeURIComponent(d.uuid)+'/rename', {method:'POST', body: JSON.stringify({name})});
-        this.showToast('renomeado','ok');
+        this.showToast('renamed','ok');
         await this.loadTunnelDevices();
       } catch(e){ this.showToast(e.message,'err'); }
     },
@@ -12973,7 +12968,7 @@ function app() {
             this.addNotification('ok', rule + ' \u2014 normalized');
           } else {
             const v = (typeof f.Value === 'number') ? ' (' + f.Value.toFixed(1) + ')' : '';
-            this.addNotification(sev === 'crit' ? 'err' : 'alerta', rule + ' fired' + v);
+            this.addNotification(sev === 'crit' ? 'err' : 'alert', rule + ' fired' + v);
           }
         }
         this._lastFireT = maxT;
@@ -13462,7 +13457,7 @@ function app() {
     // Radial items with a position (dx,dy) on a circle. 6 actions.
     radialItems(){
       const defs = [
-        { kind:'keyboard', label:'Teclado', icon:'⌨' },
+        { kind:'keyboard', label:'Keyboard', icon:'⌨' },
         { kind:'clear',    label:'Clear',  icon:'🧹' },
         { kind:'reconnect',label:'Reconnect', icon:'↻' },
         { kind:'rename',   label:'Rename', icon:'✎' },
@@ -13516,7 +13511,7 @@ function app() {
                       '<button class="pane-load" title="Load a session into this panel" style="opacity:0.6;padding:0 4px;">📋</button>' +
                       '<button class="pane-split-h" title="Split horizontal (stacks panes)" style="opacity:0.6;padding:0 4px;">⬓</button>' +
                       '<button class="pane-split-v" title="Split vertical (side by side)" style="opacity:0.6;padding:0 4px;">⬔</button>' +
-                      '<button class="pane-close" title="Fechar panel" style="opacity:0.6;padding:0 4px;color:#f43f5e;">✕</button>';
+                      '<button class="pane-close" title="Close panel" style="opacity:0.6;padding:0 4px;color:#f43f5e;">✕</button>';
       // Button listeners. Stop propagation on mousedown so the wrap does not
       // capture it (a re-render destroyed the button before the click). Buttons carry
       // draggable=false to stop the draggable of the bar from stealing the gesture.
@@ -14134,7 +14129,7 @@ function app() {
       (this.terms && this.terms.panes || []).forEach(p => {
         if (!p || !p.term) return;
         try { this._safeFit(p.fit); } catch(_){}
-        try { if (p._assertSize) p._assertSize('janela'); } catch(_){}
+        try { if (p._assertSize) p._assertSize('window'); } catch(_){}
       });
     },
     // The network came back (or the tab came to the front): there is no point waiting for the
@@ -14180,7 +14175,7 @@ function app() {
         // depend on the field being numeric "by convention".
         const q = (pane._outbox && pane._outbox.length) ? (pane._outboxBytes | 0) : 0;
         ov.innerHTML = '<div class="tpo-pill"><span class="tpo-dot"></span>'
-          + (pane.status === 'reconnecting' ? 'Reconnecting…' : 'Conectando…')
+          + (pane.status === 'reconnecting' ? 'Reconnecting…' : 'Connecting…')
           + (q ? '<span class="tpo-sub" style="margin-left:6px;opacity:.85">' + q + ' character' + (q>1?'s':'') + ' queued — nothing lost</span>' : '')
           + '<button class="tpo-link" data-a="now">reconnect now</button></div>';
         ov.style.display = 'flex';
@@ -14313,7 +14308,7 @@ function app() {
           const mark = d.cols + 'x' + d.rows;
           if (fit._lastNatural !== mark) {
             fit._lastNatural = mark;
-            try { fit._vpsmState._assertSize && fit._vpsmState._assertSize('janela natural'); } catch (_) {}
+            try { fit._vpsmState._assertSize && fit._vpsmState._assertSize('natural window'); } catch (_) {}
           }
           return true;
         }
@@ -14524,7 +14519,7 @@ function app() {
       if (sessions.length === 0) {
         const empty = document.createElement('div');
         empty.style.cssText = 'padding:8px;color:#6b7280;font-style:italic;';
-        empty.textContent = 'Nenhuma sessão existente — use "New session"';
+        empty.textContent = 'No existing sessions. Use "New session"';
         menu.appendChild(empty);
       } else {
         sessions.forEach(s => {
@@ -14880,7 +14875,7 @@ function app() {
     },
     // ----- Workspaces -----
     async saveCurrentWorkspace(){
-      const raw = await this.askInput({ title:'Save workspace', label:'Workspace name:', placeholder:'meu-workspace', validate:(v)=>{ const s=String(v||'').trim(); if(!s) return 'Enter a name'; return /^[\p{L}\p{N}_\- .]{1,64}$/u.test(s) ? '' : 'Use letters, numbers, space, -, _, . (max 64)'; } });
+      const raw = await this.askInput({ title:'Save workspace', label:'Workspace name:', placeholder:'my-workspace', validate:(v)=>{ const s=String(v||'').trim(); if(!s) return 'Enter a name'; return /^[\p{L}\p{N}_\- .]{1,64}$/u.test(s) ? '' : 'Use letters, numbers, space, -, _, . (max 64)'; } });
       const name = (raw || '').trim();
       if (!name) return;
       const snap = {
@@ -15584,7 +15579,7 @@ function app() {
       if (reverse) found = p.search.findPrevious(q, opts); else found = p.search.findNext(q, opts);
       // Updates the counter. xterm-addon-search exposes resultIndex/resultCount through an event
       // (onDidChangeResults). If it is not available, it only shows hit/miss.
-      this.hostTermSearchMatchCount = found ? '✓' : 'nada';
+      this.hostTermSearchMatchCount = found ? '✓' : 'none';
     },
     hostStatusLabel(){
       const p = this.activePane();
@@ -16745,7 +16740,7 @@ function app() {
         }
         return await r.json();
       } catch(err) {
-        this.showToast?.('upload failed: ' + (err && err.message || 'rede'), 'err');
+        this.showToast?.('upload failed: ' + (err && err.message || 'network'), 'err');
         return null;
       }
     },
@@ -16773,7 +16768,7 @@ function app() {
       const paths = [];
       for (let i = 0; i < total; i++) {
         const f = list[i];
-        this.showToast?.(total > 1 ? `enviando ${i+1}/${total}: ${f.name||'file'}…` : `enviando ${f.name||'file'}…`, 'info');
+        this.showToast?.(total > 1 ? `uploading ${i+1}/${total}: ${f.name||'file'}…` : `uploading ${f.name||'file'}…`, 'info');
         const d = await this._uploadTermFile(f, f.name);
         if (d && d.path) paths.push(this._quoteShellPath(d.path));
       }
@@ -17105,7 +17100,7 @@ function app() {
         case 'video': return '🎬 Video';
         case 'audio': return '🎵 Audio';
         case 'voice': return '🎤 Voice message';
-        case 'document': return '📎 ' + (m.media?.filename || 'Documento');
+        case 'document': return '📎 ' + (m.media?.filename || 'Document');
         case 'sticker': return '🏷️ Sticker';
         case 'location': return '📍 Location';
       }
@@ -17371,7 +17366,7 @@ function app() {
         if (failed > 0) msg += ' · ' + failed + ' failure' + (failed !== 1 ? 's' : '');
         this.showToast && this.showToast(msg, failed > 0 ? 'err' : 'ok');
       } catch (e) {
-        this.showToast && this.showToast('Sync error: ' + (e && e.message || 'rede'), 'err');
+        this.showToast && this.showToast('Sync error: ' + (e && e.message || 'network'), 'err');
       } finally {
         wa.syncing = false;
       }
@@ -17384,7 +17379,7 @@ function app() {
     // Resolves the quoted msg (a local lookup in the loaded list). Returns
     // {label, body} ready to render OR null when the quoted one has not been
     // loaded yet (we do not fetch it from the server — the user would click to
-    // scroll, which then calls loadMore if needed). Media: uses "📷 Imagem"/etc.
+    // scroll, which then calls loadMore if needed). Media: uses "📷 Image"/etc.
     whatsappQuotedPreview(m) {
       if (!m || !m.quoted_id) return null;
       const list = this.whatsapp.messages[m.chat] || [];
@@ -17398,7 +17393,7 @@ function app() {
         else if (q.type === 'document') body = '📄 Document';
         else body = '(media)';
       }
-      const label = q.from_me ? 'You' : (this.whatsappSenderLabel(q) || 'Contato');
+      const label = q.from_me ? 'You' : (this.whatsappSenderLabel(q) || 'Contact');
       return { label, body: body.slice(0, 120) };
     },
 
@@ -17522,7 +17517,7 @@ function app() {
       if (words.length === 1) return words[0].slice(0,2).toUpperCase();
       return (words[0][0] + words[1][0]).toUpperCase();
     },
-    // Inserts "Today", "Yesterday", "Segunda-feira", "27/05/2026" separators
+    // Inserts "Today", "Yesterday", "Monday", "27/05/2026" separators
     // between messages from different days, as WhatsApp Web does. Returns a flat
     // list interleaving {type:'divider', label, id} and {type:'msg', m, id}.
     whatsappMessagesWithDividers(msgs) {
@@ -17786,11 +17781,11 @@ function app() {
     // Covers 90% of everyday WhatsApp use; the rest falls back to a Unicode keyboard.
     whatsappEmojiRows() {
       return [
-        { title:'Frequentes', emojis: ['😀','😂','🥰','😍','😘','😎','🤣','😊','😢','😭','😡','🥺','😴','🤔','👀','💔','❤️','🔥','✨','🎉','👏','🙏','💯','🚀'] },
+        { title:'Frequent', emojis: ['😀','😂','🥰','😍','😘','😎','🤣','😊','😢','😭','😡','🥺','😴','🤔','👀','💔','❤️','🔥','✨','🎉','👏','🙏','💯','🚀'] },
         { title:'Smileys', emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶'] },
-        { title:'Gestos', emojis: ['👍','👎','👌','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👋','🤚','🖐️','✋','🖖','👏','🙌','👐','🤲','🤝','🙏','✍️','💪','🦾'] },
+        { title:'Gestures', emojis: ['👍','👎','👌','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👋','🤚','🖐️','✋','🖖','👏','🙌','👐','🤲','🤝','🙏','✍️','💪','🦾'] },
         { title:'Heart', emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟'] },
-        { title:'Objetos', emojis: ['🔥','✨','🎉','🎊','🎁','🎂','🍰','☕','🍺','🍷','🍕','🍔','🌹','🌸','🌞','🌙','⭐','💯','💰','📱','💻','🚗','✈️','🏠'] },
+        { title:'Objects', emojis: ['🔥','✨','🎉','🎊','🎁','🎂','🍰','☕','🍺','🍷','🍕','🍔','🌹','🌸','🌞','🌙','⭐','💯','💰','📱','💻','🚗','✈️','🏠'] },
       ];
     },
     whatsappInsertEmoji(e) {
@@ -18862,7 +18857,7 @@ function app() {
             } else if (ev.type === 'owner-action') {
               // The owner applied an action to a peer — notify (non-fatal).
               const targetName = this.vcPeerName(ev.target) || ev.target.slice(-6);
-              const byName = this.vcPeerName(ev.by) || 'Dono';
+              const byName = this.vcPeerName(ev.by) || 'Owner';
               if (ev.action === 'mute') this.vcToast('🔇 ' + byName + ' muted ' + targetName);
               else if (ev.action === 'camera-off') this.vcToast('📷 ' + byName + ' turned off the camera of ' + targetName);
               else if (ev.action === 'kick') this.vcToast('🚪 ' + byName + ' removed ' + targetName + ' from the call');
@@ -18870,7 +18865,7 @@ function app() {
               this.vcInfo('The owner asked you to unmute.');
             } else if (ev.type === 'room-locked') {
               this.videocall.roomLocked = !!ev.locked;
-              const byName = this.vcPeerName(ev.by) || 'Dono';
+              const byName = this.vcPeerName(ev.by) || 'Owner';
               this.vcToast(ev.locked ? '🔒 ' + byName + ' locked the room' : '🔓 ' + byName + ' unlocked the room');
             } else if (ev.type === 'owner-transferred') {
               const newOwner = ev.newOwner || '';
@@ -18882,10 +18877,10 @@ function app() {
             } else if (ev.type === 'mic-gain') {
               if (typeof ev.value === 'number') this.videocall.micGain = ev.value;
             } else if (ev.type === 'mic-muted') {
-              // Mute forçado pelo dono da sala. Sem isto o botão seguia
-              // mostrando o mic aberto e o primeiro clique "mutava" de novo.
+              // Mute forced by the room owner. Without this the button kept
+              // showing the mic open and the first click "muted" it again.
               this.videocall.muted = true;
-              if (ev.forced) this.vcToast('🔇 ' + (this.vcPeerName(ev.by) || 'O dono da room') + ' silenciou seu microfone');
+              if (ev.forced) this.vcToast('🔇 ' + (this.vcPeerName(ev.by) || 'The room owner') + ' muted your microphone');
             } else if (ev.type === 'mic-processing') {
               if (ev.value) this.videocall.micProc = Object.assign({}, ev.value);
             } else if (ev.type === 'subtitles-backend') {
@@ -19055,13 +19050,13 @@ function app() {
               // The peer we activated remotely confirmed that its STT came up — the
               // REAL confirmation (before, the initiator only knew that the
               // dc.send() happened, never that the engine on the other side worked).
-              const who = this.vcPeerLabel(ev.from) || 'Participante';
+              const who = this.vcPeerLabel(ev.from) || 'Participant';
               this.vcInfo('🎙 ' + who + ': starting transcription…');
             } else if (ev.type === 'subtitles-status') {
               // A failure status from the remote peer — makes the failure VISIBLE
               // (it used to be mute). We only announce failure here; ok=true arrives as an ack.
               if (!ev.ok) {
-                const who = this.vcPeerLabel(ev.from) || 'Participante';
+                const who = this.vcPeerLabel(ev.from) || 'Participant';
                 const reason = ev.reason ? (' (' + ev.reason + ')') : '';
                 this.vcInfo('⚠️ ' + who + ' could not turn transcription on' + reason);
               }
@@ -19243,7 +19238,7 @@ function app() {
         // Generate one. It needs the transcript left in the state of the previous call.
         const transcript = this.videocall.transcript || '';
         if (!transcript.trim()) {
-          this.videocall.summaryModal.summary = '⚠ Não há transcript desta chamada — ative "Live transcription" durante a chamada pra gerar o resumo IA depois.';
+          this.videocall.summaryModal.summary = '⚠ There is no transcript for this call. Turn on "Live transcription" during the call to generate the AI summary afterwards.';
           this.videocall.summaryModal.busy = false;
           return;
         }
@@ -19529,7 +19524,7 @@ function app() {
         // except the chat input (where typing a space is normal). A refinement of
         // the guard: Space used to be blocked in any input.
         if (e.code === 'Space' && !e.repeat) {
-          const isChatInput = t.tagName === 'INPUT' && (t.placeholder === 'Mensagem…' || t.placeholder === 'Mensagem...');
+          const isChatInput = t.tagName === 'INPUT' && (t.placeholder === 'Message…' || t.placeholder === 'Message...');
           if (!isChatInput && this.videocall.muted) {
             this.videocall.pttActive = true;
             for (const tr of (window.VPSMVideoCall._call?.localStream?.getAudioTracks() || [])) tr.enabled = true;
@@ -19619,7 +19614,7 @@ function app() {
     },
     vcConnectionLabel() {
       const b = this.vcConnectionQuality();
-      return b >= 4 ? 'excelente' : b === 3 ? 'boa' : b === 2 ? 'instável' : 'bad';
+      return b >= 4 ? 'excellent' : b === 3 ? 'good' : b === 2 ? 'unstable' : 'bad';
     },
 
     // ---- QoL: Reactions (emoji floating) ----
@@ -19993,7 +19988,7 @@ function app() {
         if (r.status === 403) throw new Error('only the room owner can kick');
         if (r.status === 404) throw new Error('the peer is no longer in the call');
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        this.vcInfo((peerLabel || 'Participante') + ' kicked');
+        this.vcInfo((peerLabel || 'Participant') + ' kicked');
       } catch (e) { this.vcError('kick: ' + e.message); }
     },
 
@@ -20179,9 +20174,8 @@ function app() {
         try { window.VPSMVideoCall.setShowCaptions(next); } catch (_) {}
       }
     },
-    // Volume de envio do mic — aplica ao vivo no Call e persiste. Fora da
-    // chamada só guarda: entra no próximo connect() (e o medidor do lobby já
-    // mostra com ele).
+    // Outgoing mic volume: applied live in a call and persisted. Outside a call
+    // it is only stored and takes effect on the next connect().
     vcSetMicGain(v) {
       const g = Math.min(4, Math.max(0.25, Number(v) || 1.0));
       this.videocall.micGain = g;
@@ -20193,8 +20187,8 @@ function app() {
     vcMicGainPct() {
       return Math.round((this.videocall.micGain || 1) * 100) + '%';
     },
-    // O slider anda em log2 do volume (-2..2 = 25%..400%): cada passo soa
-    // igual, e 100% cai no meio. Perto do meio gruda em 100%.
+    // The slider moves in log2 of the volume (-2..2 = 25%..400%) so every step
+    // sounds equal and 100% sits in the middle; near the middle it snaps to 100%.
     vcMicGainPos() {
       return Math.log2(this.videocall.micGain || 1);
     },
@@ -20202,12 +20196,12 @@ function app() {
       const p = Math.abs(pos) < 0.08 ? 0 : pos;
       this.vcSetMicGain(Math.round(Math.pow(2, p) * 100) / 100);
     },
-    // Supressão de ruído / cancelamento de eco / ganho automático. Na chamada,
-    // reabre o mic com a nova config sem os peers perceberem.
+    // Noise suppression / echo cancellation / auto gain. In a call it reopens
+    // the mic with the new config without the peers noticing.
     async vcSetMicProc(key, on) {
       if (!['noiseSuppression', 'echoCancellation', 'autoGainControl'].includes(key)) return;
       if (key === 'echoCancellation' && !on) {
-        this.vcInfo('Cancelamento de eco desligado — sem fone, o outro lado vai se ouvir de volta.');
+        this.vcInfo('Echo cancellation off: without headphones, the other side will hear themselves back.');
       }
       await this._vcApplyMicProc(Object.assign({}, this.videocall.micProc, { [key]: !!on }));
     },
@@ -20236,10 +20230,9 @@ function app() {
         this.vcLobbyStartMicMonitor();
       }
     },
-    // Medidor ao vivo do que sai pros peers. Um laço só, que roda enquanto o
-    // menu do mic ou as configurações estiverem abertos na chamada e se
-    // desliga sozinho. ~20 atualizações/s: o suficiente pro olho, sem fazer
-    // o Alpine re-renderizar a cada frame.
+    // Live meter of what goes out to the peers. A single loop that runs only while
+    // the mic menu or settings are open in a call, then stops by itself. ~20
+    // updates/s is enough for the eye without making Alpine re-render every frame.
     _vcMicMeterEnsure() {
       if (this._vcMicMeterRaf) return;
       let last = 0;
@@ -20545,7 +20538,7 @@ function app() {
 
     // ---- Transcription: display helpers ----
     // Resolves peerId → a human name. peersList is populated by the cbState
-    // peer-count from the engine ({id, user}). user may arrive as "guest:Esposa"
+    // peer-count from the engine ({id, user}). user may arrive as "guest:Alice"
     // for guests joining by PIN — strip the prefix.
     vcPeerLabel(peerId) {
       if (!peerId || peerId === 'me') return this.username || 'You';
@@ -20555,15 +20548,13 @@ function app() {
       // displayName fallback in peerStates (when it was sent via peer-state)
       const st = this.videocall.peerStates && this.videocall.peerStates[peerId];
       if (st && st.displayName) return String(st.displayName).replace(/^guest:/, '');
-      return 'Participante';
+      return 'Participant';
     },
-    // Nome do peer, ou '' quando desconhecido — os chamadores têm fallback
-    // próprio ('Dono', id curto). Era chamado nos handlers de owner-lock,
-    // owner-transferred e afins sem nunca ter sido definido: o TypeError
-    // abortava o handler antes do toast.
+    // Peer name, or '' when unknown: callers have their own fallback ('Owner',
+    // short id). The owner-lock/owner-transferred handlers depend on it.
     vcPeerName(peerId) {
       const l = this.vcPeerLabel(peerId);
-      return l === 'Participante' ? '' : l;
+      return l === 'Participant' ? '' : l;
     },
     // A consistent color per peerId — hash → HSL. "me" is always the panel blue.
     vcPeerColor(peerId) {
@@ -20737,8 +20728,8 @@ function app() {
     vcLobbyStartMicMonitor() {
       if (this._lobbyMicMon) { this._lobbyMicMon.stop(); this._lobbyMicMon = null; }
       const micId = this.videocall.selectedDevices.mic;
-      // Mesmo volume e processamento da chamada: o lobby mostra o que o outro
-      // lado vai ouvir. gain como função — o slider muda ao vivo sem reabrir o mic.
+      // Same volume and processing as the call, so the lobby shows what the other
+      // side will hear. gain is a function so the slider applies live without reopening the mic.
       this._lobbyMicMon = window.VPSMVideoCall.createMicLevelMonitor(micId, (lvl, info) => {
         this.videocall.lobbyMicLevel = lvl;
         this.videocall.micLimiting = !!(info && info.limiting);
@@ -20847,9 +20838,9 @@ function app() {
     },
     vcSettingsStartMicMonitor() {
       if (this._settingsMicMon) { this._settingsMicMon.stop(); this._settingsMicMon = null; }
-      // Na chamada, mede o que SAI (volume aplicado) direto do motor — sem
-      // abrir uma segunda captura do mic. O monitor separado fica de reserva
-      // pra quando o motor não tem pipeline de volume.
+      // In a call, measure what goes OUT (volume applied) straight from the engine,
+      // without opening a second mic capture. The separate monitor is the fallback
+      // for when the engine has no volume pipeline.
       const api = window.VPSMVideoCall;
       if (this.videocall.inCall && api && api.getMicLevel && api.getMicLevel()) {
         this._vcMicMeterEnsure();
@@ -20961,7 +20952,7 @@ function app() {
     },
     vcShareEmail() {
       const subject = encodeURIComponent('Video call — invite');
-      const body = encodeURIComponent(this._vcShareMessage() + '\n\n(Link expires in ' + (this.videocall.inviteExpiresAt ? new Date(this.videocall.inviteExpiresAt*1000).toLocaleString() : 'breve') + ')');
+      const body = encodeURIComponent(this._vcShareMessage() + '\n\n(Link expires in ' + (this.videocall.inviteExpiresAt ? new Date(this.videocall.inviteExpiresAt*1000).toLocaleString() : 'soon') + ')');
       window.location.href = 'mailto:?subject=' + subject + '&body=' + body;
     },
     vcShareSMS() {

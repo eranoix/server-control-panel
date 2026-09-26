@@ -15,7 +15,7 @@ import (
 // the tab usable on a bad link.
 func indexServer() http.Handler {
 	return IndexInjector(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "index não deveria cair no next", http.StatusNotFound)
+		http.Error(w, "index should not fall through to next", http.StatusNotFound)
 	}))
 }
 
@@ -45,7 +45,7 @@ func TestIndexReturns304WhenBuildUnchanged(t *testing.T) {
 		t.Fatal("the first response came with no ETag")
 	}
 
-	for _, sent := range []string{etag, "W/" + etag, `"outro", ` + etag, "*"} {
+	for _, sent := range []string{etag, "W/" + etag, `"other", ` + etag, "*"} {
 		req := httptest.NewRequest("GET", "/", nil)
 		req.Header.Set("If-None-Match", sent)
 		rec := httptest.NewRecorder()
@@ -62,7 +62,7 @@ func TestIndexReturns304WhenBuildUnchanged(t *testing.T) {
 
 func TestIndexResendsBodyWhenETagIsFromAnotherBuild(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("If-None-Match", `"build-de-ontem"`)
+	req.Header.Set("If-None-Match", `"yesterdays-build"`)
 	rec := httptest.NewRecorder()
 	indexServer().ServeHTTP(rec, req)
 

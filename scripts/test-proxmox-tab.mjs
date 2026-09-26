@@ -206,7 +206,7 @@ check('pvxStorageState demands the TIMESTAMP before accusing (observed_at)',
 // The function is extracted from the file that is SERVED and really executed;
 // only the read of component state is swapped for the argument. Rewriting the
 // logic here would prove the copy, not what goes to the browser.
-const guardFn = new Function('storageDoPainel', state.replace(/this\.pvx\.storage/g, 'storageDoPainel'));
+const guardFn = new Function('panelStorage', state.replace(/this\.pvx\.storage/g, 'panelStorage'));
 check('guard: no timestamp → sem-medida', guardFn({ datastore_audit: { value: false, observed_at: 0 } }) === 'sem-medida');
 check('🔴 guard: measured and DENIED → sem-permissao (the banner COMES BACK)',
   guardFn({ datastore_audit: { value: false, observed_at: 1787000000 } }) === 'sem-permissao');
@@ -527,7 +527,7 @@ check('🔴 two terms are ANDed, not ORed',
   ids(filter(LIST, 'tipo:lxc cred:ausente', '', fakeState)) === 'lxc/202',
   'OR would return MORE rows than the operator asked for — silently');
 check('🔴 an UNKNOWN field becomes a literal search, it is not ignored',
-  filter(LIST, 'tag:producao', '', fakeState).length === 0,
+  filter(LIST, 'tag:production', '', fakeState).length === 0,
   'dropping the constraint nobody understood returns more rows than were asked for');
 check('the segment of the health band filters together with the text',
   ids(filter(LIST, 'tipo:lxc', 'sem-credencial', fakeState)) === 'lxc/202');
@@ -661,7 +661,7 @@ check('every <select> has an accessible name (aria-label or <label>)',
 const segs = new Function('list', 'stateOf', extract(pvxJs, '41-proxmox.js', 'pvxSegments', 'list, stateOf'));
 const R = segs(LIST, fakeState);
 // 🔴 THIS PIN USED TO LOCK THE NUMBER SIX and failed the day the band gained
-// a new state (`sumiu`, for the node the hypervisor stopped listing) —
+// a new state (`gone`, for the node the hypervisor stopped listing) —
 // complaining about a legitimate addition instead of checking the thing it
 // exists to protect.
 //
@@ -713,7 +713,7 @@ check('🔴 no credential: the control closes WITH A REASON',
 // 🔴 The list of actions being walked has to be FULL. Measured by mutation:
 // swapping the `x-for` for an empty list kept the reason expression in the file
 // and the previous check passed — over a screen that showed no reason at all.
-// 🔴 THIS PIN USED TO LOCK THE LITERAL LIST ['start','shutdown','stop','revogar']
+// 🔴 THIS PIN USED TO LOCK THE LITERAL LIST ['start','shutdown','stop','revoke']
 // and failed the day the screen gained restart, clone and keep-a-copy —
 // complaining about the NEW actions instead of checking whether they were
 // covered.
@@ -802,9 +802,9 @@ check('a failure fetching disks does not clear either',
   !/this\.pvx\.disks = \[\];/.test(extract(pvxJs, '41-proxmox.js', 'pvxLoadDisks', '')));
 
 // ── the skeleton, and the THREE empties ──────────────────────────────────
-const empty = new Function('pvx', 'nodes', 'list', 'filtrados',
+const empty = new Function('pvx', 'nodes', 'list', 'filtered',
   extract(pvxJs, '41-proxmox.js', 'pvxEmpty', '')
-    .replace(/this\.pvxFilteredNodes\(\)/g, 'filtrados')
+    .replace(/this\.pvxFilteredNodes\(\)/g, 'filtered')
     .replace(/this\.pvxNodes\(\)/g, 'list')
     .replace(/this\.pvx\./g, 'pvx.')
     .replace(/this\.nodes/g, 'nodes'));

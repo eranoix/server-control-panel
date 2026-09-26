@@ -12,7 +12,7 @@ func HandleManifest(w http.ResponseWriter, _ *http.Request) {
   "id": "/",
   "name": "VPS Manager",
   "short_name": "vpsm",
-  "description": "Painel de controle da VPS",
+  "description": "VPS control panel",
   "start_url": "/",
   "scope": "/",
   "lang": "pt-BR",

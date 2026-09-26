@@ -13,14 +13,11 @@
  * The ringtone is generated on the fly with WebAudio (two-tone, low volume)
  * so we don't need to vendor an .mp3 file. Total cost: ~3KB of code.
  */
-/* VPSMDevice — identidade estável do APARELHO (não da aba).
- *
- * A campainha tocava em todo aparelho logado, sem como dizer "não
- * toque neste computador". Para haver política por aparelho é preciso que o
- * aparelho tenha nome: um uuid em localStorage (sobrevive a reload, aba nova
- * e reinício do navegador — ao contrário do sessionStorage usado pelo
- * client_id, que é por-aba de propósito) + um rótulo legível derivado do UA
- * para o dono se reconhecer na lista ("Windows — Chrome").
+/* VPSMDevice: stable identity of the DEVICE (not the tab), so the ringer
+ * policy can be set per device. The id lives in localStorage (survives
+ * reloads and browser restarts, unlike the per-tab client_id in
+ * sessionStorage); the label is derived from the UA so the owner can
+ * recognise it in the list.
  */
 (function () {
   'use strict';
@@ -39,30 +36,30 @@
   function id() {
     try {
       let v = localStorage.getItem(KEY);
-      // Mesmo alfabeto que o servidor aceita (sanitizeDeviceID): hex/underscore.
+      // Same alphabet the server accepts (sanitizeDeviceID).
       if (!v || !/^[A-Za-z0-9_-]{8,64}$/.test(v)) {
         v = uuid();
         localStorage.setItem(KEY, v);
       }
       return v;
     } catch (_) {
-      // localStorage bloqueado (modo privado): sem identidade estável, o
-      // aparelho simplesmente não entra na política e toca sempre.
+      // localStorage blocked (private mode): no stable identity, so the
+      // device is outside the policy and always rings.
       return '';
     }
   }
 
   function label() {
     const ua = navigator.userAgent || '';
-    let os = 'Desconhecido';
+    let os = 'Unknown';
     if (/Windows/i.test(ua)) os = 'Windows';
     else if (/iPhone|iPad|iPod/i.test(ua)) os = 'iOS';
     else if (/Mac OS X|Macintosh/i.test(ua)) os = 'Mac';
     else if (/Android/i.test(ua)) os = 'Android';
     else if (/Linux/i.test(ua)) os = 'Linux';
-    let br = 'Navegador';
-    // Ordem importa: Edge/Opera também dizem "Chrome"; Chrome também diz
-    // "Safari". Do mais específico para o mais genérico.
+    let br = 'Browser';
+    // Order matters: Edge/Opera also say "Chrome" and Chrome also says
+    // "Safari", so test the most specific first.
     if (/Edg\//i.test(ua)) br = 'Edge';
     else if (/OPR\/|Opera/i.test(ua)) br = 'Opera';
     else if (/Firefox\//i.test(ua)) br = 'Firefox';
@@ -97,12 +94,12 @@
   function connect(opts) {
     stopped = false;
     curToken = opts.token || '';
-    // Mobile passa ticketProvider: async () => fetch('/api/auth/ws-ticket').then(...)
-    // Cookie HttpOnly autoriza o GET; ticket é one-shot 60s, NÃO loga JWT.
+    // ticketProvider fetches a one-shot 60s ticket (HttpOnly cookie auth), so
+    // the JWT never ends up in a URL or log.
     curTicketProvider = opts.ticketProvider || null;
     cbIncoming = opts.onIncoming || cbIncoming;
-    // onEvent recebe TODOS os eventos de presença — inclusive os de controle
-    // (call-answered-elsewhere, call-ended) que cancelam um toque em curso.
+    // onEvent gets ALL presence events, including the control ones
+    // (call-answered-elsewhere, call-ended) that cancel a ring in progress.
     cbEvent = opts.onEvent || cbEvent;
     cbState = opts.onState || cbState;
     open();
@@ -117,9 +114,8 @@
   async function open() {
     if (!curToken && !curTicketProvider) return;
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Identifica o APARELHO para o servidor aplicar a política de campainha
-    // dele. Aparelho sem identidade toca sempre — degradação
-    // graciosa, nunca "perdi a ligação porque o localStorage falhou".
+    // Identify the device so the server applies its ringer policy. A device
+    // without an id always rings: a failed localStorage must never lose a call.
     let devParam = '';
     try {
       const d = window.VPSMDevice ? window.VPSMDevice.info() : null;
@@ -138,18 +134,17 @@
       url = proto + '//' + location.host + '/ws/videocall-presence?token=' + encodeURIComponent(curToken) + devParam;
     }
     try { ws = new WebSocket(url); } catch (e) { schedReconnect(); return; }
-    // Reset backoff so a server-side reject que faz handshake e fecha
-    // imediato (token bad) NAO conta como conexao boa. So reseta quando
-    // ws fica "estavel" — apos 5s sem close, ou quando recebe primeira
-    // mensagem. Sem isso, backoff piorava em loops curtos sem alivio.
+    // Reset backoff only once the WS is stable (5s without close, or a first
+    // message), so a server that handshakes and closes at once (bad token)
+    // does not count as a good connection.
     let stableTimer = setTimeout(() => { backoff = 1000; }, 5000);
     ws.onopen = () => { cbState({ type: 'connected' }); };
     ws.onmessage = (ev) => {
       backoff = 1000;
       if (stableTimer) { clearTimeout(stableTimer); stableTimer = 0; }
       let msg; try { msg = JSON.parse(ev.data); } catch (_) { return; }
-      // Encaminha tudo: quem trata decide. Manter cbIncoming separado
-      // preserva o contrato antigo de quem só quer o toque.
+      // Forward everything; cbIncoming stays separate for callers that only
+      // want the ring.
       try { cbEvent(msg); } catch (_) {}
       if (msg.type === 'incoming-call') cbIncoming(msg);
     };

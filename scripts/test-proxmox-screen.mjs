@@ -102,7 +102,7 @@ ok('the memory percentage matches the sum of the observed ones',
       { storage: 'pbs', total: 65, ultimo_ctime: 1_000_000 - 3 * 3600, guests: [100, 201, 202, 203, 204, 205, 206, 207, 208], agendamento: 'active' },
       { storage: 'backupusb', total: 5, ultimo_ctime: 1_000_000 - 340 * 3600, guests: [100, 201, 204], agendamento: 'active' },
       { storage: 'local', total: 0, ultimo_ctime: 0, guests: [], agendamento: 'fora-do-pve' },
-      { storage: 'quebrado', erro: 'the hypervisor refused' },
+      { storage: 'broken', erro: 'the hypervisor refused' },
     ],
   };
   const items = comp.pvxBackups().items;
@@ -124,15 +124,15 @@ ok('the memory percentage matches the sum of the observed ones',
   // The threshold is PER datastore: PBS runs every day, the external-disk rotation
   // is "whenever I remember to swap the disk". A single threshold would paint a
   // healthy rotation red, or a PBS dead for three days green.
-  const verde = (e) => /#22c55e/.test(e);
-  const vermelho = (e) => /#ef4444/.test(e);
-  ok('PBS at 3 h comes out green', verde(comp.pvxBackupStyle(items[0])));
-  ok('an empty datastore NEVER comes out green', !verde(comp.pvxBackupStyle(items[2])));
+  const isGreen = (e) => /#22c55e/.test(e);
+  const isRed = (e) => /#ef4444/.test(e);
+  ok('PBS at 3 h comes out green', isGreen(comp.pvxBackupStyle(items[0])));
+  ok('an empty datastore NEVER comes out green', !isGreen(comp.pvxBackupStyle(items[2])));
 
   // Negative control for the per-layer threshold.
   const pbsStale = { storage: 'pbs', total: 1, ultimo_ctime: 1_000_000 - 200 * 3600, guests: [1], agendamento: 'active' };
   ok('PBS at 200 h fails, even though that is a normal age for the rotation',
-     !verde(comp.pvxBackupStyle(pbsStale)));
+     !isGreen(comp.pvxBackupStyle(pbsStale)));
 
   // ── disarmed is NOT a failure ──────────────────────────────────────────────
   //
@@ -145,8 +145,8 @@ ok('the memory percentage matches the sum of the observed ones',
   const disarmed = { storage: 'backupusb', total: 5, ultimo_ctime: 1_000_000 - 340 * 3600,
                       guests: [1, 2, 3], agendamento: 'desarmado', schedule: '03:30' };
   const eD = comp.pvxBackupState(disarmed);
-  ok('a DISARMED layer does not come out red', !vermelho(comp.pvxBackupStyle(disarmed)), eD.color);
-  ok('and it says the label "desarmado", not an alarming age', eD.label === 'disarmed', eD.label);
+  ok('a DISARMED layer does not come out red', !isRed(comp.pvxBackupStyle(disarmed)), eD.color);
+  ok('and it says the label "disarmed", not an alarming age', eD.label === 'disarmed', eD.label);
   ok('and it explains WHY, with the time it used to run', /schedule turned off/.test(eD.nota) && /03:30/.test(eD.nota), eD.nota);
   ok('and it says outright that this is not a failure', /this is not a failure/.test(eD.nota));
 
@@ -158,7 +158,7 @@ ok('the memory percentage matches the sum of the observed ones',
   const foraDoPve = { storage: 'pbs', total: 65, ultimo_ctime: 1_000_000 - 3 * 3600,
                       guests: [1], agendamento: 'fora-do-pve' };
   const eF = comp.pvxBackupState(foraDoPve);
-  ok('a fresh layer with NO job in PVE stays green', verde(comp.pvxBackupStyle(foraDoPve)), eF.color);
+  ok('a fresh layer with NO job in PVE stays green', isGreen(comp.pvxBackupStyle(foraDoPve)), eF.color);
   ok('and the screen admits it does not know who schedules it', /does not know by whom/.test(eF.nota), eF.nota);
 
   // A layer that is ACTIVE and old is still a failure — otherwise the fix would
@@ -166,7 +166,7 @@ ok('the memory percentage matches the sum of the observed ones',
   const staleActive = { storage: 'pbs', total: 1, ultimo_ctime: 1_000_000 - 400 * 3600,
                        guests: [1], agendamento: 'active', schedule: '03:30' };
   ok('an ACTIVE and old layer stays red (the real alarm did not vanish)',
-     vermelho(comp.pvxBackupStyle(staleActive)));
+     isRed(comp.pvxBackupStyle(staleActive)));
   comp.pvx.backup = { datastores: [] };
   comp.pvx.loaded.backup = false;
 }
@@ -175,9 +175,9 @@ ok('the memory percentage matches the sum of the observed ones',
 let loaded = 0; comp.loadNodes = () => { loaded++; };
 comp.pvx.con = {guest:'', estado:'closed', erro:''}; comp.pvx.focusFilter = false;
 comp.pvxTick();
-ok('no console and no focus: the cycle FETCHES', loaded===1, 'buscas='+loaded);
+ok('no console and no focus: the cycle FETCHES', loaded===1, 'fetches='+loaded);
 comp.pvx.con.guest = 'lxc/204'; comp.pvxTick();
-ok('an open console PAUSES the fetch', loaded===1 && comp.pvx.paused, 'buscas='+loaded);
+ok('an open console PAUSES the fetch', loaded===1 && comp.pvx.paused, 'fetches='+loaded);
 ok('the pause states its reason', comp.pvx.pauseReason==='console open', comp.pvx.pauseReason);
 comp.pvx.con.guest=''; comp.pvx.focusFilter = true; comp.pvxTick();
 ok('focus in the filter pauses too', loaded===1 && comp.pvx.pauseReason==='typing in the filter');
@@ -186,7 +186,7 @@ comp.nodes.poll.age_seconds = 300; comp.pvxTick();
 ok('the age stamp KEEPS running during the pause',
    comp.pvx.ageSec===300 && comp.pvxAgeStale(), comp.pvxAgeText());
 comp.pvx.focusFilter=false; comp.pvxTick();
-ok('out of the pause, fetching resumes', loaded===2 && !comp.pvx.paused, 'buscas='+loaded);
+ok('out of the pause, fetching resumes', loaded===2 && !comp.pvx.paused, 'fetches='+loaded);
 
 
 // ── a visible label on the gauges (the operator could not tell them apart) ────
@@ -211,11 +211,11 @@ ok('every gauge has a VISIBLE label (list and detail)', visibleLabels >= 2,
 ok('the label is not only for the screen reader',
    section.includes('aria-label="which') || section.includes(":aria-label=\"which + ' of '"));
 // Deliberately tight: it demands the label IN THE CONSUMPTION BLOCK, not just any
-// ">rede<" somewhere in the section. The first version of this pin was loose and
+// ">net<" somewhere in the section. The first version of this pin was loose and
 // went green over the mutation that deleted the label — it was the mutation that
 // showed that, not the reading.
 ok('the network row gained a label instead of two loose arrows',
-   /style="min-width:3\.2rem">rede<\/span>/.test(section));
+   /style="min-width:3\.2rem">net<\/span>/.test(section));
 
 // The CPU text cannot repeat the percentage: it read "0.8% of 2 core…", two
 // percentages on the same line, rounded differently, and truncated.
@@ -237,7 +237,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 // ── no template expression throws with NOTHING selected ──────────────────────
 //
 // 🔴 THIS REPRODUCES A REAL CRASH, not a hypothesis. Clicking "← Lab summary"
-// calls pvxClearSelection(), which clears pvx.aberto — and pvxOpenNode() starts
+// calls pvxClearSelection(), which clears pvx.open — and pvxOpenNode() starts
 // returning null. Alpine unmounts the subtree of the <template x-if>, but the
 // effects that were inside it (chiefly the ones created by x-for) still evaluate
 // ONCE before removal. At that point `pvxOpenNode().name` threw and the whole
@@ -274,9 +274,9 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
     // loop, with the item variable in scope.
     if (/^\s*(\(?[\w\s,)]+\)?)\s+in\s+/.test(e)) e = e.replace(/^\s*\(?[\w\s,)]+\)?\s+in\s+/, '');
     // 🔴 NO STATE ALLOWLIST. The previous version only evaluated expressions that
-    // mentioned pvxOpenNode, pvx.detalhe, pvx.saude, pvx.taskLog or pvx.con — and
-    // all the state born afterwards (pvx.serie, pvx.sistema, pvx.backup,
-    // pvx.topologia, pvx.pacotes, pvx.registro) fell OUTSIDE. The pin stayed green
+    // mentioned pvxOpenNode, pvx.detail, pvx.health, pvx.taskLog or pvx.con — and
+    // all the state born afterwards (pvx.series, pvx.sistema, pvx.backup,
+    // pvx.topology, pvx.pacotes, pvx.registry) fell OUTSIDE. The pin stayed green
     // while ignoring exactly the expressions that froze the screen and locked the
     // operator out of the terminal.
     //
@@ -308,7 +308,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   for (const e of exprs) {
     try {
       // The loop variables are NEUTRALISED, not null: what this pin measures is
-      // "some expression throws because the STATE is null", and a `seg.chave`
+      // "some expression throws because the STATE is null", and a `seg.key`
       // blowing up for want of the x-for item would be noise hiding the signal.
       // The proxy returns itself for any property, so a chained access
       // (`g.credential.state`) survives too.
@@ -471,7 +471,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   // 🔴 The fallback cannot guess. Inventing "VM" would make the operator act on the
   // wrong category — starting, stopping or snapshotting something that is not what
   // the screen said it was.
-  const unknown = typeOf('coisa/9', { kind: 'coisa' });
+  const unknown = typeOf('thing/9', { kind: 'thing' });
   ok('an unknown type says it does not know, instead of guessing',
      unknown.key === '?' && unknown.abbrev === '?', unknown.label);
 
@@ -633,9 +633,9 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 
 // ── no state dereferenced by the template is born NULL ──────────────────────
 //
-// 🔴 The defect that locked the operator out of the terminal. `pvx.serie`,
+// 🔴 The defect that locked the operator out of the terminal. `pvx.series`,
 // `pvx.sistema` and the others were born `null`, and the template dereferenced
-// them — `pvx.serie.pontos` — before the first load, which is the state the screen
+// them — `pvx.series.pontos` — before the first load, which is the state the screen
 // ALWAYS opens in. A throw in Alpine takes down the WHOLE app, and the terminal
 // lives in the same app.
 //
@@ -662,7 +662,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
       const isProtected = new RegExp(`pvx\\.${field}\\s*(?:&&|\\?)`).test(e)
         || new RegExp(`!\\s*pvx\\.${field}\\s*\\|\\|`).test(e);
       const nullish = comp.pvx[field] === null || comp.pvx[field] === undefined;
-      if (!isProtected && nullish) unprotected.push(`pvx.${field} em: ${e.slice(0, 54)}`);
+      if (!isProtected && nullish) unprotected.push(`pvx.${field} in: ${e.slice(0, 54)}`);
     }
   }
   ok('no unprotected dereference over a field that is born null',
@@ -689,9 +689,9 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   const md = comp.pvxMd.bind(comp);
 
   ok('a heading becomes a heading', /<h3 class="pvx-md-h">apps<\/h3>/.test(md('# apps')));
-  ok('bold', /<strong>faz<\/strong>/.test(md('**faz**')));
+  ok('bold', /<strong>does<\/strong>/.test(md('**does**')));
   ok('inline code', /<code class="pvx-md-code">ss -lnt<\/code>/.test(md('`ss -lnt`')));
-  ok('list', /<ul class="pvx-md-ul">\n<li>um<\/li>/.test(md('- um')));
+  ok('list', /<ul class="pvx-md-ul">\n<li>one<\/li>/.test(md('- one')));
   ok('rule', /<hr class="pvx-md-hr">/.test(md('---')));
 
   // ── what must NOT happen ──────────────────────────────────────────────────
@@ -700,8 +700,8 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
     '<img src=x onerror=alert(1)>',
     '<a href="javascript:alert(1)">x</a>',
     '"><svg onload=alert(1)>',
-    '[clique](javascript:alert(1))',
-    '[clique](data:text/html,<script>alert(1)</script>)',
+    '[click](javascript:alert(1))',
+    '[click](data:text/html,<script>alert(1)</script>)',
     '<iframe src="https://evil"></iframe>',
   ];
   const outputs = hostile.map(md);

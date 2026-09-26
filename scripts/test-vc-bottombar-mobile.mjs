@@ -22,7 +22,7 @@ let chromium;
 try { ({ chromium } = require_('playwright-core')); }
 catch {
   console.error('FAILED: playwright-core missing from .tools/. This pin MEASURES geometry — skipping would be faking coverage.');
-  console.error('       Instale com: make tools');
+  console.error('       Install with: make tools');
   process.exit(1);
 }
 function findBrowser() {

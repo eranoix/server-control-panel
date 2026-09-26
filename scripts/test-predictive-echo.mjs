@@ -23,7 +23,7 @@ const src = readFileSync(target, 'utf8');
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
-console.log('=== test-eco-preditivo ===');
+console.log('=== test-predictive-echo ===');
 
 const extract = (nome, args) => {
   const re = new RegExp('^ {4}' + nome + '\\(' + args.join(', ') + '\\)\\{\\n([\\s\\S]*?)^ {4}\\},$', 'm');

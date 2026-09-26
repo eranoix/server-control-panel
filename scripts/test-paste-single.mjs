@@ -130,7 +130,7 @@ const result = await page.evaluate(({ guardBody, filesBody }) => {
   // A distinct name on purpose: reusing 'shot.png' here would land in the
   // signature window opened by case (a) and the pin would measure the wrong guard.
   uploads = [];
-  ta.dispatchEvent(evPaste([['intruso.png', 'image/png']]));
+  ta.dispatchEvent(evPaste([['intruder.png', 'image/png']]));
   out.withIntruder = uploads.slice();
 
   // (c) text from Excel/Word: brings text/plain plus a rendered PNG. Must not upload.
@@ -165,7 +165,7 @@ eq(result.umPaste, ['shot.png'])
   ? ok('one pasted screenshot = one upload')
   : no('one pasted screenshot should upload 1 file, it uploaded: ' + JSON.stringify(result.umPaste));
 
-eq(result.withIntruder, ['intruso.png'])
+eq(result.withIntruder, ['intruder.png'])
   ? ok('the bug topology (capture on the ancestor + capture on the descendant) yields a single upload')
   : no('the bug topology yielded ' + result.withIntruder.length + ' uploads: ' + JSON.stringify(result.withIntruder));
 

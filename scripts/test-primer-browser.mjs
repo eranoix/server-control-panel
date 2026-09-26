@@ -97,7 +97,7 @@ async function waitHealthy(url, capMs = 40000) {
   return false;
 }
 
-console.log('=== test-primer-navegador ===');
+console.log('=== test-primer-browser ===');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vpsm-primer-'));
 const binary = path.join(tmp, 'vps-manager');
@@ -325,7 +325,7 @@ try {
   // And the small one still sees the session: the rendered crop reaches it.
   await pc2.pag.evaluate(() => {
     const p = document.body._x_dataStack[0].terms.panes[0];
-    p.ws.send(JSON.stringify({ type: 'input', data: 'echo MARCA_RECORTE\r' }));
+    p.ws.send(JSON.stringify({ type: 'input', data: 'echo CLIP_MARK\r' }));
   });
   await wait(2500);
   const sawInSmall = await smallPage.evaluate(() => {
@@ -334,7 +334,7 @@ try {
     for (let i = 0; i < b.length; i++) { const l = b.getLine(i); if (l) t += l.translateToString(true) + '\n'; }
     return t;
   });
-  sawInSmall.includes('MARCA_RECORTE')
+  sawInSmall.includes('CLIP_MARK')
     ? ok('the small window sees the session through the rendered crop')
     : no('the small window cannot see the session — the crop is not arriving');
 

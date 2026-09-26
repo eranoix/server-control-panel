@@ -28,7 +28,7 @@ const api = readFileSync(join(root, 'internal/api/api.go'), 'utf8');
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
-console.log('=== test-primer-do-panel ===');
+console.log('=== test-panel-primer ===');
 
 // The route exists on the server side — without it the primer fetches nothing.
 /\/api\/terminal\/log-bruto/.test(api)

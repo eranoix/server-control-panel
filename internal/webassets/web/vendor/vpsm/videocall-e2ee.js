@@ -147,9 +147,8 @@
             }
             controller.enqueue(frame);
           } catch (e) {
-            // Drop frame on auth failure. Conta os drops do receiver pra
-            // alertar quando passphrase parece errada — antes era silent
-            // failure (tela preta sem aviso). (Auditoria M19)
+            // Drop frame on auth failure. Receiver drops are counted so a
+            // wrong passphrase raises a warning instead of a silent black screen.
             if (role === 'receiver' && onDecryptFail) {
               decryptFailures++;
               const now = Date.now();
@@ -165,10 +164,8 @@
       return;
     }
     // Path 2: RTCRtpScriptTransform (Safari) — requires Worker.
-    // Implementing the worker path adds a vendored worker .js file and
-    // significantly more code; for Fase 2 we surface "E2EE não disponível
-    // neste navegador" if path 1 is missing, and let the call proceed
-    // unencrypted only if the user explicitly confirms.
+    // Not implemented: without path 1 the caller reports E2EE as unavailable
+    // and the call proceeds unencrypted only if the user explicitly confirms.
   }
 
   window.VPSMVideoCallE2EE = {

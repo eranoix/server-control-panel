@@ -57,7 +57,7 @@
   // once you stand up a whole Alpine component is not tested.
 
   // 🔴 pvxGaugePct returns null — not 0 — when there is no measurement.
-  // `disk_used` from QEMU without a guest agent arrives as -1 (NaoReportado, from
+  // `disk_used` from QEMU without a guest agent arrives as -1 (the "not reported" sentinel from
   // the server), and 0% would draw a roomy disk over a number nobody measured.
   // null is absence saying its own name.
   function pvxGaugePct(n, which) {
@@ -157,7 +157,7 @@
         // 🔴 STATE IS BORN WITH A SHAPE, NEVER NULL.
         //
         // The previous version initialised all of this with `null`, and the template
-        // dereferenced it (`pvx.serie.pontos`, `pvx.sistema.network_erro`). Before the
+        // dereferenced it (`pvx.series.pontos`, `pvx.sistema.network`). Before the
         // first load — which is the state the screen ALWAYS opens in — that throws, and
         // a throw inside Alpine takes down the WHOLE app: the Proxmox tab dragged the
         // terminal down with it, and the operator was locked out of the only remote
@@ -165,10 +165,10 @@
         //
         // Leaning on `?.` in every expression is fragile: the next expression somebody
         // writes may forget it. A stable shape in the state removes the entire class at
-        // the source — `pvx.serie.pontos` becomes always safe.
+        // the source — `pvx.series.pontos` becomes always safe.
         //
         // "Has it loaded yet?" moved house: it used to be the nullness of the field
-        // itself, now it is `carregado`. The two questions are different, and mixing
+        // itself, now it is `loaded`. The two questions are different, and mixing
         // them is what created the defect.
         loaded: {},
 
@@ -955,7 +955,7 @@
         if (ds.erro) return { key: 'erro', label: 'error', color: '#ef4444', nota: ds.erro };
         if (ds.agendamento === 'desarmado') {
           return { key: 'desarmado', label: 'disarmed', color: '#94a3b8',
-                   nota: 'schedule turned off' + (ds.schedule ? ' (era ' + ds.schedule + ')' : '') + ' — this is not a failure' };
+                   nota: 'schedule turned off' + (ds.schedule ? ' (was ' + ds.schedule + ')' : '') + ' — this is not a failure' };
         }
         if (i.vazio) return { key: 'vazio', label: 'no copy yet', color: '#ef4444', nota: '' };
         const limitH = ds.storage === 'pbs' ? 36 : 24 * 10;
@@ -1613,10 +1613,10 @@
       //   ok             nothing to say
       pvxNodeState(n) {
         if (!n) return 'ok';
-        // 🔴 "SUMIU" COMES BEFORE "VENCIDO", and the two are not the same thing.
+        // 🔴 "GONE" COMES BEFORE "VENCIDO", and the two are not the same thing.
         //
         // `vencido` means the panel COULD NOT LOOK — the data aged
-        // out. `sumiu` means the panel DID look and the hypervisor no longer
+        // out. `gone` means the panel DID look and the hypervisor no longer
         // listed this node. They are different silences and they ask for
         // different things: one is an observation problem, the other is news
         // about the laboratory.
@@ -1763,7 +1763,7 @@
       // layout that changes width with the health of the laboratory moves the click
       // target precisely during an incident.
       pvxSegments(list, stateOf) {
-        // `sumiu` goes at the END, next to `parado`: the band is read left to right by
+        // `gone` goes at the END, next to `parado`: the band is read left to right by
         // urgency, and a node that left the hypervisor does not compete with a critical
         // one.
         const order = ['vencido', 'sem-credencial', 'critico', 'atencao', 'parado', 'gone', 'ok'];
@@ -1819,7 +1819,7 @@
       // silence is the worse of the two: there is no colleague to ask what happened to
       // the button.
       //
-      // One function for every control, and it always returns the pair {pode, motivo} —
+      // One function for every control, and it always returns the pair {can, motivo} —
       // never a naked boolean, because a naked boolean is exactly what produces a grey
       // button with no explanation.
       pvxActionState(n, action) {
@@ -1979,7 +1979,7 @@
       pvxNoteChanged() {
         return this.pvx.nota.editing && this.pvx.nota.rascunho !== (this.pvx.nota.markdown || '');
       },
-      // The ceiling is the server’s own (pve.TamanhoMaximoDaNota). Duplicating a number
+      // The ceiling is the server’s own (the note size limit in the pve package). Duplicating a number
       // is debt, but the alternative — finding out the limit only after writing 9 KB
       // and pressing save — is worse. The server remains the one in charge.
       NOTA_MAX: 8192,
@@ -2240,9 +2240,9 @@
         this.pvx.sel = this.pvxReescopa(this.pvx.sel, this.pvxFilteredNodes());
       },
       pvxSetSegment(key) {
-// Clicking the segment ALREADY ACTIVE turns the filter off (cast from Portainer:
+        // Clicking the segment ALREADY ACTIVE turns the filter off (cast from Portainer:
         // `value === key ? null : key`). Without it, the operator who filtered by
-        // "erro" has to hunt for a clear button he does not know exists.
+        // "critical" has to hunt for a clear button he does not know exists.
         this.pvx.segment = (this.pvx.segment === key) ? '' : key;
         this.pvx.sel = this.pvxReescopa(this.pvx.sel, this.pvxFilteredNodes());
       },
@@ -2324,8 +2324,8 @@
       pvxObs(o) { return (o && o.value !== undefined) ? o.value : null; },
       // 🔴 READING A TIMESTAMP IN ONE CALL, SAFE AT BOTH LEVELS.
       //
-      // The template wrote `pvx.saude.version.value` under the shallow guard
-      // `pvx.saude ? …`. The guard covered ONE level and the expression descended
+      // The template wrote `pvx.health.version.value` under the shallow guard
+      // `pvx.health ? …`. The guard covered ONE level and the expression descended
       // THREE: a hypervisor that returns the health WITHOUT one of the fields — a
       // trimmed permission, an error path, a PVE version that stopped sending that —
       // throws, and a throw in Alpine takes the whole app down, terminal included.
@@ -2340,7 +2340,7 @@
       //
       // `pvx.busy` is a STRING: empty when idle, holding the node id during the
       // operation (the screen uses that id to know WHICH row is in flight). The
-      // template wrote `:disabled="!pode || pvx.busy"`. With the action allowed and
+      // template wrote `:disabled="!can || pvx.busy"`. With the action allowed and
       // nothing in flight that gives `false || ''`, which is `''`.
       //
       // And Alpine, on a BOOLEAN attribute, only removes the attribute when the value
@@ -2376,7 +2376,7 @@
         // 🔴 THE NOTE LOADS HERE, ON THE CLICK PATH.
         //
         // It used to hang off `pvxGoTo` alone, which is the TAB change — and clicking
-        // a node does NOT go through there: `pvxSelect` sets `pvx.aba` and calls
+        // a node does NOT go through there: `pvxSelect` sets `pvx.tab` and calls
         // `pvxOpen` directly. Result: the "What this box does" block opened with a title,
         // a button and NOTHING in between, neither text nor empty state, because the
         // state was still the initial one.
@@ -2554,7 +2554,7 @@
       pvxNeedYou() {
         return this.pvxNodes().filter(n => {
           const e = this.pvxNodeState(n);
-          // `sumiu` deliberately does NOT enter here: there is nothing to do about a node
+          // `gone` deliberately does NOT enter here: there is nothing to do about a node
           // the hypervisor no longer lists, and counting it as pending is exactly the noise
           // the operator complained about.
           return e === 'vencido' || e === 'sem-credencial' || e === 'critico';

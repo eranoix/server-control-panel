@@ -29,7 +29,7 @@ const recovery = readFileSync(join(root, 'internal/webassets/web/recovery-term.h
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
-console.log('=== test-tamanho-reconciliado ===');
+console.log('=== test-reconciled-size ===');
 
 // ── the panel client ────────────────────────────────────────────────────────
 {

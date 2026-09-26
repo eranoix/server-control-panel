@@ -18,7 +18,7 @@ let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-console.log('=== test-recovery-robustez ===');
+console.log('=== test-recovery-robustness ===');
 if (!script || script.length < 3000) { no('could not extract the page script'); process.exit(1); }
 
 // ── a minimal DOM, but an honest one ────────────────────────────────────────
@@ -167,9 +167,9 @@ function run(ctx) {
     // Output: ANSI stripped, \r and \b applied — else the screen is escape junk.
     const pre = m.created.find((e) => e.className === 'simple-output');
     if (pre) {
-      api.host.term.write('\x1b[32mok\x1b[0m\r\nprogresso 10%\rprogresso 99%\nabcX\b\b');
+      api.host.term.write('\x1b[32mok\x1b[0m\r\nprogress 10%\rprogress 99%\nabcX\b\b');
       const t = pre.textContent;
-      (!t.includes('\x1b') && t.includes('ok') && t.includes('progresso 99%') && !t.includes('progresso 10%') && t.endsWith('ab'))
+      (!t.includes('\x1b') && t.includes('ok') && t.includes('progress 99%') && !t.includes('progress 10%') && t.endsWith('ab'))
         ? ok('no xterm: drops ANSI, applies \\r (overwrite) and \\b (erase)')
         : no('simple-mode output is wrong: ' + JSON.stringify(t));
       // The PTY delivers chunks of whatever size the network feels like, and that

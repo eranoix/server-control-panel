@@ -54,9 +54,9 @@ func TestServedMinifiedMatchesCurrentSource(t *testing.T) {
 				// DEFECT: there is an obsolete bundle embedded in the binary and every
 				// client silently downloads twice as much — in a project that has a data
 				// savings panel, silence will not do. Block it.
-				t.Errorf("%s existe no embed mas NAO confere com %s (carimbo ausente ou "+
-					"de outro fonte). Rode `make minify`. Enquanto isso o binario carrega "+
-					"bytes mortos e serve o original.", expected, source)
+				t.Errorf("%s is in the embed but does NOT match %s (stamp missing or "+
+					"from another source). Run `make minify`. Until then the binary carries "+
+					"dead bytes and serves the original.", expected, source)
 			}
 			// No .min.js at all: legitimate fail-open (esbuild missing).
 			continue
@@ -78,9 +78,9 @@ func TestServedMinifiedMatchesCurrentSource(t *testing.T) {
 			continue
 		}
 		if stamp != hex.EncodeToString(sum[:]) {
-			t.Errorf("%s esta OBSOLETO: carimbo %s, mas %s tem sha256 %s.\n"+
-				"Rode `make minify` — foi exatamente esta divergencia que derrubou o "+
-				"SPA com ReferenceError no boot do Alpine.",
+			t.Errorf("%s is STALE: stamp %s, but %s has sha256 %s.\n"+
+				"Run `make minify`: this mismatch takes the "+
+				"SPA down with a ReferenceError at Alpine boot.",
 				min, stamp, source, hex.EncodeToString(sum[:]))
 		}
 	}
@@ -103,12 +103,12 @@ func TestStaleMinifiedIsNotServed(t *testing.T) {
 		min      string
 		aceitavl bool
 	}{
-		{"stamp correto", "var x=1;\n" + stampPrefix + right + "\n", true},
-		{"stamp de outro source", "var x=2;\n" + stampPrefix + strings.Repeat("a", 64) + "\n", false},
-		{"sem stamp (bundle legado)", "var x=1;\n", false},
-		{"stamp truncado", "var x=1;\n" + stampPrefix + "deadbeef\n", false},
-		{"stamp nao-hex", "var x=1;\n" + stampPrefix + strings.Repeat("z", 64) + "\n", false},
-		{"carimbo no meio, nao no fim", stampPrefix + right + "\nvar x=1;\n", false},
+		{"correct stamp", "var x=1;\n" + stampPrefix + right + "\n", true},
+		{"stamp from another source", "var x=2;\n" + stampPrefix + strings.Repeat("a", 64) + "\n", false},
+		{"no stamp (legacy bundle)", "var x=1;\n", false},
+		{"truncated stamp", "var x=1;\n" + stampPrefix + "deadbeef\n", false},
+		{"non-hex stamp", "var x=1;\n" + stampPrefix + strings.Repeat("z", 64) + "\n", false},
+		{"stamp in the middle, not at the end", stampPrefix + right + "\nvar x=1;\n", false},
 	}
 
 	for _, c := range cases {
@@ -116,8 +116,8 @@ func TestStaleMinifiedIsNotServed(t *testing.T) {
 			stamp, ok := readStamp([]byte(c.min))
 			valid := ok && stamp == right
 			if valid != c.aceitavl {
-				t.Errorf("valido=%v, esperava %v — um minificado sem procedencia "+
-					"comprovada nao can substituir o source", valid, c.aceitavl)
+				t.Errorf("valid=%v, expected %v: a minified file without proven "+
+					"provenance must not replace the source", valid, c.aceitavl)
 			}
 		})
 	}
@@ -149,8 +149,8 @@ func TestAdguardStateReachesServedBundle(t *testing.T) {
 		t.Fatalf("%s unreadable: %v", served, err)
 	}
 	if !strings.Contains(string(b), "adguardLoaded") {
-		t.Errorf("index.html avalia `adguardLoaded` no boot, mas %s — o arquivo que "+
-			"o servidor entrega — nao declara o estado. Alpine transforma isso em "+
-			"ReferenceError e kill o app inteiro.", served)
+		t.Errorf("index.html evaluates `adguardLoaded` at boot, but %s (the file "+
+			"the server delivers) does not declare that state. Alpine turns this into a "+
+			"ReferenceError and kills the whole app.", served)
 	}
 }

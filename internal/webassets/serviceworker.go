@@ -30,11 +30,8 @@ const SHELL = [
   '/vendor/vpsm/app/10-git.js',
   '/vendor/vpsm/app/20-deploy.js',
   '/vendor/vpsm/app/30-agents.js',
-  // 40-nodes/41-proxmox (aba Proxmox) foram ADICIONADOS depois desta lista
-  // e ficaram de fora do precache: numa carga a frio/offline (ou durante o
-  // restart de um deploy) o fetch de 41-proxmox.js falha, VPSMProxmoxModule
-  // some, app() cai no fallback e o 1o pvxStaleStyle(...) derruba a UI. Mesma
-  // classe de crash que o precache de 10/20/30 acima existe pra prevenir.
+  // Without 40/41 in the precache, a cold/offline load (or a deploy restart)
+  // loses VPSMProxmoxModule and the first pvxStaleStyle(...) crashes the UI.
   '/vendor/vpsm/app/40-nodes.js',
   '/vendor/vpsm/app/41-proxmox.js',
   '/vendor/xterm/xterm.js', '/vendor/xterm/xterm.css',
@@ -131,9 +128,9 @@ self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (_) {}
   if (data.type === 'incoming-call') {
-    const title = '📞 Chamada de ' + safeStr(data.from, 60);
+    const title = '📞 Call from ' + safeStr(data.from, 60);
     const opts = {
-      body: 'Sala: ' + safeStr(data.room_name || data.room_id, 80),
+      body: 'Room: ' + safeStr(data.room_name || data.room_id, 80),
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       tag: 'vpsm-vc-' + safeStr(data.room_id, 60),
@@ -141,8 +138,8 @@ self.addEventListener('push', (event) => {
       requireInteraction: true,
       vibrate: [400, 200, 400, 200, 400],
       actions: [
-        { action: 'accept', title: 'Atender' },
-        { action: 'dismiss', title: 'Recusar' },
+        { action: 'accept', title: 'Answer' },
+        { action: 'dismiss', title: 'Decline' },
       ],
       data: { type: 'incoming-call', room_id: safeStr(data.room_id, 60), room_name: safeStr(data.room_name, 80), from: safeStr(data.from, 60) },
     };
@@ -150,7 +147,7 @@ self.addEventListener('push', (event) => {
     return;
   }
   if (data.type === 'alert-fired') {
-    const title = '⚠ Alerta: ' + safeStr(data.rule || 'regra', 60);
+    const title = '⚠ Alert: ' + safeStr(data.rule || 'rule', 60);
     const opts = {
       body: safeStr(data.body || (data.metric + ' ' + data.op + ' ' + data.value), 200),
       icon: '/icon-192.png',
@@ -187,7 +184,6 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   if (event.action === 'dismiss') return;
   const d = event.notification.data || {};
-  // O app mobile (/m/) foi removido — sempre rotas desktop.
   event.waitUntil((async () => {
     const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     let url;

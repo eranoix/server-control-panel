@@ -1,4 +1,4 @@
-// Package pinos runs the screen harnesses (scripts/test-*.mjs and *.sh) from
+// Package pins runs the screen harnesses (scripts/test-*.mjs and *.sh) from
 // inside `go test`.
 //
 // It exists as its OWN package for an operational reason, not an aesthetic one:
@@ -42,7 +42,7 @@ func repoRootDir(t *testing.T) string {
 		}
 		dir = pai
 	}
-	t.Fatalf("não achei a raiz do repo (go.mod) subindo a partir do dir de teste")
+	t.Fatalf("could not find the repo root (go.mod) walking up from the test dir")
 	return ""
 }
 
@@ -65,7 +65,7 @@ func Run(t *testing.T, script string, env ...string) {
 	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Fatalf("node não encontrado no PATH: os pinos de tela não podem rodar, e pular seria fingir cobertura (%v)", err)
+		t.Fatalf("node not found in PATH: the screen pins cannot run, and skipping would fake coverage (%v)", err)
 	}
 	cmd := exec.Command(node, filepath.Join(repoRootDir(t), "scripts", script))
 	if len(env) > 0 {
@@ -75,16 +75,16 @@ func Run(t *testing.T, script string, env ...string) {
 	verify(t, script, string(output), err)
 }
 
-// confere applies the same verdict to both runners, including the vacuity
+// verify applies the same verdict to both runners, including the vacuity
 // guard: a harness that prints no PASS may have exited 0 without running a
 // single assertion (broken import, empty file, early return).
 func verify(t *testing.T, script, text string, err error) {
 	t.Helper()
 	if err != nil {
-		t.Errorf("%s reprovou:\n%s", script, text)
+		t.Errorf("%s failed:\n%s", script, text)
 		return
 	}
 	if !strings.Contains(text, "PASS") {
-		t.Errorf("%s saiu com código 0 mas não imprimiu PASS — provavelmente não asseverou nada:\n%s", script, text)
+		t.Errorf("%s exited with code 0 but printed no PASS, so it probably asserted nothing:\n%s", script, text)
 	}
 }

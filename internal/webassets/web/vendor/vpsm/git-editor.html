@@ -2,22 +2,20 @@
 <html>
 <head>
 <meta charset="utf-8">
-<!-- Editor Monaco ISOLADO em iframe. O DOM do Monaco vive neste
-     documento separado, que o MutationObserver do Alpine (no documento pai)
-     NÃO observa — elimina de vez o freeze causado pelo Alpine percorrer a
-     árvore do editor. O pai chama window.gitEditor* via contentWindow
-     (same-origin); a prontidão é sinalizada por postMessage. -->
+<!-- Monaco is isolated in an iframe so Alpine's MutationObserver in the parent
+     never walks the editor tree (that walk froze the page). The parent calls
+     window.gitEditor* via contentWindow (same-origin); readiness is signalled
+     with postMessage. -->
 <style>
   html, body { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background: #1e1e1e; }
   #ed { position: absolute; inset: 0; }
   #boot { font: 13px system-ui, sans-serif; color: #888; padding: 12px; }
-  /* blame inline (estilo GitLens): anotação discreta ao fim da linha do cursor */
   .git-blame-inline { color: #6e7681; font-style: italic; opacity: .85; }
 </style>
 <script src="/vendor/monaco/vs/loader.js"></script>
 </head>
 <body>
-<div id="boot">Carregando editor…</div>
+<div id="boot">Loading editor…</div>
 <div id="ed"></div>
 <script>
 (function () {
@@ -31,7 +29,6 @@
     blameDecos = []; blameMap = null;
   }
 
-  // dispõe QUALQUER editor ativo (normal ou diff) + seus modelos + blame.
   function disposeAll() {
     clearBlame();
     try { if (editor) { var m = editor.getModel(); editor.dispose(); if (m) m.dispose(); } } catch (e) {}
@@ -58,7 +55,7 @@
     });
   } catch (e) { signal('error', { message: String(e) }); }
 
-  // API chamada pelo pai (same-origin) via iframe.contentWindow.*
+  // API called by the parent (same-origin) via iframe.contentWindow.*
   window.gitEditorReady = function () { return !!monacoRef; };
 
   window.gitEditorOpen = function (o) {
@@ -84,9 +81,8 @@
 
   window.gitEditorGetValue = function () { return editor ? editor.getValue() : ''; };
 
-  // Diff lado-a-lado: Monaco DiffEditor com original vs
-  // modificado — realce de sintaxe + diff por palavra (intra-linha) nativos.
-  // sideBySide=false → diff inline (unified). readOnly sempre (visualização).
+  // Diff view (always read-only): side by side by default, inline (unified)
+  // when sideBySide=false.
   window.gitEditorOpenDiff = function (o) {
     if (!monacoRef) return false;
     o = o || {};
@@ -112,7 +108,7 @@
     } catch (e) { signal('error', { message: String(e) }); return false; }
   };
 
-  // alterna lado-a-lado ↔ inline sem recriar (mantém posição).
+  // Toggles side-by-side/inline without recreating the editor, so the scroll position is kept.
   window.gitEditorSetDiffLayout = function (sideBySide) {
     try { if (diffEditor) diffEditor.updateOptions({ renderSideBySide: !!sideBySide }); } catch (e) {}
   };
@@ -130,9 +126,8 @@
     } catch (e) {}
   };
 
-  // Blame inline: recebe as linhas anotadas e mostra, ao fim
-  // da linha do cursor, "autor • data • resumo" via injected-text do Monaco.
-  // Passar null/[] desliga. Reanexa o listener de cursor a cada chamada.
+  // Inline blame: shows "author • date • summary" at the end of the cursor line.
+  // Passing null/[] turns it off. Each call re-attaches the cursor listener.
   window.gitEditorSetBlame = function (lines) {
     clearBlame();
     if (!lines || !lines.length || !editor || !monacoRef) return;

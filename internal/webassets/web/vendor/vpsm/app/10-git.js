@@ -113,7 +113,7 @@
           });
           po.observe({ entryTypes: ['longtask'] });
           this.gitlog('long-task observer ON');
-        } catch (e) { this.gitlog('longtask observer falhou', e.message); }
+        } catch (e) { this.gitlog('longtask observer failed', e.message); }
         window.addEventListener('error', (ev) => { try { console.error('[GITDBG] window.error', ev.message, ev.filename + ':' + ev.lineno); } catch (e) {} });
       },
 
@@ -464,10 +464,10 @@
                 theme: self.git.settings.editorTheme, fontSize: self.git.settings.fontSize,
                 minimap: self.git.settings.minimap, wordWrap: self.git.settings.wordWrap,
               }, opts));
-              self.gitlog('gitEditorOpen retornou', ok);
+              self.gitlog('gitEditorOpen returned', ok);
               resolve(!!ok); return;
             }
-            if (tries++ > 120) { self.gitlog('iframe NUNCA ficou pronto'); self.showToast('the editor did not load', 'err'); resolve(false); return; }
+            if (tries++ > 120) { self.gitlog('iframe NEVER became ready'); self.showToast('the editor did not load', 'err'); resolve(false); return; }
             setTimeout(attempt, 60);
           })();
         });
@@ -500,7 +500,7 @@
         this.$nextTick(() => this._gitFrameOpen({ content: diff, language: 'diff', readOnly: true }));
       },
       async gitOpenWorkingFile(path) {
-        this.gitlog('gitOpenWorkingFile INÍCIO', path);
+        this.gitlog('gitOpenWorkingFile START', path);
         if (!path) return;
         if (this.gitIsFolder(path)) { this.showToast('📁 ' + path + ' is a folder — open a file', ''); return; }
         // Fetches the content FIRST; binary/directory/>8MB → backend 422.
@@ -510,7 +510,7 @@
           const d = await r.json().catch(() => ({}));
           content = d.content || '';
         } catch (e) { this.showToast('could not open this file: ' + this._errText(e), 'err'); return; }
-        this.gitlog('conteúdo carregado, bytes=', content.length);
+        this.gitlog('content loaded, bytes=', content.length);
         const writable = !!(this.git.repoInfo && this.git.repoInfo.writable);
         this.git.editor.open = true; this.git.editor.mode = 'edit'; this.git.editor.path = path; this.git.editor.saving = false;
         this.$nextTick(async () => {
