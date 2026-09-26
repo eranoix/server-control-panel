@@ -71,7 +71,7 @@ const STUB = (hasAudio, hasVideo) => `
   Object.defineProperty(navigator, 'permissions', { configurable: true, value: { query: async () => ({ state: 'prompt' }) } });
 `;
 
-async function scenario(browser, nome, hasAudio, hasVideo) {
+async function scenario(browser, name, hasAudio, hasVideo) {
   const page = await browser.newPage();
   await page.goto('about:blank');
   await page.addInitScript(STUB(hasAudio, hasVideo));

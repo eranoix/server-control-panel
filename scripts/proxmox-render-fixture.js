@@ -116,8 +116,8 @@
   // with an ok credential, a guest with NO credential (lxc/202 is like that
   // today) and the external node `canario`, which is no hypervisor’s guest.
   const stamp = (v) => ({ value: v, observed_at: 1787256260 });
-  const guest = (id, nome, vmid, st, cred) => ({
-    id, name: nome, transport: 'pve-api', address: '192.168.1.1', kind: 'guest', vmid,
+  const guest = (id, name, vmid, st, cred) => ({
+    id, name: name, transport: 'pve-api', address: '192.168.1.1', kind: 'guest', vmid,
     status: stamp(st), uptime: stamp(821680), cpu_frac: stamp(0.07), cpu_cores: stamp(4),
     mem_used: stamp(2e9), mem_total: stamp(8e9), mem_host: stamp(-1),
     disk_used: stamp(1e10), disk_total: stamp(5e10),

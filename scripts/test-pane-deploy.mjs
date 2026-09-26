@@ -25,10 +25,10 @@ const ok = (m) => { console.log('  ✓ ' + m); pass++; };
 const no = (m) => { console.log('  ✗ ' + m); fail++; };
 console.log('=== test-pane-deploy ===');
 
-function method(nome) {
-  const re = new RegExp('\\n    (?:async )?' + nome + '\\(([\\s\\S]*?)\\n    \\},');
+function method(name) {
+  const re = new RegExp('\\n    (?:async )?' + name + '\\(([\\s\\S]*?)\\n    \\},');
   const m = src.match(re);
-  if (!m) { no('could not find the method ' + nome); process.exit(1); }
+  if (!m) { no('could not find the method ' + name); process.exit(1); }
   return m[0].replace(/^\n/, '') + '';
 }
 

@@ -25,10 +25,10 @@ const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
 console.log('=== test-predictive-echo ===');
 
-const extract = (nome, args) => {
-  const re = new RegExp('^ {4}' + nome + '\\(' + args.join(', ') + '\\)\\{\\n([\\s\\S]*?)^ {4}\\},$', 'm');
+const extract = (name, args) => {
+  const re = new RegExp('^ {4}' + name + '\\(' + args.join(', ') + '\\)\\{\\n([\\s\\S]*?)^ {4}\\},$', 'm');
   const m = src.match(re);
-  if (!m) { no('could not extract ' + nome); process.exit(1); }
+  if (!m) { no('could not extract ' + name); process.exit(1); }
   return new Function(...args, m[1]);
 };
 
@@ -77,9 +77,9 @@ const output = (p) => p.written.join('');
     ['good network (below the threshold the risk is not worth it)', newPane({ eco: 20 })],
     ['edge of the line (\\b does not move up a line)',         newPane({ cursorX: 79 })],
   ];
-  for (const [nome, p] of cases) {
+  for (const [name, p] of cases) {
     app._predictEcho.call(app, p, 'x');
-    output(p) === '' ? ok('does not predict: ' + nome) : no('PREDICTED where it must not: ' + nome);
+    output(p) === '' ? ok('does not predict: ' + name) : no('PREDICTED where it must not: ' + name);
   }
   const noEcho = newPane(); noEcho._serverEchoes = false;
   app._predictEcho.call(app, noEcho, 'x');

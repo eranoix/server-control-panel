@@ -39,10 +39,10 @@ console.log('=== test-pane-outbox ===');
 // local echo, latency probe). We extract ALL of them and assemble the object —
 // testing only _paneSendInput would test half a truth: the "never drops a
 // keystroke" guarantee is now split between it and _paneTxFlush.
-const extract = (nome, args) => {
-  const re = new RegExp('^ {4}' + nome + '\\(' + args.join(', ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\)\\{\\n([\\s\\S]*?)^ {4}\\},$', 'm');
+const extract = (name, args) => {
+  const re = new RegExp('^ {4}' + name + '\\(' + args.join(', ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\)\\{\\n([\\s\\S]*?)^ {4}\\},$', 'm');
   const mm = src.match(re);
-  if (!mm) { console.log('  ✗ could not extract ' + nome + ' from 00-shell.js'); process.exit(1); }
+  if (!mm) { console.log('  ✗ could not extract ' + name + ' from 00-shell.js'); process.exit(1); }
   return new Function(...args, mm[1]);
 };
 const app = {

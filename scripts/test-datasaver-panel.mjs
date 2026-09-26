@@ -29,8 +29,8 @@ const index = read('internal/webassets/web/index.html');
 const shell = read('internal/webassets/web/vendor/vpsm/app/00-shell.js');
 
 let bad = 0;
-const ok = (nome, cond, extra = '') => {
-  console.log((cond ? '  ✓ ' : '  ✗ ') + nome + (extra ? '  → ' + extra : ''));
+const ok = (name, cond, extra = '') => {
+  console.log((cond ? '  ✓ ' : '  ✗ ') + name + (extra ? '  → ' + extra : ''));
   if (!cond) bad++;
 };
 
@@ -101,8 +101,8 @@ const scenarios = [
   ['saved full of junk',         _dsShape && _dsShape({saved:{imgs:'x', orig:null, out:undefined, pct:NaN}})],
 ];
 
-for (const [nome, st] of scenarios) {
-  if (!st) { ok('scenario ' + nome, false, 'state was not built'); continue; }
+for (const [name, st] of scenarios) {
+  if (!st) { ok('scenario ' + name, false, 'state was not built'); continue; }
   let err = null, bad = null;
   for (const { tipo: type, expr } of exprs) {
     try {
@@ -112,7 +112,7 @@ for (const [nome, st] of scenarios) {
       if (txt.includes('undefined') || txt.includes('NaN')) { bad = expr + ' -> "' + txt + '"'; break; }
     } catch (ex) { err = expr + ' -> ' + ex.constructor.name + ': ' + ex.message; break; }
   }
-  ok('survives: ' + nome, !err && !bad, err || bad || '');
+  ok('survives: ' + name, !err && !bad, err || bad || '');
 }
 
 // ── the shape guard: the container can never be promised empty ──────────────

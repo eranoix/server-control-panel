@@ -182,11 +182,11 @@ try {
 
     // Open the terminal tab and mount a pane on the test session, through the
     // app's REAL METHODS — the same path as the click, without hunting selectors.
-    await pag.evaluate(async (nome) => {
+    await pag.evaluate(async (name) => {
       const d = document.body._x_dataStack[0];
       d.page = 'dev';
       await new Promise(r => setTimeout(r, 300));
-      const pane = d._makePane(nome, '');
+      const pane = d._makePane(name, '');
       d.terms.panes = [pane];
       d.terms.layout = { type: 'pane', id: pane.id };
       d.terms.activePane = pane.id;
@@ -293,11 +293,11 @@ try {
     const d = document.body._x_dataStack && document.body._x_dataStack[0];
     return !!(d && d.token);
   }, { timeout: 20000 });
-  await smallPage.evaluate(async (nome) => {
+  await smallPage.evaluate(async (name) => {
     const d = document.body._x_dataStack[0];
     d.page = 'dev';
     await new Promise(r => setTimeout(r, 300));
-    const pane = d._makePane(nome, '');
+    const pane = d._makePane(name, '');
     d.terms.panes = [pane];
     d.terms.layout = { type: 'pane', id: pane.id };
     d.terms.activePane = pane.id;

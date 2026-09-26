@@ -6773,9 +6773,9 @@ function app() {
     schedFormMissing() {
       const desc = this.schedDescriptor(this.schedForm.j.kind);
       const miss = [];
-      if (!this.schedForm.j.name.trim()) miss.push('nome');
+      if (!this.schedForm.j.name.trim()) miss.push('name');
       if (!this.schedForm.j.schedule.trim()) miss.push('cron');
-      if (!this.schedForm.j.kind) miss.push('tipo');
+      if (!this.schedForm.j.kind) miss.push('type');
       ((desc && desc.args) || []).forEach(a => {
         if (!a.required) return;
         const v = this.schedForm.args[a.name];
@@ -9174,7 +9174,7 @@ function app() {
       catch (e) { return (e && e.message) || 'invalid'; }
     },
     // Enables askInput's Confirm button. Without validate, always true (the native
-    // prompt let you confirm an empty value; the call-site handles `if(!nome) return`).
+    // prompt let you confirm an empty value; the call-site handles `if(!name) return`).
     askInputOk() {
       const m = this.askInputModal;
       if (!m || !m.open) return false;
@@ -11071,9 +11071,9 @@ function app() {
       const primeAndOpen = () => {
         if (state._primerDone) { open(); return; }
         state._primerDone = true;
-        const nome = state.sessionName;
+        const name = state.sessionName;
         const bytes = self._termPrimerBytes ? self._termPrimerBytes() : 0;
-        if (!nome || !bytes) { open(); return; }
+        if (!name || !bytes) { open(); return; }
         let opened = false;
         const follow = () => { if (opened) return; opened = true; open(); };
         const cap = setTimeout(() => {
@@ -11092,7 +11092,7 @@ function app() {
         //
         // The raw log stays as the FALLBACK: an old session, with no history file
         // yet, still loads whatever there is to load.
-        const search = (route) => fetch(route + '?name=' + encodeURIComponent(nome) + '&bytes=' + bytes,
+        const search = (route) => fetch(route + '?name=' + encodeURIComponent(name) + '&bytes=' + bytes,
                                       { credentials: 'same-origin' })
           .then(r => r.ok ? r.arrayBuffer() : null)
           .then(b => (b && b.byteLength) ? b : null);
@@ -16714,12 +16714,12 @@ function app() {
     // This used to be _uploadPasteImage and sent an "image" field to
     // /api/terminal/paste-image, which rejected non-images with 415. The server
     // now accepts any type; the field is "file" and the route is /upload.
-    async _uploadTermFile(blob, nome){
+    async _uploadTermFile(blob, name){
       if (!blob) return null;
       const fd = new FormData();
       // The name matters: it becomes the name on disk (sanitized server-side) and
       // guides whoever reads the path later. A synthetic name only when there is none.
-      let n = nome || blob.name || '';
+      let n = name || blob.name || '';
       if (!n) {
         const ext = (blob.type && blob.type.split('/')[1]) || 'bin';
         n = 'paste.' + ext;

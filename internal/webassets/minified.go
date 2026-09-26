@@ -61,12 +61,12 @@ var validMinified = sync.OnceValue(func() map[string]string {
 		return valid
 	}
 	for _, e := range entries {
-		nome := e.Name()
-		if !strings.HasSuffix(nome, ".js") || strings.HasSuffix(nome, ".min.js") {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".min.js") {
 			continue
 		}
-		source := path.Join(appDir, nome)
-		min := path.Join(appDir, strings.TrimSuffix(nome, ".js")+".min.js")
+		source := path.Join(appDir, name)
+		min := path.Join(appDir, strings.TrimSuffix(name, ".js")+".min.js")
 		if verify(sub, source, min) {
 			valid[source] = min
 		}

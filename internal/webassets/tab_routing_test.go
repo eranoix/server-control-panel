@@ -47,15 +47,15 @@ var (
 )
 
 // block slices a level-2 object literal out of the shell (`    NAME: {` up to `\n    },`).
-func block(t *testing.T, source, nome string) string {
+func block(t *testing.T, source, name string) string {
 	t.Helper()
-	i := strings.Index(source, nome+": {")
+	i := strings.Index(source, name+": {")
 	if i < 0 {
-		t.Fatalf("block %q not found in %s — the shell changed shape and this guard went blind", nome, shellFile)
+		t.Fatalf("block %q not found in %s — the shell changed shape and this guard went blind", name, shellFile)
 	}
 	j := strings.Index(source[i:], "\n    },")
 	if j < 0 {
-		t.Fatalf("end of block %q not found in %s", nome, shellFile)
+		t.Fatalf("end of block %q not found in %s", name, shellFile)
 	}
 	return source[i : i+j]
 }

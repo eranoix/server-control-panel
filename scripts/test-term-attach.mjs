@@ -32,10 +32,10 @@ console.log('=== test-term-attach ===');
 
 // Cuts a method out of the object-literal of the app: from "    name(" to the
 // "    }," that closes it at the same indentation.
-function method(nome) {
-  const re = new RegExp('\\n    (?:async )?' + nome + '\\(([\\s\\S]*?)\\n    \\},');
+function method(name) {
+  const re = new RegExp('\\n    (?:async )?' + name + '\\(([\\s\\S]*?)\\n    \\},');
   const m = src.match(re);
-  if (!m) { no('could not find the method ' + nome + ' in the source'); process.exit(1); }
+  if (!m) { no('could not find the method ' + name + ' in the source'); process.exit(1); }
   return '    ' + (m[0].match(/\n    ((?:async )?[\s\S]*)\n    \},/))[1] + '\n    },';
 }
 

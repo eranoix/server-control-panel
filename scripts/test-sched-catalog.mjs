@@ -82,7 +82,7 @@ check('string_list trims + drops blanks', eq(comp.schedFormArgs().args, ['restar
 
 // 4. required-field validation mirrors the schema.
 comp.schedForm = { j: { kind: 'docker_pull', name: '', schedule: '0 3 * * *' }, args: { ref: '' } };
-check('missing name + required ref flagged', comp.schedFormMissing().includes('nome') && comp.schedFormMissing().includes('Image'));
+check('missing name + required ref flagged', comp.schedFormMissing().includes('name') && comp.schedFormMissing().includes('Image'));
 
 comp.schedForm = { j: { kind: 'docker_pull', name: 'ok', schedule: '0 3 * * *' }, args: { ref: 'nginx' } };
 check('valid docker_pull → nothing missing', comp.schedFormMissing().length === 0);

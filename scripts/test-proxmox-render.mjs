@@ -131,11 +131,11 @@ const BUNDLE = process.env.VPSM_RENDER_BUNDLE === 'src' ? 'src' : 'min';
 if (BUNDLE === 'min') {
   const dirApp = path.join(WEB, 'vendor', 'vpsm', 'app');
   const stale = [];
-  for (const nome of fs.readdirSync(dirApp).filter((x) => x.endsWith('.js') && !x.endsWith('.min.js'))) {
-    const src = path.join(dirApp, nome);
-    const min = path.join(dirApp, nome.slice(0, -3) + '.min.js');
+  for (const name of fs.readdirSync(dirApp).filter((x) => x.endsWith('.js') && !x.endsWith('.min.js'))) {
+    const src = path.join(dirApp, name);
+    const min = path.join(dirApp, name.slice(0, -3) + '.min.js');
     if (!fs.existsSync(min)) continue;
-    if (fs.statSync(min).mtimeMs < fs.statSync(src).mtimeMs) stale.push(nome);
+    if (fs.statSync(min).mtimeMs < fs.statSync(src).mtimeMs) stale.push(name);
   }
   if (stale.length) {
     console.error('FAILED: a .min.js is OLDER than its source (the server serves the old one): ' + stale.join(', '));
@@ -230,7 +230,7 @@ if (total < 20) {
 
 let rejected = 0, measured = 0;
 for (let i = 0; i < total; i++) {
-  const nome = await page.evaluate((k) => window.__script[k].nome, i);
+  const name = await page.evaluate((k) => window.__script[k].nome, i);
   await page.evaluate((k) => window.__script[k].step(), i);
   await page.waitForTimeout(180);
   let note = '';
@@ -241,8 +241,8 @@ for (let i = 0; i < total; i++) {
     if (r && r.nota) note = '  [' + r.nota + ']';
   }
   const newOnes = errors.splice(0);
-  if (newOnes.length) { rejected++; console.log('  FAIL ' + nome + '\n        ' + newOnes.join('\n        ')); }
-  else console.log('  ok   ' + nome + note);
+  if (newOnes.length) { rejected++; console.log('  FAIL ' + name + '\n        ' + newOnes.join('\n        ')); }
+  else console.log('  ok   ' + name + note);
 }
 
 await browser.close();

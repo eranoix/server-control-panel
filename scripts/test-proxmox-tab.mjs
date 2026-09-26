@@ -33,9 +33,9 @@ const pvxJs = readFileSync(join(APP, '41-proxmox.js'), 'utf8');
 const index = readFileSync(IDX, 'utf8');
 
 let failed = 0;
-function check(nome, cond, extra) {
-  if (cond) { console.log('  ✓', nome); }
-  else { console.error('  ✗', nome, extra === undefined ? '' : extra); failed++; }
+function check(name, cond, extra) {
+  if (cond) { console.log('  ✓', name); }
+  else { console.error('  ✗', name, extra === undefined ? '' : extra); failed++; }
 }
 
 // noComments strips line comments so that an ABSENCE check cannot be
@@ -49,10 +49,10 @@ function noComments(src) {
 }
 
 // extracts the body of an object method indented by six spaces, by name.
-function extract(src, file, nome, sig) {
-  const re = new RegExp(nome + '\\(' + sig + '\\) \\{([\\s\\S]*?)\\n      \\},');
+function extract(src, file, name, sig) {
+  const re = new RegExp(name + '\\(' + sig + '\\) \\{([\\s\\S]*?)\\n      \\},');
   const m = src.match(re);
-  if (!m) { console.error('FATAL: method not found in', file + ':', nome); process.exit(2); }
+  if (!m) { console.error('FATAL: method not found in', file + ':', name); process.exit(2); }
   return m[1];
 }
 
@@ -96,7 +96,7 @@ const grafts = [
   ['00-shell.js: PAGE_REMAP', shell, /^\s*proxmox:\s*\['operations',\s*'proxmox'\],$/m],
   ['00-shell.js: _triggerViewLoaders', shell, /^\s*if \(p==='proxmox'\)\s*\{ this\.pvxInit\(\); this\.pvxStartPoll\(\); \}$/m],
 ];
-for (const [nome, src, re] of grafts) check(nome, re.test(src));
+for (const [name, src, re] of grafts) check(name, re.test(src));
 
 // the module's script has to come AFTER 40-nodes.js: app() spreads in load
 // order, and a module that arrives before the shell does not exist for Alpine.
@@ -560,11 +560,11 @@ const fakeComponent = () => {
     pvx: { filter: '', segment: '', sel: [], tiers: {} },
     nodes: { list: LIST },
   };
-  const turnOn = (nome, params) => {
-    const body = extract(pvxJs, '41-proxmox.js', nome, params.join(',\\s*'))
+  const turnOn = (name, params) => {
+    const body = extract(pvxJs, '41-proxmox.js', name, params.join(',\\s*'))
       .replace('pvxGaugePct(n, which)', '(n.__pct ? n.__pct[which] : null)');
     const f = new Function(...params, body);
-    comp[nome] = function (...a) { return f.apply(comp, a); };
+    comp[name] = function (...a) { return f.apply(comp, a); };
   };
   turnOn('pvxNodeState', ['n']);
   turnOn('pvxFilterNodes', ['list', 'text', 'segment', 'stateOf']);

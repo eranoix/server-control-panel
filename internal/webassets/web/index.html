@@ -6556,7 +6556,7 @@
             <div class="fm-pane lg:col-span-2">
               <div class="fm-pane-head">
                 <input type="checkbox" class="fm-chk" style="margin-right:12px" @change="toggleAllSel($event.target.checked)" :checked="fileSel.length>0 && fileSel.length===(fileList?.entries?.length||0)" aria-label="Select every file" />
-                <span class="flex-1">nome</span>
+                <span class="flex-1">name</span>
                 <span style="min-width:72px;text-align:right;padding-right:8px">size</span>
               </div>
               <div class="fm-pane-body" data-scroll-root>
@@ -6919,7 +6919,7 @@
                 </template>
               </div>
               <div class="flex gap-1 text-xs">
-                <input type="text" placeholder="nome" aria-label="Snippet name" x-model="newSnippet.name" class="input flex-1 py-1 text-xs"/>
+                <input type="text" placeholder="name" aria-label="Snippet name" x-model="newSnippet.name" class="input flex-1 py-1 text-xs"/>
                 <input type="text" placeholder="command" aria-label="Snippet command" x-model="newSnippet.cmd" class="input flex-[2] py-1 text-xs mono"/>
                 <button @click="addUserSnippet()" class="btn btn-primary btn-sm">Save</button>
               </div>
@@ -11505,13 +11505,13 @@
                         </div>
 
                         <!-- The link that was missing: what this disk CARRIES. -->
-                        <template x-for="nome in pvxDiskPools(d)" :key="d.devpath + nome">
+                        <template x-for="pool in pvxDiskPools(d)" :key="d.devpath + pool">
                           <div class="mt-2 pl-3 text-[11px]" style="border-left:2px solid var(--border)">
                             <span class="opacity-60">loads the pool</span>
-                            <span class="font-mono font-semibold ml-1" x-text="nome"></span>
+                            <span class="font-mono font-semibold ml-1" x-text="pool"></span>
                             <span class="ml-2 px-1.5 py-px rounded"
-                                  :style="pvxRedundancy(nome).style"
-                                  x-text="pvxRedundancy(nome).text"></span>
+                                  :style="pvxRedundancy(pool).style"
+                                  x-text="pvxRedundancy(pool).text"></span>
                           </div>
                         </template>
                         <div x-show="pvx.topology && !pvxDiskPools(d).length" x-cloak
@@ -13756,7 +13756,7 @@
                 <template x-for="(sv, si) in games.inv" :key="si">
                   <div class="flex items-center gap-2 flex-wrap">
                     <input class="input" style="width:8rem" x-model="sv.id" placeholder="id" aria-label="id"/>
-                    <input class="input" style="width:11rem" x-model="sv.name" placeholder="nome" aria-label="nome"/>
+                    <input class="input" style="width:11rem" x-model="sv.name" placeholder="name" aria-label="name"/>
                     <input class="input" style="width:9rem" x-model="sv.game" placeholder="game" aria-label="game"/>
                     <input class="input" style="width:10rem" x-model="sv.container" placeholder="container" aria-label="container"/>
                     <input class="input mono" style="width:13rem" x-model="sv.root" placeholder="/opt/..." aria-label="root"/>

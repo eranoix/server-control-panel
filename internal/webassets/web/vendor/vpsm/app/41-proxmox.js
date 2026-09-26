@@ -523,9 +523,9 @@
       // other — and in a SINGLE-DISK lab with NO MIRROR the question that matters is
       // exactly that one:
       // "what do I lose if THIS disk dies?".
-      pvxTopologyOf(nome) {
+      pvxTopologyOf(name) {
         const ps = (this.pvx.topology && this.pvx.topology.pools) || [];
-        return ps.find((p) => p.nome === nome) || null;
+        return ps.find((p) => p.nome === name) || null;
       },
       // Matches physical disk ↔ pool by the serial embedded in the by-id path.
       //
@@ -1331,16 +1331,16 @@
       // answers after the WaitTask (status stopped + exitstatus OK), so the spinner
       // covers the real operation, not the "request accepted".
       pvxCreateSnap(nodeId) {
-        const nome = (this.pvx.newSnap || '').trim();
+        const name = (this.pvx.newSnap || '').trim();
         this.askConfirm('Create snapshot',
-          `Creates the snapshot "${nome}" on "${nodeId}". The response only comes back once the hypervisor has finished the task.`,
+          `Creates the snapshot "${name}" on "${nodeId}". The response only comes back once the hypervisor has finished the task.`,
           async () => {
             if (this.pvx.busy) return;
             this.pvx.busy = nodeId;
             this.pvx.lastError = '';
             try {
               const r = await this.api('/api/proxmox/snapshots?node=' + encodeURIComponent(nodeId)
-                + '&name=' + encodeURIComponent(nome), { method: 'POST' });
+                + '&name=' + encodeURIComponent(name), { method: 'POST' });
               const d = await r.json().catch(() => ({}));
               this.showToast('snapshot created (task ' + (d.upid || '—') + ')', 'ok');
               this.pvx.newSnap = '';
@@ -1355,16 +1355,16 @@
           });
       },
 
-      pvxDeleteSnap(nodeId, nome) {
+      pvxDeleteSnap(nodeId, name) {
         this.askConfirm('Delete snapshot',
-          `Deletes "${nome}" from "${nodeId}". Irreversible: the state kept in that snapshot ceases to exist.`,
+          `Deletes "${name}" from "${nodeId}". Irreversible: the state kept in that snapshot ceases to exist.`,
           async () => {
             if (this.pvx.busy) return;
             this.pvx.busy = nodeId;
             this.pvx.lastError = '';
             try {
               const r = await this.api('/api/proxmox/snapshots?node=' + encodeURIComponent(nodeId)
-                + '&name=' + encodeURIComponent(nome), { method: 'DELETE' });
+                + '&name=' + encodeURIComponent(name), { method: 'DELETE' });
               const d = await r.json().catch(() => ({}));
               this.showToast('snapshot deleted (task ' + (d.upid || '—') + ')', 'ok');
             } catch (e) {
@@ -1388,11 +1388,11 @@
       // The confirmation is BY TYPING (requireText = the guest’s name) and not by
       // clicking: what gets lost has no second copy, because this lab’s pool is
       // SINGLE-DISK, with no mirror.
-      pvxRollbackSnap(nodeId, nome) {
+      pvxRollbackSnap(nodeId, name) {
         const g = this.pvxGuests().find(x => x.id === nodeId);
         const label = (g && g.name) || nodeId;
-        this.askConfirm('Roll back to snapshot "' + nome + '"',
-          'Guest "' + label + '" (' + nodeId + ') goes back to the state of snapshot "' + nome + '". ' +
+        this.askConfirm('Roll back to snapshot "' + name + '"',
+          'Guest "' + label + '" (' + nodeId + ') goes back to the state of snapshot "' + name + '". ' +
           'EVERYTHING written to it after that snapshot ceases to exist — files, database, logs, ' +
           'and any work in progress. There is no second copy: the pool on this server is a ' +
           'single disk, with no mirror. Type the guest name (' + label + ') to confirm.',
@@ -1402,9 +1402,9 @@
             this.pvx.lastError = '';
             try {
               const r = await this.api('/api/proxmox/snapshots/rollback?node=' + encodeURIComponent(nodeId)
-                + '&name=' + encodeURIComponent(nome), { method: 'POST' });
+                + '&name=' + encodeURIComponent(name), { method: 'POST' });
               const d = await r.json().catch(() => ({}));
-              this.showToast('guest rolled back to snapshot "' + nome + '" (task ' + (d.upid || '—') + ')', 'ok');
+              this.showToast('guest rolled back to snapshot "' + name + '" (task ' + (d.upid || '—') + ')', 'ok');
             } catch (e) {
               const txt = this._errText(e);
               this.pvx.lastError = txt;
@@ -2333,7 +2333,7 @@
       // Nine expressions had that shape. Fixing the nine with `?.` would leave the
       // tenth to the memory of whoever writes it. A single function is the fix that
       // does not depend on remembering.
-      pvxField(obj, nome) { return this.pvxObs(obj && obj[nome]); },
+      pvxField(obj, name) { return this.pvxObs(obj && obj[name]); },
 
       // 🔴 "IS IT BUSY?" HAS TO RETURN A BOOLEAN. This is not fussiness — it is the
       // defect that left the operator WITH NO BUTTONS AT ALL.

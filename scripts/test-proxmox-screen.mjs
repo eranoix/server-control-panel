@@ -27,7 +27,7 @@ const comp = Object.assign({
 }, mod);
 
 let bad = 0;
-const ok = (nome, cond, extra='') => { console.log((cond?'  ✓ ':'  ✗ ')+nome+(extra?'  → '+extra:'')); if(!cond) bad++; };
+const ok = (name, cond, extra='') => { console.log((cond?'  ✓ ':'  ✗ ')+name+(extra?'  → '+extra:'')); if(!cond) bad++; };
 
 // ── contextual tabs ───────────────────────────────────────────────────────
 const host  = comp.nodes.list[0], guest = comp.nodes.list[2];

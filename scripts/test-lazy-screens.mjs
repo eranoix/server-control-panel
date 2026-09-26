@@ -35,8 +35,8 @@ const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 
 // Cut each <template x-if="_mounted.X"> … </template> out of the real markup,
 // counting nesting (there are hundreds of <template> tags inside them).
-function clip(nome) {
-  const open = `<template x-if="_mounted.${nome}">`;
+function clip(name) {
+  const open = `<template x-if="_mounted.${name}">`;
   const ini = html.indexOf(open);
   if (ini < 0) return null;
   let prof = 0;

@@ -37,14 +37,14 @@ func TestServedMinifiedMatchesCurrentSource(t *testing.T) {
 
 	var sources int
 	for _, e := range entries {
-		nome := e.Name()
-		if !strings.HasSuffix(nome, ".js") || strings.HasSuffix(nome, ".min.js") {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".min.js") {
 			continue
 		}
 		sources++
-		source := path.Join(appDir, nome)
+		source := path.Join(appDir, name)
 
-		expected := path.Join(appDir, strings.TrimSuffix(nome, ".js")+".min.js")
+		expected := path.Join(appDir, strings.TrimSuffix(name, ".js")+".min.js")
 		_, exists := fs.Stat(sub, expected)
 
 		min, ok := MinifiedOf(source)
@@ -99,7 +99,7 @@ func TestStaleMinifiedIsNotServed(t *testing.T) {
 	right := hex.EncodeToString(sum[:])
 
 	cases := []struct {
-		nome     string
+		name     string
 		min      string
 		aceitavl bool
 	}{
@@ -112,7 +112,7 @@ func TestStaleMinifiedIsNotServed(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		t.Run(c.nome, func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			stamp, ok := readStamp([]byte(c.min))
 			valid := ok && stamp == right
 			if valid != c.aceitavl {

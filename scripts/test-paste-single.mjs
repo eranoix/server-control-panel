@@ -30,10 +30,10 @@ console.log('=== test-paste-single ===');
 
 // ── Extraction from the real source ─────────────────────────────────────────
 // Copying the logic in here would let the pin drift from the product unseen.
-const extract = (nome, args) => {
-  const re = new RegExp('^ {4}' + nome + '\\(' + args.join(', ') + '\\)\\{\\n([\\s\\S]*?)^ {4}\\},$', 'm');
+const extract = (name, args) => {
+  const re = new RegExp('^ {4}' + name + '\\(' + args.join(', ') + '\\)\\{\\n([\\s\\S]*?)^ {4}\\},$', 'm');
   const m = src.match(re);
-  if (!m) { no('could not extract ' + nome + ' from the source'); process.exit(1); }
+  if (!m) { no('could not extract ' + name + ' from the source'); process.exit(1); }
   return m[1];
 };
 const guardBody = extract('_pasteHandled', ['ev', 'files']);
@@ -106,7 +106,7 @@ const result = await page.evaluate(({ guardBody, filesBody }) => {
 
   const evPaste = (files, text) => {
     const dt = new DataTransfer();
-    for (const [nome, type] of files) dt.items.add(new File(['x'], nome, { type: type }));
+    for (const [name, type] of files) dt.items.add(new File(['x'], name, { type: type }));
     if (text !== undefined) dt.setData('text/plain', text);
     return new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
   };
