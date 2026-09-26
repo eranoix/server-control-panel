@@ -38,7 +38,7 @@ lab-agent: ## Build only cmd/lab-agent (kept out of the panel build on purpose)
 	@# was live meant hashing all five. The process could not say where it came from.
 	@# The stamp trades bit-for-bit reproducibility for TRACEABILITY: every build is
 	@# distinct, and the agent itself announces in the journal which artifact it is.
-	CGO_ENABLED=0 go build -ldflags "-X main.carimbo=$$(git rev-parse --short HEAD 2>/dev/null || echo no-git)-$$(date -u +%Y%m%dT%H%M%SZ)" -o $(AGENT_BIN) ./cmd/lab-agent
+	CGO_ENABLED=0 go build -ldflags "-X main.stamp=$$(git rev-parse --short HEAD 2>/dev/null || echo no-git)-$$(date -u +%Y%m%dT%H%M%SZ)" -o $(AGENT_BIN) ./cmd/lab-agent
 	@echo "✓ $(AGENT_BIN)"
 
 ESBUILD := .tools/node_modules/.bin/esbuild

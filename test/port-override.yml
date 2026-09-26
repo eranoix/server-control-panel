@@ -1,4 +1,4 @@
-# Override para rodar a demo noutra porta sem tocar no compose versionado.
+# Override to run the demo on another port without touching the committed compose file.
 #   docker compose -f docker-compose.yml -f test/port-override.yml up -d
 services:
   server-control-panel:

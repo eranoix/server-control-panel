@@ -66,7 +66,7 @@ jobs:
         # spawns a browser itself.
         run: |
           set -uo pipefail
-          falhou=0
+          failed=0
           for h in scripts/test-*.mjs; do
             if grep -qE 'playwright|spawn\(' "$h"; then continue; fi
             if node "$h" > /tmp/pin.log 2>&1; then
@@ -74,10 +74,10 @@ jobs:
             else
               echo "::error::$(basename "$h") failed"
               tail -30 /tmp/pin.log
-              falhou=1
+              failed=1
             fi
           done
-          exit "$falhou"
+          exit "$failed"
 
   secret-scan:
     runs-on: ubuntu-latest

@@ -1,169 +1,137 @@
-# Contrato de deploy
+# Deploy contract
 
-`scripts/deploy.sh` deixou de conhecer o nome de um projeto. Ele executa um
-contrato — **gate → build → health → symlink → rollback** — parametrizado por um
-arquivo `deploy/<projeto>.conf`.
+`scripts/deploy.sh` does not know any project by name. It runs one contract
+(**gate → build → health → symlink → rollback**) parameterised by a
+`deploy/<project>.conf` file.
 
 ```sh
-scripts/deploy.sh --conf deploy/painel.conf <novo-binario>   # deploy
-scripts/deploy.sh --conf deploy/painel.conf --rollback       # volta ao anterior
-scripts/deploy.sh --conf deploy/painel.conf --validar        # só valida a conf
+scripts/deploy.sh --conf deploy/painel.conf <new-binary>   # deploy
+scripts/deploy.sh --conf deploy/painel.conf --rollback     # back to the previous one
+scripts/deploy.sh --conf deploy/painel.conf --validar      # validate the conf only
 ```
 
-Sem `--conf`, o padrão é `deploy/painel.conf` (trás-compatibilidade). O arquivo
-ainda precisa existir: default não é permissão para rodar sem configuração.
+Without `--conf` the default is `deploy/painel.conf`. The file must still exist:
+a default is not permission to run without configuration.
 
-## Duas regras que evitam os dois erros mais caros
+## Two rules
 
-**1. O `agentctl` executa o `deploy.sh` do working tree PRINCIPAL** (`$ROOT`).
-Editar este script numa worktree, rodar `agentctl deploy` de lá e ver verde
-significa que o script **velho** rodou. Integre antes de provar. Isso já queimou
-uma sessão neste repositório, e o comentário está no próprio `deploy.sh`.
+**1. `agentctl` runs the `deploy.sh` of the MAIN working tree** (`$ROOT`). Editing
+the script in a worktree and running `agentctl deploy` from there runs the **old**
+script. Integrate before you test.
 
-**2. O contrato roda ONDE O ARTEFATO ATERRISSA, não onde ele foi construído.**
-É para isso que `BUILD_CMD` vazio existe: o binário pode ser compilado noutra
-máquina e chegar pronto. O `lab-agent` (08-08) é construído no VPS e aterrissa no
-CT 201 — e o `deploy.sh` não precisa saber o que é rede para isso funcionar.
+**2. The contract runs WHERE THE ARTIFACT LANDS, not where it was built.** That is
+what an empty `BUILD_CMD` is for: the binary can be built on another machine and
+arrive ready. `lab-agent` is built on the VPS and lands on another host, and
+`deploy.sh` does not need to know about the network for that to work.
 
-## Código de saída
+## Exit codes
 
-| Código | Significado |
+| Code | Meaning |
 |---|---|
-| `0` | deploy saudável |
-| `1` | falhou e **voltou sozinho** — o rollback deu certo e o serviço está de pé |
-| `2` ou mais | quebrado: configuração inválida, ou o rollback também falhou |
+| `0` | healthy deploy |
+| `1` | failed and **rolled back on its own**: the service is up on the previous version |
+| `2` or more | broken: invalid configuration, or the rollback failed too |
 
-O `1` é **deliberado**. Quem chama não pode lê-lo como falha total: é a diferença
-entre "o serviço está no ar na versão anterior" e "o serviço está fora do ar". O
-08-08 depende exatamente dessa distinção para provar o auto-rollback.
+`1` is deliberate. Callers must not read it as a total failure: it is the
+difference between "up on the previous version" and "down".
 
-## Chaves
+## Keys
 
-### Obrigatórias — sem qualquer uma delas o script morre nomeando a chave
+### Required: the script dies naming any missing key
 
-| Chave | O que é |
+| Key | What it is |
 |---|---|
-| `PROJ_SRC` | onde o código está (worktree de build) |
-| `PROJ_ROOT` | onde o artefato aterrissa — **pode diferir** de `PROJ_SRC` |
-| `BIN_DIR` | diretório dos binários carimbados |
-| `LINK` | o symlink trocado atomicamente |
-| `ARTIFACT_PREFIX` | prefixo usado pela retenção e pela busca do rollback |
-| `HEALTH_MODE` | `url` ou `cmd` |
-| `HEALTH_TRIES` · `HEALTH_INTERVAL` | a janela de saúde é `TRIES × INTERVAL` segundos |
-| `SERVICE` | unit principal (`restart` + `reset-failed`) |
-| `KEEP_BINARIES` | retenção — **mínimo 2**, ver abaixo |
-| `LOCK_FILE` · `LOG` | trava do `flock` e log do deploy |
+| `PROJ_SRC` | where the code is (build worktree) |
+| `PROJ_ROOT` | where the artifact lands; **may differ** from `PROJ_SRC` |
+| `BIN_DIR` | directory of the stamped binaries |
+| `LINK` | the symlink swapped atomically |
+| `ARTIFACT_PREFIX` | prefix used by retention and by the rollback lookup |
+| `HEALTH_MODE` | `url` or `cmd` |
+| `HEALTH_TRIES` · `HEALTH_INTERVAL` | the health window is `TRIES × INTERVAL` seconds |
+| `SERVICE` | main unit (`restart` + `reset-failed`) |
+| `KEEP_BINARIES` | retention, **minimum 2** (see below) |
+| `LOCK_FILE` · `LOG` | `flock` lock and deploy log |
 
-`HEALTH_MODE=url` exige `HEALTH_URL`; `HEALTH_MODE=cmd` exige `HEALTH_CMD`.
+`HEALTH_MODE=url` requires `HEALTH_URL`; `HEALTH_MODE=cmd` requires `HEALTH_CMD`.
 
-**`KEEP_BINARIES < 2` é erro DURO, não aviso.** O rollback precisa de pelo menos
-dois binários prévios. Um projeto configurado com 1 descobriria isso no pior
-momento possível: com o binário quebrado no ar e nada para onde voltar.
+**`KEEP_BINARIES < 2` is a HARD error, not a warning.** Rollback needs at least
+two previous binaries; finding that out with a broken binary live is too late.
 
-### Opcionais — **vazio tem significado declarado**
+### Optional: empty has a declared meaning
 
-Vazio com significado implícito é como um projeto novo ganha comportamento que
-ninguém pediu. Por isso cada um está escrito aqui e no comentário do bloco
-correspondente do `deploy.sh`.
-
-| Chave | Vazio significa |
+| Key | Empty means |
 |---|---|
-| `BUILD_CMD` | **projeto SEM etapa de build** — o artefato chega pronto. Caso de primeira classe, não exceção |
-| `INV_FILE` | sem pino textual de invariantes |
-| `STATE_BACKUP_DIR` / `STATE_FILES` | pula a rotação de backups de estado (específico do painel) |
-| `DRAIN_URL` | sem drenagem de fila — e com isso **some a dependência de `jq`** |
-| `PREFLIGHT_CMDS` | sem pré-voo específico do projeto |
-| `BIN_CHECK_ARG` | não roda autoteste no binário novo antes da troca |
-| `EXTRA_ARTIFACTS` | nenhum artefato extra aplicado depois do health |
-| `EXTRA_SERVICES` | nenhum serviço extra reiniciado depois do health |
+| `BUILD_CMD` | **project WITHOUT a build step**: the artifact arrives ready. A first-class case |
+| `INV_FILE` | no textual invariant pin |
+| `STATE_BACKUP_DIR` / `STATE_FILES` | skip state backup rotation (panel specific) |
+| `DRAIN_URL` | no queue drain, and therefore **no `jq` dependency** |
+| `PREFLIGHT_CMDS` | no project-specific preflight |
+| `BIN_CHECK_ARG` | no self-test of the new binary before the swap |
+| `EXTRA_ARTIFACTS` | no extra artifacts applied after health |
+| `EXTRA_SERVICES` | no extra services restarted after health |
 
-Outros padrões: `KEEP_STATE_BACKUPS=10`, `DRAIN_TRIES=60`, `DRAIN_INTERVAL=3`,
+Other defaults: `KEEP_STATE_BACKUPS=10`, `DRAIN_TRIES=60`, `DRAIN_INTERVAL=3`,
 `HEALTH_CMD_TIMEOUT=10`.
 
 ### `EXTRA_ARTIFACTS`
 
-Uma linha por artefato, `origem|destino|serviço-opcional`. Aplicados **depois** do
-health passar, para que um build quebrado nunca sobrescreva uma ferramenta que
-funciona. `$BUILD_DIR` está disponível na conf e aponta para o diretório do
-binário novo.
+One line per artifact, `source|destination|optional-service`. Applied **after**
+health passes, so a broken build never overwrites a working tool. `$BUILD_DIR` is
+available in the conf and points to the new binary's directory.
 
 ## `HEALTH_MODE=cmd`
 
-Existe porque **a sonda correta de um projeto pode não ser um GET**. Pode ser um
-autoteste que exercita o caminho real (`--selftest`), enquanto um GET em
-`/healthz` só prova que o processo respondeu. E pode haver projeto sem superfície
-HTTP nenhuma.
+The right probe for a project may not be a GET: it can be a self-test that
+exercises the real path (`--selftest`), while a GET on `/healthz` only proves the
+process answered. Some projects have no HTTP surface at all.
 
-(A justificativa original da decisão dizia que o `tl-agent` é binário único e não
-tem HTTP. Medido: ele **não** é binário único e **tem** HTTP no CT 201. O desenho
-continua certo; o argumento foi corrigido.)
+Each attempt runs under `timeout $HEALTH_CMD_TIMEOUT` and is logged, so a health
+gate that approves by mistake can be told apart from one that approves correctly.
 
-Cada tentativa roda sob `timeout $HEALTH_CMD_TIMEOUT` e é registrada no log — sem
-isso, um health-gate que aprova por engano fica indistinguível de um que aprova
-certo.
+## Not part of the contract
 
-## O que NÃO faz parte do contrato
+Advancing the canonical branch, the `.claude/coord/` board and propagation between
+worktrees stay in `agentctl`. They are multi-session coordination for the panel's
+repository, not deploy.
 
-O avanço do canônico (`refactor/foundation`), o board `.claude/coord/` e a
-propagação entre worktrees continuam no `agentctl`. São **coordenação
-multi-sessão do repositório do painel**, não deploy: um projeto que não é o painel
-não tem canônico para avançar nem worktrees de outras sessões para propagar.
+## Pins
 
-A fronteira está comentada no `agentctl`, no ponto exato onde ela passa.
+`scripts/tests/deploy-conf.sh`: assertions on a missing conf, a missing required
+key, an invalid `HEALTH_MODE`, `KEEP_BINARIES < 2`, an empty `BUILD_CMD`, and
+`HEALTH_MODE=cmd` both ways. It includes a **negative control**: a complete valid
+conf must pass. They run inside `agentctl gate` and never touch a real service:
+they use `--validar`, which exits before the first side effect.
 
-## Pinos
+## Coverage per project
 
-`scripts/tests/deploy-conf.sh` — 20 asserções sobre conf ausente, chave
-obrigatória faltando, `HEALTH_MODE` inválido, `KEEP_BINARIES < 2`, `BUILD_CMD`
-vazio, e `HEALTH_MODE=cmd` nos dois sentidos. Inclui **controle negativo**: uma
-conf válida e completa tem de passar — pino que só sabe reprovar não mede nada.
+Three projects use this contract and **none of them exercises all of it**:
 
-Rodam dentro do `agentctl gate` (mesmo passo dos invariantes, porque são shell e
-não pacote Go) e **não tocam serviço real**: usam `--validar`, que sai antes do
-primeiro efeito colateral.
-
-## Cobertura por projeto — e o que cada um NÃO cobre
-
-Três projetos usam este contrato, e **nenhum deles o exercita inteiro**. A tabela
-existe porque "o contrato está provado" lido sem ela vira falso-verde por redação:
-alguém supõe que um projeto sozinho cobriu tudo.
-
-| Parte do contrato | painel | lab-agent (08-08) | tl-agent (08-09) |
+| Part of the contract | panel | lab-agent | tl-agent |
 |---|---|---|---|
-| Etapa de **build** | ✅ (no `agentctl`) | ✅ **é o que ele cobre** — Go, no VPS | ❌ **não tem** — é Python |
-| `BUILD_CMD` vazio | ✅ | ✅ (build é passo anterior) | ✅ (não há o que compilar) |
-| Saúde por **URL** | ✅ | ✅ | ❌ |
-| Saúde por **COMANDO** | ❌ | ❌ | ✅ **é o que ele cobre** |
-| Travessia **para outra máquina** | ❌ (local) | ✅ | ✅ |
-| Troca por symlink de **binário** | ✅ | ✅ | ❌ |
-| Troca por symlink de **script** | ❌ | ❌ | ✅ |
-| **Auto-rollback** nos três sinais | — | ✅ | ✅ |
-| `EXTRA_SERVICES` | ❌ (usa `EXTRA_ARTIFACTS`) | ❌ | ✅ (`tl-daemon`) |
-| Backup de estado / drenagem de fila | ✅ | ❌ | ❌ |
+| **Build** step | ✅ (in `agentctl`) | ✅ Go, on the VPS | ❌ Python, nothing to build |
+| Empty `BUILD_CMD` | ✅ | ✅ (build is an earlier step) | ✅ |
+| Health by **URL** | ✅ | ✅ | ❌ |
+| Health by **COMMAND** | ❌ | ❌ | ✅ |
+| Crossing **to another machine** | ❌ (local) | ✅ | ✅ |
+| Symlink swap of a **binary** | ✅ | ✅ | ❌ |
+| Symlink swap of a **script** | ❌ | ❌ | ✅ |
+| **Auto-rollback** on the three signals | — | ✅ | ✅ |
+| `EXTRA_SERVICES` | ❌ (uses `EXTRA_ARTIFACTS`) | ❌ | ✅ (`tl-daemon`) |
+| State backup / queue drain | ✅ | ❌ | ❌ |
 
-**O que NENHUM dos três cobre**, dito com todas as letras: `INV_FILE` fora do
-painel, e `BIN_CHECK_ARG` fora do painel.
+Not covered by any of them: `INV_FILE` and `BIN_CHECK_ARG` outside the panel.
 
-### A limitação de escopo do artefato único
+### Single-artifact scope
 
-O contrato troca **um arquivo** atomicamente (`install -m 0755` no Step 4). Para o
-painel e o `lab-agent` isso é o programa inteiro. Para o `tl-agent` **não é**: o
-artefato trocado é o *entrypoint*, e os arquivos de apoio (`tl_agent.py`,
-`profile.json`, …) viajam pela entrega com hash conferido, mas **ficam fora da
-troca atômica e fora do rollback**.
+The contract swaps **one file** atomically (`install -m 0755`). For the panel and
+`lab-agent` that is the whole program. For `tl-agent` it is only the entrypoint:
+its support files travel with a checked hash but stay **outside the atomic swap
+and the rollback**. A deploy that rolls back restores the previous entrypoint
+while the support files stay on the new version.
 
-Consequência prática, para ninguém descobrir isso no pior momento: um deploy que
-falha e volta sozinho devolve o **entrypoint** anterior, e os arquivos de apoio
-permanecem na versão nova. Quem cobre essa diferença é o
-`deploy/tl-agent/procedencia.sh` (instalado == versionado), não o rollback.
+### `LINK` may live outside `BIN_DIR`
 
-### `LINK` pode morar fora de `BIN_DIR` — mas isso já quebrou uma vez
-
-Até o 08-09, todo projeto tinha o `LINK` dentro do `BIN_DIR`, e o `swap_symlink`
-criava um alvo **relativo** que funcionava por acidente de layout. O `tl-agent`
-tem o `LINK` na raiz e as versões em `versoes/`, e o mesmo código produziu um
-symlink apontando para um irmão inexistente: o serviço subiu, morreu com
-`No such file or directory`, esgotou o `StartLimit` — e, por ser o **primeiro**
-deploy, não havia versão anterior para onde voltar. Corrigido no `swap_symlink`
-(o alvo é resolvido relativo a onde o `LINK` mora) e congelado por pino em
+`swap_symlink` resolves the target relative to where `LINK` lives, so a `LINK` at
+the project root pointing into a versions subdirectory works. A relative target
+computed from `BIN_DIR` would point at a nonexistent sibling; this is pinned in
 `scripts/tests/deploy-conf.sh`.

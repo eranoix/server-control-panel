@@ -240,8 +240,8 @@ What runs on the phone, and why each piece sits where it does.
 
 ### Decisions that are not obvious
 
-**The banner shows the size of what TRAVELS.** "Versão 0.1.7 disponível —
-1,4 MB", never the 31 MB of the reconstructed APK. On a bad connection that
+**The banner shows the size of what TRAVELS.** "Version 0.1.7 available:
+1.4 MB", never the 31 MB of the reconstructed APK. On a bad connection that
 number is the most important information on the screen. Decimal MB (10⁶) — the
 same unit as Android's own Settings and the same as the numbers in this document.
 
@@ -285,7 +285,7 @@ Two traps found on the emulator, both fatal and silent:
    inconsistent with app label`.
 2. When pre-approval fails, the system **destroys the session**. Committing on a
    dead session reports no outcome at all and the banner would hang on
-   "Instalando…" forever. The session is recreated before the commit, and the
+   "Installing…" forever. The session is recreated before the commit, and the
    coordinator has a safety net that turns any unexpected exception into an error
    state with a path to Diagnostics.
 
@@ -318,12 +318,12 @@ divergent hash never reaches the installer"; and one test per rung of the ladder
 End to end on the emulator (Android 16, API 36), twice:
 
 ```
-0.1.6 installed -> banner "Versão 0.1.7 disponível — 4 KB"
+0.1.6 installed -> banner "Version 0.1.7 available: 4 KB"
    -> pre-approval BEFORE the download -> patch 4 803 B -> hpatchz
    -> SHA-256 matches -> installs -> app opens at 0.1.7, session intact  ✅
 
-unknown base -> banner "Versão 0.1.7 disponível — 29,0 MB"
-   -> "Baixando 0.1.7 — 11,6 MB de 29,0 MB" with a progress bar and "Cancelar"
+unknown base -> banner "Version 0.1.7 available: 29.0 MB"
+   -> "Downloading 0.1.7: 11.6 MB of 29.0 MB" with a progress bar and "Cancel"
    -> full (empty base) -> installs -> 0.1.7                             ✅
 ```
 

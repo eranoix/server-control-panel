@@ -2,6 +2,6 @@
   "error": "validation_failed",
   "fields": {
     "name": ["required"],
-    "schedule": ["cron inválido: campo de minuto fora do intervalo 0-59"]
+    "schedule": ["invalid cron: minute field out of range 0-59"]
   }
 }

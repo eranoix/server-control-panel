@@ -1,91 +1,69 @@
 # contracts/sdui/client-support
 
-Manifestos congelados do vocabulário SDUI, um por versionCode de app Android
-**já publicado** no repositório F-Droid próprio.
+Frozen manifests of the SDUI vocabulary, one per versionCode of an Android app
+build **already published** to the project's F-Droid repository.
 
-## Por que isto existe
+## Why this exists
 
-O app é distribuído sem atualização forçada — um build instalado pode ficar
-meses parado enquanto o servidor continua mudando. SDUI (mandar UI nova sem
-lançamento de app novo) é exatamente o mecanismo que remove o erro de
-compilação que normalmente pegaria uma mudança de contrato incompatível com
-um build antigo. Cada arquivo aqui é uma fotografia do que um app já em campo
-sabe interpretar; `cmd/sdui-compat check` compara o contrato/fixtures atuais
-do servidor contra CADA fotografia e falha o CI se alguma deixar de valer.
+The app has no forced updates, so an installed build can stay on a device for
+months while the server keeps changing. SDUI removes the compile error that would
+normally catch a contract change incompatible with an old build. Each file here is
+a snapshot of what an app in the field can interpret; `cmd/sdui-compat check`
+compares the server's current contract and fixtures against EVERY snapshot and
+fails CI if any of them stops holding.
 
-Sem estes manifestos, uma mudança que remove um campo obrigatório, muda um
-tipo, ou reduz um enum passaria despercebida em CI e só apareceria como tela
-quebrada na mão de um usuário com o app desatualizado — o pior lugar possível
-para descobrir.
+## When to freeze a new manifest
 
-## Quando congelar um manifesto novo
-
-Toda vez que um build do app Android é **publicado** no repositório F-Droid
-(pipeline da Fase 12), rode:
+Every time an Android build is **published** to the F-Droid repository, run:
 
 ```
 go run ./cmd/sdui-compat freeze -version <versionCode>
 ```
 
-usando o `versionCode` exato do build publicado (o mesmo número que vai no
-`AndroidManifest.xml`/`build.gradle` daquele build). Isto grava
-`android-<versionCode>.json` — o Contract gerado pelo servidor NO MOMENTO do
-freeze, ou seja, o vocabulário que aquele build específico foi testado
-contra. Faça isto como parte do processo de publicação, não depois.
+with the exact `versionCode` of the published build. This writes
+`android-<versionCode>.json`, the Contract the server generates at freeze time,
+i.e. the vocabulary that build was tested against. Do it as part of publishing.
 
-## Por que é append-only
+## Append-only
 
-Um manifesto congelado descreve um app build que já existe no mundo —
-sobrescrevê-lo é falsificar histórico: qualquer mudança de servidor feita
-depois daquele build ser publicado deixaria de ser checada contra o
-vocabulário real que ele conhece. `freeze` se recusa a sobrescrever um
-arquivo já existente a menos que `-force` seja passado explicitamente — e
-`-force` não deveria ser usado, exceto para corrigir um freeze
-comprovadamente errado antes de qualquer outro commit depender dele.
+A frozen manifest describes a build that exists in the world; overwriting it
+would stop later server changes from being checked against what that build really
+knows. `freeze` refuses to overwrite an existing file unless `-force` is passed,
+and `-force` is only for fixing a provably wrong freeze before anything depends
+on it. Never delete a manifest once its build was published: without forced
+updates there is no guarantee nobody still has it installed.
 
-Nunca apague um manifesto congelado depois que um build correspondente foi
-publicado, mesmo que aquele build tenha parado de ser distribuído — sem
-atualização forçada, não há garantia de que ninguém mais o tem instalado.
-
-## Como ler uma falha de `check`
+## Reading a `check` failure
 
 ```
 android-42:
-  [breaking] table.components[0]: contracts/sdui/fixtures/screens/x.admin.json: componente 0 tem type="table" mas falta o campo obrigatório "rows_source" que o manifesto congelado exige
-  -> 1 quebrando, 0 nota(s)
+  [breaking] table.components[0]: contracts/sdui/fixtures/screens/x.admin.json: component 0 has type="table" but is missing the required field "rows_source" that the frozen manifest requires
+  -> 1 breaking, 0 note(s)
 
-sdui-compat check: FALHOU — pelo menos um manifesto congelado (app já publicado
-em campo) não sobrevive à mudança atual do servidor. Corrija o campo/tipo
-apontado acima ou reverta a mudança antes de mergear.
+sdui-compat check: FAILED: at least one frozen manifest (an app already
+published) does not survive the current server change. Fix the field/type
+reported above or revert the change before merging.
 ```
 
-A primeira linha nomeia: o manifesto congelado afetado (`android-42`, ou
-seja, o versionCode publicado), o tipo/objeto de componente, e o
-campo/detalhe exato. Duas saídas possíveis:
+The first line names the affected manifest (the published versionCode), the
+component type or object, and the exact field. Two ways out:
 
-- **A mudança era mesmo incompatível** — reverta-a, ou proteja-a atrás de um
-  `sdui_version` novo que apps antigos ignoram por desenho.
-- **A mudança é aceitável e o app antigo nunca vai precisar deste campo** —
-  isso não deveria acontecer para uma mudança classificada `breaking` (a
-  classificação em `internal/mobilebff/sdui/compat.go` já assume a postura
-  conservadora: remoção/enfraquecimento de algo que o app antigo depende é
-  sempre quebra). Se a classificação parecer errada, o bug está no
-  classificador, não no gate — corrija `Compat`/`FixtureRenderable`, não
-  ignore a falha.
+- **The change really is incompatible:** revert it, or put it behind a new
+  `sdui_version` that old apps ignore by design.
+- **The change looks acceptable:** a `breaking` classification already assumes
+  the conservative stance (removing or weakening something an old app depends on
+  is always breaking; see `internal/mobilebff/sdui/compat.go`). If it looks wrong,
+  the bug is in the classifier (`Compat`/`FixtureRenderable`), not in the gate;
+  do not ignore the failure.
 
-Um `[note]` (ex.: `field_added_required`) não falha o CI — é um aviso de que
-um campo novo obrigatório foi adicionado ao contrato atual sem existir em
-nenhum manifesto congelado; o app antigo nunca vai enviar/depender dele, mas
-vale revisar se o servidor lida bem com a ausência dele vindo de um cliente
-antigo.
+A `[note]` (e.g. `field_added_required`) does not fail CI: a new required field
+was added that no frozen manifest has. Old apps never send it, so check that the
+server copes with its absence.
 
-## Limite conhecido: RBAC binário, não por linha
+## Known limit: binary RBAC, not per row
 
-O harness dourado (`internal/mobilebff/sdui/golden.go` +
-`golden_test.go`) só distingue dois papéis: admin e não-admin. Ele prova que
-uma tela não vaza conteúdo admin-only para um viewer não-admin, mas não
-consegue expressar autorização por posse de recurso individual (ex.: "o
-usuário X só vê SUAS próprias linhas da tabela Y") — isso exigiria um golden
-por identidade de recurso, não por papel, o que este harness não modela.
-Telas que precisam desse tipo de filtro precisam de teste de autorização
-próprio, adicional a este harness.
+The golden harness (`internal/mobilebff/sdui/golden.go` + `golden_test.go`) only
+knows two roles, admin and non-admin. It proves a screen does not leak admin-only
+content to a non-admin viewer, but it cannot express per-resource authorization
+("user X only sees their own rows"). Screens that need that kind of filter need
+their own authorization test.

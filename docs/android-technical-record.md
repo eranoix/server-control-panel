@@ -293,10 +293,10 @@ produces *ten* grid-size changes — one per animation frame — and another ten
 close:
 
 ```
-resize do cliente: 67x46 -> 67x42
-resize do cliente: 67x42 -> 67x39
+client resize: 67x46 -> 67x42
+client resize: 67x42 -> 67x39
 ... 39, 38, 36, 35, 34, 33, 32
-resize do cliente: 67x31 -> 67x30
+client resize: 67x31 -> 67x30
 ```
 
 Each one becomes a `SIGWINCH`, and a differential renderer (Ink, from Claude
@@ -314,7 +314,7 @@ That last one deserves its own note. The wobble shrank the grid to force the
 repaint, and shrank `Cols: c / 2` along with it. The service log records:
 
 ```
-[pty] repaint-wobble no attach: 49x37 → 24x18 → 49x40 (sessão "Aplicativo")
+[pty] repaint-wobble on attach: 49x37 → 24x18 → 49x40 (session "App")
 ```
 
 24 columns is exactly the width of the squeezed text in the screenshot the
@@ -322,7 +322,7 @@ owner sent, and the timestamp matches. Width is **content**, not screen
 geometry: dropping to 24 columns made the program re-render the whole
 conversation wrapped at 24, and coming back re-rendered everything again at 49
 — both versions stay. Worse: all of this was written into the session log, so
-**every future attach re-emitted that garbage**. The "Aplicativo" log had 68
+**every future attach re-emitted that garbage**. The "App" log had 68
 stretches of width 24 and 49 of width 23, sediment from old wobbles that no
 terminal can reflow afterwards (the break is the program's own `\r\n`, not
 terminal wrapping).
@@ -336,7 +336,7 @@ shows up for me any more"*.
 navigation transition the measurement arrives wrong (`1080x1621px` mid
 transition, 5 samples out of 5) — and a maximum keeps an error forever.
 
-**Fix:** `GeometriaDaGrade` became an `object` with **no state at all**. The
+**Fix:** `GridGeometry` became an `object` with **no state at all**. The
 full height is `height + max(0, ime − navigationBar)`, recomputed every frame.
 Memory was the defect; the absence of it is the fix.
 
@@ -455,7 +455,7 @@ restart the same container twice — and the app would have promised, on screen,
 that the action was saved.
 
 **Fix:** `enfileirar` now **requires** the caller to declare the proof
-(`ProvaDeIdempotencia`), **with no default value**. A default would make the
+(`IdempotencyProof`), **with no default value**. A default would make the
 question skippable, which is exactly how an action becomes a duplicate. Honest
 and recorded consequence: today the queue can only carry the WhatsApp send;
 opening it up to the rest is a **server** change, not a client one.
@@ -606,14 +606,14 @@ of truth (Room) plus `WorkManager` — that is what Google's official guide and
 of that pattern: an HTTP cache for reads, a queue for writes. It is stated here
 so it is not read as more than it is.
 
-**Reads — the cache.** `CacheDeLeitura` installs a 24 MiB disk cache in OkHttp
+**Reads — the cache.** `ReadCache` installs a 24 MiB disk cache in OkHttp
 and covers **all 72 routes at once**, because it acts on the HTTP client and not
 screen by screen. There are two interceptors, and the split matters:
 
 | piece | type | what it does |
 |---|---|---|
-| `TornaCacheavel` | **network** interceptor | rewrites the response's `Cache-Control` so it can be stored; honours `no-store`; stamps the time |
-| `ServeDoCacheQuandoAFalta` | **application** interceptor | on `IOException`, repeats the request with `onlyIfCached` + `maxStale` |
+| `MakeCacheable` | **network** interceptor | rewrites the response's `Cache-Control` so it can be stored; honours `no-store`; stamps the time |
+| `ServeFromCacheWhenOffline` | **application** interceptor | on `IOException`, repeats the request with `onlyIfCached` + `maxStale` |
 
 Rewriting in the network interceptor is not a detail: by the application
 interceptor it is already too late, the response no longer passes through the
@@ -624,7 +624,7 @@ response. Without a network, seven days. The cache is wiped on *sign-out*.
 screen starts claiming, with the same face as always, that the disk is at 78% —
 when that number may be six hours old and the disk may already be full. **Stale
 data with no label is worse than an error screen**, because an error screen
-never stops anyone from acting. `FaixaDeOffline` appears only when there is no
+never stops anyone from acting. `OfflineBanner` appears only when there is no
 **validated** network (`NET_CAPABILITY_VALIDATED`, which distinguishes "there is
 an interface" from "the internet works"), and it says how long ago the last
 server response was. The stamp comes from the network interceptor — the only
@@ -635,7 +635,7 @@ precise than what is actually known.
 
 **Writes — the queue.** A cache serves a stored response; a write has no
 response to store, and serving a `POST` from cache would be inventing that
-something happened. They are different mechanisms by nature. `FilaDeEnvio` is
+something happened. They are different mechanisms by nature. `Outbox` is
 an *outbox*: the action is written to disk and drained by a `CoroutineWorker`
 with a network constraint — `WorkManager` because the action has to survive the
 app closing and the device rebooting. FIFO with unique chained work, because
@@ -742,7 +742,7 @@ is the launcher:
 |---|---|
 | launcher | adaptive card grid (minimum 112 dp, height 128 dp), with a search field and recent sections at the top |
 | command palette | bottom sheet with automatic focus (toolbar button or `Ctrl+K`), to reach any section without going back to the launcher |
-| search | `filtrarSecoes`, **a single** implementation used by both — two would disagree about what a term finds |
+| search | `filterSections`, **a single** implementation used by both — two would disagree about what a term finds |
 | recents | last six sections, by id, in `SharedPreferences` |
 
 A deep link still beats everything: a notification pointing at
@@ -753,9 +753,9 @@ would reopen the section the person just closed. The seven points are pinned by
 an invariant in the deploy gate.
 
 The card height is 128 dp and not 108 because three real labels wrap onto two
-lines (`Imagens do Docker`, `Serviços (systemd)`, `Aparelhos (VLESS)`); and the
+lines (`Docker images`, `Services (systemd)`, `Devices (VLESS)`); and the
 group name is still spelled out in full because the initial does not
-disambiguate — `Sistema` and `Segurança` are both `S`.
+disambiguate — `System` and `Security` are both `S`.
 
 `GET /screens` lists what the server offers — **25 reachable screens** — and
 `GET /screens/{id}` returns the screen as a component tree that `:sdui` draws in
@@ -833,7 +833,7 @@ divider.
 
 ### 9.9 Diagnostics
 
-The `diagnostico` route, with no drawer entry: it is the destination of the
+The `diagnostic` route, with no drawer entry: it is the destination of the
 "Diagnostics" button on the update banner. It shows initialization failures, the
 previous process *crash* and the history of update failures — full text,
 selectable.
@@ -895,7 +895,7 @@ grid painted over the rest of the screen).
   the occasional controls out of the main column.
 - `PendingModifiers`: sticky modifiers (tap `Ctrl`, then the letter).
 - `HardwareKeyHandler`: physical Bluetooth/USB keyboard, including Ctrl/Alt.
-- `RoteamentoDeToque` / `MouseReportGestureController`: when the remote program
+- `TouchRouting` / `MouseReportGestureController`: when the remote program
   **turns on mouse reporting** (DECSET 1000/1002/1006), a touch becomes a mouse
   event; otherwise, local scrolling. What decides is the real mode reported by
   the engine, never a guess.
@@ -914,8 +914,8 @@ See §5.1–5.3 for the story. The current state:
    The value covers Android's IME animation (~200 ms; the Material spec calls
    for 250 ms on large transitions) without noticeably delaying a screen
    rotation.
-2. **The grid does not shrink with the keyboard.** `GeometriaDaGrade` is a
-   stateless `object`: `alturaSemTeclado = height + max(0, ime − navigationBar)`,
+2. **The grid does not shrink with the keyboard.** `GridGeometry` is a
+   stateless `object`: `heightWithoutKeyboard = height + max(0, ime − navigationBar)`,
    recomputed every frame. The exact subtraction comes from the `AppNavHost`
    inset chain (`padding` → `consumeWindowInsets` → `imePadding`), which makes
    the correction exact rather than heuristic.
@@ -925,7 +925,7 @@ See §5.1–5.3 for the story. The current state:
    without re-measuring, and pointer coordinates follow the placement, so hit
    testing needs no correction.
 
-**`LinhasVisiveis`** inverts the question: instead of picking the font size and
+**`VisibleRows`** inverts the question: instead of picking the font size and
 counting how many lines fit, you pick the number of lines (auto/24/30/36/45/60)
 and the app **derives** the size by search — largest to smallest, returning the
 first one that actually fits. It is a search and not a division because cell
@@ -944,9 +944,9 @@ attached.**
 ```
 GET /api/mobile/v1/terminal/log-bruto?name=<session>&bytes=<cap>
       ↓  raw PTY bytes, in base64
-  TerminalRepository.logBruto()     (decodes off the main thread)
+  TerminalRepository.rawLog()     (decodes off the main thread)
       ↓
-  TerminalViewModel.iniciarPrimer()
+  TerminalViewModel.startPrimer()
       ↓  writes into libghostty-vt in 256 KiB chunks, yielding
   scrollback ready  →  releases the live stream that was held back
 ```
@@ -981,9 +981,9 @@ Details that hold this up:
   | log | profile | bytes per rendered line |
   |---|---|---:|
   | `main.log` | shell | 244 B |
-  | `Servidor.log` | mixed | 400 B |
+  | `Server.log` | mixed | 400 B |
   | `Vpsm.log` | mixed | 667 B |
-  | `Aplicativo.log` | Claude Code | 1,250 B |
+  | `App.log` | Claude Code | 1,250 B |
 
   A five-fold spread. An average ratio would leave precisely the conversation
   session — the one you want to reread — half as long as it should be. On the

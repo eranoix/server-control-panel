@@ -1,41 +1,35 @@
-# Configuração do Prometheus / Alertmanager / Grafana
+# Prometheus / Alertmanager / Grafana configuration
 
-**Estes arquivos são a fonte da verdade.** O que está no ar é uma cópia deles em
-`/opt/projetos/vpsmanager/deploy/observability/`, que **não é um repositório
-git** — até 2026-09-07 as regras de alerta desta VPS existiam só ali, sem
-histórico, sem cópia e sem revisão. Uma regra apagada por engano não teria como
-ser recuperada.
+These files are the source of truth. The running stack uses a copy of them in a
+directory on the host that is not under version control, so every change is made
+here first and then copied over.
 
-## Publicar uma mudança
+## Publishing a change
 
-```bash
-bash scripts/publicar-observabilidade.sh
-```
+Copy the files to the live directory and **recreate** the Prometheus container
+(`docker compose up -d --force-recreate prometheus`). Recreating is required:
 
-O script copia daqui para o diretório vivo e **recria** o container do
-Prometheus. Recriar não é zelo excessivo:
+> The rules file is a **file bind mount**. An editor that writes and renames
+> swaps the inode, and the container keeps seeing the old file.
+> `POST /prometheus/-/reload` returns **HTTP 200 and loads nothing**. Only
+> recreating the container redoes the mount.
 
-> O arquivo de regras é **bind mount de ARQUIVO**. Editor que escreve-e-renomeia
-> troca o inode, e o container continua enxergando o arquivo antigo. O
-> `POST /prometheus/-/reload` devolve **HTTP 200 e não carrega nada** — foi
-> medido. Só recriar o container refaz o mount.
+After publishing, check that the container reports as many alert rules as the
+file defines.
 
-O script confere, depois de publicar, que o container está mesmo vendo o número
-de alertas que o arquivo tem.
+## What lives here
 
-## O que mora aqui
-
-| arquivo | o quê |
+| file | what |
 |---|---|
-| `prometheus.yml` | scrape targets e onde ficam as regras |
-| `prometheus-rules.yml` | os alertas — três grupos: `vpsmanager`, `host`, `containers` |
-| `alertmanager.yml` | roteamento; o único receptor é o webhook de loopback do próprio vps-manager (`/_internal/alert`), sem segredo nenhum |
+| `prometheus-rules.yml` | the alerts, in three groups: `vpsmanager`, `host`, `containers` |
+| `alertmanager.yml` | routing; the only receiver is the panel's own loopback webhook (`/_internal/alert`), with no secret |
 | `docker-compose.yml` | prometheus, grafana, node-exporter, cadvisor, alertmanager |
 
-## Alertas de swap
+## Swap alerts
 
-Os três alertas de swab existem por causa de um incidente real: o swap chegou a 100% e
-nenhuma regra viu, porque `HostMemoryLow` olha `MemAvailable` (que estava
-folgado) e `ContainerMemoryNearLimit` só dispara acima de 90% do limite (o
-culpado estava em 56% dele justamente por poder despejar o resto no swap). Ver
-`docs/infra-swap-e-limites-de-container.md`.
+`HostMemoryLow` looks at `MemAvailable` and `ContainerMemoryNearLimit` only fires
+above 90% of a container's limit, so neither sees a full swap: RAM can be
+plentiful, and a container started with `--memory` but no `--memory-swap` may
+fill swap while staying well under its limit. The three swap alerts
+(`HostSwapAlmostFull`, `HostSwapParado`, `HostSwapThrashing`) plus
+`ContainerSwapHeavy` cover that case.
