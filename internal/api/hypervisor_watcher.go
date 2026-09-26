@@ -162,7 +162,7 @@ func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
 				Title:    "Home hypervisor is back",
 				Body: fmt.Sprintf(
 					"WHAT: the panel can reach the home hypervisor again.\n"+
-						"WHERE: %s (seen from the VPS, over the tailnet).\n"+
+						"WHERE: %s (as seen from the panel's server).\n"+
 						"HOW LONG IT WAS DOWN: %s.\n"+
 						"WHAT TO CHECK NOW: whether any guest failed to come back up, and whether the "+
 						"overnight backup ran.",
@@ -195,7 +195,7 @@ func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
 		Body: fmt.Sprintf(
 			"WHAT: the panel can no longer talk to the home hypervisor — %d cycles "+
 				"in a row failed.\n"+
-				"WHERE: %s, seen from the VPS over the tailnet.\n"+
+				"WHERE: %s, as seen from the panel's server.\n"+
 				"SINCE: %s (%s ago).\n"+
 				"WHY THIS IS SERIOUS: while it is down, the panel cannot power on, power off "+
 				"or open a console on any guest — and the alarm that lives ON the hypervisor cannot "+

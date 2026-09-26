@@ -47,22 +47,6 @@ var knowledgeGraphs = map[string]graphViews{
 		"/opt/panel/graphify-out/graph.html",
 		"/opt/panel/graphify-out/server-control-panel-callflow.html",
 	},
-	"northwind-web": {
-		"/root/projects/northwind-web/graphify-out/graph.html",
-		"/root/projects/northwind-web/graphify-out/northwind-web-callflow.html",
-	},
-	"acme-booking": {
-		"/root/projects/acme-booking/graphify-out/graph.html",
-		"/root/projects/acme-booking/graphify-out/acme-booking-callflow.html",
-	},
-	"private-ai-api": {
-		"/opt/private-ai-api/graphify-out/graph.html",
-		"/opt/private-ai-api/graphify-out/private-ai-api-callflow.html",
-	},
-	"claude-router": {
-		"/opt/claude-router/graphify-out/graph.html",
-		"/opt/claude-router/graphify-out/claude-router-callflow.html",
-	},
 	"hub": {
 		"/opt/panel/data/knowledge/hub/graphify-out/graph.html",
 		"/opt/panel/data/knowledge/hub/graphify-out/hub-callflow.html",

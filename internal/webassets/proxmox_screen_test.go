@@ -16,7 +16,7 @@ import (
 //
 // `scripts/test-proxmox-tab.mjs` had 300+ assertions about the Proxmox tab and
 // was NOT invoked by anything: not the Makefile, not a hook, not the
-// `agentctl deploy` gate. A pin that only runs when somebody remembers to run it
+// pre-deploy test gate. A pin that only runs when somebody remembers to run it
 // is not a guard — it is executable documentation nobody executes. That is
 // exactly why it stayed green while the tab opened BLACK in production: nobody
 // had run it.

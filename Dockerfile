@@ -5,9 +5,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-# `make build` is deliberately not used: it runs a Tailwind step that needs a
-# toolchain binary which is not versioned, so it cannot work from a fresh clone.
-# The committed CSS is what the binary embeds either way.
+# Only the server binary is needed here; the committed tailwind.css is what it
+# embeds, so no front-end tooling runs in the image.
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server-control-panel ./cmd/server
 
 FROM alpine:3.20

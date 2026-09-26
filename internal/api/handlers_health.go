@@ -3,7 +3,7 @@ package api
 // handlers_health.go — health/readiness/diagnostics + handleConfig + TLS cert
 //
 // Covers:
-//   - handleHealth (/api/health, public; the basis of deploy.sh's auto-rollback)
+//   - handleHealth (/api/health, public; what a health-gated deploy checks before keeping a new binary)
 //   - handleHealthDetailed (/api/health/detailed, admin only)
 //   - handlePanelHealth (/api/panel-health, info about the running binary)
 //   - readCertExpiry + tlsMode (TLS helpers)
@@ -154,7 +154,7 @@ func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
 	// If the symlink becomes circular or broken (see migrate.go), the CURRENT router stays
 	// alive on the cached key, but the NEXT restart takes it down. Detecting it here fires
 	// the alert BEFORE that. Degraded by design: it NEVER sets ok=false -- otherwise a
-	// broken env would revert EVERY deploy (deploy.sh is health-gated + auto-rollback).
+	// broken env would revert EVERY health-gated deploy.
 	checks["claude_router_env"] = cr.EnvIntegrity()
 	// 9. Supabase/GoTrue — the auth backend. If it goes down, login fails silently.
 	// A FAIL here TAKES overall health down (ok=false) because without auth there is no system.
@@ -343,7 +343,7 @@ func (r *Router) handleHealthDetailed(w http.ResponseWriter, _ *http.Request) {
 // AND of every subsystem) — deliberately different from /api/health's
 // semantics, which ignores certain informational checks (fllr, gmail, ...)
 // so as not to take the deploy health-gate down; the mobile ops screen is
-// not consulted by deploy.sh, so it can afford to be stricter.
+// not consulted by a deploy, so it can afford to be stricter.
 func (r *Router) healthDetailedSnapshot() (ok bool, checks map[string]string) {
 	subs := r.computeHealthSubsystems()
 	checks = make(map[string]string, len(subs))

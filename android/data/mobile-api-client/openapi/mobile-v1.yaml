@@ -4138,7 +4138,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Triggers the agentctl deploy pipeline (primary only, confirmation required)
+      summary: Triggers the configured deploy command (primary only, confirmation required)
       tags:
         - mobile
         - ops

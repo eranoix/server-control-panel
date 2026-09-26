@@ -351,7 +351,7 @@ func generateSelfSigned(certPath, keyPath string) error {
 }
 
 // runChecks performs the same critical-path validations the server does at
-// boot, WITHOUT actually starting to serve. Lets `scripts/deploy.sh` reject
+// boot, WITHOUT actually starting to serve. Lets a deploy script reject
 // a broken binary before swapping it in. Returns nil if everything looks ok.
 func runChecks() error {
 	cfg, err := config.Load()

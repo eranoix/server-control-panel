@@ -35,9 +35,9 @@ sealed interface DeployTriggerUiState {
 
     /**
      * A job id exists and this screen is subscribed to `deploy.<jobId>`. [phase] starts at
-     * `"queued"` the instant the trigger call returns — `agentctl deploy`'s `flock -w 600` gives
-     * no intermediate signal while a prior deploy holds the lock, so a job can sit queued with
-     * zero events for up to 10 minutes. Rendering `"queued"` explicitly (rather than a bare
+     * `"queued"` the instant the trigger call returns. A deploy command that waits on a lock held
+     * by a prior deploy gives no intermediate signal, so a job can sit queued with zero events
+     * for minutes. Rendering `"queued"` explicitly (rather than a bare
      * spinner) is what keeps that wait from reading as a frozen screen; `phase` only moves to
      * `"running"` once the first `status` event actually arrives.
      */

@@ -8,25 +8,21 @@ import (
 	"testing"
 )
 
-// writeStubAgentctl drops a fake `agentctl` executable (shell script) into a
-// fresh temp dir and returns that dir, so the caller can prepend it to PATH.
-// The stub prints three deterministic lines and exits with exitCode,
-// standing in for the real `agentctl deploy` pipeline — this test never
-// invokes the real one.
-func writeStubAgentctl(t *testing.T, exitCode int) string {
+// useStubDeployCommand points DeployCommandEnv at a script that prints
+// three deterministic lines and exits with exitCode, so no test here ever
+// runs a real deploy.
+func useStubDeployCommand(t *testing.T, exitCode int) {
 	t.Helper()
-	dir := t.TempDir()
 	script := "#!/bin/sh\necho stub-line-1\necho stub-line-2\necho stub-line-3\nexit " + strconv.Itoa(exitCode) + "\n"
-	path := filepath.Join(dir, "agentctl")
+	path := filepath.Join(t.TempDir(), "deploy")
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return dir
+	t.Setenv(DeployCommandEnv, path)
 }
 
 func TestSelfDeployRunnerSuccess(t *testing.T) {
-	dir := writeStubAgentctl(t, 0)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useStubDeployCommand(t, 0)
 
 	q := newTmpQueue(t)
 	q.Register(SelfDeployRunner{})
@@ -54,8 +50,7 @@ func TestSelfDeployRunnerSuccess(t *testing.T) {
 }
 
 func TestSelfDeployRunnerFailure(t *testing.T) {
-	dir := writeStubAgentctl(t, 1)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useStubDeployCommand(t, 1)
 
 	q := newTmpQueue(t)
 	q.Register(SelfDeployRunner{})
@@ -88,5 +83,21 @@ func TestSelfDeployRunnerPrimaryOnly(t *testing.T) {
 	}
 	if !r.AuthorizedFor("alice", true) {
 		t.Error("self_deploy should allow primary")
+	}
+}
+
+func TestSelfDeployRunnerUnconfigured(t *testing.T) {
+	t.Setenv(DeployCommandEnv, "")
+
+	q := newTmpQueue(t)
+	q.Register(SelfDeployRunner{})
+
+	j, err := q.Enqueue("self_deploy", nil, "sam", "mobile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	final := waitFor(t, q, j.ID, StatusFailed)
+	if !strings.Contains(final.Error, DeployCommandEnv) {
+		t.Errorf("the error should name %s, got: %s", DeployCommandEnv, final.Error)
 	}
 }

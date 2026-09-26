@@ -476,7 +476,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 		register(queue.GitPullRunner{})                                    // git pull de um repo
 		register(queue.AptUpdateCheckRunner{})                             // report of upgradable packages
 		register(queue.RebootRunner{})                                     // reboot the server
-		register(queue.SelfDeployRunner{})                                 // agentctl deploy triggered from the mobile app
+		register(queue.SelfDeployRunner{})                                 // deploy of this server triggered from the mobile app
 		register(queue.DBBackupRunner{DataDir: cfg.DataDir})               // postgres/mysql database dump
 		register(queue.WatchdogRunner{DataDir: cfg.DataDir})               // #46: watchdog de disco + backup
 		register(queue.SessionBackupRunner{Backup: r.runSessionBackupJob}) // schedulable session backup (per session/all, per user)

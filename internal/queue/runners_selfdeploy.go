@@ -6,45 +6,50 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 )
 
-// SelfDeployRunner is the "self_deploy" job kind: it shells out to the
-// existing `agentctl deploy` pipeline (gate -> converge canon -> check
-// invariants -> build -> health-gated deploy w/ auto-rollback -> live
-// invariant verify -> advance/propagate canon) so a deploy of server-control-panel's
-// own binary can be triggered remotely without reimplementing any of that
-// safety machinery — this runner never touches scripts/deploy.sh directly
-// and never re-derives the deploy steps itself.
-//
-// No fields: agentctl resolves its own repo root/coord paths (PANEL_ROOT env
-// var, default /opt/panel) — there is nothing for the caller to inject.
+// DeployCommandEnv names the environment variable holding the command a
+// self_deploy job runs, through `sh -c`, as the user the server runs as.
+// Whatever it points at owns the whole pipeline (build, health gate,
+// rollback); this runner only starts it and streams its output.
+const DeployCommandEnv = "PANEL_DEPLOY_COMMAND"
+
+// SelfDeployRunner is the "self_deploy" job kind: it redeploys this server's
+// own binary by running the operator's deploy command (see DeployCommandEnv),
+// so a deploy can be triggered from the mobile app without reimplementing any
+// of that command's safety checks here. With the variable unset the job fails
+// with an explanation instead of guessing a command.
 //
 // This is a completely separate job kind from "app_deploy"
 // (AppDeployRunner, runners_deploy.go), which deploys OTHER PaaS-hosted apps
-// through internal/deploy — self_deploy must never import or reference that
+// through internal/deploy; self_deploy must never import or reference that
 // package or runner.
 type SelfDeployRunner struct{}
 
 func (SelfDeployRunner) Kind() string { return "self_deploy" }
 
 // AuthorizedFor: primary-only, the same RBAC tier as every other
-// system-mutating runner (RebootRunner, AptUpgradeRunner, ...) — a deploy
-// restarts the running binary.
+// system-mutating runner (RebootRunner, AptUpgradeRunner, ...), because a
+// deploy restarts the running binary.
 func (SelfDeployRunner) AuthorizedFor(_ string, isPrimary bool) bool { return isPrimary }
 
 func (SelfDeployRunner) Run(ctx context.Context, _ json.RawMessage, logW io.Writer, progress func(int), step func(string)) error {
-	step("agentctl deploy")
-	// tail keeps only the last few lines of combined output so a failure's
-	// job.Error carries a useful summary without duplicating the entire
-	// (already-streamed) log there.
+	command := strings.TrimSpace(os.Getenv(DeployCommandEnv))
+	if command == "" {
+		return fmt.Errorf("self deploy is not configured: set %s to the command that builds and deploys this server", DeployCommandEnv)
+	}
+	step("deploy")
+	// Only the last lines go into job.Error: the full output is already in
+	// the streamed log, and the error should read as a summary.
 	tail := newTailBuffer(40)
 	out := io.MultiWriter(logW, tail)
-	fmt.Fprintln(out, "$ agentctl deploy")
-	cmd := exec.CommandContext(ctx, "agentctl", "deploy")
+	fmt.Fprintln(out, "$ "+command)
+	cmd := exec.CommandContext(ctx, "sh", "-c", command)
 	if err := streamCommand(ctx, cmd, out, progress); err != nil {
-		return fmt.Errorf("agentctl deploy: %w\n--- last lines ---\n%s", err, tail.String())
+		return fmt.Errorf("deploy command: %w\n--- last lines ---\n%s", err, tail.String())
 	}
 	return nil
 }

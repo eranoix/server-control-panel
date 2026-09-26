@@ -14799,11 +14799,7 @@
                  style="top: var(--section-top, 52px)"
                  x-data="{ gp:'server-control-panel', gview:'force', graphs:[
                     {g:'Own apps', items:[
-                       {v:'server-control-panel', n:'server-control-panel'},
-                       {v:'northwind-web', n:'northwind-web'},
-                       {v:'acme-booking', n:'acme-booking'},
-                       {v:'private-ai-api', n:'private-ai-api'},
-                       {v:'claude-router', n:'claude-router'}]},
+                       {v:'server-control-panel', n:'server-control-panel'}]},
                     {g:'Hub', items:[{v:'hub', n:'Cross-repo hub (all projects)'}]}
                  ] }">
           <div class="flex items-center justify-between mb-2 gap-3">
@@ -14846,7 +14842,7 @@
         </section>
 
         <!-- VSCODE — native code-server served gated at /_code (mustPrimary).
-             Full VSCode running on the VPS: the terminal is a REAL shell (agentctl/panelctl/
+             Full VSCode running on the VPS: the terminal is a REAL shell (panelctl/
              git/deploy), direct access to the project filesystem + worktrees.
              KEEP-ALIVE iframe: it mounts on the 1st visit (lazy via codeMounted —
              no spurious fetch/401 on the other tabs) and NEVER unmounts again. Leaving the tab

@@ -440,7 +440,7 @@ func handleDeployAppCreate(deps MiscDeps) sdui.ActionHandler {
 // handleDeployAppRedeploy implements deploy.app.redeploy. params["id"] is the
 // row's app name. Enqueues a new deploy via deps.TriggerRedeploy (which
 // mirrors enqueueDeploy — internal/queue's "app_deploy" job kind, never
-// agentctl deploy/this process's own self-deploy job).
+// this process's own self-deploy job).
 func handleDeployAppRedeploy(deps MiscDeps) sdui.ActionHandler {
 	return func(_ context.Context, v sdui.Viewer, params map[string]string, _ json.RawMessage) (sdui.ActionResult, error) {
 		name := params["id"]

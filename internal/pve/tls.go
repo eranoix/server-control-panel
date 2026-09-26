@@ -15,7 +15,7 @@ package pve
 // Why pin instead of trusting the system pool: the hypervisor's certificate is
 // issued by the cluster's own CA (CN=Proxmox Virtual Environment), which is in
 // no pool at all. And its SAN lists IP:192.168.1.10 — an obsolete address —
-// while the host lives at 192.168.100.50 (LAN) and 198.51.100.20 (tailnet).
+// while the host is reached at another LAN address and over a VPN.
 // That is why the dial goes to the IP (Resolve) while the verification stays
 // against the NAME (ServerName), exactly as the `curl --resolve --cacert`
 // already proved live.

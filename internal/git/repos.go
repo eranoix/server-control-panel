@@ -24,9 +24,8 @@ func defaultRepos() []config.GitRepo {
 		// server-control-panel: fully writable at the user's request. Personal identity
 		// (it matches the northwind-dev remote and the history). Safety against clashing
 		// with the deploy flow: the writes use withRepoWriteLock (mutex +
-		// flock .git/panel-git.lock + an index.lock check) and the commits land
-		// on refactor/foundation itself (canon), which `agentctl deploy`
-		// converges — so it neither diverges nor clobbers.
+		// flock .git/panel-git.lock + an index.lock check), so a commit from the
+		// panel never interleaves with one made by a deploy running at the same time.
 		{ID: "server-control-panel", Path: "/opt/panel", Name: "Server Control Panel", Policy: policyWrite,
 			ExpName: "northwind-dev", ExpEmail: "sam.rivera@personal.example"},
 		{ID: "northwind-web", Path: "/root/projects/northwind-web", Name: "Northwind Web",

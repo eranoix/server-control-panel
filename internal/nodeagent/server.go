@@ -205,27 +205,14 @@ func respond(w http.ResponseWriter, code int, body any) {
 // filter protects the data; it does not protect the surface. With an explicit
 // listener, the port simply does not exist outside the two addresses.
 //
-// ⚠️ THIS DECISION INVERTS THE PROJECT'S OWN RULE FOR THIS CASE.
+// Why not bind to a VPN interface such as tailscale0: the game guests are not
+// on the VPN, joining it would need /dev/net/tun and a reboot on each of them,
+// and the VPN is an administration path, not a data path. Coupling game traffic
+// to it would bring back the single-tunnel failure mode the design rejects.
 //
-// The old rule stays recorded here ALONGSIDE the new one, never in its place
-// (the precedent set the last time a decision of this kind was revised). The
-// rule says: "HTTP over the Tailscale interface (100.x), never 0.0.0.0". Three
-// measured facts win for this case:
-//
-//  1. The precedent the rule ITSELF cites already does the opposite:
-//     `fanhub.py:18` uses `BIND = "192.168.100.50"` — the internal bridge, not
-//     `tailscale0`.
-//  2. `games` and `apps` are NOT on the tailnet. The measured `tailscale status`
-//     lists only hypervisor-01, data, dev, observ, vm-240 and vps-187. Binding
-//     on `tailscale0` would require `/dev/net/tun` plus a reboot on two guests
-//     — scope creep by rule, not by need.
-//  3. The tailnet is the second ADMINISTRATION path, not a DATA path. Coupling
-//     game traffic to it repeats the "single tunnel" mistake the design has
-//     already rejected.
-//
-// The rest of the rule goes on applying in full — in particular the per-node
-// bearer with ConstantTimeCompare: with no encryption on the wire, security
-// rests ENTIRELY on the bearer, and that is why the mitigations are mandatory.
+// With no encryption on the wire, security rests ENTIRELY on the per-node
+// bearer checked with ConstantTimeCompare, which is why those mitigations are
+// mandatory.
 
 // listenAddrs validates and returns the two addresses.
 func listenAddrs(bridgeIP string, port int) ([]string, error) {

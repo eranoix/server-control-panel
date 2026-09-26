@@ -20,12 +20,10 @@ import (
 //go:embed web/*
 var FS embed.FS
 
-// docsFS embeds the technical report HTML (.docs/) served by the gated /_docs
-// route. It lives in a SEPARATE embed from web/* on purpose: the public
-// FileServer mounts only web/*, so this file is NEVER servable without going
-// through the mustPrimary gate. report.html is a GENERATED artifact — copied
-// from ".docs/Technical Documentation - Server Control Panel.html" by `make build` (the
-// docs-embed target). Do not edit it by hand.
+// docsFS embeds the technical report HTML served by the gated /_docs route.
+// It lives in a SEPARATE embed from web/* on purpose: the public FileServer
+// mounts only web/*, so this file is NEVER servable without going through the
+// mustPrimary gate. `make docs-data` refreshes its generated blocks.
 //
 //go:embed docs/report.html
 var docsFS embed.FS

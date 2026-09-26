@@ -44,7 +44,6 @@ RUN printf '%s\n' '#!/bin/sh' \
 COPY host-bridge.sh /usr/local/bin/host-bridge
 RUN chmod +x /usr/local/bin/host-bridge \
  && mkdir -p /root/.local/bin \
- && ln -sf /usr/local/bin/host-bridge /usr/local/bin/agentctl \
  && ln -sf /usr/local/bin/host-bridge /usr/local/bin/panelctl \
  && ln -sf /usr/local/bin/host-bridge /root/.local/bin/graphify \
  && ln -sf /usr/local/bin/host-bridge /usr/local/bin/graphify \

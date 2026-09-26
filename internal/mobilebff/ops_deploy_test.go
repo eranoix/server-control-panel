@@ -1,9 +1,8 @@
 package mobilebff
 
 // ops_deploy_test.go proves the two server-side deploy gates and the
-// live deploy.<jobID> bridge, WITHOUT ever invoking the real `agentctl
-// deploy` — every test here runs against a stub `agentctl` on PATH (same
-// technique as runners_selfdeploy_test.go), never the real pipeline.
+// live deploy.<jobID> bridge against a stub deploy command (the same
+// technique as runners_selfdeploy_test.go), never a real deploy.
 import (
 	"context"
 	"encoding/json"
@@ -21,19 +20,18 @@ import (
 	"server-control-panel/internal/queue"
 )
 
-// writeStubAgentctl mirrors internal/queue/runners_selfdeploy_test.go's
-// helper (unexported there, so duplicated here rather than exported just for
-// a test import) — a fake `agentctl` that prints deterministic lines and
-// exits with exitCode, standing in for the real deploy pipeline.
-func writeStubAgentctl(t *testing.T, exitCode int) string {
+// useStubDeployCommand mirrors the helper in internal/queue (unexported
+// there): it points queue.DeployCommandEnv at a script that prints
+// three deterministic lines and exits with exitCode, so no test here ever
+// runs a real deploy.
+func useStubDeployCommand(t *testing.T, exitCode int) {
 	t.Helper()
-	dir := t.TempDir()
 	script := "#!/bin/sh\necho stub-line-1\necho stub-line-2\necho stub-line-3\nexit " + strconv.Itoa(exitCode) + "\n"
-	path := filepath.Join(dir, "agentctl")
+	path := filepath.Join(t.TempDir(), "deploy")
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return dir
+	t.Setenv(queue.DeployCommandEnv, path)
 }
 
 func newTestOpsQueue(t *testing.T) *queue.Queue {
@@ -56,8 +54,7 @@ func adminCfg() *config.Config { return &config.Config{Primary: testPrimary} }
 // must be refused even though it is the primary account. Both an absent
 // body field and a literal confirm:false take this path.
 func TestOpsDeploy_MissingConfirm_400(t *testing.T) {
-	dir := writeStubAgentctl(t, 0)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useStubDeployCommand(t, 0)
 	q := newTestOpsQueue(t)
 
 	mux := http.NewServeMux()
@@ -82,8 +79,7 @@ func TestOpsDeploy_MissingConfirm_400(t *testing.T) {
 // WITH confirm:true is still refused — confirmation never substitutes for
 // the RBAC check.
 func TestOpsDeploy_NonAdmin_403(t *testing.T) {
-	dir := writeStubAgentctl(t, 0)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useStubDeployCommand(t, 0)
 	q := newTestOpsQueue(t)
 
 	mux := http.NewServeMux()
@@ -121,12 +117,10 @@ func TestOpsDeploy_QueueUnavailable_503(t *testing.T) {
 // TestOpsDeploy_Success_EnqueuesAndBridgesLiveEvents is Task 2's literal
 // <done> criterion: primary + confirm:true returns a job_id, and a
 // subsequent /ws/mobile-events subscription to deploy.<jobID> receives
-// progress/log events ending in a distinct terminal event. The stub
-// `agentctl` on PATH stands in for the real pipeline — this test never
-// deploys anything.
+// progress/log events ending in a distinct terminal event. The stub deploy
+// command stands in for the real one, so this test never deploys anything.
 func TestOpsDeploy_Success_EnqueuesAndBridgesLiveEvents(t *testing.T) {
-	dir := writeStubAgentctl(t, 0)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useStubDeployCommand(t, 0)
 	q := newTestOpsQueue(t)
 	hub := NewHub()
 	authSvc := auth.New("test-secret", nil)
@@ -205,7 +199,7 @@ func TestOpsDeploy_Success_EnqueuesAndBridgesLiveEvents(t *testing.T) {
 		t.Fatal("never saw the terminal deploy.<jobID> status=done event")
 	}
 	if !sawLog {
-		t.Error("expected at least one log-type event forwarded from the stub agentctl's output")
+		t.Error("expected at least one log-type event forwarded from the stub deploy command's output")
 	}
 	_ = conn.Close()
 }
@@ -219,8 +213,7 @@ func TestOpsDeploy_Success_EnqueuesAndBridgesLiveEvents(t *testing.T) {
 // self_deploy adds or this package can reach — mobilebff.Deps carries no
 // notify.Router reference by design.
 func TestOpsDeploy_RunnerFailure_ReflectsInStatus(t *testing.T) {
-	dir := writeStubAgentctl(t, 1)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useStubDeployCommand(t, 1)
 	q := newTestOpsQueue(t)
 
 	mux := http.NewServeMux()
@@ -288,8 +281,7 @@ func TestOpsDeployStatus_UnknownJob_404(t *testing.T) {
 // on the status read path — a non-primary caller must not learn anything
 // about a deploy job, not even that it exists.
 func TestOpsDeployStatus_NonAdmin_403(t *testing.T) {
-	dir := writeStubAgentctl(t, 0)
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	useStubDeployCommand(t, 0)
 	q := newTestOpsQueue(t)
 	j, err := q.Enqueue("self_deploy", nil, testPrimary, "mobile")
 	if err != nil {

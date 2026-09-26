@@ -595,8 +595,8 @@ type MiscDeps struct {
 	JiraAddComment func(ctx context.Context, user, key, text string) (*jira.Comment, error)
 
 	// --- deploy.apps: internal/deploy's PaaS catalog — NEVER the
-	// self-deploy mechanism (ops_deploy.go, triggered by
-	// `agentctl deploy`) ------------------------------------------------
+	// self-deploy mechanism (ops_deploy.go, which runs the configured
+	// deploy command) ---------------------------------------------------
 	// ListDeployApps mirrors handleDeployApps' GET branch.
 	ListDeployApps func() ([]deploy.App, error)
 	// GetDeployApp mirrors handleDeployApp.
@@ -606,8 +606,8 @@ type MiscDeps struct {
 	// TriggerRedeploy mirrors handleDeployTrigger: enqueues an app_deploy
 	// queue job for this app's current branch HEAD. This triggers
 	// internal/deploy's OWN PaaS app_deploy runner — a completely different
-	// job kind and code path from Phase 6's SelfDeployRunner/`agentctl
-	// deploy`, which this closure never touches.
+	// job kind and code path from SelfDeployRunner, which this closure
+	// never touches.
 	TriggerRedeploy func(user, name string) (jobID string, err error)
 	// DestroyDeployApp mirrors handleDeployDestroy (Store.Destroy) —
 	// Destructive, admin-only, confirm_destructive-gated.

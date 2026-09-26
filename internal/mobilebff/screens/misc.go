@@ -16,7 +16,7 @@
 // The single easiest mistake in this batch is confusing
 // deploy.apps/queue.jobs with the self-deploy
 // mechanism: internal/mobilebff/ops_deploy.go's `POST /ops/deploy` (which
-// triggers THIS process's own redeploy via `agentctl deploy`) and
+// triggers THIS process's own redeploy through the configured deploy command) and
 // ops_health.go's `GET /ops/status`. Those two files are a SIBLING,
 // non-overlapping mechanism. deploy.apps manages internal/deploy's PaaS app
 // catalog (arbitrary OTHER apps this VPS hosts); queue.jobs manages

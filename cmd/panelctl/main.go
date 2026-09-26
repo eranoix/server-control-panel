@@ -7,7 +7,7 @@
 // Subcommands:
 //
 //	panelctl status                 — service state + last login summary
-//	panelctl rollback               — invoke scripts/deploy.sh --rollback
+//	panelctl rollback               — run $PANEL_ROLLBACK_COMMAND
 //	panelctl health                 — run the same checks the server does at -check
 //	panelctl reset-password <user>  — set a new password (prompted)
 //	panelctl disable-2fa <user>     — clear TOTP secret for a user
@@ -32,8 +32,6 @@ import (
 	"server-control-panel/internal/claudeacct"
 	"server-control-panel/internal/config"
 )
-
-const deployScript = "/opt/panel/scripts/deploy.sh"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -137,7 +135,7 @@ func usage() {
 Usage:
   panelctl status                 service state + last login
   panelctl health                 deep config/subsystem check
-  panelctl rollback               revert to previous binary
+  panelctl rollback               revert to the previous binary ($PANEL_ROLLBACK_COMMAND)
   panelctl reset-password <user>  prompt + set new password (LOCAL bcrypt in config.json)
   panelctl admin list             list the system administrators (primary + flagged)
   panelctl admin add <user>       promote <user> to admin (full parity with the primary)
@@ -279,11 +277,14 @@ func cmdAdmin(args []string) error {
 
 // ---------- rollback ----------
 
+// Rollback belongs to whatever installed the binaries, so panelctl only runs
+// the command the operator configured for it.
 func cmdRollback(args []string) error {
-	if _, err := os.Stat(deployScript); err != nil {
-		return fmt.Errorf("deploy script not found at %s: %w", deployScript, err)
+	command := strings.TrimSpace(os.Getenv("PANEL_ROLLBACK_COMMAND"))
+	if command == "" {
+		return fmt.Errorf("PANEL_ROLLBACK_COMMAND is not set: point it at the command that restores the previous binary")
 	}
-	cmd := exec.Command("bash", deployScript, "--rollback")
+	cmd := exec.Command("sh", "-c", command)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

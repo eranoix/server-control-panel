@@ -22,7 +22,7 @@ import (
 //
 // IMPORTANT: changes written here land on disk. A running server keeps its own
 // in-memory copy of the vault opened at boot and will NOT see new entries until
-// it is restarted. The caller (or `agentctl deploy`) must restart the service
+// it is restarted. The caller (or the next deploy) must restart the service
 // for imports to show up in the live UI.
 func cmdSecrets(args []string) error {
 	if len(args) < 1 {

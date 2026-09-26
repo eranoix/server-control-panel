@@ -145,9 +145,9 @@ private fun DeployTriggerContent(
 }
 
 /**
- * `phase` starts at `"queued"` the instant the trigger call returns — `agentctl deploy`'s
- * `flock -w 600` gives no intermediate signal while a prior deploy holds the lock, so this
- * screen can sit here with zero new events for up to 10 minutes. Rendering the wait explicitly
+ * `phase` starts at `"queued"` the instant the trigger call returns. A deploy command that
+ * waits on a lock held by a prior deploy gives no intermediate signal, so this screen can sit
+ * here with zero new events for minutes. Rendering the wait explicitly
  * (rather than a bare spinner) is what keeps that from reading as a frozen screen.
  */
 @Composable
@@ -207,7 +207,7 @@ private fun DeployOutcomeContent(state: DeployTriggerUiState.Outcome, onRequestC
 }
 
 /**
- * States what `agentctl deploy` actually does — build, gate on health, roll back automatically
+ * States what the server's deploy command does: build, gate on health, roll back automatically
  * on failure — so the confirmation is informed, not a bare "are you sure?".
  */
 @Composable

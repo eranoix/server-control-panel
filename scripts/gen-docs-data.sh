@@ -16,7 +16,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-DOC=".docs/Technical Documentation - Server Control Panel.html"
+DOC="internal/webassets/docs/report.html"
 
 [ -f "$DOC" ] || { echo "✗ $DOC does not exist" >&2; exit 1; }
 

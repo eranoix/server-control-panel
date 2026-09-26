@@ -19,8 +19,8 @@ import (
 // handleQueueWS already enforces (internal/api/handlers_queue.go), not
 // loosened for the mobile path. The forwarding goroutine stops (and
 // unsubscribes) right after the job's terminal status event, so it never
-// outlives the job; a self_deploy job is bounded by agentctl's own
-// `flock -w 600` plus the deploy itself, so this is not unbounded.
+// outlives the job; a self_deploy job ends when the configured deploy
+// command exits, so this is not unbounded.
 //
 // No-op when deps.Hub or deps.Queue is nil (Hub not wired yet, or the queue
 // failed to start at boot) — the HTTP trigger/status endpoints

@@ -125,7 +125,7 @@
     net_in_rate: stamp(-1), net_out_rate: stamp(-1), template: false,
     credential: cred, age_seconds: 1, stale: false,
   });
-  const CRED_OK = { token_id: 'lab@pve!node-x', expire: 1802645875, state: 'ok' };
+  const CRED_OK = { token_id: 'panel@pve!node-x', expire: 1802645875, state: 'ok' };
   const CRED_MISSING = { token_id: '', expire: 0, state: 'absent' };
   const NODES = [
     guest('lxc/204', 'lab', 204, 'running', CRED_OK),
@@ -137,7 +137,7 @@
       mem_used: stamp(0), mem_total: stamp(0), mem_host: stamp(0),
       disk_used: stamp(0), disk_total: stamp(0), net_in: stamp(0), net_out: stamp(0),
       disk_read: stamp(0), disk_write: stamp(0), net_in_rate: stamp(0), net_out_rate: stamp(0),
-      template: false, credential: { token_id: 'lab@pve!audit', expire: 1802645875, state: 'ok' },
+      template: false, credential: { token_id: 'panel@pve!audit', expire: 1802645875, state: 'ok' },
       age_seconds: 1, stale: false },
     // 🔴 The node the hypervisor no longer lists. It is NOT deleted (a guest
     // disappears for being stopped, migrated or having its ACL withdrawn), but

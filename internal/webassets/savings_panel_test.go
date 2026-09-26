@@ -3,7 +3,7 @@ package webassets
 import "testing"
 
 // savings_panel_test.go — anchors the Economy panel pin in `go test`, which is
-// what the `agentctl deploy` gate runs.
+// what the pre-deploy test gate runs.
 //
 // Without this anchor the harness would be one more .mjs that only runs when
 // somebody remembers — that is how test-proxmox-tab.mjs sat orphaned and green

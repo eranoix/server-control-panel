@@ -2,10 +2,9 @@ package mobilebff
 
 // ops_deploy.go registers the deploy trigger/status endpoints:
 // POST /ops/deploy enqueues the existing self_deploy queue job
-// (internal/queue/runners_selfdeploy.go), which shells out to the real
-// `agentctl deploy` pipeline — this file never invokes agentctl or
-// scripts/deploy.sh itself, and never re-derives any part of that pipeline's
-// gate/build/health-gate/rollback/canon steps. GET /ops/deploy/{jobID} gives
+// (internal/queue/runners_selfdeploy.go), which runs the operator's deploy
+// command. This file never runs a deploy itself and never re-derives any of
+// that command's build, health-gate or rollback steps. GET /ops/deploy/{jobID} gives
 // the screen its initial paint before the /ws/mobile-events subscription
 // (events_bridge_ops.go) catches up, mirroring why handleQueueWS also
 // replays last-known status on connect.
@@ -26,7 +25,7 @@ func registerOpsDeploy(api huma.API, deps Deps) {
 		OperationID: "triggerSelfDeploy",
 		Method:      http.MethodPost,
 		Path:        "/ops/deploy",
-		Summary:     "Triggers the agentctl deploy pipeline (primary only, confirmation required)",
+		Summary:     "Triggers the configured deploy command (primary only, confirmation required)",
 		Tags:        []string{"mobile", "ops"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusBadRequest, http.StatusForbidden, http.StatusServiceUnavailable},

@@ -2,7 +2,7 @@
 // inside `go test`.
 //
 // It exists as its OWN package for an operational reason, not an aesthetic one:
-// the agentctl deploy gate charges by PACKAGE, not by test. While every screen
+// the pre-deploy test gate charges by PACKAGE, not by test. While every screen
 // pin lived in internal/webassets, bringing the package into the gate cost
 // ~53 s — of which 33 s were a single browser test — and so the whole package
 // was left out, leaving the paste pin without deploy coverage.

@@ -278,7 +278,7 @@ func MigrateV1ToV2(d MigrationDeps) error {
 	}
 
 	// Step 12: disable legacy singleton unit. Best-effort — the template
-	// unit (panel-whatsapp@.service) is installed by deploy.sh; nothing
+	// unit (panel-whatsapp@.service) is installed with the server; nothing
 	// to enable here. If systemctl is missing (CI / container tests),
 	// silently skip.
 	if _, err := exec.LookPath("systemctl"); err == nil {

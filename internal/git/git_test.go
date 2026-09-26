@@ -137,7 +137,7 @@ func TestLayoutEmpty(t *testing.T) {
 }
 
 func TestValidRef(t *testing.T) {
-	ok := []string{"main", "feature/x", "v1.2.3", "refactor/foundation", "a_b-c.d"}
+	ok := []string{"main", "feature/x", "v1.2.3", "release/2.0", "a_b-c.d"}
 	bad := []string{"", "-rf", "--all", "a..b", "a b", "a;b", "$(x)", "a\nb", strings.Repeat("a", 300)}
 	for _, s := range ok {
 		if !validRef(s) {
