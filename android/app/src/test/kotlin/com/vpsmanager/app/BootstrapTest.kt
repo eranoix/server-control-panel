@@ -86,9 +86,9 @@ class BootstrapTest {
         Bootstrap.clearLastCrash(context)
         var previousHandlerRan = false
         var previousHandlerSawTheSameError: Throwable? = null
-        Thread.setDefaultUncaughtExceptionHandler { _, erro ->
+        Thread.setDefaultUncaughtExceptionHandler { _, error ->
             previousHandlerRan = true
-            previousHandlerSawTheSameError = erro
+            previousHandlerSawTheSameError = error
         }
 
         Bootstrap.installCrashReporter(context)

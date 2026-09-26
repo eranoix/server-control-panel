@@ -73,7 +73,7 @@ data class DashboardSnapshot(
     val healthSeverity: Severity
         get() {
             val worst = health.fold(Severity.OK) { acc, entry -> worstOf(acc, entry.severity) }
-            return if (!ops.healthOk) worstOf(worst, Severity.ATENCAO) else worst
+            return if (!ops.healthOk) worstOf(worst, Severity.WARNING) else worst
         }
 
     /** Deploys that ended badly — `rolled_back` and `failed` are news, `ok` is not. */
@@ -109,8 +109,8 @@ data class DashboardSnapshot(
                         label = "Overall health",
                         headline = "not ok",
                         detail = "the server reports health_ok = false, but no subsystem reports the problem",
-                        severity = Severity.ATENCAO,
-                        target = DashboardTarget.SERVICOS,
+                        severity = Severity.WARNING,
+                        target = DashboardTarget.SERVICES,
                     ),
                 )
             }
@@ -122,7 +122,7 @@ data class DashboardSnapshot(
                         headline = entry.status,
                         detail = "subsystem outside its healthy state",
                         severity = entry.severity,
-                        target = DashboardTarget.SERVICOS,
+                        target = DashboardTarget.SERVICES,
                     ),
                 )
             }
@@ -146,7 +146,7 @@ data class DashboardSnapshot(
                         headline = job.lastStatus,
                         detail = "last run at ${job.lastFire}",
                         severity = classifyScheduled(job.lastStatus),
-                        target = DashboardTarget.AGENDADOS,
+                        target = DashboardTarget.SCHEDULED,
                     ),
                 )
             }
@@ -166,15 +166,15 @@ data class DashboardSnapshot(
  * a new state invented on the server tomorrow shows up as a deviation (visible,
  * investigable) instead of passing as green by omission.
  */
-private val ESTADOS_SAUDAVEIS = setOf("ok", "connected", "running", "healthy", "ativo")
+private val HEALTHY_STATES = setOf("ok", "connected", "running", "healthy", "ativo")
 
 /** States the BFF uses for "I am trying" — bad, but not down. */
-private val ESTADOS_DEGRADADOS = setOf("degraded", "connecting", "reconnecting", "starting", "pending", "unknown")
+private val DEGRADED_STATES = setOf("degraded", "connecting", "reconnecting", "starting", "pending", "unknown")
 
 internal fun classifyHealth(status: String): Severity = when (status.trim().lowercase()) {
-    in ESTADOS_SAUDAVEIS -> Severity.OK
-    in ESTADOS_DEGRADADOS -> Severity.ATENCAO
-    else -> Severity.CRITICO
+    in HEALTHY_STATES -> Severity.OK
+    in DEGRADED_STATES -> Severity.WARNING
+    else -> Severity.CRITICAL
 }
 
 internal fun classifyDeploy(status: String): Severity = when (status.trim().lowercase()) {
@@ -183,8 +183,8 @@ internal fun classifyDeploy(status: String): Severity = when (status.trim().lowe
     // an ongoing incident — but it does mean the version that is live is NOT
     // the one meant to go live, and nobody finds that out without looking.
     // A warning, not a critical.
-    "rolled_back", "rolledback", "rollback" -> Severity.ATENCAO
-    "failed", "error", "erro" -> Severity.CRITICO
+    "rolled_back", "rolledback", "rollback" -> Severity.WARNING
+    "failed", "error", "erro" -> Severity.CRITICAL
     // A deploy in flight is not a failure; it is movement, and the "Now" card already reports it.
     "running", "queued", "pending", "in_progress" -> Severity.OK
     else -> Severity.OK
@@ -192,5 +192,5 @@ internal fun classifyDeploy(status: String): Severity = when (status.trim().lowe
 
 internal fun classifyScheduled(status: String): Severity = when (status.trim().lowercase()) {
     "ok", "success", "succeeded", "done", "" -> Severity.OK
-    else -> Severity.CRITICO
+    else -> Severity.CRITICAL
 }

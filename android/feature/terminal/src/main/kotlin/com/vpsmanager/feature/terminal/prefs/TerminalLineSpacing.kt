@@ -25,31 +25,36 @@ import kotlinx.coroutines.flow.map
  * MEASURED on the emulator: at a text size of 16 sp (a cell of 42 px) the
  * font's typographic box takes 40 px and the box-drawing ink (`█`, `│`) takes
  * 41. In other words, this terminal's grid is ALREADY tight — there was no
- * spare leading sitting there waiting to be cut. [COMPACTA] takes away what
+ * spare leading sitting there waiting to be cut. [COMPACT] takes away what
  * real slack exists without clipping a single letter (the floor is computed
  * from the measured ink, in `TerminalCellMetrics`), and the honest gain is of
  * the order of 3 extra rows per screen, not 10.
  */
-enum class TerminalLineSpacing(val rotulo: String, val deltaPx: Int) {
+enum class TerminalLineSpacing(
+    val label: String,
+    val deltaPx: Int,
+    /** Value written to DataStore; kept stable so a saved choice survives renames. */
+    val storedName: String,
+) {
 
     /** The tightest that fits without clipping a letter. Wins a few rows per screen. */
-    COMPACTA("Compact", -3),
+    COMPACT("Compact", -3, "COMPACTA"),
 
     /** One pixel less: all but imperceptible, one row more. */
-    JUSTA("Tight", -1),
+    TIGHT("Tight", -1, "JUSTA"),
 
     /** The usual grid. */
-    NORMAL("Normal", 0),
+    NORMAL("Normal", 0, "NORMAL"),
 
     /** A little more breathing room between the rows, for long reading. */
-    FOLGADA("Relaxed", 2),
+    RELAXED("Relaxed", 2, "FOLGADA"),
     ;
 
     companion object {
-        val PADRAO: TerminalLineSpacing = NORMAL
+        val DEFAULT: TerminalLineSpacing = NORMAL
 
-        fun porNome(nome: String?): TerminalLineSpacing =
-            entries.firstOrNull { it.name == nome } ?: PADRAO
+        fun byName(name: String?): TerminalLineSpacing =
+            entries.firstOrNull { it.storedName == name } ?: DEFAULT
     }
 }
 
@@ -73,12 +78,12 @@ class TerminalLineSpacingPreference(
     private val dataStore: DataStore<Preferences> = context.terminalPrefsDataStore,
 ) {
 
-    val entrelinha: Flow<TerminalLineSpacing> = dataStore.data.map { prefs ->
-        TerminalLineSpacing.porNome(prefs[LINE_SPACING_KEY])
+    val lineSpacing: Flow<TerminalLineSpacing> = dataStore.data.map { prefs ->
+        TerminalLineSpacing.byName(prefs[LINE_SPACING_KEY])
     }
 
-    suspend fun setEntrelinha(valor: TerminalLineSpacing) {
-        dataStore.edit { prefs -> prefs[LINE_SPACING_KEY] = valor.name }
+    suspend fun setLineSpacing(value: TerminalLineSpacing) {
+        dataStore.edit { prefs -> prefs[LINE_SPACING_KEY] = value.storedName }
     }
 
     companion object {

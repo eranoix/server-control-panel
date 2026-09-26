@@ -1,7 +1,7 @@
 package com.vpsmanager.data.terminal
 
-import com.vpsmanager.data.offline.FilaDeEnvio
-import com.vpsmanager.data.offline.ProvaDeIdempotencia
+import com.vpsmanager.data.offline.Outbox
+import com.vpsmanager.data.offline.IdempotencyProof
 import com.vpsmanager.mobileapiclient.api.MobileApi
 import com.vpsmanager.mobileapiclient.api.TerminalApi
 import com.vpsmanager.mobileapiclient.infrastructure.ClientException
@@ -66,14 +66,14 @@ sealed interface RawLogResult {
  * the Go side.
  */
 interface TerminalRawLogSource {
-    suspend fun logBruto(name: String, bytes: Int): RawLogResult
+    suspend fun rawLog(name: String, bytes: Int): RawLogResult
 
     /**
      * The RENDERED history: the lines that have already scrolled off the
      * screen, as append-only text.
      *
      * It is the PREFERRED source for the primer, and the reason is in
-     * `ReplayDeAttach`'s KDoc: replaying the raw log duplicates, because the
+     * `AttachReplay`'s KDoc: replaying the raw log duplicates, because the
      * `ESC[nA` of a repainting program saturates at the top of the SCREEN and
      * never reaches the scrollback. That text concludes there is no fix — and
      * there is none on the READING side. The server started fixing it on the
@@ -82,9 +82,9 @@ interface TerminalRawLogSource {
      * of history, 11.4x more conversation for the same network budget.
      *
      * Empty is a legitimate answer (a new session, or one that has not scrolled
-     * a single line off yet) — the primer then falls back to [logBruto].
+     * a single line off yet) — the primer then falls back to [rawLog].
      */
-    suspend fun historico(name: String, bytes: Int): RawLogResult
+    suspend fun history(name: String, bytes: Int): RawLogResult
 }
 
 /** Mirrors [TerminalSessionsSource]'s shape/reason — the "load older" seam `TerminalViewModel` tests fake. */
@@ -170,15 +170,15 @@ class TerminalRepository(
         ScrollbackResult.Error("Could not load the history.")
     }
 
-    override suspend fun historico(name: String, bytes: Int): RawLogResult = try {
-        val resposta = mobileApi.getTerminalHistorico(name = name, bytes = bytes.toLong())
-        // The same hop off the caller's dispatcher that logBruto makes, and
+    override suspend fun history(name: String, bytes: Int): RawLogResult = try {
+        val response = mobileApi.getTerminalHistorico(name = name, bytes = bytes.toLong())
+        // The same hop off the caller's dispatcher that rawLog makes, and
         // for the same reason: decoding a few MiB of base64 on the main thread
         // is a visible freeze.
         withContext(Dispatchers.Default) {
             RawLogResult.Success(
-                bytes = java.util.Base64.getDecoder().decode(resposta.base64),
-                total = resposta.total.toInt(),
+                bytes = java.util.Base64.getDecoder().decode(response.base64),
+                total = response.total.toInt(),
             )
         }
     } catch (e: ClientException) {
@@ -193,8 +193,8 @@ class TerminalRepository(
         RawLogResult.Error("Could not load the history.")
     }
 
-    override suspend fun logBruto(name: String, bytes: Int): RawLogResult = try {
-        val resposta = mobileApi.getTerminalRawLog(name = name, bytes = bytes.toLong())
+    override suspend fun rawLog(name: String, bytes: Int): RawLogResult = try {
+        val response = mobileApi.getTerminalRawLog(name = name, bytes = bytes.toLong())
         // The generated client already switches to IO for the call, but comes
         // back to the caller's dispatcher BEFORE decoding — and here the
         // decoding is not cheap: up to 16 MiB of log becomes ~22 MiB of base64.
@@ -204,8 +204,8 @@ class TerminalRepository(
                 // java.util's Base64 (not android.util's): minSdk 34
                 // guarantees it on the device AND it exists on the JVM, so the
                 // same path runs in unit tests, with no platform stand-in.
-                bytes = java.util.Base64.getDecoder().decode(resposta.base64),
-                total = resposta.total.toInt(),
+                bytes = java.util.Base64.getDecoder().decode(response.base64),
+                total = response.total.toInt(),
             )
         }
     } catch (e: ClientException) {
@@ -224,144 +224,144 @@ class TerminalRepository(
     }
 
     override suspend fun backups(): BackupsResult = try {
-        val resposta = mobileApi.listTerminalBackups()
-        if (resposta.isEmpty()) {
+        val response = mobileApi.listTerminalBackups()
+        if (response.isEmpty()) {
             BackupsResult.Empty
         } else {
             BackupsResult.Success(
-                resposta.map { bk ->
+                response.map { bk ->
                     SessionBackup(
                         id = bk.id,
-                        criadoEm = bk.created,
-                        origem = bk.source,
+                        createdAt = bk.created,
+                        origin = bk.source,
                         bytes = bk.bytes,
-                        sessoes = bk.sessions.orEmpty().map {
-                            BackupSession(nome = it.name, resumo = it.summary, linhas = it.lines.toInt())
+                        sessions = bk.sessions.orEmpty().map {
+                            BackupSession(name = it.name, summary = it.summary, lines = it.lines.toInt())
                         },
                     )
                 },
             )
         }
     } catch (e: Exception) {
-        BackupsResult.Error(motivoDe(e, "load the backups"))
+        BackupsResult.Error(reasonOf(e, "load the backups"))
     }
 
-    override suspend fun criarBackup(sessao: String?): AcaoResult = try {
-        val r = mobileApi.createTerminalBackup(CreateBackupRequest(name = sessao))
+    override suspend fun createBackup(session: String?): ActionResult = try {
+        val r = mobileApi.createTerminalBackup(CreateBackupRequest(name = session))
         val n = r.count.toInt()
-        AcaoResult.Ok(if (n == 1) "1 session saved." else "$n sessions saved.")
+        ActionResult.Ok(if (n == 1) "1 session saved." else "$n sessions saved.")
     } catch (e: IOException) {
-        enfileirar(
-            metodo = "POST",
-            caminho = "/terminal/backups",
-            corpoJson = corpoJson("name" to sessao),
-            descricao = if (sessao == null) "backup of all sessions" else "backup of $sessao",
-            acao = "save the backup",
+        enqueue(
+            method = "POST",
+            path = "/terminal/backups",
+            bodyJson = bodyJson("name" to session),
+            description = if (session == null) "backup of all sessions" else "backup of $session",
+            action = "save the backup",
         )
     } catch (e: Exception) {
-        AcaoResult.Erro(motivoDe(e, "save the backup"))
+        ActionResult.Error(reasonOf(e, "save the backup"))
     }
 
-    override suspend fun restaurar(id: String, sessao: String?): AcaoResult = try {
-        val r = mobileApi.restoreTerminalBackup(RestoreBackupRequest(id = id, name = sessao))
-        val feitas = r.restored.toInt()
-        val puladas = r.skipped.toInt()
+    override suspend fun restore(id: String, session: String?): ActionResult = try {
+        val r = mobileApi.restoreTerminalBackup(RestoreBackupRequest(id = id, name = session))
+        val done = r.restored.toInt()
+        val skipped = r.skipped.toInt()
         // "Skipped" almost always means "that name is already live", which is
         // the right behaviour (restoring does not overwrite a session in use).
         // Saying only "restored" would hide that, and the person would go
         // looking for what did not come back.
-        val texto = when {
-            feitas == 0 && puladas > 0 -> "Nothing restored — $puladas already existed or were over the limit."
-            puladas > 0 -> "$feitas restored; $puladas skipped because they already exist."
-            feitas == 1 -> "1 session restored."
-            else -> "$feitas sessions restored."
+        val text = when {
+            done == 0 && skipped > 0 -> "Nothing restored — $skipped already existed or were over the limit."
+            skipped > 0 -> "$done restored; $skipped skipped because they already exist."
+            done == 1 -> "1 session restored."
+            else -> "$done sessions restored."
         }
-        AcaoResult.Ok(texto)
+        ActionResult.Ok(text)
     } catch (e: IOException) {
-        enfileirar(
-            metodo = "POST",
-            caminho = "/terminal/backups/restore",
-            corpoJson = corpoJson("id" to id, "name" to sessao),
-            descricao = if (sessao == null) "backup restore" else "restore of $sessao",
-            acao = "restore the backup",
+        enqueue(
+            method = "POST",
+            path = "/terminal/backups/restore",
+            bodyJson = bodyJson("id" to id, "name" to session),
+            description = if (session == null) "backup restore" else "restore of $session",
+            action = "restore the backup",
         )
     } catch (e: Exception) {
-        AcaoResult.Erro(motivoDe(e, "restore the backup"))
+        ActionResult.Error(reasonOf(e, "restore the backup"))
     }
 
-    override suspend fun excluirBackup(id: String, sessao: String?): AcaoResult = try {
-        mobileApi.deleteTerminalBackup(id = id, name = sessao)
-        AcaoResult.Ok(if (sessao == null) "Backup deleted." else "Session removed from the backup.")
+    override suspend fun deleteBackup(id: String, session: String?): ActionResult = try {
+        mobileApi.deleteTerminalBackup(id = id, name = session)
+        ActionResult.Ok(if (session == null) "Backup deleted." else "Session removed from the backup.")
     } catch (e: IOException) {
-        enfileirar(
-            metodo = "DELETE",
+        enqueue(
+            method = "DELETE",
             // No body: the id goes in the path and the session in the query, as the route expects.
-            caminho = "/terminal/backups/" + urlEncode(id) +
-                (sessao?.let { "?name=" + urlEncode(it) } ?: ""),
-            corpoJson = "",
-            descricao = if (sessao == null) "backup deletion" else "removal of $sessao from the backup",
-            acao = "delete the backup",
+            path = "/terminal/backups/" + urlEncode(id) +
+                (session?.let { "?name=" + urlEncode(it) } ?: ""),
+            bodyJson = "",
+            description = if (session == null) "backup deletion" else "removal of $session from the backup",
+            action = "delete the backup",
         )
     } catch (e: Exception) {
-        AcaoResult.Erro(motivoDe(e, "delete the backup"))
+        ActionResult.Error(reasonOf(e, "delete the backup"))
     }
 
-    override suspend fun renomearSessao(de: String, para: String): AcaoResult = try {
-        mobileApi.renameTerminalSession(RenameSessionRequest(from = de, to = para))
-        AcaoResult.Ok("Renamed to $para.")
+    override suspend fun renameSession(from: String, to: String): ActionResult = try {
+        mobileApi.renameTerminalSession(RenameSessionRequest(from = from, to = to))
+        ActionResult.Ok("Renamed to $to.")
     } catch (e: IOException) {
-        enfileirar(
-            metodo = "POST",
-            caminho = "/terminal/sessions/rename",
-            corpoJson = corpoJson("from" to de, "to" to para),
-            descricao = "rename $de to $para",
-            acao = "rename the session",
+        enqueue(
+            method = "POST",
+            path = "/terminal/sessions/rename",
+            bodyJson = bodyJson("from" to from, "to" to to),
+            description = "rename $from to $to",
+            action = "rename the session",
         )
     } catch (e: Exception) {
-        AcaoResult.Erro(motivoDe(e, "rename the session"))
+        ActionResult.Error(reasonOf(e, "rename the session"))
     }
 
-    override suspend fun matarSessao(nome: String): AcaoResult = try {
-        terminalApi.killTerminalSession(KillSessionRequest(name = nome))
-        AcaoResult.Ok("Session $nome ended.")
+    override suspend fun killSession(name: String): ActionResult = try {
+        terminalApi.killTerminalSession(KillSessionRequest(name = name))
+        ActionResult.Ok("Session $name ended.")
     } catch (e: Exception) {
-        AcaoResult.Erro(motivoDe(e, "end the session"))
+        ActionResult.Error(reasonOf(e, "end the session"))
     }
 
-    override suspend fun atribuirSessao(nome: String, alvo: String): AcaoResult = try {
-        terminalApi.assignTerminalSession(AssignSessionRequest(name = nome, target = alvo))
+    override suspend fun assignSession(name: String, target: String): ActionResult = try {
+        terminalApi.assignTerminalSession(AssignSessionRequest(name = name, target = target))
         // The sentence states the RESULT, not the action: whoever chose
         // "Everyone" needs to read that everyone can now see it, not
         // "assigned successfully".
-        val quem = if (alvo == ALVO_TODOS) "everyone" else alvo
-        AcaoResult.Ok("$nome is now visible to $quem.")
+        val who = if (target == TARGET_ALL) "everyone" else target
+        ActionResult.Ok("$name is now visible to $who.")
     } catch (e: IOException) {
-        enfileirar(
-            metodo = "POST",
-            caminho = "/terminal/sessions/assign",
-            corpoJson = corpoJson("name" to nome, "target" to alvo),
-            descricao = "change who sees $nome",
-            acao = "change who sees the session",
+        enqueue(
+            method = "POST",
+            path = "/terminal/sessions/assign",
+            bodyJson = bodyJson("name" to name, "target" to target),
+            description = "change who sees $name",
+            action = "change who sees the session",
         )
     } catch (e: Exception) {
-        AcaoResult.Erro(motivoDe(e, "change who sees the session"))
+        ActionResult.Error(reasonOf(e, "change who sees the session"))
     }
 
-    override suspend fun alvosDeAtribuicao(): AlvosResult = try {
+    override suspend fun assignmentTargets(): TargetsResult = try {
         // The generator marks the list as nullable (the field is not required
         // in the schema). An absent list and an empty one amount to the same
         // thing for whoever is choosing: there is no target to offer, and the
         // screen disables the option instead of opening an empty sheet.
-        AlvosResult.Success(terminalApi.listAssignTargets().targets.orEmpty())
+        TargetsResult.Success(terminalApi.listAssignTargets().targets.orEmpty())
     } catch (e: Exception) {
-        AlvosResult.Error(motivoDe(e, "list who the session can be shown to"))
+        TargetsResult.Error(reasonOf(e, "list who the session can be shown to"))
     }
 
-    override suspend fun previaDaSessao(nome: String, linhas: Int): PreviaResult = try {
-        val r = terminalApi.previewTerminalSession(name = nome, lines = linhas.toLong())
-        PreviaResult.Success(texto = r.text, linhas = r.lines.toInt())
+    override suspend fun sessionPreview(name: String, lines: Int): PreviewResult = try {
+        val r = terminalApi.previewTerminalSession(name = name, lines = lines.toLong())
+        PreviewResult.Success(text = r.text, lines = r.lines.toInt())
     } catch (e: Exception) {
-        PreviaResult.Error(motivoDe(e, "preview the session"))
+        PreviewResult.Error(reasonOf(e, "preview the session"))
     }
 }
 
@@ -374,28 +374,28 @@ class TerminalRepository(
  * 5xx is the server saying it heard — the queue is for those who were NOT
  * heard.
  *
- * The proof is [ProvaDeIdempotencia.CHAVE_NO_CABECALHO]: the five routes used
+ * The proof is [IdempotencyProof.KEY_IN_HEADER]: the five routes used
  * here declare `Idempotency-Key` on the BFF, and it is that table which
  * guarantees the retry does not execute twice.
  */
-private fun enfileirar(
-    metodo: String,
-    caminho: String,
-    corpoJson: String,
-    descricao: String,
-    acao: String,
-): AcaoResult {
-    val guardada = FilaDeEnvio.enfileirar(
-        metodo = metodo,
-        caminho = caminho,
-        corpoJson = corpoJson,
-        descricao = descricao,
-        prova = ProvaDeIdempotencia.CHAVE_NO_CABECALHO,
+private fun enqueue(
+    method: String,
+    path: String,
+    bodyJson: String,
+    description: String,
+    action: String,
+): ActionResult {
+    val stored = Outbox.enqueue(
+        method = method,
+        path = path,
+        bodyJson = bodyJson,
+        description = description,
+        proof = IdempotencyProof.KEY_IN_HEADER,
     )
-    return if (guardada) {
-        AcaoResult.NaFila("No internet — $descricao is queued and goes out when the network is back.")
+    return if (stored) {
+        ActionResult.Queued("No internet — $description is queued and goes out when the network is back.")
     } else {
-        AcaoResult.Erro(motivoDe(IOException(), acao))
+        ActionResult.Error(reasonOf(IOException(), action))
     }
 }
 
@@ -408,16 +408,16 @@ private fun enfileirar(
  * A null field is OMITTED, never an explicit `null` — to the Go decoder on the
  * other side, an absent field and a `null` are not the same thing.
  */
-private fun corpoJson(vararg campos: Pair<String, String?>): String =
+private fun bodyJson(vararg fields: Pair<String, String?>): String =
     kotlinx.serialization.json.JsonObject(
-        campos.filter { it.second != null }
-            .associate { (chave, valor) -> chave to kotlinx.serialization.json.JsonPrimitive(valor) },
+        fields.filter { it.second != null }
+            .associate { (key, value) -> key to kotlinx.serialization.json.JsonPrimitive(value) },
     ).toString()
 
 private fun urlEncode(v: String): String = java.net.URLEncoder.encode(v, "UTF-8")
 
 /** The target meaning "everyone" in the server's assignment contract. */
-const val ALVO_TODOS: String = "*"
+const val TARGET_ALL: String = "*"
 
 /**
  * The same exception ladder the other methods in this file repeat by hand, in
@@ -425,17 +425,17 @@ const val ALVO_TODOS: String = "*"
  *
  * Each type becomes a different sentence on purpose: "no network" and "server
  * down" lead the person to opposite actions, and a generic "it did not work"
- * would make the two look the same. The [acao] goes into the sentence ("could
+ * would make the two look the same. The [action] goes into the sentence ("could
  * not restore the backup") because the message appears far from the button that
  * caused it.
  */
-private fun motivoDe(e: Exception, acao: String): String = when (e) {
+private fun reasonOf(e: Exception, action: String): String = when (e) {
     is ClientException -> when (e.statusCode) {
         404 -> "Not found — it may have been removed from another device."
         400 -> "The server rejected the request."
-        else -> "Could not $acao (error ${e.statusCode})."
+        else -> "Could not $action (error ${e.statusCode})."
     }
     is ServerException -> "The server is unavailable right now."
     is IOException -> "Connection failed. Check your network and try again."
-    else -> "Could not $acao."
+    else -> "Could not $action."
 }

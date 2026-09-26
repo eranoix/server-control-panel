@@ -31,7 +31,7 @@ class SduiCatalogRepositoryTest {
 
     private fun repositoryFor() = SduiCatalogRepository(SduiDataClient(basePath = server.url("/").toString()))
 
-    private fun responder(code: Int, body: String) {
+    private fun respond(code: Int, body: String) {
         server.enqueue(
             MockResponse()
                 .setResponseCode(code)
@@ -42,7 +42,7 @@ class SduiCatalogRepositoryTest {
 
     @Test
     fun `le id, grupo e rotulo preservando a ordem agrupada do servidor`() = runTest {
-        responder(
+        respond(
             200,
             """
             {"sections":[
@@ -75,7 +75,7 @@ class SduiCatalogRepositoryTest {
      */
     @Test
     fun `campo desconhecido do servidor e ignorado, nunca fatal`() = runTest {
-        responder(
+        respond(
             200,
             """{"sections":[{"id":"system.ports","group":"Sistema","label":"Portas em escuta",
                "icone":"radar","badge_count":7,"novidade":{"desde":"2026-09"}}]}""",
@@ -94,7 +94,7 @@ class SduiCatalogRepositoryTest {
      */
     @Test
     fun `entrada sem id ou sem rotulo e pulada, o resto da lista sobrevive`() = runTest {
-        responder(
+        respond(
             200,
             """
             {"sections":[
@@ -113,7 +113,7 @@ class SduiCatalogRepositoryTest {
     /** A JSON `null` in the label must never become a section called "null". */
     @Test
     fun `rotulo nulo e tratado como ausente, nao como o texto null`() = runTest {
-        responder(200, """{"sections":[{"id":"a.b","group":"Docker","label":null}]}""")
+        respond(200, """{"sections":[{"id":"a.b","group":"Docker","label":null}]}""")
 
         val sections = (repositoryFor().sections() as SduiSectionsResult.Success).sections
 
@@ -123,7 +123,7 @@ class SduiCatalogRepositoryTest {
     /** A missing group becomes a neutral header — cosmetic, never loses the section. */
     @Test
     fun `grupo ausente cai em Outros em vez de derrubar a secao`() = runTest {
-        responder(200, """{"sections":[{"id":"a.b","label":"Alguma coisa"}]}""")
+        respond(200, """{"sections":[{"id":"a.b","label":"Alguma coisa"}]}""")
 
         val sections = (repositoryFor().sections() as SduiSectionsResult.Success).sections
 
@@ -138,7 +138,7 @@ class SduiCatalogRepositoryTest {
      */
     @Test
     fun `lista vazia e sucesso vazio, nunca erro`() = runTest {
-        responder(200, """{"sections":[]}""")
+        respond(200, """{"sections":[]}""")
 
         val result = repositoryFor().sections()
 
@@ -152,7 +152,7 @@ class SduiCatalogRepositoryTest {
      */
     @Test
     fun `404 no catalogo vira mensagem sobre o servidor, nao sobre o usuario`() = runTest {
-        responder(404, """{"error":"not_found"}""")
+        respond(404, """{"error":"not_found"}""")
 
         val result = repositoryFor().sections()
 
@@ -165,7 +165,7 @@ class SduiCatalogRepositoryTest {
 
     @Test
     fun `500 vira mensagem de servidor indisponivel`() = runTest {
-        responder(500, """{"error":"internal_error"}""")
+        respond(500, """{"error":"internal_error"}""")
 
         val result = repositoryFor().sections()
 

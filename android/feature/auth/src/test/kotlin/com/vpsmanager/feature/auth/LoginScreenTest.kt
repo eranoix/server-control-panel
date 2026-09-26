@@ -136,16 +136,16 @@ class LoginScreenTest {
 
     @Test
     fun `o botao de parear leva ao fluxo de QR`() {
-        var pediuPareamento = false
+        var pairingRequested = false
         composeRule.setContent {
-            LoginScreen(onPairDeviceRequested = { pediuPareamento = true }, viewModel = viewModel())
+            LoginScreen(onPairDeviceRequested = { pairingRequested = true }, viewModel = viewModel())
         }
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("Pair this device (QR code)").performClick()
         composeRule.waitForIdle()
 
-        assertTrue(pediuPareamento)
+        assertTrue(pairingRequested)
     }
 
     @Test
@@ -168,8 +168,8 @@ class LoginScreenTest {
 
     @Test
     fun `totp_required pede o codigo em vez de tratar como erro`() {
-        val password = FakePasswordLogin { codigo ->
-            if (codigo == null) PasswordLoginResult.TotpRequired else PasswordLoginResult.Success("acc", "ref", 900)
+        val password = FakePasswordLogin { code ->
+            if (code == null) PasswordLoginResult.TotpRequired else PasswordLoginResult.Success("acc", "ref", 900)
         }
         val session = sessionManager()
         val vm = viewModel(session = session, password = password)
@@ -201,8 +201,8 @@ class LoginScreenTest {
      */
     @Test
     fun `codigo em branco nao vira ida muda ao servidor — a tela diz o que falta`() {
-        val password = FakePasswordLogin { codigo ->
-            if (codigo == null) PasswordLoginResult.TotpRequired else PasswordLoginResult.Success("acc", "ref", 900)
+        val password = FakePasswordLogin { code ->
+            if (code == null) PasswordLoginResult.TotpRequired else PasswordLoginResult.Success("acc", "ref", 900)
         }
         val vm = viewModel(password = password)
         composeRule.setContent { LoginScreen(onPairDeviceRequested = {}, viewModel = vm) }
@@ -231,8 +231,8 @@ class LoginScreenTest {
     @Test
     fun `codigo recusado fica na etapa do codigo, limpa o campo e nao acusa a senha`() {
         val vm = viewModel(
-            password = FakePasswordLogin { codigo ->
-                if (codigo == null) {
+            password = FakePasswordLogin { code ->
+                if (code == null) {
                     PasswordLoginResult.TotpRequired
                 } else {
                     PasswordLoginResult.InvalidCode("Código inválido ou expirado.")
@@ -252,10 +252,10 @@ class LoginScreenTest {
         vm.submitPassword()
         composeRule.waitForIdle()
 
-        val estado = vm.uiState.value
-        assertTrue("continua pedindo o codigo", estado.totpRequired)
-        assertEquals("o campo do codigo tem que vir limpo", "", estado.totpCode)
-        assertEquals("a senha nao se perde", "segredo", estado.password)
+        val state = vm.uiState.value
+        assertTrue("continua pedindo o codigo", state.totpRequired)
+        assertEquals("o campo do codigo tem que vir limpo", "", state.totpCode)
+        assertEquals("a senha nao se perde", "segredo", state.password)
         composeRule.onNodeWithText("Código inválido ou expirado.").assertExists()
         // The code field stays on screen for the next attempt.
         composeRule.onNodeWithText("Verification code").assertExists()
@@ -273,8 +273,8 @@ class LoginScreenTest {
         val session = sessionManager()
         val vm = viewModel(
             session = session,
-            password = FakePasswordLogin { codigo ->
-                if (codigo == null) PasswordLoginResult.TotpRequired else PasswordLoginResult.Success("acc", "ref", 900)
+            password = FakePasswordLogin { code ->
+                if (code == null) PasswordLoginResult.TotpRequired else PasswordLoginResult.Success("acc", "ref", 900)
             },
         )
         composeRule.setContent { LoginScreen(onPairDeviceRequested = {}, viewModel = vm) }

@@ -109,7 +109,7 @@ sealed interface CallUiState {
         val localTrack: VideoTrack?,
         val micEnabled: Boolean,
         val cameraEnabled: Boolean,
-        val semCamera: Boolean,
+        val noCamera: Boolean,
     ) : CallUiState
 
     data class InCall(
@@ -200,7 +200,7 @@ class CallViewModel(
      * keep camera and microphone alive during a call; in the lobby there is
      * no call yet, and leaving the app really should switch the camera off.
      */
-    fun abrirAntessala() {
+    fun openLobby() {
         val missing = permissionChecker.missingPermissions()
         if (missing.isNotEmpty()) {
             _uiState.value = CallUiState.PermissionRequired(missing)
@@ -219,14 +219,14 @@ class CallViewModel(
         // Here the rule is the same one that was already written, now holding
         // for both paths: a camera that will not open becomes an audio call,
         // never an app that closes.
-        val ligou = runCatching { sessionController.startLocalMedia() }
-        val trilha = if (ligou.isSuccess) {
+        val started = runCatching { sessionController.startLocalMedia() }
+        val trail = if (started.isSuccess) {
             runCatching { sessionController.localVideoTrack }.getOrNull()
         } else {
             null
         }
         _uiState.value = CallUiState.Lobby(
-            localTrack = trilha,
+            localTrack = trail,
             micEnabled = micEnabled,
             cameraEnabled = cameraEnabled,
             // With no video track, the camera failed (held by another app,
@@ -234,7 +234,7 @@ class CallViewModel(
             // That does NOT block: the call degrades to audio only, which is
             // still the call. A lobby that refuses to let you in because the
             // camera would not open trades a feature for an obstacle.
-            semCamera = trilha == null,
+            noCamera = trail == null,
         )
     }
 
@@ -465,9 +465,9 @@ class CallViewModel(
      * it did is a control nobody trusts. A no-op outside the lobby, so the
      * call flow stays identical.
      */
-    private fun repintarAntessala() {
-        val atual = _uiState.value as? CallUiState.Lobby ?: return
-        _uiState.value = atual.copy(
+    private fun repaintLobby() {
+        val current = _uiState.value as? CallUiState.Lobby ?: return
+        _uiState.value = current.copy(
             localTrack = sessionController.localVideoTrack,
             micEnabled = micEnabled,
             cameraEnabled = cameraEnabled,
@@ -488,7 +488,7 @@ class CallViewModel(
         if (_uiState.value !is CallUiState.InCall) return
         micEnabled = !micEnabled
         sessionController.setMicEnabled(micEnabled)
-        repintarAntessala()
+        repaintLobby()
         pushInCallState()
     }
 
@@ -496,7 +496,7 @@ class CallViewModel(
         if (_uiState.value !is CallUiState.InCall) return
         cameraEnabled = !cameraEnabled
         sessionController.setCameraEnabled(cameraEnabled)
-        repintarAntessala()
+        repaintLobby()
         pushInCallState()
     }
 

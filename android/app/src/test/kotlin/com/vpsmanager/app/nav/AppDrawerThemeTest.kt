@@ -39,7 +39,7 @@ class AppDrawerThemeTest {
     val composeRule = createComposeRule()
 
     private fun renderDrawer(
-        themeMode: ThemeMode = ThemeMode.PADRAO,
+        themeMode: ThemeMode = ThemeMode.DEFAULT,
         onThemeModeChange: (ThemeMode) -> Unit = {},
     ) {
         composeRule.setContent {
@@ -50,16 +50,16 @@ class AppDrawerThemeTest {
                 // System/Docker/Operations it made the drawer answer two
                 // different questions. The test follows the selector to where
                 // it went.
-                TelaDeConfiguracoes(
+                SettingsScreen(
                     themeMode = themeMode,
                     onThemeModeChange = onThemeModeChange,
-                    versaoInstalada = "0.1.42",
-                    onProcurarAtualizacao = {},
-                    onAbrirNotificacoes = {},
-                    onAbrirSeguranca = {},
-                    onAbrirLicencas = {},
-                    onAbrirDiagnostico = {},
-                onAbrirArmazenamento = {},
+                    installedVersion = "0.1.42",
+                    onCheckForUpdate = {},
+                    onOpenNotifications = {},
+                    onOpenSecurity = {},
+                    onOpenLicenses = {},
+                    onOpenDiagnostics = {},
+                onOpenStorage = {},
                 )
             }
         }
@@ -78,26 +78,26 @@ class AppDrawerThemeTest {
         renderDrawer()
 
         composeRule.onNodeWithText(THEME_SELECTOR_LABEL).assertIsDisplayed()
-        ThemeMode.entries.forEach { modo ->
-            composeRule.onNodeWithTag(themeOptionTag(modo)).assertIsDisplayed()
+        ThemeMode.entries.forEach { mode ->
+            composeRule.onNodeWithTag(themeOptionTag(mode)).assertIsDisplayed()
         }
     }
 
     @Test
     fun `o modo corrente aparece marcado`() {
-        renderDrawer(themeMode = ThemeMode.ESCURO)
+        renderDrawer(themeMode = ThemeMode.DARK)
 
-        composeRule.onNodeWithTag(themeOptionTag(ThemeMode.ESCURO)).assertIsSelected()
+        composeRule.onNodeWithTag(themeOptionTag(ThemeMode.DARK)).assertIsSelected()
     }
 
     @Test
     fun `tocar numa aparencia reporta a escolha`() {
-        var escolhido: ThemeMode? = null
-        renderDrawer(themeMode = ThemeMode.SISTEMA, onThemeModeChange = { escolhido = it })
+        var chosen: ThemeMode? = null
+        renderDrawer(themeMode = ThemeMode.SYSTEM, onThemeModeChange = { chosen = it })
 
-        composeRule.onNodeWithTag(themeOptionTag(ThemeMode.CLARO)).performClick()
+        composeRule.onNodeWithTag(themeOptionTag(ThemeMode.LIGHT)).performClick()
 
-        assertEquals(ThemeMode.CLARO, escolhido)
+        assertEquals(ThemeMode.LIGHT, chosen)
     }
 
     @Test
@@ -108,9 +108,9 @@ class AppDrawerThemeTest {
         // module that owns the component; what matters here is that the REAL
         // drawer — with its own breathing room and the other items competing
         // for space — makes no label wrap.
-        ThemeMode.entries.forEach { modo ->
-            val layout = composeRule.onNodeWithText(modo.label).textLayout()
-            assertEquals("rótulo \"${modo.label}\" quebrou em mais de uma linha", 1, layout.lineCount)
+        ThemeMode.entries.forEach { mode ->
+            val layout = composeRule.onNodeWithText(mode.label).textLayout()
+            assertEquals("rótulo \"${mode.label}\" quebrou em mais de uma linha", 1, layout.lineCount)
         }
     }
 
@@ -122,9 +122,9 @@ class AppDrawerThemeTest {
         // touched most often, and the only one whose effect is visible at once.
         val seletor = composeRule.onNodeWithText(THEME_SELECTOR_LABEL)
             .fetchSemanticsNode().positionInRoot.y
-        val atualizacao = composeRule.onNodeWithText(CHECK_UPDATE_LABEL)
+        val update = composeRule.onNodeWithText(CHECK_UPDATE_LABEL)
             .fetchSemanticsNode().positionInRoot.y
 
-        assertTrue("o seletor de aparência caiu para baixo dos outros ajustes", seletor < atualizacao)
+        assertTrue("o seletor de aparência caiu para baixo dos outros ajustes", seletor < update)
     }
 }

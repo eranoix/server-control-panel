@@ -1,9 +1,9 @@
 package com.vpsmanager.feature.terminal.ui
 
-import com.vpsmanager.data.terminal.AcaoResult
-import com.vpsmanager.data.terminal.AlvosResult
+import com.vpsmanager.data.terminal.ActionResult
+import com.vpsmanager.data.terminal.TargetsResult
 import com.vpsmanager.data.terminal.BackupsResult
-import com.vpsmanager.data.terminal.PreviaResult
+import com.vpsmanager.data.terminal.PreviewResult
 import com.vpsmanager.data.terminal.TerminalBackupSource
 import com.vpsmanager.data.terminal.TerminalSession
 import com.vpsmanager.data.terminal.TerminalSessionsResult
@@ -36,38 +36,38 @@ private class FakeTerminalSessionsSource(
  * came back — because half of these tests are about the call NOT happening.
  */
 private class FakeBackupSource(
-    private val alvos: AlvosResult = AlvosResult.Success(listOf("sam", "jordan", "*")),
-    private var previa: PreviaResult = PreviaResult.Success("$ ls\nbin  etc", 2),
+    private val targets: TargetsResult = TargetsResult.Success(listOf("sam", "jordan", "*")),
+    private var preview: PreviewResult = PreviewResult.Success("$ ls\nbin  etc", 2),
 ) : TerminalBackupSource {
-    val mortas = mutableListOf<String>()
-    val atribuidas = mutableListOf<Pair<String, String>>()
-    var previasPedidas = 0
+    val killed = mutableListOf<String>()
+    val assigned = mutableListOf<Pair<String, String>>()
+    var previewsRequested = 0
         private set
 
     override suspend fun backups() = BackupsResult.Empty
-    override suspend fun criarBackup(sessao: String?) = AcaoResult.Ok("ok")
-    override suspend fun restaurar(id: String, sessao: String?) = AcaoResult.Ok("ok")
-    override suspend fun excluirBackup(id: String, sessao: String?) = AcaoResult.Ok("ok")
-    override suspend fun renomearSessao(de: String, para: String) = AcaoResult.Ok("ok")
+    override suspend fun createBackup(session: String?) = ActionResult.Ok("ok")
+    override suspend fun restore(id: String, session: String?) = ActionResult.Ok("ok")
+    override suspend fun deleteBackup(id: String, session: String?) = ActionResult.Ok("ok")
+    override suspend fun renameSession(from: String, to: String) = ActionResult.Ok("ok")
 
-    override suspend fun matarSessao(nome: String): AcaoResult {
-        mortas += nome
-        return AcaoResult.Ok("Sessão $nome encerrada.")
+    override suspend fun killSession(name: String): ActionResult {
+        killed += name
+        return ActionResult.Ok("Sessão $name encerrada.")
     }
 
-    override suspend fun atribuirSessao(nome: String, alvo: String): AcaoResult {
-        atribuidas += nome to alvo
-        return AcaoResult.Ok("$nome agora aparece para $alvo.")
+    override suspend fun assignSession(name: String, target: String): ActionResult {
+        assigned += name to target
+        return ActionResult.Ok("$name agora aparece para $target.")
     }
 
-    override suspend fun previaDaSessao(nome: String, linhas: Int): PreviaResult {
-        previasPedidas++
-        return previa
+    override suspend fun sessionPreview(name: String, lines: Int): PreviewResult {
+        previewsRequested++
+        return preview
     }
 
-    override suspend fun alvosDeAtribuicao(): AlvosResult = alvos
+    override suspend fun assignmentTargets(): TargetsResult = targets
 
-    fun definirPrevia(r: PreviaResult) { previa = r }
+    fun setPreview(r: PreviewResult) { preview = r }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -147,12 +147,12 @@ class SessionListViewModelTest {
 
     private fun vmCom(
         backup: FakeBackupSource,
-        sessoes: List<TerminalSession> = listOf(
+        sessions: List<TerminalSession> = listOf(
             TerminalSession(name = "main", attached = true, created = 1000, tab = null),
         ),
     ): SessionListViewModel = SessionListViewModel(
         sessionsSource = FakeTerminalSessionsSource(
-            mutableListOf(TerminalSessionsResult.Success(sessoes)),
+            mutableListOf(TerminalSessionsResult.Success(sessions)),
         ),
         backupSource = backup,
     )
@@ -163,11 +163,11 @@ class SessionListViewModelTest {
         val vm = vmCom(backup)
         dispatcher.scheduler.advanceUntilIdle()
 
-        vm.matar("main")
+        vm.kill("main")
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(listOf("main"), backup.mortas)
-        assertEquals("Sessão main encerrada.", vm.recado.value)
+        assertEquals(listOf("main"), backup.killed)
+        assertEquals("Sessão main encerrada.", vm.notice.value)
     }
 
     @Test
@@ -176,10 +176,10 @@ class SessionListViewModelTest {
         val vm = vmCom(backup)
         dispatcher.scheduler.advanceUntilIdle()
 
-        vm.atribuir("main", "*")
+        vm.assign("main", "*")
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(listOf("main" to "*"), backup.atribuidas)
+        assertEquals(listOf("main" to "*"), backup.assigned)
     }
 
     @Test
@@ -188,15 +188,15 @@ class SessionListViewModelTest {
         val vm = vmCom(backup)
         dispatcher.scheduler.advanceUntilIdle()
 
-        vm.alternarPrevia("main")
+        vm.togglePreview("main")
         dispatcher.scheduler.advanceUntilIdle()
-        assertEquals(PreviaUiState.Pronta("$ ls\nbin  etc"), vm.previas.value["main"])
-        assertEquals(1, backup.previasPedidas)
+        assertEquals(PreviewUiState.Ready("$ ls\nbin  etc"), vm.previews.value["main"])
+        assertEquals(1, backup.previewsRequested)
 
-        vm.alternarPrevia("main")
+        vm.togglePreview("main")
         dispatcher.scheduler.advanceUntilIdle()
-        assertEquals(null, vm.previas.value["main"])
-        assertEquals("fechar nao pede nada ao servidor", 1, backup.previasPedidas)
+        assertEquals(null, vm.previews.value["main"])
+        assertEquals("fechar nao pede nada ao servidor", 1, backup.previewsRequested)
     }
 
     @Test
@@ -208,11 +208,11 @@ class SessionListViewModelTest {
         val vm = vmCom(backup)
         dispatcher.scheduler.advanceUntilIdle()
 
-        vm.alternarPrevia("main")   // opens and starts loading
-        vm.alternarPrevia("main")   // closes before the response comes back
+        vm.togglePreview("main")   // opens and starts loading
+        vm.togglePreview("main")   // closes before the response comes back
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(null, vm.previas.value["main"])
+        assertEquals(null, vm.previews.value["main"])
     }
 
     @Test
@@ -220,14 +220,14 @@ class SessionListViewModelTest {
         // A freshly created session has not written anything yet. Showing that
         // as a failure would send people looking for a problem that does not
         // exist.
-        val backup = FakeBackupSource(previa = PreviaResult.Success("   ", 0))
+        val backup = FakeBackupSource(preview = PreviewResult.Success("   ", 0))
         val vm = vmCom(backup)
         dispatcher.scheduler.advanceUntilIdle()
 
-        vm.alternarPrevia("main")
+        vm.togglePreview("main")
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(PreviaUiState.Vazia, vm.previas.value["main"])
+        assertEquals(PreviewUiState.Empty, vm.previews.value["main"])
     }
 
     @Test
@@ -235,18 +235,18 @@ class SessionListViewModelTest {
         // The route returns 404 to anyone who is not an admin, which is the
         // same as saying "this feature does not exist for you". An empty list
         // is the signal the screen uses not to show "Visible to..." at all.
-        val backup = FakeBackupSource(alvos = AlvosResult.Error("nao encontrado"))
+        val backup = FakeBackupSource(targets = TargetsResult.Error("nao encontrado"))
         val vm = vmCom(backup)
         dispatcher.scheduler.advanceUntilIdle()
 
         // Before asking, `null`: "we have not asked yet" is different from
         // "we asked and there are none". The screen only hides the option in
         // the second case.
-        assertEquals(null, vm.alvos.value)
+        assertEquals(null, vm.targets.value)
 
-        vm.carregarAlvos()
+        vm.loadTargets()
         dispatcher.scheduler.advanceUntilIdle()
-        assertEquals(emptyList<String>(), vm.alvos.value)
+        assertEquals(emptyList<String>(), vm.targets.value)
     }
 
     @Test
@@ -255,17 +255,17 @@ class SessionListViewModelTest {
         val vm = vmCom(backup)
         dispatcher.scheduler.advanceUntilIdle()
 
-        vm.carregarAlvos()
+        vm.loadTargets()
         dispatcher.scheduler.advanceUntilIdle()
-        val depoisDoPrimeiro = vm.alvos.value
-        assertEquals(listOf("sam", "jordan", "*"), depoisDoPrimeiro)
+        val afterFirst = vm.targets.value
+        assertEquals(listOf("sam", "jordan", "*"), afterFirst)
 
         // The screen calls this on every recomposition that brings it back;
         // the second call has to be inert, not a second request.
-        vm.carregarAlvos()
-        vm.carregarAlvos()
+        vm.loadTargets()
+        vm.loadTargets()
         dispatcher.scheduler.advanceUntilIdle()
-        assertEquals(depoisDoPrimeiro, vm.alvos.value)
+        assertEquals(afterFirst, vm.targets.value)
     }
 
 }

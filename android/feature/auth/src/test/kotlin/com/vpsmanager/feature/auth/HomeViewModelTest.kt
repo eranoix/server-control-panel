@@ -34,18 +34,18 @@ class HomeViewModelTest {
         assertEquals(HomeUiState.Loading, vm.uiState.value)
         advanceUntilIdle()
 
-        val estado = vm.uiState.value as HomeUiState.Success
-        assertEquals("teste", estado.snapshot.identity?.user)
-        assertEquals(null, estado.staleError)
+        val state = vm.uiState.value as HomeUiState.Success
+        assertEquals("teste", state.snapshot.identity?.user)
+        assertEquals(null, state.staleError)
     }
 
     @Test
     fun `recarga que falha PRESERVA o painel e carimba o aviso`() = runTest(dispatcher) {
-        var chamadas = 0
+        var calls = 0
         val vm = HomeViewModel(
             FakeDashboardSource {
-                chamadas += 1
-                if (chamadas == 1) {
+                calls += 1
+                if (calls == 1) {
                     DashboardResult.Success(snapshotReal())
                 } else {
                     DashboardResult.Error("O servidor está indisponível no momento.")
@@ -57,11 +57,11 @@ class HomeViewModelTest {
         vm.refresh()
         advanceUntilIdle()
 
-        val estado = vm.uiState.value as HomeUiState.Success
-        assertEquals("O servidor está indisponível no momento.", estado.staleError)
-        assertEquals(false, estado.refreshing)
+        val state = vm.uiState.value as HomeUiState.Success
+        assertEquals("O servidor está indisponível no momento.", state.staleError)
+        assertEquals(false, state.refreshing)
         // the previous picture stays intact
-        assertTrue(estado.snapshot.resourceSignals.isNotEmpty())
+        assertTrue(state.snapshot.resourceSignals.isNotEmpty())
     }
 
     @Test
@@ -74,11 +74,11 @@ class HomeViewModelTest {
 
     @Test
     fun `tentar novamente volta ao esqueleto e depois ao painel`() = runTest(dispatcher) {
-        var chamadas = 0
+        var calls = 0
         val vm = HomeViewModel(
             FakeDashboardSource {
-                chamadas += 1
-                if (chamadas == 1) DashboardResult.Error("caiu") else DashboardResult.Success(snapshotReal())
+                calls += 1
+                if (calls == 1) DashboardResult.Error("caiu") else DashboardResult.Success(snapshotReal())
             },
         )
         advanceUntilIdle()
@@ -92,15 +92,15 @@ class HomeViewModelTest {
 
     @Test
     fun `atualizacao automatica nao roda por cima de uma tela de erro`() = runTest(dispatcher) {
-        var chamadas = 0
+        var calls = 0
         val vm = HomeViewModel(
             FakeDashboardSource {
-                chamadas += 1
+                calls += 1
                 DashboardResult.Error("caiu")
             },
         )
         advanceUntilIdle()
-        val depoisDaPrimeira = chamadas
+        val afterFirst = calls
 
         vm.autoRefresh()
         advanceUntilIdle()
@@ -108,7 +108,7 @@ class HomeViewModelTest {
         // A loop every 5 s on top of an error message would only make the
         // message flicker; the operator is the one who decides to leave that
         // state.
-        assertEquals(depoisDaPrimeira, chamadas)
+        assertEquals(afterFirst, calls)
     }
 
     @Test
@@ -134,11 +134,11 @@ class HomeViewModelTest {
 
     @Test
     fun `uma recarga bem-sucedida limpa o aviso de quadro velho`() = runTest(dispatcher) {
-        var chamadas = 0
+        var calls = 0
         val vm = HomeViewModel(
             FakeDashboardSource {
-                chamadas += 1
-                if (chamadas == 2) DashboardResult.Error("caiu") else DashboardResult.Success(snapshotReal())
+                calls += 1
+                if (calls == 2) DashboardResult.Error("caiu") else DashboardResult.Success(snapshotReal())
             },
         )
         advanceUntilIdle()

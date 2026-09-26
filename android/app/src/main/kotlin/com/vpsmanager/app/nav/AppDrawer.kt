@@ -36,8 +36,8 @@ internal const val SIGN_OUT_ICON_DESCRIPTION = "Sign out of the account"
 internal const val OPEN_DRAWER_DESCRIPTION = "Open navigation menu"
 
 /** Labels of the two shortcuts at the top. The UI and the test read them from here. */
-internal const val ATALHO_TERMINAL_LABEL = "Terminal"
-internal const val ATALHO_TAREFAS_LABEL = "Tasks"
+internal const val TERMINAL_SHORTCUT_LABEL = "Terminal"
+internal const val TASKS_SHORTCUT_LABEL = "Tasks"
 
 /**
  * The drawer's content: the panel's parent pages, and "Sign out" anchored.
@@ -78,7 +78,7 @@ internal fun AppDrawerSheet(
     onDestinationSelected: (AppDestination) -> Unit,
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
-    onAtalho: (String) -> Unit = {},
+    onShortcut: (String) -> Unit = {},
 ) {
     ModalDrawerSheet(modifier = modifier) {
         Column(modifier = Modifier.fillMaxHeight()) {
@@ -116,17 +116,17 @@ internal fun AppDrawerSheet(
                         .padding(horizontal = 12.dp, vertical = 2.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Atalho(
-                        rotulo = ATALHO_TERMINAL_LABEL,
-                        icone = VpsmIcons.Terminal,
+                    Shortcut(
+                        label = TERMINAL_SHORTCUT_LABEL,
+                        icon = VpsmIcons.Terminal,
                         modifier = Modifier.weight(1f),
-                        onClick = { onAtalho(ROTA_TERMINAL) },
+                        onClick = { onShortcut(ROUTE_TERMINAL) },
                     )
-                    Atalho(
-                        rotulo = ATALHO_TAREFAS_LABEL,
-                        icone = VpsmIcons.Quadro,
+                    Shortcut(
+                        label = TASKS_SHORTCUT_LABEL,
+                        icon = VpsmIcons.Board,
                         modifier = Modifier.weight(1f),
-                        onClick = { onAtalho(ROTA_JIRA) },
+                        onClick = { onShortcut(ROUTE_JIRA) },
                     )
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -185,9 +185,9 @@ internal fun AppDrawerSheet(
 
 /** A shortcut from the top: icon above the label, in a block wide enough for a thumb. */
 @Composable
-private fun Atalho(
-    rotulo: String,
-    icone: androidx.compose.ui.graphics.vector.ImageVector,
+private fun Shortcut(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -203,12 +203,12 @@ private fun Atalho(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(
-                imageVector = icone,
+                imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
             )
             Text(
-                text = rotulo,
+                text = label,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 maxLines = 1,

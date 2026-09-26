@@ -34,10 +34,10 @@ import androidx.compose.ui.unit.dp
 import com.vpsmanager.data.sdui.SduiSection
 
 /** Label of the search field. Both the UI and the test read it from here. */
-internal const val ADMIN_BUSCA_LABEL = "Search sections"
+internal const val ADMIN_SEARCH_LABEL = "Search sections"
 
 /** Header of the recents strip. */
-internal const val ADMIN_RECENTES_LABEL = "Recent"
+internal const val ADMIN_RECENTS_LABEL = "Recent"
 
 /**
  * The Administration launcher: **search on top, a grid of sections below**.
@@ -72,7 +72,7 @@ internal const val ADMIN_RECENTES_LABEL = "Recent"
  *
  * "Searched and found nothing" is neither empty nor an error, and it has to say
  * so with the term on screen — otherwise it looks as though the catalogue has
- * vanished. See [SemResultado].
+ * vanished. See [NoResults].
  *
  * The grid knows NO section name at all: label, group and order come whole from
  * `GET /screens`, already filtered by RBAC on the server.
@@ -80,25 +80,25 @@ internal const val ADMIN_RECENTES_LABEL = "Recent"
 @Composable
 internal fun AdminLauncher(
     sections: List<SduiSection>,
-    busca: String,
-    recentes: List<SduiSection>,
-    onBuscaChange: (String) -> Unit,
+    query: String,
+    recents: List<SduiSection>,
+    onQueryChange: (String) -> Unit,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val filtradas = filtrarSecoes(sections, busca)
-    val buscando = busca.isNotBlank()
+    val filtered = filterSections(sections, query)
+    val searching = query.isNotBlank()
 
     Column(modifier = modifier.fillMaxSize()) {
         OutlinedTextField(
-            value = busca,
-            onValueChange = onBuscaChange,
+            value = query,
+            onValueChange = onQueryChange,
             singleLine = true,
-            label = { Text(ADMIN_BUSCA_LABEL) },
+            label = { Text(ADMIN_SEARCH_LABEL) },
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
             trailingIcon = {
-                if (buscando) {
-                    IconButton(onClick = { onBuscaChange("") }) {
+                if (searching) {
+                    IconButton(onClick = { onQueryChange("") }) {
                         Icon(Icons.Filled.Close, contentDescription = "Clear search")
                     }
                 }
@@ -108,8 +108,8 @@ internal fun AdminLauncher(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         )
 
-        if (filtradas.isEmpty()) {
-            SemResultado(termo = busca, total = sections.size, onLimpar = { onBuscaChange("") })
+        if (filtered.isEmpty()) {
+            NoResults(term = query, total = sections.size, onClear = { onQueryChange("") })
             return@Column
         }
 
@@ -129,20 +129,20 @@ internal fun AdminLauncher(
             // typed has already said what they want, and repeating the recents
             // in the middle of the results would mix two answers to two
             // different questions.
-            if (!buscando && recentes.isNotEmpty()) {
+            if (!searching && recents.isNotEmpty()) {
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                    CabecalhoDeGrupo(ADMIN_RECENTES_LABEL)
+                    GroupHeader(ADMIN_RECENTS_LABEL)
                 }
-                items(recentes, key = { "recente-${it.id}" }) { secao ->
-                    CartaoDeSecao(secao = secao, onClick = { onSelect(secao.id) })
+                items(recents, key = { "recente-${it.id}" }) { section ->
+                    SectionCard(section = section, onClick = { onSelect(section.id) })
                 }
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                    CabecalhoDeGrupo("All sections")
+                    GroupHeader("All sections")
                 }
             }
 
-            items(filtradas, key = { it.id }) { secao ->
-                CartaoDeSecao(secao = secao, onClick = { onSelect(secao.id) })
+            items(filtered, key = { it.id }) { section ->
+                SectionCard(section = section, onClick = { onSelect(section.id) })
             }
         }
     }
@@ -157,20 +157,20 @@ internal fun AdminLauncher(
  * search fail precisely for the person who arrived from an error message — the
  * case where it is worth the most.
  */
-internal fun filtrarSecoes(sections: List<SduiSection>, busca: String): List<SduiSection> {
-    val termo = busca.trim()
-    if (termo.isEmpty()) return sections
-    return sections.filter { secao ->
-        secao.label.contains(termo, ignoreCase = true) ||
-            secao.group.contains(termo, ignoreCase = true) ||
-            secao.id.contains(termo, ignoreCase = true)
+internal fun filterSections(sections: List<SduiSection>, query: String): List<SduiSection> {
+    val term = query.trim()
+    if (term.isEmpty()) return sections
+    return sections.filter { section ->
+        section.label.contains(term, ignoreCase = true) ||
+            section.group.contains(term, ignoreCase = true) ||
+            section.id.contains(term, ignoreCase = true)
     }
 }
 
 @Composable
-private fun CabecalhoDeGrupo(texto: String) {
+private fun GroupHeader(text: String) {
     Text(
-        text = texto,
+        text = text,
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 2.dp),
@@ -188,11 +188,11 @@ private fun CabecalhoDeGrupo(texto: String) {
  * same mark) without the app knowing a single name.
  */
 @Composable
-private fun CartaoDeSecao(secao: SduiSection, onClick: () -> Unit) {
+private fun SectionCard(section: SduiSection, onClick: () -> Unit) {
     // The colour of the FAMILY. See CorDoGrupo: in a grid of thirty identical
     // blocks the eye cannot jump to "the Docker part" — the group label is
     // there, but reading thirty labels is the work the colour does for free.
-    val cor = corDoGrupo(secao.group)
+    val color = groupColor(section.group)
     Card(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
@@ -219,7 +219,7 @@ private fun CartaoDeSecao(secao: SduiSection, onClick: () -> Unit) {
                 shape = CircleShape,
                 // 18% of the accent: a chip visible in both themes without
                 // competing with the symbol it carries.
-                color = cor.copy(alpha = 0.18f),
+                color = color.copy(alpha = 0.18f),
                 modifier = Modifier.size(40.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -238,19 +238,19 @@ private fun CartaoDeSecao(secao: SduiSection, onClick: () -> Unit) {
                     // is a single target. Repeating "Docker" on the icon would
                     // make the screen reader say the same word twice.
                     Icon(
-                        imageVector = iconeDaSecao(secao.id),
+                        imageVector = sectionIcon(section.id),
                         contentDescription = null,
-                        tint = cor,
+                        tint = color,
                         modifier = Modifier.size(22.dp),
                     )
                 }
             }
             Text(
-                // The label arrives SHORTENED. See rotuloCurto: "Metrics (CPU,
+                // The label arrives SHORTENED. See shortLabel: "Metrics (CPU,
                 // memory, dis…" took two lines to say nothing — what sat inside
                 // the parentheses was detail, and it was the part surviving the
                 // cut.
-                text = rotuloCurto(secao.label),
+                text = shortLabel(section.label),
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
@@ -261,9 +261,9 @@ private fun CartaoDeSecao(secao: SduiSection, onClick: () -> Unit) {
             // for the colour itself, stated once per block. Without it, the
             // colour would be a code nobody was given.
             Text(
-                text = secao.group,
+                text = section.group,
                 style = MaterialTheme.typography.labelSmall,
-                color = cor,
+                color = color,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -279,7 +279,7 @@ private fun CartaoDeSecao(secao: SduiSection, onClick: () -> Unit) {
  * which is a completely different problem and frightens people for no reason.
  */
 @Composable
-private fun SemResultado(termo: String, total: Int, onLimpar: () -> Unit) {
+private fun NoResults(term: String, total: Int, onClear: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -294,7 +294,7 @@ private fun SemResultado(termo: String, total: Int, onLimpar: () -> Unit) {
             modifier = Modifier.size(40.dp),
         )
         Text(
-            text = "Nothing matches “$termo”",
+            text = "Nothing matches “$term”",
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(top = 12.dp),
         )
@@ -311,7 +311,7 @@ private fun SemResultado(termo: String, total: Int, onLimpar: () -> Unit) {
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .padding(top = 16.dp)
-                .clickable(onClick = onLimpar)
+                .clickable(onClick = onClear)
                 .padding(8.dp),
         )
     }
@@ -329,7 +329,7 @@ private fun SemResultado(termo: String, total: Int, onLimpar: () -> Unit) {
  * the two would show a filter over a list that will never have items.
  */
 @Composable
-internal fun AdminCatalogVazio(modifier: Modifier = Modifier) {
+internal fun AdminCatalogEmpty(modifier: Modifier = Modifier) {
     Column(modifier = modifier.fillMaxWidth().padding(24.dp)) {
         Text(
             text = "No sections available",

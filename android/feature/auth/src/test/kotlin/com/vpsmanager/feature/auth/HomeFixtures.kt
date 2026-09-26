@@ -87,7 +87,7 @@ internal fun snapshotReal(
 )
 
 /** A machine where nothing crossed a threshold and nothing fired. */
-internal fun snapshotCalmo() = snapshotReal(
+internal fun calmSnapshot() = snapshotReal(
     ops = opsReal(systemReal(swapUsedPercent = 12.0, steal = 0.0, load1 = 1.2, rootUsedPercent = 30.0)),
     deploys = listOf(DeploySummary("hello", "ok", "2026-07-19 13:17 UTC")),
 )

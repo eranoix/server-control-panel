@@ -4,7 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 
 /** Which of the selection's two ends a handle controls. */
-enum class SelectionHandle { INICIO, FIM }
+enum class SelectionHandle { START, END }
 
 /**
  * Where the two handles are anchored, in grid pixels.
@@ -15,7 +15,7 @@ enum class SelectionHandle { INICIO, FIM }
  * to the right and the right one up and to the left: each "points at" the
  * character it delimits.
  */
-data class HandleAnchors(val inicio: Offset, val fim: Offset)
+data class HandleAnchors(val start: Offset, val end: Offset)
 
 /**
  * Translates a selection in cell coordinates into the two anchor points of the
@@ -27,34 +27,34 @@ data class HandleAnchors(val inicio: Offset, val fim: Offset)
  * handle runs away from the finger mid-drag.
  */
 fun handleAnchors(selection: GridSelection, hitTester: CellHitTester): HandleAnchors {
-    val ordenada = emOrdemDeLeitura(selection)
-    val primeira = hitTester.cellRect(ordenada.startRow, ordenada.startCol)
-    val ultima = hitTester.cellRect(ordenada.endRow, ordenada.endCol)
+    val ordered = inReadingOrder(selection)
+    val first = hitTester.cellRect(ordered.startRow, ordered.startCol)
+    val last = hitTester.cellRect(ordered.endRow, ordered.endCol)
     return HandleAnchors(
-        inicio = Offset(primeira.left, primeira.bottom),
-        fim = Offset(ultima.right, ultima.bottom),
+        start = Offset(first.left, first.bottom),
+        end = Offset(last.right, last.bottom),
     )
 }
 
 /**
  * Which handle the finger caught, or `null` if it caught the grid.
  *
- * [raioPx] is generous on purpose: the drawn handle is about 24 dp, but an
+ * [radiusPx] is generous on purpose: the drawn handle is about 24 dp, but an
  * Android control's touch target is 48 dp, and a handle that only responds
  * exactly on its drawing is a handle that "does not work" in practice. When
  * both are within reach — a single-cell selection — the nearest one wins, and
  * on a tie the END one, which is the one dragged in the overwhelming majority
  * of adjustments.
  */
-fun handleAt(position: Offset, anchors: HandleAnchors, raioPx: Float): SelectionHandle? {
-    val distanciaInicio = (position - anchors.inicio).getDistance()
-    val distanciaFim = (position - anchors.fim).getDistance()
-    val inicioAoAlcance = distanciaInicio <= raioPx
-    val fimAoAlcance = distanciaFim <= raioPx
+fun handleAt(position: Offset, anchors: HandleAnchors, radiusPx: Float): SelectionHandle? {
+    val startDistance = (position - anchors.start).getDistance()
+    val endDistance = (position - anchors.end).getDistance()
+    val startInReach = startDistance <= radiusPx
+    val endInReach = endDistance <= radiusPx
     return when {
-        inicioAoAlcance && fimAoAlcance -> if (distanciaInicio < distanciaFim) SelectionHandle.INICIO else SelectionHandle.FIM
-        inicioAoAlcance -> SelectionHandle.INICIO
-        fimAoAlcance -> SelectionHandle.FIM
+        startInReach && endInReach -> if (startDistance < endDistance) SelectionHandle.START else SelectionHandle.END
+        startInReach -> SelectionHandle.START
+        endInReach -> SelectionHandle.END
         else -> null
     }
 }
@@ -65,14 +65,14 @@ fun handleAt(position: Offset, anchors: HandleAnchors, raioPx: Float): Selection
  * the selected text instead of on top of it.
  */
 fun selectionBounds(selection: GridSelection, hitTester: CellHitTester): Rect {
-    val ordenada = emOrdemDeLeitura(selection)
-    val primeira = hitTester.cellRect(ordenada.startRow, ordenada.startCol)
-    val ultima = hitTester.cellRect(ordenada.endRow, ordenada.endCol)
+    val ordered = inReadingOrder(selection)
+    val first = hitTester.cellRect(ordered.startRow, ordered.startCol)
+    val last = hitTester.cellRect(ordered.endRow, ordered.endCol)
     // On a multi-line selection the rectangle is the whole band: the bar needs
     // to know the content is tall, not just where the first cell is.
-    val esquerda = if (ordenada.startRow == ordenada.endRow) primeira.left else minOf(primeira.left, ultima.left)
-    val direita = if (ordenada.startRow == ordenada.endRow) ultima.right else maxOf(primeira.right, ultima.right)
-    return Rect(left = esquerda, top = primeira.top, right = direita, bottom = ultima.bottom)
+    val left = if (ordered.startRow == ordered.endRow) first.left else minOf(first.left, last.left)
+    val right = if (ordered.startRow == ordered.endRow) last.right else maxOf(first.right, last.right)
+    return Rect(left = left, top = first.top, right = right, bottom = last.bottom)
 }
 
 /**
@@ -82,11 +82,11 @@ fun selectionBounds(selection: GridSelection, hitTester: CellHitTester): Rect {
  * text selection on Android has.
  */
 fun selectionRowRanges(selection: GridSelection, cols: Int): List<IntRange> {
-    val ordenada = emOrdemDeLeitura(selection)
-    return (ordenada.startRow..ordenada.endRow).map { row ->
-        val de = if (row == ordenada.startRow) ordenada.startCol else 0
-        val ate = if (row == ordenada.endRow) ordenada.endCol else cols - 1
-        de..ate
+    val ordered = inReadingOrder(selection)
+    return (ordered.startRow..ordered.endRow).map { row ->
+        val from = if (row == ordered.startRow) ordered.startCol else 0
+        val until = if (row == ordered.endRow) ordered.endCol else cols - 1
+        from..until
     }
 }
 
@@ -95,10 +95,10 @@ fun selectionRowRanges(selection: GridSelection, cols: Int): List<IntRange> {
  * cross during the drag — that is a legitimate gesture — and this is where
  * that stops mattering to anyone who just wants to draw or measure.
  */
-internal fun emOrdemDeLeitura(selection: GridSelection): GridSelection {
-    val depoisDoFim = selection.startRow > selection.endRow ||
+internal fun inReadingOrder(selection: GridSelection): GridSelection {
+    val pastEnd = selection.startRow > selection.endRow ||
         (selection.startRow == selection.endRow && selection.startCol > selection.endCol)
-    return if (depoisDoFim) {
+    return if (pastEnd) {
         GridSelection(
             startRow = selection.endRow,
             startCol = selection.endCol,

@@ -102,13 +102,13 @@ class UpdateBannerTest {
 
     @Test
     fun `aplicar e instalar mostram giro e nenhum botao — nao ha o que cancelar ali`() {
-        val aplicando = checkNotNull(bannerContentFor(UpdateState.Applying("0.1.7")))
-        assertTrue(aplicando.spinner)
-        assertTrue(aplicando.actions.isEmpty())
+        val applying = checkNotNull(bannerContentFor(UpdateState.Applying("0.1.7")))
+        assertTrue(applying.spinner)
+        assertTrue(applying.actions.isEmpty())
 
-        val instalando = checkNotNull(bannerContentFor(UpdateState.Installing("0.1.7")))
-        assertTrue(instalando.spinner)
-        assertTrue(instalando.actions.isEmpty())
+        val installing = checkNotNull(bannerContentFor(UpdateState.Installing("0.1.7")))
+        assertTrue(installing.spinner)
+        assertTrue(installing.actions.isEmpty())
     }
 
     @Test
@@ -169,14 +169,14 @@ class UpdateBannerTest {
 
     @Test
     fun `tocar em Atualizar dispara o download e nao o cancelamento`() {
-        var atualizou = 0
-        var cancelou = 0
+        var updated = 0
+        var cancelled = 0
         composeRule.setContent {
             VpsManagerTheme {
                 UpdateBanner(
                     state = UpdateState.Available("0.1.7", 1_400_329, incremental = true),
-                    onUpdateClick = { atualizou++ },
-                    onCancelClick = { cancelou++ },
+                    onUpdateClick = { updated++ },
+                    onCancelClick = { cancelled++ },
                     onRecoveryClick = {},
                 )
             }
@@ -184,19 +184,19 @@ class UpdateBannerTest {
 
         composeRule.onNodeWithText("Update").performClick()
 
-        assertEquals(1, atualizou)
-        assertEquals(0, cancelou)
+        assertEquals(1, updated)
+        assertEquals(0, cancelled)
     }
 
     @Test
     fun `tocar em Cancelar durante o download cancela`() {
-        var cancelou = 0
+        var cancelled = 0
         composeRule.setContent {
             VpsManagerTheme {
                 UpdateBanner(
                     state = UpdateState.Downloading("0.1.7", 700_000, 1_400_329),
                     onUpdateClick = {},
-                    onCancelClick = { cancelou++ },
+                    onCancelClick = { cancelled++ },
                     onRecoveryClick = {},
                 )
             }
@@ -204,37 +204,37 @@ class UpdateBannerTest {
 
         composeRule.onNodeWithText("Cancel").performClick()
 
-        assertEquals(1, cancelou)
+        assertEquals(1, cancelled)
     }
 
     @Test
     fun `tocar na saida de uma falha entrega QUAL saida foi pedida`() {
-        var pedida: UpdateRecovery? = null
+        var requested: UpdateRecovery? = null
         composeRule.setContent {
             VpsManagerTheme {
                 UpdateBanner(
                     state = UpdateState.Failed("sem permissão", canRetry = true, recovery = UpdateRecovery.ALLOW_UNKNOWN_SOURCES),
                     onUpdateClick = {},
                     onCancelClick = {},
-                    onRecoveryClick = { pedida = it },
+                    onRecoveryClick = { requested = it },
                 )
             }
         }
 
         composeRule.onNodeWithText("Allow").performClick()
 
-        assertEquals(UpdateRecovery.ALLOW_UNKNOWN_SOURCES, pedida)
+        assertEquals(UpdateRecovery.ALLOW_UNKNOWN_SOURCES, requested)
     }
 
     /** "Try again" is the same path as "Update" — the coordinator resumes the partial download. */
     @Test
     fun `tentar de novo reusa o caminho de atualizar`() {
-        var atualizou = 0
+        var updated = 0
         composeRule.setContent {
             VpsManagerTheme {
                 UpdateBanner(
                     state = UpdateState.Failed("Falha de conexão.", canRetry = true),
-                    onUpdateClick = { atualizou++ },
+                    onUpdateClick = { updated++ },
                     onCancelClick = {},
                     onRecoveryClick = {},
                 )
@@ -243,6 +243,6 @@ class UpdateBannerTest {
 
         composeRule.onNodeWithText("Try again").performClick()
 
-        assertEquals(1, atualizou)
+        assertEquals(1, updated)
     }
 }

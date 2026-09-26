@@ -140,13 +140,13 @@ class AppCoroutineScopeTest {
      */
     @Test
     fun `a construcao pre-correcao nao tem handler nenhum — e por isso vazava`() {
-        val escopoCru = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val rawScope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
         assertNull(
             "um escopo sem CoroutineExceptionHandler nao tem para onde mandar a " +
                 "excecao: ela escapa para o handler padrao da thread",
-            escopoCru.coroutineContext[kotlinx.coroutines.CoroutineExceptionHandler],
+            rawScope.coroutineContext[kotlinx.coroutines.CoroutineExceptionHandler],
         )
-        escopoCru.cancel()
+        rawScope.cancel()
     }
 
 }

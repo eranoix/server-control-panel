@@ -24,76 +24,76 @@ import org.robolectric.RobolectricTestRunner
 class ThemePreferenceTest {
 
     private lateinit var context: Context
-    private var contador = 0
+    private var counter = 0
 
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
     }
 
-    private fun novoArquivo() =
-        context.getSharedPreferences("teste-aparencia-${contador++}", Context.MODE_PRIVATE)
+    private fun newFile() =
+        context.getSharedPreferences("teste-aparencia-${counter++}", Context.MODE_PRIVATE)
 
     @Test
     fun `sem escolha previa o padrao e seguir o sistema`() {
-        val pref = ThemePreference(novoArquivo())
+        val pref = ThemePreference(newFile())
 
-        assertEquals(ThemeMode.SISTEMA, pref.current())
-        assertEquals(ThemeMode.SISTEMA, pref.mode.value)
+        assertEquals(ThemeMode.SYSTEM, pref.current())
+        assertEquals(ThemeMode.SYSTEM, pref.mode.value)
     }
 
     @Test
     fun `a escolha sobrevive a uma nova execucao do app`() {
-        val arquivo = novoArquivo()
+        val file = newFile()
 
         // Run 1: the owner chooses light.
-        ThemePreference(arquivo).set(ThemeMode.CLARO)
+        ThemePreference(file).set(ThemeMode.LIGHT)
 
         // Run 2: a NEW instance reading the same disk — this is what a process
         // relaunch does.
-        val depoisDeReabrir = ThemePreference(arquivo)
-        assertEquals(ThemeMode.CLARO, depoisDeReabrir.current())
+        val afterReopen = ThemePreference(file)
+        assertEquals(ThemeMode.LIGHT, afterReopen.current())
     }
 
     @Test
     fun `voltar para seguir o sistema tambem persiste`() {
-        val arquivo = novoArquivo()
-        ThemePreference(arquivo).set(ThemeMode.ESCURO)
-        ThemePreference(arquivo).set(ThemeMode.SISTEMA)
+        val file = newFile()
+        ThemePreference(file).set(ThemeMode.DARK)
+        ThemePreference(file).set(ThemeMode.SYSTEM)
 
-        assertEquals(ThemeMode.SISTEMA, ThemePreference(arquivo).current())
+        assertEquals(ThemeMode.SYSTEM, ThemePreference(file).current())
     }
 
     @Test
     fun `o valor inicial do fluxo ja e o do disco, sem quadro com o tema errado`() = runTest {
-        val arquivo = novoArquivo()
-        ThemePreference(arquivo).set(ThemeMode.ESCURO)
+        val file = newFile()
+        ThemePreference(file).set(ThemeMode.DARK)
 
         // A StateFlow's `.value` is synchronous: if the read were asynchronous,
         // this value would be the default and the UI would compose light before
         // turning dark. That is exactly the "flash" this test guards against.
-        assertEquals(ThemeMode.ESCURO, ThemePreference(arquivo).mode.value)
+        assertEquals(ThemeMode.DARK, ThemePreference(file).mode.value)
     }
 
     @Test
     fun `um valor gravado desconhecido cai no padrao em vez de estourar`() {
-        val arquivo = novoArquivo()
-        arquivo.edit().putString("modo_tema", "sepia-de-uma-versao-futura").commit()
+        val file = newFile()
+        file.edit().putString("modo_tema", "sepia-de-uma-versao-futura").commit()
 
-        assertEquals(ThemeMode.SISTEMA, ThemePreference(arquivo).current())
+        assertEquals(ThemeMode.SYSTEM, ThemePreference(file).current())
     }
 
     @Test
     fun `trocar a escolha publica no fluxo imediatamente`() {
-        val pref = ThemePreference(novoArquivo())
-        val visto = mutableListOf(pref.mode.value)
+        val pref = ThemePreference(newFile())
+        val seen = mutableListOf(pref.mode.value)
 
-        pref.set(ThemeMode.CLARO)
-        visto += pref.mode.value
-        pref.set(ThemeMode.ESCURO)
-        visto += pref.mode.value
+        pref.set(ThemeMode.LIGHT)
+        seen += pref.mode.value
+        pref.set(ThemeMode.DARK)
+        seen += pref.mode.value
 
-        assertEquals(listOf(ThemeMode.SISTEMA, ThemeMode.CLARO, ThemeMode.ESCURO), visto)
+        assertEquals(listOf(ThemeMode.SYSTEM, ThemeMode.LIGHT, ThemeMode.DARK), seen)
     }
 
     @Test
@@ -103,27 +103,27 @@ class ThemePreferenceTest {
         assertTrue(ThemePreference.get(context) === ThemePreference.get(context))
         // And the direct constructor still gives an isolated instance, which is
         // what the tests above rely on.
-        assertNotSame(ThemePreference.get(context), ThemePreference(novoArquivo()))
+        assertNotSame(ThemePreference.get(context), ThemePreference(newFile()))
     }
 
     @Test
     fun `escolha manual ignora o sistema e seguir o sistema obedece`() {
         // The core of the rule, with no UI: CLARO/ESCURO answer the same with
         // the system in any state; SISTEMA mirrors the state.
-        assertEquals(false, ThemeMode.CLARO.escuro(sistemaEscuro = true))
-        assertEquals(false, ThemeMode.CLARO.escuro(sistemaEscuro = false))
-        assertEquals(true, ThemeMode.ESCURO.escuro(sistemaEscuro = true))
-        assertEquals(true, ThemeMode.ESCURO.escuro(sistemaEscuro = false))
-        assertEquals(true, ThemeMode.SISTEMA.escuro(sistemaEscuro = true))
-        assertEquals(false, ThemeMode.SISTEMA.escuro(sistemaEscuro = false))
+        assertEquals(false, ThemeMode.LIGHT.dark(systemDark = true))
+        assertEquals(false, ThemeMode.LIGHT.dark(systemDark = false))
+        assertEquals(true, ThemeMode.DARK.dark(systemDark = true))
+        assertEquals(true, ThemeMode.DARK.dark(systemDark = false))
+        assertEquals(true, ThemeMode.SYSTEM.dark(systemDark = true))
+        assertEquals(false, ThemeMode.SYSTEM.dark(systemDark = false))
     }
 
     @Test
     fun `os ids gravados sao estaveis`() {
         // Compatibility guard: changing one of these literals turns the
         // already-saved preference of anyone who updates into "system" silently.
-        assertEquals("claro", ThemeMode.CLARO.id)
-        assertEquals("escuro", ThemeMode.ESCURO.id)
-        assertEquals("sistema", ThemeMode.SISTEMA.id)
+        assertEquals("claro", ThemeMode.LIGHT.id)
+        assertEquals("escuro", ThemeMode.DARK.id)
+        assertEquals("sistema", ThemeMode.SYSTEM.id)
     }
 }

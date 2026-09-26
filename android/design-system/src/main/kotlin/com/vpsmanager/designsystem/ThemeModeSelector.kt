@@ -61,12 +61,12 @@ fun ThemeModeSelector(
         SingleChoiceSegmentedButtonRow(
             modifier = Modifier.fillMaxWidth().testTag(THEME_SELECTOR_TAG),
         ) {
-            ThemeMode.entries.forEachIndexed { indice, mode ->
+            ThemeMode.entries.forEachIndexed { index, mode ->
                 SegmentedButton(
                     selected = mode == selected,
                     onClick = { onSelect(mode) },
                     shape = SegmentedButtonDefaults.itemShape(
-                        index = indice,
+                        index = index,
                         count = ThemeMode.entries.size,
                     ),
                     // No check icon: with it, the three labels share the

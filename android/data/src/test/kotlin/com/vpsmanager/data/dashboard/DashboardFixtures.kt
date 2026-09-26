@@ -17,7 +17,7 @@ import com.vpsmanager.data.ops.SystemSnapshot
  * exactly the case a naive dashboard paints as "all good" — and that is why it
  * is this suite's main fixture.
  */
-internal fun producaoReal(
+internal fun productionLike(
     swapUsedPercent: Double = 99.99814033419625,
     memUsedPercent: Double = 63.13659490136221,
     steal: Double = 7.0427350429260835,
@@ -61,7 +61,7 @@ internal fun producaoReal(
 )
 
 /** O `/ops/status` inteiro daquele mesmo instante: nove subsistemas ok, fila parada, zero alertas. */
-internal fun opsReal(system: SystemSnapshot? = producaoReal()) = OpsSnapshot(
+internal fun opsReal(system: SystemSnapshot? = productionLike()) = OpsSnapshot(
     health = mapOf(
         "audit" to "ok",
         "claude_router" to "ok",
@@ -80,12 +80,12 @@ internal fun opsReal(system: SystemSnapshot? = producaoReal()) = OpsSnapshot(
 )
 
 /** The real `/deploy/apps`: one app, with its last deploy rolled back. */
-internal fun deploysReais() = listOf(
+internal fun realisticDeploys() = listOf(
     DeploySummary(name = "hello", lastStatus = "rolled_back", updated = "2026-07-19 13:17 UTC"),
 )
 
 /** The five real scheduled jobs, all with `last_status = ok`. */
-internal fun agendadosReais() = listOf(
+internal fun realisticScheduled() = listOf(
     ScheduledSummary("Backup de sessões do terminal a cada 10min", "ok", "2026-09-06 07:00 UTC", "2026-09-06 07:10 UTC", true),
     ScheduledSummary("Reaper de preview envs (#37)", "ok", "2026-09-06 06:17 UTC", "2026-09-06 07:17 UTC", true),
     ScheduledSummary("Keep-alive 5h — Jordan", "ok", "2026-09-06 06:23 UTC", "2026-09-06 07:23 UTC", true),
@@ -95,8 +95,8 @@ internal fun agendadosReais() = listOf(
 
 internal fun snapshotReal(
     ops: OpsSnapshot = opsReal(),
-    deploys: List<DeploySummary>? = deploysReais(),
-    scheduled: List<ScheduledSummary>? = agendadosReais(),
+    deploys: List<DeploySummary>? = realisticDeploys(),
+    scheduled: List<ScheduledSummary>? = realisticScheduled(),
     fetchedAtEpochMs: Long = 1_788_678_502_000,
 ) = DashboardSnapshot(
     ops = ops,

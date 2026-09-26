@@ -7,7 +7,7 @@ import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.ExtractedText
 import android.view.inputmethod.ExtractedTextRequest
-import com.vpsmanager.feature.terminal.prefs.ModoDeDigitacao
+import com.vpsmanager.feature.terminal.prefs.TypingMode
 import com.vpsmanager.terminalengine.KeyByteEncoder
 
 /**
@@ -30,17 +30,17 @@ import com.vpsmanager.terminalengine.KeyByteEncoder
  *
  * ## How it ended up
  *
- * The behaviour is now defined by [ModoDeDigitacao], read ON EVERY call (never
+ * The behaviour is now defined by [TypingMode], read ON EVERY call (never
  * from a stored copy — the person switches mode mid-session, and a copy would
- * go stale in silence, for the same reason documented in `RoteamentoDeToque`):
+ * go stale in silence, for the same reason documented in `TouchRouting`):
  *
- * - [ModoDeDigitacao.TERMINAL] — [TerminalInputView] declares `TYPE_NULL` and
+ * - [TypingMode.TERMINAL] — [TerminalInputView] declares `TYPE_NULL` and
  *   the keyboard sends key events. If a keyboard ignores `TYPE_NULL` and
  *   composes anyway (Samsung is the known case), the text **is not held back**:
  *   each new piece of the composition goes straight to the terminal, and
  *   shrinking the composition sends DEL. The terminal is never stuck while you
  *   type.
- * - [ModoDeDigitacao.TEXTO] — the composition is kept AND returned by the
+ * - [TypingMode.TEXT] — the composition is kept AND returned by the
  *   getters, which is the contract the `inputType` promises. Autocorrect gets
  *   to see what has already been typed; the word only goes to the terminal once
  *   confirmed.
@@ -55,8 +55,8 @@ class TerminalInputConnection(
     view: View,
     private val sink: ByteSink,
     private val cursorMode: KeyByteEncoder.CursorMode = KeyByteEncoder.CursorMode.NORMAL,
-    private val modo: () -> ModoDeDigitacao = { ModoDeDigitacao.PADRAO },
-    private val aoMudarComposicao: (String) -> Unit = {},
+    private val mode: () -> TypingMode = { TypingMode.DEFAULT },
+    private val onCompositionChange: (String) -> Unit = {},
     private val nowNanos: () -> Long = System::nanoTime,
 ) : BaseInputConnection(view, false) {
 
@@ -69,7 +69,7 @@ class TerminalInputConnection(
      * the composition is passed straight through instead of being held. It is
      * what lets a word be confirmed without resending what already went out.
      */
-    private var jaEnviado = 0
+    private var alreadySent = 0
 
     // --- IME vs. synthetic key tie-breaker -----------------------------------
     // Several keyboards call commitText(...) for the word AND, right after,
@@ -87,25 +87,25 @@ class TerminalInputConnection(
     override fun getEditable(): Editable? = null
 
     override fun setComposingText(text: CharSequence, newCursorPosition: Int): Boolean {
-        val novo = text.toString()
-        if (modo().componeTexto) {
-            trocarComposicao(novo)
+        val next = text.toString()
+        if (mode().composesText) {
+            replaceComposition(next)
             return true
         }
 
         // TERMINAL mode: nothing may be held hostage by the keyboard. Pass the
         // difference through to the terminal now — the immediate echo a shell
         // demands.
-        val prefixoComum = prefixoComum(composing, novo)
-        if (jaEnviado > prefixoComum) {
-            enviar(ByteArray(jaEnviado - prefixoComum) { DEL_BYTE })
-            jaEnviado = prefixoComum
+        val commonPrefix = commonPrefix(composing, next)
+        if (alreadySent > commonPrefix) {
+            send(ByteArray(alreadySent - commonPrefix) { DEL_BYTE })
+            alreadySent = commonPrefix
         }
-        if (novo.length > jaEnviado) {
-            enviarTexto(novo.substring(jaEnviado))
-            jaEnviado = novo.length
+        if (next.length > alreadySent) {
+            sendText(next.substring(alreadySent))
+            alreadySent = next.length
         }
-        trocarComposicao(novo)
+        replaceComposition(next)
         return true
     }
 
@@ -119,52 +119,52 @@ class TerminalInputConnection(
         // The keyboard is saying "the composition stands as it is". Discarding
         // here LOST the word — switching apps or tapping outside mid-word was
         // enough. Whatever has not gone out yet goes out now.
-        despejarPendente()
-        limparComposicao()
+        flushPending()
+        clearComposition()
         return true
     }
 
     override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
         val committed = text.toString()
 
-        if (jaEnviado > 0) {
+        if (alreadySent > 0) {
             // TERMINAL mode with a keyboard that composes anyway: part of this
             // is already on screen. If what is being confirmed starts with what
             // already went out, send only the remainder; if the keyboard
             // REPLACED the word (autocorrect acting in a mode that never asked
             // for it), erase what went out before sending the new version,
             // rather than leaving both on screen.
-            if (committed.startsWith(composing.substring(0, jaEnviado))) {
-                if (committed.length > jaEnviado) enviarTexto(committed.substring(jaEnviado))
+            if (committed.startsWith(composing.substring(0, alreadySent))) {
+                if (committed.length > alreadySent) sendText(committed.substring(alreadySent))
             } else {
-                enviar(ByteArray(jaEnviado) { DEL_BYTE })
-                enviarTexto(committed)
+                send(ByteArray(alreadySent) { DEL_BYTE })
+                sendText(committed)
             }
         } else if (committed.isNotEmpty()) {
-            enviarTexto(committed)
+            sendText(committed)
         }
 
-        limparComposicao()
+        clearComposition()
         return true
     }
 
     override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-        if (composing.isNotEmpty() && jaEnviado == 0) {
+        if (composing.isNotEmpty() && alreadySent == 0) {
             // Deleting inside the composition, TEXTO mode: shrink the local
             // buffer. Nothing was sent to the terminal for it, so there is
             // nothing to undo over there.
             val remove = minOf(beforeLength, composing.length)
-            trocarComposicao(composing.substring(0, composing.length - remove))
+            replaceComposition(composing.substring(0, composing.length - remove))
             return true
         }
         // No pending composition (or nothing beyond what was already echoed in
         // TERMINAL mode): the delete belongs to the terminal. A Samsung
         // keyboard with "fix spelling" will ask for beforeLength > 1 at once.
-        val remove = if (composing.isEmpty()) beforeLength else minOf(beforeLength, jaEnviado)
-        if (remove > 0) enviar(ByteArray(remove) { DEL_BYTE })
+        val remove = if (composing.isEmpty()) beforeLength else minOf(beforeLength, alreadySent)
+        if (remove > 0) send(ByteArray(remove) { DEL_BYTE })
         if (composing.isNotEmpty()) {
-            jaEnviado -= remove
-            trocarComposicao(composing.substring(0, composing.length - remove))
+            alreadySent -= remove
+            replaceComposition(composing.substring(0, composing.length - remove))
         }
         return true
     }
@@ -185,8 +185,8 @@ class TerminalInputConnection(
         // whatever is in flight has to reach the terminal BEFORE it, otherwise
         // the word comes out after the Enter that was meant to send it.
         if (composing.isNotEmpty()) {
-            despejarPendente()
-            limparComposicao()
+            flushPending()
+            clearComposition()
         }
         sink.send(bytes)
         return true
@@ -239,8 +239,8 @@ class TerminalInputConnection(
 
     override fun getTextBeforeCursor(n: Int, flags: Int): CharSequence {
         if (n <= 0) return ""
-        val real = if (modo().componeTexto) composing.toString() else ""
-        val virtual = SENTINELA_ESQUERDA + real
+        val real = if (mode().composesText) composing.toString() else ""
+        val virtual = LEFT_SENTINEL + real
         return if (virtual.length <= n) virtual else virtual.substring(virtual.length - n)
     }
 
@@ -251,7 +251,7 @@ class TerminalInputConnection(
      */
     override fun getTextAfterCursor(n: Int, flags: Int): CharSequence {
         if (n <= 0) return ""
-        return if (SENTINELA_DIREITA.length <= n) SENTINELA_DIREITA else SENTINELA_DIREITA.substring(0, n)
+        return if (RIGHT_SENTINEL.length <= n) RIGHT_SENTINEL else RIGHT_SENTINEL.substring(0, n)
     }
 
     /** Selection belongs to the GRID, never to the IME — see `GridSelection`. */
@@ -268,11 +268,11 @@ class TerminalInputConnection(
      * expose, but there is a cursor, and it is not at a boundary.
      */
     override fun getExtractedText(request: ExtractedTextRequest?, flags: Int): ExtractedText? {
-        val real = if (modo().componeTexto) composing.toString() else ""
-        val texto = SENTINELA_ESQUERDA + real + SENTINELA_DIREITA
-        val cursor = SENTINELA_ESQUERDA.length + real.length
+        val real = if (mode().composesText) composing.toString() else ""
+        val text = LEFT_SENTINEL + real + RIGHT_SENTINEL
+        val cursor = LEFT_SENTINEL.length + real.length
         return ExtractedText().apply {
-            this.text = texto
+            this.text = text
             startOffset = 0
             partialStartOffset = -1
             partialEndOffset = -1
@@ -290,7 +290,7 @@ class TerminalInputConnection(
      * punctuation and must not open a sentence.
      */
     override fun getCursorCapsMode(reqModes: Int): Int {
-        if (!modo().componeTexto) return 0
+        if (!mode().composesText) return 0
         return TextUtils.getCapsMode(composing.toString(), composing.length, reqModes)
     }
 
@@ -307,16 +307,16 @@ class TerminalInputConnection(
     // respected, and `endBatchEdit` reports whether any batch is still open —
     // which is literally what the documentation asks for.
 
-    private var lotesAbertos = 0
+    private var openBatches = 0
 
     override fun beginBatchEdit(): Boolean {
-        lotesAbertos++
+        openBatches++
         return true
     }
 
     override fun endBatchEdit(): Boolean {
-        if (lotesAbertos > 0) lotesAbertos--
-        return lotesAbertos > 0
+        if (openBatches > 0) openBatches--
+        return openBatches > 0
     }
 
     /** Test only — never called by production code. */
@@ -324,40 +324,40 @@ class TerminalInputConnection(
 
     // --- interno -------------------------------------------------------------
 
-    private fun trocarComposicao(novo: String) {
-        if (composing.toString() == novo) return
+    private fun replaceComposition(next: String) {
+        if (composing.toString() == next) return
         composing.setLength(0)
-        composing.append(novo)
-        aoMudarComposicao(novo)
+        composing.append(next)
+        onCompositionChange(next)
     }
 
-    private fun limparComposicao() {
-        jaEnviado = 0
-        trocarComposicao("")
+    private fun clearComposition() {
+        alreadySent = 0
+        replaceComposition("")
     }
 
     /** Sends the terminal whatever is left of the composition and has not gone out. */
-    private fun despejarPendente() {
-        if (composing.length > jaEnviado) {
-            enviarTexto(composing.substring(jaEnviado))
-            jaEnviado = composing.length
+    private fun flushPending() {
+        if (composing.length > alreadySent) {
+            sendText(composing.substring(alreadySent))
+            alreadySent = composing.length
         }
     }
 
-    private fun enviarTexto(texto: String) {
-        if (texto.isEmpty()) return
-        enviar(texto.toByteArray(Charsets.UTF_8))
-        armDedupGuard(texto)
+    private fun sendText(text: String) {
+        if (text.isEmpty()) return
+        send(text.toByteArray(Charsets.UTF_8))
+        armDedupGuard(text)
     }
 
-    private fun enviar(bytes: ByteArray) {
+    private fun send(bytes: ByteArray) {
         if (bytes.isEmpty()) return
         sink.send(bytes)
     }
 
-    private fun armDedupGuard(enviado: String) {
+    private fun armDedupGuard(sent: String) {
         dedupQueue.clear()
-        enviado.forEach(dedupQueue::addLast)
+        sent.forEach(dedupQueue::addLast)
         dedupDeadlineNanos = nowNanos() + DEDUP_WINDOW_NANOS
     }
 
@@ -375,17 +375,17 @@ class TerminalInputConnection(
          * does not attach them to the word when segmenting. They are NEVER sent
          * to the terminal.
          */
-        const val SENTINELA_ESQUERDA = "\uE000"
-        const val SENTINELA_DIREITA = "\uE001"
+        const val LEFT_SENTINEL = "\uE000"
+        const val RIGHT_SENTINEL = "\uE001"
 
         const val DEL_BYTE: Byte = 0x7f
         const val DEDUP_WINDOW_NANOS = 150_000_000L
 
         /** How many leading characters two strings have in common. */
-        fun prefixoComum(a: CharSequence, b: CharSequence): Int {
-            val limite = minOf(a.length, b.length)
+        fun commonPrefix(a: CharSequence, b: CharSequence): Int {
+            val cutoff = minOf(a.length, b.length)
             var i = 0
-            while (i < limite && a[i] == b[i]) i++
+            while (i < cutoff && a[i] == b[i]) i++
             return i
         }
     }

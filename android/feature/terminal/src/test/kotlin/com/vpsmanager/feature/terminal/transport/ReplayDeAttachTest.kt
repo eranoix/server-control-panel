@@ -10,26 +10,26 @@ import org.junit.Test
  *
  * The numbers in these tests are not invented: they come from counting across
  * the 30 real session logs on this machine, over the same 128 KiB window the
- * server re-emits. See the comment on [ReplayDeAttach] for the table.
+ * server re-emits. See the comment on [AttachReplay] for the table.
  */
-class ReplayDeAttachTest {
+class AttachReplayTest {
 
-    private fun cuu(linhas: String): ByteArray = "[${linhas}A".toByteArray()
+    private fun cuu(lines: String): ByteArray = "[${lines}A".toByteArray()
 
-    private fun fluxo(vezes: Int, linhas: String): ByteArray {
-        val saida = ArrayList<Byte>()
-        repeat(vezes) {
-            saida.addAll("texto de uma linha qualquer\r\n".toByteArray().toList())
-            saida.addAll(cuu(linhas).toList())
+    private fun stream(times: Int, lines: String): ByteArray {
+        val output = ArrayList<Byte>()
+        repeat(times) {
+            output.addAll("texto de uma linha qualquer\r\n".toByteArray().toList())
+            output.addAll(cuu(lines).toList())
         }
-        return saida.toByteArray()
+        return output.toByteArray()
     }
 
     @Test
     fun `saida append-only de shell nao e repintura`() {
         val shell = "$ ls -l\r\ntotal 4\r\ndrwxr-xr-x 2 root root 4096 dir\r\n$ ".toByteArray()
-        assertEquals(0, ReplayDeAttach.contarCuuDeBloco(shell))
-        assertFalse(ReplayDeAttach.ehRepinturaDiferencial(shell))
+        assertEquals(0, AttachReplay.countBlockCuu(shell))
+        assertFalse(AttachReplay.isDiffRepaint(shell))
     }
 
     @Test
@@ -38,10 +38,10 @@ class ReplayDeAttachTest {
         // prompt. Measured: the worst real shell on this machine had 34 of
         // them and ZERO of two lines or more.
         val readline = ByteArray(0) +
-            "[1A".toByteArray().let { um -> ByteArray(0) + List(40) { um.toList() }.flatten().toByteArray() } +
-            "[A".toByteArray().let { um -> ByteArray(0) + List(40) { um.toList() }.flatten().toByteArray() }
-        assertEquals(0, ReplayDeAttach.contarCuuDeBloco(readline))
-        assertFalse(ReplayDeAttach.ehRepinturaDiferencial(readline))
+            "[1A".toByteArray().let { one -> ByteArray(0) + List(40) { one.toList() }.flatten().toByteArray() } +
+            "[A".toByteArray().let { one -> ByteArray(0) + List(40) { one.toList() }.flatten().toByteArray() }
+        assertEquals(0, AttachReplay.countBlockCuu(readline))
+        assertFalse(AttachReplay.isDiffRepaint(readline))
     }
 
     @Test
@@ -49,8 +49,8 @@ class ReplayDeAttachTest {
         // ECMA-48: an omitted or 0 parameter takes the command's default,
         // which for CUU is 1. Counting those as "moved up several" would
         // classify a shell as a TUI.
-        assertEquals(0, ReplayDeAttach.contarCuuDeBloco("[A[0A[A".toByteArray()))
-        assertEquals(1, ReplayDeAttach.contarCuuDeBloco("[2A".toByteArray()))
+        assertEquals(0, AttachReplay.countBlockCuu("[A[0A[A".toByteArray()))
+        assertEquals(1, AttachReplay.countBlockCuu("[2A".toByteArray()))
     }
 
     @Test
@@ -59,16 +59,16 @@ class ReplayDeAttachTest {
         // in the 128 KiB re-emitted; the quietest TUI had 33. 25 already
         // clears the limit of 20 comfortably and stays below the real worst
         // case.
-        val ink = fluxo(vezes = 25, linhas = "7")
-        assertTrue(ReplayDeAttach.contarCuuDeBloco(ink) >= ReplayDeAttach.LIMITE_REPINTURA)
-        assertTrue(ReplayDeAttach.ehRepinturaDiferencial(ink))
+        val ink = stream(times = 25, lines = "7")
+        assertTrue(AttachReplay.countBlockCuu(ink) >= AttachReplay.REPAINT_THRESHOLD)
+        assertTrue(AttachReplay.isDiffRepaint(ink))
     }
 
     @Test
     fun `o vao medido entre shell e TUI e respeitado dos dois lados`() {
         // 11 = the worst real shell measured. 33 = the quietest real TUI measured.
-        assertFalse(ReplayDeAttach.ehRepinturaDiferencial(fluxo(vezes = 11, linhas = "4")))
-        assertTrue(ReplayDeAttach.ehRepinturaDiferencial(fluxo(vezes = 33, linhas = "4")))
+        assertFalse(AttachReplay.isDiffRepaint(stream(times = 11, lines = "4")))
+        assertTrue(AttachReplay.isDiffRepaint(stream(times = 33, lines = "4")))
     }
 
     @Test
@@ -76,21 +76,21 @@ class ReplayDeAttachTest {
         // The server cuts the replay at 128 KiB and only aligns on the next
         // line break — a sequence can end up truncated. Scanning that must not
         // read past the end of the array.
-        assertEquals(0, ReplayDeAttach.contarCuuDeBloco("texto[12".toByteArray()))
-        assertEquals(0, ReplayDeAttach.contarCuuDeBloco("texto".toByteArray()))
-        assertEquals(0, ReplayDeAttach.contarCuuDeBloco(ByteArray(0)))
+        assertEquals(0, AttachReplay.countBlockCuu("texto[12".toByteArray()))
+        assertEquals(0, AttachReplay.countBlockCuu("texto".toByteArray()))
+        assertEquals(0, AttachReplay.countBlockCuu(ByteArray(0)))
     }
 
     @Test
     fun `parametro absurdamente longo satura em vez de estourar`() {
-        val absurdo = ("[" + "9".repeat(400) + "A").toByteArray()
-        assertEquals(1, ReplayDeAttach.contarCuuDeBloco(absurdo))
+        val absurd = ("[" + "9".repeat(400) + "A").toByteArray()
+        assertEquals(1, AttachReplay.countBlockCuu(absurd))
     }
 
     @Test
     fun `outras sequencias CSI que terminam em letra diferente nao contam`() {
         // `ESC[2J` (clear screen), `ESC[10B` (move down), `ESC[3C` (right).
-        val outras = "[2J[10B[3C[5D".toByteArray()
-        assertEquals(0, ReplayDeAttach.contarCuuDeBloco(outras))
+        val others = "[2J[10B[3C[5D".toByteArray()
+        assertEquals(0, AttachReplay.countBlockCuu(others))
     }
 }

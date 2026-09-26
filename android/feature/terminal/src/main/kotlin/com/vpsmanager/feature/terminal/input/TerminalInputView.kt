@@ -7,7 +7,7 @@ import android.view.ViewTreeObserver
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
-import com.vpsmanager.feature.terminal.prefs.ModoDeDigitacao
+import com.vpsmanager.feature.terminal.prefs.TypingMode
 import com.vpsmanager.terminalengine.KeyByteEncoder
 
 /**
@@ -32,7 +32,7 @@ class TerminalInputView @JvmOverloads constructor(
     var cursorMode: KeyByteEncoder.CursorMode = KeyByteEncoder.CursorMode.NORMAL
 
     /**
-     * How the keyboard should behave — see [ModoDeDigitacao].
+     * How the keyboard should behave — see [TypingMode].
      *
      * It replaces the old `inputTypeUnderTest`, which declared an ordinary text
      * field (`TYPE_CLASS_TEXT or TYPE_TEXT_FLAG_MULTI_LINE`) while the
@@ -46,26 +46,26 @@ class TerminalInputView @JvmOverloads constructor(
      * closed and reopened it — and the change would look as though it had not
      * worked.
      */
-    var modoDeDigitacao: ModoDeDigitacao = ModoDeDigitacao.PADRAO
-        set(valor) {
-            if (field == valor) return
-            field = valor
-            aoMudarComposicao("")
+    var typingMode: TypingMode = TypingMode.DEFAULT
+        set(value) {
+            if (field == value) return
+            field = value
+            onCompositionChange("")
             context.getSystemService(InputMethodManager::class.java)?.restartInput(this)
         }
 
     /**
      * Tells whoever draws the composition strip that the in-flight text changed.
      *
-     * Without this, [ModoDeDigitacao.TEXTO] would be typing blind: the word is
+     * Without this, [TypingMode.TEXT] would be typing blind: the word is
      * held by the keyboard until it is confirmed, so the terminal screen shows
      * nothing while you type. It is the piece missing from Termux and the reason
      * a terminal usually just turns composition off altogether.
      */
-    var aoMudarComposicao: (String) -> Unit = {}
+    var onCompositionChange: (String) -> Unit = {}
 
     /** Pending keyboard request, waiting for this view's window to regain focus. */
-    private var aguardandoFoco: ViewTreeObserver.OnWindowFocusChangeListener? = null
+    private var awaitingFocus: ViewTreeObserver.OnWindowFocusChangeListener? = null
 
     init {
         isFocusable = true
@@ -93,7 +93,7 @@ class TerminalInputView @JvmOverloads constructor(
     fun showKeyboard() {
         requestFocus()
         if (hasWindowFocus()) {
-            pedirImeAgora()
+            requestImeNow()
             return
         }
         // This view's window is NOT the focused one yet — the case of "Show
@@ -103,25 +103,25 @@ class TerminalInputView @JvmOverloads constructor(
         // closed the sheet and the keyboard did not come up, and not even
         // waiting a frame fixed it — window focus returns when it returns. So
         // the request waits for focus to arrive, exactly once.
-        aguardandoFoco?.let { viewTreeObserver.removeOnWindowFocusChangeListener(it) }
-        val listener = ViewTreeObserver.OnWindowFocusChangeListener { temFoco ->
-            if (!temFoco) return@OnWindowFocusChangeListener
-            pararDeAguardarFoco()
+        awaitingFocus?.let { viewTreeObserver.removeOnWindowFocusChangeListener(it) }
+        val listener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+            if (!hasFocus) return@OnWindowFocusChangeListener
+            stopAwaitingFocus()
             requestFocus()
-            pedirImeAgora()
+            requestImeNow()
         }
-        aguardandoFoco = listener
+        awaitingFocus = listener
         viewTreeObserver.addOnWindowFocusChangeListener(listener)
     }
 
-    private fun pedirImeAgora() {
+    private fun requestImeNow() {
         val imm = context.getSystemService(InputMethodManager::class.java) ?: return
         imm.showSoftInput(this, 0)
     }
 
-    private fun pararDeAguardarFoco() {
-        val listener = aguardandoFoco ?: return
-        aguardandoFoco = null
+    private fun stopAwaitingFocus() {
+        val listener = awaitingFocus ?: return
+        awaitingFocus = null
         if (viewTreeObserver.isAlive) viewTreeObserver.removeOnWindowFocusChangeListener(listener)
     }
 
@@ -152,27 +152,27 @@ class TerminalInputView @JvmOverloads constructor(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         if (requestFocus()) return
-        aguardandoFoco?.let { viewTreeObserver.removeOnWindowFocusChangeListener(it) }
-        val listener = ViewTreeObserver.OnWindowFocusChangeListener { temFoco ->
-            if (!temFoco) return@OnWindowFocusChangeListener
-            pararDeAguardarFoco()
+        awaitingFocus?.let { viewTreeObserver.removeOnWindowFocusChangeListener(it) }
+        val listener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+            if (!hasFocus) return@OnWindowFocusChangeListener
+            stopAwaitingFocus()
             requestFocus()
         }
-        aguardandoFoco = listener
+        awaitingFocus = listener
         viewTreeObserver.addOnWindowFocusChangeListener(listener)
     }
 
     override fun onDetachedFromWindow() {
         // A keyboard request that was never served cannot outlive the view
         // that made it.
-        pararDeAguardarFoco()
+        stopAwaitingFocus()
         super.onDetachedFromWindow()
     }
 
     override fun onCheckIsTextEditor(): Boolean = true
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
-        outAttrs.inputType = modoDeDigitacao.inputType()
+        outAttrs.inputType = typingMode.inputType()
         outAttrs.imeOptions =
             EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_ACTION_NONE
         return TerminalInputConnection(
@@ -181,8 +181,8 @@ class TerminalInputView @JvmOverloads constructor(
             cursorMode = cursorMode,
             // Read on every call rather than captured: people switch modes
             // with the keyboard open, and a copy would go stale in silence.
-            modo = { modoDeDigitacao },
-            aoMudarComposicao = { texto -> aoMudarComposicao(texto) },
+            mode = { typingMode },
+            onCompositionChange = { text -> onCompositionChange(text) },
         )
     }
 }

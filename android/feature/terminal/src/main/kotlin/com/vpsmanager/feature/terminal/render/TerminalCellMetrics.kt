@@ -11,7 +11,7 @@ import kotlin.math.roundToInt
  * with nothing added or taken away. It is made explicit so that "normal" is a
  * value with a name, and not the bare `0` of someone who forgot the argument.
  */
-const val ENTRELINHA_NORMAL_PX: Int = 0
+const val NORMAL_LINE_SPACING_PX: Int = 0
 
 /**
  * Ratio between the cell height and the font size. It used to live duplicated
@@ -67,19 +67,19 @@ data class TerminalCellMetrics(
  */
 fun computeTerminalCellMetrics(
     fontSizePx: Float,
-    entrelinhaPx: Int = ENTRELINHA_NORMAL_PX,
+    lineSpacingPx: Int = NORMAL_LINE_SPACING_PX,
     typeface: Typeface = Typeface.MONOSPACE,
 ): TerminalCellMetrics {
     // The "full body" height: what the cell measured before line spacing
     // existed, and what it still measures at [ENTRELINHA_NORMAL].
-    val alturaDeCorpo = fontSizePx.roundToInt().coerceAtLeast(1)
+    val bodyHeight = fontSizePx.roundToInt().coerceAtLeast(1)
     // THE LETTER SIZE DOES NOT DEPEND ON THE LINE SPACING. Before this,
     // `textSizePx` was derived from `cellHeightPx`; had it stayed that way,
     // tightening the line spacing would shrink the glyph along with it — which
     // is exactly what the app's owner did NOT ask for ("less spacing", not
     // "smaller letters"). Now both come from the font size, and only the cell
     // height responds to the line spacing.
-    val textSizePx = alturaDeCorpo * GLYPH_TEXT_SIZE_RATIO
+    val textSizePx = bodyHeight * GLYPH_TEXT_SIZE_RATIO
     val paint = Paint().apply {
         this.typeface = typeface
         this.textSize = textSizePx
@@ -89,15 +89,15 @@ fun computeTerminalCellMetrics(
         cellWidthPx = advance.roundToInt().coerceAtLeast(1),
         // **A delta in WHOLE pixels, not a fractional factor.** The cell
         // height has to be a whole number (that is the condition for the 1:1
-        // blit — see the comment on [TerminalCellMetrics]), and `alturaDeCorpo`
+        // blit — see the comment on [TerminalCellMetrics]), and `bodyHeight`
         // is already whole, so adding a whole number never comes near a
         // rounding. A factor such as 0.95 would look more natural and would be
         // worse: at a 14 px body, 0.90 and 0.95 round to the SAME 13 px — two
         // menu items with the same effect, which is how a preference earns a
         // reputation for being broken. It is the same choice Alacritty makes,
         // whose `font.offset.y` is a whole-pixel delta.
-        cellHeightPx = (alturaDeCorpo + entrelinhaPx)
-            .coerceAtLeast(alturaMinimaDaCelulaPx(paint)),
+        cellHeightPx = (bodyHeight + lineSpacingPx)
+            .coerceAtLeast(minCellHeightPx(paint)),
         textSizePx = textSizePx,
     )
 }
@@ -120,7 +120,7 @@ fun computeTerminalCellMetrics(
  * 0.5x. **No letter is clipped at any step** — that is what this floor
  * guarantees.
  */
-private const val AMOSTRA_DE_TINTA = "ÂÊÍÕÜWMbdfhklt gjpqy ç,;_"
+private const val INK_SAMPLE = "ÂÊÍÕÜWMbdfhklt gjpqy ç,;_"
 
 /**
  * The floor for the cell height, MEASURED on the font — not guessed.
@@ -128,7 +128,7 @@ private const val AMOSTRA_DE_TINTA = "ÂÊÍÕÜWMbdfhklt gjpqy ç,;_"
  * [GlyphAtlas] centres the baseline by the font's box
  * (`baselineY = top + (height - ascent - descent) / 2`), so what decides
  * whether a glyph fits is the height of its INK against the height of the
- * cell. Below the largest value in [AMOSTRA_DE_TINTA] the centring starts to
+ * cell. Below the largest value in [INK_SAMPLE] the centring starts to
  * produce a rectangle smaller than the ink, and the letter is clipped at the
  * top and the bottom at once.
  *
@@ -143,16 +143,16 @@ private const val AMOSTRA_DE_TINTA = "ÂÊÍÕÜWMbdfhklt gjpqy ç,;_"
  * with the same `textSize` and the same `Typeface` — measuring on another one
  * would be measuring another font.
  */
-private fun alturaMinimaDaCelulaPx(paint: Paint): Int {
-    val caixa = Rect()
-    var tintaAcima = 0f // how far the tallest glyph rises above the baseline
-    var tintaAbaixo = 0f // how far the lowest glyph drops below it
-    for (c in AMOSTRA_DE_TINTA) {
-        paint.getTextBounds(c.toString(), 0, 1, caixa)
+private fun minCellHeightPx(paint: Paint): Int {
+    val inbox = Rect()
+    var inkAbove = 0f // how far the tallest glyph rises above the baseline
+    var inkBelow = 0f // how far the lowest glyph drops below it
+    for (c in INK_SAMPLE) {
+        paint.getTextBounds(c.toString(), 0, 1, inbox)
         // A text `Rect` is relative to the baseline: `top` is negative above
         // it, `bottom` positive below.
-        if (-caixa.top > tintaAcima) tintaAcima = -caixa.top.toFloat()
-        if (caixa.bottom > tintaAbaixo) tintaAbaixo = caixa.bottom.toFloat()
+        if (-inbox.top > inkAbove) inkAbove = -inbox.top.toFloat()
+        if (inbox.bottom > inkBelow) inkBelow = inbox.bottom.toFloat()
     }
     // Solves the SAME sum [GlyphAtlas] uses to place the baseline:
     //
@@ -160,15 +160,15 @@ private fun alturaMinimaDaCelulaPx(paint: Paint): Int {
     //
     // The ink may not run past either edge of the cell:
     //
-    //     base - tintaAcima  >= 0   ⇒  h >= 2·tintaAcima + ascent + descent
-    //     base + tintaAbaixo <= h   ⇒  h >= 2·tintaAbaixo - ascent - descent
+    //     base - inkAbove  >= 0   ⇒  h >= 2·inkAbove + ascent + descent
+    //     base + inkBelow <= h   ⇒  h >= 2·inkBelow - ascent - descent
     //
     // This is exact, not a safety margin: it is the height at which the most
     // extreme letter in the sample touches the edge without crossing it. Note
     // that the baseline is placed by the FONT's metrics while the constraint
     // is on the INK — which is why the two quantities appear together.
     val fm = paint.fontMetrics
-    val porCima = 2f * tintaAcima + fm.ascent + fm.descent
-    val porBaixo = 2f * tintaAbaixo - fm.ascent - fm.descent
-    return ceil(maxOf(porCima, porBaixo)).toInt().coerceAtLeast(1)
+    val overTop = 2f * inkAbove + fm.ascent + fm.descent
+    val underBottom = 2f * inkBelow - fm.ascent - fm.descent
+    return ceil(maxOf(overTop, underBottom)).toInt().coerceAtLeast(1)
 }

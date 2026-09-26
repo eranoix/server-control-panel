@@ -22,19 +22,19 @@ import kotlin.math.pow
 class VpsmColorsTest {
 
     /** WCAG AA minimum for normal text. */
-    private val minimoAA = 4.5
+    private val minimumAA = 4.5
 
-    private fun canalLinear(v: Float): Double {
+    private fun linearChannel(v: Float): Double {
         val s = v.toDouble()
         return if (s <= 0.03928) s / 12.92 else ((s + 0.055) / 1.055).pow(2.4)
     }
 
-    private fun luminancia(c: Color): Double =
-        0.2126 * canalLinear(c.red) + 0.7152 * canalLinear(c.green) + 0.0722 * canalLinear(c.blue)
+    private fun luminance(c: Color): Double =
+        0.2126 * linearChannel(c.red) + 0.7152 * linearChannel(c.green) + 0.0722 * linearChannel(c.blue)
 
-    private fun contraste(a: Color, b: Color): Double {
-        val la = luminancia(a)
-        val lb = luminancia(b)
+    private fun contrast(a: Color, b: Color): Double {
+        val la = luminance(a)
+        val lb = luminance(b)
         return (maxOf(la, lb) + 0.05) / (minOf(la, lb) + 0.05)
     }
 
@@ -43,7 +43,7 @@ class VpsmColorsTest {
      * to be drawn over `X` — if the pair does not pass, the promise is false
      * and some screen of the app has text that disappears.
      */
-    private fun pares(e: ColorScheme): List<Triple<String, Color, Color>> = listOf(
+    private fun pairs(e: ColorScheme): List<Triple<String, Color, Color>> = listOf(
         Triple("primary/onPrimary", e.primary, e.onPrimary),
         Triple("primaryContainer/on", e.primaryContainer, e.onPrimaryContainer),
         Triple("secondary/onSecondary", e.secondary, e.onSecondary),
@@ -62,24 +62,24 @@ class VpsmColorsTest {
         Triple("inverseSurface/inverseOnSurface", e.inverseSurface, e.inverseOnSurface),
     )
 
-    private fun confereEsquema(nome: String, esquema: ColorScheme) {
-        pares(esquema).forEach { (papel, fundo, frente) ->
-            val razao = contraste(fundo, frente)
+    private fun checkScheme(name: String, scheme: ColorScheme) {
+        pairs(scheme).forEach { (role, background, foreground) ->
+            val ratio = contrast(background, foreground)
             assertTrue(
-                "[$nome] $papel ficou em ${"%.2f".format(razao)}:1 — abaixo do mínimo AA de $minimoAA:1",
-                razao >= minimoAA,
+                "[$name] $role ficou em ${"%.2f".format(ratio)}:1 — abaixo do mínimo AA de $minimumAA:1",
+                ratio >= minimumAA,
             )
         }
     }
 
     @Test
     fun `todo par cor sobre-cor passa em AA no tema claro`() {
-        confereEsquema("claro", VpsmLightColors)
+        checkScheme("claro", VpsmLightColors)
     }
 
     @Test
     fun `todo par cor sobre-cor passa em AA no tema escuro`() {
-        confereEsquema("escuro", VpsmDarkColors)
+        checkScheme("escuro", VpsmDarkColors)
     }
 
     @Test
@@ -87,10 +87,10 @@ class VpsmColorsTest {
         // The regression this test guards against is literal: a
         // `lightColorScheme()` with no arguments returns the baseline purple
         // (#6750A4 / #D0BCFF) and the app goes back to looking like a demo.
-        val roxoBaselineClaro = Color(0xFF6750A4)
-        val roxoBaselineEscuro = Color(0xFFD0BCFF)
-        assertTrue("tema claro voltou ao roxo baseline", VpsmLightColors.primary != roxoBaselineClaro)
-        assertTrue("tema escuro voltou ao roxo baseline", VpsmDarkColors.primary != roxoBaselineEscuro)
+        val baselinePurpleLight = Color(0xFF6750A4)
+        val baselinePurpleDark = Color(0xFFD0BCFF)
+        assertTrue("tema claro voltou ao roxo baseline", VpsmLightColors.primary != baselinePurpleLight)
+        assertTrue("tema escuro voltou ao roxo baseline", VpsmDarkColors.primary != baselinePurpleDark)
     }
 
     @Test
@@ -98,8 +98,8 @@ class VpsmColorsTest {
         // Deliberately silly guard: a copy-paste that left both surfaces on
         // the same side of the scale would pass every contrast test above and
         // still produce a white "dark theme".
-        assertTrue("a superfície clara deveria ser clara", luminancia(VpsmLightColors.surface) > 0.5)
-        assertTrue("a superfície escura deveria ser escura", luminancia(VpsmDarkColors.surface) < 0.1)
+        assertTrue("a superfície clara deveria ser clara", luminance(VpsmLightColors.surface) > 0.5)
+        assertTrue("a superfície escura deveria ser escura", luminance(VpsmDarkColors.surface) < 0.1)
     }
 
     @Test
@@ -109,28 +109,28 @@ class VpsmColorsTest {
         // amber does not derive from the scheme (Material has no role for
         // "warning"), so it is precisely the one a swap of neutrals could
         // leave without contrast against the surface the card is drawn on.
-        val avisoClaroFundo = Color(0xFFFFEBB8)
-        val avisoClaroTexto = Color(0xFF4A3400)
-        val avisoEscuroFundo = Color(0xFF3E2D00)
-        val avisoEscuroTexto = Color(0xFFFFE2A6)
+        val warningLightBackground = Color(0xFFFFEBB8)
+        val warningLightText = Color(0xFF4A3400)
+        val warningDarkBackground = Color(0xFF3E2D00)
+        val warningDarkText = Color(0xFFFFE2A6)
 
         assertTrue(
             "texto do aviso claro ilegível no próprio cartão",
-            contraste(avisoClaroFundo, avisoClaroTexto) >= minimoAA,
+            contrast(warningLightBackground, warningLightText) >= minimumAA,
         )
         assertTrue(
             "texto do aviso escuro ilegível no próprio cartão",
-            contraste(avisoEscuroFundo, avisoEscuroTexto) >= minimoAA,
+            contrast(warningDarkBackground, warningDarkText) >= minimumAA,
         )
         // And the card has to STAND OUT from the surface: an amber that became
         // the same colour as the background would warn about nothing.
         assertTrue(
             "o cartão de aviso claro sumiu na superfície",
-            contraste(avisoClaroFundo, VpsmLightColors.surface) >= 1.08,
+            contrast(warningLightBackground, VpsmLightColors.surface) >= 1.08,
         )
         assertTrue(
             "o cartão de aviso escuro sumiu na superfície",
-            contraste(avisoEscuroFundo, VpsmDarkColors.surface) >= 1.08,
+            contrast(warningDarkBackground, VpsmDarkColors.surface) >= 1.08,
         )
     }
 
@@ -139,11 +139,11 @@ class VpsmColorsTest {
         // Another agent builds the icon's `res/` from these constants. If
         // someone changes the scheme and forgets the icon, the icon stops
         // belonging to the same family — this test ties the two together.
-        assertTrue(FundoDoIconeAdaptativo == VpsmDarkColors.onPrimary)
-        assertTrue(MarcaSobreFundo == VpsmDarkColors.primary)
+        assertTrue(AdaptiveIconBackground == VpsmDarkColors.onPrimary)
+        assertTrue(MarkOnBackground == VpsmDarkColors.primary)
         assertTrue(
             "a marca precisa ser legível sobre o fundo do ícone",
-            contraste(FundoDoIconeAdaptativo, MarcaSobreFundo) >= minimoAA,
+            contrast(AdaptiveIconBackground, MarkOnBackground) >= minimumAA,
         )
     }
 }

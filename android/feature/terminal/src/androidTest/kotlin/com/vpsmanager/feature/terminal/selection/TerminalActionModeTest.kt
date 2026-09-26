@@ -33,169 +33,169 @@ class TerminalActionModeTest {
     @get:Rule
     val composeTestRule = createAndroidComposeRule<ComponentActivity>()
 
-    private fun comBarra(
-        bloco: (barra: TerminalActionMode, registro: Registro) -> Unit,
+    private fun withBar(
+        tile: (bar: TerminalActionMode, recorder: Recorder) -> Unit,
     ) {
-        val registro = Registro()
-        lateinit var barra: TerminalActionMode
+        val recorder = Recorder()
+        lateinit var bar: TerminalActionMode
         composeTestRule.runOnUiThread {
             val host = TerminalInputView(composeTestRule.activity)
             // Attach it for real: a loose view never gets an `ActionMode`.
-            val raiz = composeTestRule.activity.findViewById<ViewGroup>(android.R.id.content)
-            raiz.addView(host)
+            val root = composeTestRule.activity.findViewById<ViewGroup>(android.R.id.content)
+            root.addView(host)
             host.requestFocus()
-            barra = TerminalActionMode(
+            bar = TerminalActionMode(
                 host = host,
-                aoCopiar = { registro.copiou++ },
-                aoSelecionarTudo = { registro.selecionouTudo++ },
-                aoColar = { registro.colou++ },
-                aoCompartilhar = { registro.compartilhou++ },
-                aoEnviarProTerminal = { registro.enviou++ },
-                aoFechar = { registro.fechou++ },
-                retanguloDaSelecao = { Rect(0f, 0f, 120f, 40f) },
+                onCopy = { recorder.copied++ },
+                onSelectAll = { recorder.selectedAll++ },
+                onPaste = { recorder.pasted++ },
+                onShare = { recorder.shared++ },
+                onSendToTerminal = { recorder.sentCount++ },
+                onClose = { recorder.closed++ },
+                selectionRect = { Rect(0f, 0f, 120f, 40f) },
             )
         }
         composeTestRule.waitForIdle()
-        bloco(barra, registro)
+        tile(bar, recorder)
     }
 
-    private class Registro {
-        var copiou = 0
-        var selecionouTudo = 0
-        var colou = 0
-        var compartilhou = 0
-        var enviou = 0
-        var fechou = 0
+    private class Recorder {
+        var copied = 0
+        var selectedAll = 0
+        var pasted = 0
+        var shared = 0
+        var sentCount = 0
+        var closed = 0
     }
 
     @Test
-    fun oSistemaConcedeUmModoDeAcaoFlutuanteParaAgradeDoTerminal() = comBarra { barra, _ ->
-        composeTestRule.runOnUiThread { barra.mostrar() }
+    fun systemGrantsFloatingActionModeToTerminalGrid() = withBar { bar, _ ->
+        composeTestRule.runOnUiThread { bar.show() }
         composeTestRule.waitForIdle()
 
         assertTrue(
             "sem um ActionMode concedido pelo sistema não existe barra flutuante nenhuma — e a falha seria silenciosa",
-            barra.estaNoAr(),
+            bar.isShowing(),
         )
     }
 
     @Test
-    fun mostrarDuasVezes_naoAbreUmaSegundaBarra() = comBarra { barra, _ ->
+    fun showTwice_doesNotOpenSecondBar() = withBar { bar, _ ->
         composeTestRule.runOnUiThread {
-            barra.mostrar()
+            bar.show()
             // The selection changed size: re-anchor, do not stack another bar.
-            barra.mostrar()
-            barra.atualizar()
+            bar.show()
+            bar.update()
         }
         composeTestRule.waitForIdle()
 
-        assertTrue(barra.estaNoAr())
+        assertTrue(bar.isShowing())
     }
 
     @Test
-    fun esconderPorDentro_naoAvisaDeVoltaQuemFechou() = comBarra { barra, registro ->
+    fun hideFromInside_doesNotNotifyCloserBack() = withBar { bar, recorder ->
         // This is the anti-recursion latch: whoever hides the bar is usually
         // whoever cleared the selection, and telling them back would call
         // `esconder()` again, without end.
         composeTestRule.runOnUiThread {
-            barra.mostrar()
-            barra.esconder()
+            bar.show()
+            bar.hide()
         }
         composeTestRule.waitForIdle()
 
-        assertFalse(barra.estaNoAr())
-        assertEquals("fechar por dentro não pode ecoar de volta", 0, registro.fechou)
+        assertFalse(bar.isShowing())
+        assertEquals("fechar por dentro não pode ecoar de volta", 0, recorder.closed)
     }
 
     @Test
-    fun esconderSemBarraNoAr_naoFazNada() = comBarra { barra, registro ->
-        composeTestRule.runOnUiThread { barra.esconder() }
+    fun hideWithoutShownBar_doesNothing() = withBar { bar, recorder ->
+        composeTestRule.runOnUiThread { bar.hide() }
         composeTestRule.waitForIdle()
 
-        assertFalse(barra.estaNoAr())
-        assertEquals(0, registro.fechou)
+        assertFalse(bar.isShowing())
+        assertEquals(0, recorder.closed)
     }
 
     // ---- The REAL menu the system assembled ----
     //
-    // `MenuDeSelecaoTest` proves the hierarchy over the list of items, on the
+    // `SelectionMenuTest` proves the hierarchy over the list of items, on the
     // JVM. These prove the next step, which only exists on the device: that
     // the items arrived intact at the `Menu` of the `ActionMode` granted by
     // the system, with the labels Android itself translates, and that the
     // click dispatches through the right action.
 
     @Test
-    fun oMenuDoSistemaRecebeTodasAsAcoes_comOsRotulosDoAparelho() = comBarra { barra, _ ->
-        composeTestRule.runOnUiThread { barra.mostrar() }
+    fun systemMenuGetsAllActions_withDeviceLabels() = withBar { bar, _ ->
+        composeTestRule.runOnUiThread { bar.show() }
         composeTestRule.waitForIdle()
 
-        val menu = checkNotNull(barra.menuNoAr()) { "sem menu não há barra" }
-        assertEquals(itensDaBarra().size, menu.size())
-        for (item in itensDaBarra()) {
-            val entrada = checkNotNull(menu.findItem(item.id)) { "faltou ${item.acao} no menu real" }
-            val esperado = item.tituloDoSistema
+        val menu = checkNotNull(bar.menuShown()) { "sem menu não há barra" }
+        assertEquals(barItems().size, menu.size())
+        for (item in barItems()) {
+            val entry = checkNotNull(menu.findItem(item.id)) { "faltou ${item.action} no menu real" }
+            val expected = item.systemTitle
                 ?.let { composeTestRule.activity.getString(it) }
-                ?: item.tituloProprio
-            assertEquals("rótulo de ${item.acao}", esperado, entrada.title.toString())
-            assertEquals("ordem de ${item.acao}", item.ordem, entrada.order)
+                ?: item.customTitle
+            assertEquals("rótulo de ${item.action}", expected, entry.title.toString())
+            assertEquals("ordem de ${item.action}", item.order, entry.order)
             // The item has to be visible AND enabled: `FloatingToolbar`
             // filters by `isVisible() && isEnabled()`, and a disabled item
             // disappears from the bar instead of going grey.
-            assertTrue("${item.acao} tem que estar visível", entrada.isVisible)
-            assertTrue("${item.acao} tem que estar habilitada", entrada.isEnabled)
+            assertTrue("${item.action} tem que estar visível", entry.isVisible)
+            assertTrue("${item.action} tem que estar habilitada", entry.isEnabled)
         }
     }
 
     @Test
-    fun colarEstaNoMenuMesmoSemNadaCopiado() = comBarra { barra, _ ->
+    fun pasteIsInMenuEvenWithNothingCopied() = withBar { bar, _ ->
         // The emulator's clipboard starts out empty in this test, and that is
         // exactly the case that used to make the item disappear. Now it stays —
         // the "there is nothing copied" is said on the click, by `PasteAction`.
-        composeTestRule.runOnUiThread { barra.mostrar() }
+        composeTestRule.runOnUiThread { bar.show() }
         composeTestRule.waitForIdle()
 
-        val colar = checkNotNull(barra.menuNoAr()).findItem(Menu.FIRST + AcaoDeSelecao.COLAR.ordinal)
-        assertTrue("Colar não pode depender do que há na área de transferência", colar != null)
+        val paste = checkNotNull(bar.menuShown()).findItem(Menu.FIRST + SelectionAction.PASTE.ordinal)
+        assertTrue("Colar não pode depender do que há na área de transferência", paste != null)
     }
 
     @Test
-    fun clicarEmCadaItem_despachaAAcaoCorrespondente() = comBarra { barra, registro ->
-        composeTestRule.runOnUiThread { barra.mostrar() }
+    fun clickingEachItem_dispatchesMatchingAction() = withBar { bar, recorder ->
+        composeTestRule.runOnUiThread { bar.show() }
         composeTestRule.waitForIdle()
 
         // "Selecionar tudo" is the only one that does NOT close the bar, so it
         // goes first: the others end the mode and the menu stops existing.
-        acionar(barra, AcaoDeSelecao.SELECIONAR_TUDO)
-        assertEquals(1, registro.selecionouTudo)
-        assertTrue("selecionar tudo troca a seleção, não encerra o gesto", barra.estaNoAr())
+        trigger(bar, SelectionAction.SELECT_ALL)
+        assertEquals(1, recorder.selectedAll)
+        assertTrue("selecionar tudo troca a seleção, não encerra o gesto", bar.isShowing())
 
-        acionar(barra, AcaoDeSelecao.COPIAR)
-        assertEquals(1, registro.copiou)
-        assertFalse("copiar encerra a seleção", barra.estaNoAr())
+        trigger(bar, SelectionAction.COPY)
+        assertEquals(1, recorder.copied)
+        assertFalse("copiar encerra a seleção", bar.isShowing())
 
-        reabrirEAcionar(barra, AcaoDeSelecao.COLAR)
-        assertEquals(1, registro.colou)
+        reopenAndTrigger(bar, SelectionAction.PASTE)
+        assertEquals(1, recorder.pasted)
 
-        reabrirEAcionar(barra, AcaoDeSelecao.COMPARTILHAR)
-        assertEquals(1, registro.compartilhou)
+        reopenAndTrigger(bar, SelectionAction.SHARE)
+        assertEquals(1, recorder.shared)
 
-        reabrirEAcionar(barra, AcaoDeSelecao.ENVIAR_PRO_TERMINAL)
-        assertEquals(1, registro.enviou)
+        reopenAndTrigger(bar, SelectionAction.SEND_TO_TERMINAL)
+        assertEquals(1, recorder.sentCount)
     }
 
-    private fun acionar(barra: TerminalActionMode, acao: AcaoDeSelecao) {
+    private fun trigger(bar: TerminalActionMode, action: SelectionAction) {
         composeTestRule.runOnUiThread {
             // The real path: the same one a tap on the button goes through,
             // Menu -> ActionMode.Callback.onActionItemClicked.
-            checkNotNull(barra.menuNoAr())
-                .performIdentifierAction(Menu.FIRST + acao.ordinal, 0)
+            checkNotNull(bar.menuShown())
+                .performIdentifierAction(Menu.FIRST + action.ordinal, 0)
         }
         composeTestRule.waitForIdle()
     }
 
-    private fun reabrirEAcionar(barra: TerminalActionMode, acao: AcaoDeSelecao) {
-        composeTestRule.runOnUiThread { barra.mostrar() }
+    private fun reopenAndTrigger(bar: TerminalActionMode, action: SelectionAction) {
+        composeTestRule.runOnUiThread { bar.show() }
         composeTestRule.waitForIdle()
-        acionar(barra, acao)
+        trigger(bar, action)
     }
 }

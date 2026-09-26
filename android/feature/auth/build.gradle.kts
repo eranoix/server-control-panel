@@ -18,7 +18,7 @@ android {
 }
 
 dependencies {
-    // Bloqueio do app (TelaDeSeguranca / BloqueioDoApp).
+    // Bloqueio do app (SecurityScreen / AppLock).
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.datastore.preferences)
     implementation(project(":core"))

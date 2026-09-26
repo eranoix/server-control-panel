@@ -21,7 +21,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
-import com.vpsmanager.data.ops.progresso.AcompanhaODeployWorker
+import com.vpsmanager.data.ops.progress.DeployWatchWorker
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -42,7 +42,7 @@ fun DeployTriggerRoute(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val contexto = LocalContext.current
+    val context = LocalContext.current
     val viewModel: DeployTriggerViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
@@ -51,8 +51,8 @@ fun DeployTriggerRoute(
                     // The progress notification is what keeps the deploy
                     // visible after the person puts the phone away — which is
                     // the most common next gesture.
-                    acompanharForaDaTela = { jobId ->
-                        AcompanhaODeployWorker.acompanhar(contexto, jobId, app = "")
+                    trackOffScreen = { jobId ->
+                        DeployWatchWorker.track(context, jobId, app = "")
                     },
                 )
             }
@@ -165,7 +165,7 @@ private fun DeployInProgressContent(state: DeployTriggerUiState.InProgress) {
         )
         Text(text = "Log", modifier = Modifier.padding(top = 8.dp))
 
-        val rolagem = rememberLazyListState()
+        val scroll = rememberLazyListState()
         // THE LOG FOLLOWS ALONG BY ITSELF.
         //
         // A deploy log that does not follow is a log that drags along behind:
@@ -178,17 +178,17 @@ private fun DeployInProgressContent(state: DeployTriggerUiState.InProgress) {
         // impossible to read.
         LaunchedEffect(state.logLines.size) {
             if (state.logLines.isNotEmpty()) {
-                rolagem.animateScrollToItem(state.logLines.lastIndex)
+                scroll.animateScrollToItem(state.logLines.lastIndex)
             }
         }
-        LazyColumn(state = rolagem, modifier = Modifier.fillMaxWidth()) {
+        LazyColumn(state = scroll, modifier = Modifier.fillMaxWidth()) {
             // THE KEY IS THE INDEX, not the line.
             //
             // A log repeats lines ("done.", a blank line) and a duplicate key
             // makes Compose throw at runtime. The index is stable here because
             // this log only ever GROWS at the end — it is never reordered and
             // no line is ever removed from the middle.
-            itemsIndexed(state.logLines, key = { indice, _ -> indice }) { _, line ->
+            itemsIndexed(state.logLines, key = { index, _ -> index }) { _, line ->
                 Text(text = line)
             }
         }

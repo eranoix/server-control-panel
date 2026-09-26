@@ -36,13 +36,13 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
-import com.vpsmanager.feature.auth.painel.BlocoDoPainel
-import com.vpsmanager.feature.auth.painel.BlocosEscolhidos
-import com.vpsmanager.feature.auth.painel.PedidoDeTopo
-import com.vpsmanager.feature.auth.painel.CatalogoDeBlocos
-import com.vpsmanager.feature.auth.painel.GradeDeBlocos
-import com.vpsmanager.feature.auth.painel.blocosVisiveis
-import com.vpsmanager.feature.auth.painel.catalogoDeBlocos
+import com.vpsmanager.feature.auth.dashboard.DashboardTile
+import com.vpsmanager.feature.auth.dashboard.ChosenTiles
+import com.vpsmanager.feature.auth.dashboard.ScrollToTopRequest
+import com.vpsmanager.feature.auth.dashboard.TileCatalog
+import com.vpsmanager.feature.auth.dashboard.TileGrid
+import com.vpsmanager.feature.auth.dashboard.visibleTiles
+import com.vpsmanager.feature.auth.dashboard.tileCatalog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -54,8 +54,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vpsmanager.data.dashboard.DashboardSnapshot
 import com.vpsmanager.data.dashboard.DashboardTarget
-import com.vpsmanager.data.widget.ResumoGuardado
-import com.vpsmanager.data.widget.resumoDe
+import com.vpsmanager.data.widget.StoredSummary
+import com.vpsmanager.data.widget.summaryOf
 import com.vpsmanager.designsystem.vpsmStatusColors
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -102,8 +102,8 @@ fun HomeScreen(
      * Defaults to empty so it does not break anyone already composing this
      * screen in a test.
      */
-    onAbrirSeguranca: () -> Unit = {},
-    onAbrirDiagnostico: () -> Unit = {},
+    onOpenSecurity: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = viewModel(),
     onOpenSection: (String) -> Unit = {},
@@ -115,10 +115,10 @@ fun HomeScreen(
     // The widget summary's writer is wired up here because the screen has a
     // context and the ViewModel should not gain one just to store four
     // strings.
-    val contexto = LocalContext.current
-    LaunchedEffect(contexto) {
-        viewModel.publicarResumoCom { snapshot ->
-            ResumoGuardado.gravar(contexto, resumoDe(snapshot))
+    val context = LocalContext.current
+    LaunchedEffect(context) {
+        viewModel.publishSummaryWith { snapshot ->
+            StoredSummary.persist(context, summaryOf(snapshot))
         }
     }
 
@@ -133,8 +133,8 @@ fun HomeScreen(
             if (sectionId != null) onOpenSection(sectionId) else onOpenTerminal()
         },
         modifier = modifier,
-        onAbrirSeguranca = onAbrirSeguranca,
-        onAbrirDiagnostico = onAbrirDiagnostico,
+        onOpenSecurity = onOpenSecurity,
+        onOpenDiagnostics = onOpenDiagnostics,
     )
 }
 
@@ -191,8 +191,8 @@ internal fun HomeDashboard(
     onRefresh: () -> Unit,
     onTarget: (DashboardTarget) -> Unit,
     modifier: Modifier = Modifier,
-    onAbrirSeguranca: () -> Unit = {},
-    onAbrirDiagnostico: () -> Unit = {},
+    onOpenSecurity: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
 ) {
     PullToRefreshBox(
         isRefreshing = (state as? HomeUiState.Success)?.refreshing == true,
@@ -207,8 +207,8 @@ internal fun HomeDashboard(
                 staleError = state.staleError,
                 onRetry = onRetry,
                 onTarget = onTarget,
-                onAbrirSeguranca = onAbrirSeguranca,
-                onAbrirDiagnostico = onAbrirDiagnostico,
+                onOpenSecurity = onOpenSecurity,
+                onOpenDiagnostics = onOpenDiagnostics,
             )
         }
     }
@@ -221,10 +221,10 @@ private fun DashboardContent(
     staleError: String?,
     onRetry: () -> Unit,
     onTarget: (DashboardTarget) -> Unit,
-    onAbrirSeguranca: () -> Unit = {},
-    onAbrirDiagnostico: () -> Unit = {},
+    onOpenSecurity: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
 ) {
-    val atencao = snapshot.attention
+    val warning = snapshot.attention
     val context = LocalContext.current
 
     // "GO HOME" MEANS THE TOP OF THE PAGE.
@@ -232,32 +232,32 @@ private fun DashboardContent(
     // The drawer navigates with `restoreState = true`, which restores the saved
     // scroll position — so tapping Home handed back the same page halfway down,
     // with the header cut off under the bar. To whoever tapped, that is "the
-    // button did not work". See PedidoDeTopo.
-    val rolagem = rememberLazyListState()
-    val pedidoDeTopo by PedidoDeTopo.contador.collectAsStateWithLifecycle()
-    LaunchedEffect(pedidoDeTopo) {
-        if (pedidoDeTopo > 0) rolagem.animateScrollToItem(0)
+    // button did not work". See ScrollToTopRequest.
+    val scroll = rememberLazyListState()
+    val scrollToTopRequest by ScrollToTopRequest.counter.collectAsStateWithLifecycle()
+    LaunchedEffect(scrollToTopRequest) {
+        if (scrollToTopRequest > 0) scroll.animateScrollToItem(0)
     }
-    val catalogo = remember(snapshot) { catalogoDeBlocos(snapshot) }
-    var escolhidos by remember { mutableStateOf(BlocosEscolhidos.ler(context)) }
-    var emEdicao by rememberSaveable { mutableStateOf(false) }
-    var catalogoAberto by rememberSaveable { mutableStateOf(false) }
-    val visiveis = remember(catalogo, escolhidos) { blocosVisiveis(catalogo, escolhidos) }
+    val catalog = remember(snapshot) { tileCatalog(snapshot) }
+    var chosen by remember { mutableStateOf(ChosenTiles.read(context)) }
+    var editing by rememberSaveable { mutableStateOf(false) }
+    var catalogOpen by rememberSaveable { mutableStateOf(false) }
+    val visible = remember(catalog, chosen) { visibleTiles(catalog, chosen) }
 
-    if (catalogoAberto) {
-        CatalogoDeBlocos(
-            catalogo = catalogo,
-            escolhidos = escolhidos,
-            noTeto = escolhidos.size >= BlocosEscolhidos.MAXIMO,
-            aoEscolher = { bloco ->
-                escolhidos = BlocosEscolhidos.acrescentar(context, bloco.id)
+    if (catalogOpen) {
+        TileCatalog(
+            catalog = catalog,
+            chosen = chosen,
+            atCap = chosen.size >= ChosenTiles.MAX,
+            onChoose = { tile ->
+                chosen = ChosenTiles.append(context, tile.id)
             },
-            aoFechar = { catalogoAberto = false },
+            onClose = { catalogOpen = false },
         )
     }
 
     LazyColumn(
-        state = rolagem,
+        state = scroll,
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -276,14 +276,14 @@ private fun DashboardContent(
         // EXPLAINS — the grid says the disk is red, the card says why that
         // matters and where to go.
         item("painel") {
-            PainelDeBlocos(
-                blocos = visiveis,
-                emEdicao = emEdicao,
-                temEscolha = escolhidos.isNotEmpty(),
-                aoAlternarEdicao = { emEdicao = !emEdicao },
-                aoTocar = { onTarget(it.alvo) },
-                aoRemover = { escolhidos = BlocosEscolhidos.remover(context, it.id) },
-                aoPedirCatalogo = { catalogoAberto = true },
+            TileDashboard(
+                tiles = visible,
+                editing = editing,
+                hasChoice = chosen.isNotEmpty(),
+                onToggleEditing = { editing = !editing },
+                onTap = { onTarget(it.target) },
+                onRemove = { chosen = ChosenTiles.remove(context, it.id) },
+                onRequestCatalog = { catalogOpen = true },
             )
         }
         // THE ATTENTION CARD STAYS. I removed it by mistake and the tests
@@ -291,8 +291,8 @@ private fun DashboardContent(
         // what carries a reverted deploy or a crossed threshold to the right
         // screen. Removing "tell me when something is wrong" was not the
         // request.
-        if (atencao.isNotEmpty()) {
-            item("atencao") { AttentionCard(signals = atencao, onTarget = onTarget) }
+        if (warning.isNotEmpty()) {
+            item("atencao") { AttentionCard(signals = warning, onTarget = onTarget) }
         }
         // THE HEALTH CARD IS GONE (at the owner's request).
         //
@@ -319,8 +319,8 @@ private fun DashboardContent(
             SessionCard(
                 snapshot = snapshot,
                 driftText = clockDriftText(snapshot),
-                onAbrirSeguranca = onAbrirSeguranca,
-                onAbrirDiagnostico = onAbrirDiagnostico,
+                onOpenSecurity = onOpenSecurity,
+                onOpenDiagnostics = onOpenDiagnostics,
             )
         }
     }
@@ -342,7 +342,7 @@ private fun FreshnessLine(fetchedAtEpochMs: Long, staleError: String?, onRetry: 
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "updated at ${horaDe(fetchedAtEpochMs)}",
+                text = "updated at ${timeOf(fetchedAtEpochMs)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -371,7 +371,7 @@ private fun FreshnessLine(fetchedAtEpochMs: Long, staleError: String?, onRetry: 
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "The numbers below are from ${horaDe(fetchedAtEpochMs)}",
+                            text = "The numbers below are from ${timeOf(fetchedAtEpochMs)}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = warning.content,
@@ -431,7 +431,7 @@ private fun HomeLoading() {
         // the Home screen. A skeleton that promises cards which never arrive is
         // worse than no skeleton at all — it teaches the wrong screen during
         // loading and then contradicts itself.
-        items(listOf("Quick actions", "Session")) { titulo ->
+        items(listOf("Quick actions", "Session")) { title ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -441,7 +441,7 @@ private fun HomeLoading() {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = titulo,
+                        text = title,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -500,7 +500,7 @@ private fun HomeError(message: String, onRetry: () -> Unit) {
 }
 
 /** "07:08" in the DEVICE's time zone — it is the clock the operator is looking at. */
-internal fun horaDe(epochMillis: Long): String =
+internal fun timeOf(epochMillis: Long): String =
     Instant.ofEpochMilli(epochMillis)
         .atZone(ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("HH:mm:ss"))
@@ -515,16 +515,16 @@ internal fun horaDe(epochMillis: Long): String =
  * that": logs stamped at another hour, a cron that looks like it never fired,
  * a token that expires early.
  */
-private const val DERIVA_RELOGIO_SEGUNDOS = 60L
+private const val CLOCK_DRIFT_SECONDS = 60L
 
 /** The drift sentence, or `null` when the two clocks agree. */
 internal fun clockDriftText(snapshot: DashboardSnapshot): String? {
     val system = snapshot.ops.system ?: return null
     val deviceSeconds = snapshot.fetchedAtEpochMs / 1_000
     val drift = deviceSeconds - system.serverTimeEpoch
-    if (abs(drift) < DERIVA_RELOGIO_SEGUNDOS) return null
-    val sentido = if (drift > 0) "behind the" else "ahead of the"
-    return "Server clock ${abs(drift)} s $sentido device"
+    if (abs(drift) < CLOCK_DRIFT_SECONDS) return null
+    val direction = if (drift > 0) "behind the" else "ahead of the"
+    return "Server clock ${abs(drift)} s $direction device"
 }
 
 
@@ -537,14 +537,14 @@ internal fun clockDriftText(snapshot: DashboardSnapshot): String? {
  * depending on the screen is the beginning of a bar nobody reads.
  */
 @Composable
-private fun PainelDeBlocos(
-    blocos: List<BlocoDoPainel>,
-    emEdicao: Boolean,
-    temEscolha: Boolean,
-    aoAlternarEdicao: () -> Unit,
-    aoTocar: (BlocoDoPainel) -> Unit,
-    aoRemover: (BlocoDoPainel) -> Unit,
-    aoPedirCatalogo: () -> Unit,
+private fun TileDashboard(
+    tiles: List<DashboardTile>,
+    editing: Boolean,
+    hasChoice: Boolean,
+    onToggleEditing: () -> Unit,
+    onTap: (DashboardTile) -> Unit,
+    onRemove: (DashboardTile) -> Unit,
+    onRequestCatalog: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -553,21 +553,21 @@ private fun PainelDeBlocos(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (emEdicao) "Building the dashboard" else "Dashboard",
+                text = if (editing) "Building the dashboard" else "Dashboard",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
-            TextButton(onClick = aoAlternarEdicao) {
-                Text(text = if (emEdicao) "Done" else "Customize")
+            TextButton(onClick = onToggleEditing) {
+                Text(text = if (editing) "Done" else "Customize")
             }
         }
-        if (blocos.isEmpty() && !emEdicao) {
+        if (tiles.isEmpty() && !editing) {
             // THE REAL EMPTY: the person removed everything. We do not put
             // the starting blocks back on our own — that would undo what they
             // have just done. The invitation stays, and there is only one of
             // it.
             OutlinedCard(
-                modifier = Modifier.fillMaxWidth().clickable(onClick = aoPedirCatalogo),
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onRequestCatalog),
             ) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(20.dp),
@@ -576,7 +576,7 @@ private fun PainelDeBlocos(
                 ) {
                     Text(text = "+  Pick the first tile", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        text = if (temEscolha) {
+                        text = if (hasChoice) {
                             "None of the chosen tiles is available right now."
                         } else {
                             "The dashboard starts empty on purpose: you choose what you look at every day."
@@ -588,12 +588,12 @@ private fun PainelDeBlocos(
                 }
             }
         } else {
-            GradeDeBlocos(
-                blocos = blocos,
-                emEdicao = emEdicao,
-                aoTocar = aoTocar,
-                aoRemover = aoRemover,
-                aoPedirCatalogo = aoPedirCatalogo,
+            TileGrid(
+                tiles = tiles,
+                editing = editing,
+                onTap = onTap,
+                onRemove = onRemove,
+                onRequestCatalog = onRequestCatalog,
             )
         }
     }

@@ -132,7 +132,7 @@ open class ConversationViewModel(
         viewModelScope.launch {
             when (val result = repository.sendMessage(jid = jid, clientMsgId = clientMsgId, text = text)) {
                 is SendResult.Success -> reconcileSent(clientMsgId, result.id)
-                is SendResult.NaFila -> marcarNaFila(clientMsgId)
+                is SendResult.Queued -> markQueued(clientMsgId)
                 is SendResult.Error -> markFailed(clientMsgId)
             }
         }
@@ -158,17 +158,17 @@ open class ConversationViewModel(
     /**
      * The message has been stored to go out when the network comes back.
      *
-     * Marking it NA_FILA rather than leaving it SENDING: a "sending" that
+     * Marking it QUEUED rather than leaving it SENDING: a "sending" that
      * never finishes reads as a frozen app, and after thirty seconds the
      * person sends it again — creating the duplicate message the queue
      * existed to prevent.
      */
-    private fun marcarNaFila(clientMsgId: String) {
+    private fun markQueued(clientMsgId: String) {
         val current = _uiState.value as? ConversationUiState.Content ?: return
         _uiState.value = current.copy(
             messages = current.messages.map { msg ->
                 if (msg.clientMsgId == clientMsgId) {
-                    msg.copy(sendStatus = MessageSendStatus.NA_FILA)
+                    msg.copy(sendStatus = MessageSendStatus.QUEUED)
                 } else {
                     msg
                 }

@@ -101,7 +101,7 @@ class ApkPatcherRealApkTest {
     }
 
     @Test
-    fun patch015Para016_reconstroiOApkAssinadoByteAByte() {
+    fun patch015To016_rebuildsSignedApkByteForByte() {
         val expectedProps = Properties().apply {
             InstrumentationRegistry.getInstrumentation().context.assets.open(EXPECTED_ASSET).use { load(it) }
         }
@@ -185,7 +185,7 @@ class ApkPatcherRealApkTest {
     }
 
     @Test
-    fun patchDoApkReal_sobreBaseErrada_naoEntregaArquivo() {
+    fun realApkPatch_onWrongBase_deliversNoFile() {
         val expectedProps = Properties().apply {
             InstrumentationRegistry.getInstrumentation().context.assets.open(EXPECTED_ASSET).use { load(it) }
         }

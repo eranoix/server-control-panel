@@ -58,7 +58,7 @@ class ApkPatcherSmokeTest {
     }
 
     @Test
-    fun aplicaOPatchEConfereOHash() {
+    fun appliesPatchAndChecksHash() {
         val result = patcher.apply(oldFile, patchFile, out, expected)
 
         assertTrue("esperava Applied, veio $result", result is PatchResult.Applied)
@@ -68,7 +68,7 @@ class ApkPatcherSmokeTest {
     }
 
     @Test
-    fun baseErrada_oNativoAprovaMasOHashReprova() {
+    fun wrongBase_nativePassesButHashFails() {
         // Same SIZE as the correct base, different content: the case where
         // hpatchz has no way to notice anything — the diff header checks out.
         val wrongBase = File(dir, "wrong-old.bin").apply {
@@ -89,7 +89,7 @@ class ApkPatcherSmokeTest {
     }
 
     @Test
-    fun patchCorrompidoNoMeio_oNativoAprovaMasOHashReprova() {
+    fun patchCorruptedInMiddle_nativePassesButHashFails() {
         val corrupt = PatchFixtures.corruptedCopy(patchFile, dir, "corrupt.hdiff", offset = 5_000)
 
         val result = patcher.apply(oldFile, corrupt, out, expected)
@@ -102,7 +102,7 @@ class ApkPatcherSmokeTest {
     }
 
     @Test
-    fun patchTruncado_falhaNoNativo() {
+    fun truncatedPatch_failsInNative() {
         val truncated = PatchFixtures.truncatedCopy(patchFile, dir, "trunc.hdiff", keepBytes = 4_000)
 
         val result = patcher.apply(oldFile, truncated, out, expected)
@@ -113,7 +113,7 @@ class ApkPatcherSmokeTest {
     }
 
     @Test
-    fun cabecalhoDestruido_falhaComoHdiffInfoError() {
+    fun destroyedHeader_failsAsHdiffInfoError() {
         val broken = File(dir, "hdr.hdiff").apply {
             val bytes = patchFile.readBytes()
             for (i in 2 until 10) bytes[i] = 'Z'.code.toByte()
@@ -127,7 +127,7 @@ class ApkPatcherSmokeTest {
     }
 
     @Test
-    fun hashEsperadoErrado_reprovaMesmoComPatchBom() {
+    fun wrongExpectedHash_failsEvenWithGoodPatch() {
         // Guards against the opposite bug: the module must not "fix" a wrong
         // manifest by accepting whatever came out.
         val result = patcher.apply(
@@ -142,7 +142,7 @@ class ApkPatcherSmokeTest {
     }
 
     @Test
-    fun patchAusente_naoEntraNoNativo() {
+    fun missingPatch_neverReachesNative() {
         val result = patcher.apply(oldFile, File(dir, "nao-existe.hdiff"), out, expected)
 
         assertTrue(result is PatchResult.InputMissing)

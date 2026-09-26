@@ -24,32 +24,32 @@ class DashboardSnapshotTest {
 
     @Test
     fun `um estado novo inventado no servidor aparece como desvio, nao some como verde`() {
-        assertEquals(Severity.CRITICO, classifyHealth("kaput"))
-        assertEquals(Severity.ATENCAO, classifyHealth("degraded"))
+        assertEquals(Severity.CRITICAL, classifyHealth("kaput"))
+        assertEquals(Severity.WARNING, classifyHealth("degraded"))
     }
 
     @Test
     fun `o pior subsistema manda no grupo inteiro`() {
         val ops = opsReal().copy(health = opsReal().health + ("whatsapp" to "disconnected"))
         val snapshot = snapshotReal(ops = ops)
-        assertEquals(Severity.CRITICO, snapshot.healthSeverity)
+        assertEquals(Severity.CRITICAL, snapshot.healthSeverity)
         assertEquals("whatsapp", snapshot.health.first().name)
     }
 
     @Test
     fun `health_ok false com tudo verde e contradicao — o painel acredita no pior`() {
         val snapshot = snapshotReal(ops = opsReal().copy(healthOk = false))
-        assertEquals(Severity.ATENCAO, snapshot.healthSeverity)
+        assertEquals(Severity.WARNING, snapshot.healthSeverity)
     }
 
     @Test
     fun `a contradicao do health_ok chega ao cartao de atencao, nao so ao rollup`() {
         val snapshot = snapshotReal(ops = opsReal().copy(healthOk = false))
-        val sinal = snapshot.attention.firstOrNull { it.id == "saude:health_ok" }
-        assertEquals(Severity.ATENCAO, sinal?.severity)
+        val signal = snapshot.attention.firstOrNull { it.id == "saude:health_ok" }
+        assertEquals(Severity.WARNING, signal?.severity)
         assertEquals(
             "the server reports health_ok = false, but no subsystem reports the problem",
-            sinal?.detail,
+            signal?.detail,
         )
     }
 
@@ -68,14 +68,14 @@ class DashboardSnapshotTest {
     fun `o deploy revertido de verdade aparece na lista de atencao`() {
         val snapshot = snapshotReal()
         val deploy = snapshot.attention.firstOrNull { it.id == "deploy:hello" }
-        assertEquals(Severity.ATENCAO, deploy?.severity)
+        assertEquals(Severity.WARNING, deploy?.severity)
         assertEquals(DashboardTarget.DEPLOYS, deploy?.target)
     }
 
     @Test
     fun `rollback e atencao e falha e critico — a maquina que se salvou nao e incidente em curso`() {
-        assertEquals(Severity.ATENCAO, classifyDeploy("rolled_back"))
-        assertEquals(Severity.CRITICO, classifyDeploy("failed"))
+        assertEquals(Severity.WARNING, classifyDeploy("rolled_back"))
+        assertEquals(Severity.CRITICAL, classifyDeploy("failed"))
         assertEquals(Severity.OK, classifyDeploy("ok"))
         assertEquals(Severity.OK, classifyDeploy("running"))
     }
@@ -88,13 +88,13 @@ class DashboardSnapshotTest {
 
     @Test
     fun `um agendado que falhou sobe, um agendado desligado nao`() {
-        val comFalha = agendadosReais().toMutableList().also {
+        val withFailure = realisticScheduled().toMutableList().also {
             it[0] = it[0].copy(lastStatus = "error")
             it[1] = it[1].copy(lastStatus = "error", enabled = false)
         }
-        val snapshot = snapshotReal(scheduled = comFalha)
+        val snapshot = snapshotReal(scheduled = withFailure)
         assertEquals(1, snapshot.brokenScheduled.size)
-        assertEquals(comFalha[0].name, snapshot.brokenScheduled.single().name)
+        assertEquals(withFailure[0].name, snapshot.brokenScheduled.single().name)
     }
 
     @Test
@@ -102,30 +102,30 @@ class DashboardSnapshotTest {
         val ops = opsReal().copy(
             alerts = listOf(OpsAlert("disk_root", "critical", "firing", 92.0, 85.0, "%")),
         )
-        val atencao = snapshotReal(ops = ops).attention
+        val warning = snapshotReal(ops = ops).attention
 
-        assertEquals(Severity.CRITICO, atencao.first().severity)
-        assertEquals("alerta:disk_root", atencao.first().id)
+        assertEquals(Severity.CRITICAL, warning.first().severity)
+        assertEquals("alerta:disk_root", warning.first().id)
         assertTrue(
-            "os sinais derivados têm que continuar na lista: ${atencao.map { it.id }}",
-            atencao.any { it.id == "swap" } && atencao.any { it.id == "cpu" },
+            "os sinais derivados têm que continuar na lista: ${warning.map { it.id }}",
+            warning.any { it.id == "swap" } && warning.any { it.id == "cpu" },
         )
         // `steal` left this list on purpose in 0.1.30: it is information, not
         // an alert, because there is no action possible from inside the VM.
         // See stealSignal in ResourceSignals.kt.
         assertTrue(
             "steal nao pode voltar para o cartao de atencao",
-            atencao.none { it.id == "steal" },
+            warning.none { it.id == "steal" },
         )
     }
 
     @Test
     fun `numa maquina calma a lista de atencao fica vazia — silencio e a boa noticia`() {
-        val calma = opsReal(
-            system = producaoReal(swapUsedPercent = 10.0, steal = 0.0, load1 = 1.0, rootUsedPercent = 20.0),
+        val calmOps = opsReal(
+            system = productionLike(swapUsedPercent = 10.0, steal = 0.0, load1 = 1.0, rootUsedPercent = 20.0),
         )
         val snapshot = snapshotReal(
-            ops = calma,
+            ops = calmOps,
             deploys = listOf(DeploySummary("hello", "ok", "2026-07-19 13:17 UTC")),
         )
         assertTrue("veio: ${snapshot.attention}", snapshot.attention.isEmpty())

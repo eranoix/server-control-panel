@@ -197,14 +197,14 @@
             sistema, via APPWIDGET_UPDATE.
         -->
         <receiver
-            android:name=".widget.PainelNoInicioReceiver"
+            android:name=".widget.HomeWidgetReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/painel_no_inicio_info" />
+                android:resource="@xml/home_widget_info" />
         </receiver>
 
         <service
@@ -266,7 +266,7 @@
           fingir que este aqui foi atualizado.
         -->
         <receiver
-            android:name=".update.VoltaDepoisDaAtualizacao"
+            android:name=".update.ReturnAfterUpdateReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />

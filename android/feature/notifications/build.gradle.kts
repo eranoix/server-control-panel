@@ -20,7 +20,7 @@ android {
 dependencies {
     // :core brings the bridge to the terminal — the primary action of every
     // alert in the inbox is to take it to the place that answers any
-    // question (ComandosDaPonte).
+    // question (BridgeCommands).
     implementation(project(":core"))
     // :design-system: the state colours (ok/warning/critical) come from ONE
     // place only. Two different reds on the same screen teach the eye that
@@ -35,7 +35,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.core.ktx)
-    // OnboardingDePush asks for POST_NOTIFICATIONS through the activity result
+    // PushOnboarding asks for POST_NOTIFICATIONS through the activity result
     // contract — without this the app declares the permission and never
     // requests it, which was the defect.
     implementation(libs.androidx.activity.compose)

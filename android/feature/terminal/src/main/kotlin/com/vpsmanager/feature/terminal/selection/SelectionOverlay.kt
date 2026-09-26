@@ -36,7 +36,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
  * DRAWN handle is smaller than that, and a handle that only responds exactly
  * on top of its drawing is, in practice, a handle that does not work.
  */
-private val RAIO_DE_TOQUE_DA_ALCA = 24.dp
+private val HANDLE_TOUCH_RADIUS = 24.dp
 
 /**
  * The system's OWN two handle drawables, read from the device theme.
@@ -53,13 +53,13 @@ private val RAIO_DE_TOQUE_DA_ALCA = 24.dp
 // the right answer; changing the pattern would mean giving up the system
 // handles.
 @SuppressLint("ResourceType")
-private class AlcasDoSistema(context: Context) {
-    val esquerda: Drawable?
-    val direita: Drawable?
-    val corDeRealce: Color
+private class SystemHandles(context: Context) {
+    val left: Drawable?
+    val right: Drawable?
+    val highlightColor: Color
 
     init {
-        val atributos = context.theme.obtainStyledAttributes(
+        val attributes = context.theme.obtainStyledAttributes(
             intArrayOf(
                 android.R.attr.textSelectHandleLeft,
                 android.R.attr.textSelectHandleRight,
@@ -67,12 +67,12 @@ private class AlcasDoSistema(context: Context) {
             ),
         )
         try {
-            esquerda = atributos.getDrawable(0)
-            direita = atributos.getDrawable(1)
-            val realce = atributos.getColor(2, 0)
-            corDeRealce = if (realce == 0) Color(0x6633B5E5) else Color(realce)
+            left = attributes.getDrawable(0)
+            right = attributes.getDrawable(1)
+            val highlight = attributes.getColor(2, 0)
+            highlightColor = if (highlight == 0) Color(0x6633B5E5) else Color(highlight)
         } finally {
-            atributos.recycle()
+            attributes.recycle()
         }
     }
 }
@@ -102,41 +102,41 @@ private class AlcasDoSistema(context: Context) {
 fun SelectionOverlay(
     selectionState: State<GridSelection?>,
     hitTesterProvider: () -> CellHitTester,
-    aoArrastarAlca: (SelectionHandle, Offset) -> Unit,
-    aoTerminarArrasteDeAlca: () -> Unit,
+    onDragHandle: (SelectionHandle, Offset) -> Unit,
+    onHandleDragEnd: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val alcas = remember(context) { AlcasDoSistema(context) }
-    val raioPx = with(LocalDensity.current) { RAIO_DE_TOQUE_DA_ALCA.toPx() }
+    val handles = remember(context) { SystemHandles(context) }
+    val radiusPx = with(LocalDensity.current) { HANDLE_TOUCH_RADIUS.toPx() }
 
     // The magnifier magnifies the window's SURFACE, so the host has to be the
     // view containing the drawn grid — the Compose root, not this layer.
-    val raizDoCompose = LocalView.current
-    val lupa = remember(raizDoCompose) { LupaDaAlca(raizDoCompose) }
-    DisposableEffect(lupa) { onDispose { lupa.descartar() } }
+    val composeRoot = LocalView.current
+    val magnifier = remember(composeRoot) { HandleMagnifier(composeRoot) }
+    DisposableEffect(magnifier) { onDispose { magnifier.discard() } }
 
     // The gesture's coordinates are local to this layer; the magnifier wants
     // them relative to the root. Without this conversion the magnifier
     // magnifies the wrong place as soon as the grid does not start at the top
     // of the window (with the key row open, for instance).
-    var coordenadas by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
     Canvas(
         modifier = modifier
             .fillMaxSize()
             .clipToBounds()
-            .onGloballyPositioned { coordenadas = it }
-            .pointerInput(hitTesterProvider, raioPx) {
+            .onGloballyPositioned { coordinates = it }
+            .pointerInput(hitTesterProvider, radiusPx) {
                 awaitEachGesture {
                     // Never requires "unconsumed": this detector has to see
                     // the touch before deciding whether it is its own, and only
                     // then consumes. Consuming before knowing would steal from
                     // the grid every touch that was not on a handle.
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    val selecao = selectionState.value ?: return@awaitEachGesture
-                    val ancoras = handleAnchors(selecao, hitTesterProvider())
-                    val alca = handleAt(down.position, ancoras, raioPx) ?: return@awaitEachGesture
+                    val selection = selectionState.value ?: return@awaitEachGesture
+                    val anchors = handleAnchors(selection, hitTesterProvider())
+                    val handle = handleAt(down.position, anchors, radiusPx) ?: return@awaitEachGesture
 
                     // From here on the gesture is OURS. Consuming every event
                     // is what stops the grid's tap recogniser and its
@@ -144,65 +144,65 @@ fun SelectionOverlay(
                     // finger — both give up once they see the event consumed.
                     down.consume()
                     while (true) {
-                        val evento = awaitPointerEvent()
-                        val mudanca = evento.changes.firstOrNull { it.id == down.id } ?: break
-                        mudanca.consume()
-                        if (!mudanca.pressed) break
-                        aoArrastarAlca(alca, mudanca.position)
-                        mostrarLupa(lupa, coordenadas, hitTesterProvider(), mudanca.position)
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        change.consume()
+                        if (!change.pressed) break
+                        onDragHandle(handle, change.position)
+                        showMagnifier(magnifier, coordinates, hitTesterProvider(), change.position)
                     }
-                    lupa.esconder()
-                    aoTerminarArrasteDeAlca()
+                    magnifier.hide()
+                    onHandleDragEnd()
                 }
             },
     ) {
-        val selecao = selectionState.value ?: return@Canvas
+        val selection = selectionState.value ?: return@Canvas
         val hitTester = hitTesterProvider()
-        desenharRealce(selecao, hitTester, alcas.corDeRealce)
-        desenharAlcas(selecao, hitTester, alcas)
+        drawHighlight(selection, hitTester, handles.highlightColor)
+        drawHandles(selection, hitTester, handles)
     }
 }
 
-private fun DrawScope.desenharRealce(
-    selecao: GridSelection,
+private fun DrawScope.drawHighlight(
+    selection: GridSelection,
     hitTester: CellHitTester,
-    cor: Color,
+    color: Color,
 ) {
-    val ordenada = emOrdemDeLeitura(selecao)
-    selectionRowRanges(selecao, hitTester.cols).forEachIndexed { indice, faixa ->
-        val linha = ordenada.startRow + indice
-        val primeira = hitTester.cellRect(linha, faixa.first)
-        val ultima = hitTester.cellRect(linha, faixa.last)
+    val ordered = inReadingOrder(selection)
+    selectionRowRanges(selection, hitTester.cols).forEachIndexed { index, band ->
+        val line = ordered.startRow + index
+        val first = hitTester.cellRect(line, band.first)
+        val last = hitTester.cellRect(line, band.last)
         drawRect(
-            color = cor,
-            topLeft = Offset(primeira.left, primeira.top),
-            size = Size(ultima.right - primeira.left, primeira.height),
+            color = color,
+            topLeft = Offset(first.left, first.top),
+            size = Size(last.right - first.left, first.height),
         )
     }
 }
 
-private fun DrawScope.desenharAlcas(
-    selecao: GridSelection,
+private fun DrawScope.drawHandles(
+    selection: GridSelection,
     hitTester: CellHitTester,
-    alcas: AlcasDoSistema,
+    handles: SystemHandles,
 ) {
-    val ancoras = handleAnchors(selecao, hitTester)
+    val anchors = handleAnchors(selection, hitTester)
     drawIntoCanvas { canvas ->
-        alcas.esquerda?.let { desenho ->
-            val largura = desenho.intrinsicWidth
-            val altura = desenho.intrinsicHeight
-            val esquerda = (ancoras.inicio.x - largura * 3 / 4f).toInt()
-            val topo = ancoras.inicio.y.toInt()
-            desenho.setBounds(esquerda, topo, esquerda + largura, topo + altura)
-            desenho.draw(canvas.nativeCanvas)
+        handles.left?.let { drawing ->
+            val width = drawing.intrinsicWidth
+            val height = drawing.intrinsicHeight
+            val left = (anchors.start.x - width * 3 / 4f).toInt()
+            val top = anchors.start.y.toInt()
+            drawing.setBounds(left, top, left + width, top + height)
+            drawing.draw(canvas.nativeCanvas)
         }
-        alcas.direita?.let { desenho ->
-            val largura = desenho.intrinsicWidth
-            val altura = desenho.intrinsicHeight
-            val esquerda = (ancoras.fim.x - largura / 4f).toInt()
-            val topo = ancoras.fim.y.toInt()
-            desenho.setBounds(esquerda, topo, esquerda + largura, topo + altura)
-            desenho.draw(canvas.nativeCanvas)
+        handles.right?.let { drawing ->
+            val width = drawing.intrinsicWidth
+            val height = drawing.intrinsicHeight
+            val left = (anchors.end.x - width / 4f).toInt()
+            val top = anchors.end.y.toInt()
+            drawing.setBounds(left, top, left + width, top + height)
+            drawing.draw(canvas.nativeCanvas)
         }
     }
 }
@@ -216,18 +216,18 @@ private fun DrawScope.desenharAlcas(
  * behaviour as `TextView`, and for the same reason — whoever is dragging needs
  * to read the line.
  *
- * With [coordenadas] not yet measured there is no way to convert to the root,
+ * With [coordinates] not yet measured there is no way to convert to the root,
  * and magnifying the wrong place is worse than not magnifying at all.
  */
-private fun mostrarLupa(
-    lupa: LupaDaAlca,
-    coordenadas: LayoutCoordinates?,
+private fun showMagnifier(
+    magnifier: HandleMagnifier,
+    coordinates: LayoutCoordinates?,
     hitTester: CellHitTester,
-    posicao: Offset,
+    position: Offset,
 ) {
-    val coords = coordenadas ?: return
-    val celula = hitTester.hitTest(posicao)
-    val retangulo = hitTester.cellRect(celula.row, celula.col)
-    val naRaiz = coords.localToRoot(Offset(posicao.x, retangulo.center.y))
-    lupa.mostrar(naRaiz.x, naRaiz.y)
+    val coords = coordinates ?: return
+    val cell = hitTester.hitTest(position)
+    val rect = hitTester.cellRect(cell.row, cell.col)
+    val inRoot = coords.localToRoot(Offset(position.x, rect.center.y))
+    magnifier.show(inRoot.x, inRoot.y)
 }

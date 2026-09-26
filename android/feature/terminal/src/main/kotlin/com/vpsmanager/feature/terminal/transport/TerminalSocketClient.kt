@@ -37,7 +37,7 @@ internal const val BACKOFF_CAP_MS = 15_000L
  * command line does not exceed a few hundred bytes) and still small enough
  * never to become a surprise dump into the shell.
  */
-internal const val MAX_PENDENTE_BYTES = 8 * 1024
+internal const val MAX_PENDING_SEND_BYTES = 8 * 1024
 
 /**
  * Deadline for the outbound queue. Measured on the emulator, a healthy
@@ -48,7 +48,7 @@ internal const val MAX_PENDENTE_BYTES = 8 * 1024
  * Past that, it is dropped and the user is TOLD — what must never happen is
  * for it to vanish in silence.
  */
-internal const val PENDENTE_TTL_MS = 10_000L
+internal const val PENDING_TTL_MS = 10_000L
 
 internal fun backoffDelayMs(attempt: Int): Long {
     if (attempt <= 1) return BACKOFF_BASE_MS
@@ -110,14 +110,14 @@ class TerminalSocketClient(
      * while the client draws on a grid of M: everything lands in the wrong
      * place. That was the defect, measured in the server log.
      */
-    private val onTamanhoDaSessao: (cols: Int, rows: Int) -> Unit = { _, _ -> },
+    private val onSessionSize: (cols: Int, rows: Int) -> Unit = { _, _ -> },
     /**
      * Whether a FRESH attach should ask the server for the block of history it
      * re-emits (`attachReplay`, `internal/pty/pty.go`).
      *
      * `false` when the app itself is the one priming the screen, fetching the
      * raw log and replaying it into libghostty-vt (see
-     * `TerminalViewModel.iniciarPrimer`). Both paths deliver the SAME thing,
+     * `TerminalViewModel.startPrimer`). Both paths deliver the SAME thing,
      * and leaving both switched on would show the history twice — the classic
      * defect of this terminal.
      *
@@ -132,9 +132,9 @@ class TerminalSocketClient(
      * own keeps the old behaviour, instead of ending up with no history at all
      * by omission.
      */
-    private val pedirReplayDoServidor: Boolean = true,
+    private val requestServerReplay: Boolean = true,
     private val delayer: suspend (Long) -> Unit = { delay(it) },
-    private val agora: () -> Long = System::currentTimeMillis,
+    private val now: () -> Long = System::currentTimeMillis,
 ) : ByteSink {
 
     private val _state = MutableStateFlow<ConnectionState>(ConnectionState.Connecting)
@@ -165,7 +165,7 @@ class TerminalSocketClient(
      * always a reconnect in flight, and that is exactly when people type.
      */
     @Volatile
-    private var socketAberto: TerminalWebSocket? = null
+    private var openSocket: TerminalWebSocket? = null
 
     @Volatile
     private var everConnected = false
@@ -188,11 +188,11 @@ class TerminalSocketClient(
      * way BACK there is always a reconnect in flight, and it is exactly in
      * that interval (0.5 s to 1 s, measured) that someone is already typing.
      */
-    private val pendentes = ArrayDeque<ByteArray>()
-    private var pendentesBytes = 0
-    private var pendentesDesde = 0L
+    private val pending = ArrayDeque<ByteArray>()
+    private var pendingBytes = 0
+    private var pendingSince = 0L
 
-    private val _digitacaoDescartada = MutableStateFlow(false)
+    private val _typingDiscarded = MutableStateFlow(false)
 
     /**
      * True when the queue above overran either its size or its deadline and
@@ -201,9 +201,9 @@ class TerminalSocketClient(
      * soon as a new connection manages to drain it (or when nothing is pending
      * any more).
      */
-    val digitacaoDescartada: StateFlow<Boolean> = _digitacaoDescartada.asStateFlow()
+    val typingDiscarded: StateFlow<Boolean> = _typingDiscarded.asStateFlow()
 
-    private val _digitacaoPendente = MutableStateFlow("")
+    private val _pendingTyping = MutableStateFlow("")
 
     /**
      * What has been typed and has not gone up yet, as readable text.
@@ -214,72 +214,72 @@ class TerminalSocketClient(
      * indistinguishable from a frozen app, which was exactly the owner's
      * complaint.
      *
-     * See [resumoDaDigitacao] for why this is NOT written onto the grid.
+     * See [typingSummary] for why this is NOT written onto the grid.
      */
-    val digitacaoPendente: StateFlow<String> = _digitacaoPendente.asStateFlow()
+    val pendingTyping: StateFlow<String> = _pendingTyping.asStateFlow()
 
     override fun send(bytes: ByteArray) {
         if (bytes.isEmpty()) return
-        // OPEN, not merely existing. See [socketAberto]: the difference
+        // OPEN, not merely existing. See [openSocket]: the difference
         // between the two is the whole window of the reconnect, which is where
         // the typing used to vanish.
-        val vivo = socketAberto
-        if (vivo != null) {
-            vivo.sendBytes(bytes)
+        val live = openSocket
+        if (live != null) {
+            live.sendBytes(bytes)
             return
         }
-        enfileirar(bytes)
+        enqueue(bytes)
     }
 
     @Synchronized
-    private fun enfileirar(bytes: ByteArray) {
-        val agoraMs = agora()
-        if (pendentes.isEmpty()) pendentesDesde = agoraMs
-        val estourouTamanho = pendentesBytes + bytes.size > MAX_PENDENTE_BYTES
-        val estourouPrazo = agoraMs - pendentesDesde > PENDENTE_TTL_MS
-        if (estourouTamanho || estourouPrazo) {
-            pendentes.clear()
-            pendentesBytes = 0
-            _digitacaoPendente.value = ""
-            _digitacaoDescartada.value = true
+    private fun enqueue(bytes: ByteArray) {
+        val nowMs = now()
+        if (pending.isEmpty()) pendingSince = nowMs
+        val sizeExceeded = pendingBytes + bytes.size > MAX_PENDING_SEND_BYTES
+        val deadlineExceeded = nowMs - pendingSince > PENDING_TTL_MS
+        if (sizeExceeded || deadlineExceeded) {
+            pending.clear()
+            pendingBytes = 0
+            _pendingTyping.value = ""
+            _typingDiscarded.value = true
             return
         }
-        pendentes.addLast(bytes)
-        pendentesBytes += bytes.size
-        _digitacaoPendente.value = resumoDaDigitacao(_digitacaoPendente.value, bytes)
+        pending.addLast(bytes)
+        pendingBytes += bytes.size
+        _pendingTyping.value = typingSummary(_pendingTyping.value, bytes)
     }
 
     /**
-     * Sends whatever was held back, in the order it was typed, to [destino].
+     * Sends whatever was held back, in the order it was typed, to [destination].
      * Idempotent on purpose: it is called both from `onOpen` and right after
      * the socket is assigned, because those two things happen on different
      * threads and the order between them is not guaranteed.
      */
     @Synchronized
-    private fun drenarPendentes(destino: TerminalWebSocket) {
+    private fun drainPending(destination: TerminalWebSocket) {
         // Getting here IS the confirmation of opening: both calls (`onOpen`
         // and the one that follows the assignment) only happen with `abriu`
         // true. Marking it here keeps "open" in a single definition, instead
         // of repeating the condition in two places that could drift apart.
-        socketAberto = destino
-        while (pendentes.isNotEmpty()) {
-            destino.sendBytes(pendentes.removeFirst())
+        openSocket = destination
+        while (pending.isNotEmpty()) {
+            destination.sendBytes(pending.removeFirst())
         }
-        pendentesBytes = 0
+        pendingBytes = 0
         // The summary goes away once what it was summarising has REALLY gone
         // up. From here on the text is shown by the server's echo, on the
         // grid, which is the right place — the banner only existed while that
         // echo could not get through.
-        _digitacaoPendente.value = ""
-        _digitacaoDescartada.value = false
+        _pendingTyping.value = ""
+        _typingDiscarded.value = false
     }
 
     /**
      * The size the grid has RIGHT NOW, kept so that it can be reasserted on
-     * every connection. See [sendResize] and [reafirmarTamanho].
+     * every connection. See [sendResize] and [reassertSize].
      */
     @Volatile
-    private var tamanhoDaGrade: Pair<Int, Int>? = null
+    private var gridSize: Pair<Int, Int>? = null
 
     /**
      * Tells the server the size of the grid — and REMEMBERS it.
@@ -288,16 +288,16 @@ class TerminalSocketClient(
      *
      * This method writes to `socket?`: with the connection down, the message
      * disappears in silence. And the only caller
-     * (`TerminalViewModel.aplicarTamanho`) starts with
+     * (`TerminalViewModel.applySize`) starts with
      * `if (cols == gridCols && rows == gridRows) return`, so a change of
      * height that happened during the outage is NEVER resent — the app already
      * believes it has said its piece.
      *
      * Remembering it here turns "I said it once" into "this is the truth", and
-     * [reafirmarTamanho] reimposes it every time a socket opens.
+     * [reassertSize] reimposes it every time a socket opens.
      */
     fun sendResize(cols: Int, rows: Int) {
-        tamanhoDaGrade = cols to rows
+        gridSize = cols to rows
         socket?.sendText(TerminalControlMessage.encode(TerminalControlMessage.resize(cols, rows)))
     }
 
@@ -338,8 +338,8 @@ class TerminalSocketClient(
      * It costs one text frame per connection — and a new connection is
      * precisely the moment when the two sides are most likely to disagree.
      */
-    private fun reafirmarTamanho() {
-        val (cols, rows) = tamanhoDaGrade ?: return
+    private fun reassertSize() {
+        val (cols, rows) = gridSize ?: return
         socket?.sendText(TerminalControlMessage.encode(TerminalControlMessage.resize(cols, rows)))
         TerminalDiag.log("tamanho reafirmado ${cols}x$rows sessao=$name")
     }
@@ -390,7 +390,7 @@ class TerminalSocketClient(
      * and only [connect] undoes that), nor does it disturb a connection that
      * is already alive.
      */
-    fun reconectarAgora() {
+    fun reconnectNow() {
         if (!shouldRun) return
         if (_state.value == ConnectionState.Live) return
         loopJob?.cancel()
@@ -405,20 +405,20 @@ class TerminalSocketClient(
         // and leaving this field behind would send the next keystrokes into
         // the dead pipe instead of into the queue — which is the whole defect
         // of this file.
-        socketAberto = null
+        openSocket = null
     }
 
     private sealed interface AttemptOutcome {
         data object Ended : AttemptOutcome
 
         /**
-         * [chegouALive] says whether THIS attempt got as far as opening
+         * [reachedLive] says whether THIS attempt got as far as opening
          * (onOpen) before it fell. It is what separates "the server is down
          * and I have been failing all along" from "I was connected and the
          * connection has just dropped" — only the first case deserves to
          * inherit the backoff ladder.
          */
-        data class Failed(val reason: String, val chegouALive: Boolean = false) : AttemptOutcome
+        data class Failed(val reason: String, val reachedLive: Boolean = false) : AttemptOutcome
     }
 
     private suspend fun runLoop() {
@@ -427,7 +427,7 @@ class TerminalSocketClient(
             // `attach=1` means "I ALREADY HAVE the screen" — it holds on a
             // reconnect, where the in-memory grid is intact and a replay would
             // duplicate it. It does not hold on the first connection: there
-            // the grid is born empty and what fills it is `iniciarPrimer`,
+            // the grid is born empty and what fills it is `startPrimer`,
             // with the raw log replayed into the engine.
             //
             // The `replay=0` that goes along with it is NOT merely "do not
@@ -457,7 +457,7 @@ class TerminalSocketClient(
                     // other side. Backoff exists so as not to hammer a server
                     // that is down, not to punish somebody for switching
                     // apps.
-                    if (outcome.chegouALive) attempt = 0
+                    if (outcome.reachedLive) attempt = 0
                     attempt += 1
                     _state.value = ConnectionState.Reconnecting(attempt)
                     delayer(backoffDelayMs(attempt))
@@ -471,23 +471,23 @@ class TerminalSocketClient(
             is WsTicketResult.Error -> return AttemptOutcome.Failed(result.reason)
             is WsTicketResult.Success -> result.ticket
         }
-        val url = buildUrl(wsBaseUrl, name, ticket, attach, pedirReplayDoServidor)
+        val url = buildUrl(wsBaseUrl, name, ticket, attach, requestServerReplay)
         TerminalDiag.log("tentativa sessao=$name attach=$attach everConnected=$everConnected")
         val outcome = CompletableDeferred<AttemptOutcome>()
         // How many binary messages this attempt has received so far. The
         // FIRST one of a connection WITHOUT `attach=1` is the server's
         // scrollback replay (`internal/pty/pty.go` writes that block before
         // wiring up the proxy), and it is precisely the one to be measured.
-        var mensagens = 0
+        var messages = 0
         // Atomic, not a captured `var`: onOpen arrives on the WebSocket
         // thread and is read in onClosed/onFailure, which may come from
         // another.
-        val abriu = AtomicBoolean(false)
+        val opened = AtomicBoolean(false)
         val listener = object : TerminalWebSocketListener {
             override fun onOpen() {
                 TerminalDiag.log("onOpen sessao=$name attach=$attach")
                 everConnected = true
-                abriu.set(true)
+                opened.set(true)
                 _state.value = ConnectionState.Live
                 // Deferred to the dispatcher because `onOpen` can arrive on
                 // the WebSocket thread BEFORE `socket` has been assigned
@@ -498,21 +498,21 @@ class TerminalSocketClient(
                 // already has the right geometry, otherwise the remote program
                 // answers by painting for the wrong screen.
                 scope.launch {
-                    reafirmarTamanho()
-                    socket?.let(::drenarPendentes)
+                    reassertSize()
+                    socket?.let(::drainPending)
                 }
             }
 
             override fun onTextMessage(text: String) {
-                val tamanho = TerminalControlMessage.tamanhoDaSessao(text) ?: return
-                TerminalDiag.log("tamanho da sessao=${tamanho.first}x${tamanho.second}")
-                onTamanhoDaSessao(tamanho.first, tamanho.second)
+                val size = TerminalControlMessage.sessionSize(text) ?: return
+                TerminalDiag.log("tamanho da sessao=${size.first}x${size.second}")
+                onSessionSize(size.first, size.second)
             }
 
             override fun onBinaryMessage(bytes: ByteArray) {
-                mensagens += 1
-                if (mensagens <= 3) {
-                    TerminalDiag.log("msg#$mensagens attach=$attach bytes=${bytes.size}")
+                messages += 1
+                if (messages <= 3) {
+                    TerminalDiag.log("msg#$messages attach=$attach bytes=${bytes.size}")
                 }
                 // The FIRST message of a connection WITHOUT `attach=1` is
                 // the scrollback replay, and only it: the server writes that
@@ -520,8 +520,8 @@ class TerminalSocketClient(
                 // PTY proxy (`internal/pty/pty.go`), so nothing from the live
                 // stream can arrive ahead of it. With `attach=1` the server
                 // sends no replay at all, and there is nothing to filter here.
-                if (pedirReplayDoServidor && !attach && mensagens == 1 &&
-                    ReplayDeAttach.ehRepinturaDiferencial(bytes)
+                if (requestServerReplay && !attach && messages == 1 &&
+                    AttachReplay.isDiffRepaint(bytes)
                 ) {
                     TerminalDiag.log("replay DESCARTADO (repintura diferencial) bytes=${bytes.size}")
                     return
@@ -531,27 +531,27 @@ class TerminalSocketClient(
 
             override fun onClosed(code: Int, reason: String) {
                 socket = null
-                socketAberto = null
+                openSocket = null
                 if (code == WS_CLOSE_SESSION_ENDED) {
                     outcome.complete(AttemptOutcome.Ended)
                 } else {
-                    outcome.complete(AttemptOutcome.Failed(reason, abriu.get()))
+                    outcome.complete(AttemptOutcome.Failed(reason, opened.get()))
                 }
             }
 
             override fun onFailure(reason: String) {
                 socket = null
-                socketAberto = null
-                outcome.complete(AttemptOutcome.Failed(reason, abriu.get()))
+                openSocket = null
+                outcome.complete(AttemptOutcome.Failed(reason, opened.get()))
             }
         }
-        val aberto = webSocketFactory.open(url, listener)
-        socket = aberto
+        val isOpen = webSocketFactory.open(url, listener)
+        socket = isOpen
         // The other half of the race above: if `onOpen` had already happened
         // by the time we got here, its drain saw a null `socket` and did
         // nothing. Draining is synchronized and empties the queue, so calling
         // it twice does not send anything twice.
-        if (abriu.get()) drenarPendentes(aberto)
+        if (opened.get()) drainPending(isOpen)
         return outcome.await()
     }
 
@@ -573,7 +573,7 @@ class TerminalSocketClient(
             name: String,
             ticket: String,
             attach: Boolean,
-            replayDoServidor: Boolean = true,
+            serverReplay: Boolean = true,
         ): String {
             val base = "$wsBaseUrl$WS_SHELL_PATH?name=$name&ticket=$ticket"
             // `size=1` tells the server that this client UNDERSTANDS the
@@ -587,7 +587,7 @@ class TerminalSocketClient(
             // session stays at the largest size and the device receives a crop
             // composed for its own window.
             val comAttach = if (attach) "$base&attach=1&size=1&quadro=1" else "$base&size=1&quadro=1"
-            return if (replayDoServidor) comAttach else "$comAttach&replay=0"
+            return if (serverReplay) comAttach else "$comAttach&replay=0"
         }
     }
 }

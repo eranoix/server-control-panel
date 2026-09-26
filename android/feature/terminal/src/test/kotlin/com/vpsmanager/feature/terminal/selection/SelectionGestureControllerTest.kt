@@ -1,7 +1,7 @@
 package com.vpsmanager.feature.terminal.selection
 
 import androidx.compose.ui.geometry.Offset
-import com.vpsmanager.feature.terminal.mouse.RoteamentoDeToque
+import com.vpsmanager.feature.terminal.mouse.TouchRouting
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -78,11 +78,11 @@ class SelectionGestureControllerTest {
     }
 
     @Test
-    fun routeCanvasDrag_programaNaoPediuMouse_soASelecaoRecebeOgesto() {
+    fun routeCanvasDrag_programDidNotAskForMouse_onlySelectionGetsGesture() {
         // The `bash` prompt — no tracking active. Previously a manual switch
         // could send the gesture to the "mouse" even here, and the bytes ended
         // up as text on the command line.
-        val toggle = RoteamentoDeToque { false }
+        val toggle = TouchRouting { false }
         val selectionCalls = mutableListOf<Offset>()
         val mouseCalls = mutableListOf<Offset>()
         val selectionTarget = CanvasDragTarget { position, _ -> selectionCalls += position }
@@ -96,8 +96,8 @@ class SelectionGestureControllerTest {
     }
 
     @Test
-    fun routeCanvasDrag_programaPediuMouse_soOmouseRecebeOgesto() {
-        val toggle = RoteamentoDeToque { true }
+    fun routeCanvasDrag_programAskedForMouse_onlyMouseGetsGesture() {
+        val toggle = TouchRouting { true }
         val selectionCalls = mutableListOf<Offset>()
         val mouseCalls = mutableListOf<Offset>()
         val selectionTarget = CanvasDragTarget { position, _ -> selectionCalls += position }
@@ -111,7 +111,7 @@ class SelectionGestureControllerTest {
     }
 
     @Test
-    fun routeCanvasDrag_seguirOprogramaRemotoNaoEmaisNegociavel() {
+    fun routeCanvasDrag_followingRemoteProgramIsNotNegotiable() {
         // There used to be a test here for the "the program asked for the
         // mouse but I want to select anyway" preference. The preference was
         // REMOVED at the app owner's request, and this test now pins that
@@ -121,13 +121,13 @@ class SelectionGestureControllerTest {
         // Selecting inside an `htop` is still possible through a LONG PRESS,
         // which anchors the selection before this routing and therefore does
         // not show up in this test.
-        val roteamento = RoteamentoDeToque { true }
+        val routing = TouchRouting { true }
         val selectionCalls = mutableListOf<Offset>()
         val mouseCalls = mutableListOf<Offset>()
         val selectionTarget = CanvasDragTarget { position, _ -> selectionCalls += position }
         val mouseTarget = CanvasDragTarget { position, _ -> mouseCalls += position }
 
-        val router = routeCanvasDrag(roteamento, selectionTarget, mouseTarget)
+        val router = routeCanvasDrag(routing, selectionTarget, mouseTarget)
         router.onDrag(Offset(5f, 6f), DragPhase.START)
 
         assertEquals(listOf(Offset(5f, 6f)), mouseCalls)

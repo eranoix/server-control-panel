@@ -35,13 +35,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import com.vpsmanager.feature.terminal.attach.ANEXAR_LABEL
-import com.vpsmanager.feature.terminal.attach.ANEXAR_TAG
+import com.vpsmanager.feature.terminal.attach.ATTACH_LABEL
+import com.vpsmanager.feature.terminal.attach.ATTACH_TAG
 import com.vpsmanager.feature.terminal.prefs.TerminalLineSpacing
-import com.vpsmanager.feature.terminal.power.ISENCAO_BATERIA_LABEL
-import com.vpsmanager.feature.terminal.power.ISENCAO_BATERIA_TAG
-import com.vpsmanager.feature.terminal.prefs.LinhasVisiveis
-import com.vpsmanager.feature.terminal.prefs.ModoDeDigitacao
+import com.vpsmanager.feature.terminal.power.BATTERY_EXEMPTION_LABEL
+import com.vpsmanager.feature.terminal.power.BATTERY_EXEMPTION_TAG
+import com.vpsmanager.feature.terminal.prefs.VisibleRows
+import com.vpsmanager.feature.terminal.prefs.TypingMode
 import com.vpsmanager.feature.terminal.prefs.TerminalScrollback
 import com.vpsmanager.feature.terminal.prefs.TerminalFontSizePreference
 
@@ -58,10 +58,10 @@ const val SHOW_KEYBOARD_LABEL = "Show keyboard"
 const val SHOW_KEYBOARD_TAG = "botao-mostrar-teclado"
 
 /** Label of the sheet's paste button — the path to pasting that does not depend on a selection existing. */
-const val COLAR_LABEL = "Paste"
+const val PASTE_LABEL = "Paste"
 
 /** Test tag for the sheet's paste button. */
-const val COLAR_TAG = "botao-colar"
+const val PASTE_TAG = "botao-colar"
 
 // THE "CLEAR HISTORY" BUTTON IS GONE, and not as tidying up.
 //
@@ -81,13 +81,13 @@ const val COLAR_TAG = "botao-colar"
 // one of ours.
 
 /** Test tag for each line-spacing step. */
-fun entrelinhaTag(passo: TerminalLineSpacing): String = "entrelinha-${passo.name}"
+fun lineSpacingTag(step: TerminalLineSpacing): String = "entrelinha-${step.name}"
 
 /** Tag for each input mode's chip, for the test that proves the switch. */
-fun modoDeDigitacaoTag(modo: ModoDeDigitacao): String = "modo-digitacao-${modo.name}"
+fun typingModeTag(mode: TypingMode): String = "modo-digitacao-${mode.name}"
 
 /** Tag for each history-size chip. */
-fun scrollbackTag(passo: TerminalScrollback): String = "scrollback-${passo.name}"
+fun scrollbackTag(step: TerminalScrollback): String = "scrollback-${step.name}"
 
 
 /**
@@ -105,21 +105,21 @@ fun scrollbackTag(passo: TerminalScrollback): String = "scrollback-${passo.name}
  * block of text competing with the control.
  */
 @Composable
-private fun CabecalhoDeSecao(icone: ImageVector, titulo: String, legenda: String? = null) {
+private fun SectionHeader(icon: ImageVector, title: String, caption: String? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                imageVector = icone,
+                imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
                 tint = MaterialTheme.colorScheme.primary,
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(text = titulo, style = MaterialTheme.typography.titleSmall)
+            Text(text = title, style = MaterialTheme.typography.titleSmall)
         }
-        if (legenda != null) {
+        if (caption != null) {
             Text(
-                text = legenda,
+                text = caption,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -137,23 +137,23 @@ private fun CabecalhoDeSecao(icone: ImageVector, titulo: String, legenda: String
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun <T> EscadaDeChips(
-    opcoes: List<T>,
-    selecionado: (T) -> Boolean,
-    rotulo: (T) -> String,
+private fun <T> ChipLadder(
+    options: List<T>,
+    selected: (T) -> Boolean,
+    label: (T) -> String,
     tag: (T) -> String,
-    onEscolher: (T) -> Unit,
+    onChoose: (T) -> Unit,
 ) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        opcoes.forEach { opcao ->
+        options.forEach { option ->
             FilterChip(
-                selected = selecionado(opcao),
-                onClick = { onEscolher(opcao) },
-                label = { Text(text = rotulo(opcao), maxLines = 1) },
-                modifier = Modifier.testTag(tag(opcao)),
+                selected = selected(option),
+                onClick = { onChoose(option) },
+                label = { Text(text = label(option), maxLines = 1) },
+                modifier = Modifier.testTag(tag(option)),
             )
         }
     }
@@ -177,7 +177,7 @@ private fun <T> EscadaDeChips(
  * The mouse selector ("when the program asks for mouse") used to be here and
  * is GONE: it was a preference about a rare case that forced people to
  * understand the terminal's mouse model in order to decide. Today the gesture's
- * owner is derived from the emulator's real state (see `RoteamentoDeToque`),
+ * owner is derived from the emulator's real state (see `TouchRouting`),
  * and anyone who needs to select inside an `htop` uses long-press. Line
  * spacing took its place.
  *
@@ -190,21 +190,21 @@ fun TerminalOptionsSheet(
     onFontSizeChange: (Float) -> Unit,
     gridCols: Int,
     gridRows: Int,
-    linhasVisiveis: LinhasVisiveis,
-    onLinhasVisiveisChange: (LinhasVisiveis) -> Unit,
-    alturaVisivelPx: Int,
-    alturaDeReferenciaPx: Int,
-    scrollbackLinhas: Int,
+    visibleRows: VisibleRows,
+    onVisibleRowsChange: (VisibleRows) -> Unit,
+    visibleHeightPx: Int,
+    referenceHeightPx: Int,
+    scrollbackLines: Int,
     onScrollbackChange: (Int) -> Unit,
-    modoDeDigitacao: ModoDeDigitacao,
-    onModoDeDigitacaoChange: (ModoDeDigitacao) -> Unit,
-    entrelinha: TerminalLineSpacing,
-    onEntrelinhaChange: (TerminalLineSpacing) -> Unit,
-    onColar: () -> Unit,
-    onAnexar: () -> Unit,
+    typingMode: TypingMode,
+    onTypingModeChange: (TypingMode) -> Unit,
+    lineSpacing: TerminalLineSpacing,
+    onLineSpacingChange: (TerminalLineSpacing) -> Unit,
+    onPaste: () -> Unit,
+    onAttach: () -> Unit,
     onShowKeyboard: () -> Unit,
-    isentoDeBateria: Boolean,
-    onPedirIsencaoDeBateria: () -> Unit,
+    batteryExempt: Boolean,
+    onRequestBatteryExemption: () -> Unit,
     onDismissRequest: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -218,21 +218,21 @@ fun TerminalOptionsSheet(
             onFontSizeChange = onFontSizeChange,
             gridCols = gridCols,
             gridRows = gridRows,
-            linhasVisiveis = linhasVisiveis,
-            onLinhasVisiveisChange = onLinhasVisiveisChange,
-            alturaVisivelPx = alturaVisivelPx,
-            alturaDeReferenciaPx = alturaDeReferenciaPx,
-            scrollbackLinhas = scrollbackLinhas,
+            visibleRows = visibleRows,
+            onVisibleRowsChange = onVisibleRowsChange,
+            visibleHeightPx = visibleHeightPx,
+            referenceHeightPx = referenceHeightPx,
+            scrollbackLines = scrollbackLines,
             onScrollbackChange = onScrollbackChange,
-            modoDeDigitacao = modoDeDigitacao,
-            onModoDeDigitacaoChange = onModoDeDigitacaoChange,
-            entrelinha = entrelinha,
-            onEntrelinhaChange = onEntrelinhaChange,
-            onColar = onColar,
-            onAnexar = onAnexar,
+            typingMode = typingMode,
+            onTypingModeChange = onTypingModeChange,
+            lineSpacing = lineSpacing,
+            onLineSpacingChange = onLineSpacingChange,
+            onPaste = onPaste,
+            onAttach = onAttach,
             onShowKeyboard = onShowKeyboard,
-            isentoDeBateria = isentoDeBateria,
-            onPedirIsencaoDeBateria = onPedirIsencaoDeBateria,
+            batteryExempt = batteryExempt,
+            onRequestBatteryExemption = onRequestBatteryExemption,
         )
     }
 }
@@ -250,21 +250,21 @@ internal fun TerminalOptionsContent(
     onFontSizeChange: (Float) -> Unit,
     gridCols: Int,
     gridRows: Int,
-    linhasVisiveis: LinhasVisiveis,
-    onLinhasVisiveisChange: (LinhasVisiveis) -> Unit,
-    alturaVisivelPx: Int,
-    alturaDeReferenciaPx: Int,
-    scrollbackLinhas: Int,
+    visibleRows: VisibleRows,
+    onVisibleRowsChange: (VisibleRows) -> Unit,
+    visibleHeightPx: Int,
+    referenceHeightPx: Int,
+    scrollbackLines: Int,
     onScrollbackChange: (Int) -> Unit,
-    modoDeDigitacao: ModoDeDigitacao,
-    onModoDeDigitacaoChange: (ModoDeDigitacao) -> Unit,
-    entrelinha: TerminalLineSpacing,
-    onEntrelinhaChange: (TerminalLineSpacing) -> Unit,
-    onColar: () -> Unit,
-    onAnexar: () -> Unit,
+    typingMode: TypingMode,
+    onTypingModeChange: (TypingMode) -> Unit,
+    lineSpacing: TerminalLineSpacing,
+    onLineSpacingChange: (TerminalLineSpacing) -> Unit,
+    onPaste: () -> Unit,
+    onAttach: () -> Unit,
     onShowKeyboard: () -> Unit,
-    isentoDeBateria: Boolean,
-    onPedirIsencaoDeBateria: () -> Unit,
+    batteryExempt: Boolean,
+    onRequestBatteryExemption: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -281,10 +281,10 @@ internal fun TerminalOptionsContent(
                 // showing the hand-picked value here would be a lie, and the
                 // A−/A+ buttons would move a number that is not in use.
                 Text(
-                    text = if (linhasVisiveis == LinhasVisiveis.AUTOMATICO) {
+                    text = if (visibleRows == VisibleRows.AUTOMATIC) {
                         "${fontSizeSp.toInt()}sp"
                     } else {
-                        "derived from ${linhasVisiveis.linhas} lines"
+                        "derived from ${visibleRows.lines} lines"
                     },
                 )
                 // The resulting grid in numbers: this is what you choose the
@@ -296,9 +296,9 @@ internal fun TerminalOptionsContent(
                         // The reference height only differs from the visible
                         // one when something is covering the grid — keyboard,
                         // connection banner, attachment bar. See
-                        // [GeometriaDaGrade].
-                        if (alturaDeReferenciaPx != alturaVisivelPx) {
-                            "  ·  ${alturaVisivelPx}px of ${alturaDeReferenciaPx}px"
+                        // [GridGeometry].
+                        if (referenceHeightPx != visibleHeightPx) {
+                            "  ·  ${visibleHeightPx}px of ${referenceHeightPx}px"
                         } else {
                             ""
                         },
@@ -318,34 +318,34 @@ internal fun TerminalOptionsContent(
 
         HorizontalDivider()
 
-        CabecalhoDeSecao(
-            icone = Icons.Filled.Menu,
-            titulo = "Visible lines",
-            legenda = if (linhasVisiveis == LinhasVisiveis.AUTOMATICO) {
+        SectionHeader(
+            icon = Icons.Filled.Menu,
+            title = "Visible lines",
+            caption = if (visibleRows == VisibleRows.AUTOMATIC) {
                 "$gridRows fit right now. Pick a number to pin it — the type size adjusts."
             } else {
-                "Pinned at ${linhasVisiveis.linhas}. The type size is derived from it."
+                "Pinned at ${visibleRows.lines}. The type size is derived from it."
             },
         )
-        EscadaDeChips(
-            opcoes = LinhasVisiveis.entries,
-            selecionado = { it == linhasVisiveis },
-            rotulo = { it.rotulo },
-            tag = ::linhasVisiveisTag,
-            onEscolher = onLinhasVisiveisChange,
+        ChipLadder(
+            options = VisibleRows.entries,
+            selected = { it == visibleRows },
+            label = { it.label },
+            tag = ::visibleRowsTag,
+            onChoose = onVisibleRowsChange,
         )
 
-        CabecalhoDeSecao(
-            icone = Icons.Filled.List,
-            titulo = "Line spacing",
-            legenda = "Space between lines, without changing the type size.",
+        SectionHeader(
+            icon = Icons.Filled.List,
+            title = "Line spacing",
+            caption = "Space between lines, without changing the type size.",
         )
-        EscadaDeChips(
-            opcoes = TerminalLineSpacing.entries,
-            selecionado = { it == entrelinha },
-            rotulo = { it.rotulo },
-            tag = ::entrelinhaTag,
-            onEscolher = onEntrelinhaChange,
+        ChipLadder(
+            options = TerminalLineSpacing.entries,
+            selected = { it == lineSpacing },
+            label = { it.label },
+            tag = ::lineSpacingTag,
+            onChoose = onLineSpacingChange,
         )
 
         HorizontalDivider()
@@ -354,18 +354,18 @@ internal fun TerminalOptionsContent(
         // belongs to the moment, not to the app: a shell command needs every
         // keystroke as typed; writing prose for the agent gains a great deal
         // from the device's corrector. That is why it is a switch and not a
-        // decision locked in. See ModoDeDigitacao for the defect this fixes.
-        CabecalhoDeSecao(
-            icone = Icons.Filled.Edit,
-            titulo = "Keyboard",
-            legenda = modoDeDigitacao.descricao,
+        // decision locked in. See TypingMode for the defect this fixes.
+        SectionHeader(
+            icon = Icons.Filled.Edit,
+            title = "Keyboard",
+            caption = typingMode.description,
         )
-        EscadaDeChips(
-            opcoes = ModoDeDigitacao.entries,
-            selecionado = { it == modoDeDigitacao },
-            rotulo = { it.rotulo },
-            tag = ::modoDeDigitacaoTag,
-            onEscolher = onModoDeDigitacaoChange,
+        ChipLadder(
+            options = TypingMode.entries,
+            selected = { it == typingMode },
+            label = { it.label },
+            tag = ::typingModeTag,
+            onChoose = onTypingModeChange,
         )
 
         HorizontalDivider()
@@ -379,20 +379,20 @@ internal fun TerminalOptionsContent(
         // fetches from the server when opening the session. While it was only
         // capacity, it reserved room that was never filled — and promising
         // history that does not arrive is worse than not promising it.
-        CabecalhoDeSecao(
-            icone = Icons.Filled.Refresh,
-            titulo = "Scrollback",
-            legenda = "Lines you can scroll back and reread " +
-                "(${TerminalScrollback.porLinhas(scrollbackLinhas).custoAproximado} " +
+        SectionHeader(
+            icon = Icons.Filled.Refresh,
+            title = "Scrollback",
+            caption = "Lines you can scroll back and reread " +
+                "(${TerminalScrollback.byRows(scrollbackLines).approxCost} " +
                 "on the device). The app fetches this history when it opens the session, " +
                 "so it applies from the next time you open it.",
         )
-        EscadaDeChips(
-            opcoes = TerminalScrollback.entries,
-            selecionado = { it.linhas == scrollbackLinhas },
-            rotulo = { it.rotulo },
+        ChipLadder(
+            options = TerminalScrollback.entries,
+            selected = { it.lines == scrollbackLines },
+            label = { it.label },
             tag = ::scrollbackTag,
-            onEscolher = { onScrollbackChange(it.linhas) },
+            onChoose = { onScrollbackChange(it.lines) },
         )
 
         HorizontalDivider()
@@ -412,8 +412,8 @@ internal fun TerminalOptionsContent(
         // Copy lives on the system's floating bar, which only exists while
         // there is a selection. Paste depends on no selection at all, so it
         // needs a path that always exists — this one.
-        OutlinedButton(onClick = onColar, modifier = Modifier.testTag(COLAR_TAG)) {
-            Text(text = COLAR_LABEL)
+        OutlinedButton(onClick = onPaste, modifier = Modifier.testTag(PASTE_TAG)) {
+            Text(text = PASTE_LABEL)
         }
 
         // Attach sits RIGHT NEXT to Paste because, seen from a distance, it
@@ -432,8 +432,8 @@ internal fun TerminalOptionsContent(
         // reachable without leaving the session, with a thumb, two taps away;
         // the upload's progress, on the other hand, shows up on the attachment
         // bar glued to the key row, with nothing to reopen.
-        OutlinedButton(onClick = onAnexar, modifier = Modifier.testTag(ANEXAR_TAG)) {
-            Text(text = ANEXAR_LABEL)
+        OutlinedButton(onClick = onAttach, modifier = Modifier.testTag(ATTACH_TAG)) {
+            Text(text = ATTACH_LABEL)
         }
 
 
@@ -443,7 +443,7 @@ internal fun TerminalOptionsContent(
         // in here, behind an explicit tap, the app never asks for anything on
         // its own: whoever declined (or never opened the sheet) simply is not
         // asked again, which is the rule about not nagging.
-        if (!isentoDeBateria) {
+        if (!batteryExempt) {
             HorizontalDivider()
 
             Text(text = "Session in the background", style = MaterialTheme.typography.titleMedium)
@@ -453,10 +453,10 @@ internal fun TerminalOptionsContent(
                 style = MaterialTheme.typography.bodySmall,
             )
             OutlinedButton(
-                onClick = onPedirIsencaoDeBateria,
-                modifier = Modifier.testTag(ISENCAO_BATERIA_TAG),
+                onClick = onRequestBatteryExemption,
+                modifier = Modifier.testTag(BATTERY_EXEMPTION_TAG),
             ) {
-                Text(text = ISENCAO_BATERIA_LABEL)
+                Text(text = BATTERY_EXEMPTION_LABEL)
             }
         }
 
@@ -464,4 +464,4 @@ internal fun TerminalOptionsContent(
 }
 
 /** Test tag for each visible-lines step. */
-internal fun linhasVisiveisTag(opcao: LinhasVisiveis): String = "linhas-visiveis-${opcao.linhas}"
+internal fun visibleRowsTag(option: VisibleRows): String = "linhas-visiveis-${option.lines}"

@@ -35,12 +35,12 @@ import kotlin.coroutines.resumeWithException
  * None of them is fatal: [PairingScanScreen] renders every one of them as a
  * screen with a way out. Before this classification existed, the failure rose
  * as an unhandled exception from inside a `Runnable` on the main executor and
- * **killed the process** — see the comment on [ChecagemDeCameraX].
+ * **killed the process** — see the comment on [CameraXCheck].
  */
-internal sealed interface FalhaDeCamera {
+internal sealed interface CameraFailure {
 
     /** Permission denied, but the system still allows asking again. */
-    data object PermissaoNegada : FalhaDeCamera
+    data object PermissionDenied : CameraFailure
 
     /**
      * Denied for good ("don't ask again", or denied twice). The system starts
@@ -48,62 +48,62 @@ internal sealed interface FalhaDeCamera {
      * loop that never goes anywhere: the only way out is the app's Settings
      * screen.
      */
-    data object PermissaoBloqueada : FalhaDeCamera
+    data object PermissionBlocked : CameraFailure
 
     /** The device exposes no camera at all. Insisting does not help. */
-    data object SemCamera : FalhaDeCamera
+    data object NoCamera : CameraFailure
 
     /**
      * The camera exists but another app has taken it — this very app does
      * video calls, so the contention is a real scenario, not a hypothetical.
      */
-    data object CameraOcupada : FalhaDeCamera
+    data object CameraInUse : CameraFailure
 
     /** Switched off by device policy or by Do Not Disturb mode. */
-    data object CameraBloqueadaPeloSistema : FalhaDeCamera
+    data object CameraBlockedBySystem : CameraFailure
 
     /**
-     * Anything else. [detalhe] is the technical text of the root cause, shown
+     * Anything else. [detail] is the technical text of the root cause, shown
      * on screen because the server's owner has no `adb` to work out for
      * themselves what happened — if the app does not say, nobody says.
      */
-    data class FalhaInesperada(val detalhe: String) : FalhaDeCamera
+    data class UnexpectedFailure(val detail: String) : CameraFailure
 }
 
 /** What the scanner screen is doing right now. */
-internal sealed interface EstadoDoScanner {
+internal sealed interface ScannerState {
 
     /** Checking permission and availability — nothing to show yet. */
-    data object Verificando : EstadoDoScanner
+    data object Checking : ScannerState
 
     /** The system permission dialog is in front of the user. */
-    data object PedindoPermissao : EstadoDoScanner
+    data object RequestingPermission : ScannerState
 
-    /** Camera open; [usarCameraFrontal] when there is no usable rear one. */
-    data class Escaneando(val usarCameraFrontal: Boolean) : EstadoDoScanner
+    /** Camera open; [useFrontCamera] when there is no usable rear one. */
+    data class Scanning(val useFrontCamera: Boolean) : ScannerState
 
     /** No camera, with explanation and exit. Never a blank screen, never a crash. */
-    data class Degradado(val falha: FalhaDeCamera) : EstadoDoScanner
+    data class Degraded(val failure: CameraFailure) : ScannerState
 }
 
-/** Result of [ChecagemDeCamera.conferir]. */
-internal sealed interface ProntidaoDaCamera {
-    data class Pronta(val usarCameraFrontal: Boolean) : ProntidaoDaCamera
-    data class Indisponivel(val falha: FalhaDeCamera) : ProntidaoDaCamera
+/** Result of [CameraCheck.check]. */
+internal sealed interface CameraReadiness {
+    data class Ready(val useFrontCamera: Boolean) : CameraReadiness
+    data class Unavailable(val failure: CameraFailure) : CameraReadiness
 }
 
 /**
  * The seam between the screen and CameraX.
  *
  * It exists so that the FAILURE path is testable on the JVM: a fake returning
- * [ProntidaoDaCamera.Indisponivel] reproduces "provider failed", "camera
+ * [CameraReadiness.Unavailable] reproduces "provider failed", "camera
  * busy" or "device has no camera" without depending on any hardware — not
  * even the emulator, whose camera configuration another session may switch on
  * or off underneath the test. Every risky decision happens in here, BEFORE
  * any `PreviewView` exists, and what comes out is a value, never an exception.
  */
-internal fun interface ChecagemDeCamera {
-    suspend fun conferir(context: Context): ProntidaoDaCamera
+internal fun interface CameraCheck {
+    suspend fun check(context: Context): CameraReadiness
 }
 
 /**
@@ -111,15 +111,15 @@ internal fun interface ChecagemDeCamera {
  * The no-argument constructor is the production behaviour; tests swap the
  * pieces one by one.
  */
-internal class AmbienteDaCamera(
-    val temPermissao: (Context) -> Boolean = ::temPermissaoDeCamera,
-    val podePedirPermissaoNovamente: (Context) -> Boolean = ::podePedirPermissaoDeCameraNovamente,
-    val checagem: ChecagemDeCamera = ChecagemDeCameraX,
+internal class CameraEnvironment(
+    val hasPermission: (Context) -> Boolean = ::hasCameraPermission,
+    val canAskPermissionAgain: (Context) -> Boolean = ::canAskCameraPermissionAgain,
+    val cameraCheck: CameraCheck = CameraXCheck,
 )
 
 /**
  * The real implementation: asks for the [ProcessCameraProvider] and only
- * returns [ProntidaoDaCamera.Pronta] when there really is a camera for the
+ * returns [CameraReadiness.Ready] when there really is a camera for the
  * scanner to use.
  *
  * The defect this replaces: the previous code called
@@ -134,40 +134,40 @@ internal class AmbienteDaCamera(
  * option.
  *
  * Here the future is awaited in a coroutine, every failure becomes a value
- * via [classificarFalhaDeCamera], and the selector choice accounts for
+ * via [classifyCameraFailure], and the selector choice accounts for
  * devices with no rear camera (falling back to the front one instead of
  * failing).
  */
-internal object ChecagemDeCameraX : ChecagemDeCamera {
+internal object CameraXCheck : CameraCheck {
 
-    override suspend fun conferir(context: Context): ProntidaoDaCamera {
-        val cameras = contarCamerasDoAparelho(context)
+    override suspend fun check(context: Context): CameraReadiness {
+        val cameras = countDeviceCameras(context)
         // An honest short circuit: with no camera at all there is nothing
         // to try, and bringing CameraX up just to hear "0 cameras" is noise.
-        if (cameras == 0) return ProntidaoDaCamera.Indisponivel(FalhaDeCamera.SemCamera)
+        if (cameras == 0) return CameraReadiness.Unavailable(CameraFailure.NoCamera)
 
-        val provedor = try {
-            ProcessCameraProvider.getInstance(context).aguardar(context)
+        val provider = try {
+            ProcessCameraProvider.getInstance(context).await(context)
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
-            return ProntidaoDaCamera.Indisponivel(classificarFalhaDeCamera(t, cameras))
+            return CameraReadiness.Unavailable(classifyCameraFailure(t, cameras))
         }
 
         return try {
             when {
-                provedor.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) ->
-                    ProntidaoDaCamera.Pronta(usarCameraFrontal = false)
+                provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) ->
+                    CameraReadiness.Ready(useFrontCamera = false)
                 // A device with only a front camera still reads a QR code —
                 // worse ergonomics, but a path that works instead of an error.
-                provedor.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) ->
-                    ProntidaoDaCamera.Pronta(usarCameraFrontal = true)
-                else -> ProntidaoDaCamera.Indisponivel(FalhaDeCamera.SemCamera)
+                provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) ->
+                    CameraReadiness.Ready(useFrontCamera = true)
+                else -> CameraReadiness.Unavailable(CameraFailure.NoCamera)
             }
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
-            ProntidaoDaCamera.Indisponivel(classificarFalhaDeCamera(t, cameras))
+            CameraReadiness.Unavailable(classifyCameraFailure(t, cameras))
         }
     }
 }
@@ -177,21 +177,21 @@ internal object ChecagemDeCameraX : ChecagemDeCamera {
  * pulling in `kotlinx-coroutines-guava` (a whole dependency for one
  * function). The exception that comes out of here is the same one `get()`
  * would throw — wrapped in an `ExecutionException` — because
- * [classificarFalhaDeCamera] is the one that unwraps it.
+ * [classifyCameraFailure] is the one that unwraps it.
  */
-private suspend fun <T> ListenableFuture<T>.aguardar(context: Context): T =
-    suspendCancellableCoroutine { continuacao: CancellableContinuation<T> ->
+private suspend fun <T> ListenableFuture<T>.await(context: Context): T =
+    suspendCancellableCoroutine { continuation: CancellableContinuation<T> ->
         addListener(
             {
                 try {
-                    continuacao.resume(get())
+                    continuation.resume(get())
                 } catch (t: Throwable) {
-                    continuacao.resumeWithException(t)
+                    continuation.resumeWithException(t)
                 }
             },
             ContextCompat.getMainExecutor(context),
         )
-        continuacao.invokeOnCancellation { cancel(false) }
+        continuation.invokeOnCancellation { cancel(false) }
     }
 
 /**
@@ -207,7 +207,7 @@ private suspend fun <T> ListenableFuture<T>.aguardar(context: Context): T =
  *
  * Returns `-1` when there was no way to know; in that case CameraX decides.
  */
-internal fun contarCamerasDoAparelho(context: Context): Int =
+internal fun countDeviceCameras(context: Context): Int =
     try {
         (context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager)?.cameraIdList?.size ?: -1
     } catch (e: CameraAccessException) {
@@ -229,35 +229,35 @@ internal fun contarCamerasDoAparelho(context: Context): Int =
  * Pure on purpose — it is the piece the tests exercise cause by cause, with
  * no Compose, no Robolectric and no hardware.
  *
- * [camerasDoAparelho] comes from [contarCamerasDoAparelho]; `-1` means
- * "unknown" and does not become [FalhaDeCamera.SemCamera].
+ * [deviceCameras] comes from [countDeviceCameras]; `-1` means
+ * "unknown" and does not become [CameraFailure.NoCamera].
  */
-internal fun classificarFalhaDeCamera(erro: Throwable, camerasDoAparelho: Int): FalhaDeCamera {
-    val causas = cadeiaDeCausas(erro)
+internal fun classifyCameraFailure(error: Throwable, deviceCameras: Int): CameraFailure {
+    val causes = causeChain(error)
 
     // Permission revoked in Settings with the screen already open: CameraX
     // runs into a SecurityException deep down the stack.
-    if (causas.any { it is SecurityException }) return FalhaDeCamera.PermissaoNegada
+    if (causes.any { it is SecurityException }) return CameraFailure.PermissionDenied
 
-    if (camerasDoAparelho == 0) return FalhaDeCamera.SemCamera
+    if (deviceCameras == 0) return CameraFailure.NoCamera
 
-    val indisponivel = causas.filterIsInstance<CameraUnavailableException>().firstOrNull()
-        ?: return FalhaDeCamera.FalhaInesperada(resumirCausa(causas))
+    val unavailable = causes.filterIsInstance<CameraUnavailableException>().firstOrNull()
+        ?: return CameraFailure.UnexpectedFailure(summarizeCause(causes))
 
-    return when (indisponivel.reason) {
+    return when (unavailable.reason) {
         CameraUnavailableException.CAMERA_IN_USE,
         CameraUnavailableException.CAMERA_MAX_IN_USE,
         // DISCONNECTED in practice means another client has taken the
         // camera: the user's action is the same as CAMERA_IN_USE — release
         // and try again.
         CameraUnavailableException.CAMERA_DISCONNECTED,
-        -> FalhaDeCamera.CameraOcupada
+        -> CameraFailure.CameraInUse
 
         CameraUnavailableException.CAMERA_DISABLED,
         CameraUnavailableException.CAMERA_UNAVAILABLE_DO_NOT_DISTURB,
-        -> FalhaDeCamera.CameraBloqueadaPeloSistema
+        -> CameraFailure.CameraBlockedBySystem
 
-        else -> FalhaDeCamera.FalhaInesperada(resumirCausa(causas))
+        else -> CameraFailure.UnexpectedFailure(summarizeCause(causes))
     }
 }
 
@@ -277,51 +277,51 @@ internal fun classificarFalhaDeCamera(erro: Throwable, camerasDoAparelho: Int): 
  * error card in that case would be flicker on top of something that is
  * already sorting itself out.
  */
-internal fun classificarErroDeEstadoDaCamera(codigo: Int): FalhaDeCamera? = when (codigo) {
+internal fun classifyCameraStateError(code: Int): CameraFailure? = when (code) {
     androidx.camera.core.CameraState.ERROR_CAMERA_IN_USE,
     androidx.camera.core.CameraState.ERROR_MAX_CAMERAS_IN_USE,
-    -> FalhaDeCamera.CameraOcupada
+    -> CameraFailure.CameraInUse
 
     androidx.camera.core.CameraState.ERROR_CAMERA_DISABLED,
     androidx.camera.core.CameraState.ERROR_DO_NOT_DISTURB_MODE_ENABLED,
-    -> FalhaDeCamera.CameraBloqueadaPeloSistema
+    -> CameraFailure.CameraBlockedBySystem
 
     // Recoverable: CameraX tries again of its own accord.
     androidx.camera.core.CameraState.ERROR_OTHER_RECOVERABLE_ERROR -> null
 
     androidx.camera.core.CameraState.ERROR_STREAM_CONFIG ->
-        FalhaDeCamera.FalhaInesperada("CameraState.ERROR_STREAM_CONFIG: stream configuration rejected")
+        CameraFailure.UnexpectedFailure("CameraState.ERROR_STREAM_CONFIG: stream configuration rejected")
 
     androidx.camera.core.CameraState.ERROR_CAMERA_FATAL_ERROR ->
-        FalhaDeCamera.FalhaInesperada("CameraState.ERROR_CAMERA_FATAL_ERROR: the camera needs to be restarted")
+        CameraFailure.UnexpectedFailure("CameraState.ERROR_CAMERA_FATAL_ERROR: the camera needs to be restarted")
 
-    else -> FalhaDeCamera.FalhaInesperada("CameraState error $codigo")
+    else -> CameraFailure.UnexpectedFailure("CameraState error $code")
 }
 
 /** Causes from the outside in, without repeats (cycle guard) and capped. */
-private fun cadeiaDeCausas(erro: Throwable): List<Throwable> {
-    val vistas = mutableListOf<Throwable>()
-    var atual: Throwable? = erro
-    while (atual != null && vistas.size < 12 && vistas.none { it === atual }) {
-        vistas += atual
-        atual = atual.cause
+private fun causeChain(error: Throwable): List<Throwable> {
+    val visited = mutableListOf<Throwable>()
+    var current: Throwable? = error
+    while (current != null && visited.size < 12 && visited.none { it === current }) {
+        visited += current
+        current = current.cause
     }
-    return vistas
+    return visited
 }
 
 /**
- * The technical text shown in [FalhaDeCamera.FalhaInesperada]: the deepest
+ * The technical text shown in [CameraFailure.UnexpectedFailure]: the deepest
  * cause, which is the one that says something — `ExecutionException` and
  * `InitializationException` are only wrapping.
  */
-private fun resumirCausa(causas: List<Throwable>): String {
-    val raiz = causas.lastOrNull() ?: return "unknown cause"
-    val mensagem = raiz.message?.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
-    return "${raiz.javaClass.simpleName}$mensagem".take(400)
+private fun summarizeCause(causes: List<Throwable>): String {
+    val root = causes.lastOrNull() ?: return "unknown cause"
+    val message = root.message?.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty()
+    return "${root.javaClass.simpleName}$message".take(400)
 }
 
 /** Camera permission granted right now? */
-internal fun temPermissaoDeCamera(context: Context): Boolean =
+internal fun hasCameraPermission(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
 /**
@@ -334,14 +334,14 @@ internal fun temPermissaoDeCamera(context: Context): Boolean =
  * say) the safe answer is `false`, which leads to Settings instead of
  * insisting on a dialog that never appears.
  */
-internal fun podePedirPermissaoDeCameraNovamente(context: Context): Boolean {
-    val activity = context.acharActivity() ?: return false
+internal fun canAskCameraPermissionAgain(context: Context): Boolean {
+    val activity = context.findActivity() ?: return false
     return activity.shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)
 }
 
-/** The [FalhaDeCamera] matching a permission denial. */
-internal fun falhaDePermissao(podePedirNovamente: Boolean): FalhaDeCamera =
-    if (podePedirNovamente) FalhaDeCamera.PermissaoNegada else FalhaDeCamera.PermissaoBloqueada
+/** The [CameraFailure] matching a permission denial. */
+internal fun permissionFailure(canAskAgain: Boolean): CameraFailure =
+    if (canAskAgain) CameraFailure.PermissionDenied else CameraFailure.PermissionBlocked
 
 /**
  * Opens this app's Settings screen — the only way out when the permission has
@@ -350,7 +350,7 @@ internal fun falhaDePermissao(podePedirNovamente: Boolean): FalhaDeCamera =
  * pretending it opened. Never throws: that is how this flow used to bring the
  * app down.
  */
-internal fun abrirConfiguracoesDoApp(context: Context): Boolean = try {
+internal fun openAppSettings(context: Context): Boolean = try {
     context.startActivity(
         Intent(
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -365,11 +365,11 @@ internal fun abrirConfiguracoesDoApp(context: Context): Boolean = try {
 }
 
 /** Unwraps the Activity from inside Compose's [ContextWrapper]s. */
-private fun Context.acharActivity(): Activity? {
-    var atual: Context? = this
-    while (atual is ContextWrapper) {
-        if (atual is Activity) return atual
-        atual = atual.baseContext
+private fun Context.findActivity(): Activity? {
+    var current: Context? = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
     }
     return null
 }

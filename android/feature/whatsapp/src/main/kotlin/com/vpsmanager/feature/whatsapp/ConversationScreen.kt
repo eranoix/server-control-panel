@@ -278,7 +278,7 @@ private fun MessageBubble(
                 // second copy of the same message — which is exactly what the
                 // queue exists to prevent. The sentence says what is going to
                 // happen, and the right action is none.
-                MessageSendStatus.NA_FILA -> Text(
+                MessageSendStatus.QUEUED -> Text(
                     text = "Queued — sends when the internet is back",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

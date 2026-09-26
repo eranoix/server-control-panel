@@ -2,7 +2,7 @@ package com.vpsmanager.app.nav
 
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import com.vpsmanager.data.update.OndeEuEstava
+import com.vpsmanager.data.update.ResumePoint
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -27,9 +27,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.vpsmanager.app.armazenamento.TelaDeArmazenamento
-import com.vpsmanager.data.armazenamento.ArmazenamentoDoApp
-import com.vpsmanager.data.armazenamento.DepositosDoAparelho
+import com.vpsmanager.app.storage.StorageScreen
+import com.vpsmanager.data.storage.AppStorage
+import com.vpsmanager.data.storage.DeviceStorageAreas
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
@@ -48,22 +48,22 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.vpsmanager.designsystem.ThemeMode
 import com.vpsmanager.app.BuildConfig
-import com.vpsmanager.app.DiagnosticoScreen
+import com.vpsmanager.app.DiagnosticsScreen
 import com.vpsmanager.app.licenses.OssLicensesScreen
-import com.vpsmanager.app.offline.FaixaDeOffline
-import com.vpsmanager.core.shell.PonteComOTerminal
-import com.vpsmanager.feature.auth.painel.PedidoDeTopo
+import com.vpsmanager.app.offline.OfflineBanner
+import com.vpsmanager.core.shell.TerminalBridge
+import com.vpsmanager.feature.auth.dashboard.ScrollToTopRequest
 import com.vpsmanager.app.update.UpdateBanner
 import com.vpsmanager.data.update.UpdateRecovery
 import com.vpsmanager.data.update.UpdateState
 import com.vpsmanager.feature.admin.AdminScreen
 import com.vpsmanager.feature.auth.HomeScreen
-import com.vpsmanager.feature.auth.seguranca.TelaDeSeguranca
-import com.vpsmanager.feature.jira.QuadroDoJiraRoute
+import com.vpsmanager.feature.auth.security.SecurityScreen
+import com.vpsmanager.feature.jira.JiraBoardRoute
 import com.vpsmanager.feature.files.browse.FileBrowserScreen
 import com.vpsmanager.feature.files.editor.FileEditorScreen
 import com.vpsmanager.feature.notifications.fcm.NotificationDeepLink
-import com.vpsmanager.feature.notifications.fcm.OnboardingDePush
+import com.vpsmanager.feature.notifications.fcm.PushOnboarding
 import com.vpsmanager.feature.notifications.prefs.NotificationPreferencesRoute
 import com.vpsmanager.feature.terminal.ui.SessionListScreen
 import com.vpsmanager.feature.terminal.ui.SessionListViewModel
@@ -121,7 +121,7 @@ private const val DEBUG_SDUI_PREVIEW_ROUTE = "debug/sdui-preview"
  * sentence that explains an "app not installed" to someone with no adb.
  */
 internal const val DIAGNOSTICS_ROUTE = "diagnostico"
-internal const val ROTA_ARMAZENAMENTO = "armazenamento"
+internal const val ROUTE_STORAGE = "armazenamento"
 
 /**
  * A tapped notification's deep link, already resolved to a concrete [AppNavHost] route
@@ -179,8 +179,8 @@ internal fun resolveVideocallDeepLink(roomId: String?): ResolvedNotificationDeep
  * its position, and coming back to it gives you where you were, instead of
  * starting over.
  */
-private fun NavHostController.irParaTelaDeTrabalho(rota: String) {
-    navigate(rota) {
+private fun NavHostController.goToWorkScreen(route: String) {
+    navigate(route) {
         graph.startDestinationRoute?.let { start ->
             popUpTo(start) { saveState = true }
         }
@@ -246,12 +246,12 @@ fun AppNavHost(
     onUpdateRecovery: (UpdateRecovery) -> Unit = {},
     updateDiagnostics: String? = null,
     onClearUpdateDiagnostics: () -> Unit = {},
-    versaoInstalada: String? = null,
-    onProcurarAtualizacao: () -> Unit = {},
+    installedVersion: String? = null,
+    onCheckForUpdate: () -> Unit = {},
     // The appearance is a DEVICE preference, not a screen's: it comes in
     // through the shell, with a default, so `MainActivity` stays the only
     // owner of the persistence and a UI test can drive the choice by hand.
-    themeMode: ThemeMode = ThemeMode.PADRAO,
+    themeMode: ThemeMode = ThemeMode.DEFAULT,
     onThemeModeChange: (ThemeMode) -> Unit = {},
     navController: NavHostController = rememberNavController(),
 ) {
@@ -281,10 +281,10 @@ fun AppNavHost(
     // The route is recorded HERE, and not in the update coordinator, because
     // here is where it exists: the coordinator knows nothing about navigation,
     // and should not.
-    val contexto = LocalContext.current
-    val ondeEuEstava = remember(contexto) { OndeEuEstava(contexto.applicationContext) }
-    val aoAtualizar: () -> Unit = {
-        ondeEuEstava.lembrar(currentRoute)
+    val context = LocalContext.current
+    val resumePoint = remember(context) { ResumePoint(context.applicationContext) }
+    val onRefresh: () -> Unit = {
+        resumePoint.save(currentRoute)
         onUpdateClick()
     }
     // With a concrete route per parent (see the grid registrations, below),
@@ -312,19 +312,19 @@ fun AppNavHost(
                     // was left at — which, for whoever tapped "Home", is the button
                     // not working. Android's convention for reselection is to go
                     // back to the top, and that is what Home does on this request.
-                    if (destination == AppDestination.Inicio) PedidoDeTopo.pedir()
-                    navController.irParaTelaDeTrabalho(destination.navigationTarget)
+                    if (destination == AppDestination.Home) ScrollToTopRequest.request()
+                    navController.goToWorkScreen(destination.navigationTarget)
                 },
                 onSignOut = {
                     scope.launch { drawerState.close() }
                     onSignOut()
                 },
-                onAtalho = { rota ->
+                onShortcut = { route ->
                     scope.launch { drawerState.close() }
-                    // The SAME options as the drawer — see irParaTelaDeTrabalho.
+                    // The SAME options as the drawer — see goToWorkScreen.
                     // Leaving this out here is what left two terminals alive on
                     // the stack, painting one over the other.
-                    navController.irParaTelaDeTrabalho(rota)
+                    navController.goToWorkScreen(route)
                 },
             )
         },
@@ -374,10 +374,10 @@ fun AppNavHost(
                         // Above the update banner: with no network, knowing the
                         // screen's data is stale is worth more than knowing a new
                         // version exists — which, besides, cannot be downloaded now.
-                        FaixaDeOffline()
+                        OfflineBanner()
                         UpdateBanner(
                             state = updateState,
-                            onUpdateClick = aoAtualizar,
+                            onUpdateClick = onRefresh,
                             onCancelClick = onUpdateCancel,
                             onRecoveryClick = { recovery ->
                                 if (recovery == UpdateRecovery.SHOW_DIAGNOSTICS) {
@@ -403,25 +403,25 @@ fun AppNavHost(
             // is the first point where the person is already known to be
             // authenticated. Without this call the app declared the
             // notification permission and never asked for it; see
-            // OnboardingDePush.
-            OnboardingDePush()
+            // PushOnboarding.
+            PushOnboarding()
             // THE BRIDGE TO THE TERMINAL. Any screen can ask "send this to
             // the terminal"; the only one that knows what "the terminal"
             // means in terms of a ROUTE is this shell, and the project's rule
             // is that no feature knows about routes. So the shell registers
             // HOW the terminal is opened here, and the bridge carries the
             // command.
-            LigarAPonteComOTerminal(navController)
-            CompositionLocalProvider(LocalUpdateRequest provides aoAtualizar) {
+            ConnectTerminalBridge(navController)
+            CompositionLocalProvider(LocalUpdateRequest provides onRefresh) {
                 NavHost(
                     navController = navController,
-                    startDestination = AppDestination.Inicio.route,
+                    startDestination = AppDestination.Home.route,
                     modifier = Modifier
                         .padding(innerPadding)
                         .consumeWindowInsets(innerPadding)
                         .imePadding(),
                 ) {
-                    composable(AppDestination.Inicio.route) {
+                    composable(AppDestination.Home.route) {
                         // The Home panel emits a DESTINATION, never a route: every
                         // server-described section still comes in through the same
                         // parameterised route `admin/{sectionId}`, and the translation
@@ -431,12 +431,12 @@ fun AppNavHost(
                                 navController.navigate(adminSectionRoute(sectionId)) { launchSingleTop = true }
                             },
                             onOpenTerminal = {
-                                navController.navigate(ROTA_TERMINAL) { launchSingleTop = true }
+                                navController.navigate(ROUTE_TERMINAL) { launchSingleTop = true }
                             },
-                            onAbrirSeguranca = {
-                                navController.navigate(ROTA_SEGURANCA) { launchSingleTop = true }
+                            onOpenSecurity = {
+                                navController.navigate(ROUTE_SECURITY) { launchSingleTop = true }
                             },
-                            onAbrirDiagnostico = {
+                            onOpenDiagnostics = {
                                 navController.navigate(DIAGNOSTICS_ROUTE) { launchSingleTop = true }
                             },
                         )
@@ -464,16 +464,16 @@ fun AppNavHost(
                     // they promise. As a bonus, each parent gets its own
                     // bucket of saved state — Docker's search and scroll stop
                     // leaking into System.
-                    PaginaMae.entries
-                        .filter { filhasDe(it).isNotEmpty() }
-                        .forEach { mae ->
-                            composable(rotaDaMae(mae.id)) {
-                                TelaDaMae(
-                                    mae = mae,
-                                    aoAbrirNativa = { rota ->
-                                        navController.irParaTelaDeTrabalho(rota)
+                    ParentPage.entries
+                        .filter { childrenOf(it).isNotEmpty() }
+                        .forEach { parent ->
+                            composable(parentRoute(parent.id)) {
+                                ParentScreen(
+                                    parent = parent,
+                                    onOpenNative = { route ->
+                                        navController.goToWorkScreen(route)
                                     },
-                                    aoAbrirSdui = { sectionId ->
+                                    onOpenSdui = { sectionId ->
                                         navController.navigate(adminSectionRoute(sectionId)) {
                                             launchSingleTop = true
                                         }
@@ -482,41 +482,41 @@ fun AppNavHost(
                             }
                         }
 
-                    composable(ROTA_CONFIGURACOES) {
-                        TelaDeConfiguracoes(
+                    composable(ROUTE_SETTINGS) {
+                        SettingsScreen(
                             themeMode = themeMode,
                             onThemeModeChange = onThemeModeChange,
-                            versaoInstalada = versaoInstalada,
-                            onProcurarAtualizacao = onProcurarAtualizacao,
-                            onAbrirNotificacoes = {
-                                navController.navigate(ROTA_NOTIFICACOES) { launchSingleTop = true }
+                            installedVersion = installedVersion,
+                            onCheckForUpdate = onCheckForUpdate,
+                            onOpenNotifications = {
+                                navController.navigate(ROUTE_NOTIFICATIONS) { launchSingleTop = true }
                             },
-                            onAbrirSeguranca = {
-                                navController.navigate(ROTA_SEGURANCA) { launchSingleTop = true }
+                            onOpenSecurity = {
+                                navController.navigate(ROUTE_SECURITY) { launchSingleTop = true }
                             },
-                            onAbrirLicencas = {
-                                navController.navigate(ROTA_LICENCAS) { launchSingleTop = true }
+                            onOpenLicenses = {
+                                navController.navigate(ROUTE_LICENSES) { launchSingleTop = true }
                             },
-                            onAbrirDiagnostico = {
+                            onOpenDiagnostics = {
                                 navController.navigate(DIAGNOSTICS_ROUTE) { launchSingleTop = true }
                             },
-                            onAbrirArmazenamento = {
-                                navController.navigate(ROTA_ARMAZENAMENTO) { launchSingleTop = true }
+                            onOpenStorage = {
+                                navController.navigate(ROUTE_STORAGE) { launchSingleTop = true }
                             },
                         )
                     }
 
-                    composable(ROTA_TERMINAL) { entry ->
-                        val doConteudo: SessionListViewModel = viewModel(viewModelStoreOwner = entry)
-                        TelaFilha(
-                            titulo = ATALHO_TERMINAL_LABEL,
-                            onVoltar = { navController.popBackStack() },
-                            acoes = {
-                                TextButton(onClick = doConteudo::refresh) { Text(REFRESH_ACTION_LABEL) }
+                    composable(ROUTE_TERMINAL) { entry ->
+                        val contentViewModel: SessionListViewModel = viewModel(viewModelStoreOwner = entry)
+                        ChildScreen(
+                            title = TERMINAL_SHORTCUT_LABEL,
+                            onBack = { navController.popBackStack() },
+                            actions = {
+                                TextButton(onClick = contentViewModel::refresh) { Text(REFRESH_ACTION_LABEL) }
                             },
                         ) {
                         SessionListScreen(
-                            viewModel = doConteudo,
+                            viewModel = contentViewModel,
                             // `launchSingleTop` is NOT cosmetic here. Without
                             // it, opening the same session twice stacked TWO
                             // `terminal/{nome}` destinations, each with its own
@@ -546,9 +546,9 @@ fun AppNavHost(
                             // leave fifteen terminals on the stack, each with a
                             // live grid in memory, and the back arrow would walk
                             // through all of them before reaching the list.
-                            onTrocarSessao = { nome ->
-                                navController.navigate(terminalSessionRoute(nome)) {
-                                    popUpTo(ROTA_TERMINAL)
+                            onSwitchSession = { name ->
+                                navController.navigate(terminalSessionRoute(name)) {
+                                    popUpTo(ROUTE_TERMINAL)
                                     launchSingleTop = true
                                 }
                             },
@@ -567,15 +567,15 @@ fun AppNavHost(
                         }
                         AdminScreen(sectionId = sectionId)
                     }
-                    composable(ROTA_NOTIFICACOES) {
-                        TelaFilha(
-                            titulo = "Notifications",
-                            onVoltar = { navController.popBackStack() },
+                    composable(ROUTE_NOTIFICATIONS) {
+                        ChildScreen(
+                            title = "Notifications",
+                            onBack = { navController.popBackStack() },
                         ) {
                             NotificationPreferencesRoute()
                         }
                     }
-                    composable(ROTA_CHAMADA) {
+                    composable(ROUTE_CALL) {
                         RoomLobbyScreen(
                             onRoomSelected = { roomId -> navController.navigate(videocallRoomRoute(roomId)) },
                         )
@@ -589,9 +589,9 @@ fun AppNavHost(
                         }
                         CallScreen(roomId = roomId, onLeaveCall = { navController.popBackStack() })
                     }
-                    composable(ROTA_JIRA) { QuadroDoJiraRoute() }
-                    composable(ROTA_WHATSAPP) { WhatsAppRoute() }
-                    composable(ROTA_ARQUIVOS) {
+                    composable(ROUTE_JIRA) { JiraBoardRoute() }
+                    composable(ROUTE_WHATSAPP) { WhatsAppRoute() }
+                    composable(ROUTE_FILES) {
                         FileBrowserScreen(
                             onOpenFile = { path -> navController.navigate(fileEditorRoute(path)) },
                         )
@@ -608,44 +608,44 @@ fun AppNavHost(
                             onBack = { navController.popBackStack() },
                         )
                     }
-                    composable(ROTA_LICENCAS) { OssLicensesScreen() }
+                    composable(ROUTE_LICENSES) { OssLicensesScreen() }
 
                     // Measuring costs reading directories, so it happens when the
                     // screen opens and after each cleanup — never per frame. It is
                     // a keyed `remember`, and not `LaunchedEffect`, because the
                     // value IS the screen: without it there is nothing to draw.
-                    composable(ROTA_ARMAZENAMENTO) {
-                        val contexto = LocalContext.current
-                        var passagem by remember { mutableIntStateOf(0) }
-                        var ultimo by remember { mutableStateOf<ArmazenamentoDoApp.Resultado?>(null) }
-                        val usos = remember(passagem) { DepositosDoAparelho.medir(contexto) }
-                        TelaFilha(
-                            titulo = "Storage",
-                            onVoltar = { navController.popBackStack() },
+                    composable(ROUTE_STORAGE) {
+                        val context = LocalContext.current
+                        var pass by remember { mutableIntStateOf(0) }
+                        var last by remember { mutableStateOf<AppStorage.CleanupResult?>(null) }
+                        val usages = remember(pass) { DeviceStorageAreas.measure(context) }
+                        ChildScreen(
+                            title = "Storage",
+                            onBack = { navController.popBackStack() },
                         ) {
-                            TelaDeArmazenamento(
-                                usos = usos,
-                                ultimoResultado = ultimo,
-                                onLiberarEspaco = {
-                                    ultimo = DepositosDoAparelho.limparTudoReconstruivel(contexto)
-                                    passagem++
+                            StorageScreen(
+                                usages = usages,
+                                lastResult = last,
+                                onFreeSpace = {
+                                    last = DeviceStorageAreas.clearAllRebuildable(context)
+                                    pass++
                                 },
                             )
                         }
                     }
                     // Route with NO entry in the drawer: reached from Home's
-                    // Session card. See `onAbrirSeguranca`'s KDoc.
-                    composable(ROTA_SEGURANCA) { TelaDeSeguranca() }
+                    // Session card. See `onOpenSecurity`'s KDoc.
+                    composable(ROUTE_SECURITY) { SecurityScreen() }
 
                     // A detail screen: it brings its own "back" and so does not
                     // appear in the drawer. It is the destination of the update
                     // banner's "Diagnostics" button.
                     composable(DIAGNOSTICS_ROUTE) {
-                        DiagnosticoScreen(
-                            falhasDeInit = emptyList(),
-                            ultimoCrash = null,
-                            falhasDeAtualizacao = updateDiagnostics,
-                            onLimpar = {
+                        DiagnosticsScreen(
+                            initFailures = emptyList(),
+                            lastCrash = null,
+                            updateFailures = updateDiagnostics,
+                            onClear = {
                                 onClearUpdateDiagnostics()
                                 navController.popBackStack()
                             },
@@ -718,31 +718,31 @@ internal const val REFRESH_ACTION_LABEL = "Refresh"
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TelaFilha(
-    titulo: String,
-    onVoltar: () -> Unit,
-    acoes: @Composable RowScope.() -> Unit = {},
-    conteudo: @Composable () -> Unit,
+private fun ChildScreen(
+    title: String,
+    onBack: () -> Unit,
+    actions: @Composable RowScope.() -> Unit = {},
+    content: @Composable () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text(text = titulo, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            title = { Text(text = title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             navigationIcon = {
-                IconButton(onClick = onVoltar) {
+                IconButton(onClick = onBack) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = VOLTAR_DESCRIPTION,
+                        contentDescription = BACK_DESCRIPTION,
                     )
                 }
             },
-            actions = acoes,
+            actions = actions,
         )
-        conteudo()
+        content()
     }
 }
 
 /** Description of the back button on child screens. The UI and the test read it from here. */
-internal const val VOLTAR_DESCRIPTION = "Back"
+internal const val BACK_DESCRIPTION = "Back"
 
 @Composable
 private fun RowScope.TopLevelActions(destination: AppDestination, entry: NavBackStackEntry) {
@@ -756,20 +756,20 @@ private fun RowScope.TopLevelActions(destination: AppDestination, entry: NavBack
     // decision, here, about whether it has a bar action — instead of silently
     // having none.
     when (destination) {
-        AppDestination.Inicio,
-        AppDestination.Sistema,
+        AppDestination.Home,
+        AppDestination.System,
         AppDestination.Docker,
         AppDestination.Dev,
-        AppDestination.Seguranca,
+        AppDestination.Security,
         AppDestination.Apps,
-        AppDestination.Operacoes,
-        AppDestination.Configuracoes,
+        AppDestination.Operations,
+        AppDestination.Settings,
         -> Unit
     }
 }
 
 /**
- * Teaches [PonteComOTerminal] how to open the Terminal, for as long as
+ * Teaches [TerminalBridge] how to open the Terminal, for as long as
  * this shell lives.
  *
  * ## Why it is tied to the composition and not to the process
@@ -795,15 +795,15 @@ private fun RowScope.TopLevelActions(destination: AppDestination, entry: NavBack
  * `TerminalViewModel`, after the primer.
  */
 @Composable
-private fun LigarAPonteComOTerminal(navController: NavHostController) {
-    val controlador by rememberUpdatedState(navController)
+private fun ConnectTerminalBridge(navController: NavHostController) {
+    val controller by rememberUpdatedState(navController)
     DisposableEffect(Unit) {
-        PonteComOTerminal.aoPedirOTerminal = {
-            controlador.navigate(ROTA_TERMINAL) { launchSingleTop = true }
+        TerminalBridge.onRequestTerminal = {
+            controller.navigate(ROUTE_TERMINAL) { launchSingleTop = true }
         }
-        onDispose { PonteComOTerminal.aoPedirOTerminal = null }
+        onDispose { TerminalBridge.onRequestTerminal = null }
     }
 }
 
 /** Route of the device security screen. */
-internal const val ROTA_SEGURANCA = "seguranca"
+internal const val ROUTE_SECURITY = "seguranca"

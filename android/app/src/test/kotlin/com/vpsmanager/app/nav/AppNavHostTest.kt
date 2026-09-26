@@ -83,7 +83,7 @@ class AppNavHostTest {
     fun `a casca abre na Home, com o hamburguer descrito para leitor de tela`() {
         renderShell()
 
-        assertEquals(AppDestination.Inicio.route, currentRoute())
+        assertEquals(AppDestination.Home.route, currentRoute())
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).assertExists()
     }
 
@@ -123,10 +123,10 @@ class AppNavHostTest {
         // A CONCRETE route per parent. With a single parameterised registration,
         // the six parents were one destination to Navigation — and that is what
         // trapped the person inside one of them.
-        assertEquals(rotaDaMae("dev"), currentRoute())
+        assertEquals(parentRoute("dev"), currentRoute())
         // Drawer closed: the "Licences" label, which only appears inside it,
         // leaves the screen.
-        composeRule.onNodeWithText(AppDestination.Configuracoes.label).assertIsNotDisplayed()
+        composeRule.onNodeWithText(AppDestination.Settings.label).assertIsNotDisplayed()
     }
 
     /**
@@ -148,7 +148,7 @@ class AppNavHostTest {
         composeRule.onNodeWithContentDescription(AppDestination.Docker.iconDescription).performClick()
         composeRule.waitForIdle()
 
-        assertEquals(rotaDaMae("docker"), currentRoute())
+        assertEquals(parentRoute("docker"), currentRoute())
         // The parent names no section at all: it opens the GRID, and what picks
         // the section is the tap on the child. The `auto` sentinel died along
         // with the single thirty-block grid.
@@ -167,10 +167,10 @@ class AppNavHostTest {
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).performClick()
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithContentDescription(AppDestination.Configuracoes.iconDescription).performClick()
+        composeRule.onNodeWithContentDescription(AppDestination.Settings.iconDescription).performClick()
         composeRule.waitForIdle()
 
-        assertEquals(AppDestination.Configuracoes.route, currentRoute())
+        assertEquals(AppDestination.Settings.route, currentRoute())
     }
 
     /**
@@ -193,15 +193,15 @@ class AppNavHostTest {
         renderShell()
 
         listOf(
-            AppDestination.Sistema,
+            AppDestination.System,
             AppDestination.Docker,
-            AppDestination.Operacoes,
-            AppDestination.Sistema,
-        ).forEach { mae ->
-            navegarPelaGaveta(mae)
+            AppDestination.Operations,
+            AppDestination.System,
+        ).forEach { parent ->
+            navigateFromDrawer(parent)
             assertEquals(
-                "a gaveta nao saiu do lugar ao pedir ${mae.label}",
-                mae.route,
+                "a gaveta nao saiu do lugar ao pedir ${parent.label}",
+                parent.route,
                 currentRoute(),
             )
         }
@@ -227,19 +227,19 @@ class AppNavHostTest {
         repeat(2) {
             composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).performClick()
             composeRule.waitForIdle()
-            composeRule.onNodeWithText(ATALHO_TERMINAL_LABEL).performClick()
+            composeRule.onNodeWithText(TERMINAL_SHORTCUT_LABEL).performClick()
             composeRule.waitForIdle()
-            assertEquals(ROTA_TERMINAL, currentRoute())
+            assertEquals(ROUTE_TERMINAL, currentRoute())
 
             // From inside the Terminal there is no hamburger — there is "back".
             // That is the child-screen contract, and the path the person actually walks.
-            composeRule.onNodeWithContentDescription(VOLTAR_DESCRIPTION).performClick()
+            composeRule.onNodeWithContentDescription(BACK_DESCRIPTION).performClick()
             composeRule.waitForIdle()
         }
 
         // One `terminal` entry on the stack, never two.
-        val quantos = navController.currentBackStack.value.count { it.destination.route == ROTA_TERMINAL }
-        assertTrue("havia $quantos destinos de terminal empilhados, esperava no máximo 1", quantos <= 1)
+        val howMany = navController.currentBackStack.value.count { it.destination.route == ROUTE_TERMINAL }
+        assertTrue("havia $howMany destinos de terminal empilhados, esperava no máximo 1", howMany <= 1)
     }
 
     @Test
@@ -275,7 +275,7 @@ class AppNavHostTest {
     // ------------------------------------------------- one header per screen
 
     /** Opens the drawer and picks [destination]. */
-    private fun navegarPelaGaveta(destination: AppDestination) {
+    private fun navigateFromDrawer(destination: AppDestination) {
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).performClick()
         composeRule.waitForIdle()
         // By the icon's DESCRIPTION, never by the label: the current
@@ -311,8 +311,8 @@ class AppNavHostTest {
         // there is no "old title" left to look for. What remains is the proof
         // that matters: one hamburger, one shell.
         renderShell()
-        DESTINOS_RENDERIZAVEIS_NA_JVM.forEach { destination ->
-            navegarPelaGaveta(destination)
+        JVM_RENDERABLE_DESTINATIONS.forEach { destination ->
+            navigateFromDrawer(destination)
 
             assertEquals(
                 "a casca desenhou mais de uma barra em ${destination.label}",
@@ -321,7 +321,7 @@ class AppNavHostTest {
             )
             // And no top-level bar shows "back": going back from a root has
             // nowhere to go.
-            composeRule.onNodeWithContentDescription(VOLTAR_DESCRIPTION).assertDoesNotExist()
+            composeRule.onNodeWithContentDescription(BACK_DESCRIPTION).assertDoesNotExist()
         }
     }
 
@@ -335,8 +335,8 @@ class AppNavHostTest {
     @Test
     fun `nenhum destino de nivel principal mostra voltar`() {
         renderShell()
-        DESTINOS_RENDERIZAVEIS_NA_JVM.forEach { destination ->
-            navegarPelaGaveta(destination)
+        JVM_RENDERABLE_DESTINATIONS.forEach { destination ->
+            navigateFromDrawer(destination)
 
             composeRule.onNodeWithText(BACK_DESCRIPTION).assertDoesNotExist()
             composeRule.onNodeWithContentDescription(BACK_DESCRIPTION).assertDoesNotExist()
@@ -358,8 +358,8 @@ class AppNavHostTest {
     @Test
     fun `tela de detalhe tem voltar e ele volta`() {
         renderShell()
-        val rotaDoEditor = "arquivos/edit/" + URLEncoder.encode("/etc/hosts", "UTF-8")
-        navController.navigate(rotaDoEditor)
+        val editorRoute = "arquivos/edit/" + URLEncoder.encode("/etc/hosts", "UTF-8")
+        navController.navigate(editorRoute)
         composeRule.waitForIdle()
 
         assertEquals("arquivos/edit/{path}", currentRoute())
@@ -371,7 +371,7 @@ class AppNavHostTest {
         composeRule.waitForIdle()
 
         // It really went back: it left the detail and the shell's hamburger reappeared.
-        assertEquals(AppDestination.Inicio.route, currentRoute())
+        assertEquals(AppDestination.Home.route, currentRoute())
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).assertExists()
     }
 
@@ -400,28 +400,28 @@ class AppNavHostTest {
         renderShell()
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText(ATALHO_TERMINAL_LABEL).performClick()
+        composeRule.onNodeWithText(TERMINAL_SHORTCUT_LABEL).performClick()
         composeRule.waitForIdle()
 
-        val entrada = navController.getBackStackEntry(ROTA_TERMINAL)
-        val doConteudo = ViewModelProvider(entrada)[SessionListViewModel::class.java]
-        val emissoes = mutableListOf<SessionListUiState>()
-        val coleta = CoroutineScope(Dispatchers.Unconfined).launch {
-            doConteudo.uiState.collect { emissoes += it }
+        val entry = navController.getBackStackEntry(ROUTE_TERMINAL)
+        val contentViewModel = ViewModelProvider(entry)[SessionListViewModel::class.java]
+        val emissions = mutableListOf<SessionListUiState>()
+        val collector = CoroutineScope(Dispatchers.Unconfined).launch {
+            contentViewModel.uiState.collect { emissions += it }
         }
 
         try {
-            val carregamentosAntes = emissoes.count { it is SessionListUiState.Loading }
+            val loadsBefore = emissions.count { it is SessionListUiState.Loading }
             composeRule.onNodeWithText(REFRESH_ACTION_LABEL).assertExists()
             composeRule.onNodeWithText(REFRESH_ACTION_LABEL).performClick()
             composeRule.waitForIdle()
 
             assertTrue(
                 "clicar em Atualizar não recarregou o ViewModel da lista",
-                emissoes.count { it is SessionListUiState.Loading } > carregamentosAntes,
+                emissions.count { it is SessionListUiState.Loading } > loadsBefore,
             )
         } finally {
-            coleta.cancel()
+            collector.cancel()
         }
     }
 
@@ -441,7 +441,7 @@ class AppNavHostTest {
                 onSignOut = { signOut.blockingSignOut() },
                 navController = rememberNavController(),
             )
-            LaunchDestination.AuthGate -> Text(text = TELA_DE_ENTRADA)
+            LaunchDestination.AuthGate -> Text(text = SIGN_IN_SCREEN)
         }
     }
 
@@ -459,7 +459,7 @@ class AppNavHostTest {
 
         // Signed in: the shell is up and the sign-in is not.
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).assertExists()
-        composeRule.onNodeWithText(TELA_DE_ENTRADA).assertDoesNotExist()
+        composeRule.onNodeWithText(SIGN_IN_SCREEN).assertDoesNotExist()
 
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).performClick()
         composeRule.waitForIdle()
@@ -468,7 +468,7 @@ class AppNavHostTest {
 
         assertTrue("a sessão continuou de pé", session.state.value is SessionState.SignedOut)
         assertNull("o token não foi descartado", session.currentAccessToken())
-        composeRule.onNodeWithText(TELA_DE_ENTRADA).assertExists()
+        composeRule.onNodeWithText(SIGN_IN_SCREEN).assertExists()
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).assertDoesNotExist()
     }
 
@@ -485,7 +485,7 @@ class AppNavHostTest {
     }
 
     private companion object {
-        const val TELA_DE_ENTRADA = "Entrar no VPS Manager"
+        const val SIGN_IN_SCREEN = "Entrar no VPS Manager"
 
         /**
          * The drawer destinations that compose under Robolectric with no device.
@@ -494,14 +494,14 @@ class AppNavHostTest {
          * not show back" rule holds for it just the same — the Apps grid draws
          * no more of a bar of its own than the others.
          */
-        val DESTINOS_RENDERIZAVEIS_NA_JVM = listOf(
-            AppDestination.Inicio,
-            AppDestination.Sistema,
+        val JVM_RENDERABLE_DESTINATIONS = listOf(
+            AppDestination.Home,
+            AppDestination.System,
             AppDestination.Docker,
             AppDestination.Dev,
-            AppDestination.Seguranca,
-            AppDestination.Operacoes,
-            AppDestination.Configuracoes,
+            AppDestination.Security,
+            AppDestination.Operations,
+            AppDestination.Settings,
         )
     }
 }

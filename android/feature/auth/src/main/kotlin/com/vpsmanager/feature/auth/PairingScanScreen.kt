@@ -55,10 +55,10 @@ import com.vpsmanager.data.auth.PairingRepository
 import java.util.concurrent.Executors
 
 /** Label of the shortcut to [ServerSetupScreen] — the same one throughout the screen. */
-internal const val ROTULO_CONFIGURAR_MANUALMENTE = "Set up manually"
+internal const val LABEL_SET_UP_MANUALLY = "Set up manually"
 
 /** Label of the shortcut to [LoginScreen] (passkey, or username and password). */
-internal const val ROTULO_JA_TENHO_ACESSO = "I already have access"
+internal const val LABEL_ALREADY_HAVE_ACCESS = "I already have access"
 
 /**
  * Scans the panel's pairing QR with CameraX on the preview/frame pipeline and
@@ -75,10 +75,10 @@ internal const val ROTULO_JA_TENHO_ACESSO = "I already have access"
  * Every failure path — permission denied, permission denied permanently, a
  * device with no camera, the camera taken by another app (this app has video
  * calling), the camera disabled by policy, an unexpected provider failure —
- * becomes an [EstadoDoScanner.Degradado] that explains the cause and offers
+ * becomes an [ScannerState.Degraded] that explains the cause and offers
  * the way out: [onManualSetupRequested] (configure the server by hand) and
  * [onLoginRequested] (sign in with username and password). See
- * [ChecagemDeCameraX] for the crash this replaces.
+ * [CameraXCheck] for the crash this replaces.
  */
 @Composable
 fun PairingScanScreen(
@@ -92,12 +92,12 @@ fun PairingScanScreen(
         onPairingScanned = onPairingScanned,
         onManualSetupRequested = onManualSetupRequested,
         onLoginRequested = onLoginRequested,
-        ambiente = remember { AmbienteDaCamera() },
+        environment = remember { CameraEnvironment() },
     )
 }
 
 /**
- * [PairingScanScreen]'s body with [AmbienteDaCamera] exposed, which is how the
+ * [PairingScanScreen]'s body with [CameraEnvironment] exposed, which is how the
  * JVM tests reproduce each cause of failure with no hardware at all.
  */
 @Composable
@@ -106,50 +106,50 @@ internal fun PairingScanContent(
     onPairingScanned: (PairingPayload) -> Unit,
     onManualSetupRequested: (() -> Unit)?,
     onLoginRequested: (() -> Unit)?,
-    ambiente: AmbienteDaCamera,
+    environment: CameraEnvironment,
 ) {
     val context = LocalContext.current
-    var estado by remember { mutableStateOf<EstadoDoScanner>(EstadoDoScanner.Verificando) }
+    var state by remember { mutableStateOf<ScannerState>(ScannerState.Checking) }
     // Each increment re-runs the check: it is both "try again" and the return
     // from the system Settings.
-    var tentativa by remember { mutableStateOf(0) }
+    var attempt by remember { mutableStateOf(0) }
     // rememberSaveable so the permission request is NOT repeated on every
     // recomposition or rotation — asking in a loop is what the system punishes
     // by swallowing the dialog, and what leaves the user with no idea why
     // nothing is happening.
-    var jaPediPermissao by rememberSaveable { mutableStateOf(false) }
+    var alreadyAskedPermission by rememberSaveable { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { concedida ->
-        if (concedida) {
-            tentativa++
+    ) { granted ->
+        if (granted) {
+            attempt++
         } else {
-            estado = EstadoDoScanner.Degradado(
-                falhaDePermissao(ambiente.podePedirPermissaoNovamente(context)),
+            state = ScannerState.Degraded(
+                permissionFailure(environment.canAskPermissionAgain(context)),
             )
         }
     }
 
-    LaunchedEffect(tentativa) {
-        estado = EstadoDoScanner.Verificando
-        if (!ambiente.temPermissao(context)) {
-            if (jaPediPermissao) {
+    LaunchedEffect(attempt) {
+        state = ScannerState.Checking
+        if (!environment.hasPermission(context)) {
+            if (alreadyAskedPermission) {
                 // We have already asked once in this instance of the screen
                 // and still have no permission: do not ask again unprompted.
-                estado = EstadoDoScanner.Degradado(
-                    falhaDePermissao(ambiente.podePedirPermissaoNovamente(context)),
+                state = ScannerState.Degraded(
+                    permissionFailure(environment.canAskPermissionAgain(context)),
                 )
             } else {
-                jaPediPermissao = true
-                estado = EstadoDoScanner.PedindoPermissao
+                alreadyAskedPermission = true
+                state = ScannerState.RequestingPermission
                 permissionLauncher.launch(Manifest.permission.CAMERA)
             }
             return@LaunchedEffect
         }
-        estado = when (val prontidao = ambiente.checagem.conferir(context)) {
-            is ProntidaoDaCamera.Pronta -> EstadoDoScanner.Escaneando(prontidao.usarCameraFrontal)
-            is ProntidaoDaCamera.Indisponivel -> EstadoDoScanner.Degradado(prontidao.falha)
+        state = when (val readiness = environment.cameraCheck.check(context)) {
+            is CameraReadiness.Ready -> ScannerState.Scanning(readiness.useFrontCamera)
+            is CameraReadiness.Unavailable -> ScannerState.Degraded(readiness.failure)
         }
     }
 
@@ -157,56 +157,56 @@ internal fun PairingScanContent(
     // screen on its own — forcing the operator to leave and come back would be
     // leaving the job half done. It only re-checks when the permission
     // actually changed, so there is no loop.
-    val estadoAtual by rememberUpdatedState(estado)
+    val currentState by rememberUpdatedState(state)
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
-        val observador = LifecycleEventObserver { _, evento ->
-            val aguardandoPermissao = (estadoAtual as? EstadoDoScanner.Degradado)?.falha.let {
-                it is FalhaDeCamera.PermissaoNegada || it is FalhaDeCamera.PermissaoBloqueada
+        val observer = LifecycleEventObserver { _, event ->
+            val awaitingPermission = (currentState as? ScannerState.Degraded)?.failure.let {
+                it is CameraFailure.PermissionDenied || it is CameraFailure.PermissionBlocked
             }
-            if (evento == Lifecycle.Event.ON_RESUME && aguardandoPermissao && ambiente.temPermissao(context)) {
-                tentativa++
+            if (event == Lifecycle.Event.ON_RESUME && awaitingPermission && environment.hasPermission(context)) {
+                attempt++
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observador)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observador) }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    when (val atual = estado) {
+    when (val current = state) {
         // A spinner on its own is a dead end too: if the system's permission
         // dialog is dismissed from outside, the operator is left staring at a
         // screen with nothing to tap. The exits stay up in EVERY state.
-        EstadoDoScanner.Verificando,
-        EstadoDoScanner.PedindoPermissao,
+        ScannerState.Checking,
+        ScannerState.RequestingPermission,
         -> Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
-            SaidasDoPareamento(
+            PairingExits(
                 onManualSetupRequested = onManualSetupRequested,
                 onLoginRequested = onLoginRequested,
-                sobreVideo = false,
+                overVideo = false,
             )
         }
 
-        is EstadoDoScanner.Escaneando -> QrCameraPreview(
+        is ScannerState.Scanning -> QrCameraPreview(
             modifier = modifier,
-            usarCameraFrontal = atual.usarCameraFrontal,
+            useFrontCamera = current.useFrontCamera,
             onPairingScanned = onPairingScanned,
             onManualSetupRequested = onManualSetupRequested,
             onLoginRequested = onLoginRequested,
-            onFalha = { erro ->
-                estado = EstadoDoScanner.Degradado(
-                    classificarFalhaDeCamera(erro, contarCamerasDoAparelho(context)),
+            onFailure = { error ->
+                state = ScannerState.Degraded(
+                    classifyCameraFailure(error, countDeviceCameras(context)),
                 )
             },
-            onFalhaDeEstado = { falha -> estado = EstadoDoScanner.Degradado(falha) },
+            onStateFailure = { failure -> state = ScannerState.Degraded(failure) },
         )
 
-        is EstadoDoScanner.Degradado -> CameraIndisponivelContent(
+        is ScannerState.Degraded -> CameraUnavailableContent(
             modifier = modifier,
-            falha = atual.falha,
-            onPedirPermissao = { permissionLauncher.launch(Manifest.permission.CAMERA) },
-            onAbrirConfiguracoes = { abrirConfiguracoesDoApp(context) },
-            onTentarNovamente = { tentativa++ },
+            failure = current.failure,
+            onRequestPermission = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+            onOpenSettings = { openAppSettings(context) },
+            onRetry = { attempt++ },
             onManualSetupRequested = onManualSetupRequested,
             onLoginRequested = onLoginRequested,
         )
@@ -216,25 +216,25 @@ internal fun PairingScanContent(
 @Composable
 private fun QrCameraPreview(
     modifier: Modifier,
-    usarCameraFrontal: Boolean,
+    useFrontCamera: Boolean,
     onPairingScanned: (PairingPayload) -> Unit,
     onManualSetupRequested: (() -> Unit)?,
     onLoginRequested: (() -> Unit)?,
-    onFalha: (Throwable) -> Unit,
-    onFalhaDeEstado: (FalhaDeCamera) -> Unit,
+    onFailure: (Throwable) -> Unit,
+    onStateFailure: (CameraFailure) -> Unit,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val pairingRepository = remember { PairingRepository() }
     var alreadyScanned by remember { mutableStateOf(false) }
     val currentOnPairingScanned by rememberUpdatedState(onPairingScanned)
-    val currentOnFalha by rememberUpdatedState(onFalha)
-    val currentOnFalhaDeEstado by rememberUpdatedState(onFalhaDeEstado)
+    val currentOnFailure by rememberUpdatedState(onFailure)
+    val currentOnStateFailure by rememberUpdatedState(onStateFailure)
     // Held here (rather than created inside the factory) so the
     // DisposableEffect below can shut it down: the previous version of this
     // screen leaked a thread per visit to the scanner.
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
-    val seletor = remember(usarCameraFrontal) {
-        if (usarCameraFrontal) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+    val seletor = remember(useFrontCamera) {
+        if (useFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
     }
 
     DisposableEffect(Unit) {
@@ -280,13 +280,13 @@ private fun QrCameraPreview(
                             // the likeliest case. That does not arrive as an
                             // exception: CameraX reports it through this
                             // LiveData.
-                            camera.cameraInfo.cameraState.observe(lifecycleOwner) { estadoDaCamera ->
-                                estadoDaCamera.error?.let { erro ->
-                                    classificarErroDeEstadoDaCamera(erro.code)?.let(currentOnFalhaDeEstado)
+                            camera.cameraInfo.cameraState.observe(lifecycleOwner) { cameraState ->
+                                cameraState.error?.let { error ->
+                                    classifyCameraStateError(error.code)?.let(currentOnStateFailure)
                                 }
                             }
                         } catch (t: Throwable) {
-                            currentOnFalha(t)
+                            currentOnFailure(t)
                         }
                     },
                     ContextCompat.getMainExecutor(ctx),
@@ -307,10 +307,10 @@ private fun QrCameraPreview(
                 style = MaterialTheme.typography.bodyLarge,
             )
         }
-        SaidasDoPareamento(
+        PairingExits(
             onManualSetupRequested = onManualSetupRequested,
             onLoginRequested = onLoginRequested,
-            sobreVideo = true,
+            overVideo = true,
         )
     }
 }
@@ -324,18 +324,18 @@ private fun QrCameraPreview(
  * text.
  */
 @Composable
-private fun BoxScope.SaidasDoPareamento(
+private fun BoxScope.PairingExits(
     onManualSetupRequested: (() -> Unit)?,
     onLoginRequested: (() -> Unit)?,
-    sobreVideo: Boolean,
+    overVideo: Boolean,
 ) {
-    val cor = if (sobreVideo) Color.White else Color.Unspecified
+    val color = if (overVideo) Color.White else Color.Unspecified
     if (onManualSetupRequested != null) {
         TextButton(
             onClick = onManualSetupRequested,
             modifier = Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(8.dp),
         ) {
-            Text(text = ROTULO_CONFIGURAR_MANUALMENTE, color = cor)
+            Text(text = LABEL_SET_UP_MANUALLY, color = color)
         }
     }
     if (onLoginRequested != null) {
@@ -343,7 +343,7 @@ private fun BoxScope.SaidasDoPareamento(
             onClick = onLoginRequested,
             modifier = Modifier.align(Alignment.TopStart).safeDrawingPadding().padding(8.dp),
         ) {
-            Text(text = ROTULO_JA_TENHO_ACESSO, color = cor)
+            Text(text = LABEL_ALREADY_HAVE_ACCESS, color = color)
         }
     }
 }
@@ -381,71 +381,71 @@ private fun decodeQr(imageProxy: ImageProxy): String? {
 }
 
 /**
- * The text of a [FalhaDeCamera]: what happened and, above all, what to do.
- * [acao] is the label of the button that attacks the cause — `null` when no
+ * The text of a [CameraFailure]: what happened and, above all, what to do.
+ * [action] is the label of the button that attacks the cause — `null` when no
  * action would resolve it (a device with no camera), in which case only the
  * exits remain.
  */
-internal data class TextoDaFalha(
-    val titulo: String,
-    val explicacao: String,
-    val acao: String?,
-    val detalheTecnico: String? = null,
+internal data class FailureText(
+    val title: String,
+    val explanation: String,
+    val action: String?,
+    val technicalDetail: String? = null,
 )
 
 /**
  * Each cause with its own text, in the imperative: stating only what happened
  * leaves the operator stuck; what they need is the next step.
  */
-internal fun FalhaDeCamera.texto(): TextoDaFalha = when (this) {
-    FalhaDeCamera.PermissaoNegada -> TextoDaFalha(
-        titulo = "No camera access",
-        explicacao = "The app needs the camera only to read the pairing QR code. Tap " +
+internal fun CameraFailure.text(): FailureText = when (this) {
+    CameraFailure.PermissionDenied -> FailureText(
+        title = "No camera access",
+        explanation = "The app needs the camera only to read the pairing QR code. Tap " +
             "\"Allow camera access\" and confirm in the system dialog. If you'd rather not grant " +
             "access, set up the server manually and sign in with username and password.",
-        acao = "Allow camera access",
+        action = "Allow camera access",
     )
 
-    FalhaDeCamera.PermissaoBloqueada -> TextoDaFalha(
-        titulo = "Camera access blocked",
-        explicacao = "The permission was permanently denied, so the app can no longer ask. " +
+    CameraFailure.PermissionBlocked -> FailureText(
+        title = "Camera access blocked",
+        explanation = "The permission was permanently denied, so the app can no longer ask. " +
             "Open this app's settings, go to Permissions → Camera and choose \"Allow\". " +
             "Or continue without the camera: set up the server manually and sign in with username and password.",
-        acao = "Open app settings",
+        action = "Open app settings",
     )
 
-    FalhaDeCamera.SemCamera -> TextoDaFalha(
-        titulo = "This device has no camera",
-        explicacao = "Without a camera the panel's QR code can't be read — and there is nothing to " +
+    CameraFailure.NoCamera -> FailureText(
+        title = "This device has no camera",
+        explanation = "Without a camera the panel's QR code can't be read — and there is nothing to " +
             "retry. The way forward is to set the server address manually and sign in with " +
             "username and password.",
-        acao = null,
+        action = null,
     )
 
-    FalhaDeCamera.CameraOcupada -> TextoDaFalha(
-        titulo = "The camera is in use",
-        explicacao = "Another app is using the camera — an ongoing video call, for example, " +
+    CameraFailure.CameraInUse -> FailureText(
+        title = "The camera is in use",
+        explanation = "Another app is using the camera — an ongoing video call, for example, " +
             "including one in this very app. End the other use and tap \"Try again\". " +
             "If you'd rather not wait, set up the server manually and sign in with username and password.",
-        acao = "Try again",
+        action = "Try again",
     )
 
-    FalhaDeCamera.CameraBloqueadaPeloSistema -> TextoDaFalha(
-        titulo = "The camera is disabled by the system",
-        explicacao = "A device policy or \"Do not disturb\" mode is blocking the " +
+    CameraFailure.CameraBlockedBySystem -> FailureText(
+        title = "The camera is disabled by the system",
+        explanation = "A device policy or \"Do not disturb\" mode is blocking the " +
             "camera. Allow it in Android settings and tap \"Try again\" — or " +
             "set up the server manually and sign in with username and password.",
-        acao = "Try again",
+        action = "Try again",
     )
 
-    is FalhaDeCamera.FalhaInesperada -> TextoDaFalha(
-        titulo = "Could not open the camera",
-        explicacao = "The camera failed to start for a reason the app does not recognize. Tap " +
+    is CameraFailure.UnexpectedFailure -> FailureText(
+        title = "Could not open the camera",
+        explanation = "The camera failed to start for a reason the app does not recognize. Tap " +
             "\"Try again\"; if it keeps failing, copy the detail below into your problem " +
             "report. Meanwhile, you can set up the server manually and sign in with " +
             "username and password.",
-        acao = "Try again",
-        detalheTecnico = detalhe,
+        action = "Try again",
+        technicalDetail = detail,
     )
 }
 
@@ -456,16 +456,16 @@ internal fun FalhaDeCamera.texto(): TextoDaFalha = when (this) {
  * closing.
  */
 @Composable
-internal fun CameraIndisponivelContent(
+internal fun CameraUnavailableContent(
     modifier: Modifier = Modifier,
-    falha: FalhaDeCamera,
-    onPedirPermissao: () -> Unit,
-    onAbrirConfiguracoes: () -> Unit,
-    onTentarNovamente: () -> Unit,
+    failure: CameraFailure,
+    onRequestPermission: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onRetry: () -> Unit,
     onManualSetupRequested: (() -> Unit)?,
     onLoginRequested: (() -> Unit)?,
 ) {
-    val texto = falha.texto()
+    val text = failure.text()
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -479,35 +479,35 @@ internal fun CameraIndisponivelContent(
                 modifier = Modifier.padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text(text = texto.titulo, style = MaterialTheme.typography.titleLarge)
-                Text(text = texto.explicacao, style = MaterialTheme.typography.bodyMedium)
-                texto.detalheTecnico?.let { detalhe ->
+                Text(text = text.title, style = MaterialTheme.typography.titleLarge)
+                Text(text = text.explanation, style = MaterialTheme.typography.bodyMedium)
+                text.technicalDetail?.let { detail ->
                     Text(
-                        text = detalhe,
+                        text = detail,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                texto.acao?.let { rotulo ->
+                text.action?.let { label ->
                     Button(
-                        onClick = when (falha) {
-                            FalhaDeCamera.PermissaoNegada -> onPedirPermissao
-                            FalhaDeCamera.PermissaoBloqueada -> onAbrirConfiguracoes
-                            else -> onTentarNovamente
+                        onClick = when (failure) {
+                            CameraFailure.PermissionDenied -> onRequestPermission
+                            CameraFailure.PermissionBlocked -> onOpenSettings
+                            else -> onRetry
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(text = rotulo, textAlign = TextAlign.Center)
+                        Text(text = label, textAlign = TextAlign.Center)
                     }
                 }
                 if (onManualSetupRequested != null) {
                     TextButton(onClick = onManualSetupRequested, modifier = Modifier.fillMaxWidth()) {
-                        Text(text = ROTULO_CONFIGURAR_MANUALMENTE)
+                        Text(text = LABEL_SET_UP_MANUALLY)
                     }
                 }
                 if (onLoginRequested != null) {
                     TextButton(onClick = onLoginRequested, modifier = Modifier.fillMaxWidth()) {
-                        Text(text = ROTULO_JA_TENHO_ACESSO)
+                        Text(text = LABEL_ALREADY_HAVE_ACCESS)
                     }
                 }
             }

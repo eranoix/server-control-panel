@@ -30,7 +30,7 @@ fun createUpdateCoordinator(
         readInstalledApk = reader::read,
         installedVersionCode = installedVersionCode(appContext),
         appLabel = appContext.applicationInfo.loadLabel(appContext.packageManager),
-        recordDiagnostic = { texto -> UpdateDiagnostics.record(appContext, texto) },
+        recordDiagnostic = { text -> UpdateDiagnostics.record(appContext, text) },
         // The server's own rescue page: when the device refuses to install
         // from here, that is where the owner goes — and not to a search in the
         // browser.

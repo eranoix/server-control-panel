@@ -31,12 +31,12 @@ import androidx.core.view.WindowCompat
  */
 @Composable
 fun VpsManagerTheme(
-    themeMode: ThemeMode = ThemeMode.PADRAO,
-    darkTheme: Boolean = themeMode.escuro(isSystemInDarkTheme()),
+    themeMode: ThemeMode = ThemeMode.DEFAULT,
+    darkTheme: Boolean = themeMode.dark(isSystemInDarkTheme()),
     content: @Composable () -> Unit,
 ) {
     val colorScheme = if (darkTheme) VpsmDarkColors else VpsmLightColors
-    AjustaBarrasDoSistema(darkTheme)
+    AdjustSystemBars(darkTheme)
     MaterialTheme(
         colorScheme = colorScheme,
         content = content,
@@ -45,7 +45,7 @@ fun VpsManagerTheme(
 
 /**
  * Puts the status bar's and navigation bar's icons at the right contrast for
- * [escuro].
+ * [dark].
  *
  * The app draws edge to edge (`enableEdgeToEdge()`), so those two bars are
  * TRANSPARENT and show the screen's background underneath. What decides
@@ -62,14 +62,14 @@ fun VpsManagerTheme(
  * no bar to adjust and the function is a no-op.
  */
 @Composable
-private fun AjustaBarrasDoSistema(escuro: Boolean) {
+private fun AdjustSystemBars(dark: Boolean) {
     val view = LocalView.current
     if (LocalInspectionMode.current || view.isInEditMode) return
     SideEffect {
         val window = (view.context as? Activity)?.window ?: return@SideEffect
         val controller = WindowCompat.getInsetsController(window, view)
         // "LIGHT bar appearance" = DARK icons, for a light background.
-        controller.isAppearanceLightStatusBars = !escuro
-        controller.isAppearanceLightNavigationBars = !escuro
+        controller.isAppearanceLightStatusBars = !dark
+        controller.isAppearanceLightNavigationBars = !dark
     }
 }

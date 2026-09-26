@@ -60,7 +60,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.vpsmanager.data.terminal.ALVO_TODOS
+import com.vpsmanager.data.terminal.TARGET_ALL
 import com.vpsmanager.data.terminal.TerminalSession
 import com.vpsmanager.designsystem.VpsmIcons
 import com.vpsmanager.designsystem.vpsmStatusColors
@@ -106,95 +106,95 @@ fun SessionListScreen(
     viewModel: SessionListViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val recado by viewModel.recado.collectAsStateWithLifecycle()
-    val ocupada by viewModel.ocupada.collectAsStateWithLifecycle()
-    val previas by viewModel.previas.collectAsStateWithLifecycle()
-    val alvos by viewModel.alvos.collectAsStateWithLifecycle()
-    var backupsAbertos by rememberSaveable { mutableStateOf(false) }
-    var renomeando by remember { mutableStateOf<String?>(null) }
-    var encerrando by remember { mutableStateOf<String?>(null) }
-    var atribuindo by remember { mutableStateOf<String?>(null) }
+    val notice by viewModel.notice.collectAsStateWithLifecycle()
+    val busySession by viewModel.busySession.collectAsStateWithLifecycle()
+    val previews by viewModel.previews.collectAsStateWithLifecycle()
+    val targets by viewModel.targets.collectAsStateWithLifecycle()
+    var backupsOpen by rememberSaveable { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<String?>(null) }
+    var ending by remember { mutableStateOf<String?>(null) }
+    var assigning by remember { mutableStateOf<String?>(null) }
 
     // The assignment targets are requested when the screen appears, not in the
     // ViewModel's constructor — whoever constructs it controls what starts.
-    LaunchedEffect(Unit) { viewModel.carregarAlvos() }
+    LaunchedEffect(Unit) { viewModel.loadTargets() }
 
     Column(modifier = modifier.fillMaxSize()) {
         // The message takes up height only when there is one: a permanent empty
         // strip would cost 40 dp on the screen where the list needs them.
-        recado?.let { texto ->
-            RecadoDaOperacao(texto = texto, aoFechar = viewModel::limparRecado)
+        notice?.let { text ->
+            OperationNotice(text = text, onClose = viewModel::clearNotice)
         }
 
         when (val current = state) {
-            is SessionListUiState.Loading -> ConteudoCarregando()
-            is SessionListUiState.Error -> ConteudoDeErro(
+            is SessionListUiState.Loading -> LoadingContent()
+            is SessionListUiState.Error -> ErrorContent(
                 message = current.message,
                 onRetry = viewModel::refresh,
             )
-            is SessionListUiState.Empty -> ConteudoVazio(
+            is SessionListUiState.Empty -> EmptyContent(
                 onAttach = onSessionSelected,
-                aoAbrirBackups = { backupsAbertos = true },
+                onOpenBackups = { backupsOpen = true },
             )
-            is SessionListUiState.Success -> ListaDeSessoes(
+            is SessionListUiState.Success -> SessionList(
                 sessions = current.sessions,
-                ocupada = ocupada,
+                busySession = busySession,
                 onSessionClick = { onSessionSelected(it.name) },
                 onAttach = onSessionSelected,
-                aoSalvarTudo = { viewModel.salvarBackup(null) },
-                aoAbrirBackups = { backupsAbertos = true },
-                aoSalvarSessao = { viewModel.salvarBackup(it) },
-                aoRenomear = { renomeando = it },
-                previas = previas,
+                onSaveAll = { viewModel.saveBackup(null) },
+                onOpenBackups = { backupsOpen = true },
+                onSaveSession = { viewModel.saveBackup(it) },
+                onRename = { renaming = it },
+                previews = previews,
                 // The list comes back empty for anyone who is not an admin (the
                 // route returns 404), so the option does not even appear —
                 // rather than appearing and failing.
-                podeAtribuir = !alvos.isNullOrEmpty(),
-                aoEspiar = { viewModel.alternarPrevia(it) },
-                aoAtribuir = { atribuindo = it },
-                aoEncerrar = { encerrando = it },
+                canAssign = !targets.isNullOrEmpty(),
+                onPeek = { viewModel.togglePreview(it) },
+                onAssign = { assigning = it },
+                onEnd = { ending = it },
             )
         }
     }
 
-    if (backupsAbertos) {
+    if (backupsOpen) {
         BackupsSheet(
             viewModel = viewModel,
-            aoFechar = { backupsAbertos = false },
+            onClose = { backupsOpen = false },
         )
     }
 
-    encerrando?.let { nome ->
-        DialogoDeEncerrar(
-            nome = nome,
-            aoConfirmar = {
-                encerrando = null
-                viewModel.matar(nome)
+    ending?.let { name ->
+        EndDialog(
+            name = name,
+            onConfirm = {
+                ending = null
+                viewModel.kill(name)
             },
-            aoCancelar = { encerrando = null },
+            onCancel = { ending = null },
         )
     }
 
-    atribuindo?.let { nome ->
-        FolhaDeAtribuicao(
-            nome = nome,
-            alvos = alvos.orEmpty(),
-            aoEscolher = { alvo ->
-                atribuindo = null
-                viewModel.atribuir(nome, alvo)
+    assigning?.let { name ->
+        AssignSheet(
+            name = name,
+            targets = targets.orEmpty(),
+            onChoose = { target ->
+                assigning = null
+                viewModel.assign(name, target)
             },
-            aoFechar = { atribuindo = null },
+            onClose = { assigning = null },
         )
     }
 
-    renomeando?.let { nomeAtual ->
-        DialogoDeRenomear(
-            nomeAtual = nomeAtual,
-            aoConfirmar = { novo ->
-                renomeando = null
-                viewModel.renomear(nomeAtual, novo)
+    renaming?.let { currentName ->
+        RenameDialog(
+            currentName = currentName,
+            onConfirm = { next ->
+                renaming = null
+                viewModel.rename(currentName, next)
             },
-            aoCancelar = { renomeando = null },
+            onCancel = { renaming = null },
         )
     }
 }
@@ -208,7 +208,7 @@ fun SessionListScreen(
  * dismissed.
  */
 @Composable
-private fun RecadoDaOperacao(texto: String, aoFechar: () -> Unit) {
+private fun OperationNotice(text: String, onClose: () -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         modifier = Modifier.fillMaxWidth(),
@@ -218,18 +218,18 @@ private fun RecadoDaOperacao(texto: String, aoFechar: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = texto,
+                text = text,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = aoFechar) { Text(text = "OK") }
+            TextButton(onClick = onClose) { Text(text = "OK") }
         }
     }
 }
 
 @Composable
-private fun ConteudoCarregando() {
+private fun LoadingContent() {
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -241,7 +241,7 @@ private fun ConteudoCarregando() {
 }
 
 @Composable
-private fun ConteudoDeErro(message: String, onRetry: () -> Unit) {
+private fun ErrorContent(message: String, onRetry: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
         Card {
             Column(
@@ -264,7 +264,7 @@ private fun ConteudoDeErro(message: String, onRetry: () -> Unit) {
  * there.
  */
 @Composable
-private fun ConteudoVazio(onAttach: (String) -> Unit, aoAbrirBackups: () -> Unit) {
+private fun EmptyContent(onAttach: (String) -> Unit, onOpenBackups: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.Center,
@@ -285,35 +285,35 @@ private fun ConteudoVazio(onAttach: (String) -> Unit, aoAbrirBackups: () -> Unit
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(20.dp))
-        CampoDeNovaSessao(onAttach = onAttach)
+        NewSessionField(onAttach = onAttach)
         Spacer(modifier = Modifier.height(8.dp))
-        TextButton(onClick = aoAbrirBackups) { Text(text = "View backups") }
+        TextButton(onClick = onOpenBackups) { Text(text = "View backups") }
     }
 }
 
 @Composable
-private fun ListaDeSessoes(
+private fun SessionList(
     sessions: List<TerminalSession>,
-    ocupada: String?,
+    busySession: String?,
     onSessionClick: (TerminalSession) -> Unit,
     onAttach: (String) -> Unit,
-    aoSalvarTudo: () -> Unit,
-    aoAbrirBackups: () -> Unit,
-    aoSalvarSessao: (String) -> Unit,
-    aoRenomear: (String) -> Unit,
-    previas: Map<String, PreviaUiState>,
-    podeAtribuir: Boolean,
-    aoEspiar: (String) -> Unit,
-    aoAtribuir: (String) -> Unit,
-    aoEncerrar: (String) -> Unit,
+    onSaveAll: () -> Unit,
+    onOpenBackups: () -> Unit,
+    onSaveSession: (String) -> Unit,
+    onRename: (String) -> Unit,
+    previews: Map<String, PreviewUiState>,
+    canAssign: Boolean,
+    onPeek: (String) -> Unit,
+    onAssign: (String) -> Unit,
+    onEnd: (String) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        BarraDeResumo(
+        SummaryBar(
             total = sessions.size,
-            ativas = sessions.count { it.attached },
-            salvandoTudo = ocupada == SessionListViewModel.TODAS,
-            aoSalvarTudo = aoSalvarTudo,
-            aoAbrirBackups = aoAbrirBackups,
+            active = sessions.count { it.attached },
+            savingAll = busySession == SessionListViewModel.ALL,
+            onSaveAll = onSaveAll,
+            onOpenBackups = onOpenBackups,
         )
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -323,21 +323,21 @@ private fun ListaDeSessoes(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             items(items = sessions, key = { it.name }) { session ->
-                LinhaDeSessao(
+                SessionRow(
                     session = session,
-                    ocupada = ocupada == session.name,
-                    previa = previas[session.name],
-                    podeAtribuir = podeAtribuir,
+                    busySession = busySession == session.name,
+                    preview = previews[session.name],
+                    canAssign = canAssign,
                     onClick = { onSessionClick(session) },
-                    aoSalvar = { aoSalvarSessao(session.name) },
-                    aoRenomear = { aoRenomear(session.name) },
-                    aoEspiar = { aoEspiar(session.name) },
-                    aoAtribuir = { aoAtribuir(session.name) },
-                    aoEncerrar = { aoEncerrar(session.name) },
+                    onSave = { onSaveSession(session.name) },
+                    onRename = { onRename(session.name) },
+                    onPeek = { onPeek(session.name) },
+                    onAssign = { onAssign(session.name) },
+                    onEnd = { onEnd(session.name) },
                 )
             }
             item {
-                CartaoDeNovaSessao(onAttach = onAttach)
+                NewSessionCard(onAttach = onAttach)
             }
         }
     }
@@ -349,12 +349,12 @@ private fun ListaDeSessoes(
  * not content — scrolling the list must not carry away access to the backups.
  */
 @Composable
-private fun BarraDeResumo(
+private fun SummaryBar(
     total: Int,
-    ativas: Int,
-    salvandoTudo: Boolean,
-    aoSalvarTudo: () -> Unit,
-    aoAbrirBackups: () -> Unit,
+    active: Int,
+    savingAll: Boolean,
+    onSaveAll: () -> Unit,
+    onOpenBackups: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -364,20 +364,20 @@ private fun BarraDeResumo(
             Text(
                 text = buildString {
                     append(if (total == 1) "1 session" else "$total sessions")
-                    if (ativas > 0) append(" · $ativas active" + if (ativas > 1) "" else "")
+                    if (active > 0) append(" · $active active" + if (active > 1) "" else "")
                 },
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.weight(1f),
             )
-            if (salvandoTudo) {
+            if (savingAll) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.width(12.dp))
             } else {
-                TextButton(onClick = aoSalvarTudo, modifier = Modifier.testTag(SALVAR_TUDO_TAG)) {
+                TextButton(onClick = onSaveAll, modifier = Modifier.testTag(SAVE_ALL_TAG)) {
                     Text(text = "Save all")
                 }
             }
-            TextButton(onClick = aoAbrirBackups, modifier = Modifier.testTag(BACKUPS_TAG)) {
+            TextButton(onClick = onOpenBackups, modifier = Modifier.testTag(BACKUPS_TAG)) {
                 Text(text = "Backups")
             }
         }
@@ -385,21 +385,21 @@ private fun BarraDeResumo(
 }
 
 @Composable
-private fun LinhaDeSessao(
+private fun SessionRow(
     session: TerminalSession,
-    ocupada: Boolean,
-    previa: PreviaUiState?,
-    podeAtribuir: Boolean,
+    busySession: Boolean,
+    preview: PreviewUiState?,
+    canAssign: Boolean,
     onClick: () -> Unit,
-    aoSalvar: () -> Unit,
-    aoRenomear: () -> Unit,
-    aoEspiar: () -> Unit,
-    aoAtribuir: () -> Unit,
-    aoEncerrar: () -> Unit,
+    onSave: () -> Unit,
+    onRename: () -> Unit,
+    onPeek: () -> Unit,
+    onAssign: () -> Unit,
+    onEnd: () -> Unit,
 ) {
-    val previaAberta = previa != null
-    var menuAberto by remember { mutableStateOf(false) }
-    val cores = vpsmStatusColors
+    val previewOpen = preview != null
+    var menuOpen by remember { mutableStateOf(false) }
+    val statusColors = vpsmStatusColors
 
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
@@ -431,7 +431,7 @@ private fun LinhaDeSessao(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = metaDaSessao(session),
+                    text = sessionMeta(session),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -443,10 +443,10 @@ private fun LinhaDeSessao(
                 // too would make seven badges in a list of seven, and seven
                 // badges distinguish nothing — that was exactly the repeated
                 // "Not attached" of the previous version.
-                SeloAtiva(cor = cores.ok.accent)
+                ActiveBadge(color = statusColors.ok.accent)
                 Spacer(modifier = Modifier.width(4.dp))
             }
-            if (ocupada) {
+            if (busySession) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(18.dp).padding(end = 2.dp),
                     strokeWidth = 2.dp,
@@ -454,35 +454,35 @@ private fun LinhaDeSessao(
                 Spacer(modifier = Modifier.width(10.dp))
             } else {
                 Box {
-                    IconButton(onClick = { menuAberto = true }) {
+                    IconButton(onClick = { menuOpen = true }) {
                         Icon(
                             imageVector = Icons.Filled.MoreVert,
                             contentDescription = "Actions for session ${session.name}",
                         )
                     }
-                    DropdownMenu(expanded = menuAberto, onDismissRequest = { menuAberto = false }) {
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(
                             text = { Text("Open") },
-                            onClick = { menuAberto = false; onClick() },
+                            onClick = { menuOpen = false; onClick() },
                         )
                         DropdownMenuItem(
                             text = { Text("Save backup") },
-                            onClick = { menuAberto = false; aoSalvar() },
+                            onClick = { menuOpen = false; onSave() },
                         )
                         DropdownMenuItem(
                             text = { Text("Rename…") },
-                            onClick = { menuAberto = false; aoRenomear() },
+                            onClick = { menuOpen = false; onRename() },
                         )
                         DropdownMenuItem(
                             // The label follows the STATE, not the action:
                             // whoever has the preview open reads "Close preview".
-                            text = { Text(if (previaAberta) "Close preview" else "Peek") },
-                            onClick = { menuAberto = false; aoEspiar() },
+                            text = { Text(if (previewOpen) "Close preview" else "Peek") },
+                            onClick = { menuOpen = false; onPeek() },
                         )
-                        if (podeAtribuir) {
+                        if (canAssign) {
                             DropdownMenuItem(
                                 text = { Text("Visible to…") },
-                                onClick = { menuAberto = false; aoAtribuir() },
+                                onClick = { menuOpen = false; onAssign() },
                             )
                         }
                         HorizontalDivider()
@@ -495,14 +495,14 @@ private fun LinhaDeSessao(
                                     color = MaterialTheme.colorScheme.error,
                                 )
                             },
-                            onClick = { menuAberto = false; aoEncerrar() },
+                            onClick = { menuOpen = false; onEnd() },
                         )
                     }
                 }
             }
         }
-        if (previa != null) {
-            CartaoDePrevia(previa = previa)
+        if (preview != null) {
+            PreviewCard(preview = preview)
         }
     }
 }
@@ -519,21 +519,21 @@ private fun LinhaDeSessao(
  * trees, which are half of what you are trying to recognise at a glance.
  */
 @Composable
-private fun CartaoDePrevia(previa: PreviaUiState) {
+private fun PreviewCard(preview: PreviewUiState) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
         shape = RoundedCornerShape(8.dp),
     ) {
         Box(modifier = Modifier.padding(10.dp)) {
-            when (previa) {
-                is PreviaUiState.Carregando -> Row(verticalAlignment = Alignment.CenterVertically) {
+            when (preview) {
+                is PreviewUiState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(text = "Reading the session…", style = MaterialTheme.typography.bodySmall)
                 }
 
-                is PreviaUiState.Vazia -> Text(
+                is PreviewUiState.Empty -> Text(
                     // "Empty" is information, not failure: a freshly created
                     // session has not written anything yet, and saying so keeps it
                     // from looking like an error.
@@ -542,14 +542,14 @@ private fun CartaoDePrevia(previa: PreviaUiState) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                is PreviaUiState.Erro -> Text(
-                    text = previa.mensagem,
+                is PreviewUiState.Error -> Text(
+                    text = preview.message,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
 
-                is PreviaUiState.Pronta -> Text(
-                    text = previa.texto,
+                is PreviewUiState.Ready -> Text(
+                    text = preview.text,
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -573,14 +573,14 @@ private fun CartaoDePrevia(previa: PreviaUiState) {
  * re-read the question to know what you are confirming.
  */
 @Composable
-private fun DialogoDeEncerrar(
-    nome: String,
-    aoConfirmar: () -> Unit,
-    aoCancelar: () -> Unit,
+private fun EndDialog(
+    name: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
 ) {
     AlertDialog(
-        onDismissRequest = aoCancelar,
-        title = { Text("End $nome?") },
+        onDismissRequest = onCancel,
+        title = { Text("End $name?") },
         text = {
             Text(
                 "Everything running inside it ends too. " +
@@ -588,12 +588,12 @@ private fun DialogoDeEncerrar(
             )
         },
         confirmButton = {
-            TextButton(onClick = aoConfirmar) {
+            TextButton(onClick = onConfirm) {
                 Text(text = "End", color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
-            TextButton(onClick = aoCancelar) { Text("Cancel") }
+            TextButton(onClick = onCancel) { Text("Cancel") }
         },
     )
 }
@@ -610,29 +610,29 @@ private fun DialogoDeEncerrar(
  * not know the convention.
  */
 @Composable
-private fun FolhaDeAtribuicao(
-    nome: String,
-    alvos: List<String>,
-    aoEscolher: (String) -> Unit,
-    aoFechar: () -> Unit,
+private fun AssignSheet(
+    name: String,
+    targets: List<String>,
+    onChoose: (String) -> Unit,
+    onClose: () -> Unit,
 ) {
     AlertDialog(
-        onDismissRequest = aoFechar,
-        title = { Text("Who sees $nome?") },
+        onDismissRequest = onClose,
+        title = { Text("Who sees $name?") },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                alvos.forEach { alvo ->
-                    val ehTodos = alvo == ALVO_TODOS
+                targets.forEach { target ->
+                    val isAll = target == TARGET_ALL
                     TextButton(
-                        onClick = { aoEscolher(alvo) },
+                        onClick = { onChoose(target) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (ehTodos) "Everyone" else alvo,
+                                text = if (isAll) "Everyone" else target,
                                 style = MaterialTheme.typography.bodyLarge,
                             )
-                            if (ehTodos) {
+                            if (isAll) {
                                 Text(
                                     text = "Shows up in every account's list",
                                     style = MaterialTheme.typography.bodySmall,
@@ -645,20 +645,20 @@ private fun FolhaDeAtribuicao(
             }
         },
         confirmButton = {
-            TextButton(onClick = aoFechar) { Text("Cancel") }
+            TextButton(onClick = onClose) { Text("Cancel") }
         },
     )
 }
 
 @Composable
-private fun SeloAtiva(cor: Color) {
+private fun ActiveBadge(color: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(cor))
+        Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(color))
         Spacer(modifier = Modifier.width(5.dp))
         Text(
             text = "active",
             style = MaterialTheme.typography.labelSmall,
-            color = cor,
+            color = color,
         )
     }
 }
@@ -671,16 +671,16 @@ private fun SeloAtiva(cor: Color) {
  * today — `created` exists in the BFF's session summary, "last activity" does
  * not.
  */
-private fun metaDaSessao(session: TerminalSession): String {
-    val partes = mutableListOf(idadeLegivel(session.created))
+private fun sessionMeta(session: TerminalSession): String {
+    val parts = mutableListOf(readableAge(session.created))
     // The tab only goes in when it says something the name does not. On the
     // server it is filled with the session's own name in most cases, and
     // repeating "pouco1 · pouco1" spends the entire meta row to convey nothing —
     // which is exactly how the first version of this screen turned out.
     session.tab
         ?.takeIf { it.isNotBlank() && !it.equals(session.name, ignoreCase = true) }
-        ?.let { partes += it }
-    return partes.joinToString(" · ")
+        ?.let { parts += it }
+    return parts.joinToString(" · ")
 }
 
 /**
@@ -688,10 +688,10 @@ private fun metaDaSessao(session: TerminalSession): String {
  * opened 55 s ago are the same thing to somebody choosing which to open, and a
  * clock ticking in the list would only draw attention to what does not matter.
  */
-internal fun idadeLegivel(criadoEmSegundos: Long, agoraSegundos: Long = System.currentTimeMillis() / 1000): String {
-    val delta = (agoraSegundos - criadoEmSegundos).coerceAtLeast(0)
+internal fun readableAge(createdAtSeconds: Long, nowSeconds: Long = System.currentTimeMillis() / 1000): String {
+    val delta = (nowSeconds - createdAtSeconds).coerceAtLeast(0)
     return when {
-        criadoEmSegundos <= 0L -> "—"
+        createdAtSeconds <= 0L -> "—"
         delta < 60 -> "now"
         delta < 3_600 -> "${delta / 60} min ago"
         delta < 86_400 -> "${delta / 3_600} h ago"
@@ -702,7 +702,7 @@ internal fun idadeLegivel(criadoEmSegundos: Long, agoraSegundos: Long = System.c
 
 /** At the end of the list, not at the top: what you do here 9 times out of 10 is open a session that already exists. */
 @Composable
-private fun CartaoDeNovaSessao(onAttach: (String) -> Unit) {
+private fun NewSessionCard(onAttach: (String) -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
         shape = RoundedCornerShape(12.dp),
@@ -719,25 +719,25 @@ private fun CartaoDeNovaSessao(onAttach: (String) -> Unit) {
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(text = "New session", style = MaterialTheme.typography.labelLarge)
             }
-            CampoDeNovaSessao(onAttach = onAttach)
+            NewSessionField(onAttach = onAttach)
         }
     }
 }
 
 @Composable
-private fun CampoDeNovaSessao(onAttach: (String) -> Unit) {
-    var nome by rememberSaveable { mutableStateOf("") }
+private fun NewSessionField(onAttach: (String) -> Unit) {
+    var name by rememberSaveable { mutableStateOf("") }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
-            value = nome,
-            onValueChange = { nome = it },
+            value = name,
+            onValueChange = { name = it },
             label = { Text(text = "Session name") },
             singleLine = true,
             modifier = Modifier.weight(1f),
         )
         TextButton(
-            enabled = nome.isNotBlank(),
-            onClick = { onAttach(nome.trim()) },
+            enabled = name.isNotBlank(),
+            onClick = { onAttach(name.trim()) },
         ) {
             Text(text = "Attach")
         }
@@ -745,16 +745,16 @@ private fun CampoDeNovaSessao(onAttach: (String) -> Unit) {
 }
 
 @Composable
-private fun DialogoDeRenomear(nomeAtual: String, aoConfirmar: (String) -> Unit, aoCancelar: () -> Unit) {
-    var novo by remember { mutableStateOf(nomeAtual) }
+private fun RenameDialog(currentName: String, onConfirm: (String) -> Unit, onCancel: () -> Unit) {
+    var next by remember { mutableStateOf(currentName) }
     AlertDialog(
-        onDismissRequest = aoCancelar,
+        onDismissRequest = onCancel,
         title = { Text(text = "Rename session") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
-                    value = novo,
-                    onValueChange = { novo = it },
+                    value = next,
+                    onValueChange = { next = it },
                     label = { Text(text = "New name") },
                     singleLine = true,
                 )
@@ -767,11 +767,11 @@ private fun DialogoDeRenomear(nomeAtual: String, aoConfirmar: (String) -> Unit, 
         },
         confirmButton = {
             TextButton(
-                enabled = novo.isNotBlank() && novo != nomeAtual,
-                onClick = { aoConfirmar(novo.trim()) },
+                enabled = next.isNotBlank() && next != currentName,
+                onClick = { onConfirm(next.trim()) },
             ) { Text(text = "Rename") }
         },
-        dismissButton = { TextButton(onClick = aoCancelar) { Text(text = "Cancel") } },
+        dismissButton = { TextButton(onClick = onCancel) { Text(text = "Cancel") } },
     )
 }
 
@@ -781,17 +781,17 @@ private fun DialogoDeRenomear(nomeAtual: String, aoConfirmar: (String) -> Unit, 
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun ChipsDeSessoes(nomes: List<String>, aoTocar: (String) -> Unit) {
+internal fun SessionChips(names: List<String>, onTap: (String) -> Unit) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        nomes.forEach { nome ->
+        names.forEach { name ->
             AssistChip(
-                onClick = { aoTocar(nome) },
+                onClick = { onTap(name) },
                 label = {
                     Text(
-                        text = nome,
+                        text = name,
                         style = MaterialTheme.typography.labelSmall,
                         fontFamily = FontFamily.Monospace,
                         maxLines = 1,
@@ -803,5 +803,5 @@ internal fun ChipsDeSessoes(nomes: List<String>, aoTocar: (String) -> Unit) {
     }
 }
 
-internal const val SALVAR_TUDO_TAG = "sessoes-salvar-tudo"
+internal const val SAVE_ALL_TAG = "sessoes-salvar-tudo"
 internal const val BACKUPS_TAG = "sessoes-backups"

@@ -145,7 +145,7 @@ class VpsFirebaseMessagingServiceTest {
         // request outside the file browser), so on a fresh install `notify`
         // was swallowed by the system with no exception and no trace. Today
         // the path is explicit and logged — and what asks for it is
-        // `OnboardingDePush`, at login.
+        // `PushOnboarding`, at login.
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
         val service = Robolectric.setupService(VpsFirebaseMessagingService::class.java)

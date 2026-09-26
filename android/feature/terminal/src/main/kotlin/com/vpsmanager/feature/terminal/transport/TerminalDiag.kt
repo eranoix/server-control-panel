@@ -22,8 +22,8 @@ object TerminalDiag {
     @Volatile
     var enabled: Boolean = true
 
-    fun log(mensagem: String) {
+    fun log(message: String) {
         if (!enabled) return
-        runCatching { android.util.Log.i(TAG, mensagem) }
+        runCatching { android.util.Log.i(TAG, message) }
     }
 }

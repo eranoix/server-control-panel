@@ -15,22 +15,22 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class FirebaseBootstrapTest {
 
-    private fun json(vararg pacotes: String): String {
-        val clientes = pacotes.joinToString(",") { pacote ->
+    private fun json(vararg packages: String): String {
+        val clients = packages.joinToString(",") { packageName ->
             """
             {
               "client_info": {
-                "mobilesdk_app_id": "1:12345:android:${pacote.hashCode()}",
-                "android_client_info": { "package_name": "$pacote" }
+                "mobilesdk_app_id": "1:12345:android:${packageName.hashCode()}",
+                "android_client_info": { "package_name": "$packageName" }
               },
-              "api_key": [ { "current_key": "chave-de-$pacote" } ]
+              "api_key": [ { "current_key": "chave-de-$packageName" } ]
             }
             """.trimIndent()
         }
         return """
         {
           "project_info": { "project_number": "12345", "project_id": "vpsm-teste" },
-          "client": [ $clientes ]
+          "client": [ $clients ]
         }
         """.trimIndent()
     }
@@ -41,25 +41,25 @@ class FirebaseBootstrapTest {
         // the first one would register the device under another identity — and
         // the push would leave the server and never arrive, with no error
         // anywhere.
-        val opcoes = FirebaseBootstrap.opcoesDe(
+        val options = FirebaseBootstrap.optionsFrom(
             json("com.outro.app", "tech.northwind.vpsm.app"),
             "tech.northwind.vpsm.app",
         )
-        assertEquals("chave-de-tech.northwind.vpsm.app", opcoes?.apiKey)
-        assertEquals("vpsm-teste", opcoes?.projectId)
-        assertEquals("12345", opcoes?.gcmSenderId)
+        assertEquals("chave-de-tech.northwind.vpsm.app", options?.apiKey)
+        assertEquals("vpsm-teste", options?.projectId)
+        assertEquals("12345", options?.gcmSenderId)
     }
 
     @Test
     fun `sem o nosso pacote devolve nulo em vez de chutar`() {
-        assertNull(FirebaseBootstrap.opcoesDe(json("com.outro.app"), "tech.northwind.vpsm.app"))
+        assertNull(FirebaseBootstrap.optionsFrom(json("com.outro.app"), "tech.northwind.vpsm.app"))
     }
 
     @Test
     fun `arquivo corrompido nao derruba o boot`() {
         // This code runs inside a Bootstrap step: an exception here would stop
         // the app from opening because of an optional feature.
-        assertNull(FirebaseBootstrap.opcoesDe("{ isto não é json", "tech.northwind.vpsm.app"))
-        assertNull(FirebaseBootstrap.opcoesDe("{}", "tech.northwind.vpsm.app"))
+        assertNull(FirebaseBootstrap.optionsFrom("{ isto não é json", "tech.northwind.vpsm.app"))
+        assertNull(FirebaseBootstrap.optionsFrom("{}", "tech.northwind.vpsm.app"))
     }
 }

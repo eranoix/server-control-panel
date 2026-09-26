@@ -55,8 +55,8 @@ internal fun colorsFor(severity: Severity): StatusColorPair {
     val colors = vpsmStatusColors
     return when (severity) {
         Severity.OK -> colors.ok
-        Severity.ATENCAO -> colors.warning
-        Severity.CRITICO -> colors.critical
+        Severity.WARNING -> colors.warning
+        Severity.CRITICAL -> colors.critical
     }
 }
 
@@ -69,8 +69,8 @@ internal fun colorsFor(severity: Severity): StatusColorPair {
  */
 internal fun labelFor(severity: Severity): String = when (severity) {
     Severity.OK -> "ok"
-    Severity.ATENCAO -> "WARNING"
-    Severity.CRITICO -> "CRITICAL"
+    Severity.WARNING -> "WARNING"
+    Severity.CRITICAL -> "CRITICAL"
 }
 
 /**
@@ -169,7 +169,7 @@ internal fun AttentionCard(
     onTarget: (DashboardTarget) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val worst = signals.maxOfOrNull { it.severity } ?: Severity.ATENCAO
+    val worst = signals.maxOfOrNull { it.severity } ?: Severity.WARNING
     val colors = colorsFor(worst)
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -191,7 +191,7 @@ internal fun AttentionCard(
                     modifier = Modifier.size(22.dp),
                 )
                 Text(
-                    text = atencaoTitulo(signals.size),
+                    text = attentionTitle(signals.size),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = colors.content,
@@ -234,7 +234,7 @@ internal fun AttentionCard(
 }
 
 /** "1 thing needs attention" / "3 things need attention". */
-internal fun atencaoTitulo(count: Int): String =
+internal fun attentionTitle(count: Int): String =
     if (count == 1) "1 thing needs attention" else "$count things need attention"
 
 @Composable
@@ -272,18 +272,18 @@ internal fun HealthCard(
     onTarget: (DashboardTarget) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var mostrarSaudaveis by remember { mutableStateOf(false) }
-    val desviados = entries.filter { it.severity != Severity.OK }
-    val saudaveis = entries.filter { it.severity == Severity.OK }
-    val resumo = when {
+    var showHealthy by remember { mutableStateOf(false) }
+    val offNominal = entries.filter { it.severity != Severity.OK }
+    val healthy = entries.filter { it.severity == Severity.OK }
+    val summary = when {
         entries.isEmpty() -> "no subsystems reported"
-        desviados.isEmpty() -> "${saudaveis.size} subsystems · all ok"
-        else -> "${saudaveis.size} ok · ${desviados.size} out of normal"
+        offNominal.isEmpty() -> "${healthy.size} subsystems · all ok"
+        else -> "${healthy.size} ok · ${offNominal.size} out of normal"
     }
 
     DashboardCard(
         title = "Server health",
-        subtitle = resumo,
+        subtitle = summary,
         modifier = modifier,
     ) {
         if (quietLine != null) {
@@ -293,8 +293,8 @@ internal fun HealthCard(
                 color = vpsmStatusColors.ok.accent,
             )
         }
-        desviados.forEach { entry ->
-            NavigableRow(onClick = { onTarget(DashboardTarget.SERVICOS) }) {
+        offNominal.forEach { entry ->
+            NavigableRow(onClick = { onTarget(DashboardTarget.SERVICES) }) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -310,26 +310,26 @@ internal fun HealthCard(
                 }
             }
         }
-        if (saudaveis.isNotEmpty()) {
-            OutlinedButton(onClick = { mostrarSaudaveis = !mostrarSaudaveis }) {
+        if (healthy.isNotEmpty()) {
+            OutlinedButton(onClick = { showHealthy = !showHealthy }) {
                 Icon(
-                    imageVector = if (mostrarSaudaveis) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    imageVector = if (showHealthy) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = if (mostrarSaudaveis) {
-                        "hide the ${saudaveis.size} healthy ones"
+                    text = if (showHealthy) {
+                        "hide the ${healthy.size} healthy ones"
                     } else {
-                        "show the ${saudaveis.size} healthy ones"
+                        "show the ${healthy.size} healthy ones"
                     },
                     style = MaterialTheme.typography.labelLarge,
                 )
             }
-            if (mostrarSaudaveis) {
+            if (showHealthy) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    saudaveis.forEach { entry ->
+                    healthy.forEach { entry ->
                         Text(
                             text = "${entry.name} ${entry.status}",
                             style = MaterialTheme.typography.bodySmall,
@@ -384,10 +384,10 @@ internal fun ResourcesCard(
     onTarget: (DashboardTarget) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val piores = signals.count { it.severity != Severity.OK }
+    val worstCount = signals.count { it.severity != Severity.OK }
     DashboardCard(
         title = "Resources",
-        subtitle = if (piores == 0) "all within thresholds" else "$piores over threshold",
+        subtitle = if (worstCount == 0) "all within thresholds" else "$worstCount over threshold",
         modifier = modifier,
     ) {
         signals.forEach { signal ->
@@ -399,16 +399,16 @@ internal fun ResourcesCard(
 @Composable
 private fun ResourceRow(signal: ResourceSignal, onClick: () -> Unit) {
     val colors = colorsFor(signal.severity)
-    val destaque = signal.severity != Severity.OK
+    val highlight = signal.severity != Severity.OK
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .background(
-                color = if (destaque) colors.container else Color.Transparent,
+                color = if (highlight) colors.container else Color.Transparent,
                 shape = RoundedCornerShape(8.dp),
             )
-            .padding(horizontal = if (destaque) 10.dp else 0.dp, vertical = 8.dp),
+            .padding(horizontal = if (highlight) 10.dp else 0.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -421,7 +421,7 @@ private fun ResourceRow(signal: ResourceSignal, onClick: () -> Unit) {
                 .width(3.dp)
                 .height(28.dp)
                 .background(
-                    color = if (destaque) colors.accent else MaterialTheme.colorScheme.outlineVariant,
+                    color = if (highlight) colors.accent else MaterialTheme.colorScheme.outlineVariant,
                     shape = RoundedCornerShape(2.dp),
                 )
                 .clearAndSetSemantics { },
@@ -434,15 +434,15 @@ private fun ResourceRow(signal: ResourceSignal, onClick: () -> Unit) {
                 Text(
                     text = signal.label,
                     style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = if (destaque) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (destaque) colors.content else MaterialTheme.colorScheme.onSurface,
+                    fontWeight = if (highlight) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (highlight) colors.content else MaterialTheme.colorScheme.onSurface,
                 )
-                if (destaque) SeverityTag(signal.severity)
+                if (highlight) SeverityTag(signal.severity)
             }
             Text(
                 text = signal.detail,
                 style = MaterialTheme.typography.bodySmall,
-                color = if (destaque) colors.content else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (highlight) colors.content else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         // A signal with no single value (the network, whose value is a pair)
@@ -454,7 +454,7 @@ private fun ResourceRow(signal: ResourceSignal, onClick: () -> Unit) {
                 style = MaterialTheme.typography.titleMedium,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                color = if (destaque) colors.accent else MaterialTheme.colorScheme.onSurface,
+                color = if (highlight) colors.accent else MaterialTheme.colorScheme.onSurface,
             )
         }
     }
@@ -501,8 +501,8 @@ internal fun SessionCard(
     snapshot: DashboardSnapshot,
     driftText: String?,
     modifier: Modifier = Modifier,
-    onAbrirSeguranca: () -> Unit = {},
-    onAbrirDiagnostico: () -> Unit = {},
+    onOpenSecurity: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
 ) {
     val identity = snapshot.identity
     val system = snapshot.ops.system
@@ -546,7 +546,7 @@ internal fun SessionCard(
         // "Security" on its own does not distinguish the server's security from
         // the security of whoever is holding the phone.
         Row {
-            TextButton(onClick = onAbrirSeguranca) {
+            TextButton(onClick = onOpenSecurity) {
                 Text("Lock and screenshots")
             }
             // The diagnostics used to live ONLY behind an update failure —
@@ -554,7 +554,7 @@ internal fun SessionCard(
             // the strip offers the browser rather than the diagnostics. That
             // is: the more they were needed, the less they were reachable.
             // Here they have a door of their own.
-            TextButton(onClick = onAbrirDiagnostico) {
+            TextButton(onClick = onOpenDiagnostics) {
                 Text("Diagnostics")
             }
         }

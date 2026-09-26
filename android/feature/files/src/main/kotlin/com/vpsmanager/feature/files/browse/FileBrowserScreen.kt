@@ -42,8 +42,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vpsmanager.core.model.FileEntry
-import com.vpsmanager.core.shell.ComandosDaPonte
-import com.vpsmanager.core.shell.PonteComOTerminal
+import com.vpsmanager.core.shell.BridgeCommands
+import com.vpsmanager.core.shell.TerminalBridge
 import com.vpsmanager.feature.files.transfer.TransferScreen
 import com.vpsmanager.feature.files.transfer.TransferViewModel
 
@@ -128,7 +128,7 @@ fun FileBrowserScreen(
             currentPath = viewModel.currentPath,
             canNavigateUp = viewModel.currentPath != ROOT_PATH,
             onNavigateUp = viewModel::navigateUp,
-            onIrParaCaminho = viewModel::irPara,
+            onGoToPath = viewModel::goTo,
             pickMode = pickMode,
             onUploadClick = { uploadPickerLauncher.launch(arrayOf("*/*")) },
             onSelectCurrentClick = { onFolderPicked(viewModel.currentPath) },
@@ -152,12 +152,12 @@ fun FileBrowserScreen(
                     // folder exists and is readable), which is why it is
                     // offered alongside — the breadcrumb above stays tappable
                     // for the same reason.
-                    onSubirUmNivel = viewModel::navigateUp.takeIf { viewModel.currentPath != ROOT_PATH },
+                    onUpOneLevel = viewModel::navigateUp.takeIf { viewModel.currentPath != ROOT_PATH },
                 )
                 is FileBrowserUiState.Empty -> EmptyContent()
                 is FileBrowserUiState.Success -> DirectoryContent(
                     entries = current.entries,
-                    caminhoDe = viewModel::pathFor,
+                    pathOf = viewModel::pathFor,
                     pickMode = pickMode,
                     onEntryClick = { entry ->
                         when {
@@ -188,7 +188,7 @@ private fun FileBrowserHeader(
     currentPath: String,
     canNavigateUp: Boolean,
     onNavigateUp: () -> Unit,
-    onIrParaCaminho: (String) -> Unit,
+    onGoToPath: (String) -> Unit,
     pickMode: Boolean,
     onUploadClick: () -> Unit,
     onSelectCurrentClick: () -> Unit,
@@ -196,13 +196,13 @@ private fun FileBrowserHeader(
     Surface(tonalElevation = 2.dp) {
         Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
             // THE BREADCRUMB COMES FIRST, alone on its line. It is this
-            // screen's primary information (see TrilhaDoCaminho), and sharing
+            // screen's primary information (see PathBreadcrumb), and sharing
             // the width with two action buttons would squeeze it to three
             // characters on a deep path — which is exactly when it is most
             // useful.
-            TrilhaDoCaminho(
-                caminho = currentPath,
-                aoTocarSegmento = onIrParaCaminho,
+            PathBreadcrumb(
+                path = currentPath,
+                onTapSegment = onGoToPath,
                 modifier = Modifier.padding(horizontal = 12.dp),
             )
             Row(
@@ -228,8 +228,8 @@ private fun FileBrowserHeader(
                     // the real size of a directory.
                     TextButton(
                         onClick = {
-                            val cmd = ComandosDaPonte.listarPasta(currentPath)
-                            PonteComOTerminal.mandar(cmd.comando, cmd.origem)
+                            val cmd = BridgeCommands.listDir(currentPath)
+                            TerminalBridge.send(cmd.command, cmd.origin)
                         },
                     ) { Text(text = "In terminal") }
                 }
@@ -268,7 +268,7 @@ private fun EmptyContent() {
 }
 
 @Composable
-private fun ErrorContent(message: String, onRetry: () -> Unit, onSubirUmNivel: (() -> Unit)?) {
+private fun ErrorContent(message: String, onRetry: () -> Unit, onUpOneLevel: (() -> Unit)?) {
     Card {
         Column(
             modifier = Modifier.padding(24.dp),
@@ -286,7 +286,7 @@ private fun ErrorContent(message: String, onRetry: () -> Unit, onSubirUmNivel: (
                 // Without this exit, a folder you cannot read becomes a dead
                 // end — the only alternative being to reopen the whole screen
                 // and navigate again from the root.
-                onSubirUmNivel?.let {
+                onUpOneLevel?.let {
                     TextButton(onClick = it) { Text(text = "Up one folder") }
                 }
             }
@@ -297,7 +297,7 @@ private fun ErrorContent(message: String, onRetry: () -> Unit, onSubirUmNivel: (
 @Composable
 private fun DirectoryContent(
     entries: List<FileEntry>,
-    caminhoDe: (FileEntry) -> String,
+    pathOf: (FileEntry) -> String,
     pickMode: Boolean,
     onEntryClick: (FileEntry) -> Unit,
     onDownloadClick: (FileEntry) -> Unit,
@@ -307,7 +307,7 @@ private fun DirectoryContent(
         items(items = entries, key = { it.name }) { entry ->
             FileRow(
                 entry = entry,
-                caminhoCompleto = caminhoDe(entry),
+                fullPath = pathOf(entry),
                 pickMode = pickMode,
                 onClick = { onEntryClick(entry) },
                 onDownloadClick = { onDownloadClick(entry) },
@@ -320,7 +320,7 @@ private fun DirectoryContent(
 @Composable
 private fun FileRow(
     entry: FileEntry,
-    caminhoCompleto: String,
+    fullPath: String,
     pickMode: Boolean,
     onClick: () -> Unit,
     onDownloadClick: () -> Unit,
@@ -368,8 +368,8 @@ private fun FileRow(
                     // editable.
                     TextButton(
                         onClick = {
-                            val cmd = ComandosDaPonte.verArquivo(caminhoCompleto)
-                            PonteComOTerminal.mandar(cmd.comando, cmd.origem)
+                            val cmd = BridgeCommands.viewFile(fullPath)
+                            TerminalBridge.send(cmd.command, cmd.origin)
                         },
                     ) { Text(text = "View") }
                     TextButton(onClick = onDownloadClick) { Text(text = "Download") }

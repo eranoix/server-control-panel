@@ -97,15 +97,15 @@ class UpdateBannerInShellTest {
 
     @Test
     fun `tocar na faixa pede a atualizacao`() {
-        var pedidos = 0
+        var requests = 0
         renderShell(
             UpdateState.Available(versionName = "0.1.7", downloadBytes = 1_400_329, incremental = true),
-            onUpdateClick = { pedidos++ },
+            onUpdateClick = { requests++ },
         )
 
         composeRule.onNodeWithText("Update").performClick()
 
-        assertEquals(1, pedidos)
+        assertEquals(1, requests)
     }
 
     /**
@@ -117,14 +117,14 @@ class UpdateBannerInShellTest {
      */
     @Test
     fun `o botao Diagnostico navega para o relatorio com a mensagem do sistema`() {
-        var saidasParaOSistema = 0
+        var exitsToSystem = 0
         renderShell(
             UpdateState.Failed(
                 "A instalação falhou: INSTALL_FAILED_UPDATE_INCOMPATIBLE",
                 canRetry = true,
                 recovery = UpdateRecovery.SHOW_DIAGNOSTICS,
             ),
-            onUpdateRecovery = { saidasParaOSistema++ },
+            onUpdateRecovery = { exitsToSystem++ },
             updateDiagnostics = "Atualização — instalação falhou (status 4)\nINSTALL_FAILED_UPDATE_INCOMPATIBLE",
         )
 
@@ -132,21 +132,21 @@ class UpdateBannerInShellTest {
         composeRule.waitForIdle()
 
         assertEquals("diagnostico", navController.currentBackStackEntry?.destination?.route)
-        assertEquals("nada de sair do app para isto", 0, saidasParaOSistema)
+        assertEquals("nada de sair do app para isto", 0, exitsToSystem)
         composeRule.onNodeWithText("INSTALL_FAILED_UPDATE_INCOMPATIBLE", substring = true).assertExists()
     }
 
     /** The ways out that ARE the system's (toggle, storage, browser) go up to whoever has an Activity. */
     @Test
     fun `as demais saidas sobem para a Activity em vez de virarem navegacao`() {
-        var pedida: UpdateRecovery? = null
+        var requested: UpdateRecovery? = null
         renderShell(
             UpdateState.Failed("sem permissão", canRetry = true, recovery = UpdateRecovery.ALLOW_UNKNOWN_SOURCES),
-            onUpdateRecovery = { pedida = it },
+            onUpdateRecovery = { requested = it },
         )
 
         composeRule.onNodeWithText("Allow").performClick()
 
-        assertEquals(UpdateRecovery.ALLOW_UNKNOWN_SOURCES, pedida)
+        assertEquals(UpdateRecovery.ALLOW_UNKNOWN_SOURCES, requested)
     }
 }

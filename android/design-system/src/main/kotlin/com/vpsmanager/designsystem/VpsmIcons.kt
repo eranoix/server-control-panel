@@ -44,7 +44,7 @@ object VpsmIcons {
     // place where the eye looks for the difference.
 
     /** Memory chip — RAM. */
-    val Memoria: ImageVector by lazy {
+    val Memory: ImageVector by lazy {
         materialVector(
             name = "Memoria",
             pathData = "M15,9H9v6h6V9z M13,13h-2v-2h2V13z M21,11V9h-2V7c0-1.1-0.9-2-2-2h-2V3h-2v2h-2V3H9v2H7" +
@@ -54,7 +54,7 @@ object VpsmIcons {
     }
 
     /** Discos empilhados — armazenamento. */
-    val Disco: ImageVector by lazy {
+    val Disk: ImageVector by lazy {
         materialVector(
             name = "Disco",
             pathData = "M2,20h20v-4H2V20z M4,17h2v2H4V17z M2,4v4h20V4H2z M6,7H4V5h2V7z M2,14h20v-4H2V14z " +
@@ -63,7 +63,7 @@ object VpsmIcons {
     }
 
     /** A speedometer needle — CPU load. */
-    val Velocimetro: ImageVector by lazy {
+    val Speedometer: ImageVector by lazy {
         materialVector(
             name = "Velocimetro",
             pathData = "M20.38,8.57l-1.23,1.85a8,8,0,0,1-0.22,7.58H5.07A8,8,0,0,1,15.58,6.85l1.85-1.23A10,10,0,0,0," +
@@ -73,7 +73,7 @@ object VpsmIcons {
     }
 
     /** Layers — containers, images, volumes: Docker's stacked things. */
-    val Camadas: ImageVector by lazy {
+    val Layers: ImageVector by lazy {
         materialVector(
             name = "Camadas",
             pathData = "M11.99,18.54l-7.37-5.73L3,14.07l9,7l9-7l-1.63-1.27L11.99,18.54z " +
@@ -82,7 +82,7 @@ object VpsmIcons {
     }
 
     /** Two arrows swapping sides — swap. */
-    val Troca: ImageVector by lazy {
+    val Swap: ImageVector by lazy {
         materialVector(
             name = "Troca",
             pathData = "M6.99,11L3,15l3.99,4v-3H14v-2H6.99V11z M21,9l-3.99-4v3H10v2h7.01v3L21,9z",
@@ -90,7 +90,7 @@ object VpsmIcons {
     }
 
     /** A stopwatch — how long the machine has been up. */
-    val Cronometro: ImageVector by lazy {
+    val Stopwatch: ImageVector by lazy {
         materialVector(
             name = "Cronometro",
             pathData = "M15,1H9v2h6V1z M11,14h2V8h-2V14z M19.03,7.39l1.42-1.42c-0.43-0.51-0.9-0.99-1.41-1.41" +
@@ -100,7 +100,7 @@ object VpsmIcons {
     }
 
     /** A monitor heart — the subsystems' health. */
-    val Saude: ImageVector by lazy {
+    val Health: ImageVector by lazy {
         materialVector(
             name = "Saude",
             pathData = "M13.5,8c-1.11,0-2.08,0.6-2.6,1.5h-0.79C9.58,8.6,8.61,8,7.5,8C5.56,8,4,9.56,4,11.5" +
@@ -112,7 +112,7 @@ object VpsmIcons {
     }
 
     /** A rocket — a deployment. */
-    val Entrega: ImageVector by lazy {
+    val Delivery: ImageVector by lazy {
         materialVector(
             name = "Entrega",
             pathData = "M9.19,6.35c-2.04,2.29-3.44,5.58-3.57,5.89L2,10.69l4.05-4.05c0.47-0.47,1.15-0.68,1.81-0.55" +
@@ -183,7 +183,7 @@ object VpsmIcons {
     // question. Drawing the missing ones costs bytes, not megabytes.
 
     /** A closed box — a container, distinct from the IMAGES it comes from. */
-    val Caixa: ImageVector by lazy {
+    val Box: ImageVector by lazy {
         materialVector(
             name = "Caixa",
             pathData = "M12,2L4,6v12l8,4l8,-4V6L12,2z M12,4.2L17.5,7L12,9.8L6.5,7L12,4.2z M6,8.6l5,2.5v7.3" +
@@ -192,7 +192,7 @@ object VpsmIcons {
     }
 
     /** Shield — perimeter protection (firewall), distinct from a secret. */
-    val Escudo: ImageVector by lazy {
+    val Shield: ImageVector by lazy {
         materialVector(
             name = "Escudo",
             pathData = "M12,1L3,5v6c0,5.55,3.84,10.74,9,12c5.16,-1.26,9,-6.45,9,-12V5L12,1z M12,11.99h7" +
@@ -201,7 +201,7 @@ object VpsmIcons {
     }
 
     /** A key — a stored secret, distinct from the shield that blocks. */
-    val Chave: ImageVector by lazy {
+    val Key: ImageVector by lazy {
         materialVector(
             name = "Chave",
             pathData = "M21,10h-8.35C11.83,7.67,9.61,6,7,6c-3.31,0,-6,2.69,-6,6s2.69,6,6,6c2.61,0,4.83," +
@@ -211,7 +211,7 @@ object VpsmIcons {
     }
 
     /** A globe — a name that resolves on the network (DNS). */
-    val Globo: ImageVector by lazy {
+    val Globe: ImageVector by lazy {
         materialVector(
             name = "Globo",
             pathData = "M12,2C6.48,2,2,6.48,2,12s4.48,10,10,10s10,-4.48,10,-10S17.52,2,12,2z M11,19.93" +
@@ -222,7 +222,7 @@ object VpsmIcons {
     }
 
     /** Rising bars — a volume measured over time (network usage). */
-    val Grafico: ImageVector by lazy {
+    val Chart: ImageVector by lazy {
         materialVector(
             name = "Grafico",
             pathData = "M5,9.2h3V19H5V9.2z M10.6,5h2.8v14h-2.8V5z M16.2,13H19v6h-2.8V13z",
@@ -230,7 +230,7 @@ object VpsmIcons {
     }
 
     /** A phone — a paired device, distinct from a person's ACCOUNT. */
-    val Celular: ImageVector by lazy {
+    val Phone: ImageVector by lazy {
         materialVector(
             name = "Celular",
             pathData = "M17,1.01L7,1c-1.1,0,-2,0.9,-2,2v18c0,1.1,0.9,2,2,2h10c1.1,0,2,-0.9,2,-2V3" +
@@ -249,7 +249,7 @@ object VpsmIcons {
     }
 
     /** A socket — a listening port, something you connect to. */
-    val Tomada: ImageVector by lazy {
+    val Plug: ImageVector by lazy {
         materialVector(
             name = "Tomada",
             pathData = "M16,7V3h-2v4h-4V3H8v4H8c-1.1,0,-2,0.9,-2,2v5.5L9.5,18v3h5v-3L18,14.5V9C18,7.9,17.1,7,16,7z" +
@@ -258,7 +258,7 @@ object VpsmIcons {
     }
 
     /** A monitor with a cursor — an ACTIVE session, not the account that opened it. */
-    val SessaoAtiva: ImageVector by lazy {
+    val ActiveSession: ImageVector by lazy {
         materialVector(
             name = "SessaoAtiva",
             pathData = "M20,3H4C2.9,3,2,3.9,2,5v11c0,1.1,0.9,2,2,2h5v2h6v-2h5c1.1,0,2,-0.9,2,-2V5" +
@@ -267,7 +267,7 @@ object VpsmIcons {
     }
 
     /** A paper clip — attach a file. */
-    val Clipe: ImageVector by lazy {
+    val Clip: ImageVector by lazy {
         materialVector(
             name = "Clipe",
             pathData = "M16.5,6v11.5c0,2.21,-1.79,4,-4,4s-4,-1.79,-4,-4V5c0,-1.38,1.12,-2.5,2.5,-2.5" +
@@ -286,7 +286,7 @@ object VpsmIcons {
      * represents columns holding different amounts of work, which is the
      * information you look at a board for.
      */
-    val Quadro: ImageVector by lazy {
+    val Board: ImageVector by lazy {
         materialVector(
             name = "Quadro",
             pathData = "M4,4h4v13H4V4z M10,4h4v9h-4V4z M16,4h4v16h-4V4z M3,2C2.45,2,2,2.45,2,3v18" +

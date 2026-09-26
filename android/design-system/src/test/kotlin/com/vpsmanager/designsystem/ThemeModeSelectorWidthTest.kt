@@ -46,10 +46,10 @@ class ThemeModeSelectorWidthTest {
     val composeRule = createComposeRule()
 
     /** The width of a Material 3 drawer sheet. */
-    private val larguraDaGaveta = 360.dp
+    private val drawerWidth = 360.dp
 
     /** The same breathing room `AppDrawerSheet` applies to the selector. */
-    private val respiroLateral = 28.dp
+    private val sidePadding = 28.dp
 
     private fun SemanticsNodeInteraction.textLayout(): TextLayoutResult {
         val results = mutableListOf<TextLayoutResult>()
@@ -58,14 +58,14 @@ class ThemeModeSelectorWidthTest {
         return results.first()
     }
 
-    private fun renderNaGaveta() {
+    private fun renderInDrawer() {
         composeRule.setContent {
             VpsManagerTheme {
-                Box(modifier = Modifier.width(larguraDaGaveta)) {
+                Box(modifier = Modifier.width(drawerWidth)) {
                     ThemeModeSelector(
-                        selected = ThemeMode.SISTEMA,
+                        selected = ThemeMode.SYSTEM,
                         onSelect = {},
-                        modifier = Modifier.padding(horizontal = respiroLateral),
+                        modifier = Modifier.padding(horizontal = sidePadding),
                     )
                 }
             }
@@ -75,35 +75,35 @@ class ThemeModeSelectorWidthTest {
 
     @Test
     fun `cada rotulo cabe numa linha e sobra espaco no botao`() {
-        renderNaGaveta()
+        renderInDrawer()
 
-        ThemeMode.entries.forEach { modo ->
-            val layout = composeRule.onNodeWithText(modo.label).textLayout()
-            assertEquals("rótulo \"${modo.label}\" quebrou em mais de uma linha", 1, layout.lineCount)
+        ThemeMode.entries.forEach { mode ->
+            val layout = composeRule.onNodeWithText(mode.label).textLayout()
+            assertEquals("rótulo \"${mode.label}\" quebrou em mais de uma linha", 1, layout.lineCount)
 
             // The space the button actually offered the text, against the
             // space the text asked for. It is this ratio — and not the
             // absolute width, which Robolectric's fake font distorts — that
             // exposes a button too tight for its label.
-            val ofertado = layout.layoutInput.constraints.maxWidth
-            val pedido = layout.multiParagraph.maxIntrinsicWidth
+            val offered = layout.layoutInput.constraints.maxWidth
+            val request = layout.multiParagraph.maxIntrinsicWidth
             assertTrue(
-                "o botão de \"${modo.label}\" ofereceu $ofertado px para um texto de $pedido px",
-                ofertado >= pedido * 2,
+                "o botão de \"${mode.label}\" ofereceu $offered px para um texto de $request px",
+                offered >= request * 2,
             )
         }
     }
 
     @Test
     fun `os tres botoes dividem a largura por igual`() {
-        renderNaGaveta()
+        renderInDrawer()
 
         // A segment squeezed relative to the others is the defect that would
         // make the longest label ("Sistema") the only one clipped on the device.
-        val larguras = ThemeMode.entries.map {
+        val widths = ThemeMode.entries.map {
             composeRule.onNodeWithTag(themeOptionTag(it)).fetchSemanticsNode().size.width
         }
-        assertTrue("segmentos com larguras diferentes: $larguras", larguras.max() - larguras.min() <= 2)
-        assertTrue("segmentos estreitos demais: $larguras", larguras.min() > 0)
+        assertTrue("segmentos com larguras diferentes: $widths", widths.max() - widths.min() <= 2)
+        assertTrue("segmentos estreitos demais: $widths", widths.min() > 0)
     }
 }

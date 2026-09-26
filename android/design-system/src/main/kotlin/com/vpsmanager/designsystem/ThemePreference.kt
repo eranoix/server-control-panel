@@ -38,10 +38,10 @@ class ThemePreference(
 ) {
 
     constructor(context: Context) : this(
-        context.applicationContext.getSharedPreferences(NOME_ARQUIVO, Context.MODE_PRIVATE),
+        context.applicationContext.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE),
     )
 
-    private val _mode = MutableStateFlow(ThemeMode.porId(prefs.getString(CHAVE_MODO, null)))
+    private val _mode = MutableStateFlow(ThemeMode.byId(prefs.getString(KEY_MODE, null)))
 
     /** The current appearance. The value is already right before the first composition. */
     val mode: StateFlow<ThemeMode> = _mode.asStateFlow()
@@ -58,16 +58,16 @@ class ThemePreference(
      * survives the end of the process.
      */
     fun set(mode: ThemeMode) {
-        prefs.edit().putString(CHAVE_MODO, mode.id).apply()
+        prefs.edit().putString(KEY_MODE, mode.id).apply()
         _mode.value = mode
     }
 
     companion object {
-        private const val NOME_ARQUIVO = "vpsm_aparencia"
-        private const val CHAVE_MODO = "modo_tema"
+        private const val FILE_NAME = "vpsm_aparencia"
+        private const val KEY_MODE = "modo_tema"
 
         @Volatile
-        private var instancia: ThemePreference? = null
+        private var instance: ThemePreference? = null
 
         /**
          * The process-wide instance. It is a singleton because the preference
@@ -77,8 +77,8 @@ class ThemePreference(
          * would stay stale until the next boot.
          */
         fun get(context: Context): ThemePreference =
-            instancia ?: synchronized(this) {
-                instancia ?: ThemePreference(context).also { instancia = it }
+            instance ?: synchronized(this) {
+                instance ?: ThemePreference(context).also { instance = it }
             }
     }
 }

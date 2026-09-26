@@ -2,7 +2,7 @@ package com.vpsmanager.feature.terminal.input
 
 import android.view.KeyEvent
 import android.view.View
-import com.vpsmanager.feature.terminal.prefs.ModoDeDigitacao
+import com.vpsmanager.feature.terminal.prefs.TypingMode
 import com.vpsmanager.feature.terminal.selection.GridSelection
 import com.vpsmanager.feature.terminal.selection.GridSelectionHolder
 import com.vpsmanager.terminalengine.KeyByteEncoder
@@ -35,17 +35,17 @@ class TerminalInputConnectionTest {
         view = View(RuntimeEnvironment.getApplication())
     }
 
-    private var composicaoVista: String = ""
+    private var seenComposition: String = ""
 
     private fun newConnection(
         cursorMode: KeyByteEncoder.CursorMode = KeyByteEncoder.CursorMode.NORMAL,
-        modo: ModoDeDigitacao = ModoDeDigitacao.PADRAO,
+        mode: TypingMode = TypingMode.DEFAULT,
     ): TerminalInputConnection = TerminalInputConnection(
         view = view,
         sink = sink,
         cursorMode = cursorMode,
-        modo = { modo },
-        aoMudarComposicao = { texto -> composicaoVista = texto },
+        mode = { mode },
+        onCompositionChange = { text -> seenComposition = text },
         nowNanos = { fakeNowNanos },
     )
 
@@ -64,7 +64,7 @@ class TerminalInputConnectionTest {
 
     @Test
     fun `no modo TEXTO a composicao fica retida ate ser confirmada`() {
-        val connection = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val connection = newConnection(mode = TypingMode.TEXT)
         connection.setComposingText("ni", 1)
         connection.setComposingText("nih", 1)
         assertTrue("composing must not touch the sink", sink.isEmpty())
@@ -79,7 +79,7 @@ class TerminalInputConnectionTest {
         // keyboard SHOULD compose, but the ones that ignore the type (Samsung)
         // did — and then the screen sat still while the fingers moved, because
         // nothing reached the terminal until the word was finished.
-        val connection = newConnection(modo = ModoDeDigitacao.TERMINAL)
+        val connection = newConnection(mode = TypingMode.TERMINAL)
         connection.setComposingText("l", 1)
         assertEquals("6c", sink.hex())
         connection.setComposingText("ls", 1)
@@ -92,7 +92,7 @@ class TerminalInputConnectionTest {
 
     @Test
     fun `no modo TERMINAL encolher a composicao manda DEL`() {
-        val connection = newConnection(modo = ModoDeDigitacao.TERMINAL)
+        val connection = newConnection(mode = TypingMode.TERMINAL)
         connection.setComposingText("ls", 1)
         assertEquals("6c 73", sink.hex())
         connection.setComposingText("l", 1)
@@ -104,7 +104,7 @@ class TerminalInputConnectionTest {
         // Autocorrect acting in a mode that never asked for autocorrect: we
         // already echoed "teh" and the keyboard confirms "the". Without the
         // erase, the screen would read "tehthe".
-        val connection = newConnection(modo = ModoDeDigitacao.TERMINAL)
+        val connection = newConnection(mode = TypingMode.TERMINAL)
         connection.setComposingText("teh", 1)
         assertEquals("74 65 68", sink.hex())
 
@@ -118,7 +118,7 @@ class TerminalInputConnectionTest {
         // tapping away mid-word was enough to make it vanish without ever
         // reaching the terminal. `finishComposingText` means "take it as it
         // stands", not "throw it away" — Termux also flushes here.
-        val connection = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val connection = newConnection(mode = TypingMode.TEXT)
         connection.setComposingText("hel", 1)
         assertTrue("nada sai enquanto compoe", sink.isEmpty())
 
@@ -131,7 +131,7 @@ class TerminalInputConnectionTest {
     fun `uma tecla de comando entrega a composicao ANTES de si`() {
         // Enter with a word in flight: the word has to arrive before the
         // 0d, otherwise it goes out after the Enter meant to send it.
-        val connection = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val connection = newConnection(mode = TypingMode.TEXT)
         connection.setComposingText("ls", 1)
         connection.sendKeyEvent(keyDown(KeyEvent.KEYCODE_ENTER))
         assertEquals("6c 73 0d", sink.hex())
@@ -139,14 +139,14 @@ class TerminalInputConnectionTest {
 
     @Test
     fun `a faixa de composicao e avisada a cada mudanca e no fim`() {
-        val connection = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val connection = newConnection(mode = TypingMode.TEXT)
         connection.setComposingText("te", 1)
-        assertEquals("te", composicaoVista)
+        assertEquals("te", seenComposition)
         connection.setComposingText("tes", 1)
-        assertEquals("tes", composicaoVista)
+        assertEquals("tes", seenComposition)
 
         connection.commitText("teste", 1)
-        assertEquals("confirmada a palavra, a faixa some", "", composicaoVista)
+        assertEquals("confirmada a palavra, a faixa some", "", seenComposition)
     }
 
     @Test
@@ -174,7 +174,7 @@ class TerminalInputConnectionTest {
 
     @Test
     fun `deleteSurroundingText during composition shrinks the buffer locally with zero bytes`() {
-        val connection = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val connection = newConnection(mode = TypingMode.TEXT)
         connection.setComposingText("ab", 1)
         connection.deleteSurroundingText(1, 0)
         assertTrue("no bytes must reach the sink mid-composition", sink.isEmpty())
@@ -226,25 +226,25 @@ class TerminalInputConnectionTest {
         // the arrow key. Now the test asserts the guarantee directly: what
         // leaves here contains nothing from the terminal. The virtual-context
         // sentinels are fixed, known constants with no information inside.
-        for (modo in ModoDeDigitacao.entries) {
+        for (mode in TypingMode.entries) {
             sink.clear()
-            val connection = newConnection(modo = modo)
+            val connection = newConnection(mode = mode)
             connection.commitText("hello", 1) // went to the terminal, not to the IME
 
-            val exposto = connection.getTextBeforeCursor(10, 0).toString() +
+            val exposed = connection.getTextBeforeCursor(10, 0).toString() +
                 connection.getTextAfterCursor(10, 0).toString() +
                 (connection.getExtractedText(null, 0)?.text?.toString() ?: "")
 
             assertTrue(
-                "conteudo do terminal vazou para o IME em $modo: $exposto",
-                !exposto.contains("hello"),
+                "conteudo do terminal vazou para o IME em $mode: $exposed",
+                !exposed.contains("hello"),
             )
             // Nothing beyond the sentinels: with no composition in flight,
             // not a single letter is left in what the keyboard sees.
             assertEquals(
-                "so as sentinelas podiam estar ali em $modo",
+                "so as sentinelas podiam estar ali em $mode",
                 "",
-                exposto.filter { it.isLetterOrDigit() },
+                exposed.filter { it.isLetterOrDigit() },
             )
             assertNull("selecao e da grade, nao do IME", connection.getSelectedText(0))
         }
@@ -255,7 +255,7 @@ class TerminalInputConnectionTest {
         // The root cause of the wrong corrections: the app declared a text
         // field and returned "" here, so autocorrect decided the replacement
         // against emptiness.
-        val connection = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val connection = newConnection(mode = TypingMode.TEXT)
         connection.setComposingText("comec", 1)
 
         // The composition is there, at the end of what precedes the cursor.
@@ -264,13 +264,13 @@ class TerminalInputConnectionTest {
         assertTrue(connection.getTextBeforeCursor(10, 0).toString().endsWith("comec"))
         assertEquals("ec", connection.getTextBeforeCursor(2, 0).toString())
 
-        val extraido = connection.getExtractedText(null, 0)!!
+        val extracted = connection.getExtractedText(null, 0)!!
         assertTrue(
             "a composicao tem que aparecer no texto extraido",
-            extraido.text.toString().contains("comec"),
+            extracted.text.toString().contains("comec"),
         )
         // The cursor sits AFTER the composition and BEFORE the right sentinel.
-        assertEquals("comec", extraido.text.toString().substring(1, extraido.selectionStart))
+        assertEquals("comec", extracted.text.toString().substring(1, extracted.selectionStart))
     }
 
     @Test
@@ -286,18 +286,18 @@ class TerminalInputConnectionTest {
         // Now: the keyboard receives no TEXT (neither from the terminal nor
         // from the composition — the composition here already went straight to
         // the terminal), but it does receive a cursor that is not at a boundary.
-        val connection = newConnection(modo = ModoDeDigitacao.TERMINAL)
+        val connection = newConnection(mode = TypingMode.TERMINAL)
         connection.setComposingText("comec", 1)
 
-        val antes = connection.getTextBeforeCursor(10, 0).toString()
-        assertEquals("nenhuma letra pode aparecer aqui", "", antes.filter { it.isLetterOrDigit() })
-        assertTrue("mas nao pode estar vazio — e o que engolia a seta", antes.isNotEmpty())
+        val before = connection.getTextBeforeCursor(10, 0).toString()
+        assertEquals("nenhuma letra pode aparecer aqui", "", before.filter { it.isLetterOrDigit() })
+        assertTrue("mas nao pode estar vazio — e o que engolia a seta", before.isNotEmpty())
         assertTrue(connection.getTextAfterCursor(10, 0).toString().isNotEmpty())
     }
 
     @Test
     fun `grid selection and ime composition state do not observe each other`() {
-        val connection = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val connection = newConnection(mode = TypingMode.TEXT)
         val selectionHolder = GridSelectionHolder()
 
         // Direction 1: composition in progress, then a selection is set.
@@ -336,14 +336,14 @@ class TerminalInputConnectionTest {
 
     @Test
     fun `nenhum dos lados do cursor fica vazio — e o que engolia a seta`() {
-        for (modo in ModoDeDigitacao.entries) {
-            val connection = newConnection(modo = modo)
+        for (mode in TypingMode.entries) {
+            val connection = newConnection(mode = mode)
             assertTrue(
-                "antes do cursor nao pode ser vazio em $modo",
+                "antes do cursor nao pode ser vazio em $mode",
                 connection.getTextBeforeCursor(20, 0)!!.isNotEmpty(),
             )
             assertTrue(
-                "depois do cursor nao pode ser vazio em $modo",
+                "depois do cursor nao pode ser vazio em $mode",
                 connection.getTextAfterCursor(20, 0)!!.isNotEmpty(),
             )
         }
@@ -354,9 +354,9 @@ class TerminalInputConnectionTest {
         // The guarantee that holds the whole solution up: the virtual context
         // exists only as IME metadata. If a Private Use character showed up in
         // the output, it would end up on the grid and in the PTY.
-        for (modo in ModoDeDigitacao.entries) {
+        for (mode in TypingMode.entries) {
             sink.clear()
-            val connection = newConnection(modo = modo)
+            val connection = newConnection(mode = mode)
             connection.getTextBeforeCursor(20, 0)
             connection.getTextAfterCursor(20, 0)
             connection.getExtractedText(null, 0)
@@ -365,30 +365,30 @@ class TerminalInputConnectionTest {
             connection.commitText("ls", 1)
             connection.deleteSurroundingText(1, 0)
 
-            val saida = String(sink.bytes(), Charsets.UTF_8)
+            val output = String(sink.bytes(), Charsets.UTF_8)
             assertTrue(
-                "sentinela esquerda vazou para o terminal em $modo: ${sink.hex()}",
-                !saida.contains('\uE000'),
+                "sentinela esquerda vazou para o terminal em $mode: ${sink.hex()}",
+                !output.contains('\uE000'),
             )
             assertTrue(
-                "sentinela direita vazou para o terminal em $modo: ${sink.hex()}",
-                !saida.contains('\uE001'),
+                "sentinela direita vazou para o terminal em $mode: ${sink.hex()}",
+                !output.contains('\uE001'),
             )
         }
     }
 
     @Test
     fun `a palavra real continua legivel para o corretor, sem a sentinela colada`() {
-        val connection = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val connection = newConnection(mode = TypingMode.TEXT)
         connection.setComposingText("ola", 1)
-        val antes = connection.getTextBeforeCursor(20, 0).toString()
+        val before = connection.getTextBeforeCursor(20, 0).toString()
 
         // Autocorrect looks for the WORD. The sentinel is from the Private
         // Use Area — not a letter — so segmentation stops at it instead of
         // swallowing it.
-        assertTrue("a composicao real tem que estar ali: $antes", antes.endsWith("ola"))
-        val ultimaPalavra = antes.takeLastWhile { it.isLetter() }
-        assertEquals("ola", ultimaPalavra)
+        assertTrue("a composicao real tem que estar ali: $before", before.endsWith("ola"))
+        val lastWord = before.takeLastWhile { it.isLetter() }
+        assertEquals("ola", lastWord)
     }
 
     @Test
@@ -396,20 +396,20 @@ class TerminalInputConnectionTest {
         // An IME that got a cursor at the end here and a cursor in the middle
         // there would go back to deciding by boundary. The three answers have
         // to agree.
-        val connection = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val connection = newConnection(mode = TypingMode.TEXT)
         connection.setComposingText("ola", 1)
 
-        val extraido = connection.getExtractedText(null, 0)!!
-        val texto = extraido.text.toString()
-        assertTrue("tem que sobrar texto depois do cursor", extraido.selectionStart < texto.length)
-        assertTrue("tem que existir texto antes do cursor", extraido.selectionStart > 0)
-        assertEquals(extraido.selectionStart, extraido.selectionEnd)
-        assertEquals("ola", texto.substring(1, extraido.selectionStart))
+        val extracted = connection.getExtractedText(null, 0)!!
+        val text = extracted.text.toString()
+        assertTrue("tem que sobrar texto depois do cursor", extracted.selectionStart < text.length)
+        assertTrue("tem que existir texto antes do cursor", extracted.selectionStart > 0)
+        assertEquals(extracted.selectionStart, extracted.selectionEnd)
+        assertEquals("ola", text.substring(1, extracted.selectionStart))
     }
 
     @Test
     fun `o corte por n respeita o pedido do teclado`() {
-        val connection = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val connection = newConnection(mode = TypingMode.TEXT)
         connection.setComposingText("comando", 1)
         assertEquals(3, connection.getTextBeforeCursor(3, 0)!!.length)
         assertEquals("", connection.getTextBeforeCursor(0, 0)!!.toString())
@@ -421,7 +421,7 @@ class TerminalInputConnectionTest {
         // Autocorrect asks to delete the word and commits the new one. Had it
         // counted the sentinel in, it would delete one character too many —
         // and in a terminal that is a DEL nobody asked for.
-        val connection = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val connection = newConnection(mode = TypingMode.TEXT)
         connection.setComposingText("ola", 1)
         sink.clear()
         connection.deleteSurroundingText(3, 0) // exactly the word
@@ -431,7 +431,7 @@ class TerminalInputConnectionTest {
 
     @Test
     fun `um pedido de apagar maior que a composicao nao inventa DEL extra`() {
-        val connection = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val connection = newConnection(mode = TypingMode.TEXT)
         connection.setComposingText("ola", 1)
         sink.clear()
         connection.deleteSurroundingText(99, 0)
@@ -442,7 +442,7 @@ class TerminalInputConnectionTest {
     fun `lote de edicao e aceito e respeita o aninhamento`() {
         // Answering `false` means "I cannot do batches", and an IME that
         // hears that may give up on the word replacement.
-        val connection = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val connection = newConnection(mode = TypingMode.TEXT)
         assertTrue(connection.beginBatchEdit())
         assertTrue("lote interno ainda aberto", connection.beginBatchEdit())
         assertTrue("ainda resta um lote", connection.endBatchEdit())
@@ -454,12 +454,12 @@ class TerminalInputConnectionTest {
     fun `capitalizacao automatica responde no modo TEXTO e cala no TERMINAL`() {
         // TerminalInputView declares CAP_SENTENCES in TEXT mode; without this
         // the promise was never kept.
-        val texto = newConnection(modo = ModoDeDigitacao.TEXTO)
+        val text = newConnection(mode = TypingMode.TEXT)
         assertTrue(
             "inicio de frase tem que pedir maiuscula",
-            texto.getCursorCapsMode(android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES) != 0,
+            text.getCursorCapsMode(android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES) != 0,
         )
-        val terminal = newConnection(modo = ModoDeDigitacao.TERMINAL)
+        val terminal = newConnection(mode = TypingMode.TERMINAL)
         assertEquals(
             0,
             terminal.getCursorCapsMode(android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES),

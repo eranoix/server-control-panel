@@ -211,10 +211,10 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
      * @param linhas how many lines to move; **negative goes up** (into the
      *   past), positive goes down, exactly like a mouse wheel delta.
      */
-    fun scrollViewport(linhas: Int) {
+    fun scrollViewport(lines: Int) {
         checkOpen()
-        if (linhas == 0) return
-        nativeScrollViewport(handle, TAG_SCROLL_DELTA, linhas.toLong())
+        if (lines == 0) return
+        nativeScrollViewport(handle, TAG_SCROLL_DELTA, lines.toLong())
     }
 
     /**
@@ -244,7 +244,7 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
      * conversation. On a reconnect the history is legitimate — see
      * `TerminalViewModel`.
      */
-    fun limparHistorico() {
+    fun clearHistory() {
         checkOpen()
         nativeWrite(handle, ERASE_SAVED_LINES)
     }
@@ -265,9 +265,9 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
      * Jumps to an absolute history row — the same row space as
      * [TerminalScrollState.offset], so a position read back needs no conversion.
      */
-    fun scrollToRow(linha: Long) {
+    fun scrollToRow(line: Long) {
         checkOpen()
-        nativeScrollViewport(handle, TAG_SCROLL_ROW, if (linha < 0) 0L else linha)
+        nativeScrollViewport(handle, TAG_SCROLL_ROW, if (line < 0) 0L else line)
     }
 
     /**
@@ -281,13 +281,13 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
      */
     fun scrollState(): TerminalScrollState {
         checkOpen()
-        val v = nativeScrollState(handle) ?: return TerminalScrollState.NO_FIM
-        if (v.size < 4) return TerminalScrollState.NO_FIM
+        val v = nativeScrollState(handle) ?: return TerminalScrollState.AT_END
+        if (v.size < 4) return TerminalScrollState.AT_END
         return TerminalScrollState(
             total = v[0],
             offset = v[1],
-            visiveis = v[2],
-            noFim = v[3] != 0L,
+            visible = v[2],
+            atEnd = v[3] != 0L,
         )
     }
 
@@ -389,7 +389,7 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
          * `ESC[3J` — xterm's *erase saved lines*: clears the scrollback and
          * leaves the live screen intact. Written through the parser itself
          * rather than a new native entry point, because it is the standard
-         * sequence libghostty-vt already implements. See [limparHistorico].
+         * sequence libghostty-vt already implements. See [clearHistory].
          */
         private val ERASE_SAVED_LINES = byteArrayOf(0x1b, '['.code.toByte(), '3'.code.toByte(), 'J'.code.toByte())
 
@@ -400,9 +400,9 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
          * anyone who wants more passes another value — see
          * `TerminalScrollbackPreference`.
          */
-        const val SCROLLBACK_PADRAO = 10_000
+        const val DEFAULT_SCROLLBACK = 10_000
 
-        fun create(cols: Int, rows: Int, scrollback: Int = SCROLLBACK_PADRAO): TerminalEngine =
+        fun create(cols: Int, rows: Int, scrollback: Int = DEFAULT_SCROLLBACK): TerminalEngine =
             TerminalEngine(cols, rows, scrollback)
 
         @JvmStatic private external fun nativeCreate(cols: Int, rows: Int, scrollback: Int): Long

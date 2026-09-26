@@ -60,7 +60,7 @@ fun TerminalCanvas(
     cellHeightPx: Float,
     glyphAtlas: GlyphAtlas,
     modifier: Modifier = Modifier,
-    palette: TerminalPalette = PaletaTerminalEscura,
+    palette: TerminalPalette = DarkTerminalPalette,
     defaultFg: Int = palette.defaultFg,
     defaultBg: Int = palette.defaultBg,
 ) {
@@ -101,7 +101,7 @@ fun TerminalCanvas(
             )
         }
 
-        desenharCursor(snapshot, blinkOn, cellWidthPx, cellHeightPx, palette)
+        drawCursor(snapshot, blinkOn, cellWidthPx, cellHeightPx, palette)
     }
 }
 
@@ -111,7 +111,7 @@ fun TerminalCanvas(
  * `if` inside the `translate` would leave the draw lambda four levels deep in
  * indentation, with the `cursorWideTail` rule unreadable in the middle of it.
  */
-private fun DrawScope.desenharCursor(
+private fun DrawScope.drawCursor(
     snapshot: CellSnapshot,
     blinkOn: Boolean,
     cellWidthPx: Float,

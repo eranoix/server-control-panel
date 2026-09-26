@@ -27,13 +27,13 @@ object UpdateDiagnostics {
     private const val MAX_ENTRIES = 10
     private const val SEPARATOR = "\n---\n"
 
-    /** Adds [entrada] at the TOP. The oldest ones fall off the end. */
-    fun record(context: Context, entrada: String) {
+    /** Adds [entry] at the TOP. The oldest ones fall off the end. */
+    fun record(context: Context, entry: String) {
         val file = file(context)
         try {
-            val anteriores = if (file.isFile) file.readText().split(SEPARATOR).filter { it.isNotBlank() } else emptyList()
-            val todas = (listOf(entrada.trim()) + anteriores).take(MAX_ENTRIES)
-            file.writeText(todas.joinToString(SEPARATOR))
+            val previous = if (file.isFile) file.readText().split(SEPARATOR).filter { it.isNotBlank() } else emptyList()
+            val all = (listOf(entry.trim()) + previous).take(MAX_ENTRIES)
+            file.writeText(all.joinToString(SEPARATOR))
         } catch (e: IOException) {
             // Diagnostics that crash the app are worse than no diagnostics.
         } catch (e: SecurityException) {

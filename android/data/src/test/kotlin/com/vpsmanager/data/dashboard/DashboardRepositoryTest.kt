@@ -24,10 +24,10 @@ class DashboardRepositoryTest {
             session = FakeSession(SessionResult.Success("teste", "test@northwind.example", isAdmin = true)),
             rows = FakeRows(
                 mapOf(
-                    "/api/mobile/v1/deploy/apps" to linhas(
+                    "/api/mobile/v1/deploy/apps" to lines(
                         """{"id":"hello","name":"hello","last_status":"rolled_back","updated":"2026-07-19 13:17 UTC"}""",
                     ),
-                    "/api/mobile/v1/scheduler/jobs" to linhas(
+                    "/api/mobile/v1/scheduler/jobs" to lines(
                         """{"id":"sc_1","name":"Backup","last_status":"ok","last_fire":"07:00","next_fire":"07:10","enabled":true}""",
                     ),
                 ),
@@ -96,7 +96,7 @@ class DashboardRepositoryTest {
             session = FakeSession(SessionResult.Empty),
             rows = FakeRows(
                 mapOf(
-                    "/api/mobile/v1/deploy/apps" to linhas("""{"id":"hello","last_status":"ok","updated":"x"}"""),
+                    "/api/mobile/v1/deploy/apps" to lines("""{"id":"hello","last_status":"ok","updated":"x"}"""),
                 ),
             ),
         )
@@ -106,7 +106,7 @@ class DashboardRepositoryTest {
     }
 }
 
-private fun linhas(vararg json: String): List<JsonObject> =
+private fun lines(vararg json: String): List<JsonObject> =
     json.map { Json.parseToJsonElement(it).asRow() }
 
 private class FakeOps(private val result: OpsStatusResult) : OpsSource {
@@ -119,6 +119,6 @@ private class FakeSession(private val result: SessionResult) : SessionSource {
     override suspend fun getMe() = result
 }
 
-private class FakeRows(private val porEndpoint: Map<String, List<JsonObject>>) : RowsSource {
-    override suspend fun fetch(endpoint: String): List<JsonObject>? = porEndpoint[endpoint]
+private class FakeRows(private val byEndpoint: Map<String, List<JsonObject>>) : RowsSource {
+    override suspend fun fetch(endpoint: String): List<JsonObject>? = byEndpoint[endpoint]
 }

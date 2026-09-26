@@ -32,7 +32,7 @@ private const val HTTP_TOO_MANY_REQUESTS = 429
  * send a code?), so a server change degrades to the old behaviour instead of
  * breaking.
  */
-private const val SEGUNDO_FATOR_RECUSADO = "2fa"
+private const val SECOND_FACTOR_REJECTED = "2fa"
 
 /** Resultado de `POST /auth/login` — ver `internal/mobilebff/auth_login.go`. */
 sealed interface PasswordLoginResult {
@@ -114,10 +114,10 @@ class PasswordLoginRepository(
                 else -> PasswordLoginResult.Failed("Unexpected response from the server.")
             }
         } catch (e: ClientException) {
-            traduzFalhaDeLogin(
+            translateLoginFailure(
                 statusCode = e.statusCode,
-                corpoDoErro = (e.response as? ClientError<*>)?.body as? String,
-                enviouCodigo = !totpCode.isNullOrBlank(),
+                errorBody = (e.response as? ClientError<*>)?.body as? String,
+                sentCode = !totpCode.isNullOrBlank(),
             )
         } catch (e: ServerException) {
             PasswordLoginResult.Failed("The server is unavailable right now.")
@@ -138,12 +138,12 @@ class PasswordLoginRepository(
  * and a wrong second factor (stay on the code). Separating them:
  *
  * - Primary criterion: the server's own `detail`, which already distinguishes
- *   the two (see [SEGUNDO_FATOR_RECUSADO]). It is the exact criterion — it even
+ *   the two (see [SECOND_FACTOR_REJECTED]). It is the exact criterion — it even
  *   catches the case where the operator edits the password at the code step and
  *   starts getting the PASSWORD wrong: the server then answers "invalid
  *   credentials" and the screen correctly goes back to talking about the
  *   password.
- * - Fallback criterion: [enviouCodigo]. If the body does not arrive (a proxy
+ * - Fallback criterion: [sentCode]. If the body does not arrive (a proxy
  *   that swallows it, a generator that changes shape), it still holds that the
  *   server only asks for a code AFTER accepting the password — so a 401 on a
  *   call that carried a code is, overwhelmingly often, the code.
@@ -152,12 +152,12 @@ class PasswordLoginRepository(
  * without the generated client: this is where the decision lives, not in the
  * `catch`.
  */
-internal fun traduzFalhaDeLogin(statusCode: Int, corpoDoErro: String?, enviouCodigo: Boolean): PasswordLoginResult {
-    val foiOSegundoFator = when {
-        corpoDoErro.isNullOrBlank() -> enviouCodigo
-        else -> corpoDoErro.contains(SEGUNDO_FATOR_RECUSADO, ignoreCase = true)
+internal fun translateLoginFailure(statusCode: Int, errorBody: String?, sentCode: Boolean): PasswordLoginResult {
+    val wasSecondFactor = when {
+        errorBody.isNullOrBlank() -> sentCode
+        else -> errorBody.contains(SECOND_FACTOR_REJECTED, ignoreCase = true)
     }
-    if (statusCode == HTTP_UNAUTHORIZED && foiOSegundoFator) {
+    if (statusCode == HTTP_UNAUTHORIZED && wasSecondFactor) {
         return PasswordLoginResult.InvalidCode(
             "Invalid or expired code. The authenticator app code changes every 30 seconds — " +
                 "get a new one and type it in full. A backup code also works.",

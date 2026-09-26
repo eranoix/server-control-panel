@@ -11,14 +11,14 @@ import com.vpsmanager.terminalengine.TerminalModes
  * delta and the emulator's `scrollViewport`: **negative is towards the past**
  * (upwards), positive is towards the present (downwards).
  */
-sealed interface AcaoDeRolagem {
+sealed interface ScrollAction {
 
     /**
      * Scroll the emulator's **local history**. This is the shell-prompt case:
      * the scrollback lives here, nobody on the other side needs telling, and
      * the response is immediate because it does not depend on the network.
      */
-    data class Viewport(val linhas: Int) : AcaoDeRolagem
+    data class Viewport(val lines: Int) : ScrollAction
 
     /**
      * Send a **mouse wheel** to the remote program. Once it has asked for
@@ -27,7 +27,7 @@ sealed interface AcaoDeRolagem {
      * history of ours to navigate — and it EXPECTS the wheel in order to
      * scroll its own content.
      */
-    data class Roda(val linhas: Int) : AcaoDeRolagem
+    data class Wheel(val lines: Int) : ScrollAction
 
     /**
      * Send **arrow keys**, up or down. This is xterm's `alternateScroll`
@@ -38,7 +38,7 @@ sealed interface AcaoDeRolagem {
      * finger. Without it the gesture would be inert in precisely the programs
      * one reads the most in.
      */
-    data class Setas(val linhas: Int) : AcaoDeRolagem
+    data class Arrows(val lines: Int) : ScrollAction
 
     /**
      * Do nothing — and that is a legitimate answer, not a failure.
@@ -47,11 +47,11 @@ sealed interface AcaoDeRolagem {
      * navigate, and the program has declared it does not want the wheel.
      * Faking movement there would be lying to the owner of the device.
      */
-    data object Nada : AcaoDeRolagem
+    data object Nothing : ScrollAction
 }
 
 /**
- * Decides where a drag of [linhas] lines goes, from the emulator's REAL state.
+ * Decides where a drag of [lines] lines goes, from the emulator's REAL state.
  * No decision comes from a switch in the app — the same discipline the mouse
  * and pasting already follow.
  *
@@ -63,29 +63,29 @@ sealed interface AcaoDeRolagem {
  * 3. **Otherwise**, this is the normal screen with scrollback: scroll the
  *    local viewport.
  */
-fun decidirRolagem(modes: TerminalModes, linhas: Int): AcaoDeRolagem {
-    if (linhas == 0) return AcaoDeRolagem.Nada
+fun decideScroll(modes: TerminalModes, lines: Int): ScrollAction {
+    if (lines == 0) return ScrollAction.Nothing
 
-    if (modes.mouseTracking) return AcaoDeRolagem.Roda(linhas)
+    if (modes.mouseTracking) return ScrollAction.Wheel(lines)
 
     if (modes.altScreen) {
-        return if (modes.altScroll) AcaoDeRolagem.Setas(linhas) else AcaoDeRolagem.Nada
+        return if (modes.altScroll) ScrollAction.Arrows(lines) else ScrollAction.Nothing
     }
 
-    return AcaoDeRolagem.Viewport(linhas)
+    return ScrollAction.Viewport(lines)
 }
 
-/** The bytes of an arrow key, repeated [linhas] times, respecting DECCKM. */
-fun bytesDeSeta(linhas: Int, cursorKeysApplication: Boolean): ByteArray {
-    if (linhas == 0) return ByteArray(0)
+/** The bytes of an arrow key, repeated [lines] times, respecting DECCKM. */
+fun arrowBytes(lines: Int, cursorKeysApplication: Boolean): ByteArray {
+    if (lines == 0) return ByteArray(0)
     // ESC [ A / ESC [ B in normal mode; ESC O A / ESC O B in application
     // mode. Sending the wrong form does not make the program scroll — it makes
     // the program receive rubbish.
     val introducer = if (cursorKeysApplication) "\u001bO" else "\u001b["
-    val letra = if (linhas < 0) "A" else "B"
-    val uma = (introducer + letra).toByteArray(Charsets.US_ASCII)
-    val vezes = kotlin.math.abs(linhas)
-    val out = ByteArray(uma.size * vezes)
-    for (i in 0 until vezes) uma.copyInto(out, i * uma.size)
+    val letter = if (lines < 0) "A" else "B"
+    val one = (introducer + letter).toByteArray(Charsets.US_ASCII)
+    val times = kotlin.math.abs(lines)
+    val out = ByteArray(one.size * times)
+    for (i in 0 until times) one.copyInto(out, i * one.size)
     return out
 }

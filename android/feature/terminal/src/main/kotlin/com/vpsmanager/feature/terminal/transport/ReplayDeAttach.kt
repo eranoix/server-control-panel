@@ -44,7 +44,7 @@ package com.vpsmanager.feature.terminal.transport
  *
  * What the operator wants to see — the current conversation, at the width of
  * their own screen — comes from the app's own primer
- * (`TerminalViewModel.iniciarPrimer`), which fetches the history and replays it
+ * (`TerminalViewModel.startPrimer`), which fetches the history and replays it
  * into libghostty-vt. The SERVER's replay would only precede that with an old,
  * crooked copy.
  *
@@ -57,7 +57,7 @@ package com.vpsmanager.feature.terminal.transport
  * scrolled out is finished — the program never touches it again — so it becomes
  * append-only text, with no cursor to saturate and no stale width to drag along.
  *
- * That is why `iniciarPrimer` asks `/terminal/historico` FIRST and only falls
+ * That is why `startPrimer` asks `/terminal/historico` FIRST and only falls
  * back to `/terminal/log-bruto` when the session still has no history file.
  * Measured: 4096 KiB of raw log yield 360 KiB of history — 11.4x more
  * conversation per byte on the same network budget.
@@ -94,18 +94,18 @@ package com.vpsmanager.feature.terminal.transport
  *   Claude Code    : 33, 52, 125, 396, ... 2448  (min 33)
  * ```
  *
- * The gap between 11 and 33 is empty, and [LIMITE_REPINTURA] = 20 sits in the
+ * The gap between 11 and 33 is empty, and [REPAINT_THRESHOLD] = 20 sits in the
  * middle of it. Erring towards "it is a shell" is the cheap side: at worst the
  * operator sees the history the way they always have.
  */
-object ReplayDeAttach {
+object AttachReplay {
 
     /**
      * How many two-or-more-line CUUs it takes to call a stream "redrawn". See
      * the calibration in the class comment: it sits in the measured gap
      * between the worst shell (11) and the best TUI (33).
      */
-    const val LIMITE_REPINTURA: Int = 20
+    const val REPAINT_THRESHOLD: Int = 20
 
     /**
      * Was this stream produced by a differential renderer (Ink, `less`,
@@ -114,7 +114,7 @@ object ReplayDeAttach {
      * Scans the bytes once, without allocating: the block can be up to 128 KiB
      * and this runs on the WebSocket thread, at the moment of the attach.
      */
-    fun ehRepinturaDiferencial(bytes: ByteArray): Boolean = contarCuuDeBloco(bytes) >= LIMITE_REPINTURA
+    fun isDiffRepaint(bytes: ByteArray): Boolean = countBlockCuu(bytes) >= REPAINT_THRESHOLD
 
     /**
      * How many times the stream moves the cursor up TWO or more lines —
@@ -124,27 +124,27 @@ object ReplayDeAttach {
      * not count. An empty parameter or `0` also mean 1 (ECMA-48: an omitted or
      * zero parameter takes the command's default value, which here is 1).
      */
-    internal fun contarCuuDeBloco(bytes: ByteArray): Int {
+    internal fun countBlockCuu(bytes: ByteArray): Int {
         var total = 0
         var i = 0
-        val fim = bytes.size
-        while (i < fim - 1) {
-            if (bytes[i] == ESC && bytes[i + 1] == COLCHETE) {
+        val end = bytes.size
+        while (i < end - 1) {
+            if (bytes[i] == ESC && bytes[i + 1] == BRACKET) {
                 var j = i + 2
-                var valor = 0
-                var digitos = 0
-                while (j < fim && bytes[j] >= ZERO && bytes[j] <= NOVE) {
+                var value = 0
+                var digits = 0
+                while (j < end && bytes[j] >= ZERO && bytes[j] <= NINE) {
                     // Saturates instead of overflowing: anything above 2 has
                     // already decided the test, and an absurdly long parameter
                     // in a corrupted stream must not become an arithmetic
                     // overflow.
-                    if (valor < 1000) valor = valor * 10 + (bytes[j] - ZERO)
-                    digitos += 1
+                    if (value < 1000) value = value * 10 + (bytes[j] - ZERO)
+                    digits += 1
                     j += 1
                 }
-                if (j < fim && bytes[j] == CUU_FINAL) {
-                    val linhas = if (digitos == 0 || valor == 0) 1 else valor
-                    if (linhas >= 2) total += 1
+                if (j < end && bytes[j] == CUU_FINAL) {
+                    val lines = if (digits == 0 || value == 0) 1 else value
+                    if (lines >= 2) total += 1
                     i = j + 1
                     continue
                 }
@@ -155,8 +155,8 @@ object ReplayDeAttach {
     }
 
     private const val ESC: Byte = 0x1B
-    private const val COLCHETE: Byte = '['.code.toByte()
+    private const val BRACKET: Byte = '['.code.toByte()
     private const val ZERO: Byte = '0'.code.toByte()
-    private const val NOVE: Byte = '9'.code.toByte()
+    private const val NINE: Byte = '9'.code.toByte()
     private const val CUU_FINAL: Byte = 'A'.code.toByte()
 }

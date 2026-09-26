@@ -32,16 +32,16 @@ import androidx.compose.ui.unit.dp
 import com.vpsmanager.data.terminal.TerminalSession
 
 /** Test tag for the sessions sheet. */
-const val SESSOES_SHEET_TAG = "sessoes-sheet"
+const val SESSIONS_SHEET_TAG = "sessoes-sheet"
 
 /** Test tag for the sheet's filter field. */
-const val SESSOES_FILTRO_TAG = "sessoes-filtro"
+const val SESSIONS_FILTER_TAG = "sessoes-filtro"
 
 /** Test tag for the new-session name field. */
-const val SESSOES_NOVA_TAG = "sessoes-nova"
+const val SESSIONS_NEW_TAG = "sessoes-nova"
 
 /** Prefix of the test tag on each session row. */
-fun sessaoTag(nome: String): String = "sessao-$nome"
+fun sessionTag(name: String): String = "sessao-$name"
 
 /**
  * The session-switching sheet, opened by the "Session" button in the top bar.
@@ -109,25 +109,25 @@ fun sessaoTag(nome: String): String = "sessao-$nome"
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionSwitcherSheet(
-    sessaoAtual: String,
-    estado: SessionListUiState,
-    onTrocarSessao: (String) -> Unit,
-    onCriarSessao: (String) -> Unit,
-    onDesanexar: () -> Unit,
+    currentSession: String,
+    state: SessionListUiState,
+    onSwitchSession: (String) -> Unit,
+    onCreateSession: (String) -> Unit,
+    onDetach: () -> Unit,
     onDismissRequest: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         sheetState = sheetState,
-        modifier = Modifier.testTag(SESSOES_SHEET_TAG),
+        modifier = Modifier.testTag(SESSIONS_SHEET_TAG),
     ) {
         SessionSwitcherContent(
-            sessaoAtual = sessaoAtual,
-            estado = estado,
-            onTrocarSessao = onTrocarSessao,
-            onCriarSessao = onCriarSessao,
-            onDesanexar = onDesanexar,
+            currentSession = currentSession,
+            state = state,
+            onSwitchSession = onSwitchSession,
+            onCreateSession = onCreateSession,
+            onDetach = onDetach,
         )
     }
 }
@@ -140,14 +140,14 @@ fun SessionSwitcherSheet(
  */
 @Composable
 internal fun SessionSwitcherContent(
-    sessaoAtual: String,
-    estado: SessionListUiState,
-    onTrocarSessao: (String) -> Unit,
-    onCriarSessao: (String) -> Unit,
-    onDesanexar: () -> Unit,
+    currentSession: String,
+    state: SessionListUiState,
+    onSwitchSession: (String) -> Unit,
+    onCreateSession: (String) -> Unit,
+    onDetach: () -> Unit,
 ) {
-    var filtro by remember { mutableStateOf("") }
-    var nomeNovo by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf("") }
+    var newName by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -158,11 +158,11 @@ internal fun SessionSwitcherContent(
     ) {
         Text(text = "Sessions", style = MaterialTheme.typography.titleMedium)
 
-        when (estado) {
+        when (state) {
             is SessionListUiState.Loading -> CircularProgressIndicator()
 
             is SessionListUiState.Error -> Text(
-                text = estado.message,
+                text = state.message,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
@@ -173,38 +173,38 @@ internal fun SessionSwitcherContent(
             )
 
             is SessionListUiState.Success -> {
-                val visiveis = estado.sessions.filter {
-                    filtro.isBlank() || it.name.contains(filtro, ignoreCase = true)
+                val visible = state.sessions.filter {
+                    filter.isBlank() || it.name.contains(filter, ignoreCase = true)
                 }
                 // The filter only appears once there is list enough to
                 // justify it: on a handful of sessions it is one more field
                 // between the thumb and the target.
-                if (estado.sessions.size > LIMITE_PARA_FILTRAR) {
+                if (state.sessions.size > FILTER_THRESHOLD) {
                     OutlinedTextField(
-                        value = filtro,
-                        onValueChange = { filtro = it },
+                        value = filter,
+                        onValueChange = { filter = it },
                         label = { Text(text = "Filter") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag(SESSOES_FILTRO_TAG),
+                        modifier = Modifier.fillMaxWidth().testTag(SESSIONS_FILTER_TAG),
                     )
                 }
                 // `heightIn` with a cap: the list scrolls INSIDE the sheet,
                 // and the create footer never leaves the screen — which is
                 // the whole property of a pinned footer.
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = ALTURA_MAXIMA_DA_LISTA),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = MAX_LIST_HEIGHT),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    items(visiveis, key = { it.name }) { sessao ->
-                        LinhaDeSessao(
-                            indice = estado.sessions.indexOf(sessao) + 1,
-                            sessao = sessao,
-                            atual = sessao.name == sessaoAtual,
-                            onClick = { onTrocarSessao(sessao.name) },
+                    items(visible, key = { it.name }) { session ->
+                        SessionRow(
+                            index = state.sessions.indexOf(session) + 1,
+                            session = session,
+                            current = session.name == currentSession,
+                            onClick = { onSwitchSession(session.name) },
                         )
                     }
                 }
-                if (visiveis.isEmpty()) {
+                if (visible.isEmpty()) {
                     Text(
                         text = "No session with that name.",
                         style = MaterialTheme.typography.bodySmall,
@@ -217,15 +217,15 @@ internal fun SessionSwitcherContent(
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
-                value = nomeNovo,
-                onValueChange = { nomeNovo = it },
+                value = newName,
+                onValueChange = { newName = it },
                 label = { Text(text = "New session") },
                 singleLine = true,
-                modifier = Modifier.weight(1f).testTag(SESSOES_NOVA_TAG),
+                modifier = Modifier.weight(1f).testTag(SESSIONS_NEW_TAG),
             )
             Button(
-                onClick = { onCriarSessao(nomeNovo.trim()) },
-                enabled = nomeNovo.isNotBlank(),
+                onClick = { onCreateSession(newName.trim()) },
+                enabled = newName.isNotBlank(),
                 modifier = Modifier.padding(start = 8.dp),
             ) { Text(text = "Create") }
         }
@@ -233,34 +233,34 @@ internal fun SessionSwitcherContent(
         // Detach says what the back arrow already does, spelled out in full:
         // the session stays alive on the server. It is the answer to the doubt
         // that makes someone never leave the screen.
-        OutlinedButton(onClick = onDesanexar, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = onDetach, modifier = Modifier.fillMaxWidth()) {
             Text(text = "Detach (the session keeps running on the server)")
         }
     }
 }
 
 @Composable
-private fun LinhaDeSessao(
-    indice: Int,
-    sessao: TerminalSession,
-    atual: Boolean,
+private fun SessionRow(
+    index: Int,
+    session: TerminalSession,
+    current: Boolean,
     onClick: () -> Unit,
 ) {
     TextButton(
         onClick = onClick,
-        enabled = !atual,
-        modifier = Modifier.fillMaxWidth().testTag(sessaoTag(sessao.name)),
+        enabled = !current,
+        modifier = Modifier.fillMaxWidth().testTag(sessionTag(session.name)),
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "[$indice] ${sessao.name}",
+                text = "[$index] ${session.name}",
                 style = MaterialTheme.typography.bodyLarge,
-                fontWeight = if (atual) FontWeight.Bold else FontWeight.Normal,
+                fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
             )
             Text(
                 text = when {
-                    atual -> "on this screen now"
-                    sessao.attached -> "open in another client"
+                    current -> "on this screen now"
+                    session.attached -> "open in another client"
                     else -> "not attached"
                 },
                 style = MaterialTheme.typography.bodySmall,
@@ -270,6 +270,6 @@ private fun LinhaDeSessao(
 }
 
 /** Above this the list stops being thumb-scrollable and gains a filter. */
-private const val LIMITE_PARA_FILTRAR = 8
+private const val FILTER_THRESHOLD = 8
 
-private val ALTURA_MAXIMA_DA_LISTA = 340.dp
+private val MAX_LIST_HEIGHT = 340.dp

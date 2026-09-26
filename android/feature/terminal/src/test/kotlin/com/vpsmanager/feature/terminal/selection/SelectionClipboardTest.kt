@@ -192,90 +192,90 @@ class SelectionClipboardTest {
     // stays and says so.
 
     @Test
-    fun pasteAction_areaDeTransferenciaVazia_avisaEmVezDeFicarEmSilencio() {
-        var avisos = 0
+    fun pasteAction_emptyClipboard_warnsInsteadOfStayingSilent() {
+        var notices = 0
         val action = PasteAction(
             clipboardRead = { "" },
             sendPaste = { fail("não pode mandar byte nenhum com a área vazia") },
-            aoFaltarConteudo = { avisos++ },
+            onContentMissing = { notices++ },
         )
 
         action.paste()
 
-        assertEquals("um aviso, exatamente", 1, avisos)
+        assertEquals("um aviso, exatamente", 1, notices)
     }
 
     @Test
-    fun pasteAction_areaDeTransferenciaAusente_avisaTambem() {
-        var avisos = 0
+    fun pasteAction_missingClipboard_warnsToo() {
+        var notices = 0
         val action = PasteAction(
             clipboardRead = { null },
             sendPaste = { fail("não pode mandar byte nenhum sem área de transferência") },
-            aoFaltarConteudo = { avisos++ },
+            onContentMissing = { notices++ },
         )
 
         action.paste()
 
-        assertEquals(1, avisos)
+        assertEquals(1, notices)
     }
 
     @Test
-    fun pasteAction_comConteudo_naoAvisa() {
-        var avisos = 0
+    fun pasteAction_withContent_doesNotWarn() {
+        var notices = 0
         val sent = mutableListOf<String>()
         val action = PasteAction(
             clipboardRead = { "ls -la" },
             sendPaste = { sent += it },
-            aoFaltarConteudo = { avisos++ },
+            onContentMissing = { notices++ },
         )
 
         action.paste()
 
-        assertEquals("aviso é só para o caso vazio", 0, avisos)
+        assertEquals("aviso é só para o caso vazio", 0, notices)
         assertEquals(listOf("ls -la"), sent)
     }
 
     // ---- The two overflow actions that consume the selection ----
 
     @Test
-    fun usar_entregaExatamenteOTextoSobASelecao() {
+    fun use_deliversExactlyTextUnderSelection() {
         val snapshot = buildSnapshot(cols = 6, rows = 1) { _, col -> narrowCell("ls -la"[col].code) }
-        val recebido = mutableListOf<String>()
+        val received = mutableListOf<String>()
 
-        TextoSelecionado({ snapshot }, { GridSelection(0, 0, 0, 5) }).usar { recebido += it }
+        SelectedText({ snapshot }, { GridSelection(0, 0, 0, 5) }).use { received += it }
 
-        assertEquals(listOf("ls -la"), recebido)
+        assertEquals(listOf("ls -la"), received)
     }
 
     @Test
-    fun usar_semSelecao_naoConsomeNada() {
+    fun use_withoutSelection_consumesNothing() {
         val snapshot = buildSnapshot(cols = 1, rows = 1) { _, _ -> narrowCell('a'.code) }
 
-        TextoSelecionado({ snapshot }, { null }).usar {
+        SelectedText({ snapshot }, { null }).use {
             fail("sem seleção não há texto para compartilhar nem para reenviar")
         }
     }
 
     @Test
-    fun usar_selecaoSoDeCelulasNuncaEscritas_naoAbreSeletorVazio() {
+    fun use_selectionOfNeverWrittenCells_doesNotOpenEmptyChooser() {
         // A blank run of grid extracts "" — opening a share sheet with empty
         // text, or sending zero bytes to the shell, is the tap looking broken.
         val snapshot = buildSnapshot(cols = 4, rows = 1) { _, _ -> narrowCell(0) }
 
-        TextoSelecionado({ snapshot }, { GridSelection(0, 0, 0, 3) }).usar {
+        SelectedText({ snapshot }, { GridSelection(0, 0, 0, 3) }).use {
             fail("texto vazio não pode chegar ao consumidor")
         }
     }
 
     @Test
-    fun textoSelecionado_leOSnapshotDoMomentoDoClique_naoUmaCopiaAntiga() {
+    fun selectedText_readsSnapshotAtClickTime_notStaleCopy() {
         // The bar stays up while the remote program goes on printing; the
         // text handed over has to be what is on screen NOW.
-        var atual = buildSnapshot(cols = 3, rows = 1) { _, col -> narrowCell("abc"[col].code) }
-        val texto = TextoSelecionado({ atual }, { GridSelection(0, 0, 0, 2) })
+        var current = buildSnapshot(cols = 3, rows = 1) { _, col -> narrowCell("abc"[col].code) }
+        val text = SelectedText({ current }, { GridSelection(0, 0, 0, 2) })
 
-        assertEquals("abc", texto.ler())
-        atual = buildSnapshot(cols = 3, rows = 1) { _, col -> narrowCell("xyz"[col].code) }
-        assertEquals("xyz", texto.ler())
+        assertEquals("abc", text.read())
+        current = buildSnapshot(cols = 3, rows = 1) { _, col -> narrowCell("xyz"[col].code) }
+        assertEquals("xyz", text.read())
     }
 }

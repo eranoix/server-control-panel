@@ -12,32 +12,32 @@ import org.junit.Test
  */
 class ScrollGesturePolicyTest {
 
-    private val shell = TerminalModes.NENHUM
+    private val shell = TerminalModes.NONE
 
     @Test
-    fun telaNormalSemMouse_rolaOHistoricoLocal() {
-        assertEquals(AcaoDeRolagem.Viewport(-3), decidirRolagem(shell, -3))
-        assertEquals(AcaoDeRolagem.Viewport(5), decidirRolagem(shell, 5))
+    fun normalScreenWithoutMouse_scrollsLocalHistory() {
+        assertEquals(ScrollAction.Viewport(-3), decideScroll(shell, -3))
+        assertEquals(ScrollAction.Viewport(5), decideScroll(shell, 5))
     }
 
     /** `htop`, `vim` with mouse, `less`: the gesture belongs to the program, not to us. */
     @Test
-    fun programaPediuMouse_viraRoda_mesmoNaTelaNormal() {
+    fun programAskedForMouse_becomesWheel_evenOnNormalScreen() {
         val comMouse = shell.copy(mouseTracking = true)
-        assertEquals(AcaoDeRolagem.Roda(-3), decidirRolagem(comMouse, -3))
+        assertEquals(ScrollAction.Wheel(-3), decideScroll(comMouse, -3))
     }
 
     @Test
-    fun programaPediuMouse_viraRoda_tambemNaTelaAlternativa() {
+    fun programAskedForMouse_becomesWheel_alsoOnAltScreen() {
         val htop = shell.copy(mouseTracking = true, altScreen = true, altScroll = true)
-        assertEquals(AcaoDeRolagem.Roda(-2), decidirRolagem(htop, -2))
+        assertEquals(ScrollAction.Wheel(-2), decideScroll(htop, -2))
     }
 
     /** `less`/`man`: alternate screen, no mouse, 1007 on (the default). */
     @Test
-    fun telaAlternativaComAltScroll_viraSeta() {
+    fun altScreenWithAltScroll_becomesArrow() {
         val less = shell.copy(altScreen = true, altScroll = true)
-        assertEquals(AcaoDeRolagem.Setas(-4), decidirRolagem(less, -4))
+        assertEquals(ScrollAction.Arrows(-4), decideScroll(less, -4))
     }
 
     /**
@@ -46,42 +46,42 @@ class ScrollGesturePolicyTest {
      * right answer — faking movement here would be lying.
      */
     @Test
-    fun telaAlternativaSemAltScroll_naoFazNada() {
-        val cheia = shell.copy(altScreen = true, altScroll = false)
-        assertEquals(AcaoDeRolagem.Nada, decidirRolagem(cheia, -4))
+    fun altScreenWithoutAltScroll_doesNothing() {
+        val full = shell.copy(altScreen = true, altScroll = false)
+        assertEquals(ScrollAction.Nothing, decideScroll(full, -4))
     }
 
     @Test
-    fun arrasteDeZeroLinhas_naoFazNada() {
-        assertEquals(AcaoDeRolagem.Nada, decidirRolagem(shell, 0))
-        assertEquals(AcaoDeRolagem.Nada, decidirRolagem(shell.copy(mouseTracking = true), 0))
+    fun zeroRowDrag_doesNothing() {
+        assertEquals(ScrollAction.Nothing, decideScroll(shell, 0))
+        assertEquals(ScrollAction.Nothing, decideScroll(shell.copy(mouseTracking = true), 0))
     }
 
     // ---- arrow bytes -----------------------------------------------------
 
     @Test
-    fun setaNormal_usaCSI() {
-        assertArrayEquals("\u001b[A".toByteArray(), bytesDeSeta(-1, cursorKeysApplication = false))
-        assertArrayEquals("\u001b[B".toByteArray(), bytesDeSeta(1, cursorKeysApplication = false))
+    fun normalArrow_usesCSI() {
+        assertArrayEquals("\u001b[A".toByteArray(), arrowBytes(-1, cursorKeysApplication = false))
+        assertArrayEquals("\u001b[B".toByteArray(), arrowBytes(1, cursorKeysApplication = false))
     }
 
     /** DECCKM on: SS3, not CSI. The wrong form does not scroll — it becomes garbage. */
     @Test
-    fun setaEmModoAplicacao_usaSS3() {
-        assertArrayEquals("\u001bOA".toByteArray(), bytesDeSeta(-1, cursorKeysApplication = true))
-        assertArrayEquals("\u001bOB".toByteArray(), bytesDeSeta(1, cursorKeysApplication = true))
+    fun applicationModeArrow_usesSS3() {
+        assertArrayEquals("\u001bOA".toByteArray(), arrowBytes(-1, cursorKeysApplication = true))
+        assertArrayEquals("\u001bOB".toByteArray(), arrowBytes(1, cursorKeysApplication = true))
     }
 
     @Test
-    fun setaRepeteUmaVezPorLinha() {
+    fun arrowRepeatsOncePerRow() {
         assertArrayEquals(
             "\u001b[A\u001b[A\u001b[A".toByteArray(),
-            bytesDeSeta(-3, cursorKeysApplication = false),
+            arrowBytes(-3, cursorKeysApplication = false),
         )
     }
 
     @Test
-    fun setaDeZeroLinhas_naoProduzByte() {
-        assertEquals(0, bytesDeSeta(0, cursorKeysApplication = false).size)
+    fun zeroRowArrow_producesNoBytes() {
+        assertEquals(0, arrowBytes(0, cursorKeysApplication = false).size)
     }
 }

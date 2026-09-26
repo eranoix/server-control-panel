@@ -58,9 +58,9 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.vpsmanager.feature.terminal.attach.AnexoDoTerminal
-import com.vpsmanager.feature.terminal.geometria.AncoraDoQuadro
-import com.vpsmanager.feature.terminal.geometria.GeometriaDaGrade
+import com.vpsmanager.feature.terminal.attach.TerminalAttachment
+import com.vpsmanager.feature.terminal.geometry.ScreenAnchor
+import com.vpsmanager.feature.terminal.geometry.GridGeometry
 import com.vpsmanager.feature.terminal.input.TerminalInputView
 import com.vpsmanager.feature.terminal.transport.ConnectionState
 import com.vpsmanager.feature.terminal.keys.ExtraKeysBar
@@ -69,17 +69,17 @@ import com.vpsmanager.feature.terminal.keys.HardwareKeyHandler
 import com.vpsmanager.feature.terminal.keys.PendingModifiers
 import com.vpsmanager.feature.terminal.mouse.MouseEventEncoder
 import com.vpsmanager.feature.terminal.mouse.MouseReportGestureController
-import com.vpsmanager.feature.terminal.mouse.RoteamentoDeToque
-import com.vpsmanager.feature.terminal.power.ISENCAO_BATERIA_DIALOGO_TAG
-import com.vpsmanager.feature.terminal.power.ISENCAO_BATERIA_EXPLICACAO
-import com.vpsmanager.feature.terminal.power.ISENCAO_BATERIA_LABEL
-import com.vpsmanager.feature.terminal.power.abrirPedidoDeIsencaoDeBateria
-import com.vpsmanager.feature.terminal.power.isentoDeOtimizacaoDeBateria
+import com.vpsmanager.feature.terminal.mouse.TouchRouting
+import com.vpsmanager.feature.terminal.power.BATTERY_EXEMPTION_DIALOG_TAG
+import com.vpsmanager.feature.terminal.power.BATTERY_EXEMPTION_EXPLANATION
+import com.vpsmanager.feature.terminal.power.BATTERY_EXEMPTION_LABEL
+import com.vpsmanager.feature.terminal.power.openBatteryExemptionRequest
+import com.vpsmanager.feature.terminal.power.isBatteryOptimizationExempt
 import com.vpsmanager.feature.terminal.prefs.TerminalFontSizePreference
-import com.vpsmanager.feature.terminal.prefs.LinhasVisiveis
-import com.vpsmanager.feature.terminal.prefs.LinhasVisiveisPreference
-import com.vpsmanager.feature.terminal.prefs.ModoDeDigitacao
-import com.vpsmanager.feature.terminal.prefs.ModoDeDigitacaoPreference
+import com.vpsmanager.feature.terminal.prefs.VisibleRows
+import com.vpsmanager.feature.terminal.prefs.VisibleRowsPreference
+import com.vpsmanager.feature.terminal.prefs.TypingMode
+import com.vpsmanager.feature.terminal.prefs.TypingModePreference
 import com.vpsmanager.feature.terminal.prefs.TerminalLineSpacing
 import com.vpsmanager.feature.terminal.prefs.TerminalScrollback
 import com.vpsmanager.feature.terminal.prefs.TerminalScrollbackPreference
@@ -88,11 +88,11 @@ import com.vpsmanager.feature.terminal.render.GlyphAtlas
 import com.vpsmanager.feature.terminal.render.TerminalCanvas
 import com.vpsmanager.feature.terminal.render.TerminalCellMetrics
 import com.vpsmanager.feature.terminal.render.computeTerminalCellMetrics
-import com.vpsmanager.feature.terminal.render.paletaTerminalCorrente
+import com.vpsmanager.feature.terminal.render.currentTerminalPalette
 import com.vpsmanager.feature.terminal.scroll.ScrollPositionOverlay
 import com.vpsmanager.feature.terminal.scroll.ScrollbackGestureController
 import com.vpsmanager.feature.terminal.scroll.canvasScrollGesture
-import com.vpsmanager.feature.terminal.selection.AcaoDeOutroApp
+import com.vpsmanager.feature.terminal.selection.OtherAppAction
 import com.vpsmanager.feature.terminal.transport.TerminalDiag
 import com.vpsmanager.feature.terminal.selection.CanvasTapTarget
 import com.vpsmanager.feature.terminal.selection.CellHitTester
@@ -102,21 +102,21 @@ import com.vpsmanager.feature.terminal.selection.GridSelectionHolder
 import com.vpsmanager.feature.terminal.selection.PasteAction
 import com.vpsmanager.feature.terminal.selection.SelectionGestureController
 import com.vpsmanager.feature.terminal.selection.SelectionOverlay
-import com.vpsmanager.feature.terminal.selection.TOQUE_DUPLO
-import com.vpsmanager.feature.terminal.selection.TOQUE_TRIPLO
+import com.vpsmanager.feature.terminal.selection.DOUBLE_TAP
+import com.vpsmanager.feature.terminal.selection.TRIPLE_TAP
 import com.vpsmanager.feature.terminal.selection.TerminalActionMode
-import com.vpsmanager.feature.terminal.selection.TextoSelecionado
-import com.vpsmanager.feature.terminal.selection.acoesDeOutrosApps
+import com.vpsmanager.feature.terminal.selection.SelectedText
+import com.vpsmanager.feature.terminal.selection.otherAppActions
 import com.vpsmanager.feature.terminal.selection.canvasDragGestures
 import com.vpsmanager.feature.terminal.selection.canvasTapGesture
-import com.vpsmanager.feature.terminal.selection.compartilharTexto
-import com.vpsmanager.feature.terminal.selection.intentDeProcessarTexto
+import com.vpsmanager.feature.terminal.selection.shareText
+import com.vpsmanager.feature.terminal.selection.processTextIntent
 import com.vpsmanager.feature.terminal.selection.routeCanvasDrag
 import com.vpsmanager.feature.terminal.selection.routeCanvasTap
 import com.vpsmanager.feature.terminal.selection.selectionBounds
-import com.vpsmanager.feature.terminal.selection.selecionarLinha
-import com.vpsmanager.feature.terminal.selection.selecionarPalavra
-import com.vpsmanager.feature.terminal.selection.selecionarTudo
+import com.vpsmanager.feature.terminal.selection.selectLine
+import com.vpsmanager.feature.terminal.selection.selectWord
+import com.vpsmanager.feature.terminal.selection.selectAll
 import com.vpsmanager.terminalengine.CellSnapshot
 import com.vpsmanager.terminalengine.MouseGeometry
 import com.vpsmanager.terminalengine.TerminalModes
@@ -132,17 +132,17 @@ import kotlinx.coroutines.launch
 const val BACK_DESCRIPTION = "Back"
 
 /** Test tag for the session button in the top bar. */
-const val SESSOES_TAG = "sessoes-terminal"
+const val SESSIONS_TAG = "sessoes-terminal"
 
 /** What the session button says in the top bar. */
-const val ROTULO_SESSOES = "Session"
+const val LABEL_SESSIONS = "Session"
 
 /**
  * What shows up when "Paste" is tapped with nothing copied. The item is
  * pinned to the bar (the app owner asked for that), so it has to say why
  * nothing happened rather than simply doing nothing — see `PasteAction`.
  */
-const val AVISO_NADA_PARA_COLAR = "There is nothing copied to paste"
+const val NOTICE_NOTHING_TO_PASTE = "There is nothing copied to paste"
 
 
 /**
@@ -183,7 +183,7 @@ const val AVISO_NADA_PARA_COLAR = "There is nothing copied to paste"
 @Composable
 fun TerminalRoute(
     onBack: () -> Unit,
-    onTrocarSessao: (String) -> Unit,
+    onSwitchSession: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: TerminalViewModel = viewModel(
@@ -196,25 +196,25 @@ fun TerminalRoute(
     // reads the real state just above. A reconnection that settles in ~1 s —
     // the normal case of coming back to the app — never lights a banner at all.
     val bannerState by viewModel.bannerState.collectAsStateWithLifecycle()
-    val origemDaPonte by viewModel.origemDoComandoDaPonte.collectAsStateWithLifecycle()
-    val digitacaoPendente by viewModel.digitacaoPendente.collectAsStateWithLifecycle()
-    val digitacaoDescartada by viewModel.digitacaoDescartada.collectAsStateWithLifecycle()
+    val bridgeOrigin by viewModel.bridgeCommandOrigin.collectAsStateWithLifecycle()
+    val pendingTyping by viewModel.pendingTyping.collectAsStateWithLifecycle()
+    val typingDiscarded by viewModel.typingDiscarded.collectAsStateWithLifecycle()
     val isStalled by viewModel.isStalled.collectAsStateWithLifecycle()
 
     val density = LocalDensity.current
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var sessoesAbertas by remember { mutableStateOf(false) }
+    var sessionsOpen by remember { mutableStateOf(false) }
     // The session list comes from the SAME place the list screen uses
     // ([SessionListViewModel] over `TerminalSessionsSource`). There is no
     // second source of truth about sessions — what there is is a second
     // surface showing the first.
-    val sessoesViewModel: SessionListViewModel = viewModel()
-    val sessoesState by sessoesViewModel.uiState.collectAsStateWithLifecycle()
+    val sessionsViewModel: SessionListViewModel = viewModel()
+    val sessionsState by sessionsViewModel.uiState.collectAsStateWithLifecycle()
 
-    var isentoDeBateria by remember { mutableStateOf(isentoDeOtimizacaoDeBateria(context)) }
-    var dialogoIsencaoAberto by remember { mutableStateOf(false) }
+    var batteryExempt by remember { mutableStateOf(isBatteryOptimizationExempt(context)) }
+    var exemptionDialogOpen by remember { mutableStateOf(false) }
 
     // One observer, two DIFFERENT events — and the difference matters:
     //
@@ -235,15 +235,15 @@ fun TerminalRoute(
     //   exemption the person had just granted.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
-        val observador = LifecycleEventObserver { _, evento ->
-            when (evento) {
-                Lifecycle.Event.ON_START -> viewModel.onVoltouAoPrimeiroPlano()
-                Lifecycle.Event.ON_RESUME -> isentoDeBateria = isentoDeOtimizacaoDeBateria(context)
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> viewModel.onReturnedToForeground()
+                Lifecycle.Event.ON_RESUME -> batteryExempt = isBatteryOptimizationExempt(context)
                 else -> Unit
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observador)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observador) }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     // Font size persisted purely on-device (see
     // TerminalFontSizePreference's own doc comment on why this never touches
@@ -257,14 +257,14 @@ fun TerminalRoute(
     // device-only. It goes into the metrics `remember` alongside the font
     // size because it changes the cell height, hence the GRID (number of
     // rows), hence the resize that goes to the server.
-    val entrelinhaPreference = remember { TerminalLineSpacingPreference(context) }
-    val entrelinha by entrelinhaPreference.entrelinha.collectAsStateWithLifecycle(
-        initialValue = TerminalLineSpacing.PADRAO,
+    val lineSpacingPreference = remember { TerminalLineSpacingPreference(context) }
+    val lineSpacing by lineSpacingPreference.lineSpacing.collectAsStateWithLifecycle(
+        initialValue = TerminalLineSpacing.DEFAULT,
     )
     // Typing mode: defines the contract the view declares to the device
     // keyboard. It does not enter the metrics — it touches no cell — but it
     // changes the `inputType`, so swapping the value restarts IME input
-    // (see TerminalInputView.modoDeDigitacao).
+    // (see TerminalInputView.typingMode).
     // Conversation history: read here and handed to the ViewModel, which uses
     // it at the moment the engine is CREATED (scrollback size is fixed at
     // creation) and to decide how much log to fetch from the server.
@@ -272,53 +272,53 @@ fun TerminalRoute(
     // The STEP, and not the stored integer, is what travels down from here: a
     // value from an older ladder (200 thousand) would reserve a capacity the
     // fetch would never fill, and would leave the options sheet with no step
-    // lit. `porLinhas` snaps it; the rest of the flow only ever sees steps.
+    // lit. `byRows` snaps it; the rest of the flow only ever sees steps.
     val scrollbackPreference = remember { TerminalScrollbackPreference(context) }
-    val scrollbackGravado by scrollbackPreference.linhas.collectAsStateWithLifecycle(
-        initialValue = TerminalScrollback.DEFAULT.linhas,
+    val savedScrollback by scrollbackPreference.lines.collectAsStateWithLifecycle(
+        initialValue = TerminalScrollback.DEFAULT.lines,
     )
-    val scrollbackLinhas = TerminalScrollback.porLinhas(scrollbackGravado).linhas
+    val scrollbackLines = TerminalScrollback.byRows(savedScrollback).lines
     // It arrives from the DataStore after the ViewModel is constructed; the
     // engine is only born once the grid has been measured, so handing the
     // value over here is in time.
-    viewModel.scrollbackLinhas = scrollbackLinhas
+    viewModel.scrollbackLines = scrollbackLines
     // How many rows fit on screen. Unlike the font size, this is the number
     // the person actually has in mind ("I want to see the whole `docker ps`");
-    // the type size becomes a consequence. See [LinhasVisiveis].
-    val linhasVisiveisPreference = remember { LinhasVisiveisPreference(context) }
-    val linhasVisiveisValor by linhasVisiveisPreference.linhas.collectAsStateWithLifecycle(
-        initialValue = LinhasVisiveis.PADRAO.linhas,
+    // the type size becomes a consequence. See [VisibleRows].
+    val visibleRowsPreference = remember { VisibleRowsPreference(context) }
+    val visibleRowsValue by visibleRowsPreference.lines.collectAsStateWithLifecycle(
+        initialValue = VisibleRows.DEFAULT.lines,
     )
-    val linhasVisiveis = LinhasVisiveis.porLinhas(linhasVisiveisValor)
+    val visibleRows = VisibleRows.byRows(visibleRowsValue)
 
-    val modoDigitacaoPreference = remember { ModoDeDigitacaoPreference(context) }
-    val modoDigitacao by modoDigitacaoPreference.modo.collectAsStateWithLifecycle(
-        initialValue = ModoDeDigitacao.PADRAO,
+    val typingModePreference = remember { TypingModePreference(context) }
+    val currentTypingMode by typingModePreference.mode.collectAsStateWithLifecycle(
+        initialValue = TypingMode.DEFAULT,
     )
     // The word the keyboard is composing and has not yet handed to the
     // terminal. It only exists in TEXT mode; empty, the strip emits no node.
-    var composicaoPendente by remember { mutableStateOf("") }
+    var pendingComposition by remember { mutableStateOf("") }
     // The current theme's grid colours (background, default text, cursor and
     // the light theme's legibility guard). Read up here because a change of
     // theme has to repaint the grid in the same recomposition that repaints
     // the rest.
-    val paletaTerminal = paletaTerminalCorrente
+    val terminalPalette = currentTerminalPalette
     // The AVAILABLE HEIGHT, used to derive the type size when the number of
     // rows is fixed. It starts at zero and arrives with the first
     // measurement; until then the chosen size stands, and the first
     // composition already draws something legible instead of waiting on a
     // measure.
-    var alturaParaLinhasPx by remember { mutableStateOf(0) }
+    var heightForRowsPx by remember { mutableStateOf(0) }
 
-    val metrics = remember(density, fontSizeSp, entrelinha, linhasVisiveis, alturaParaLinhasPx) {
-        if (linhasVisiveis == LinhasVisiveis.AUTOMATICO || alturaParaLinhasPx <= 0) {
-            computeCellMetrics(density, fontSizeSp, entrelinha)
+    val metrics = remember(density, fontSizeSp, lineSpacing, visibleRows, heightForRowsPx) {
+        if (visibleRows == VisibleRows.AUTOMATIC || heightForRowsPx <= 0) {
+            computeCellMetrics(density, fontSizeSp, lineSpacing)
         } else {
-            corpoQueCabeEm(
-                linhas = linhasVisiveis.linhas,
-                alturaPx = alturaParaLinhasPx,
+            bodyThatFits(
+                lines = visibleRows.lines,
+                heightPx = heightForRowsPx,
                 density = density,
-                entrelinha = entrelinha,
+                lineSpacing = lineSpacing,
             )
         }
     }
@@ -365,11 +365,11 @@ fun TerminalRoute(
     // itself while the keyboard slides, without recomposing this whole
     // function on every frame of the animation. It is the same mechanism
     // `imePadding()` uses internally.
-    val insetsDoTeclado = WindowInsets.ime
-    val insetsDaBarraDeNavegacao = WindowInsets.navigationBars
+    val keyboardInsets = WindowInsets.ime
+    val navBarInsets = WindowInsets.navigationBars
 
     /** The height the grid has with the keyboard closed. For the options sheet only. */
-    var alturaSemTecladoPx by remember { mutableStateOf(0) }
+    var heightWithoutKeyboardPx by remember { mutableStateOf(0) }
 
     val hitTesterProvider: () -> CellHitTester = remember(metrics) {
         {
@@ -390,27 +390,27 @@ fun TerminalRoute(
     // with the snapshot: an `htop` that opens turns mouse reporting on and one
     // that closes turns it off, without telling anyone — the app has to ask,
     // not remember.
-    var modosDoTerminal by remember { mutableStateOf(TerminalModes.NENHUM) }
+    var terminalModes by remember { mutableStateOf(TerminalModes.NONE) }
 
     // The system's floating bar. It is born together with the
     // `TerminalInputView` (that view is what hosts the `ActionMode`), down
     // below in the `AndroidView`.
-    val barraDeSelecao = remember { mutableStateOf<TerminalActionMode?>(null) }
+    val selectionBar = remember { mutableStateOf<TerminalActionMode?>(null) }
 
     val selectionController = remember(hitTesterProvider, selectionHolder) {
-        SelectionGestureController(hitTesterProvider, selectionHolder) { selecao ->
+        SelectionGestureController(hitTesterProvider, selectionHolder) { selection ->
             // Android is what draws the bar, and it has to be CALLED —
             // nothing observes this holder on its own.
-            val barra = barraDeSelecao.value
-            if (selecao == null) barra?.esconder() else barra?.mostrar()
+            val bar = selectionBar.value
+            if (selection == null) bar?.hide() else bar?.show()
         }
     }
 
     // No state and no preference: who owns the gesture is decided, gesture
     // by gesture, by the mode the REMOTE PROGRAM turned on. See
-    // [RoteamentoDeToque].
-    val roteamentoDeToque = remember(viewModel) {
-        RoteamentoDeToque { viewModel.currentModes().mouseTracking }
+    // [TouchRouting].
+    val touchRouting = remember(viewModel) {
+        TouchRouting { viewModel.currentModes().mouseTracking }
     }
 
     // The encoding itself belongs to the VT emulator — it knows the mode and
@@ -436,18 +436,18 @@ fun TerminalRoute(
     val mouseReportController = remember(mouseEncoder, viewModel) {
         MouseReportGestureController(mouseEncoder, viewModel.byteSink)
     }
-    val canvasDragTarget = remember(roteamentoDeToque, selectionController, mouseReportController) {
-        routeCanvasDrag(roteamentoDeToque, selectionController, mouseReportController)
+    val canvasDragTarget = remember(touchRouting, selectionController, mouseReportController) {
+        routeCanvasDrag(touchRouting, selectionController, mouseReportController)
     }
 
     // The fourth gesture: a vertical drag scrolls the history. Where it
     // scrolls to is NOT the app's choice — it comes from the emulator's real
     // state, the same discipline as the mouse and the paste. See
-    // [decidirRolagem].
+    // [decideScroll].
     val scrollTarget = remember(viewModel, metrics) {
         ScrollbackGestureController(
-            modos = { viewModel.currentModes() },
-            geometria = {
+            modes = { viewModel.currentModes() },
+            geometry = {
                 MouseGeometry(
                     cellWidthPx = metrics.cellWidthPx,
                     cellHeightPx = metrics.cellHeightPx,
@@ -455,15 +455,15 @@ fun TerminalRoute(
                     screenHeightPx = gridRows * metrics.cellHeightPx,
                 )
             },
-            rolarViewport = viewModel::scrollViewport,
+            scrollViewport = viewModel::scrollViewport,
             // After scrolling, is there anywhere left to go? This is what
             // makes the fling stop at the top of the history instead of
             // grinding against it.
-            podeRolarViewport = { linhas ->
-                val estado = viewModel.currentScrollState()
-                if (linhas < 0) estado.offset > 0 else !estado.noFim
+            canScrollViewport = { lines ->
+                val state = viewModel.currentScrollState()
+                if (lines < 0) state.offset > 0 else !state.atEnd
             },
-            enviarBytes = viewModel.byteSink::send,
+            sendBytes = viewModel.byteSink::send,
             encodeMouse = { action, button, xPx, yPx, geometry ->
                 viewModel.encodeMouse(
                     action = action,
@@ -482,7 +482,7 @@ fun TerminalRoute(
     // leave from the view that owns the terminal's InputConnection, see
     // TerminalInputView.showKeyboard().
     val inputView = remember { mutableStateOf<TerminalInputView?>(null) }
-    val pedirTeclado: () -> Unit = { inputView.value?.showKeyboard() }
+    val requestKeyboard: () -> Unit = { inputView.value?.showKeyboard() }
 
     /**
      * The tap on the grid when the gesture belongs to the app. One tap raises
@@ -493,7 +493,7 @@ fun TerminalRoute(
     val tapKeyboardTarget = remember(selectionController, viewModel, hitTesterProvider) {
         CanvasTapTarget { position, taps ->
             val snapshot = viewModel.currentSnapshot()
-            if (snapshot == null || taps < TOQUE_DUPLO) {
+            if (snapshot == null || taps < DOUBLE_TAP) {
                 selectionController.clearSelection()
                 inputView.value?.showKeyboard()
                 return@CanvasTapTarget
@@ -503,19 +503,19 @@ fun TerminalRoute(
             // since the snapshot is the source of the text about to be
             // selected.
             val cell = hitTesterProvider().hitTest(position)
-            val linha = cell.row.coerceIn(0, snapshot.rows - 1)
-            val coluna = cell.col.coerceIn(0, snapshot.cols - 1)
-            selectionController.definirSelecao(
-                if (taps >= TOQUE_TRIPLO) {
-                    selecionarLinha(snapshot, linha)
+            val line = cell.row.coerceIn(0, snapshot.rows - 1)
+            val column = cell.col.coerceIn(0, snapshot.cols - 1)
+            selectionController.setSelection(
+                if (taps >= TRIPLE_TAP) {
+                    selectLine(snapshot, line)
                 } else {
-                    selecionarPalavra(snapshot, linha, coluna)
+                    selectWord(snapshot, line, column)
                 },
             )
         }
     }
-    val canvasTapTarget = remember(roteamentoDeToque, tapKeyboardTarget, mouseReportController) {
-        routeCanvasTap(roteamentoDeToque, tapKeyboardTarget, mouseReportController)
+    val canvasTapTarget = remember(touchRouting, tapKeyboardTarget, mouseReportController) {
+        routeCanvasTap(touchRouting, tapKeyboardTarget, mouseReportController)
     }
     val clipboardManager = LocalClipboardManager.current
     val copyAction = remember(selectionHolder, viewModel) {
@@ -533,39 +533,39 @@ fun TerminalRoute(
             // may have nothing to do. A Toast, and not a Snackbar: the
             // floating bar lives in a window of its own, above this one — a
             // Snackbar anchored to the Scaffold would appear BEHIND it.
-            aoFaltarConteudo = {
-                Toast.makeText(context, AVISO_NADA_PARA_COLAR, Toast.LENGTH_SHORT).show()
+            onContentMissing = {
+                Toast.makeText(context, NOTICE_NOTHING_TO_PASTE, Toast.LENGTH_SHORT).show()
             },
         )
     }
     // The text under the selection, read at the instant of the click — the
     // source for the two overflow-menu actions that consume the selection
     // without going through the clipboard.
-    val textoSelecionado = remember(selectionHolder, viewModel) {
-        TextoSelecionado(
+    val selectedText = remember(selectionHolder, viewModel) {
+        SelectedText(
             snapshotProvider = viewModel::currentSnapshot,
             selectionProvider = { selectionHolder.selection },
         )
     }
-    val compartilhar: () -> Unit = remember(textoSelecionado, context) {
-        { textoSelecionado.usar { texto -> compartilharTexto(context, texto) } }
+    val share: () -> Unit = remember(selectedText, context) {
+        { selectedText.use { text -> shareText(context, text) } }
     }
     // Sending the selection back to the remote program goes through the SAME
     // `sendPaste` as a paste — it is the VT emulator that decides whether to
     // wrap it in `ESC[200~`/`ESC[201~`, according to the mode the program
     // asked for (see `PasteAction`). Pushing the bytes out around this path
     // would reintroduce the two defects that path exists to avoid.
-    val enviarProTerminal: () -> Unit = remember(textoSelecionado, viewModel) {
-        { textoSelecionado.usar(viewModel::sendPaste) }
+    val sendToTerminal: () -> Unit = remember(selectedText, viewModel) {
+        { selectedText.use(viewModel::sendPaste) }
     }
     // "Translate", "Search", "Read aloud" — what the device's apps offer over
     // plain text. The one enumerating them is the bar, as it opens, and not
     // this composition: that way installing or removing an app is reflected
     // without recreating the screen.
-    val abrirEmOutroApp = remember(textoSelecionado, context) {
-        { acao: AcaoDeOutroApp ->
-            textoSelecionado.usar { texto ->
-                context.startActivity(intentDeProcessarTexto(acao, texto))
+    val openInOtherApp = remember(selectedText, context) {
+        { action: OtherAppAction ->
+            selectedText.use { text ->
+                context.startActivity(processTextIntent(action, text))
             }
         }
     }
@@ -576,12 +576,12 @@ fun TerminalRoute(
     // (the Configuration changes, the composition re-reads).
     val configuration = LocalConfiguration.current
     val hasHardwareKeyboard = configuration.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
-    var keysBarState by remember { mutableStateOf(ExtraKeysBarState.UMA_LINHA) }
+    var keysBarState by remember { mutableStateOf(ExtraKeysBarState.ONE_ROW) }
     var optionsOpen by remember { mutableStateOf(false) }
     // Session attachment (file/image/photo): only the sheet's switch lives
     // here; the rest (upload, progress, inserting the path) sits entirely in
-    // AnexoDoTerminal, so this function does not swell again.
-    var anexoAberto by remember { mutableStateOf(false) }
+    // TerminalAttachment, so this function does not swell again.
+    var attachmentOpen by remember { mutableStateOf(false) }
 
     // Renderer polling loop, deliberately decoupled from onBytes cadence (a
     // throughput finding): this reads a plain poll method, not a per-write
@@ -591,31 +591,31 @@ fun TerminalRoute(
     // Scroll position, re-read in the same frame as the snapshot:
     // libghostty-vt warns, explicitly, that there is NO notification of a
     // scroll change — whoever draws the position asks for it.
-    var estadoDeRolagem by remember { mutableStateOf(TerminalScrollState.NO_FIM) }
+    var scrollState by remember { mutableStateOf(TerminalScrollState.AT_END) }
     // How much history there was at the instant the owner left the bottom.
     // If the total grows after that, new output arrived while they were
     // reading — and the screen did NOT jump to show it, so it has to say that
     // it exists.
-    var totalAoSairDoFim by remember { mutableStateOf(0L) }
-    var haSaidaNova by remember { mutableStateOf(false) }
+    var totalWhenLeftEnd by remember { mutableStateOf(0L) }
+    var hasNewOutput by remember { mutableStateOf(false) }
 
     LaunchedEffect(viewModel) {
         while (isActive) {
             withFrameNanos {
                 snapshotState.value = viewModel.currentSnapshot()
                 selectionState.value = selectionHolder.selection
-                modosDoTerminal = viewModel.currentModes()
+                terminalModes = viewModel.currentModes()
 
-                val agora = viewModel.currentScrollState()
-                if (agora.noFim) {
+                val now = viewModel.currentScrollState()
+                if (now.atEnd) {
                     // Back at the bottom: there is nothing "new" out of sight.
-                    totalAoSairDoFim = agora.total
-                    haSaidaNova = false
+                    totalWhenLeftEnd = now.total
+                    hasNewOutput = false
                 } else {
-                    if (estadoDeRolagem.noFim) totalAoSairDoFim = agora.total
-                    haSaidaNova = agora.total > totalAoSairDoFim
+                    if (scrollState.atEnd) totalWhenLeftEnd = now.total
+                    hasNewOutput = now.total > totalWhenLeftEnd
                 }
-                estadoDeRolagem = agora
+                scrollState = now
             }
         }
     }
@@ -654,10 +654,10 @@ fun TerminalRoute(
                     // meant going back to the list, which throws the grid away
                     // and redoes the attach.
                     TextButton(
-                        onClick = { sessoesAbertas = true },
-                        modifier = Modifier.testTag(SESSOES_TAG),
+                        onClick = { sessionsOpen = true },
+                        modifier = Modifier.testTag(SESSIONS_TAG),
                     ) {
-                        Text(text = ROTULO_SESSOES)
+                        Text(text = LABEL_SESSIONS)
                     }
                     IconButton(onClick = { optionsOpen = true }) {
                         Icon(
@@ -673,10 +673,10 @@ fun TerminalRoute(
             ConnectionBanner(
                 state = bannerState,
                 isStalled = isStalled,
-                digitacaoDescartada = digitacaoDescartada,
+                typingDiscarded = typingDiscarded,
             )
-            FaixaDaPonte(origem = origemDaPonte)
-            FaixaDeDigitacaoPendente(texto = digitacaoPendente)
+            BridgeBanner(origin = bridgeOrigin)
+            PendingTypingBanner(text = pendingTyping)
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -685,13 +685,13 @@ fun TerminalRoute(
                     // paints the WHOLE area.
                     //
                     // The grid can be placed lower than the top (see
-                    // AncoraDoQuadro): whatever is left above it is drawn by
+                    // ScreenAnchor): whatever is left above it is drawn by
                     // nobody, and showed up in the application's surface
                     // colour — a grey band in a black terminal, which reads as
                     // a defect and not as a blank line. Painting here costs
                     // one rectangle per frame and makes the whole area,
                     // visually, terminal.
-                    .background(Color(0xFF000000 or paletaTerminal.defaultBg.toLong()))
+                    .background(Color(0xFF000000 or terminalPalette.defaultBg.toLong()))
                     // CLIP BEFORE the `layout`: the node reports the
                     // visible height, so the clip confines the part that
                     // spills upwards instead of letting it paint over the
@@ -707,7 +707,7 @@ fun TerminalRoute(
                     // That way the number of rows does not change when the
                     // keyboard comes up, and it is the change in the number of
                     // rows that used to duplicate the history (see
-                    // GeometriaDaGrade). There is no heuristic and no memory:
+                    // GridGeometry). There is no heuristic and no memory:
                     // what `imePadding()` took away is added back by the exact
                     // value, frame by frame.
                     //
@@ -716,15 +716,15 @@ fun TerminalRoute(
                     // along with no correction of their own: pointer
                     // coordinates follow placement.
                     .layout { measurable, constraints ->
-                        val tapado = GeometriaDaGrade.tapadoPeloTeclado(
-                            imePx = insetsDoTeclado.getBottom(this),
-                            barraDeNavegacaoPx = insetsDaBarraDeNavegacao.getBottom(this),
+                        val covered = GridGeometry.coveredByKeyboard(
+                            imePx = keyboardInsets.getBottom(this),
+                            navBarPx = navBarInsets.getBottom(this),
                         )
-                        val alturaCheia = constraints.maxHeight + tapado
-                        val posto = measurable.measure(
-                            constraints.copy(minHeight = alturaCheia, maxHeight = alturaCheia),
+                        val fullHeight = constraints.maxHeight + covered
+                        val placed = measurable.measure(
+                            constraints.copy(minHeight = fullHeight, maxHeight = fullHeight),
                         )
-                        layout(posto.width, constraints.maxHeight) {
+                        layout(placed.width, constraints.maxHeight) {
                             // ── WHAT HAS TO STAY VISIBLE IS THE CURSOR ───
                             //
                             // The temptation is to anchor to the bottom —
@@ -786,26 +786,26 @@ fun TerminalRoute(
                             // by a replay, so the condition exists and the
                             // answer is ours: a single rule, both ways — the
                             // bottom of the CONTENT meets the bottom of the
-                            // VISIBLE AREA. See [AncoraDoQuadro].
-                            val quadro = snapshotState.value
-                            val ultimaComConteudo = quadro?.let { q ->
-                                AncoraDoQuadro.ultimaLinhaComConteudo(q.cols, q.rows) { x, y ->
+                            // VISIBLE AREA. See [ScreenAnchor].
+                            val board = snapshotState.value
+                            val lastWithContent = board?.let { q ->
+                                ScreenAnchor.lastRowWithContent(q.cols, q.rows) { x, y ->
                                     val c = q.cellAt(x, y)
-                                    c.codepoint == 0 || c.codepoint == ESPACO
+                                    c.codepoint == 0 || c.codepoint == SPACE
                                 }
                             } ?: -1
-                            val ultimaUtil = AncoraDoQuadro.ultimaLinhaUtil(
-                                ultimaLinhaComConteudo = ultimaComConteudo,
-                                linhaDoCursor = quadro?.cursorY ?: 0,
-                                folgaAbaixoDoCursor = LINHAS_ABAIXO_DO_CURSOR,
-                                linhas = quadro?.rows ?: 1,
+                            val lastUseful = ScreenAnchor.lastUsefulRow(
+                                lastRowWithContent = lastWithContent,
+                                cursorRow = board?.cursorY ?: 0,
+                                slackBelowCursor = ROWS_BELOW_CURSOR,
+                                lines = board?.rows ?: 1,
                             )
-                            posto.place(
+                            placed.place(
                                 0,
-                                AncoraDoQuadro.deslocamentoY(
-                                    fundoDoConteudoPx = (ultimaUtil + 1) * metrics.cellHeightPx,
-                                    alturaVisivelPx = constraints.maxHeight,
-                                    maximoParaSubirPx = tapado,
+                                ScreenAnchor.offsetY(
+                                    contentBottomPx = (lastUseful + 1) * metrics.cellHeightPx,
+                                    visibleHeightPx = constraints.maxHeight,
+                                    maxLiftPx = covered,
                                 ),
                             )
                         }
@@ -816,12 +816,12 @@ fun TerminalRoute(
                         // keyboard were closed. Which is why there is no
                         // correction at all to make here — and that is the
                         // point of the whole fix.
-                        val cols = GeometriaDaGrade.colunas(size.width, metrics.cellWidthPx)
-                        val rows = GeometriaDaGrade.linhas(size.height, metrics.cellHeightPx)
+                        val cols = GridGeometry.columns(size.width, metrics.cellWidthPx)
+                        val rows = GridGeometry.lines(size.height, metrics.cellHeightPx)
                         gridCols = cols
                         gridRows = rows
-                        alturaSemTecladoPx = size.height
-                        alturaParaLinhasPx = size.height
+                        heightWithoutKeyboardPx = size.height
+                        heightForRowsPx = size.height
                         TerminalDiag.log(
                             "MEDIDA cheia=${size.width}x${size.height}px " +
                                 "celula=${metrics.cellWidthPx}x${metrics.cellHeightPx} " +
@@ -849,18 +849,18 @@ fun TerminalRoute(
                     // line the `TerminalCanvas` falls back to the dark default
                     // and the grid turns black inside a light app — which is
                     // exactly what the emulator capture showed when this line
-                    // was lost in a merge. See [paletaTerminalCorrente] on why
+                    // was lost in a merge. See [currentTerminalPalette] on why
                     // the palette comes from the colour scheme and not from
                     // the system mode.
-                    palette = paletaTerminal,
+                    palette = terminalPalette,
                 )
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { context ->
                         TerminalInputView(context).apply {
                             byteSink = viewModel.byteSink
-                            modoDeDigitacao = modoDigitacao
-                            aoMudarComposicao = { texto -> composicaoPendente = texto }
+                            typingMode = currentTypingMode
+                            onCompositionChange = { text -> pendingComposition = text }
                             // Hardware (Bluetooth/USB) keyboard events travel
                             // through `dispatchKeyEvent`/`setOnKeyListener`,
                             // never through `sendKeyEvent` on the
@@ -879,21 +879,21 @@ fun TerminalRoute(
                             // grid's area — which is why the selection
                             // rectangle can go straight through, with no
                             // coordinate-space conversion.
-                            barraDeSelecao.value = TerminalActionMode(
+                            selectionBar.value = TerminalActionMode(
                                 host = view,
-                                aoCopiar = copyAction::copy,
-                                aoSelecionarTudo = {
+                                onCopy = copyAction::copy,
+                                onSelectAll = {
                                     viewModel.currentSnapshot()?.let {
-                                        selectionController.definirSelecao(selecionarTudo(it))
+                                        selectionController.setSelection(selectAll(it))
                                     }
                                 },
-                                aoColar = pasteAction::paste,
-                                aoCompartilhar = compartilhar,
-                                aoEnviarProTerminal = enviarProTerminal,
-                                aoFechar = selectionController::clearSelection,
-                                acoesDeOutrosApps = { acoesDeOutrosApps(view.context) },
-                                aoUsarOutroApp = abrirEmOutroApp,
-                                retanguloDaSelecao = {
+                                onPaste = pasteAction::paste,
+                                onShare = share,
+                                onSendToTerminal = sendToTerminal,
+                                onClose = selectionController::clearSelection,
+                                otherAppActions = { otherAppActions(view.context) },
+                                onUseOtherApp = openInOtherApp,
+                                selectionRect = {
                                     selectionHolder.selection
                                         ?.let { selectionBounds(it, hitTesterProvider()) }
                                         ?: Rect.Zero
@@ -908,7 +908,7 @@ fun TerminalRoute(
                         // is why a change of mode from the options sheet
                         // reaches a keyboard that is already open, instead of
                         // waiting for it to close and reopen.
-                        view.modoDeDigitacao = modoDigitacao
+                        view.typingMode = currentTypingMode
                     },
                 )
                 // ABOVE the input view, on purpose: the handles have to
@@ -917,34 +917,34 @@ fun TerminalRoute(
                 SelectionOverlay(
                     selectionState = selectionState,
                     hitTesterProvider = hitTesterProvider,
-                    aoArrastarAlca = selectionController::arrastarAlca,
-                    aoTerminarArrasteDeAlca = { barraDeSelecao.value?.mostrar() },
+                    onDragHandle = selectionController::dragHandle,
+                    onHandleDragEnd = { selectionBar.value?.show() },
                     modifier = Modifier.fillMaxSize(),
                 )
                 // Where they are in the history and how to get back. It
                 // only appears once they have left the bottom — pinned at the
                 // bottom, the grid stays clean.
                 ScrollPositionOverlay(
-                    estado = estadoDeRolagem,
-                    haSaidaNova = haSaidaNova,
-                    aoVoltarAoFim = viewModel::scrollToBottom,
+                    state = scrollState,
+                    hasNewOutput = hasNewOutput,
+                    onBackToEnd = viewModel::scrollToBottom,
                 )
             }
             // Between the grid and the keys: where the thumb already is
             // and where the eye already looks while assembling the command the
             // path will go into. With no attachment it emits no node — 0 dp of
-            // cost (see BarraDeAnexos).
-            AnexoDoTerminal(
-                folhaAberta = anexoAberto,
-                aoFecharFolha = { anexoAberto = false },
+            // cost (see AttachmentBar).
+            TerminalAttachment(
+                sheetOpen = attachmentOpen,
+                onCloseSheet = { attachmentOpen = false },
                 // Inserting the path leaves through the SAME sendPaste as
                 // a paste: it is what decides, from the remote program's real
                 // mode, whether the text goes wrapped in bracketed paste.
-                aoInserirTexto = viewModel::sendPaste,
+                onInsertText = viewModel::sendPaste,
                 // With the connection down, `TerminalSocketClient.send`
                 // drops the bytes silently — the attachment cannot vanish
-                // because of that. See AVISO_TERMINAL_FORA_DO_AR.
-                terminalPronto = connectionState == ConnectionState.Live,
+                // because of that. See NOTICE_TERMINAL_OFFLINE.
+                terminalReady = connectionState == ConnectionState.Live,
             )
             // The word held back by the keyboard's autocorrect, just above
             // the keys and just below the grid — between what has already
@@ -955,9 +955,9 @@ fun TerminalRoute(
             // and disappearing that resized the grid on every word (77 resizes
             // in 45 min, measured) and made the screen duplicate. See the
             // strip's own KDoc.
-            FaixaDeComposicao(
-                texto = composicaoPendente,
-                reservarEspaco = modoDigitacao == ModoDeDigitacao.TEXTO,
+            CompositionStrip(
+                text = pendingComposition,
+                reserveSpace = currentTypingMode == TypingMode.TEXT,
             )
             ExtraKeysBar(
                 pendingModifiers = pendingModifiers,
@@ -966,36 +966,36 @@ fun TerminalRoute(
                 onStateChange = { keysBarState = it },
                 hasHardwareKeyboard = hasHardwareKeyboard,
                 // The paperclip opens the SAME source sheet the options
-                // sheet already opened (`FolhaDeOrigemDoAnexo`) — file, image
+                // sheet already opened (`AttachmentSourceSheet`) — file, image
                 // or take a photo. What was missing was not the feature: it
                 // was a short path to it, from inside the keyboard, which is
                 // where attaching is thought of. The upload, the progress and
-                // inserting the path all still live in `AnexoDoTerminal`.
-                aoAnexar = { anexoAberto = true },
+                // inserting the path all still live in `TerminalAttachment`.
+                onAttach = { attachmentOpen = true },
             )
         }
 
-        if (sessoesAbertas) {
+        if (sessionsOpen) {
             SessionSwitcherSheet(
-                sessaoAtual = viewModel.sessionName,
-                estado = sessoesState,
-                onTrocarSessao = { nome ->
-                    sessoesAbertas = false
-                    onTrocarSessao(nome)
+                currentSession = viewModel.sessionName,
+                state = sessionsState,
+                onSwitchSession = { name ->
+                    sessionsOpen = false
+                    onSwitchSession(name)
                 },
-                onCriarSessao = { nome ->
-                    sessoesAbertas = false
+                onCreateSession = { name ->
+                    sessionsOpen = false
                     // Creating and attaching are the SAME operation on
                     // this server: the backend opens the session on the first
                     // attach. Reusing the switch path instead of inventing an
                     // endpoint keeps a single way into the terminal.
-                    onTrocarSessao(nome)
+                    onSwitchSession(name)
                 },
-                onDesanexar = {
-                    sessoesAbertas = false
+                onDetach = {
+                    sessionsOpen = false
                     onBack()
                 },
-                onDismissRequest = { sessoesAbertas = false },
+                onDismissRequest = { sessionsOpen = false },
             )
         }
 
@@ -1007,33 +1007,33 @@ fun TerminalRoute(
                 },
                 gridCols = gridCols,
                 gridRows = gridRows,
-                linhasVisiveis = linhasVisiveis,
-                onLinhasVisiveisChange = { novo ->
-                    coroutineScope.launch { linhasVisiveisPreference.setLinhas(novo.linhas) }
+                visibleRows = visibleRows,
+                onVisibleRowsChange = { next ->
+                    coroutineScope.launch { visibleRowsPreference.setRows(next.lines) }
                 },
-                alturaVisivelPx = alturaSemTecladoPx,
-                alturaDeReferenciaPx = alturaSemTecladoPx,
-                scrollbackLinhas = scrollbackLinhas,
-                onScrollbackChange = { novo ->
-                    coroutineScope.launch { scrollbackPreference.setLinhas(novo) }
+                visibleHeightPx = heightWithoutKeyboardPx,
+                referenceHeightPx = heightWithoutKeyboardPx,
+                scrollbackLines = scrollbackLines,
+                onScrollbackChange = { next ->
+                    coroutineScope.launch { scrollbackPreference.setRows(next) }
                 },
-                modoDeDigitacao = modoDigitacao,
-                onModoDeDigitacaoChange = { novo ->
-                    coroutineScope.launch { modoDigitacaoPreference.setModo(novo) }
+                typingMode = currentTypingMode,
+                onTypingModeChange = { next ->
+                    coroutineScope.launch { typingModePreference.setMode(next) }
                 },
-                entrelinha = entrelinha,
-                onEntrelinhaChange = { novo ->
-                    coroutineScope.launch { entrelinhaPreference.setEntrelinha(novo) }
+                lineSpacing = lineSpacing,
+                onLineSpacingChange = { next ->
+                    coroutineScope.launch { lineSpacingPreference.setLineSpacing(next) }
                 },
-                onColar = {
+                onPaste = {
                     optionsOpen = false
                     pasteAction.paste()
                 },
                 // Close this sheet before opening the source one: two
                 // stacked ModalBottomSheets fight over the same window focus.
-                onAnexar = {
+                onAttach = {
                     optionsOpen = false
-                    anexoAberto = true
+                    attachmentOpen = true
                 },
                 // Ask for the keyboard while the sheet is still up: it is
                 // TerminalInputView.showKeyboard() that holds the request back
@@ -1041,36 +1041,36 @@ fun TerminalRoute(
                 // on an unfocused window is silently ignored.
                 onShowKeyboard = {
                     optionsOpen = false
-                    pedirTeclado()
+                    requestKeyboard()
                 },
-                isentoDeBateria = isentoDeBateria,
+                batteryExempt = batteryExempt,
                 // Explain BEFORE the system asks. A system dialog with no
                 // context is denied by reflex — and once denied, it is not
                 // offered again on its own.
-                onPedirIsencaoDeBateria = {
+                onRequestBatteryExemption = {
                     optionsOpen = false
-                    dialogoIsencaoAberto = true
+                    exemptionDialogOpen = true
                 },
                 onDismissRequest = { optionsOpen = false },
             )
         }
 
-        if (dialogoIsencaoAberto) {
+        if (exemptionDialogOpen) {
             AlertDialog(
-                onDismissRequest = { dialogoIsencaoAberto = false },
-                modifier = Modifier.testTag(ISENCAO_BATERIA_DIALOGO_TAG),
-                title = { Text(text = ISENCAO_BATERIA_LABEL) },
+                onDismissRequest = { exemptionDialogOpen = false },
+                modifier = Modifier.testTag(BATTERY_EXEMPTION_DIALOG_TAG),
+                title = { Text(text = BATTERY_EXEMPTION_LABEL) },
                 text = {
                     Text(
-                        text = ISENCAO_BATERIA_EXPLICACAO,
+                        text = BATTERY_EXEMPTION_EXPLANATION,
                         modifier = Modifier.verticalScroll(rememberScrollState()),
                     )
                 },
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            dialogoIsencaoAberto = false
-                            abrirPedidoDeIsencaoDeBateria(context)
+                            exemptionDialogOpen = false
+                            openBatteryExemptionRequest(context)
                         },
                     ) { Text(text = "Continue") }
                 },
@@ -1079,7 +1079,7 @@ fun TerminalRoute(
                 // more often, and the item stays on the sheet for whenever
                 // they want it.
                 dismissButton = {
-                    TextButton(onClick = { dialogoIsencaoAberto = false }) {
+                    TextButton(onClick = { exemptionDialogOpen = false }) {
                         Text(text = "Not now")
                     }
                 },
@@ -1099,10 +1099,10 @@ fun TerminalRoute(
 private fun computeCellMetrics(
     density: Density,
     fontSizeSp: Float,
-    entrelinha: TerminalLineSpacing,
+    lineSpacing: TerminalLineSpacing,
 ): TerminalCellMetrics = computeTerminalCellMetrics(
     fontSizePx = with(density) { fontSizeSp.sp.toPx() },
-    entrelinhaPx = entrelinha.deltaPx,
+    lineSpacingPx = lineSpacing.deltaPx,
 )
 
 /**
@@ -1111,13 +1111,13 @@ private fun computeCellMetrics(
  * It is not aesthetic slack: it is the bottom border of the input box of the
  * programs used here. With zero, the keyboard cut off exactly that line.
  */
-private const val LINHAS_ABAIXO_DO_CURSOR = 2
+private const val ROWS_BELOW_CURSOR = 2
 
 /** The space codepoint — a cell holding it draws nothing. */
-private const val ESPACO = 32
+private const val SPACE = 32
 
 /**
- * The largest type size that still makes [linhas] lines fit in [alturaPx].
+ * The largest type size that still makes [lines] lines fit in [heightPx].
  *
  * ## Why a search and not a division
  *
@@ -1135,23 +1135,23 @@ private const val ESPACO = 32
  * for): better to hand back small, illegible type than a division by zero or a
  * one-line grid.
  */
-private fun corpoQueCabeEm(
-    linhas: Int,
-    alturaPx: Int,
+private fun bodyThatFits(
+    lines: Int,
+    heightPx: Int,
     density: Density,
-    entrelinha: TerminalLineSpacing,
+    lineSpacing: TerminalLineSpacing,
 ): TerminalCellMetrics {
-    var ultima = computeCellMetrics(density, CORPO_MINIMO_SP, entrelinha)
-    var corpo = CORPO_MAXIMO_SP
-    while (corpo >= CORPO_MINIMO_SP) {
-        val m = computeCellMetrics(density, corpo, entrelinha)
-        if (m.cellHeightPx * linhas <= alturaPx) return m
-        ultima = m
-        corpo -= PASSO_DE_BUSCA_SP
+    var last = computeCellMetrics(density, MIN_BODY_SP, lineSpacing)
+    var body = MAX_BODY_SP
+    while (body >= MIN_BODY_SP) {
+        val m = computeCellMetrics(density, body, lineSpacing)
+        if (m.cellHeightPx * lines <= heightPx) return m
+        last = m
+        body -= SEARCH_STEP_SP
     }
-    return ultima
+    return last
 }
 
-private const val CORPO_MAXIMO_SP = 28f
-private const val CORPO_MINIMO_SP = 6f
-private const val PASSO_DE_BUSCA_SP = 0.5f
+private const val MAX_BODY_SP = 28f
+private const val MIN_BODY_SP = 6f
+private const val SEARCH_STEP_SP = 0.5f

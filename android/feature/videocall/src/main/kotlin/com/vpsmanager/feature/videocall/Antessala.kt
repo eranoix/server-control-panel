@@ -51,14 +51,14 @@ import org.webrtc.EglBase
  * trades a feature for an obstacle.
  */
 @Composable
-internal fun Antessala(
+internal fun LobbyScreen(
     state: CallUiState.Lobby,
     eglBaseContext: EglBase.Context,
     onToggleMic: () -> Unit,
     onToggleCamera: () -> Unit,
     onSwitchCamera: () -> Unit,
-    onEntrar: () -> Unit,
-    onDesistir: () -> Unit,
+    onEnter: () -> Unit,
+    onGiveUp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -86,7 +86,7 @@ internal fun Antessala(
                 .background(Color.Black),
             contentAlignment = Alignment.Center,
         ) {
-            if (state.semCamera) {
+            if (state.noCamera) {
                 Text(
                     text = "No camera image.\nAnother app may be using it.",
                     color = Color.White,
@@ -113,26 +113,26 @@ internal fun Antessala(
                 label = { Text(text = if (state.micEnabled) "Microphone on" else "Microphone muted") },
             )
             FilterChip(
-                selected = state.cameraEnabled && !state.semCamera,
+                selected = state.cameraEnabled && !state.noCamera,
                 onClick = onToggleCamera,
-                enabled = !state.semCamera,
+                enabled = !state.noCamera,
                 label = { Text(text = if (state.cameraEnabled) "Camera on" else "Camera off") },
             )
         }
 
-        if (!state.semCamera) {
+        if (!state.noCamera) {
             TextButton(onClick = onSwitchCamera) { Text(text = "Flip camera") }
         }
 
-        Button(onClick = onEntrar, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = onEnter, modifier = Modifier.fillMaxWidth()) {
             Text(
                 text = when {
-                    state.semCamera -> "Join with audio only"
+                    state.noCamera -> "Join with audio only"
                     !state.cameraEnabled -> "Join with audio only"
                     else -> "Join call"
                 },
             )
         }
-        TextButton(onClick = onDesistir) { Text(text = "Not now") }
+        TextButton(onClick = onGiveUp) { Text(text = "Not now") }
     }
 }

@@ -104,7 +104,7 @@ class SessionManagerTest {
         )
         val manager = manager(InMemoryTokenStore(tokens()), refresher)
 
-        val pedidos = List(8) { async { manager.refreshAfterUnauthorized("a1") } }
+        val requests = List(8) { async { manager.refreshAfterUnauthorized("a1") } }
         // Runs all 8 until every one of them is blocked: one on the gate
         // (already inside the refresher) and seven on the mutex queue. It is at
         // this point -- all in flight, none finished -- that the count proves
@@ -113,10 +113,10 @@ class SessionManagerTest {
         assertEquals("uma renovacao por vencimento, nunca uma por chamada", 1, refresher.calls.get())
 
         gate.complete(Unit)
-        val resultados = pedidos.awaitAll()
+        val results = requests.awaitAll()
 
         assertEquals("nenhuma renovacao extra depois que a fila destravou", 1, refresher.calls.get())
-        assertEquals(List(8) { "a-novo-1" }, resultados)
+        assertEquals(List(8) { "a-novo-1" }, results)
         assertEquals("a-novo-1", manager.currentAccessToken())
     }
 
@@ -137,9 +137,9 @@ class SessionManagerTest {
         val store = InMemoryTokenStore(tokens())
         val manager = manager(store, CountingRefresher({ RefreshOutcome.Rejected }))
 
-        val resultado = manager.refreshAfterUnauthorized("a1")
+        val result = manager.refreshAfterUnauthorized("a1")
 
-        assertNull(resultado)
+        assertNull(result)
         assertEquals(SessionState.SignedOut, manager.state.value)
         assertNull("o par morto nao pode continuar gravado", store.load())
     }

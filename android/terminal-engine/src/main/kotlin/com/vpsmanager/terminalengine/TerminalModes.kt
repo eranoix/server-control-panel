@@ -77,7 +77,7 @@ data class TerminalModes(
          * value describes a real terminal rather than a convenient zero. With
          * no engine, [altScreen] is false and 1007 changes no decision at all.
          */
-        val NENHUM = TerminalModes(mouseTracking = false, bracketedPaste = false)
+        val NONE = TerminalModes(mouseTracking = false, bracketedPaste = false)
 
         internal const val BIT_MOUSE_TRACKING = 1
         internal const val BIT_BRACKETED_PASTE = 2
@@ -108,10 +108,10 @@ enum class MouseAction(internal val nativeValue: Int) {
 
 /** Mirrors `GhosttyMouseButton`. `NENHUM` is the "no button" of free movement. */
 enum class MouseButton(internal val nativeValue: Int) {
-    NENHUM(0),
-    ESQUERDO(1),
-    DIREITO(2),
-    MEIO(3),
+    NONE(0),
+    LEFT(1),
+    RIGHT(2),
+    MIDDLE(3),
 
     /**
      * Wheel up. Not our invention: since xterm, the wheel **is** button 4 (and
@@ -119,10 +119,10 @@ enum class MouseButton(internal val nativeValue: Int) {
      * and `less` recognise the wheel — any other encoding is simply not read as
      * scrolling.
      */
-    RODA_CIMA(4),
+    WHEEL_UP(4),
 
     /** Wheel down — button 5 of the same xterm convention. */
-    RODA_BAIXO(5),
+    WHEEL_DOWN(5),
 }
 
 /**

@@ -26,9 +26,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.vpsmanager.feature.videocall.pip.AutoEntrarNaJanelaFlutuante
-import com.vpsmanager.feature.videocall.pip.ChamadaNaJanela
-import com.vpsmanager.feature.videocall.pip.JanelaFlutuante
+import com.vpsmanager.feature.videocall.pip.AutoEnterFloatingWindow
+import com.vpsmanager.feature.videocall.pip.CallInWindow
+import com.vpsmanager.feature.videocall.pip.FloatingWindow
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -58,25 +58,25 @@ fun CallScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) {
-        // Re-attempt regardless of the exact grant map — abrirAntessala re-checks every
+        // Re-attempt regardless of the exact grant map — openLobby re-checks every
         // permission itself and re-emits PermissionRequired for whatever is still missing.
-        viewModel.abrirAntessala()
+        viewModel.openLobby()
     }
 
     // THE GREEN ROOM, not joining straight away. Joining a call is the only
     // action in this app that is public and irreversible: by the time the
     // person finds out they were muted, the others have already seen. See
-    // [Antessala].
+    // [LobbyScreen].
     LaunchedEffect(roomId) {
-        viewModel.abrirAntessala()
+        viewModel.openLobby()
     }
 
-    val naJanela by JanelaFlutuante.naJanela.collectAsStateWithLifecycle()
+    val inWindow by FloatingWindow.inWindow.collectAsStateWithLifecycle()
 
     // Auto-enter only applies INSIDE the call. Enabling it while the screen is
     // still asking for permission would make leaving the app open a little
     // window for a call that never started.
-    AutoEntrarNaJanelaFlutuante(habilitado = state is CallUiState.InCall)
+    AutoEnterFloatingWindow(enabled = state is CallUiState.InCall)
 
     Box(modifier = modifier.fillMaxSize()) {
         when (val current = state) {
@@ -85,14 +85,14 @@ fun CallScreen(
                 onRequestPermissions = { permissionLauncher.launch(CALL_PERMISSIONS) },
             )
             is CallUiState.Error -> CallErrorContent(message = current.message, onLeave = onLeaveCall)
-            is CallUiState.Lobby -> Antessala(
+            is CallUiState.Lobby -> LobbyScreen(
                 state = current,
                 eglBaseContext = viewModel.eglBaseContext,
                 onToggleMic = viewModel::onToggleMic,
                 onToggleCamera = viewModel::onToggleCamera,
                 onSwitchCamera = viewModel::onSwitchCamera,
-                onEntrar = { viewModel.joinRoom(roomId) },
-                onDesistir = {
+                onEnter = { viewModel.joinRoom(roomId) },
+                onGiveUp = {
                     // Backing out of the green room has to RELEASE the
                     // camera. Without the onLeave, the device's light would
                     // stay on after the person went back to the list — and the
@@ -101,7 +101,7 @@ fun CallScreen(
                     onLeaveCall()
                 },
             )
-            is CallUiState.InCall -> if (naJanela) {
+            is CallUiState.InCall -> if (inWindow) {
                 // IN THE LITTLE WINDOW: video and one line of state, nothing
                 // more.
                 //
@@ -111,7 +111,7 @@ fun CallScreen(
                 // names and the grid turn to mush. And the state has to fit
                 // there because the little window is the ONLY place where a
                 // drop can be seen while the app is not in the foreground.
-                ChamadaNaJanela(state = current, eglBaseContext = viewModel.eglBaseContext)
+                CallInWindow(state = current, eglBaseContext = viewModel.eglBaseContext)
             } else {
                 InCallContent(
                     state = current,

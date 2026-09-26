@@ -30,9 +30,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
-import com.vpsmanager.feature.notifications.inbox.CaixaDeAlertas
-import com.vpsmanager.feature.notifications.inbox.AlertasVistos
-import com.vpsmanager.feature.notifications.inbox.CaixaDeAlertasViewModel
+import com.vpsmanager.feature.notifications.inbox.AlertInbox
+import com.vpsmanager.feature.notifications.inbox.SeenAlerts
+import com.vpsmanager.feature.notifications.inbox.AlertInboxViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -62,16 +62,16 @@ fun NotificationPreferencesRoute(
     // With the repository as a second parameter — even with a default
     // value — reflection does not find the constructor and the screen dies
     // with "Cannot create an instance of class". A test caught this.
-    val caixa: CaixaDeAlertasViewModel = viewModel(
+    val inbox: AlertInboxViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
-                CaixaDeAlertasViewModel(context.applicationContext as android.app.Application)
+                AlertInboxViewModel(context.applicationContext as android.app.Application)
             }
         },
     )
-    val alertas by caixa.alertas.collectAsStateWithLifecycle()
-    val vistos by caixa.vistos.collectAsStateWithLifecycle()
-    val caixaFalhou by caixa.falhou.collectAsStateWithLifecycle()
+    val alerts by inbox.alerts.collectAsStateWithLifecycle()
+    val seen by inbox.seen.collectAsStateWithLifecycle()
+    val inboxFailed by inbox.failed.collectAsStateWithLifecycle()
 
     // TWO TABS, and not a single scroll.
     //
@@ -85,36 +85,36 @@ fun NotificationPreferencesRoute(
     // The count on the label is the reason tabs work here: without it,
     // switching tabs would be the only way to know whether anything is firing,
     // and a tab that has to be opened in order to inform does not inform.
-    var abaSelecionada by rememberSaveable { mutableStateOf(0) }
-    val pendentes = alertas.count { AlertasVistos.chaveDe(it) !in vistos }
+    var selectedTab by rememberSaveable { mutableStateOf(0) }
+    val pending = alerts.count { SeenAlerts.keyOf(it) !in seen }
 
     Column(modifier = modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = abaSelecionada) {
+        TabRow(selectedTabIndex = selectedTab) {
             Tab(
-                selected = abaSelecionada == 0,
-                onClick = { abaSelecionada = 0 },
+                selected = selectedTab == 0,
+                onClick = { selectedTab = 0 },
                 text = {
                     Text(
-                        text = if (pendentes > 0) "Firing ($pendentes)" else "Firing",
+                        text = if (pending > 0) "Firing ($pending)" else "Firing",
                     )
                 },
             )
             Tab(
-                selected = abaSelecionada == 1,
-                onClick = { abaSelecionada = 1 },
+                selected = selectedTab == 1,
+                onClick = { selectedTab = 1 },
                 text = { Text(text = "Rules") },
             )
         }
-        when (abaSelecionada) {
+        when (selectedTab) {
             0 -> Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                CaixaDeAlertas(
-                    alertas = alertas,
-                    vistos = vistos,
-                    aoMarcarVisto = caixa::marcarVisto,
-                    aoDesmarcarTudo = caixa::mostrarOsVistos,
+                AlertInbox(
+                    alerts = alerts,
+                    seen = seen,
+                    onMarkSeen = inbox::markSeen,
+                    onUnmarkAll = inbox::showSeen,
                     modifier = Modifier.padding(16.dp),
                 )
-                if (caixaFalhou) {
+                if (inboxFailed) {
                     // A read failure is stated, never silenced: "no alerts"
                     // is the one sentence this screen may never say by
                     // mistake.

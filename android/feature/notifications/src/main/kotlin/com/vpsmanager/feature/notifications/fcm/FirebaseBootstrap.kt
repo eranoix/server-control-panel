@@ -10,7 +10,7 @@ import org.json.JSONObject
 private const val TAG_BOOT = "VpsFirebaseBoot"
 
 /** Where the owner drops the file the Firebase console hands over. */
-internal const val ARQUIVO_GOOGLE_SERVICES = "google-services.json"
+internal const val GOOGLE_SERVICES_FILE = "google-services.json"
 
 /**
  * Brings Firebase up from the `google-services.json` placed in
@@ -52,32 +52,32 @@ object FirebaseBootstrap {
      * Returns `true` if Firebase came up. Called once at app boot; it is safe
      * to call again (the SDK returns the app that already exists).
      */
-    fun instalar(context: Context): Boolean {
-        val bruto = lerAsset(context) ?: run {
+    fun install(context: Context): Boolean {
+        val raw = readAsset(context) ?: run {
             Log.i(
                 TAG_BOOT,
-                "push nativo desligado: ponha o $ARQUIVO_GOOGLE_SERVICES do console do " +
+                "push nativo desligado: ponha o $GOOGLE_SERVICES_FILE do console do " +
                     "Firebase em app/src/main/assets/ (o projeto precisa do pacote " +
                     "tech.northwind.vpsm.app)",
             )
             return false
         }
-        val opcoes = opcoesDe(bruto, context.packageName) ?: run {
+        val options = optionsFrom(raw, context.packageName) ?: run {
             // A file that is present and useless is worse than an absent
             // one: somebody believes they configured it. Which is why this
             // branch shouts instead of whispering.
-            Log.e(TAG_BOOT, "$ARQUIVO_GOOGLE_SERVICES presente mas sem os campos do pacote ${context.packageName}")
+            Log.e(TAG_BOOT, "$GOOGLE_SERVICES_FILE presente mas sem os campos do pacote ${context.packageName}")
             return false
         }
         return runCatching {
             if (FirebaseApp.getApps(context).isEmpty()) {
-                FirebaseApp.initializeApp(context, opcoes)
+                FirebaseApp.initializeApp(context, options)
             }
             // Asking for the token NOW is what fires `onNewToken` on the
             // first run; without this the device would only register itself on
             // the day FCM decided to rotate the key on its own.
             FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
-                VpsFirebaseMessagingService.registrarTokenAvulso(context, token)
+                VpsFirebaseMessagingService.registerTokenDetached(context, token)
             }
             true
         }.getOrElse { e ->
@@ -86,8 +86,8 @@ object FirebaseBootstrap {
         }
     }
 
-    private fun lerAsset(context: Context): String? = runCatching {
-        context.assets.open(ARQUIVO_GOOGLE_SERVICES).bufferedReader().use { it.readText() }
+    private fun readAsset(context: Context): String? = runCatching {
+        context.assets.open(GOOGLE_SERVICES_FILE).bufferedReader().use { it.readText() }
     }.getOrNull()
 
     /**
@@ -99,22 +99,22 @@ object FirebaseBootstrap {
      * register the device under the wrong identity — the push would go out and
      * never arrive.
      */
-    internal fun opcoesDe(json: String, packageName: String): FirebaseOptions? = runCatching {
-        val raiz = JSONObject(json)
-        val projeto = raiz.getJSONObject("project_info")
-        val clientes = raiz.getJSONArray("client")
-        for (i in 0 until clientes.length()) {
-            val cliente = clientes.getJSONObject(i)
-            val info = cliente.getJSONObject("client_info")
+    internal fun optionsFrom(json: String, packageName: String): FirebaseOptions? = runCatching {
+        val root = JSONObject(json)
+        val project = root.getJSONObject("project_info")
+        val clients = root.getJSONArray("client")
+        for (i in 0 until clients.length()) {
+            val client = clients.getJSONObject(i)
+            val info = client.getJSONObject("client_info")
             if (info.getJSONObject("android_client_info").getString("package_name") != packageName) {
                 continue
             }
-            val apiKey = cliente.getJSONArray("api_key").getJSONObject(0).getString("current_key")
+            val apiKey = client.getJSONArray("api_key").getJSONObject(0).getString("current_key")
             return@runCatching FirebaseOptions.Builder()
-                .setProjectId(projeto.getString("project_id"))
+                .setProjectId(project.getString("project_id"))
                 .setApplicationId(info.getString("mobilesdk_app_id"))
                 .setApiKey(apiKey)
-                .setGcmSenderId(projeto.getString("project_number"))
+                .setGcmSenderId(project.getString("project_number"))
                 .build()
         }
         null

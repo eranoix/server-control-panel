@@ -20,7 +20,7 @@ enum class MessageSendStatus {
      * away. And an eternal SENDING is indistinguishable from a frozen app,
      * which is the likelier reading after thirty seconds of staring at it.
      */
-    NA_FILA,
+    QUEUED,
 }
 
 /**

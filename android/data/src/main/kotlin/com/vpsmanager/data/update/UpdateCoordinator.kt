@@ -86,7 +86,7 @@ sealed interface UpdateState {
      *
      * It clears itself: it is the answer to a question, not a system state.
      */
-    data class SemNovidade(val versionName: String) : UpdateState
+    data class UpToDate(val versionName: String) : UpdateState
 
     /**
      * The check that was ASKED FOR could not reach the server.
@@ -95,7 +95,7 @@ sealed interface UpdateState {
      * inverted: there a network failure is swallowed because there is nothing
      * to be done with it; here it is the answer to the question just asked.
      */
-    data class BuscaFalhou(val message: String) : UpdateState
+    data class CheckFailed(val message: String) : UpdateState
 }
 
 /** A testable boundary over `PackageInstaller`, which does not exist on a host JVM. */
@@ -104,14 +104,14 @@ interface ApkInstallerPort {
 
     /**
      * False when Android does not know who installed this app — the case for
-     * every hand-downloaded APK. See `ApkInstaller.origemDeInstalacaoConhecida`.
+     * every hand-downloaded APK. See `ApkInstaller.installSourceKnown`.
      */
-    fun origemDeInstalacaoConhecida(): Boolean = true
+    fun installSourceKnown(): Boolean = true
 
     /** Returns false when nothing on the device is able to open an APK. */
-    fun abrirInstaladorDoSistema(apk: File): Boolean = false
+    fun openSystemInstaller(apk: File): Boolean = false
 
-    fun createSession(apkSizeBytes: Long, declararPacote: Boolean = true): Int?
+    fun createSession(apkSizeBytes: Long, declarePackage: Boolean = true): Int?
     fun abandon(sessionId: Int)
     suspend fun requestPreapproval(sessionId: Int, label: CharSequence): PreapprovalOutcome
     suspend fun commit(sessionId: Int, apk: File): InstallOutcome
@@ -231,7 +231,7 @@ class UpdateCoordinator(
      * installed without the system dialog. What this path removes is the wait,
      * not the consent.
      */
-    suspend fun procurarEAtualizar() {
+    suspend fun checkAndUpdate() {
         // An update already under way is not restarted: tapping the button
         // again while 7 MB are coming down would throw away what has arrived.
         if (runningJob?.isActive == true) return
@@ -242,34 +242,34 @@ class UpdateCoordinator(
 
         when (val result = source.check(baseSha)) {
             is UpdateCheckResult.ChannelNotPublished ->
-                _state.value = UpdateState.BuscaFalhou("The server has not published any version of the app yet.")
+                _state.value = UpdateState.CheckFailed("The server has not published any version of the app yet.")
             is UpdateCheckResult.Error ->
-                _state.value = UpdateState.BuscaFalhou("Could not check for updates right now. Check your network.")
+                _state.value = UpdateState.CheckFailed("Could not check for updates right now. Check your network.")
             is UpdateCheckResult.Success -> {
                 manifest = result.manifest
-                when (val decidido = decideAvailability(result.manifest, installedVersionCode)) {
+                when (val decided = decideAvailability(result.manifest, installedVersionCode)) {
                     is UpdateState.Available -> {
-                        _state.value = decidido
+                        _state.value = decided
                         start()
                     }
-                    else -> _state.value = UpdateState.SemNovidade(result.manifest.latest.versionName)
+                    else -> _state.value = UpdateState.UpToDate(result.manifest.latest.versionName)
                 }
             }
         }
-        apagarRespostaDepoisDeLida()
+        deleteResponseAfterRead()
     }
 
     /**
      * An answer to a question has a moment to leave the screen; a system state
-     * does not. Only [UpdateState.SemNovidade] and [UpdateState.BuscaFalhou]
+     * does not. Only [UpdateState.UpToDate] and [UpdateState.CheckFailed]
      * come through here — and only while they are still the current state, so
      * a download started in the meantime is not wiped.
      */
-    private fun apagarRespostaDepoisDeLida() {
+    private fun deleteResponseAfterRead() {
         scope.launch {
-            kotlinx.coroutines.delay(DURACAO_DA_RESPOSTA_MS)
-            val atual = _state.value
-            if (atual is UpdateState.SemNovidade || atual is UpdateState.BuscaFalhou) {
+            kotlinx.coroutines.delay(RESPONSE_DURATION_MS)
+            val current = _state.value
+            if (current is UpdateState.UpToDate || current is UpdateState.CheckFailed) {
                 _state.value = UpdateState.Idle
             }
         }
@@ -331,8 +331,8 @@ class UpdateCoordinator(
         // question at the end — Android refuses the declared session with
         // "Self update is blocked by unknown source package", which was the
         // loop the owner's device got stuck in.
-        val podeSeDeclarar = installer.origemDeInstalacaoConhecida()
-        var sessionId = installer.createSession(current.latest.apkSizeBytes, podeSeDeclarar)
+        val canDeclareSelf = installer.installSourceKnown()
+        var sessionId = installer.createSession(current.latest.apkSizeBytes, canDeclareSelf)
         if (sessionId == null) {
             _state.value = UpdateState.Failed(
                 "Could not prepare the installation on this device.",
@@ -350,7 +350,7 @@ class UpdateCoordinator(
             // it requires the declared session. It is not even attempted —
             // asking and failing would destroy the session and force another
             // one to be created, for nothing.
-            if (!podeSeDeclarar) {
+            if (!canDeclareSelf) {
                 recordDiagnostic(
                     "Update: this app was installed outside an app store, so Android does not " +
                         "allow confirming before the download. The confirmation appears at the end.",
@@ -496,8 +496,8 @@ class UpdateCoordinator(
                     // Without this, a refused session becomes an endless
                     // "try again" loop — which the owner lived through eight
                     // times.
-                    val recorreuAoSistema = !outcome.blocked && installer.abrirInstaladorDoSistema(apk)
-                    if (recorreuAoSistema) {
+                    val fellBackToSystem = !outcome.blocked && installer.openSystemInstaller(apk)
+                    if (fellBackToSystem) {
                         recordDiagnostic(
                             "Update: the session was rejected (${outcome.message}) — " +
                                 "opening the system installer with the already downloaded APK.",
@@ -607,7 +607,7 @@ class UpdateCoordinator(
          * drawer closes), and below the point where a motionless notice becomes
          * part of the scenery and stops being read.
          */
-        const val DURACAO_DA_RESPOSTA_MS = 6_000L
+        const val RESPONSE_DURATION_MS = 6_000L
 
         // Same unit as formatDownloadSize — the owner must not see "1.4 MB" in
         // the banner and a figure in another base in the out-of-space message.

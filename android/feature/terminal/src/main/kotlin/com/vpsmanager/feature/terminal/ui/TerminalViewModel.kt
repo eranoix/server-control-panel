@@ -9,7 +9,7 @@ import com.vpsmanager.data.terminal.TerminalRepository
 import com.vpsmanager.data.terminal.TerminalRawLogSource
 import com.vpsmanager.data.terminal.TerminalTicketSource
 import com.vpsmanager.data.terminal.TerminalWebSocketFactory
-import com.vpsmanager.core.shell.PonteComOTerminal
+import com.vpsmanager.core.shell.TerminalBridge
 import com.vpsmanager.data.terminal.defaultTerminalWsBaseUrl
 import com.vpsmanager.feature.terminal.input.ByteSink
 import com.vpsmanager.feature.terminal.prefs.TerminalScrollback
@@ -83,7 +83,7 @@ internal class TerminalViewModel(
      * size at creation — changing the preference only applies to the next
      * attached session, and the options sheet says so on screen.
      */
-    scrollbackInicial: Int = TerminalEngine.SCROLLBACK_PADRAO,
+    initialScrollback: Int = TerminalEngine.DEFAULT_SCROLLBACK,
     private val stallCheckIntervalMs: Long = 1_000L,
     private val stallThresholdMs: Long = STALL_THRESHOLD_MS_DEFAULT,
     private val clock: () -> Long = System::currentTimeMillis,
@@ -101,7 +101,7 @@ internal class TerminalViewModel(
      * route updates this value before then. Changing it later does not touch
      * the live engine: the scrollback size is fixed in `ghostty_terminal_new`.
      */
-    var scrollbackLinhas: Int = scrollbackInicial
+    var scrollbackLines: Int = initialScrollback
 
     private var engine: GridEngine? = null
 
@@ -125,11 +125,11 @@ internal class TerminalViewModel(
     /**
      * True from the instant the engine is born until the fetched history has
      * been written into it. While it holds, bytes arriving from the socket sit
-     * in [pendentes] instead of reaching the engine — see [onBytesReceived].
+     * in [pending] instead of reaching the engine — see [onBytesReceived].
      */
-    private var primerPendente = false
+    private var primerPending = false
 
-    private val _origemDoComandoDaPonte = MutableStateFlow<String?>(null)
+    private val _bridgeCommandOrigin = MutableStateFlow<String?>(null)
 
     /**
      * Where the command the bridge has just inserted came from, or `null`.
@@ -140,11 +140,11 @@ internal class TerminalViewModel(
      * `docker logs` they do not remember typing. The line clears itself — it
      * is a note, not a state.
      */
-    val origemDoComandoDaPonte: StateFlow<String?> = _origemDoComandoDaPonte.asStateFlow()
+    val bridgeCommandOrigin: StateFlow<String?> = _bridgeCommandOrigin.asStateFlow()
 
     /** Live bytes that arrived during the primer, in the order they arrived. */
-    private val pendentes = ArrayDeque<ByteArray>()
-    private var bytesPendentes = 0
+    private val pending = ArrayDeque<ByteArray>()
+    private var pendingBytes = 0
 
     private val socketClient = TerminalSocketClient(
         name = sessionName,
@@ -153,11 +153,11 @@ internal class TerminalViewModel(
         wsBaseUrl = wsBaseUrl,
         scope = viewModelScope,
         onBytes = ::onBytesReceived,
-        onTamanhoDaSessao = ::aplicarTamanhoDaSessao,
-        // What primes the screen here is `iniciarPrimer`, with the raw log
+        onSessionSize = ::applySessionSize,
+        // What primes the screen here is `startPrimer`, with the raw log
         // replayed into the engine. Asking the server to replay as well would
         // show the history twice.
-        pedirReplayDoServidor = false,
+        requestServerReplay = false,
     )
 
     /** The REAL socket state — the logic decides by this one (never by [bannerState]). */
@@ -186,25 +186,25 @@ internal class TerminalViewModel(
      */
     @OptIn(ExperimentalCoroutinesApi::class)
     val bannerState: StateFlow<ConnectionState> = socketClient.state
-        .flatMapLatest { estado ->
-            if (estado is ConnectionState.Connecting || estado is ConnectionState.Reconnecting) {
+        .flatMapLatest { state ->
+            if (state is ConnectionState.Connecting || state is ConnectionState.Reconnecting) {
                 // flatMapLatest cancels this wait if the state changes before
                 // it elapses — which is exactly the "reconnected fast" case.
                 flow {
                     delay(bannerGraceMs)
-                    emit(estado)
+                    emit(state)
                 }
             } else {
-                flowOf(estado)
+                flowOf(state)
             }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, ConnectionState.Live)
 
     /** True when what was typed while the connection was down had to be dropped. */
-    val digitacaoDescartada: StateFlow<Boolean> = socketClient.digitacaoDescartada
+    val typingDiscarded: StateFlow<Boolean> = socketClient.typingDiscarded
 
     /** What was typed with no connection and is still waiting to go up. */
-    val digitacaoPendente: StateFlow<String> = socketClient.digitacaoPendente
+    val pendingTyping: StateFlow<String> = socketClient.pendingTyping
 
     /**
      * Wired as `TerminalInputView.byteSink`. Records write activity for the
@@ -267,8 +267,8 @@ internal class TerminalViewModel(
         // that comes through here.
         resizeJob?.cancel()
         resizeJob = viewModelScope.launch {
-            delay(ESTABILIZACAO_DE_TAMANHO_MS)
-            aplicarTamanho(cols, rows)
+            delay(SIZE_SETTLE_MS)
+            applySize(cols, rows)
         }
     }
 
@@ -277,25 +277,25 @@ internal class TerminalViewModel(
      * Kept apart from [onGridSizeChanged] so the engine-creation path — which
      * also triggers the connection — remains a single one.
      */
-    private fun aplicarTamanho(cols: Int, rows: Int) {
+    private fun applySize(cols: Int, rows: Int) {
         if (cols == gridCols && rows == gridRows) return
         gridCols = cols
         gridRows = rows
         val currentEngine = engine
         if (currentEngine == null) {
             TerminalDiag.log("engine CRIADA ${cols}x$rows sessao=$sessionName -> primer")
-            engine = engineFactory(cols, rows, scrollbackLinhas)
+            engine = engineFactory(cols, rows, scrollbackLines)
             // ORDER MATTERS, and it now lives ENTIRELY inside the primer: it
-            // fetches the log and ONLY THEN connects. See [iniciarPrimer] on why
+            // fetches the log and ONLY THEN connects. See [startPrimer] on why
             // connecting in parallel delivered the same bytes twice.
-            primerPendente = true
+            primerPending = true
             // ANNOUNCE THE SIZE BEFORE ANYTHING ELSE — this was missing.
             //
             // This branch (engine creation) never called `sendResize`; only the
-            // CHANGE branch did. And `reafirmarTamanho`, which resends once the
+            // CHANGE branch did. And `reassertSize`, which resends once the
             // socket opens, gives up if nothing was ever sent:
             //
-            //     val (cols, rows) = tamanhoDaGrade ?: return
+            //     val (cols, rows) = gridSize ?: return
             //
             // Result: on a FRESH attach the app never told the server what size
             // it was. The PTY stayed at the previous client's size, the program
@@ -309,18 +309,18 @@ internal class TerminalViewModel(
             // defect back because it came back to this branch.
             //
             // The socket does not exist yet here, and that is no harm:
-            // `sendResize` records the size and `reafirmarTamanho` delivers it
+            // `sendResize` records the size and `reassertSize` delivers it
             // the moment the connection opens. What could not go on was the
             // size never existing at all.
             socketClient.sendResize(cols, rows)
-            iniciarPrimer()
+            startPrimer()
         } else {
             // TELLS the server the size of THIS WINDOW — and leaves the engine alone.
             //
             // The server decides the GRID size, because a session may have
             // several clients and the PTY sits at the smallest of them. The
             // engine only changes when the announcement arrives
-            // (`aplicarTamanhoDaSessao`).
+            // (`applySessionSize`).
             //
             // Resizing the engine from the measurement taken here was the
             // defect: with a smaller client attached, the program wrapped its
@@ -350,11 +350,11 @@ internal class TerminalViewModel(
      * tamanho efetivo (menor entre os clientes): 66x60
      * ```
      *
-     * The space left over on screen is not orphaned: [AncoraDoQuadro] already
+     * The space left over on screen is not orphaned: [ScreenAnchor] already
      * knows how to position a grid smaller than the visible area, pinning the
      * content to the bottom.
      */
-    private fun aplicarTamanhoDaSessao(cols: Int, rows: Int) {
+    private fun applySessionSize(cols: Int, rows: Int) {
         viewModelScope.launch {
             val motor = engine ?: return@launch
             if (cols == gridCols && rows == gridRows) return@launch
@@ -380,9 +380,9 @@ internal class TerminalViewModel(
      * A no-op before the grid's first measurement: there is no engine and no
      * socket yet, and [onGridSizeChanged] is what connects.
      */
-    fun onVoltouAoPrimeiroPlano() {
+    fun onReturnedToForeground() {
         if (engine == null) return
-        socketClient.reconectarAgora()
+        socketClient.reconnectNow()
     }
 
     /**
@@ -416,7 +416,7 @@ internal class TerminalViewModel(
      * question the gesture layer asks before deciding what a touch means —
      * without it, the app was guessing.
      */
-    fun currentModes(): TerminalModes = engine?.modes() ?: TerminalModes.NENHUM
+    fun currentModes(): TerminalModes = engine?.modes() ?: TerminalModes.NONE
 
     /**
      * Encodes a mouse event for the remote program, or returns `null` when
@@ -453,8 +453,8 @@ internal class TerminalViewModel(
      * reaches further back in time. The gesture scrolls this one; the panel
      * remains the way to whatever is older than the emulator still holds.
      */
-    fun scrollViewport(linhas: Int) {
-        engine?.scrollViewport(linhas)
+    fun scrollViewport(lines: Int) {
+        engine?.scrollViewport(lines)
     }
 
     /** Pins the viewport back at the end — the UI's "back to the end". */
@@ -468,12 +468,12 @@ internal class TerminalViewModel(
      * draws the position has to ask.
      */
     fun currentScrollState(): TerminalScrollState =
-        engine?.scrollState() ?: TerminalScrollState.NO_FIM
+        engine?.scrollState() ?: TerminalScrollState.AT_END
 
     private fun onBytesReceived(bytes: ByteArray) {
         viewModelScope.launch {
-            if (primerPendente) {
-                enfileirarAteOPrimerTerminar(bytes)
+            if (primerPending) {
+                queueUntilPrimerDone(bytes)
             } else {
                 engine?.write(bytes)
             }
@@ -492,12 +492,12 @@ internal class TerminalViewModel(
      * released at once — losing the history is an annoyance, freezing the live
      * terminal is a defect.
      */
-    private fun enfileirarAteOPrimerTerminar(bytes: ByteArray) {
-        pendentes.addLast(bytes)
-        bytesPendentes += bytes.size
-        if (bytesPendentes > MAX_BYTES_PENDENTES) {
-            TerminalDiag.log("primer ABANDONADO: $bytesPendentes B vivos chegaram antes do historico")
-            concluirPrimer()
+    private fun queueUntilPrimerDone(bytes: ByteArray) {
+        pending.addLast(bytes)
+        pendingBytes += bytes.size
+        if (pendingBytes > MAX_PENDING_BYTES) {
+            TerminalDiag.log("primer ABANDONADO: $pendingBytes B vivos chegaram antes do historico")
+            completePrimer()
         }
     }
 
@@ -574,20 +574,20 @@ internal class TerminalViewModel(
      * (mouse, bracketed paste) the gesture layer consults. Correcting it "for
      * the best" would break that.
      */
-    private fun iniciarPrimer() {
-        val alvo = TerminalScrollback.porLinhas(scrollbackLinhas)
+    private fun startPrimer() {
+        val target = TerminalScrollback.byRows(scrollbackLines)
         viewModelScope.launch {
-            val historico = buscarHistorico(alvo.bytesDeLogParaBuscar)
+            val history = fetchHistory(target.logBytesToFetch)
 
             // ── CONNECT ONLY NOW, AND NEVER BEFORE ──────────────────────────
-            // See [iniciarPrimer]'s KDoc: while nobody is attached the server
+            // See [startPrimer]'s KDoc: while nobody is attached the server
             // does not write to the log, so opening the socket AFTER the bytes
             // are already in hand makes the history end exactly where the live
             // stream begins. Connecting in parallel is what produced the overlap.
             socketClient.connect()
 
-            if (historico != null) escreverEmPedacos(historico)
-            concluirPrimer()
+            if (history != null) writeInChunks(history)
+            completePrimer()
         }
     }
 
@@ -598,10 +598,10 @@ internal class TerminalViewModel(
      * and a slow server must not turn into a terminal that never connects.
      * History is a comfort; a live session is why the screen exists at all.
      */
-    private suspend fun buscarHistorico(bytesAlvo: Int): ByteArray? {
-        val prazo = withTimeoutOrNull(TETO_DO_PRIMER_MS) {
-            for (tentativa in 0 until TENTATIVAS_DO_PRIMER) {
-                if (!primerPendente) return@withTimeoutOrNull null
+    private suspend fun fetchHistory(targetBytes: Int): ByteArray? {
+        val deadline = withTimeoutOrNull(PRIMER_TIMEOUT_MS) {
+            for (attempt in 0 until PRIMER_ATTEMPTS) {
+                if (!primerPending) return@withTimeoutOrNull null
                 // TWO SOURCES, IN THIS ORDER.
                 //
                 // The RENDERED history first: these are the lines that have
@@ -614,15 +614,15 @@ internal class TerminalViewModel(
                 //
                 // The RAW log as a fallback: an old session (with no history
                 // file yet) still loads whatever can be loaded.
-                val renderizado = rawLogSource.historico(sessionName, bytesAlvo)
-                if (renderizado is RawLogResult.Success && renderizado.bytes.isNotEmpty()) {
+                val rendered = rawLogSource.history(sessionName, targetBytes)
+                if (rendered is RawLogResult.Success && rendered.bytes.isNotEmpty()) {
                     TerminalDiag.log(
-                        "primer sessao=$sessionName ${renderizado.bytes.size} B de " +
-                            "${renderizado.total} B do historico renderizado",
+                        "primer sessao=$sessionName ${rendered.bytes.size} B de " +
+                            "${rendered.total} B do historico renderizado",
                     )
-                    return@withTimeoutOrNull renderizado.bytes
+                    return@withTimeoutOrNull rendered.bytes
                 }
-                when (val r = rawLogSource.logBruto(sessionName, bytesAlvo)) {
+                when (val r = rawLogSource.rawLog(sessionName, targetBytes)) {
                     is RawLogResult.Success -> {
                         TerminalDiag.log(
                             "primer sessao=$sessionName ${r.bytes.size} B de ${r.total} B do log cru (reserva)",
@@ -630,17 +630,17 @@ internal class TerminalViewModel(
                         return@withTimeoutOrNull r.bytes
                     }
                     is RawLogResult.Error -> {
-                        TerminalDiag.log("primer FALHOU (${tentativa + 1}): ${r.reason}")
-                        if (tentativa + 1 < TENTATIVAS_DO_PRIMER) delay(ESPERA_ENTRE_TENTATIVAS_MS)
+                        TerminalDiag.log("primer FALHOU (${attempt + 1}): ${r.reason}")
+                        if (attempt + 1 < PRIMER_ATTEMPTS) delay(RETRY_DELAY_MS)
                     }
                 }
             }
             null
         }
-        if (prazo == null) {
+        if (deadline == null) {
             TerminalDiag.log("primer sem historico — conectando so com o fluxo vivo")
         }
-        return prazo
+        return deadline
     }
 
     /**
@@ -653,28 +653,28 @@ internal class TerminalViewModel(
      * the turn back to the renderer between chunks: the history appears
      * scrolling in, instead of the screen freezing and blinking up finished.
      */
-    private suspend fun escreverEmPedacos(bytes: ByteArray) {
+    private suspend fun writeInChunks(bytes: ByteArray) {
         val motor = engine ?: return
-        var inicio = 0
-        while (inicio < bytes.size) {
-            val fim = minOf(inicio + TAMANHO_DO_PEDACO_DE_REPLAY, bytes.size)
-            motor.write(bytes.copyOfRange(inicio, fim))
-            inicio = fim
+        var start = 0
+        while (start < bytes.size) {
+            val end = minOf(start + REPLAY_CHUNK_SIZE, bytes.size)
+            motor.write(bytes.copyOfRange(start, end))
+            start = end
             yield()
         }
     }
 
     /** Releases the live stream that was awaiting the history, in arrival order. */
-    private fun concluirPrimer() {
-        if (!primerPendente) return
-        primerPendente = false
+    private fun completePrimer() {
+        if (!primerPending) return
+        primerPending = false
         val motor = engine
-        while (pendentes.isNotEmpty()) {
-            val bloco = pendentes.removeFirst()
-            motor?.write(bloco)
+        while (pending.isNotEmpty()) {
+            val tile = pending.removeFirst()
+            motor?.write(tile)
         }
-        bytesPendentes = 0
-        entregarOComandoDaPonte()
+        pendingBytes = 0
+        deliverBridgeCommand()
     }
 
     /**
@@ -687,19 +687,19 @@ internal class TerminalViewModel(
      * person would watch the terminal "eat" what they asked for. After the
      * primer the grid is already the real one.
      *
-     * The command arrives PASTED, never executed — see [PonteComOTerminal].
+     * The command arrives PASTED, never executed — see [TerminalBridge].
      * The person is the one who presses Enter, after reading it.
      */
-    private fun entregarOComandoDaPonte() {
-        val pedido = PonteComOTerminal.consumir() ?: return
-        sendPaste(pedido.comando)
-        _origemDoComandoDaPonte.value = pedido.origem
+    private fun deliverBridgeCommand() {
+        val request = TerminalBridge.consume() ?: return
+        sendPaste(request.command)
+        _bridgeCommandOrigin.value = request.origin
         viewModelScope.launch {
-            delay(DURACAO_DO_RECADO_DA_PONTE_MS)
+            delay(BRIDGE_NOTICE_DURATION_MS)
             // Compare before clearing: a second command arriving inside the
             // window swaps the line, and clearing blindly here would erase the NEW one.
-            if (_origemDoComandoDaPonte.value == pedido.origem) {
-                _origemDoComandoDaPonte.value = null
+            if (_bridgeCommandOrigin.value == request.origin) {
+                _bridgeCommandOrigin.value = null
             }
         }
     }
@@ -760,14 +760,14 @@ internal class TerminalViewModel(
          * and whatever is left above it is wobble scaffolding. See
          * `reagendarLimpezaDoAttach`.
          */
-        const val SILENCIO_PARA_LIMPAR_ATTACH_MS = 1_200L
+        const val ATTACH_CLEAR_SILENCE_MS = 1_200L
 
         /**
          * How long to wait for the grid to settle before sending the size.
          * Covers Android's IME animation (~200 ms) without perceptibly
          * delaying a screen rotation.
          */
-        const val ESTABILIZACAO_DE_TAMANHO_MS = 220L
+        const val SIZE_SETTLE_MS = 220L
 
         /**
          * 8s: long enough that an ordinary round-trip — even over a slow or
@@ -792,16 +792,16 @@ internal class TerminalViewModel(
          * 2 MiB is more than any normal attach produces (a full-screen
          * program's frame fits in tens of KiB) and small enough not to weigh
          * on memory should something be dumping output non-stop. See
-         * [enfileirarAteOPrimerTerminar].
+         * [queueUntilPrimerDone].
          */
-        const val MAX_BYTES_PENDENTES = 2 * 1024 * 1024
+        const val MAX_PENDING_BYTES = 2 * 1024 * 1024
 
         /**
          * The slice of the replay written between one yield and the next.
          * 256 KiB is large enough for the per-JNI-call cost to disappear and
          * small enough to fit comfortably inside a 16 ms frame.
          */
-        const val TAMANHO_DO_PEDACO_DE_REPLAY = 256 * 1024
+        const val REPLAY_CHUNK_SIZE = 256 * 1024
 
         /**
          * Two attempts at fetching the history. The first competes with the
@@ -809,15 +809,15 @@ internal class TerminalViewModel(
          * whole screen — and a failure there is usually transient. Insisting
          * beyond that would only delay releasing the live stream.
          */
-        const val TENTATIVAS_DO_PRIMER = 3
+        const val PRIMER_ATTEMPTS = 3
 
         /** Breathing room between the primer's attempts. */
-        const val ESPERA_ENTRE_TENTATIVAS_MS = 400L
+        const val RETRY_DELAY_MS = 400L
 
         /**
          * Ceiling on waiting for the history BEFORE connecting.
          *
-         * The connection waits on the log fetch (see [iniciarPrimer]), so this
+         * The connection waits on the log fetch (see [startPrimer]), so this
          * ceiling is what stops a slow server from becoming a terminal that
          * never connects.
          *
@@ -840,7 +840,7 @@ internal class TerminalViewModel(
          * screen with a live session on the other end — and that one is worse,
          * because it looks broken.
          */
-        const val TETO_DO_PRIMER_MS = 12_000L
+        const val PRIMER_TIMEOUT_MS = 12_000L
 
         /**
          * How long the "came from X" line stays on screen.
@@ -850,7 +850,7 @@ internal class TerminalViewModel(
          * opened, and short enough not to become one more permanent banner
          * competing for the grid's few rows.
          */
-        const val DURACAO_DO_RECADO_DA_PONTE_MS = 6_000L
+        const val BRIDGE_NOTICE_DURATION_MS = 6_000L
     }
 
 }

@@ -53,14 +53,14 @@ class CallScreenTest {
     }
 
     /**
-     * [lancaAoLigarMidia] reproduces the REAL case seen on the device, not a
+     * [throwOnStartMedia] reproduces the REAL case seen on the device, not a
      * test exaggeration: `startLocalMedia` loads a native library, enumerates
      * cameras (and calls `error(...)` when there is none) and opens the
      * capture (which throws if another app already holds the camera). This is
      * the path along which the app crashed on the call screen.
      */
     private class FakeSessionController(
-        private val lancaAoLigarMidia: Boolean = false,
+        private val throwOnStartMedia: Boolean = false,
     ) : VideoCallSessionController {
         override val eglBaseContext: EglBase.Context = object : EglBase.Context {
             override fun getNativeEglContext(): Long = 0L
@@ -68,7 +68,7 @@ class CallScreenTest {
         override var localVideoTrack: VideoTrack? = null
         override var localAudioTrack: org.webrtc.AudioTrack? = null
         override fun startLocalMedia() {
-            if (lancaAoLigarMidia) error("camera ocupada por outro app")
+            if (throwOnStartMedia) error("camera ocupada por outro app")
         }
         override fun createPeerConnectionFor(peerId: String, turn: TurnCredentials, observer: PeerConnection.Observer): PeerConnection? = null
         override fun closePeerConnectionFor(peerId: String) {}
@@ -116,7 +116,7 @@ class CallScreenTest {
     fun `midia que lanca NAO derruba a tela — vira antessala sem camera`() {
         val viewModel = CallViewModel(
             permissionChecker = CallPermissionChecker { emptyList() },
-            sessionController = FakeSessionController(lancaAoLigarMidia = true),
+            sessionController = FakeSessionController(throwOnStartMedia = true),
             signaling = FakeSignaling(),
         )
         composeRule.setContent { CallScreen(roomId = ROOM_ID, onLeaveCall = {}, viewModel = viewModel) }
@@ -148,7 +148,7 @@ class CallScreenTest {
         )
         composeRule.setContent { CallScreen(roomId = ROOM_ID, onLeaveCall = {}, viewModel = viewModel) }
 
-        composeRule.entrarPelaAntessala()
+        composeRule.enterThroughLobby()
 
         composeRule.onNodeWithText("Joining the call…").assertExists()
     }
@@ -195,7 +195,7 @@ class CallScreenTest {
         )
         var left = false
         composeRule.setContent { CallScreen(roomId = ROOM_ID, onLeaveCall = { left = true }, viewModel = viewModel) }
-        composeRule.entrarPelaAntessala()
+        composeRule.enterThroughLobby()
         signaling.push(joinedMessage())
         composeRule.waitForIdle()
 
@@ -215,7 +215,7 @@ class CallScreenTest {
         )
         var left = false
         composeRule.setContent { CallScreen(roomId = ROOM_ID, onLeaveCall = { left = true }, viewModel = viewModel) }
-        composeRule.entrarPelaAntessala()
+        composeRule.enterThroughLobby()
         signaling.push(SignalingMessage(type = "error", error = "A sala foi encerrada pelo administrador."))
         composeRule.waitForIdle()
 
@@ -234,7 +234,7 @@ class CallScreenTest {
  * always the second one. Spreading that subtlety over four tests would be four
  * places to get wrong when the label changes.
  */
-private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.entrarPelaAntessala() {
+private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.enterThroughLobby() {
     waitForIdle()
     onNodeWithText("Join with audio only").performClick()
     waitForIdle()

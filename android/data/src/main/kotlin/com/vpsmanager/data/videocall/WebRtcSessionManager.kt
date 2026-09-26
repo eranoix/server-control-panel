@@ -143,7 +143,7 @@ class WebRtcSessionManager internal constructor(
             // in testing. The waiting room started turning the camera on BEFORE
             // the signal, and the latent defect became a crash in the face of
             // whoever opened the screen.
-            garantirWebRtcCarregado(context.applicationContext)
+            ensureWebRtcLoaded(context.applicationContext)
             PeerConnectionFactory.builder()
                 .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
                 .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
@@ -276,10 +276,10 @@ class WebRtcSessionManager internal constructor(
  * waiting room and an incoming call on the lock screen) would arrive here on
  * different threads, and a two-step check would let both through.
  */
-private val webRtcCarregado = java.util.concurrent.atomic.AtomicBoolean(false)
+private val webRtcLoaded = java.util.concurrent.atomic.AtomicBoolean(false)
 
-internal fun garantirWebRtcCarregado(context: Context) {
-    if (!webRtcCarregado.compareAndSet(false, true)) return
+internal fun ensureWebRtcLoaded(context: Context) {
+    if (!webRtcLoaded.compareAndSet(false, true)) return
     PeerConnectionFactory.initialize(
         PeerConnectionFactory.InitializationOptions.builder(context)
             .createInitializationOptions(),

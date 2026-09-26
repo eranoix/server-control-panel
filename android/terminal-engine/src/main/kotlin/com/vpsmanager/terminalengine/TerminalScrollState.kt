@@ -21,7 +21,7 @@ data class TerminalScrollState(
     val offset: Long,
 
     /** Quantas linhas cabem na tela. */
-    val visiveis: Long,
+    val visible: Long,
 
     /**
      * The viewport is pinned to the end (the active area), i.e. following new
@@ -31,31 +31,31 @@ data class TerminalScrollState(
      * moment the screen **must not** jump down by itself because new output
      * arrived.
      */
-    val noFim: Boolean,
+    val atEnd: Boolean,
 ) {
     /**
      * How many history lines exist above the live screen. Zero when there is
      * nowhere to scroll to — the alternate screen, or a freshly opened session.
      */
-    val historico: Long get() = (total - visiveis).coerceAtLeast(0)
+    val history: Long get() = (total - visible).coerceAtLeast(0)
 
     /** There is somewhere to scroll: only then do the position bar and the gesture make sense. */
-    val podeRolar: Boolean get() = historico > 0
+    val canScroll: Boolean get() = history > 0
 
     /**
      * Progress from 0 (top of the history) to 1 (the end, the live screen),
      * for drawing the bar. With no history the value is 1 — everything is in
      * view, and the end is where you are.
      */
-    val progresso: Float
+    val progress: Float
         get() {
-            val h = historico
+            val h = history
             if (h <= 0) return 1f
             return (offset.toFloat() / h.toFloat()).coerceIn(0f, 1f)
         }
 
     companion object {
         /** Pinned to the end, with no history: the state of a freshly created terminal. */
-        val NO_FIM = TerminalScrollState(total = 0, offset = 0, visiveis = 0, noFim = true)
+        val AT_END = TerminalScrollState(total = 0, offset = 0, visible = 0, atEnd = true)
     }
 }

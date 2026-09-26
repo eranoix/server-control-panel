@@ -297,7 +297,7 @@ class TerminalSocketClientTest {
 
         assertEquals("o laço está dormindo o backoff", 1, factory.openedUrls.size)
 
-        client.reconectarAgora()
+        client.reconnectNow()
         runCurrent()
 
         assertEquals("voltou ao app: tenta na hora", 2, factory.openedUrls.size)
@@ -308,7 +308,7 @@ class TerminalSocketClientTest {
 
         // And it does not disturb one that is already up.
         factory.listeners[1].onOpen()
-        client.reconectarAgora()
+        client.reconnectNow()
         runCurrent()
         assertEquals("conexão viva não é derrubada", 2, factory.openedUrls.size)
     }
@@ -336,7 +336,7 @@ class TerminalSocketClientTest {
 
         client.send(byteArrayOf('l'.code.toByte()))
         client.send(byteArrayOf('s'.code.toByte()))
-        assertFalse("nada foi descartado", client.digitacaoDescartada.value)
+        assertFalse("nada foi descartado", client.typingDiscarded.value)
 
         runCurrent()
         factory.listeners[1].onOpen()
@@ -366,18 +366,18 @@ class TerminalSocketClientTest {
         factory.listeners[0].onOpen()
         factory.listeners[0].onFailure("queda")
 
-        client.send(ByteArray(MAX_PENDENTE_BYTES))
-        assertFalse(client.digitacaoDescartada.value)
+        client.send(ByteArray(MAX_PENDING_SEND_BYTES))
+        assertFalse(client.typingDiscarded.value)
         // This one no longer fits: the whole queue goes, and the warning lights up.
         client.send(byteArrayOf(1))
-        assertTrue("estourou o teto: alguém precisa ser avisado", client.digitacaoDescartada.value)
+        assertTrue("estourou o teto: alguém precisa ser avisado", client.typingDiscarded.value)
 
         runCurrent()
         factory.listeners[1].onOpen()
         runCurrent()
 
         assertEquals("nada represado é mandado depois de descartado", 0, factory.sockets[1].binaryFrames.size)
-        assertFalse("conexão nova limpa o aviso", client.digitacaoDescartada.value)
+        assertFalse("conexão nova limpa o aviso", client.typingDiscarded.value)
     }
 
     @Test
@@ -465,7 +465,7 @@ class TerminalSocketClientTest {
      * itself during the attach's repaint wobble, and restores it to the last
      * value the client reported — which may be stale. Because the app only
      * spoke up when ITS OWN size changed
-     * (`aplicarTamanho` starts with `if (cols == gridCols && rows == gridRows) return`),
+     * (`applySize` starts with `if (cols == gridCols && rows == gridRows) return`),
      * the two sides drifted apart with nothing to reconcile them, and the
      * remote program painted for a screen of the wrong height: text at the
      * top, emptiness below. Only typing fixed it, because the IME's
@@ -585,7 +585,7 @@ class TerminalSocketClientTest {
         assertEquals(
             "e o que foi digitado tem que ficar VISIVEL enquanto espera",
             "ls",
-            client.digitacaoPendente.value,
+            client.pendingTyping.value,
         )
 
         factory.listeners[1].onOpen()
@@ -595,7 +595,7 @@ class TerminalSocketClientTest {
         assertEquals("os dois bytes sairam, nenhum a mais", 2, frames.size)
         assertTrue(frames[0].contentEquals(byteArrayOf('l'.code.toByte())))
         assertTrue(frames[1].contentEquals(byteArrayOf('s'.code.toByte())))
-        assertEquals("e a faixa some quando eles REALMENTE subiram", "", client.digitacaoPendente.value)
+        assertEquals("e a faixa some quando eles REALMENTE subiram", "", client.pendingTyping.value)
     }
 
 }

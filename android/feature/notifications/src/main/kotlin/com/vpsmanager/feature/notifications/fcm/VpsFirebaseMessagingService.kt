@@ -69,11 +69,11 @@ class VpsFirebaseMessagingService : FirebaseMessagingService() {
             }
         }
 
-        val gerente = NotificationManagerCompat.from(applicationContext)
+        val manager = NotificationManagerCompat.from(applicationContext)
 
         // A messaging service has no screen: from here there is no way to
         // REQUEST the permission, only to note that it is missing. The one
-        // that asks is [OnboardingDePush], at the post-login moment. Without
+        // that asks is [PushOnboarding], at the post-login moment. Without
         // this check the `notify` was swallowed by the system with no
         // exception and no trace — and for a good while the permission was
         // always missing, because nothing in the app ever got round to
@@ -81,12 +81,12 @@ class VpsFirebaseMessagingService : FirebaseMessagingService() {
         // The check is INLINE, and not via the helper function: lint does not
         // follow a method call to recognise the guard, and a guard it cannot
         // see comes back as a build error.
-        val permitido = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(
                 applicationContext,
                 Manifest.permission.POST_NOTIFICATIONS,
             ) == PackageManager.PERMISSION_GRANTED
-        if (!permitido) {
+        if (!allowed) {
             Log.w(
                 TAG,
                 "notificação descartada: POST_NOTIFICATIONS não concedida " +
@@ -94,7 +94,7 @@ class VpsFirebaseMessagingService : FirebaseMessagingService() {
             )
             return
         }
-        if (!gerente.areNotificationsEnabled()) {
+        if (!manager.areNotificationsEnabled()) {
             // Permission granted but notifications switched off in the
             // system settings, or the channel silenced. There is nothing to be
             // done from here either — but it vanishes in silence if nobody
@@ -112,7 +112,7 @@ class VpsFirebaseMessagingService : FirebaseMessagingService() {
             eventType = data["event_type"].orEmpty(),
             jobId = data["job_id"],
         )
-        gerente.notify(notificationId, notification)
+        manager.notify(notificationId, notification)
     }
 
 
@@ -185,11 +185,11 @@ class VpsFirebaseMessagingService : FirebaseMessagingService() {
     companion object {
         /**
          * PROCESS scope, and not an instance's: the caller of
-         * [registrarTokenAvulso] is the app's boot, which has no service in
+         * [registerTokenDetached] is the app's boot, which has no service in
          * hand. A scope created per call would be discarded before the request
          * finished.
          */
-        private val escopoAvulso = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val detachedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         /**
          * Registers the token when it arrived from outside the service's
@@ -202,10 +202,10 @@ class VpsFirebaseMessagingService : FirebaseMessagingService() {
          * server. Same path and same repository as [registerToken] — no second
          * way of registering.
          */
-        fun registrarTokenAvulso(context: Context, token: String) {
+        fun registerTokenDetached(context: Context, token: String) {
             val app = context.applicationContext
             val deviceId = DeviceIdProvider(app).deviceId()
-            escopoAvulso.launch {
+            detachedScope.launch {
                 when (val result = PushDeviceRepository().register(deviceId, token)) {
                     is com.vpsmanager.data.push.PushDeviceResult.Success -> Unit
                     is com.vpsmanager.data.push.PushDeviceResult.Error -> Log.w(TAG, result.reason)

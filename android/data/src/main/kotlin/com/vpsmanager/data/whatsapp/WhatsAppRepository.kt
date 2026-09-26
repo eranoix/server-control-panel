@@ -9,8 +9,8 @@ import com.vpsmanager.mobileapiclient.infrastructure.ApiClient
 import com.vpsmanager.mobileapiclient.infrastructure.ClientException
 import com.vpsmanager.mobileapiclient.infrastructure.ServerException
 import java.io.File
-import com.vpsmanager.data.offline.FilaDeEnvio
-import com.vpsmanager.data.offline.ProvaDeIdempotencia
+import com.vpsmanager.data.offline.Outbox
+import com.vpsmanager.data.offline.IdempotencyProof
 import java.io.IOException
 import okhttp3.Call
 import okhttp3.MediaType
@@ -53,7 +53,7 @@ sealed interface SendResult {
      * failure was the old behaviour, and it made the app ask for an action that
      * was not needed.
      */
-    data object NaFila : SendResult
+    data object Queued : SendResult
 }
 
 /**
@@ -141,15 +141,15 @@ open class WhatsAppRepository(
         // If the queue refuses (not installed, or at its ceiling), it falls
         // through to the usual error: a message refused in silence would be
         // worse than the visible failure that existed before.
-        val guardada = FilaDeEnvio.enfileirar(
-            metodo = "POST",
-            caminho = "/whatsapp/chats/$jid/messages",
-            corpoJson = corpoDeEnvio(clientMsgId, text, quotedId),
-            descricao = "message to $jid",
-            prova = ProvaDeIdempotencia.NO_CORPO,
+        val stored = Outbox.enqueue(
+            method = "POST",
+            path = "/whatsapp/chats/$jid/messages",
+            bodyJson = sendBody(clientMsgId, text, quotedId),
+            description = "message to $jid",
+            proof = IdempotencyProof.IN_BODY,
         )
-        if (guardada) {
-            SendResult.NaFila
+        if (stored) {
+            SendResult.Queued
         } else {
             SendResult.Error("Connection failed. Check your network and try again.")
         }
@@ -330,8 +330,8 @@ private fun GeneratedReaction.toDomain() = WhatsAppReaction(emoji = emoji, from 
  * `quoted_id` only goes in when it exists: sending an explicit `null` is not
  * the same as omitting it for a Go decoder with a non-nullable field.
  */
-private fun corpoDeEnvio(clientMsgId: String, text: String, quotedId: String?): String {
-    val campos = buildMap {
+private fun sendBody(clientMsgId: String, text: String, quotedId: String?): String {
+    val fields = buildMap {
         put("client_msg_id", clientMsgId)
         put("text", text)
         if (quotedId != null) put("quoted_id", quotedId)
@@ -342,6 +342,6 @@ private fun corpoDeEnvio(clientMsgId: String, text: String, quotedId: String?): 
     // resolve. Building the object is more direct and does not depend on which
     // overload the compiler picks.
     return kotlinx.serialization.json.JsonObject(
-        campos.mapValues { (_, valor) -> kotlinx.serialization.json.JsonPrimitive(valor) },
+        fields.mapValues { (_, value) -> kotlinx.serialization.json.JsonPrimitive(value) },
     ).toString()
 }

@@ -140,7 +140,7 @@ class AuthTokenInterceptorTest {
         val client = clientFor(session)
 
         val threads = List(6) {
-            Thread { get(client, "/api/mobile/v1/me").use { resposta -> check(resposta.code == 200) } }
+            Thread { get(client, "/api/mobile/v1/me").use { response -> check(response.code == 200) } }
         }
         threads.forEach { it.start() }
         threads.forEach { it.join() }

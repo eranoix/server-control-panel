@@ -8,8 +8,8 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.fragment.app.FragmentActivity
 import android.view.WindowManager
-import com.vpsmanager.data.seguranca.PreferenciasDeSeguranca
-import com.vpsmanager.feature.auth.seguranca.PortaDoAplicativo
+import com.vpsmanager.data.security.SecurityPreferences
+import com.vpsmanager.feature.auth.security.AppGate
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
@@ -26,7 +26,7 @@ import com.vpsmanager.app.nav.resolveNotificationDeepLink
 import com.vpsmanager.app.nav.resolveVideocallDeepLink
 import com.vpsmanager.data.auth.AppSession
 import com.vpsmanager.data.auth.SessionState
-import com.vpsmanager.data.update.OndeEuEstava
+import com.vpsmanager.data.update.ResumePoint
 import com.vpsmanager.data.update.UpdateDiagnostics
 import com.vpsmanager.data.update.UpdateRecovery
 import com.vpsmanager.data.update.unknownSourcesSettingsIntent
@@ -35,7 +35,7 @@ import com.vpsmanager.designsystem.VpsManagerTheme
 import com.vpsmanager.feature.auth.AuthGateScreen
 import com.vpsmanager.feature.notifications.fcm.NotificationDeepLink
 import com.vpsmanager.feature.videocall.call.EXTRA_ROOM_ID
-import com.vpsmanager.feature.videocall.pip.JanelaFlutuante
+import com.vpsmanager.feature.videocall.pip.FloatingWindow
 import android.content.res.Configuration
 import kotlinx.coroutines.launch
 
@@ -86,8 +86,8 @@ class MainActivity : FragmentActivity() {
      */
     private lateinit var themePreference: ThemePreference
 
-    /** The screen the person was on when they asked for the update. See [OndeEuEstava]. */
-    private val ondeEuEstava by lazy { OndeEuEstava(applicationContext) }
+    /** The screen the person was on when they asked for the update. See [ResumePoint]. */
+    private val resumePoint by lazy { ResumePoint(applicationContext) }
     private var pendingDeepLinkRoute by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -129,10 +129,10 @@ class MainActivity : FragmentActivity() {
             setContent {
                 val themeMode by themePreference.mode.collectAsStateWithLifecycle()
                 VpsManagerTheme(themeMode = themeMode) {
-                    DiagnosticoScreen(
-                        falhasDeInit = Bootstrap.initFailures.toList(),
-                        ultimoCrash = crashAnterior,
-                        onLimpar = {
+                    DiagnosticsScreen(
+                        initFailures = Bootstrap.initFailures.toList(),
+                        lastCrash = crashAnterior,
+                        onClear = {
                             Bootstrap.clearLastCrash(this)
                             Bootstrap.initFailures.clear()
                             recreate()
@@ -146,10 +146,10 @@ class MainActivity : FragmentActivity() {
         // FLAG_SECURE according to the preference. It covers screenshots, screen
         // recording AND the thumbnail in Recents — which is the one Android
         // writes TO DISK when you leave the app, showing the last screen.
-        val prefsSeguranca = PreferenciasDeSeguranca(applicationContext)
+        val securityPrefs = SecurityPreferences(applicationContext)
         lifecycleScope.launch {
-            prefsSeguranca.protegerContraCaptura.collect { proteger ->
-                if (proteger) {
+            securityPrefs.protectFromCapture.collect { protect ->
+                if (protect) {
                     window.setFlags(
                         WindowManager.LayoutParams.FLAG_SECURE,
                         WindowManager.LayoutParams.FLAG_SECURE,
@@ -178,9 +178,9 @@ class MainActivity : FragmentActivity() {
                 // THE DOOR comes before everything: when the lock is on, the
                 // content is never even composed — and composing Home means
                 // fetching data from the server.
-                PortaDoAplicativo(
+                AppGate(
                     activity = this@MainActivity,
-                    preferencias = prefsSeguranca,
+                    preferences = securityPrefs,
                 ) {
                 val sessionState by session.state.collectAsStateWithLifecycle()
                 val hasServer = serverConfigRepository.currentBaseUrl() != null
@@ -214,16 +214,16 @@ class MainActivity : FragmentActivity() {
                             onUpdateClick = updates::start,
                             onUpdateCancel = updates::cancel,
                             onUpdateRecovery = { recovery ->
-                                abrirSaidaDeAtualizacao(recovery, serverConfigRepository.currentBaseUrl())
+                                openUpdateExit(recovery, serverConfigRepository.currentBaseUrl())
                             },
                             updateDiagnostics = updateDiagnostics,
                             onClearUpdateDiagnostics = { UpdateDiagnostics.clear(this@MainActivity) },
-                            versaoInstalada = BuildConfig.VERSION_NAME,
-                            // `procurarEAtualizar` already starts the download when it
+                            installedVersion = BuildConfig.VERSION_NAME,
+                            // `checkAndUpdate` already starts the download when it
                             // finds a new version: the tap on the button was the
                             // authorisation, and Android's confirmation is still the
                             // final gate. See its KDoc.
-                            onProcurarAtualizacao = { scope.launch { updates.procurarEAtualizar() } },
+                            onCheckForUpdate = { scope.launch { updates.checkAndUpdate() } },
                             themeMode = themeMode,
                             onThemeModeChange = themePreference::set,
                         )
@@ -249,7 +249,7 @@ class MainActivity : FragmentActivity() {
      * [UpdateRecovery.SHOW_DIAGNOSTICS] does not reach here: it is navigation
      * inside the app, resolved by `AppNavHost` without leaving for anywhere.
      */
-    private fun abrirSaidaDeAtualizacao(recovery: UpdateRecovery, baseUrl: String?) {
+    private fun openUpdateExit(recovery: UpdateRecovery, baseUrl: String?) {
         val intent = when (recovery) {
             UpdateRecovery.ALLOW_UNKNOWN_SOURCES -> unknownSourcesSettingsIntent(this)
             UpdateRecovery.FREE_SPACE -> Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)
@@ -300,8 +300,8 @@ class MainActivity : FragmentActivity() {
         // The notification WINS over the saved route when both exist:
         // whoever tapped a notification has just said where they want to
         // go, and that is more recent than where they were before updating.
-        val rota = resolved?.navRoute ?: ondeEuEstava.consumir()
-        pendingDeepLinkRoute = deepLinkState.consumeOnce(rota)
+        val route = resolved?.navRoute ?: resumePoint.consume()
+        pendingDeepLinkRoute = deepLinkState.consumeOnce(route)
     }
 
     private companion object {
@@ -326,6 +326,6 @@ class MainActivity : FragmentActivity() {
         newConfig: Configuration,
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        JanelaFlutuante.modoMudou(isInPictureInPictureMode)
+        FloatingWindow.modeChanged(isInPictureInPictureMode)
     }
 }

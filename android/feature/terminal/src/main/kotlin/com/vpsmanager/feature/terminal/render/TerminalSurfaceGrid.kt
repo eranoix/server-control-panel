@@ -38,11 +38,11 @@ class TerminalSurfaceGrid @JvmOverloads constructor(
     var cellWidthPx: Float = 16f
     var cellHeightPx: Float = 28f
     var glyphAtlas: GlyphAtlas = GlyphAtlas(cellWidthPx.toInt(), cellHeightPx.toInt())
-    var defaultFg: Int = PaletaTerminalEscura.defaultFg
-    var defaultBg: Int = PaletaTerminalEscura.defaultBg
+    var defaultFg: Int = DarkTerminalPalette.defaultFg
+    var defaultBg: Int = DarkTerminalPalette.defaultBg
 
     /** Light-theme legibility guard — see [TerminalPalette]. */
-    var minLumaDelta: Int = PaletaTerminalEscura.minLumaDelta
+    var minLumaDelta: Int = DarkTerminalPalette.minLumaDelta
 
     /** Set by the render loop after each completed frame; read-only for callers/benchmarks. */
     @Volatile var framesRendered: Long = 0

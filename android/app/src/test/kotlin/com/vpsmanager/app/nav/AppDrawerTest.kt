@@ -40,7 +40,7 @@ class AppDrawerTest {
     val composeRule = createComposeRule()
 
     private fun renderDrawer(
-        currentRoute: String? = AppDestination.Inicio.route,
+        currentRoute: String? = AppDestination.Home.route,
         onDestinationSelected: (AppDestination) -> Unit = {},
         onSignOut: () -> Unit = {},
     ) {
@@ -121,22 +121,22 @@ class AppDrawerTest {
     fun `a gaveta tem exatamente as maes do painel, na ordem da web`() {
         renderDrawer()
 
-        val esperado = listOf(
+        val expected = listOf(
             "Home", "System", "Docker", "Dev", "Security", "Apps", "Operations", "Settings",
         )
-        assertEquals(esperado, AppDestination.entries.map { it.label })
-        esperado.forEach { composeRule.onNodeWithText(it).assertExists() }
+        assertEquals(expected, AppDestination.entries.map { it.label })
+        expected.forEach { composeRule.onNodeWithText(it).assertExists() }
     }
 
     @Test
     fun `inicio e o primeiro destino da gaveta`() {
         renderDrawer()
 
-        val inicioTop = composeRule.onNodeWithText(AppDestination.Inicio.label)
+        val homeTop = composeRule.onNodeWithText(AppDestination.Home.label)
             .fetchSemanticsNode().boundsInRoot.top
-        AppDestination.entries.filter { it != AppDestination.Inicio }.forEach { outro ->
-            val topo = composeRule.onNodeWithText(outro.label).fetchSemanticsNode().boundsInRoot.top
-            assertTrue("'${outro.label}' aparece acima do Início", topo > inicioTop)
+        AppDestination.entries.filter { it != AppDestination.Home }.forEach { other ->
+            val top = composeRule.onNodeWithText(other.label).fetchSemanticsNode().boundsInRoot.top
+            assertTrue("'${other.label}' aparece acima do Início", top > homeTop)
         }
     }
 
@@ -144,11 +144,11 @@ class AppDrawerTest {
     fun `configuracoes fica por ultimo, depois de todo destino de trabalho`() {
         renderDrawer()
 
-        val configTop = composeRule.onNodeWithText(AppDestination.Configuracoes.label)
+        val configTop = composeRule.onNodeWithText(AppDestination.Settings.label)
             .fetchSemanticsNode().boundsInRoot.top
-        AppDestination.entries.filter { it != AppDestination.Configuracoes }.forEach { outro ->
-            val topo = composeRule.onNodeWithText(outro.label).fetchSemanticsNode().boundsInRoot.top
-            assertTrue("'${outro.label}' ficou abaixo de Configurações", topo < configTop)
+        AppDestination.entries.filter { it != AppDestination.Settings }.forEach { other ->
+            val top = composeRule.onNodeWithText(other.label).fetchSemanticsNode().boundsInRoot.top
+            assertTrue("'${other.label}' ficou abaixo de Configurações", top < configTop)
         }
     }
 
@@ -174,17 +174,17 @@ class AppDrawerTest {
         var signedOut = false
         renderDrawer(onSignOut = { signedOut = true })
 
-        val sair = composeRule.onNodeWithText(SIGN_OUT_LABEL)
-        sair.assertIsDisplayed()
-        sair.assertHasClickAction()
+        val signOut = composeRule.onNodeWithText(SIGN_OUT_LABEL)
+        signOut.assertIsDisplayed()
+        signOut.assertHasClickAction()
 
-        val sairTop = sair.fetchSemanticsNode().boundsInRoot.top
+        val signOutTop = signOut.fetchSemanticsNode().boundsInRoot.top
         AppDestination.entries.forEach { destination ->
-            val topo = composeRule.onNodeWithText(destination.label).fetchSemanticsNode().boundsInRoot.top
-            assertTrue("'${destination.label}' ficou abaixo de Sair", topo < sairTop)
+            val top = composeRule.onNodeWithText(destination.label).fetchSemanticsNode().boundsInRoot.top
+            assertTrue("'${destination.label}' ficou abaixo de Sair", top < signOutTop)
         }
 
-        sair.performClick()
+        signOut.performClick()
         assertTrue(signedOut)
     }
 
@@ -219,9 +219,9 @@ class AppDrawerTest {
      */
     @Test
     fun `mae nao casa com a rota de uma filha`() {
-        assertTrue(AppDestination.Docker.matches(rotaDaMae("docker")))
+        assertTrue(AppDestination.Docker.matches(parentRoute("docker")))
         assertFalse(AppDestination.Docker.matches(adminSectionRoute("docker.containers")))
-        assertFalse(AppDestination.Operacoes.matches(ROTA_JIRA))
+        assertFalse(AppDestination.Operations.matches(ROUTE_JIRA))
     }
 
     /** A duplicate route would leave two items highlighted at the same time. */

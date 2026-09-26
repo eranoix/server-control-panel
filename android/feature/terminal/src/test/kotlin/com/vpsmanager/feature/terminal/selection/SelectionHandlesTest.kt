@@ -23,155 +23,155 @@ class SelectionHandlesTest {
     private val hitTester = CellHitTester(cellWidthPx = 20f, cellHeightPx = 40f, cols = 10, rows = 5)
 
     @Test
-    fun ancoras_pendemDasBordasInferioresDaPrimeiraEdaUltimaCelula() {
+    fun anchors_hangFromBottomEdgesOfFirstAndLastCell() {
         // The Android convention: the left handle hangs from the bottom LEFT
         // edge of the first character, the right one from the bottom RIGHT of
         // the last — that is what makes each "point at" what it delimits.
-        val selecao = GridSelection(startRow = 1, startCol = 2, endRow = 1, endCol = 4)
+        val selection = GridSelection(startRow = 1, startCol = 2, endRow = 1, endCol = 4)
 
-        val ancoras = handleAnchors(selecao, hitTester)
+        val anchors = handleAnchors(selection, hitTester)
 
-        assertEquals(Offset(40f, 80f), ancoras.inicio)
-        assertEquals(Offset(100f, 80f), ancoras.fim)
+        assertEquals(Offset(40f, 80f), anchors.start)
+        assertEquals(Offset(100f, 80f), anchors.end)
     }
 
     @Test
-    fun ancoras_naoTrocamDeLadoQuandoOarrasteFoiDeTrasPraFrente() {
+    fun anchors_doNotSwapSidesWhenDraggedBackToFront() {
         // Dragging right to left produces an "inverted" selection. If the
         // start handle jumped to the other side mid-gesture, it would run away
         // from the finger.
-        val paraFrente = GridSelection(startRow = 0, startCol = 1, endRow = 0, endCol = 5)
-        val paraTras = GridSelection(startRow = 0, startCol = 5, endRow = 0, endCol = 1)
+        val forward = GridSelection(startRow = 0, startCol = 1, endRow = 0, endCol = 5)
+        val backward = GridSelection(startRow = 0, startCol = 5, endRow = 0, endCol = 1)
 
-        assertEquals(handleAnchors(paraFrente, hitTester), handleAnchors(paraTras, hitTester))
+        assertEquals(handleAnchors(forward, hitTester), handleAnchors(backward, hitTester))
     }
 
     @Test
-    fun oToqueSobreAalcaAcertaAalca() {
-        val selecao = GridSelection(0, 2, 2, 6)
-        val ancoras = handleAnchors(selecao, hitTester)
+    fun tapOnHandleHitsHandle() {
+        val selection = GridSelection(0, 2, 2, 6)
+        val anchors = handleAnchors(selection, hitTester)
 
-        assertEquals(SelectionHandle.INICIO, handleAt(ancoras.inicio, ancoras, raioPx = 48f))
-        assertEquals(SelectionHandle.FIM, handleAt(ancoras.fim, ancoras, raioPx = 48f))
+        assertEquals(SelectionHandle.START, handleAt(anchors.start, anchors, radiusPx = 48f))
+        assertEquals(SelectionHandle.END, handleAt(anchors.end, anchors, radiusPx = 48f))
     }
 
     @Test
-    fun oToqueLongeDasDuas_naoEdeAlcaNenhuma_eOgestoVoltaPraGrade() {
-        val selecao = GridSelection(0, 2, 0, 4)
-        val ancoras = handleAnchors(selecao, hitTester)
+    fun tapFarFromBoth_hitsNoHandle_andGestureGoesBackToGrid() {
+        val selection = GridSelection(0, 2, 0, 4)
+        val anchors = handleAnchors(selection, hitTester)
 
-        assertNull(handleAt(Offset(180f, 180f), ancoras, raioPx = 48f))
+        assertNull(handleAt(Offset(180f, 180f), anchors, radiusPx = 48f))
     }
 
     @Test
-    fun comAsDuasAoAlcance_venceAmaisProxima() {
+    fun withBothInReach_nearestWins() {
         // A single-cell selection: the two anchors sit 20 px apart, inside
         // the same 48 dp target.
-        val selecao = GridSelection(0, 0, 0, 0)
-        val ancoras = handleAnchors(selecao, hitTester)
+        val selection = GridSelection(0, 0, 0, 0)
+        val anchors = handleAnchors(selection, hitTester)
 
-        assertEquals(SelectionHandle.INICIO, handleAt(Offset(2f, 40f), ancoras, raioPx = 48f))
-        assertEquals(SelectionHandle.FIM, handleAt(Offset(19f, 40f), ancoras, raioPx = 48f))
+        assertEquals(SelectionHandle.START, handleAt(Offset(2f, 40f), anchors, radiusPx = 48f))
+        assertEquals(SelectionHandle.END, handleAt(Offset(19f, 40f), anchors, radiusPx = 48f))
     }
 
     @Test
-    fun arrastarAalcaDeFim_moveSoAponta_deixandoOinicioNoLugar() {
+    fun draggingEndHandle_movesOnlyTheEnd_leavingStartInPlace() {
         val holder = GridSelectionHolder()
         val controller = SelectionGestureController({ hitTester }, holder)
-        controller.definirSelecao(GridSelection(0, 1, 0, 3))
+        controller.setSelection(GridSelection(0, 1, 0, 3))
 
         // Drop the end on the cell (row 2, column 7).
-        controller.arrastarAlca(SelectionHandle.FIM, Offset(150f, 100f))
+        controller.dragHandle(SelectionHandle.END, Offset(150f, 100f))
 
         assertEquals(GridSelection(0, 1, 2, 7), holder.selection)
     }
 
     @Test
-    fun arrastarAalcaDeInicio_moveSoOcomeco() {
+    fun draggingStartHandle_movesOnlyTheStart() {
         val holder = GridSelectionHolder()
         val controller = SelectionGestureController({ hitTester }, holder)
-        controller.definirSelecao(GridSelection(1, 4, 3, 8))
+        controller.setSelection(GridSelection(1, 4, 3, 8))
 
-        controller.arrastarAlca(SelectionHandle.INICIO, Offset(10f, 10f))
+        controller.dragHandle(SelectionHandle.START, Offset(10f, 10f))
 
         assertEquals(GridSelection(0, 0, 3, 8), holder.selection)
     }
 
     @Test
-    fun asAlcasPodemSeCruzar_eOtextoSaiEmOrdemDeLeitura() {
+    fun handlesMayCross_andTextComesOutInReadingOrder() {
         val holder = GridSelectionHolder()
         val controller = SelectionGestureController({ hitTester }, holder)
-        controller.definirSelecao(GridSelection(0, 2, 0, 5))
+        controller.setSelection(GridSelection(0, 2, 0, 5))
 
         // Drag the START handle past the end — a legitimate gesture in any
         // Android text field.
-        controller.arrastarAlca(SelectionHandle.INICIO, Offset(170f, 10f))
+        controller.dragHandle(SelectionHandle.START, Offset(170f, 10f))
 
-        val cruzada = holder.selection!!
-        assertEquals(GridSelection(0, 8, 0, 5), cruzada)
+        val crossed = holder.selection!!
+        assertEquals(GridSelection(0, 8, 0, 5), crossed)
         // Crossed in the data, ordered when it comes to measuring and drawing.
-        assertEquals(Rect(100f, 0f, 180f, 40f), selectionBounds(cruzada, hitTester))
+        assertEquals(Rect(100f, 0f, 180f, 40f), selectionBounds(crossed, hitTester))
     }
 
     @Test
-    fun arrastarAlcaSemSelecao_naoCriaSelecaoDoNada() {
+    fun draggingHandleWithoutSelection_doesNotCreateOne() {
         val holder = GridSelectionHolder()
         val controller = SelectionGestureController({ hitTester }, holder)
 
-        controller.arrastarAlca(SelectionHandle.FIM, Offset(50f, 50f))
+        controller.dragHandle(SelectionHandle.END, Offset(50f, 50f))
 
         assertNull(holder.selection)
     }
 
     @Test
-    fun oRetanguloDaSelecaoEoQueAbarraFlutuanteRecebeParaSePosicionar() {
+    fun selectionRectIsWhatFloatingBarUsesToPosition() {
         // Without this rectangle the system would use the bounds of the whole
         // view and the bar would land at the top of the screen, far from what
         // was selected.
-        val selecao = GridSelection(startRow = 1, startCol = 2, endRow = 1, endCol = 4)
+        val selection = GridSelection(startRow = 1, startCol = 2, endRow = 1, endCol = 4)
 
-        assertEquals(Rect(40f, 40f, 100f, 80f), selectionBounds(selecao, hitTester))
+        assertEquals(Rect(40f, 40f, 100f, 80f), selectionBounds(selection, hitTester))
     }
 
     @Test
-    fun oRealceDeVariasLinhas_pegaAsLinhasDoMeioInteiras() {
-        val faixas = selectionRowRanges(GridSelection(0, 7, 2, 3), cols = 10)
+    fun multiRowHighlight_coversMiddleRowsFully() {
+        val bands = selectionRowRanges(GridSelection(0, 7, 2, 3), cols = 10)
 
-        assertEquals(listOf(7..9, 0..9, 0..3), faixas)
+        assertEquals(listOf(7..9, 0..9, 0..3), bands)
     }
 
     @Test
-    fun oRealceDeUmaLinhaSo_ficaEntreAsDuasColunas() {
+    fun singleRowHighlight_staysBetweenBothColumns() {
         assertEquals(listOf(2..6), selectionRowRanges(GridSelection(4, 2, 4, 6), cols = 10))
     }
 
     @Test
-    fun aMudancaDeSelecaoAvisaQuemDesenhaAbarra() {
+    fun selectionChangeNotifiesBarDrawer() {
         // The floating bar belongs to the system: nothing observes the holder
         // on its own, it has to be CALLED. Without this notice the selection
         // would exist with no bar.
-        val avisos = mutableListOf<GridSelection?>()
+        val notices = mutableListOf<GridSelection?>()
         val holder = GridSelectionHolder()
-        val controller = SelectionGestureController({ hitTester }, holder) { avisos += it }
+        val controller = SelectionGestureController({ hitTester }, holder) { notices += it }
 
-        controller.definirSelecao(GridSelection(0, 0, 0, 2))
-        controller.arrastarAlca(SelectionHandle.FIM, Offset(90f, 10f))
+        controller.setSelection(GridSelection(0, 0, 0, 2))
+        controller.dragHandle(SelectionHandle.END, Offset(90f, 10f))
         controller.clearSelection()
 
-        assertEquals(3, avisos.size)
-        assertNull("o último aviso é o de que não há mais seleção", avisos.last())
+        assertEquals(3, notices.size)
+        assertNull("o último aviso é o de que não há mais seleção", notices.last())
     }
 
     @Test
-    fun limparUmaSelecaoQueJaNaoExiste_naoAvisaDeNovo() {
+    fun clearingMissingSelection_doesNotNotifyAgain() {
         // Closing the bar clears the selection, and clearing the selection
         // closes the bar. Without this guard the pair would loop.
-        val avisos = mutableListOf<GridSelection?>()
+        val notices = mutableListOf<GridSelection?>()
         val holder = GridSelectionHolder()
-        val controller = SelectionGestureController({ hitTester }, holder) { avisos += it }
+        val controller = SelectionGestureController({ hitTester }, holder) { notices += it }
 
         controller.clearSelection()
 
-        assertEquals(0, avisos.size)
+        assertEquals(0, notices.size)
     }
 }

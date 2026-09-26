@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.map
  *
  * The number now drives both halves, which were always one and the same
  * thing: the emulator's capacity AND how much log the app fetches from the
- * server to fill that capacity on attach ([bytesDeLogParaBuscar]). It is the
+ * server to fill that capacity on attach ([logBytesToFetch]). It is the
  * question a person really asks — "how far up can I scroll and reread?".
  *
  * ## Why a ladder, and not a free-text field
@@ -37,19 +37,19 @@ import kotlinx.coroutines.flow.map
  * worst case — but libghostty-vt keeps the scrollback compressed per page and
  * only pays for what was written. The numbers are a ceiling, not an average.
  */
-enum class TerminalScrollback(val rotulo: String, val linhas: Int, val custoAproximado: String) {
+enum class TerminalScrollback(val label: String, val lines: Int, val approxCost: String) {
 
-    CINCO_MIL("5k", 5_000, "~3 MB"),
+    FIVE_THOUSAND("5k", 5_000, "~3 MB"),
 
-    DEZ_MIL("10k", 10_000, "~5 MB"),
+    TEN_THOUSAND("10k", 10_000, "~5 MB"),
 
-    VINTE_MIL("20k", 20_000, "~11 MB"),
+    TWENTY_THOUSAND("20k", 20_000, "~11 MB"),
 
-    CINQUENTA_MIL("50k", 50_000, "~27 MB"),
+    FIFTY_THOUSAND("50k", 50_000, "~27 MB"),
     ;
 
     /**
-     * How many bytes of raw log to fetch from the server to fill [linhas].
+     * How many bytes of raw log to fetch from the server to fill [lines].
      *
      * ## The 1,300 ratio is measured, not estimated
      *
@@ -80,20 +80,20 @@ enum class TerminalScrollback(val rotulo: String, val linhas: Int, val custoApro
      * the transport's gzip shrinks the log by ~15× (measured: 6.2 MB →
      * 388 KB), and the fetch happens once, on attach.
      */
-    val bytesDeLogParaBuscar: Int
-        get() = (linhas.toLong() * BYTES_DE_LOG_POR_LINHA).coerceAtMost(TETO_DE_BUSCA_BYTES).toInt()
+    val logBytesToFetch: Int
+        get() = (lines.toLong() * LOG_BYTES_PER_LINE).coerceAtMost(FETCH_CAP_BYTES).toInt()
 
     companion object {
-        val DEFAULT: TerminalScrollback = CINCO_MIL
+        val DEFAULT: TerminalScrollback = FIVE_THOUSAND
 
-        /** See [bytesDeLogParaBuscar]: worst case measured on this machine's real logs. */
-        private const val BYTES_DE_LOG_POR_LINHA = 1_300L
+        /** See [logBytesToFetch]: worst case measured on this machine's real logs. */
+        private const val LOG_BYTES_PER_LINE = 1_300L
 
         /** Two generations of 8 MiB — the whole log, never more than exists. */
-        private const val TETO_DE_BUSCA_BYTES = 16L * 1024 * 1024
+        private const val FETCH_CAP_BYTES = 16L * 1024 * 1024
 
-        fun porNome(nome: String?): TerminalScrollback =
-            entries.firstOrNull { it.name == nome } ?: DEFAULT
+        fun byName(name: String?): TerminalScrollback =
+            entries.firstOrNull { it.name == name } ?: DEFAULT
 
         /**
          * The rung that a stored value belongs to.
@@ -106,9 +106,9 @@ enum class TerminalScrollback(val rotulo: String, val linhas: Int, val custoApro
          * options sheet with no rung lit at all — the screen saying that their
          * choice does not exist, instead of saying where it ended up.
          */
-        fun porLinhas(linhas: Int): TerminalScrollback =
-            entries.firstOrNull { it.linhas == linhas }
-                ?: entries.lastOrNull { it.linhas <= linhas }
+        fun byRows(lines: Int): TerminalScrollback =
+            entries.firstOrNull { it.lines == lines }
+                ?: entries.lastOrNull { it.lines <= lines }
                 ?: entries.first()
     }
 }
@@ -134,12 +134,12 @@ class TerminalScrollbackPreference(
     private val dataStore: DataStore<Preferences> = context.terminalPrefsDataStore,
 ) {
 
-    val linhas: Flow<Int> = dataStore.data.map { prefs ->
-        prefs[SCROLLBACK_KEY] ?: TerminalScrollback.DEFAULT.linhas
+    val lines: Flow<Int> = dataStore.data.map { prefs ->
+        prefs[SCROLLBACK_KEY] ?: TerminalScrollback.DEFAULT.lines
     }
 
-    suspend fun setLinhas(valor: Int) {
-        dataStore.edit { prefs -> prefs[SCROLLBACK_KEY] = valor }
+    suspend fun setRows(value: Int) {
+        dataStore.edit { prefs -> prefs[SCROLLBACK_KEY] = value }
     }
 
     companion object {

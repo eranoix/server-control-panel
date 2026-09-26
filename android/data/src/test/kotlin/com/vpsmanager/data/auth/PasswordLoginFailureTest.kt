@@ -19,26 +19,26 @@ import org.junit.Test
  */
 class PasswordLoginFailureTest {
 
-    private val corpoCodigoRecusado =
+    private val rejectedCodeBody =
         """{"title":"Unauthorized","status":401,"detail":"código 2FA inválido"}"""
-    private val corpoCredencialRecusada =
+    private val rejectedCredentialBody =
         """{"title":"Unauthorized","status":401,"detail":"invalid credentials"}"""
 
     @Test
     fun `401 do segundo fator nao acusa a senha`() {
-        val resultado = traduzFalhaDeLogin(401, corpoCodigoRecusado, enviouCodigo = true)
+        val result = translateLoginFailure(401, rejectedCodeBody, sentCode = true)
 
-        assertTrue("esperava InvalidCode, veio $resultado", resultado is PasswordLoginResult.InvalidCode)
-        val motivo = (resultado as PasswordLoginResult.InvalidCode).reason
-        assertTrue("a mensagem nao pode falar em senha: $motivo", !motivo.contains("password", ignoreCase = true))
-        assertTrue("a mensagem deve dizer que o codigo expira: $motivo", motivo.contains("30 seconds"))
+        assertTrue("esperava InvalidCode, veio $result", result is PasswordLoginResult.InvalidCode)
+        val reason = (result as PasswordLoginResult.InvalidCode).reason
+        assertTrue("a mensagem nao pode falar em senha: $reason", !reason.contains("password", ignoreCase = true))
+        assertTrue("a mensagem deve dizer que o codigo expira: $reason", reason.contains("30 seconds"))
     }
 
     @Test
     fun `401 de credencial continua acusando usuario e senha`() {
-        val resultado = traduzFalhaDeLogin(401, corpoCredencialRecusada, enviouCodigo = false)
+        val result = translateLoginFailure(401, rejectedCredentialBody, sentCode = false)
 
-        assertEquals(PasswordLoginResult.Failed("Invalid username or password."), resultado)
+        assertEquals(PasswordLoginResult.Failed("Invalid username or password."), result)
     }
 
     /**
@@ -49,9 +49,9 @@ class PasswordLoginFailureTest {
      */
     @Test
     fun `senha editada na etapa do codigo volta a acusar a senha, nao o codigo`() {
-        val resultado = traduzFalhaDeLogin(401, corpoCredencialRecusada, enviouCodigo = true)
+        val result = translateLoginFailure(401, rejectedCredentialBody, sentCode = true)
 
-        assertEquals(PasswordLoginResult.Failed("Invalid username or password."), resultado)
+        assertEquals(PasswordLoginResult.Failed("Invalid username or password."), result)
     }
 
     /**
@@ -61,15 +61,15 @@ class PasswordLoginFailureTest {
      */
     @Test
     fun `sem corpo de erro, ter mandado codigo decide que foi o codigo`() {
-        assertTrue(traduzFalhaDeLogin(401, null, enviouCodigo = true) is PasswordLoginResult.InvalidCode)
-        assertTrue(traduzFalhaDeLogin(401, "", enviouCodigo = true) is PasswordLoginResult.InvalidCode)
+        assertTrue(translateLoginFailure(401, null, sentCode = true) is PasswordLoginResult.InvalidCode)
+        assertTrue(translateLoginFailure(401, "", sentCode = true) is PasswordLoginResult.InvalidCode)
     }
 
     @Test
     fun `sem corpo e sem codigo enviado, o 401 e de credencial`() {
         assertEquals(
             PasswordLoginResult.Failed("Invalid username or password."),
-            traduzFalhaDeLogin(401, null, enviouCodigo = false),
+            translateLoginFailure(401, null, sentCode = false),
         )
     }
 
@@ -80,23 +80,23 @@ class PasswordLoginFailureTest {
      */
     @Test
     fun `423 explica que codigo errado tambem conta para o bloqueio`() {
-        val resultado = traduzFalhaDeLogin(423, null, enviouCodigo = true)
+        val result = translateLoginFailure(423, null, sentCode = true)
 
-        val motivo = (resultado as PasswordLoginResult.Failed).reason
-        assertTrue("deve mencionar bloqueio: $motivo", motivo.contains("locked", ignoreCase = true))
-        assertTrue("deve ligar ao codigo: $motivo", motivo.contains("code", ignoreCase = true))
+        val reason = (result as PasswordLoginResult.Failed).reason
+        assertTrue("deve mencionar bloqueio: $reason", reason.contains("locked", ignoreCase = true))
+        assertTrue("deve ligar ao codigo: $reason", reason.contains("code", ignoreCase = true))
     }
 
     @Test
     fun `429 pede espera, e um status desconhecido nao ecoa o corpo cru`() {
         assertEquals(
             PasswordLoginResult.Failed("Too many attempts. Wait a moment and try again."),
-            traduzFalhaDeLogin(429, null, enviouCodigo = false),
+            translateLoginFailure(429, null, sentCode = false),
         )
 
-        val desconhecido = traduzFalhaDeLogin(418, """{"detail":"segredo do servidor"}""", enviouCodigo = false)
-        val motivo = (desconhecido as PasswordLoginResult.Failed).reason
-        assertTrue("nao pode ecoar o corpo: $motivo", !motivo.contains("segredo"))
-        assertTrue(motivo.contains("418"))
+        val unknown = translateLoginFailure(418, """{"detail":"segredo do servidor"}""", sentCode = false)
+        val reason = (unknown as PasswordLoginResult.Failed).reason
+        assertTrue("nao pode ecoar o corpo: $reason", !reason.contains("segredo"))
+        assertTrue(reason.contains("418"))
     }
 }

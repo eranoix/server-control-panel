@@ -53,10 +53,10 @@ class HomeScreenTest {
 
     @Test
     fun `erro duro diz o que houve E o que fazer, e o botao recarrega`() {
-        var recarregou = false
+        var reloaded = false
         composeRule.dashboard(
             state = HomeUiState.Error("Connection failed. Check your network and try again."),
-            onRetry = { recarregou = true },
+            onRetry = { reloaded = true },
         )
 
         composeRule.onNodeWithText("Can't reach the server").assertIsDisplayed()
@@ -67,7 +67,7 @@ class HomeScreenTest {
         ).assertIsDisplayed()
 
         composeRule.onNodeWithText("  Try again").performClick()
-        assertEquals(true, recarregou)
+        assertEquals(true, reloaded)
     }
 
     @Test
@@ -135,7 +135,7 @@ class HomeScreenTest {
         // card, which left the Home at the owner's request. Silence becomes the
         // good news itself: the absence of a warning is the cheapest way to say
         // everything is fine, and it does not spend the first screen saying it.
-        composeRule.dashboard(HomeUiState.Success(snapshotCalmo()))
+        composeRule.dashboard(HomeUiState.Success(calmSnapshot()))
 
         composeRule.onAllNodesWithText("Nenhum alerta disparando.").assertCountEquals(0)
         composeRule.onAllNodesWithText("1 thing needs attention").assertCountEquals(0)
@@ -155,13 +155,13 @@ class HomeScreenTest {
 
     // THE TEST FOR THE "AGORA" CARD LEFT ALONG WITH THE CARD (at the owner's
     // request). Queue, deploy and scheduled are still on the Home through the
-    // block grid, and that is where they are tested — see `BlocosDoPainelTest`
+    // block grid, and that is where they are tested — see `DashboardTilesTest`
     // and the queue tap test, just below.
 
     // The "I could not find out" was said TWICE by the "Agora" card (deploy
     // and scheduled), and the card is gone. The rule it protected — a failed
     // call NEVER turns into zero, because zero is a statement — still holds and
-    // is still tested where the information now lives: `BlocosDoPainelTest`,
+    // is still tested where the information now lives: `DashboardTilesTest`,
     // which exercises deploys=null and scheduled=null straight into the
     // blocks' constructor.
 
@@ -209,7 +209,7 @@ class HomeScreenTest {
         val ops = opsReal(systemReal(memUsedPercent = 97.0))
         composeRule.dashboard(HomeUiState.Success(snapshotReal(ops = ops)))
 
-        // "Swap" is not in BLOCOS_INICIAIS — if it shows up, it was the
+        // "Swap" is not in INITIAL_TILES — if it shows up, it was the
         // critical rule that brought it in.
         composeRule.onAllNodesWithText("SWAP").assertCountAtLeast(1)
     }
@@ -253,41 +253,41 @@ class HomeScreenTest {
 
     @Test
     fun `tocar um sinal do topo leva a tela dele`() {
-        var alvo: DashboardTarget? = null
-        composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { alvo = it })
+        var target: DashboardTarget? = null
+        composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { target = it })
 
         // [0] = the attention card's row, which is the one at the top.
         composeRule.onAllNodesWithText("Swap")[0].performClick()
-        assertEquals(DashboardTarget.PROCESSOS, alvo)
+        assertEquals(DashboardTarget.PROCESSES, target)
     }
 
     @Test
     fun `tocar o deploy revertido leva a tela de deploys`() {
-        var alvo: DashboardTarget? = null
-        composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { alvo = it })
+        var target: DashboardTarget? = null
+        composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { target = it })
 
         composeRule.onNodeWithText("Deploy hello").performClick()
-        assertEquals(DashboardTarget.DEPLOYS, alvo)
+        assertEquals(DashboardTarget.DEPLOYS, target)
     }
 
     @Test
     fun `tocar a fila leva a fila de jobs`() {
-        var alvo: DashboardTarget? = null
-        composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { alvo = it })
+        var target: DashboardTarget? = null
+        composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { target = it })
 
         // Through the grid BLOCK, no longer through the "Agora" card's row:
         // the card is gone, the path to the queue is not. And this is what the
         // test protected — the destination, not the card.
-        // UPPERCASE: `GradeDeBlocos` draws `bloco.rotulo.uppercase()`.
+        // UPPERCASE: `TileGrid` draws `bloco.rotulo.uppercase()`.
         composeRule.scrollTo("QUEUE")
         composeRule.onNodeWithText("QUEUE").performClick()
-        assertEquals(DashboardTarget.FILA, alvo)
+        assertEquals(DashboardTarget.QUEUE, target)
     }
 
     @Test
     fun `as acoes rapidas levam a cada destino`() {
-        val alvos = mutableListOf<DashboardTarget>()
-        composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { alvos += it })
+        val targets = mutableListOf<DashboardTarget>()
+        composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { targets += it })
 
         composeRule.scrollTo("Quick actions")
         listOf("Terminal", "Docker", "Deploys", "Audit log").forEach {
@@ -301,7 +301,7 @@ class HomeScreenTest {
                 DashboardTarget.DEPLOYS,
                 DashboardTarget.AUDITORIA,
             ),
-            alvos,
+            targets,
         )
     }
 
@@ -309,7 +309,7 @@ class HomeScreenTest {
     fun `toda secao emitida existe no servidor — nenhum destino aponta para o vazio`() {
         // The 25 SDUI screens served by the BFF; a destination outside this
         // list would open "Esta seção não existe" on the phone.
-        val secoesDoServidor = setOf(
+        val serverSections = setOf(
             "alerts.rules", "deploy.apps", "docker.compose", "docker.containers", "docker.images",
             "docker.networks", "docker.prune", "docker.volumes", "ai.settings", "jira.issues",
             "queue.jobs", "scheduler.jobs", "security.adguard", "security.audit", "security.devices",
@@ -319,7 +319,7 @@ class HomeScreenTest {
         )
         DashboardTarget.entries.forEach { target ->
             val id = target.sectionId ?: return@forEach
-            assert(id in secoesDoServidor) { "destino $target aponta para a seção inexistente '$id'" }
+            assert(id in serverSections) { "destino $target aponta para a seção inexistente '$id'" }
         }
     }
 
@@ -342,14 +342,14 @@ class HomeScreenTest {
 
     @Test
     fun `a tela traduz o destino em secao e em terminal, sem conhecer rota`() {
-        var secao: String? = null
+        var section: String? = null
         var terminal = false
         val vm = HomeViewModel(FakeDashboardSource { DashboardResult.Success(snapshotReal()) })
         composeRule.setContent {
             VpsManagerTheme {
                 HomeScreen(
                     viewModel = vm,
-                    onOpenSection = { secao = it },
+                    onOpenSection = { section = it },
                     onOpenTerminal = { terminal = true },
                     autoRefreshMillis = 0,
                 )
@@ -358,7 +358,7 @@ class HomeScreenTest {
         composeRule.waitForIdle()
 
         composeRule.onAllNodesWithText("Swap")[0].performClick()
-        assertEquals("system.processes", secao)
+        assertEquals("system.processes", section)
 
         composeRule.scrollTo("Quick actions")
         composeRule.onNodeWithText("Terminal").performClick()
@@ -367,11 +367,11 @@ class HomeScreenTest {
 
     @Test
     fun `erro na primeira carga vira tela de erro, e nova tentativa traz o painel`() {
-        var tentativas = 0
+        var attempts = 0
         val vm = HomeViewModel(
             FakeDashboardSource {
-                tentativas += 1
-                if (tentativas == 1) {
+                attempts += 1
+                if (attempts == 1) {
                     DashboardResult.Error("The server is unavailable right now.")
                 } else {
                     DashboardResult.Success(snapshotReal())
@@ -413,9 +413,9 @@ private fun ComposeContentTestRule.dashboard(
     waitForIdle()
 }
 
-/** Scrolls the `LazyColumn` down to the item containing [texto]. */
-private fun ComposeContentTestRule.scrollTo(texto: String) {
-    onNode(hasScrollAction()).performScrollToNode(hasText(texto, substring = true))
+/** Scrolls the `LazyColumn` down to the item containing [text]. */
+private fun ComposeContentTestRule.scrollTo(text: String) {
+    onNode(hasScrollAction()).performScrollToNode(hasText(text, substring = true))
     waitForIdle()
 }
 

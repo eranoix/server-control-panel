@@ -31,9 +31,9 @@ fun ConnectionBanner(
     state: ConnectionState,
     isStalled: Boolean,
     modifier: Modifier = Modifier,
-    digitacaoDescartada: Boolean = false,
+    typingDiscarded: Boolean = false,
 ) {
-    val content = bannerContent(state, isStalled, digitacaoDescartada)
+    val content = bannerContent(state, isStalled, typingDiscarded)
     AnimatedVisibility(visible = content.visible, modifier = modifier) {
         Row(
             modifier = Modifier
@@ -59,13 +59,13 @@ private data class BannerContent(val visible: Boolean, val text: String, val bac
 private fun bannerContent(
     state: ConnectionState,
     isStalled: Boolean,
-    digitacaoDescartada: Boolean = false,
+    typingDiscarded: Boolean = false,
 ): BannerContent = when {
     // First of all, and on top of any connection state: losing what was typed
     // is the only thing here that has already cost somebody work. While `send`
     // was swallowing the bytes in silence, the operator only found out through
     // the command that never ran.
-    digitacaoDescartada -> BannerContent(
+    typingDiscarded -> BannerContent(
         visible = true,
         text = "The connection dropped and what you typed was not sent — run the command again",
         background = MaterialTheme.colorScheme.errorContainer,

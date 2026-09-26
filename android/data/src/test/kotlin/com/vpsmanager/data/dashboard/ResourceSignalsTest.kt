@@ -17,19 +17,19 @@ import org.junit.Test
  */
 class ResourceSignalsTest {
 
-    private fun sinal(id: String, system: com.vpsmanager.data.ops.SystemSnapshot = producaoReal()) =
+    private fun signal(id: String, system: com.vpsmanager.data.ops.SystemSnapshot = productionLike()) =
         gradeResources(system).first { it.id == id }
 
     @Test
     fun `a maquina real NAO passa por saudavel — swap sem folga e carga sobem`() {
-        val atencao = attentionSignals(gradeResources(producaoReal()))
+        val warning = attentionSignals(gradeResources(productionLike()))
 
         assertTrue(
-            "esperava sinais de atenção nesta máquina, veio: $atencao",
-            atencao.isNotEmpty(),
+            "esperava sinais de atenção nesta máquina, veio: $warning",
+            warning.isNotEmpty(),
         )
-        assertNotNull("swap a 100% tem que virar sinal", atencao.firstOrNull { it.id == "swap" })
-        assertNotNull("load 11,97 em 8 núcleos tem que virar sinal", atencao.firstOrNull { it.id == "cpu" })
+        assertNotNull("swap a 100% tem que virar sinal", warning.firstOrNull { it.id == "swap" })
+        assertNotNull("load 11,97 em 8 núcleos tem que virar sinal", warning.firstOrNull { it.id == "cpu" })
     }
 
     /**
@@ -51,12 +51,12 @@ class ResourceSignalsTest {
      */
     @Test
     fun `steal alto NAO sobe para o cartao de atencao`() {
-        val atencao = attentionSignals(gradeResources(producaoReal(steal = 37.0)))
+        val warning = attentionSignals(gradeResources(productionLike(steal = 37.0)))
 
         assertEquals(
             "steal nao pode virar alerta: nao ha acao possivel de dentro da VM",
             null,
-            atencao.firstOrNull { it.id == "steal" },
+            warning.firstOrNull { it.id == "steal" },
         )
     }
 
@@ -67,30 +67,30 @@ class ResourceSignalsTest {
         // A machine 18 days up with 37% of RAM free: full swap is the normal
         // state of long uptime. Red here every day is the false alarm that
         // teaches people to ignore red.
-        assertEquals(Severity.ATENCAO, sinal("swap").severity)
+        assertEquals(Severity.WARNING, signal("swap").severity)
     }
 
     @Test
     fun `swap cheio COM a RAM no limite vira CRITICO — e a receita do OOM`() {
-        val system = producaoReal(memUsedPercent = 96.0)
-        assertEquals(Severity.CRITICO, sinal("swap", system).severity)
+        val system = productionLike(memUsedPercent = 96.0)
+        assertEquals(Severity.CRITICAL, signal("swap", system).severity)
     }
 
     @Test
     fun `swap com folga nao levanta sinal`() {
-        val system = producaoReal(swapUsedPercent = 40.0)
-        assertEquals(Severity.OK, sinal("swap", system).severity)
+        val system = productionLike(swapUsedPercent = 40.0)
+        assertEquals(Severity.OK, signal("swap", system).severity)
     }
 
     @Test
     fun `o limiar de swap e exatamente 95 por cento, inclusive`() {
-        assertEquals(Severity.OK, sinal("swap", producaoReal(swapUsedPercent = 94.9)).severity)
-        assertEquals(Severity.ATENCAO, sinal("swap", producaoReal(swapUsedPercent = 95.0)).severity)
+        assertEquals(Severity.OK, signal("swap", productionLike(swapUsedPercent = 94.9)).severity)
+        assertEquals(Severity.WARNING, signal("swap", productionLike(swapUsedPercent = 95.0)).severity)
     }
 
     @Test
     fun `o detalhe do swap explica o limiar em vez de so repetir o numero`() {
-        val swap = sinal("swap")
+        val swap = signal("swap")
         assertTrue(
             "o detalhe tem que dizer POR QUE 100% de swap importa: ${swap.detail}",
             swap.detail.contains("no room left to page"),
@@ -103,9 +103,9 @@ class ResourceSignalsTest {
     fun `steal e sempre OK — informacao, nunca alerta`() {
         // Not 7%, not 20%, not 37% (the real number the owner photographed).
         // The number stays VISIBLE; what it no longer does is shout.
-        assertEquals(Severity.OK, sinal("steal").severity)
-        assertEquals(Severity.OK, sinal("steal", producaoReal(steal = 20.0)).severity)
-        assertEquals(Severity.OK, sinal("steal", producaoReal(steal = 37.0)).severity)
+        assertEquals(Severity.OK, signal("steal").severity)
+        assertEquals(Severity.OK, signal("steal", productionLike(steal = 20.0)).severity)
+        assertEquals(Severity.OK, signal("steal", productionLike(steal = 37.0)).severity)
     }
 
     /**
@@ -115,7 +115,7 @@ class ResourceSignalsTest {
      */
     @Test
     fun `steal alto continua com numero e com a frase que explica`() {
-        val s = sinal("steal", producaoReal(steal = 37.0))
+        val s = signal("steal", productionLike(steal = 37.0))
 
         assertEquals("37%", s.headline)
         assertTrue(s.detail.contains("cannot be fixed from inside the VM"))
@@ -123,7 +123,7 @@ class ResourceSignalsTest {
 
     @Test
     fun `steal baixo diz que o hipervisor esta entregando a CPU contratada`() {
-        val s = sinal("steal", producaoReal(steal = 4.9))
+        val s = signal("steal", productionLike(steal = 4.9))
 
         assertEquals(Severity.OK, s.severity)
         assertTrue(s.detail.contains("delivering the CPU you pay for"))
@@ -131,7 +131,7 @@ class ResourceSignalsTest {
 
     @Test
     fun `o detalhe do steal diz que nao ha conserto de dentro da VM`() {
-        assertTrue(sinal("steal").detail.contains("cannot be fixed from inside the VM"))
+        assertTrue(signal("steal").detail.contains("cannot be fixed from inside the VM"))
     }
 
     // ── CPU / load ──────────────────────────────────────────────────────────
@@ -140,56 +140,56 @@ class ResourceSignalsTest {
     fun `CPU e julgada por load por nucleo, nao pelo uso instantaneo`() {
         // 91% usage with load 0.4 on 8 cores: a compile spike, not a queue.
         // High usage on its own must NOT light the signal.
-        val pico = producaoReal(load1 = 3.2)
-        assertEquals(Severity.OK, sinal("cpu", pico).severity)
-        assertEquals("91%", sinal("cpu", pico).headline)
+        val peak = productionLike(load1 = 3.2)
+        assertEquals(Severity.OK, signal("cpu", peak).severity)
+        assertEquals("91%", signal("cpu", peak).headline)
     }
 
     @Test
     fun `load igual ao numero de nucleos ja e atencao — dai pra cima ha fila`() {
-        assertEquals(Severity.ATENCAO, sinal("cpu", producaoReal(load1 = 8.0)).severity)
-        assertEquals(Severity.OK, sinal("cpu", producaoReal(load1 = 7.9)).severity)
+        assertEquals(Severity.WARNING, signal("cpu", productionLike(load1 = 8.0)).severity)
+        assertEquals(Severity.OK, signal("cpu", productionLike(load1 = 7.9)).severity)
     }
 
     @Test
     fun `load ao dobro dos nucleos e CRITICO`() {
-        assertEquals(Severity.CRITICO, sinal("cpu", producaoReal(load1 = 16.0)).severity)
+        assertEquals(Severity.CRITICAL, signal("cpu", productionLike(load1 = 16.0)).severity)
     }
 
     @Test
     fun `sem nucleos declarados o painel nao julga em vez de dividir por zero`() {
-        val semNucleos = producaoReal().let { real ->
+        val withoutCores = productionLike().let { real ->
             real.copy(cpu = real.cpu.copy(cores = 0))
         }
-        assertEquals(Severity.OK, sinal("cpu", semNucleos).severity)
+        assertEquals(Severity.OK, signal("cpu", withoutCores).severity)
     }
 
     // ── iowait, memory, disk ────────────────────────────────────────────────
 
     @Test
     fun `iowait zerado nao levanta sinal e iowait alto levanta`() {
-        assertEquals(Severity.OK, sinal("iowait").severity)
-        assertEquals(Severity.ATENCAO, sinal("iowait", producaoReal(iowait = 12.0)).severity)
-        assertEquals(Severity.CRITICO, sinal("iowait", producaoReal(iowait = 30.0)).severity)
+        assertEquals(Severity.OK, signal("iowait").severity)
+        assertEquals(Severity.WARNING, signal("iowait", productionLike(iowait = 12.0)).severity)
+        assertEquals(Severity.CRITICAL, signal("iowait", productionLike(iowait = 30.0)).severity)
     }
 
     @Test
     fun `memoria a 63 por cento e ok, a 90 e atencao, a 96 e critica`() {
-        assertEquals(Severity.OK, sinal("memoria").severity)
-        assertEquals(Severity.ATENCAO, sinal("memoria", producaoReal(memUsedPercent = 90.0)).severity)
-        assertEquals(Severity.CRITICO, sinal("memoria", producaoReal(memUsedPercent = 96.0)).severity)
+        assertEquals(Severity.OK, signal("memoria").severity)
+        assertEquals(Severity.WARNING, signal("memoria", productionLike(memUsedPercent = 90.0)).severity)
+        assertEquals(Severity.CRITICAL, signal("memoria", productionLike(memUsedPercent = 96.0)).severity)
     }
 
     @Test
     fun `a raiz a 73 por cento e ok e a 92 sobe para atencao`() {
-        assertEquals(Severity.OK, sinal("disco:/").severity)
-        assertEquals(Severity.ATENCAO, sinal("disco:/", producaoReal(rootUsedPercent = 92.0)).severity)
-        assertEquals(Severity.CRITICO, sinal("disco:/", producaoReal(rootUsedPercent = 96.0)).severity)
+        assertEquals(Severity.OK, signal("disco:/").severity)
+        assertEquals(Severity.WARNING, signal("disco:/", productionLike(rootUsedPercent = 92.0)).severity)
+        assertEquals(Severity.CRITICAL, signal("disco:/", productionLike(rootUsedPercent = 96.0)).severity)
     }
 
     @Test
     fun `cada ponto de montagem vira um sinal proprio`() {
-        val ids = gradeResources(producaoReal()).map { it.id }
+        val ids = gradeResources(productionLike()).map { it.id }
         assertTrue(ids.containsAll(listOf("disco:/", "disco:/boot", "disco:/boot/efi")))
     }
 
@@ -197,18 +197,18 @@ class ResourceSignalsTest {
 
     @Test
     fun `rede nunca e julgada — nao existe limiar honesto para muito trafego`() {
-        val rede = sinal("rede")
-        assertEquals(Severity.OK, rede.severity)
-        assertTrue("veio: ${rede.detail}", rede.detail.contains("147.5 KiB/s"))
-        assertTrue("veio: ${rede.detail}", rede.detail.contains("256.3 KiB/s"))
+        val network = signal("rede")
+        assertEquals(Severity.OK, network.severity)
+        assertTrue("veio: ${network.detail}", network.detail.contains("147.5 KiB/s"))
+        assertTrue("veio: ${network.detail}", network.detail.contains("256.3 KiB/s"))
     }
 
     @Test
     fun `rede nao reserva a coluna do valor — o par de taxas nao cabe nela`() {
         // Two rates with units squeezed the label onto two lines and the detail
         // onto four at phone width. An empty headline makes the column vanish.
-        assertEquals("", sinal("rede").headline)
-        assertTrue(gradeResources(producaoReal()).filter { it.id != "rede" }.all { it.headline.isNotBlank() })
+        assertEquals("", signal("rede").headline)
+        assertTrue(gradeResources(productionLike()).filter { it.id != "rede" }.all { it.headline.isNotBlank() })
     }
 
     // ── sorting and rollup ──────────────────────────────────────────────────
@@ -219,40 +219,40 @@ class ResourceSignalsTest {
         // allocate). This test used to use steal at 25%, which stopped being an
         // alert in 0.1.30 — the ordering rule is still the same, it is the
         // example that needed a signal that still alerts.
-        val system = producaoReal(memUsedPercent = 97.0)
-        val atencao = attentionSignals(gradeResources(system))
+        val system = productionLike(memUsedPercent = 97.0)
+        val warning = attentionSignals(gradeResources(system))
 
         // What this test pins is the RULE (worst first), not which signal wins
         // the tie: with RAM at 97% both memory AND swap go critical, and among
         // equals the stable order of `gradeResources` decides. Pinning an id
         // here would turn a change of reading order into a red test, which is
         // noise.
-        assertEquals(Severity.CRITICO, atencao.first().severity)
+        assertEquals(Severity.CRITICAL, warning.first().severity)
         assertTrue(
-            "os dois criticos tem que estar no topo: ${atencao.map { it.id }}",
-            atencao.take(2).map { it.id }.containsAll(listOf("memoria", "swap")),
+            "os dois criticos tem que estar no topo: ${warning.map { it.id }}",
+            warning.take(2).map { it.id }.containsAll(listOf("memoria", "swap")),
         )
     }
 
     @Test
     fun `a ordem dos recursos e estavel, independente da gravidade`() {
-        val calmo = gradeResources(producaoReal(swapUsedPercent = 1.0, steal = 0.0, load1 = 0.5))
-        val caotico = gradeResources(producaoReal(steal = 40.0))
-        assertEquals(calmo.map { it.id }, caotico.map { it.id })
+        val calm = gradeResources(productionLike(swapUsedPercent = 1.0, steal = 0.0, load1 = 0.5))
+        val chaotic = gradeResources(productionLike(steal = 40.0))
+        assertEquals(calm.map { it.id }, chaotic.map { it.id })
     }
 
     // ── alertas do servidor ─────────────────────────────────────────────────
 
     @Test
     fun `worstOf devolve o pior dos dois — a operacao de rollup de grupo`() {
-        assertEquals(Severity.CRITICO, worstOf(Severity.ATENCAO, Severity.CRITICO))
-        assertEquals(Severity.ATENCAO, worstOf(Severity.ATENCAO, Severity.OK))
+        assertEquals(Severity.CRITICAL, worstOf(Severity.WARNING, Severity.CRITICAL))
+        assertEquals(Severity.WARNING, worstOf(Severity.WARNING, Severity.OK))
         assertEquals(Severity.OK, worstOf(Severity.OK, Severity.OK))
     }
 
     @Test
     fun `um alerta do servidor nunca e rebaixado — critical continua CRITICO`() {
-        val alerta = OpsAlert(
+        val alert = OpsAlert(
             name = "disk_root",
             severity = "critical",
             state = "firing",
@@ -261,27 +261,27 @@ class ResourceSignalsTest {
             unit = "%",
         ).toSignal()
 
-        assertEquals(Severity.CRITICO, alerta.severity)
-        assertEquals("92 %", alerta.headline)
-        assertEquals(DashboardTarget.ALERTAS, alerta.target)
+        assertEquals(Severity.CRITICAL, alert.severity)
+        assertEquals("92 %", alert.headline)
+        assertEquals(DashboardTarget.ALERTS, alert.target)
     }
 
     @Test
     fun `severidade desconhecida do servidor vira ATENCAO, nunca silencio`() {
-        val alerta = OpsAlert("queue_lag", "warn", "firing", 310.0, 120.0, "s").toSignal()
-        assertEquals(Severity.ATENCAO, alerta.severity)
-        assertTrue(alerta.detail.contains("threshold 120 s"))
+        val alert = OpsAlert("queue_lag", "warn", "firing", 310.0, 120.0, "s").toSignal()
+        assertEquals(Severity.WARNING, alert.severity)
+        assertTrue(alert.detail.contains("threshold 120 s"))
     }
 
     @Test
     fun `alerta sem unidade nao imprime espaco solto`() {
-        val alerta = OpsAlert("regra", "warn", "firing", 3.5, 2.0, null).toSignal()
-        assertEquals("3.5", alerta.headline)
+        val alert = OpsAlert("regra", "warn", "firing", 3.5, 2.0, null).toSignal()
+        assertEquals("3.5", alert.headline)
     }
 
     @Test
     fun `todo sinal aponta para uma tela — nenhum e beco sem saida`() {
-        gradeResources(producaoReal()).forEach { signal ->
+        gradeResources(productionLike()).forEach { signal ->
             assertNotNull("sinal ${signal.id} sem destino", signal.target)
         }
     }

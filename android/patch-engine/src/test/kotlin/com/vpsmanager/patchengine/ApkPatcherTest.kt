@@ -41,7 +41,7 @@ class ApkPatcherTest {
     private val expected get() = ExpectedApk(sha256 = newSha, sizeBytes = newBytes.size.toLong())
 
     @Test
-    fun apply_quandoTudoBate_devolveAppliedComOHashCalculado() {
+    fun apply_whenEverythingMatches_returnsAppliedWithComputedHash() {
         val patcher = ApkPatcher(fakeNative(returns = 0, produces = newBytes))
         val out = File(tempDir, "out.apk")
 
@@ -55,7 +55,7 @@ class ApkPatcherTest {
     }
 
     @Test
-    fun apply_quandoNativoDizOkMasOsBytesEstaoErrados_reprovaEApagaASaida() {
+    fun apply_whenNativeSaysOkButBytesAreWrong_failsAndDeletesOutput() {
         // This is the scenario that justifies verification living in this
         // module: it was MEASURED on the host's hpatchz that applying a patch
         // over a wrong base of the same size returns 0 and writes a whole,
@@ -72,7 +72,7 @@ class ApkPatcherTest {
     }
 
     @Test
-    fun apply_hashEsperadoEmMaiusculas_continuaCasando() {
+    fun apply_uppercaseExpectedHash_stillMatches() {
         val patcher = ApkPatcher(fakeNative(returns = 0, produces = newBytes))
         val out = File(tempDir, "out.apk")
 
@@ -87,7 +87,7 @@ class ApkPatcherTest {
     }
 
     @Test
-    fun apply_semApkBase_naoChamaONativo() {
+    fun apply_withoutBaseApk_doesNotCallNative() {
         var called = false
         val patcher = ApkPatcher(NativePatcher { _, _, _, _, _, _ -> called = true; 0 })
 
@@ -106,7 +106,7 @@ class ApkPatcherTest {
     }
 
     @Test
-    fun apply_semPatch_reportaQualEntradaFaltou() {
+    fun apply_withoutPatch_reportsWhichInputIsMissing() {
         val patcher = ApkPatcher(fakeNative(returns = 0, produces = newBytes))
 
         val result = patcher.apply(
@@ -121,7 +121,7 @@ class ApkPatcherTest {
     }
 
     @Test
-    fun apply_erroNativoComum_viraNativeFailureTraduzido() {
+    fun apply_commonNativeError_becomesTranslatedNativeFailure() {
         val patcher = ApkPatcher(fakeNative(returns = 9))
         val out = File(tempDir, "out.apk")
 
@@ -132,7 +132,7 @@ class ApkPatcherTest {
     }
 
     @Test
-    fun apply_discoCheioNoMeioDaEscrita_viraInsufficientStorageENaoCodigoNativo() {
+    fun apply_diskFullMidWrite_becomesInsufficientStorageNotNativeCode() {
         // 24 = HPATCH_FILEWRITE_NO_SPACE_ERROR. The caller reacts to this
         // differently (asking to free up space), and should not have to know
         // the native enum to find out.
@@ -150,7 +150,7 @@ class ApkPatcherTest {
     }
 
     @Test
-    fun apply_semAlibHpatchz_viraEngineUnavailable() {
+    fun apply_withoutHpatchzLib_becomesEngineUnavailable() {
         val patcher = ApkPatcher(
             NativePatcher { _, _, _, _, _, _ -> throw UnsatisfiedLinkError("dlopen failed: libhpatchz.so") },
         )
@@ -166,7 +166,7 @@ class ApkPatcherTest {
     }
 
     @Test
-    fun apply_apagaSobraDeExecucaoAnteriorAntesDeChamarONativo() {
+    fun apply_deletesLeftoverFromPreviousRunBeforeCallingNative() {
         val out = File(tempDir, "out.apk")
         out.writeBytes("apk pela metade de uma tentativa que falhou".toByteArray())
 
@@ -186,7 +186,7 @@ class ApkPatcherTest {
     }
 
     @Test
-    fun apply_repassaOCacheMemoryPadraoDeQuatroMebibytes() {
+    fun apply_passesDefaultFourMebibyteCacheMemory() {
         var seenCache = -1L
         var seenThreads = -1
         var seenChecksum = false
@@ -213,7 +213,7 @@ class ApkPatcherTest {
     }
 
     @Test
-    fun sha256Of_baseComNoVetorConhecidoDoNist() {
+    fun sha256Of_matchesKnownNistVector() {
         val f = File(tempDir, "abc.bin").apply { writeBytes("abc".toByteArray()) }
         assertEquals(
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
@@ -222,7 +222,7 @@ class ApkPatcherTest {
     }
 
     @Test
-    fun sha256Of_arquivoMaiorQueOBufferDeLeitura() {
+    fun sha256Of_fileLargerThanReadBuffer() {
         // 64 KiB is the size of the internal buffer; going past it exercises the loop.
         val bytes = ByteArray(200_000) { (it % 251).toByte() }
         val f = File(tempDir, "grande.bin").apply { writeBytes(bytes) }
@@ -234,7 +234,7 @@ class ApkPatcherTest {
     }
 
     @Test
-    fun hPatchCode_traduzOsSaltosDoEnumUpstream() {
+    fun hPatchCode_translatesUpstreamEnumGaps() {
         // Upstream jumps from 18 to 20 and from 25 to 103; translating by
         // `ordinal` would fail silently on exactly the checksum codes.
         assertEquals(HPatchCode.OPTIONS_ERROR, HPatchCode.fromRaw(1))
@@ -245,7 +245,7 @@ class ApkPatcherTest {
     }
 
     @Test
-    fun hPatchCode_codigoDesconhecidoNaoSeDisfarcaDeConhecido() {
+    fun hPatchCode_unknownCodeIsNotDisguisedAsKnown() {
         assertEquals(HPatchCode.UNKNOWN, HPatchCode.fromRaw(201))
         assertEquals(HPatchCode.UNKNOWN, HPatchCode.fromRaw(9999))
 

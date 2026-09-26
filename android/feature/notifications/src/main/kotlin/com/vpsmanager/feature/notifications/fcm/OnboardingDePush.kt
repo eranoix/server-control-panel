@@ -49,38 +49,38 @@ import androidx.core.content.ContextCompat
  * marked as seen in [com.vpsmanager.data.push.PushOnboardingState].
  */
 @Composable
-fun OnboardingDePush() {
+fun PushOnboarding() {
     val context = LocalContext.current
 
     // Below Android 13 there is no runtime notification permission —
     // declaring it in the manifest is enough and the request is not possible.
-    val precisaPedirPermissao = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+    val needsPermissionRequest = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
         PackageManager.PERMISSION_GRANTED
 
     // "Has the system sheet resolved yet?" — starts out true when there is
     // nothing to ask for, so that the conversation about battery is not left
     // waiting on an event that will never happen.
-    var permissaoResolvida by remember { mutableStateOf(!precisaPedirPermissao) }
+    var permissionResolved by remember { mutableStateOf(!needsPermissionRequest) }
 
-    val pedidoDePermissao = rememberLauncherForActivityResult(
+    val permissionRequest = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) {
         // The outcome does not change what comes next: the battery exemption
         // is just as useful, and insisting on a denied permission would be
         // precisely what the prompt's own docs call "never a forced gate".
-        permissaoResolvida = true
+        permissionResolved = true
     }
 
-    LaunchedEffect(precisaPedirPermissao) {
-        if (precisaPedirPermissao) {
-            pedidoDePermissao.launch(Manifest.permission.POST_NOTIFICATIONS)
+    LaunchedEffect(needsPermissionRequest) {
+        if (needsPermissionRequest) {
+            permissionRequest.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
-    val aindaNaoViuBateria = rememberShouldShowBatteryOptimizationPrompt()
-    var mostrarBateria by remember { mutableStateOf(aindaNaoViuBateria) }
-    if (permissaoResolvida && mostrarBateria) {
-        BatteryOptimizationPrompt(onDismissed = { mostrarBateria = false })
+    val batteryNotSeenYet = rememberShouldShowBatteryOptimizationPrompt()
+    var showBattery by remember { mutableStateOf(batteryNotSeenYet) }
+    if (permissionResolved && showBattery) {
+        BatteryOptimizationPrompt(onDismissed = { showBattery = false })
     }
 }

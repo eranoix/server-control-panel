@@ -30,7 +30,7 @@ import kotlin.math.abs
  *
  * [minLumaDelta] is the minimum luminance distance a text colour must keep
  * from the background it will land on. Anything too close is pushed away from
- * the background while preserving its hue (see [ajustaParaContraste]): yellow
+ * the background while preserving its hue (see [adjustForContrast]): yellow
  * stays yellow, only dark enough to read. The information's tone survives, and
  * so does legibility.
  *
@@ -57,7 +57,7 @@ data class TerminalPalette(
  * Exactly the colours the grid used before there was any theme choice — the
  * dark theme does not move a single pixel.
  */
-val PaletaTerminalEscura = TerminalPalette(
+val DarkTerminalPalette = TerminalPalette(
     defaultFg = 0xE0E0E0,
     defaultBg = 0x000000,
     cursor = Color.White.copy(alpha = 0.4f),
@@ -77,7 +77,7 @@ val PaletaTerminalEscura = TerminalPalette(
  * measuring the whole palette, and [TerminalPaletteTest] redoes the
  * measurement on every build.
  */
-val PaletaTerminalClara = TerminalPalette(
+val LightTerminalPalette = TerminalPalette(
     defaultFg = 0x1A1A1A,
     defaultBg = 0xFAFAFA,
     // A translucent BLACK cursor in the light theme. The translucent white it
@@ -97,9 +97,9 @@ val PaletaTerminalClara = TerminalPalette(
  * current scheme is the only source that already knows which theme is actually
  * painting.
  */
-val paletaTerminalCorrente: TerminalPalette
+val currentTerminalPalette: TerminalPalette
     @Composable get() =
-        if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) PaletaTerminalEscura else PaletaTerminalClara
+        if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) DarkTerminalPalette else LightTerminalPalette
 
 /**
  * The perceived luminance of a 0xRRGGBB colour, in 0..255 (ITU-R BT.601
@@ -108,7 +108,7 @@ val paletaTerminalCorrente: TerminalPalette
  * This is deliberately the CHEAP formula, not WCAG's sRGB linearisation: it
  * runs per CELL, per FRAME — an 80x40 grid at 60 Hz is 192 thousand calls a
  * second, and three `pow` calls apiece would show up in the frame budget. It
- * is the threshold in [PaletaTerminalClara] that was calibrated against the
+ * is the threshold in [LightTerminalPalette] that was calibrated against the
  * real WCAG contrast ratio, in the test; here the only question is "far
  * enough?", and for that the approximation is plenty.
  */
@@ -135,32 +135,32 @@ internal fun luma(rgb: Int): Int {
  * A pure function over integers: it is tested on the JVM, with no emulator
  * (see [TerminalPaletteTest]).
  */
-internal fun ajustaParaContraste(fg: Int, bg: Int, minLumaDelta: Int): Int {
+internal fun adjustForContrast(fg: Int, bg: Int, minLumaDelta: Int): Int {
     if (minLumaDelta <= 0) return fg
     val lumaBg = luma(bg)
     val lumaFg = luma(fg)
     if (abs(lumaFg - lumaBg) >= minLumaDelta) return fg
 
     // A light background pulls the text towards black; a dark one, towards white.
-    val fundoClaro = lumaBg >= 128
-    val alvo = if (fundoClaro) 0 else 255
+    val lightBackground = lumaBg >= 128
+    val target = if (lightBackground) 0 else 255
 
     // luma(blend) = lumaFg + t * (target - lumaFg). We want it to end up
     // minLumaDelta away from lumaBg, on the side opposite the background.
-    val desejada = if (fundoClaro) lumaBg - minLumaDelta else lumaBg + minLumaDelta
-    val denominador = alvo - lumaFg
-    val t = if (denominador == 0) 1f else ((desejada - lumaFg).toFloat() / denominador).coerceIn(0f, 1f)
+    val desired = if (lightBackground) lumaBg - minLumaDelta else lumaBg + minLumaDelta
+    val denominator = target - lumaFg
+    val t = if (denominator == 0) 1f else ((desired - lumaFg).toFloat() / denominator).coerceIn(0f, 1f)
 
-    return misturaCanais(fg, alvo, t)
+    return mixChannels(fg, target, t)
 }
 
-/** Blends each channel of [rgb] towards [alvo] (0 or 255) by the fraction [t]. */
-private fun misturaCanais(rgb: Int, alvo: Int, t: Float): Int {
-    val r = canal((rgb shr 16) and 0xff, alvo, t)
-    val g = canal((rgb shr 8) and 0xff, alvo, t)
-    val b = canal(rgb and 0xff, alvo, t)
+/** Blends each channel of [rgb] towards [target] (0 or 255) by the fraction [t]. */
+private fun mixChannels(rgb: Int, target: Int, t: Float): Int {
+    val r = channel((rgb shr 16) and 0xff, target, t)
+    val g = channel((rgb shr 8) and 0xff, target, t)
+    val b = channel(rgb and 0xff, target, t)
     return (r shl 16) or (g shl 8) or b
 }
 
-private fun canal(valor: Int, alvo: Int, t: Float): Int =
-    (valor + (alvo - valor) * t).toInt().coerceIn(0, 255)
+private fun channel(value: Int, target: Int, t: Float): Int =
+    (value + (target - value) * t).toInt().coerceIn(0, 255)

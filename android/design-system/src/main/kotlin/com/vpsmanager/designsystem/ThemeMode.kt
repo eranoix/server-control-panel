@@ -9,7 +9,7 @@ package com.vpsmanager.designsystem
  * app follows. A light/dark switch would force precisely the people who like
  * the automatic behaviour to start deciding by hand — a regression dressed up
  * as a feature. So the manual choice COMES IN, and the automatic one STAYS
- * the default ([PADRAO]).
+ * the default ([DEFAULT]).
  *
  * [id] is what goes to disk. It is a stable string on purpose: writing
  * `ordinal` would make a future reordering of this enum silently
@@ -23,37 +23,37 @@ package com.vpsmanager.designsystem
 enum class ThemeMode(val id: String, val label: String) {
 
     /** Always light, even with the system in dark mode. */
-    CLARO("claro", "Light"),
+    LIGHT("claro", "Light"),
 
     /** Always dark, even with the system in light mode. */
-    ESCURO("escuro", "Dark"),
+    DARK("escuro", "Dark"),
 
     /** Whatever the device is using right now — the default. */
-    SISTEMA("sistema", "System"),
+    SYSTEM("sistema", "System"),
     ;
 
     /**
      * Whether this mode paints dark, given what the SYSTEM is using now.
      *
-     * [sistemaEscuro] is only consulted by [SISTEMA]; [CLARO] and [ESCURO]
+     * [systemDark] is only consulted by [SYSTEM]; [LIGHT] and [DARK]
      * ignore the system by definition — that is exactly what a manual choice
      * means.
      */
-    fun escuro(sistemaEscuro: Boolean): Boolean = when (this) {
-        CLARO -> false
-        ESCURO -> true
-        SISTEMA -> sistemaEscuro
+    fun dark(systemDark: Boolean): Boolean = when (this) {
+        LIGHT -> false
+        DARK -> true
+        SYSTEM -> systemDark
     }
 
     companion object {
         /** The app's historical behaviour, and the default for anyone who never chose. */
-        val PADRAO: ThemeMode = SISTEMA
+        val DEFAULT: ThemeMode = SYSTEM
 
         /**
-         * The mode stored under [id], or [PADRAO] when the value is null or
+         * The mode stored under [id], or [DEFAULT] when the value is null or
          * unknown — an app downgrade, which does not know a newer id, falls
          * back to automatic instead of blowing up.
          */
-        fun porId(id: String?): ThemeMode = entries.firstOrNull { it.id == id } ?: PADRAO
+        fun byId(id: String?): ThemeMode = entries.firstOrNull { it.id == id } ?: DEFAULT
     }
 }

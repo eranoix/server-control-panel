@@ -54,15 +54,15 @@ sealed interface AdminCatalogState {
      * single field is what made the previous version open on an arbitrary
      * section.
      *
-     * [busca] lives here, and not in a `remember` on the screen, so it
+     * [query] lives here, and not in a `remember` on the screen, so it
      * survives going into a section and back: someone who filtered by
      * "docker", opened one and returned finds the filter as they left it.
      */
     data class Ready(
         val sections: List<SduiSection>,
         val selectedId: String?,
-        val busca: String = "",
-        val recentesIds: List<String> = emptyList(),
+        val query: String = "",
+        val recentIds: List<String> = emptyList(),
     ) : AdminCatalogState {
 
         /** The sections grouped, preserving the order the groups arrived in. */
@@ -78,8 +78,8 @@ sealed interface AdminCatalogState {
          * permission revoked) simply does not match and disappears — no ghost
          * item that opens onto a 404.
          */
-        val recentes: List<SduiSection>
-            get() = recentesIds.mapNotNull { id -> sections.firstOrNull { it.id == id } }
+        val recents: List<SduiSection>
+            get() = recentIds.mapNotNull { id -> sections.firstOrNull { it.id == id } }
     }
 }
 
@@ -91,7 +91,7 @@ sealed interface AdminCatalogState {
  * section the user may not see simply does not come — the app does not receive
  * it and does not draw a disabled item, which would confirm the screen exists.
  *
- * [rotaInicial] is the id from the `admin/{sectionId}` route. When it is
+ * [initialRoute] is the id from the `admin/{sectionId}` route. When it is
  * [ADMIN_SECTION_AUTO], no section is opened and the screen shows the
  * LAUNCHER. When it is a concrete id (a deep link from a notification, say) it
  * is honoured even if it is not in the catalogue: what actually authorises is
@@ -99,15 +99,15 @@ sealed interface AdminCatalogState {
  * available" message — the catalogue is a navigation hint, never the gate.
  */
 class AdminCatalogViewModel(
-    private val rotaInicial: String = ADMIN_SECTION_AUTO,
+    private val initialRoute: String = ADMIN_SECTION_AUTO,
     private val catalogPort: SduiCatalogPort = SduiCatalogRepository(),
     /**
      * Where the recents come from and go to. Injectable because the real
      * implementation touches `SharedPreferences`, which does not exist on a
      * host JVM — the test's double is an in-memory list.
      */
-    private val lerRecentes: () -> List<String> = { emptyList() },
-    private val gravarRecente: (String) -> Unit = {},
+    private val readRecents: () -> List<String> = { emptyList() },
+    private val writeRecent: (String) -> Unit = {},
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<AdminCatalogState>(AdminCatalogState.Loading)
@@ -118,7 +118,7 @@ class AdminCatalogViewModel(
      * already switched section must not be thrown back to the initial one just
      * because the list was fetched again.
      */
-    private var escolhaDoUsuario: String? = null
+    private var userChoice: String? = null
 
     /**
      * The filter text, preserved across catalogue reloads.
@@ -128,7 +128,7 @@ class AdminCatalogViewModel(
      * read happened before initialisation and the state stayed stuck in
      * Loading — with no visible error on screen.
      */
-    private var buscaAtual: String = ""
+    private var currentQuery: String = ""
 
     init {
         load()
@@ -141,9 +141,9 @@ class AdminCatalogViewModel(
                 is SduiSectionsResult.Success ->
                     _uiState.value = AdminCatalogState.Ready(
                         sections = result.sections,
-                        selectedId = resolverSelecao(),
-                        busca = buscaAtual,
-                        recentesIds = lerRecentes(),
+                        selectedId = resolveSelection(),
+                        query = currentQuery,
+                        recentIds = readRecents(),
                     )
 
                 is SduiSectionsResult.Error ->
@@ -161,35 +161,35 @@ class AdminCatalogViewModel(
      * `docker.containers` opens there, because the question "which section"
      * was already answered by whoever sent the notification.
      */
-    private fun resolverSelecao(): String? {
-        escolhaDoUsuario?.let { return it }
-        if (rotaInicial != ADMIN_SECTION_AUTO) return rotaInicial
+    private fun resolveSelection(): String? {
+        userChoice?.let { return it }
+        if (initialRoute != ADMIN_SECTION_AUTO) return initialRoute
         return null
     }
 
     fun select(sectionId: String) {
-        escolhaDoUsuario = sectionId
-        gravarRecente(sectionId)
+        userChoice = sectionId
+        writeRecent(sectionId)
         val current = _uiState.value as? AdminCatalogState.Ready ?: return
         if (current.selectedId == sectionId) return
-        _uiState.value = current.copy(selectedId = sectionId, recentesIds = lerRecentes())
+        _uiState.value = current.copy(selectedId = sectionId, recentIds = readRecents())
     }
 
     /**
      * Closes the section and returns to the launcher.
      *
-     * It clears [escolhaDoUsuario] deliberately: without that, the next
+     * It clears [userChoice] deliberately: without that, the next
      * catalogue reload would reopen the section the person has just closed.
      */
-    fun voltarAoLancador() {
-        escolhaDoUsuario = null
+    fun backToLauncher() {
+        userChoice = null
         val current = _uiState.value as? AdminCatalogState.Ready ?: return
-        _uiState.value = current.copy(selectedId = null, recentesIds = lerRecentes())
+        _uiState.value = current.copy(selectedId = null, recentIds = readRecents())
     }
 
-    fun buscar(termo: String) {
-        buscaAtual = termo
+    fun search(term: String) {
+        currentQuery = term
         val current = _uiState.value as? AdminCatalogState.Ready ?: return
-        _uiState.value = current.copy(busca = termo)
+        _uiState.value = current.copy(query = term)
     }
 }

@@ -25,16 +25,16 @@ class InstalledApkReaderTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
 
-    private fun apkFalso(nome: String, conteudo: ByteArray): File =
-        File(temp.newFolder(), nome).apply {
+    private fun fakeApk(name: String, content: ByteArray): File =
+        File(temp.newFolder(), name).apply {
             parentFile?.mkdirs()
-            writeBytes(conteudo)
+            writeBytes(content)
         }
 
     @Test
     fun `hasheia o APK que o sistema aponta agora`() {
-        val conteudo = ByteArray(2048) { (it % 31).toByte() }
-        val apk = apkFalso("base.apk", conteudo)
+        val content = ByteArray(2048) { (it % 31).toByte() }
+        val apk = fakeApk("base.apk", content)
         context.applicationInfo.sourceDir = apk.path
 
         val result = InstalledApkReader(context).read()
@@ -47,16 +47,16 @@ class InstalledApkReaderTest {
     /** 0.2 to 0.5 s per reading of a 31 MB APK. Paid once, not on every opening. */
     @Test
     fun `o hash e cacheado — a segunda leitura nao reprocessa os bytes`() {
-        val apk = apkFalso("base.apk", ByteArray(1024) { 7 })
+        val apk = fakeApk("base.apk", ByteArray(1024) { 7 })
         context.applicationInfo.sourceDir = apk.path
-        var vezes = 0
-        val reader = InstalledApkReader(context) { file -> vezes++; ApkPatcher.sha256Of(file) }
+        var times = 0
+        val reader = InstalledApkReader(context) { file -> times++; ApkPatcher.sha256Of(file) }
 
-        val primeira = reader.read()
-        val segunda = reader.read()
+        val first = reader.read()
+        val second = reader.read()
 
-        assertEquals(1, vezes)
-        assertEquals((primeira as InstalledApkResult.Ok).sha256, (segunda as InstalledApkResult.Ok).sha256)
+        assertEquals(1, times)
+        assertEquals((first as InstalledApkResult.Ok).sha256, (second as InstalledApkResult.Ok).sha256)
     }
 
     /**
@@ -69,19 +69,19 @@ class InstalledApkReaderTest {
      */
     @Test
     fun `caminho novo invalida o cache sozinho — nunca devolve o hash do APK anterior`() {
-        val velho = apkFalso("base.apk", ByteArray(1024) { 1 })
-        val novo = apkFalso("base.apk", ByteArray(1024) { 2 })
+        val old = fakeApk("base.apk", ByteArray(1024) { 1 })
+        val next = fakeApk("base.apk", ByteArray(1024) { 2 })
         val reader = InstalledApkReader(context)
 
-        context.applicationInfo.sourceDir = velho.path
-        val hashVelho = (reader.read() as InstalledApkResult.Ok).sha256
+        context.applicationInfo.sourceDir = old.path
+        val oldHash = (reader.read() as InstalledApkResult.Ok).sha256
 
-        context.applicationInfo.sourceDir = novo.path
-        val hashNovo = (reader.read() as InstalledApkResult.Ok).sha256
+        context.applicationInfo.sourceDir = next.path
+        val newHash = (reader.read() as InstalledApkResult.Ok).sha256
 
-        assertEquals(ApkPatcher.sha256Of(velho), hashVelho)
-        assertEquals(ApkPatcher.sha256Of(novo), hashNovo)
-        assertTrue("o cache não pode sobreviver a uma reinstalação", hashVelho != hashNovo)
+        assertEquals(ApkPatcher.sha256Of(old), oldHash)
+        assertEquals(ApkPatcher.sha256Of(next), newHash)
+        assertTrue("o cache não pode sobreviver a uma reinstalação", oldHash != newHash)
     }
 
     /**

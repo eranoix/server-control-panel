@@ -67,11 +67,11 @@ class HomeViewModel(
      * dashboard test to stand up an Android context just to exercise a
      * threshold decision would be paying dearly for nothing.
      */
-    private var gravarResumoDoWidget: ((com.vpsmanager.data.dashboard.DashboardSnapshot) -> Unit)? = null
+    private var writeWidgetSummary: ((com.vpsmanager.data.dashboard.DashboardSnapshot) -> Unit)? = null
 
     /** Switches summary publishing on. Called by the screen, which has a context. */
-    fun publicarResumoCom(escritor: (com.vpsmanager.data.dashboard.DashboardSnapshot) -> Unit) {
-        gravarResumoDoWidget = escritor
+    fun publishSummaryWith(writer: (com.vpsmanager.data.dashboard.DashboardSnapshot) -> Unit) {
+        writeWidgetSummary = writer
     }
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
@@ -125,7 +125,7 @@ class HomeViewModel(
                     // "loading" forever. The honest consequence is that someone
                     // who has not opened the app for a day reads "more than a
                     // day ago" on the widget, rather than an invented number.
-                    gravarResumoDoWidget?.invoke(result.snapshot)
+                    writeWidgetSummary?.invoke(result.snapshot)
                 }
 
                 is DashboardResult.Error -> _uiState.update { current ->

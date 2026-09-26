@@ -183,14 +183,14 @@ class ConversationViewModelTest {
      * THE QUEUE, WIRED UP — the guarantee that was missing for a whole session.
      *
      * The write queue shipped with tests of its own and ZERO callers:
-     * `FilaDeEnvio.instalar()` ran at boot and nothing ever called
+     * `Outbox.instalar()` ran at boot and nothing ever called
      * `enfileirar`. Writing without internet went on failing exactly as
      * before. This test exists so that cannot happen again in silence: if
      * anyone unwires the path again, it goes red.
      */
     @Test
     fun `sem rede a mensagem vai para a fila, e a bolha diz isso`() = runTest {
-        val repository = FakeConversationRepository(onSend = { _, _ -> SendResult.NaFila })
+        val repository = FakeConversationRepository(onSend = { _, _ -> SendResult.Queued })
         val eventSource = FakeWhatsAppEventSource()
         val viewModel = ConversationViewModel(jid = JID, repository = repository, eventSource = eventSource)
         dispatcher.scheduler.advanceUntilIdle()
@@ -200,11 +200,11 @@ class ConversationViewModelTest {
 
         val content = viewModel.uiState.value as ConversationUiState.Content
         assertEquals(1, content.messages.size)
-        assertEquals(MessageSendStatus.NA_FILA, content.messages.single().sendStatus)
+        assertEquals(MessageSendStatus.QUEUED, content.messages.single().sendStatus)
     }
 
     /**
-     * NA_FILA is not FAILED, and the difference changes what the person does.
+     * QUEUED is not FAILED, and the difference changes what the person does.
      *
      * Faced with a failure they tap "tentar de novo"; faced with a message
      * that has been put aside, they put the phone away. Treating the two as
@@ -214,7 +214,7 @@ class ConversationViewModelTest {
      */
     @Test
     fun `na fila NAO e falha — o texto continua e o estado e outro`() = runTest {
-        val repository = FakeConversationRepository(onSend = { _, _ -> SendResult.NaFila })
+        val repository = FakeConversationRepository(onSend = { _, _ -> SendResult.Queued })
         val eventSource = FakeWhatsAppEventSource()
         val viewModel = ConversationViewModel(jid = JID, repository = repository, eventSource = eventSource)
         dispatcher.scheduler.advanceUntilIdle()

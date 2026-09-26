@@ -87,7 +87,7 @@ internal fun buildRowDrawOps(
         // Before, the faint pass starts from a colour that is already legible
         // and arrives at something discreet AND visible; after, it would
         // become a colour with no purpose.
-        fg = ajustaParaContraste(fg, bg, minLumaDelta)
+        fg = adjustForContrast(fg, bg, minLumaDelta)
         if (cell.faint) {
             fg = blend(fg, bg, 0.5f)
         }

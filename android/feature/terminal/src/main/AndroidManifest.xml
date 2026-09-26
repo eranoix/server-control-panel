@@ -49,7 +49,7 @@
     -->
     <application>
         <provider
-            android:name="com.vpsmanager.feature.terminal.attach.AnexoFileProvider"
+            android:name="com.vpsmanager.feature.terminal.attach.AttachmentFileProvider"
             android:authorities="${applicationId}.terminalattach.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">

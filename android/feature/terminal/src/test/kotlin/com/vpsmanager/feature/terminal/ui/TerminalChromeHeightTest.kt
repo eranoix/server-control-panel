@@ -19,8 +19,8 @@ import com.vpsmanager.feature.terminal.keys.EXTRA_KEYS_BAR_TAG
 import com.vpsmanager.feature.terminal.keys.ExtraKeysBar
 import com.vpsmanager.feature.terminal.keys.ExtraKeysBarState
 import com.vpsmanager.feature.terminal.keys.PendingModifiers
-import com.vpsmanager.feature.terminal.prefs.LinhasVisiveis
-import com.vpsmanager.feature.terminal.prefs.ModoDeDigitacao
+import com.vpsmanager.feature.terminal.prefs.VisibleRows
+import com.vpsmanager.feature.terminal.prefs.TypingMode
 import com.vpsmanager.feature.terminal.prefs.TerminalScrollback
 import com.vpsmanager.feature.terminal.prefs.TerminalLineSpacing
 import com.vpsmanager.feature.terminal.transport.ConnectionState
@@ -142,7 +142,7 @@ class TerminalChromeHeightTest {
      */
     @androidx.compose.runtime.Composable
     private fun TerminalColumn(optionsOpen: Boolean) {
-        var keysBarState by remember { mutableStateOf(ExtraKeysBarState.UMA_LINHA) }
+        var keysBarState by remember { mutableStateOf(ExtraKeysBarState.ONE_ROW) }
         Column(modifier = Modifier.fillMaxSize()) {
             ConnectionBanner(state = ConnectionState.Live, isStalled = false)
             Box(
@@ -164,21 +164,21 @@ class TerminalChromeHeightTest {
                 onFontSizeChange = {},
                 gridCols = 54,
                 gridRows = 46,
-                scrollbackLinhas = TerminalScrollback.DEFAULT.linhas,
+                scrollbackLines = TerminalScrollback.DEFAULT.lines,
                 onScrollbackChange = {},
-                modoDeDigitacao = ModoDeDigitacao.PADRAO,
-                onModoDeDigitacaoChange = {},
-                entrelinha = TerminalLineSpacing.NORMAL,
-                onEntrelinhaChange = {},
-                onColar = {},
-                onAnexar = {},
+                typingMode = TypingMode.DEFAULT,
+                onTypingModeChange = {},
+                lineSpacing = TerminalLineSpacing.NORMAL,
+                onLineSpacingChange = {},
+                onPaste = {},
+                onAttach = {},
                 onShowKeyboard = {},
-                isentoDeBateria = true,
-                onPedirIsencaoDeBateria = {},
-                linhasVisiveis = LinhasVisiveis.AUTOMATICO,
-                onLinhasVisiveisChange = {},
-                alturaVisivelPx = 1_800,
-                alturaDeReferenciaPx = 1_800,
+                batteryExempt = true,
+                onRequestBatteryExemption = {},
+                visibleRows = VisibleRows.AUTOMATIC,
+                onVisibleRowsChange = {},
+                visibleHeightPx = 1_800,
+                referenceHeightPx = 1_800,
             )
         }
     }

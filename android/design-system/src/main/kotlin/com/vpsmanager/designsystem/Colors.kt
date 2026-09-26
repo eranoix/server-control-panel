@@ -140,11 +140,11 @@ internal val VpsmDarkColors = darkColorScheme(
  *
  * It lives here, rather than loose in an XML, because it IS the scheme: it is
  * the dark theme's `onPrimary` (cyan tone 20). The `logo-mark.svg` drawn on top
- * uses [MarcaSobreFundo] — which is the dark `primary`. Icon and app speaking
+ * uses [MarkOnBackground] — which is the dark `primary`. Icon and app speaking
  * the same language is not a coincidence maintained by hand, it is the same
  * constant.
  */
-val FundoDoIconeAdaptativo: Color = Color(0xFF00363E)
+val AdaptiveIconBackground: Color = Color(0xFF00363E)
 
-/** The brand colour on top of [FundoDoIconeAdaptativo]. */
-val MarcaSobreFundo: Color = Color(0xFF2FD9F4)
+/** The brand colour on top of [AdaptiveIconBackground]. */
+val MarkOnBackground: Color = Color(0xFF2FD9F4)

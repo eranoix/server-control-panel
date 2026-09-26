@@ -102,7 +102,7 @@ sealed interface InstallOutcome {
  * "Update" inside the app. It is the system that stops asking again.
  *
  * This only holds with a **known install origin** — see
- * [origemDeInstalacaoConhecida].
+ * [installSourceKnown].
  *
  * ### Why [requestPreapproval] comes BEFORE the download
  * On the owner's connection, downloading 10 MB only to then ask "may I
@@ -154,7 +154,7 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
      * question now happens at the end, after the download, instead of before.
      * One more megabyte of download is cheap; an app that never updates is not.
      */
-    override fun origemDeInstalacaoConhecida(): Boolean = try {
+    override fun installSourceKnown(): Boolean = try {
         appContext.packageManager
             .getInstallSourceInfo(appContext.packageName)
             .installingPackageName != null
@@ -175,9 +175,9 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
      * Returns false when nothing on the device can open an APK, which happens
      * on work profiles where policy blocks sideloading.
      */
-    override fun abrirInstaladorDoSistema(apk: File): Boolean {
+    override fun openSystemInstaller(apk: File): Boolean {
         val uri = try {
-            FileProvider.getUriForFile(appContext, "${appContext.packageName}$SUFIXO_AUTORIDADE", apk)
+            FileProvider.getUriForFile(appContext, "${appContext.packageName}$AUTHORITY_SUFFIX", apk)
         } catch (e: IllegalArgumentException) {
             return false
         }
@@ -205,14 +205,14 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
      * Creates the install session. [apkSizeBytes] goes into `setSize` so the
      * system reserves its space before we write.
      */
-    override fun createSession(apkSizeBytes: Long, declararPacote: Boolean): Int? = try {
+    override fun createSession(apkSizeBytes: Long, declarePackage: Boolean): Int? = try {
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             // Declaring the package restricts the session to installing ONLY
             // this app, and is mandatory for pre-approval. But it is also what
             // marks the session as a "self update" — and with an unknown
             // install origin Android aborts that combination. See
-            // [origemDeInstalacaoConhecida].
-            if (declararPacote) {
+            // [installSourceKnown].
+            if (declarePackage) {
                 setAppPackageName(appContext.packageName)
                 // WITHOUT THE SYSTEM DIALOG.
                 //
@@ -335,11 +335,11 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
                 // by policy — and in the second case its message is the only
                 // clue about what to do. That is how the refused self-update
                 // stayed invisible for eight attempts.
-                val doSistema = event.message
-                if (doSistema.isNullOrBlank()) {
+                val fromSystem = event.message
+                if (fromSystem.isNullOrBlank()) {
                     InstallOutcome.Failed("Installation canceled.", blocked = false)
                 } else {
-                    InstallOutcome.Failed(doSistema, blocked = false)
+                    InstallOutcome.Failed(fromSystem, blocked = false)
                 }
             }
             else -> InstallOutcome.Failed(
@@ -385,7 +385,7 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
          * `getUriForFile` throws IllegalArgumentException and the last rung of
          * the ladder vanishes without warning.
          */
-        private const val SUFIXO_AUTORIDADE = ".atualizacao"
+        private const val AUTHORITY_SUFFIX = ".atualizacao"
 
         const val PHASE_PREAPPROVAL = "preaprovacao"
         const val PHASE_COMMIT = "instalacao"

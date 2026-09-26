@@ -9,17 +9,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 // the tests), and one of them typed wrong by hand would only appear as
 // "nothing happens when you tap".
 
-internal const val ROTA_TERMINAL = "terminal"
-internal const val ROTA_ARQUIVOS = "arquivos"
-internal const val ROTA_JIRA = "jira"
-internal const val ROTA_WHATSAPP = "whatsapp"
-internal const val ROTA_CHAMADA = "chamada"
-internal const val ROTA_NOTIFICACOES = "notificacoes"
-internal const val ROTA_LICENCAS = "licencas"
-internal const val ROTA_CONFIGURACOES = "configuracoes"
+internal const val ROUTE_TERMINAL = "terminal"
+internal const val ROUTE_FILES = "arquivos"
+internal const val ROUTE_JIRA = "jira"
+internal const val ROUTE_WHATSAPP = "whatsapp"
+internal const val ROUTE_CALL = "chamada"
+internal const val ROUTE_NOTIFICATIONS = "notificacoes"
+internal const val ROUTE_LICENSES = "licencas"
+internal const val ROUTE_SETTINGS = "configuracoes"
 
 /** The route of a parent page's grid. */
-internal fun rotaDaMae(id: String) = "mae/$id"
+internal fun parentRoute(id: String) = "mae/$id"
 
 /**
  * The drawer's destinations: the panel's PARENT pages, and only those.
@@ -41,34 +41,34 @@ internal fun rotaDaMae(id: String) = "mae/$id"
  * that TalkBack announces "System" and not "unlabelled image".
  */
 internal enum class AppDestination(
-    val mae: PaginaMae,
+    val parent: ParentPage,
 ) {
-    Inicio(PaginaMae.Inicio),
-    Sistema(PaginaMae.Sistema),
-    Docker(PaginaMae.Docker),
-    Dev(PaginaMae.Dev),
-    Seguranca(PaginaMae.Seguranca),
-    Apps(PaginaMae.Apps),
-    Operacoes(PaginaMae.Operacoes),
-    Configuracoes(PaginaMae.Configuracoes),
+    Home(ParentPage.Home),
+    System(ParentPage.System),
+    Docker(ParentPage.Docker),
+    Dev(ParentPage.Dev),
+    Security(ParentPage.Security),
+    Apps(ParentPage.Apps),
+    Operations(ParentPage.Operations),
+    Settings(ParentPage.Settings),
     ;
 
-    val label: String get() = mae.titulo
-    val icon: ImageVector get() = mae.icone
-    val iconDescription: String get() = mae.descricaoDoIcone
+    val label: String get() = parent.title
+    val icon: ImageVector get() = parent.icon
+    val iconDescription: String get() = parent.iconDescription
 
     /**
      * This destination's route.
      *
-     * [Inicio] and [Configuracoes] are real screens, not grids: the first is
+     * [Home] and [Settings] are real screens, not grids: the first is
      * the panel for whoever has just signed in, the second is the device's
      * list of settings. The rest open the grid of their children.
      */
     val route: String
         get() = when (this) {
-            Inicio -> "home"
-            Configuracoes -> ROTA_CONFIGURACOES
-            else -> rotaDaMae(mae.id)
+            Home -> "home"
+            Settings -> ROUTE_SETTINGS
+            else -> parentRoute(parent.id)
         }
 
     /** The route the item actually navigates to. */

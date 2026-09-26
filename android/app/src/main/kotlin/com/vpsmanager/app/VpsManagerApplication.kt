@@ -19,13 +19,13 @@ import com.vpsmanager.data.events.MobileEventsClient
 import com.vpsmanager.data.events.MobileEventsRepository
 import com.vpsmanager.data.events.MobileEventsSocket
 import com.vpsmanager.data.terminal.defaultTerminalWsBaseUrl
-import com.vpsmanager.data.offline.CacheDeLeitura
-import com.vpsmanager.data.offline.FilaDeEnvio
-import com.vpsmanager.data.offline.RedeDoAparelho
+import com.vpsmanager.data.offline.ReadCache
+import com.vpsmanager.data.offline.Outbox
+import com.vpsmanager.data.offline.DeviceNetwork
 import com.vpsmanager.data.update.UpdateCoordinator
 import com.vpsmanager.data.update.createUpdateCoordinator
 import com.vpsmanager.data.videocall.IncomingCallDispatcher
-import com.vpsmanager.app.armazenamento.ManutencaoWorker
+import com.vpsmanager.app.storage.MaintenanceWorker
 import com.vpsmanager.app.update.UpdateCheckWorker
 import com.vpsmanager.feature.files.transfer.TransferMaintenance
 import com.vpsmanager.feature.notifications.fcm.FirebaseBootstrap
@@ -212,19 +212,19 @@ class VpsManagerApplication : Application() {
         // becomes a silent no-op — and the symptom would be the app still dying
         // without internet, with no error pointing here.
         Bootstrap.step("offline (read cache + network state)") {
-            CacheDeLeitura.instalar(this)
-            RedeDoAparelho.instalar(this)
+            ReadCache.install(this)
+            DeviceNetwork.install(this)
             // The queue is read from disk here: an action queued yesterday has to
             // reappear today, and WorkManager only delivers it if somebody rewires
             // the work after the process dies.
-            FilaDeEnvio.instalar(this)
+            Outbox.install(this)
         }
         // Native push: brings Firebase up if — and only if — the console's
         // google-services.json is in assets/. Without it, this step does nothing
         // and records the instruction, the same way the server degrades when
         // `fcm_service_account` is not in the vault. See FirebaseBootstrap.
         Bootstrap.step("native push (Firebase, if provisioned)") {
-            FirebaseBootstrap.instalar(this)
+            FirebaseBootstrap.install(this)
         }
         Bootstrap.step("transfer cleanup (WorkManager)") {
             sweepAbandonedTransfers()
@@ -238,9 +238,9 @@ class VpsManagerApplication : Application() {
         }
         // Daily storage cleanup. Enqueueing is cheap (one write to WorkManager's
         // database); what runs it is the system, when the device is comfortable.
-        // See ManutencaoWorker about the KEEP.
+        // See MaintenanceWorker about the KEEP.
         Bootstrap.step("storage maintenance (WorkManager)") {
-            ManutencaoWorker.enfileirar(this)
+            MaintenanceWorker.enqueue(this)
         }
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {

@@ -56,10 +56,10 @@ object Bootstrap {
     fun installCrashReporter(context: Context) {
         val appContext = context.applicationContext
         val anterior = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, erro ->
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             try {
                 val sw = StringWriter()
-                erro.printStackTrace(PrintWriter(sw))
+                error.printStackTrace(PrintWriter(sw))
                 File(appContext.filesDir, CRASH_FILE).writeText(
                     buildString {
                         appendLine("thread: ${thread.name}")
@@ -75,7 +75,7 @@ object Bootstrap {
             } catch (_: Throwable) {
                 // Writing the report must never make the original crash worse.
             }
-            anterior?.uncaughtException(thread, erro)
+            anterior?.uncaughtException(thread, error)
         }
     }
 

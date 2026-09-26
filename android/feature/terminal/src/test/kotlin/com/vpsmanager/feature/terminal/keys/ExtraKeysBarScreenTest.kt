@@ -43,7 +43,7 @@ class ExtraKeysBarScreenTest {
 
     /** Host holding the bar's state, just like `TerminalRoute` does. */
     private fun setBar(
-        initial: ExtraKeysBarState = ExtraKeysBarState.UMA_LINHA,
+        initial: ExtraKeysBarState = ExtraKeysBarState.ONE_ROW,
         hasHardwareKeyboard: Boolean = false,
         onSendBytes: (ByteArray) -> Unit = {},
         pendingModifiers: PendingModifiers = PendingModifiers(),
@@ -64,7 +64,7 @@ class ExtraKeysBarScreenTest {
 
     @Test
     fun `estado colapsado mede 32 dp e mantem o terminal operavel`() {
-        setBar(initial = ExtraKeysBarState.COLAPSADA)
+        setBar(initial = ExtraKeysBarState.COLLAPSED)
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(32.dp)
         // The minimum set: without these, neither Ctrl+C nor quitting vim.
@@ -78,7 +78,7 @@ class ExtraKeysBarScreenTest {
 
     @Test
     fun `estado de uma linha mede 40 dp e traz as oito teclas`() {
-        setBar(initial = ExtraKeysBarState.UMA_LINHA)
+        setBar(initial = ExtraKeysBarState.ONE_ROW)
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(40.dp)
         listOf("Esc", "Tab", "Ctrl", "Alt", "←", "↓", "↑", "→").forEach { label ->
@@ -88,7 +88,7 @@ class ExtraKeysBarScreenTest {
 
     @Test
     fun `estado de duas linhas mede 80 dp e traz a navegacao completa`() {
-        setBar(initial = ExtraKeysBarState.DUAS_LINHAS)
+        setBar(initial = ExtraKeysBarState.TWO_ROWS)
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(80.dp)
         listOf("Home", "End", "PgUp", "PgDn", "/").forEach { label ->
@@ -98,7 +98,7 @@ class ExtraKeysBarScreenTest {
 
     @Test
     fun `a alca cicla os tres estados no toque`() {
-        setBar(initial = ExtraKeysBarState.COLAPSADA)
+        setBar(initial = ExtraKeysBarState.COLLAPSED)
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(32.dp)
         composeRule.onNodeWithTag(EXTRA_KEYS_HANDLE_TAG).performClick()
@@ -111,7 +111,7 @@ class ExtraKeysBarScreenTest {
 
     @Test
     fun `arrastar a alca pra cima expande e pra baixo colapsa`() {
-        setBar(initial = ExtraKeysBarState.UMA_LINHA)
+        setBar(initial = ExtraKeysBarState.ONE_ROW)
 
         composeRule.onNodeWithTag(EXTRA_KEYS_HANDLE_TAG).performTouchInput {
             swipeUp(startY = bottom, endY = top - 200f)
@@ -126,7 +126,7 @@ class ExtraKeysBarScreenTest {
 
     @Test
     fun `teclado fisico conectado colapsa a barra sozinho`() {
-        setBar(initial = ExtraKeysBarState.DUAS_LINHAS, hasHardwareKeyboard = true)
+        setBar(initial = ExtraKeysBarState.TWO_ROWS, hasHardwareKeyboard = true)
 
         // With no tap at all: the mere presence of a physical keyboard already
         // takes the bar to the collapsed state (the opposite of the complaint
@@ -137,7 +137,7 @@ class ExtraKeysBarScreenTest {
 
     @Test
     fun `o auto-colapso e reversivel pela alca`() {
-        setBar(initial = ExtraKeysBarState.UMA_LINHA, hasHardwareKeyboard = true)
+        setBar(initial = ExtraKeysBarState.ONE_ROW, hasHardwareKeyboard = true)
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(32.dp)
         composeRule.onNodeWithTag(EXTRA_KEYS_HANDLE_TAG).performClick()
@@ -148,15 +148,15 @@ class ExtraKeysBarScreenTest {
 
     @Test
     fun `sem teclado fisico o automatismo nao mexe no que o operador escolheu`() {
-        setBar(initial = ExtraKeysBarState.COLAPSADA, hasHardwareKeyboard = false)
+        setBar(initial = ExtraKeysBarState.COLLAPSED, hasHardwareKeyboard = false)
 
         // Entering the screen with no physical keyboard does not reimpose
-        // UMA_LINHA over the handle's choice: the automatism only acts when
+        // ONE_ROW over the handle's choice: the automatism only acts when
         // there IS a physical keyboard, or when one already evaluated
         // disconnects.
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(32.dp)
-        assertEquals(ExtraKeysBarState.UMA_LINHA, ExtraKeysBarState.forHardwareKeyboard(present = false))
-        assertEquals(ExtraKeysBarState.COLAPSADA, ExtraKeysBarState.forHardwareKeyboard(present = true))
+        assertEquals(ExtraKeysBarState.ONE_ROW, ExtraKeysBarState.forHardwareKeyboard(present = false))
+        assertEquals(ExtraKeysBarState.COLLAPSED, ExtraKeysBarState.forHardwareKeyboard(present = true))
     }
 
     @Test

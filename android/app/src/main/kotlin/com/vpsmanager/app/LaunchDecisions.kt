@@ -8,7 +8,7 @@ package com.vpsmanager.app
  */
 
 /**
- * Whether [MainActivity.onCreate] must show [com.vpsmanager.app.DiagnosticoScreen] instead of the
+ * Whether [MainActivity.onCreate] must show [com.vpsmanager.app.DiagnosticsScreen] instead of the
  * normal setup/login/home flow.
  *
  * The operator has no `adb` on a real device — if the previous process died ([lastCrash] is the

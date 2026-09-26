@@ -48,36 +48,36 @@ import kotlinx.coroutines.withTimeoutOrNull
  * every dp it takes is a dp the grid does not get — hence three states rather
  * than a binary "show/hide".
  *
- * [COLAPSADA] is not "hidden": hiding it outright would make Ctrl+C
+ * [COLLAPSED] is not "hidden": hiding it outright would make Ctrl+C
  * unreachable, and Ctrl+C is the number one reason anyone opens a terminal on
  * a phone. It is 32 dp holding the minimum set that keeps the terminal
  * usable — see [collapsedKeys].
  */
 enum class ExtraKeysBarState(val heightDp: Dp, val visualRowHeightDp: Dp) {
-    COLAPSADA(heightDp = 32.dp, visualRowHeightDp = 32.dp),
-    UMA_LINHA(heightDp = 40.dp, visualRowHeightDp = 40.dp),
-    DUAS_LINHAS(heightDp = 80.dp, visualRowHeightDp = 40.dp),
+    COLLAPSED(heightDp = 32.dp, visualRowHeightDp = 32.dp),
+    ONE_ROW(heightDp = 40.dp, visualRowHeightDp = 40.dp),
+    TWO_ROWS(heightDp = 80.dp, visualRowHeightDp = 40.dp),
     ;
 
     /** The handle's tap cycle: A -> B -> C -> A. */
     fun next(): ExtraKeysBarState = when (this) {
-        COLAPSADA -> UMA_LINHA
-        UMA_LINHA -> DUAS_LINHAS
-        DUAS_LINHAS -> COLAPSADA
+        COLLAPSED -> ONE_ROW
+        ONE_ROW -> TWO_ROWS
+        TWO_ROWS -> COLLAPSED
     }
 
     /** One step up (more keys) when the handle is dragged vertically. */
     fun expanded(): ExtraKeysBarState = when (this) {
-        COLAPSADA -> UMA_LINHA
-        UMA_LINHA -> DUAS_LINHAS
-        DUAS_LINHAS -> DUAS_LINHAS
+        COLLAPSED -> ONE_ROW
+        ONE_ROW -> TWO_ROWS
+        TWO_ROWS -> TWO_ROWS
     }
 
     /** One step down (fewer keys) when the handle is dragged vertically. */
     fun collapsed(): ExtraKeysBarState = when (this) {
-        COLAPSADA -> COLAPSADA
-        UMA_LINHA -> COLAPSADA
-        DUAS_LINHAS -> UMA_LINHA
+        COLLAPSED -> COLLAPSED
+        ONE_ROW -> COLLAPSED
+        TWO_ROWS -> ONE_ROW
     }
 
     companion object {
@@ -89,10 +89,10 @@ enum class ExtraKeysBarState(val heightDp: Dp, val visualRowHeightDp: Dp) {
          * acknowledges it as a bug precisely because it does NOT. Automatic,
          * but reversible through the handle: vanishing entirely annoys people
          * who want the arrow keys even with a keyboard, so the target is
-         * [COLAPSADA], never "no row at all".
+         * [COLLAPSED], never "no row at all".
          */
         fun forHardwareKeyboard(present: Boolean): ExtraKeysBarState =
-            if (present) COLAPSADA else UMA_LINHA
+            if (present) COLLAPSED else ONE_ROW
     }
 }
 
@@ -113,10 +113,10 @@ internal sealed interface KeyAction {
     data class Literal(val text: String) : KeyAction
 
     /** Toggles the sticky Ctrl chip (OFF -> ARMED -> LOCKED -> OFF). */
-    data object AlternarCtrl : KeyAction
+    data object ToggleCtrl : KeyAction
 
     /** Toggles the sticky Alt chip. */
-    data object AlternarAlt : KeyAction
+    data object ToggleAlt : KeyAction
 }
 
 /**
@@ -147,8 +147,8 @@ internal fun runKeyAction(
             onSendBytes(bytes)
             pendingModifiers.consumeAfterKeystroke()
         }
-        KeyAction.AlternarCtrl -> pendingModifiers.tapCtrl()
-        KeyAction.AlternarAlt -> pendingModifiers.tapAlt()
+        KeyAction.ToggleCtrl -> pendingModifiers.tapCtrl()
+        KeyAction.ToggleAlt -> pendingModifiers.tapAlt()
     }
 }
 
@@ -180,7 +180,7 @@ internal enum class StickyKind { CTRL, ALT }
  */
 internal val collapsedKeys: List<ExtraKey> = listOf(
     ExtraKey("Esc", KeyAction.Code(KeyEvent.KEYCODE_ESCAPE), swipeUp = KeyAction.Ctrl('c')),
-    ExtraKey("Ctrl", KeyAction.AlternarCtrl, sticky = StickyKind.CTRL),
+    ExtraKey("Ctrl", KeyAction.ToggleCtrl, sticky = StickyKind.CTRL),
     ExtraKey("^C", KeyAction.Ctrl('c')),
     ExtraKey("Tab", KeyAction.Code(KeyEvent.KEYCODE_TAB), swipeUp = KeyAction.Ctrl('d')),
     ExtraKey("↑", KeyAction.Code(KeyEvent.KEYCODE_DPAD_UP), swipeUp = KeyAction.Code(KeyEvent.KEYCODE_PAGE_UP), repeats = true),
@@ -195,8 +195,8 @@ internal val collapsedKeys: List<ExtraKey> = listOf(
 internal val oneRowKeys: List<ExtraKey> = listOf(
     ExtraKey("Esc", KeyAction.Code(KeyEvent.KEYCODE_ESCAPE), swipeUp = KeyAction.Ctrl('c')),
     ExtraKey("Tab", KeyAction.Code(KeyEvent.KEYCODE_TAB), swipeUp = KeyAction.Ctrl('d')),
-    ExtraKey("Ctrl", KeyAction.AlternarCtrl, swipeUp = KeyAction.Ctrl('l'), sticky = StickyKind.CTRL),
-    ExtraKey("Alt", KeyAction.AlternarAlt, swipeUp = KeyAction.Literal("|"), sticky = StickyKind.ALT),
+    ExtraKey("Ctrl", KeyAction.ToggleCtrl, swipeUp = KeyAction.Ctrl('l'), sticky = StickyKind.CTRL),
+    ExtraKey("Alt", KeyAction.ToggleAlt, swipeUp = KeyAction.Literal("|"), sticky = StickyKind.ALT),
     ExtraKey("←", KeyAction.Code(KeyEvent.KEYCODE_DPAD_LEFT), swipeUp = KeyAction.Code(KeyEvent.KEYCODE_MOVE_HOME), repeats = true),
     ExtraKey("↓", KeyAction.Code(KeyEvent.KEYCODE_DPAD_DOWN), swipeUp = KeyAction.Code(KeyEvent.KEYCODE_PAGE_DOWN), repeats = true),
     ExtraKey("↑", KeyAction.Code(KeyEvent.KEYCODE_DPAD_UP), swipeUp = KeyAction.Code(KeyEvent.KEYCODE_PAGE_UP), repeats = true),
@@ -217,8 +217,8 @@ internal val twoRowsTopKeys: List<ExtraKey> = listOf(
 /** STATE C, bottom row. Seven keys per row: the number Termux converged on in both of its stock configurations. */
 internal val twoRowsBottomKeys: List<ExtraKey> = listOf(
     ExtraKey("Tab", KeyAction.Code(KeyEvent.KEYCODE_TAB), swipeUp = KeyAction.Ctrl('d')),
-    ExtraKey("Ctrl", KeyAction.AlternarCtrl, swipeUp = KeyAction.Ctrl('l'), sticky = StickyKind.CTRL),
-    ExtraKey("Alt", KeyAction.AlternarAlt, sticky = StickyKind.ALT),
+    ExtraKey("Ctrl", KeyAction.ToggleCtrl, swipeUp = KeyAction.Ctrl('l'), sticky = StickyKind.CTRL),
+    ExtraKey("Alt", KeyAction.ToggleAlt, sticky = StickyKind.ALT),
     ExtraKey("←", KeyAction.Code(KeyEvent.KEYCODE_DPAD_LEFT), repeats = true),
     ExtraKey("↓", KeyAction.Code(KeyEvent.KEYCODE_DPAD_DOWN), repeats = true),
     ExtraKey("→", KeyAction.Code(KeyEvent.KEYCODE_DPAD_RIGHT), repeats = true),
@@ -268,24 +268,24 @@ fun ExtraKeysBar(
     modifier: Modifier = Modifier,
     cursorMode: KeyByteEncoder.CursorMode = KeyByteEncoder.CursorMode.NORMAL,
     hasHardwareKeyboard: Boolean = false,
-    /** Opens the attachment source sheet. See [BotaoDeAnexo]. */
-    aoAnexar: () -> Unit = {},
+    /** Opens the attachment source sheet. See [AttachButton]. */
+    onAttach: () -> Unit = {},
 ) {
     // A physical keyboard being connected or disconnected repositions the row
     // on its own, once per transition — and only per transition, so that the
     // handle still has the last word afterwards.
     //
-    // `jaAvaliou` is what stops the automation from becoming tyranny: on the
+    // `alreadyEvaluated` is what stops the automation from becoming tyranny: on the
     // FIRST composition it only acts if a physical keyboard is present.
     // Without it, every entry into the screen (and every recomposition from
-    // scratch) would reimpose UMA_LINHA over the state the operator had
+    // scratch) would reimpose ONE_ROW over the state the operator had
     // chosen with the handle.
-    var jaAvaliou by rememberSaveable { mutableStateOf(false) }
+    var alreadyEvaluated by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(hasHardwareKeyboard) {
-        if (hasHardwareKeyboard || jaAvaliou) {
+        if (hasHardwareKeyboard || alreadyEvaluated) {
             onStateChange(ExtraKeysBarState.forHardwareKeyboard(hasHardwareKeyboard))
         }
-        jaAvaliou = true
+        alreadyEvaluated = true
     }
 
     val run: (KeyAction) -> Unit = { action ->
@@ -299,15 +299,15 @@ fun ExtraKeysBar(
         Row(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
                 when (state) {
-                    ExtraKeysBarState.COLAPSADA -> KeyLine(collapsedKeys, state.visualRowHeightDp, pendingModifiers, run)
-                    ExtraKeysBarState.UMA_LINHA -> KeyLine(oneRowKeys, state.visualRowHeightDp, pendingModifiers, run)
-                    ExtraKeysBarState.DUAS_LINHAS -> {
+                    ExtraKeysBarState.COLLAPSED -> KeyLine(collapsedKeys, state.visualRowHeightDp, pendingModifiers, run)
+                    ExtraKeysBarState.ONE_ROW -> KeyLine(oneRowKeys, state.visualRowHeightDp, pendingModifiers, run)
+                    ExtraKeysBarState.TWO_ROWS -> {
                         KeyLine(twoRowsTopKeys, state.visualRowHeightDp, pendingModifiers, run)
                         KeyLine(twoRowsBottomKeys, state.visualRowHeightDp, pendingModifiers, run)
                     }
                 }
             }
-            BotaoDeAnexo(aoAnexar = aoAnexar)
+            AttachButton(onAttach = onAttach)
             BarHandle(state = state, onStateChange = onStateChange)
         }
     }
@@ -431,7 +431,7 @@ private fun KeyCap(
  */
 @Composable
 private fun BarHandle(state: ExtraKeysBarState, onStateChange: (ExtraKeysBarState) -> Unit) {
-    val chevron = if (state == ExtraKeysBarState.DUAS_LINHAS) "⌄" else "⌃"
+    val chevron = if (state == ExtraKeysBarState.TWO_ROWS) "⌄" else "⌃"
     Box(
         modifier = Modifier
             .width(40.dp)
@@ -519,9 +519,9 @@ internal fun tapExtraKey(
  *
  * The first version of this button locked while the session was down, on the
  * grounds that there would be nowhere to paste the path. The grounds were
- * false: `AnexoDoTerminal` already handles that case — the file uploads, it
- * sits in the [BarraDeAnexos], and it is the INSERTION of the path that waits
- * for the connection (see `AnexoInsercaoOfflineTest`, written after a path
+ * false: `TerminalAttachment` already handles that case — the file uploads, it
+ * sits in the [AttachmentBar], and it is the INSERTION of the path that waits
+ * for the connection (see `AttachmentOfflineInsertionTest`, written after a path
  * really did evaporate on a reconnecting emulator).
  *
  * Locking here would remove exactly the case that code exists to serve:
@@ -530,7 +530,7 @@ internal fun tapExtraKey(
  * locked.
  */
 @Composable
-private fun BotaoDeAnexo(aoAnexar: () -> Unit) {
+private fun AttachButton(onAttach: () -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier
@@ -539,12 +539,12 @@ private fun BotaoDeAnexo(aoAnexar: () -> Unit) {
             // enforce it — the Material components do, and this is a bare
             // Surface.
             .width(48.dp)
-            .clickable(onClick = aoAnexar)
+            .clickable(onClick = onAttach)
             .semantics { contentDescription = "Attach image or file to the session" },
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
-                imageVector = VpsmIcons.Clipe,
+                imageVector = VpsmIcons.Clip,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )

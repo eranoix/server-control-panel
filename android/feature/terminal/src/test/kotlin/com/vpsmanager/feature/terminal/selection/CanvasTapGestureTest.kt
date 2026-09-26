@@ -10,7 +10,7 @@ import androidx.compose.ui.test.performTouchInput
 import com.vpsmanager.feature.terminal.input.ByteSink
 import com.vpsmanager.feature.terminal.mouse.MouseEventEncoder
 import com.vpsmanager.feature.terminal.mouse.MouseReportGestureController
-import com.vpsmanager.feature.terminal.mouse.RoteamentoDeToque
+import com.vpsmanager.feature.terminal.mouse.TouchRouting
 import com.vpsmanager.terminalengine.MouseAction
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -22,10 +22,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /** A comfortable margin over `longPressTimeoutMillis` (400–500 ms). */
-private const val FOLGA_TOQUE_LONGO_MS = 700L
+private const val LONG_PRESS_SLACK_MS = 700L
 
 /** Well inside `doubleTapTimeoutMillis` (300 ms on devices and on the emulator). */
-private const val INTERVALO_DE_TOQUE_DUPLO_MS = 60L
+private const val DOUBLE_TAP_INTERVAL_MS = 60L
 
 /**
  * The defect the app's owner reported: *"in the terminal, when I tap the
@@ -52,35 +52,35 @@ class CanvasTapGestureTest {
     private val hitTester = CellHitTester(cellWidthPx = 20f, cellHeightPx = 40f, cols = 40, rows = 40)
     private val selectionHolder = GridSelectionHolder()
     private val selectionController = SelectionGestureController({ hitTester }, selectionHolder)
-    private val toques = mutableListOf<Pair<Offset, Int>>()
+    private val recordedTaps = mutableListOf<Pair<Offset, Int>>()
 
-    private class SinkGravador : ByteSink {
-        val enviados = mutableListOf<String>()
+    private class RecordingSink : ByteSink {
+        val sent = mutableListOf<String>()
         override fun send(bytes: ByteArray) {
-            enviados += String(bytes, Charsets.US_ASCII)
+            sent += String(bytes, Charsets.US_ASCII)
         }
     }
 
-    private val sink = SinkGravador()
+    private val sink = RecordingSink()
 
     /**
      * An encoder that behaves like the native one with tracking ACTIVE — the
      * only situation in which a tap may go to the remote program.
      */
-    private val encoderComRastreamento = MouseEventEncoder { action, _, _, _ ->
-        val terminador = if (action == MouseAction.RELEASE) 'm' else 'M'
-        "\u001b[<0;1;1$terminador".toByteArray(Charsets.US_ASCII)
+    private val trackingEncoder = MouseEventEncoder { action, _, _, _ ->
+        val terminator = if (action == MouseAction.RELEASE) 'm' else 'M'
+        "\u001b[<0;1;1$terminator".toByteArray(Charsets.US_ASCII)
     }
 
     /** The same gesture stack [com.vpsmanager.feature.terminal.ui.TerminalRoute] mounts on the grid. */
-    private fun montarGrade(policy: RoteamentoDeToque) {
-        val mouseController = MouseReportGestureController(encoderComRastreamento, sink)
-        val alvoArraste = routeCanvasDrag(policy, selectionController, mouseController)
-        val alvoToque = routeCanvasTap(
+    private fun buildGrid(policy: TouchRouting) {
+        val mouseController = MouseReportGestureController(trackingEncoder, sink)
+        val dragTarget = routeCanvasDrag(policy, selectionController, mouseController)
+        val tapTarget = routeCanvasTap(
             policy,
-            keyboardTarget = { posicao, taps ->
-                if (taps < TOQUE_DUPLO) selectionController.clearSelection()
-                toques += posicao to taps
+            keyboardTarget = { position, taps ->
+                if (taps < DOUBLE_TAP) selectionController.clearSelection()
+                recordedTaps += position to taps
             },
             mouseTarget = mouseController,
         )
@@ -88,31 +88,31 @@ class CanvasTapGestureTest {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .canvasDragGestures(alvoArraste)
-                    .canvasTapGesture(alvoToque),
+                    .canvasDragGestures(dragTarget)
+                    .canvasTapGesture(tapTarget),
             )
         }
     }
 
-    private fun semMouse() = RoteamentoDeToque { false }
+    private fun noMouse() = TouchRouting { false }
 
-    private fun comMouse() = RoteamentoDeToque { true }
+    private fun comMouse() = TouchRouting { true }
 
     @Test
     fun `toque curto na grade pede o teclado`() {
-        montarGrade(semMouse())
+        buildGrid(noMouse())
 
         composeRule.onRoot().performTouchInput { down(center); up() }
         composeRule.waitForIdle()
 
-        assertEquals("um toque curto na grade tem que pedir o teclado, uma vez", 1, toques.size)
-        assertEquals("e ser contado como toque simples", TOQUE_SIMPLES, toques[0].second)
+        assertEquals("um toque curto na grade tem que pedir o teclado, uma vez", 1, recordedTaps.size)
+        assertEquals("e ser contado como toque simples", SINGLE_TAP, recordedTaps[0].second)
         assertNull("um toque curto não é seleção", selectionHolder.selection)
     }
 
     @Test
     fun `toque longo continua selecionando e nao pede o teclado`() {
-        montarGrade(semMouse())
+        buildGrid(noMouse())
 
         // The gesture is split into two blocks with the virtual clock
         // advanced in between: `advanceEventTime` only stamps the injected
@@ -120,12 +120,12 @@ class CanvasTapGestureTest {
         // the test's clock.
         composeRule.onRoot().performTouchInput {
             down(center)
-            advanceEventTime(FOLGA_TOQUE_LONGO_MS)
+            advanceEventTime(LONG_PRESS_SLACK_MS)
         }
-        composeRule.mainClock.advanceTimeBy(FOLGA_TOQUE_LONGO_MS)
+        composeRule.mainClock.advanceTimeBy(LONG_PRESS_SLACK_MS)
 
         assertNotNull("o toque longo tem que ancorar a seleção", selectionHolder.selection)
-        assertTrue("um toque longo NÃO é toque curto: nada de teclado", toques.isEmpty())
+        assertTrue("um toque longo NÃO é toque curto: nada de teclado", recordedTaps.isEmpty())
 
         composeRule.onRoot().performTouchInput {
             moveTo(center + Offset(120f, 80f))
@@ -133,36 +133,36 @@ class CanvasTapGestureTest {
         }
         composeRule.waitForIdle()
 
-        val selecao = selectionHolder.selection
-        assertNotNull("o arraste depois do toque longo tem que manter a seleção viva", selecao)
+        val selection = selectionHolder.selection
+        assertNotNull("o arraste depois do toque longo tem que manter a seleção viva", selection)
         assertTrue(
             "soltar o dedo no fim de um arraste de seleção não pode virar um toque curto",
-            toques.isEmpty(),
+            recordedTaps.isEmpty(),
         )
     }
 
     @Test
     fun `dois toques rapidos no mesmo lugar sao um toque duplo`() {
-        montarGrade(semMouse())
+        buildGrid(noMouse())
 
         composeRule.onRoot().performTouchInput { down(center); up() }
         composeRule.onRoot().performTouchInput {
-            advanceEventTime(INTERVALO_DE_TOQUE_DUPLO_MS)
+            advanceEventTime(DOUBLE_TAP_INTERVAL_MS)
             down(center)
             up()
         }
         composeRule.waitForIdle()
 
-        assertEquals("os dois toques chegam, na ordem", listOf(TOQUE_SIMPLES, TOQUE_DUPLO), toques.map { it.second })
+        assertEquals("os dois toques chegam, na ordem", listOf(SINGLE_TAP, DOUBLE_TAP), recordedTaps.map { it.second })
     }
 
     @Test
     fun `tres toques rapidos chegam a contagem de linha e nao passam disso`() {
-        montarGrade(semMouse())
+        buildGrid(noMouse())
 
         repeat(4) {
             composeRule.onRoot().performTouchInput {
-                advanceEventTime(INTERVALO_DE_TOQUE_DUPLO_MS)
+                advanceEventTime(DOUBLE_TAP_INTERVAL_MS)
                 down(center)
                 up()
             }
@@ -171,18 +171,18 @@ class CanvasTapGestureTest {
 
         assertEquals(
             "acima de três não há gesto definido: o contador satura em vez de criar estados sem significado",
-            listOf(TOQUE_SIMPLES, TOQUE_DUPLO, TOQUE_TRIPLO, TOQUE_TRIPLO),
-            toques.map { it.second },
+            listOf(SINGLE_TAP, DOUBLE_TAP, TRIPLE_TAP, TRIPLE_TAP),
+            recordedTaps.map { it.second },
         )
     }
 
     @Test
     fun `dois toques longe um do outro sao dois toques simples`() {
-        montarGrade(semMouse())
+        buildGrid(noMouse())
 
         composeRule.onRoot().performTouchInput { down(center); up() }
         composeRule.onRoot().performTouchInput {
-            advanceEventTime(INTERVALO_DE_TOQUE_DUPLO_MS)
+            advanceEventTime(DOUBLE_TAP_INTERVAL_MS)
             down(center + Offset(150f, 120f))
             up()
         }
@@ -190,24 +190,24 @@ class CanvasTapGestureTest {
 
         assertEquals(
             "tocar em cantos opostos da tela não é gesto de palavra",
-            listOf(TOQUE_SIMPLES, TOQUE_SIMPLES),
-            toques.map { it.second },
+            listOf(SINGLE_TAP, SINGLE_TAP),
+            recordedTaps.map { it.second },
         )
     }
 
     @Test
     fun `um toque longo no meio quebra a sequencia de toques`() {
-        montarGrade(semMouse())
+        buildGrid(noMouse())
 
         composeRule.onRoot().performTouchInput { down(center); up() }
         composeRule.onRoot().performTouchInput {
             down(center)
-            advanceEventTime(FOLGA_TOQUE_LONGO_MS)
+            advanceEventTime(LONG_PRESS_SLACK_MS)
         }
-        composeRule.mainClock.advanceTimeBy(FOLGA_TOQUE_LONGO_MS)
+        composeRule.mainClock.advanceTimeBy(LONG_PRESS_SLACK_MS)
         composeRule.onRoot().performTouchInput { up() }
         composeRule.onRoot().performTouchInput {
-            advanceEventTime(INTERVALO_DE_TOQUE_DUPLO_MS)
+            advanceEventTime(DOUBLE_TAP_INTERVAL_MS)
             down(center)
             up()
         }
@@ -215,26 +215,26 @@ class CanvasTapGestureTest {
 
         assertEquals(
             "depois de um arraste de seleção o próximo toque recomeça do 1",
-            listOf(TOQUE_SIMPLES, TOQUE_SIMPLES),
-            toques.map { it.second },
+            listOf(SINGLE_TAP, SINGLE_TAP),
+            recordedTaps.map { it.second },
         )
     }
 
     @Test
     fun `com o programa pedindo mouse o toque vira clique pro programa, nao teclado`() {
-        montarGrade(comMouse())
+        buildGrid(comMouse())
 
         composeRule.onRoot().performTouchInput { down(center); up() }
         composeRule.waitForIdle()
 
-        assertTrue("com mouse ativo o toque pertence ao programa remoto", toques.isEmpty())
+        assertTrue("com mouse ativo o toque pertence ao programa remoto", recordedTaps.isEmpty())
         assertEquals(
             "um clique é o par pressiona/solta na mesma célula",
             2,
-            sink.enviados.size,
+            sink.sent.size,
         )
-        assertTrue("o primeiro evento é o pressionar (terminador M)", sink.enviados[0].endsWith("M"))
-        assertTrue("o segundo é o soltar (terminador m)", sink.enviados[1].endsWith("m"))
+        assertTrue("o primeiro evento é o pressionar (terminador M)", sink.sent[0].endsWith("M"))
+        assertTrue("o segundo é o soltar (terminador m)", sink.sent[1].endsWith("m"))
     }
 
     @Test
@@ -242,14 +242,14 @@ class CanvasTapGestureTest {
         // The proof of the defect: at a bash prompt, tapping the grid must
         // not put ONE byte into the stream. That is where the "crazy text"
         // was coming from.
-        montarGrade(semMouse())
+        buildGrid(noMouse())
 
         composeRule.onRoot().performTouchInput { down(center); up() }
         composeRule.onRoot().performTouchInput {
             down(center)
-            advanceEventTime(FOLGA_TOQUE_LONGO_MS)
+            advanceEventTime(LONG_PRESS_SLACK_MS)
         }
-        composeRule.mainClock.advanceTimeBy(FOLGA_TOQUE_LONGO_MS)
+        composeRule.mainClock.advanceTimeBy(LONG_PRESS_SLACK_MS)
         composeRule.onRoot().performTouchInput {
             moveTo(center + Offset(120f, 80f))
             up()
@@ -258,7 +258,7 @@ class CanvasTapGestureTest {
 
         assertTrue(
             "nem o toque nem o arraste podem virar sequência de mouse quando ninguém pediu mouse",
-            sink.enviados.isEmpty(),
+            sink.sent.isEmpty(),
         )
     }
 }

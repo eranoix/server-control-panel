@@ -26,15 +26,15 @@ import kotlin.math.roundToInt
  * and the already translated labels (`android.R.string.*`). What does NOT come
  * for free are other apps' actions ("Translate", "Search"): in AOSP it is the
  * `Editor` that gathers them, and an `ActionMode` requested by hand starts
- * with an EMPTY menu. Here they are assembled by [acoesDeOutrosApps],
+ * with an EMPTY menu. Here they are assembled by [otherAppActions],
  * replicating the `ProcessTextIntentActionsHandler`.
  *
  * The labels come from `android.R.string.*` on purpose: they are the SAME
  * texts, in the SAME language, that the device's own search field shows.
  *
- * **Which actions, and in which hierarchy**, is [itensDaBarra]'s business —
+ * **Which actions, and in which hierarchy**, is [barItems]'s business —
  * this file only hosts the action mode and dispatches the click. Read
- * [Destaque] before touching the set: what decides bar-versus-overflow is
+ * [Placement] before touching the set: what decides bar-versus-overflow is
  * `showAsAction`, and AOSP interprets it in a way that is not the ordinary
  * `Toolbar`'s.
  *
@@ -51,38 +51,38 @@ import kotlin.math.roundToInt
  */
 class TerminalActionMode(
     private val host: View,
-    private val aoCopiar: () -> Unit,
-    private val aoSelecionarTudo: () -> Unit,
-    private val aoColar: () -> Unit,
-    private val aoCompartilhar: () -> Unit,
-    private val aoEnviarProTerminal: () -> Unit,
-    private val aoFechar: () -> Unit,
-    private val retanguloDaSelecao: () -> Rect,
-    private val acoesDeOutrosApps: () -> List<AcaoDeOutroApp> = ::emptyList,
-    private val aoUsarOutroApp: (AcaoDeOutroApp) -> Unit = {},
+    private val onCopy: () -> Unit,
+    private val onSelectAll: () -> Unit,
+    private val onPaste: () -> Unit,
+    private val onShare: () -> Unit,
+    private val onSendToTerminal: () -> Unit,
+    private val onClose: () -> Unit,
+    private val selectionRect: () -> Rect,
+    private val otherAppActions: () -> List<OtherAppAction> = ::emptyList,
+    private val onUseOtherApp: (OtherAppAction) -> Unit = {},
 ) {
 
-    private var modo: ActionMode? = null
+    private var actionMode: ActionMode? = null
 
     // `finish()` fires `onDestroyActionMode`, which tells whoever closed it;
     // and whoever closed it usually clears the selection, which would call
     // `esconder()` again. Without this latch the recursion is infinite.
-    private var fechandoPorDentro = false
+    private var closingFromInside = false
 
     // The list of outside apps is frozen at the moment the menu is assembled,
     // and the click is resolved by INDEX into it. Re-querying the
     // `PackageManager` on the click could return a different order (an app
     // installed or removed in the meantime) and fire the wrong app.
-    private var outrosAppsNoMenu: List<AcaoDeOutroApp> = emptyList()
+    private var otherAppsInMenu: List<OtherAppAction> = emptyList()
 
     /** Shows the bar, or merely repositions the one already up. */
-    fun mostrar() {
-        val atual = modo
-        if (atual != null) {
-            atual.invalidateContentRect()
+    fun show() {
+        val current = actionMode
+        if (current != null) {
+            current.invalidateContentRect()
             return
         }
-        modo = host.startActionMode(callback, ActionMode.TYPE_FLOATING)
+        actionMode = host.startActionMode(callback, ActionMode.TYPE_FLOATING)
     }
 
     /**
@@ -92,41 +92,41 @@ class TerminalActionMode(
      * behaviour as a text field, so the bar does not cover what is being
      * adjusted.
      */
-    fun atualizar() {
-        modo?.invalidateContentRect()
+    fun update() {
+        actionMode?.invalidateContentRect()
     }
 
     /** Is the bar up right now? Only the instrumented test asks — production reacts to events. */
-    internal fun estaNoAr(): Boolean = modo != null
+    internal fun isShowing(): Boolean = actionMode != null
 
     /**
      * The `Menu` the SYSTEM assembled for this bar. Only the instrumented test
      * reads it — this is how it checks that the items reached the real menu
-     * (and not just the [itensDaBarra] list) and fires the click down the real
+     * (and not just the [barItems] list) and fires the click down the real
      * path, `performIdentifierAction`.
      */
-    internal fun menuNoAr(): Menu? = modo?.menu
+    internal fun menuShown(): Menu? = actionMode?.menu
 
     /** Takes the bar down without notifying back whoever asked for it. */
-    fun esconder() {
-        val atual = modo ?: return
-        modo = null
-        fechandoPorDentro = true
-        atual.finish()
-        fechandoPorDentro = false
+    fun hide() {
+        val current = actionMode ?: return
+        actionMode = null
+        closingFromInside = true
+        current.finish()
+        closingFromInside = false
     }
 
     private val callback = object : ActionMode.Callback2() {
         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
-            outrosAppsNoMenu = acoesDeOutrosApps()
-            montarMenu(menu, deOutrosApps = outrosAppsNoMenu)
+            otherAppsInMenu = otherAppActions()
+            buildMenu(menu, fromOtherApps = otherAppsInMenu)
             return true
         }
 
         /**
          * `false` = "I did not touch the menu", and it is the right answer
          * here because the set of items does NOT change from one showing to
-         * the next (see [itensDaBarra]).
+         * the next (see [barItems]).
          *
          * This function used to read the clipboard on every preparation, so as
          * to disable "Paste" when it was empty. Two defects in that: the
@@ -141,35 +141,35 @@ class TerminalActionMode(
         override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
 
         override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean =
-            when (acaoDoItem(item.itemId)) {
-                AcaoDeSelecao.COPIAR -> {
-                    aoCopiar()
+            when (actionForItem(item.itemId)) {
+                SelectionAction.COPY -> {
+                    onCopy()
                     // Copying ends the selection, as in a text field: the
                     // gesture is over, and leaving the highlight lit suggests
                     // there is still something to do with it.
                     mode.finish()
                     true
                 }
-                AcaoDeSelecao.SELECIONAR_TUDO -> {
+                SelectionAction.SELECT_ALL -> {
                     // The only action that does NOT close the bar: it swaps
                     // the selection, and the next step (copy, share) acts on
                     // the new one — closing here would force selecting all
                     // over again.
-                    aoSelecionarTudo()
+                    onSelectAll()
                     true
                 }
-                AcaoDeSelecao.COLAR -> {
-                    aoColar()
+                SelectionAction.PASTE -> {
+                    onPaste()
                     mode.finish()
                     true
                 }
-                AcaoDeSelecao.COMPARTILHAR -> {
-                    aoCompartilhar()
+                SelectionAction.SHARE -> {
+                    onShare()
                     mode.finish()
                     true
                 }
-                AcaoDeSelecao.ENVIAR_PRO_TERMINAL -> {
-                    aoEnviarProTerminal()
+                SelectionAction.SEND_TO_TERMINAL -> {
+                    onSendToTerminal()
                     mode.finish()
                     true
                 }
@@ -178,11 +178,11 @@ class TerminalActionMode(
                 // lets the system handle it, rather than us firing the wrong
                 // action.
                 null -> {
-                    val indice = indiceDeOutroApp(item.itemId, outrosAppsNoMenu.size)
-                    if (indice == null) {
+                    val index = otherAppIndex(item.itemId, otherAppsInMenu.size)
+                    if (index == null) {
                         false
                     } else {
-                        aoUsarOutroApp(outrosAppsNoMenu[indice])
+                        onUseOtherApp(otherAppsInMenu[index])
                         mode.finish()
                         true
                     }
@@ -190,8 +190,8 @@ class TerminalActionMode(
             }
 
         override fun onDestroyActionMode(mode: ActionMode) {
-            modo = null
-            if (!fechandoPorDentro) aoFechar()
+            actionMode = null
+            if (!closingFromInside) onClose()
         }
 
         /**
@@ -202,7 +202,7 @@ class TerminalActionMode(
          * what was selected.
          */
         override fun onGetContentRect(mode: ActionMode, view: View, outRect: android.graphics.Rect) {
-            val r = retanguloDaSelecao()
+            val r = selectionRect()
             outRect.set(
                 r.left.roundToInt(),
                 r.top.roundToInt(),
