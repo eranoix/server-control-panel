@@ -202,7 +202,7 @@ for (const larg of [320, 380, 430, 700]) {
     ? ok(tag + ': as ' + r.sheet.linhas + ' sheet rows are >=44px tall')
     : no(tag + ': ' + r.sheet.low + ' of ' + r.sheet.linhas + ' rows below 44px');
   r.small === 0 ? ok(tag + ': os ' + r.toolbar + ' round bar buttons keep a touch target >=44px')
-                   : no(tag + ': ' + r.small + ' bar button(s) below 44px — the fix ate the touch target');
+                   : no(tag + ': ' + r.small + ' bar button(s) below 44px — the fix until the touch target');
   await page.close();
 }
 

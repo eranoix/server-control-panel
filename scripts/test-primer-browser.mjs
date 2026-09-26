@@ -86,8 +86,8 @@ async function freePort() {
 }
 
 async function waitHealthy(url, capMs = 40000) {
-  const ate = Date.now() + capMs;
-  while (Date.now() < ate) {
+  const until = Date.now() + capMs;
+  while (Date.now() < until) {
     try {
       const r = await fetch(url + '/api/health');
       if (r.ok) return true;
@@ -196,18 +196,18 @@ try {
     }, SESSION);
 
     // Wait for the socket to actually open.
-    const abriu = await pag.waitForFunction(() => {
+    const opened = await pag.waitForFunction(() => {
       const d = document.body._x_dataStack[0];
       const p = d.terms.panes[0];
       return !!(p && p.ws && p.ws.readyState === 1 && p.term);
     }, { timeout: 30000 }).then(() => true).catch(() => false);
 
-    return { ctx, pag, routes, erros: errors, abriu, label };
+    return { ctx, pag, routes, erros: errors, opened, label };
   }
 
   // ── 1) first computer: produce history ─────────────────────────────────
   const pc1 = await openPanel('PC 1');
-  if (!pc1.abriu) {
+  if (!pc1.opened) {
     console.error('FAILED: the terminal did not connect on the first visit. Errors: ' + pc1.erros.join(' | '));
     console.error(serverLog.join('').slice(-2000));
     process.exit(1);
@@ -221,14 +221,14 @@ try {
   });
   await wait(4000);
 
-  const viuNoPc1 = await pc1.pag.evaluate(() => {
+  const sawOnPc1 = await pc1.pag.evaluate(() => {
     const p = document.body._x_dataStack[0].terms.panes[0];
     const b = p.term.buffer.active;
     let t = '';
     for (let i = 0; i < b.length; i++) { const l = b.getLine(i); if (l) t += l.translateToString(true) + '\n'; }
     return t;
   });
-  (viuNoPc1.includes('PROVA_120'))
+  (sawOnPc1.includes('PROVA_120'))
     ? ok('PC 1 sees the output it has just produced')
     : no('PC 1 cannot see its own output — the test never got as far as producing history');
 
@@ -237,13 +237,13 @@ try {
 
   // ── 2) second computer: a new context, no cookie, no localStorage ──────
   const pc2 = await openPanel('PC 2');
-  if (!pc2.abriu) {
+  if (!pc2.opened) {
     console.error('FAILED: the terminal did not connect on the second visit. Errors: ' + pc2.erros.join(' | '));
     process.exit(1);
   }
   await wait(2500);
 
-  const viuNoPc2 = await pc2.pag.evaluate(() => {
+  const sawOnPc2 = await pc2.pag.evaluate(() => {
     const p = document.body._x_dataStack[0].terms.panes[0];
     const b = p.term.buffer.active;
     let t = '';
@@ -255,13 +255,13 @@ try {
   // can only be here if the primer brought the history back.
   const oldOnes = ['PROVA_1', 'PROVA_5', 'PROVA_20'].filter(m => {
     const re = new RegExp(m + '(?![0-9])');
-    return re.test(viuNoPc2);
+    return re.test(sawOnPc2);
   });
   (oldOnes.length === 3)
     ? ok('PC 2 sees the lines that HAD ALREADY SCROLLED OFF — the history crossed the change of computer')
     : no(`PC 2 only found ${oldOnes.length}/3 of the old lines (${oldOnes.join(',') || 'none'}) — the primer did not bring the history`);
 
-  (viuNoPc2.includes('PROVA_120'))
+  (sawOnPc2.includes('PROVA_120'))
     ? ok('PC 2 also sees the CURRENT screen (the attach repaint still does its part)')
     : no('PC 2 cannot see the current screen — the attach repaint stopped working');
 

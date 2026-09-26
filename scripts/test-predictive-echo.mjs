@@ -33,12 +33,12 @@ const extract = (nome, args) => {
 };
 
 const app = {
-  hostTermEcoPreditivo: 'auto',
+  hostTermPredictiveEcho: 'auto',
   hostTermEchoThreshold: 60,
   _predictEcho: extract('_predictEcho', ['pane', 'd']),
   _canPredict: extract('_canPredict', ['pane', 'd']),
   _erasePrediction: extract('_erasePrediction', ['pane']),
-  _repreveEco: extract('_repreveEco', ['pane']),
+  _repredictEcho: extract('_repredictEcho', ['pane']),
   _looksLikePasswordLine: extract('_looksLikePasswordLine', ['pane']),
 };
 
@@ -92,11 +92,11 @@ const output = (p) => p.written.join('');
                          : no('predicted a control character');
 
   const off = newPane();
-  app._predictEcho.call({ ...app, hostTermEcoPreditivo: 'nunca' }, off, 'x');
+  app._predictEcho.call({ ...app, hostTermPredictiveEcho: 'nunca' }, off, 'x');
   output(off) === '' ? ok('does not predict: the user turned it off') : no('ignored the user preference');
 
   const forced = newPane({ eco: 5 });
-  app._predictEcho.call({ ...app, hostTermEcoPreditivo: 'sempre' }, forced, 'x');
+  app._predictEcho.call({ ...app, hostTermPredictiveEcho: 'sempre' }, forced, 'x');
   output(forced) !== '' ? ok('"always" mode predicts even on a good network') : no('"always" mode did not predict');
 }
 
@@ -118,7 +118,7 @@ const output = (p) => p.written.join('');
   for (const c of 'ls -la') app._predictEcho.call(app, p, c);
   p.written.length = 0;
   p.term.buffer.active.cursorX = 4;          // the server confirmed 2 characters
-  app._repreveEco.call(app, p);
+  app._repredictEcho.call(app, p);
   (p._pred.txt === ' -la' && output(p) === '\x1b[2m -la\x1b[22m')
     ? ok('only the unconfirmed part is repainted (the tail does not blink every frame)')
     : no('wrong reconciliation: txt=' + JSON.stringify(p._pred.txt) + ' output=' + JSON.stringify(output(p)));
@@ -129,7 +129,7 @@ const output = (p) => p.written.join('');
   for (const c of 'ls') app._predictEcho.call(app, p, c);
   p.written.length = 0;
   p.term.buffer.active.cursorX = 4;
-  app._repreveEco.call(app, p);
+  app._repredictEcho.call(app, p);
   (p._pred.txt === '' && output(p) === '')
     ? ok('all confirmed → nothing repainted, no dimmed leftovers')
     : no('a guess survived a full confirmation');
@@ -140,7 +140,7 @@ const output = (p) => p.written.join('');
   for (const c of 'abc') app._predictEcho.call(app, p, c);
   p.written.length = 0;
   p.term.buffer.active.cursorY = 1;
-  app._repreveEco.call(app, p);
+  app._repredictEcho.call(app, p);
   (p._pred.txt === '' && output(p) === '')
     ? ok('the server changed line → the guess dies (it does not leak onto the wrong line)')
     : no('the guess survived a line change');
@@ -151,7 +151,7 @@ const output = (p) => p.written.join('');
   app._predictEcho.call(app, p, 'x');
   p.written.length = 0;
   p.term.buffer.active.type = 'alternate';
-  app._repreveEco.call(app, p);
+  app._repredictEcho.call(app, p);
   (p._pred.txt === '' && output(p) === '')
     ? ok('a TUI took over mid-flight → the guess is dropped, not repainted on top')
     : no('repainted on top of a TUI');
@@ -162,7 +162,7 @@ const output = (p) => p.written.join('');
 // the guess would sit underneath the server output.
 {
   const i = src.indexOf('self._erasePrediction(state)');
-  const j = src.indexOf('self._repreveEco(state)');
+  const j = src.indexOf('self._repredictEcho(state)');
   (i > 0 && j > i && /if \(!q\.length\) return;\n {10}\/\/ The rule that makes predictive echo safe/.test(src))
     ? ok('flushTerm erases before the batch and repaints after (the order is the guarantee)')
     : no('the erase/repaint order in flushTerm does not check out');

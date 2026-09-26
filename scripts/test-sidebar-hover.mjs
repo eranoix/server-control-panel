@@ -113,12 +113,12 @@ async function targetWs() {
 }
 
 class CDP {
-  constructor(ws) { this.ws = ws; this.id = 0; this.pend = new Map();
+  constructor(ws) { this.ws = ws; this.id = 0; this.pending = new Map();
     ws.onmessage = (e) => { const m = JSON.parse(e.data);
-      if (m.id && this.pend.has(m.id)) { const { res, rej } = this.pend.get(m.id); this.pend.delete(m.id);
+      if (m.id && this.pending.has(m.id)) { const { res, rej } = this.pending.get(m.id); this.pending.delete(m.id);
         m.error ? rej(new Error(m.error.message)) : res(m.result); } }; }
   send(method, params = {}) { const id = ++this.id;
-    return new Promise((res, rej) => { this.pend.set(id, { res, rej }); this.ws.send(JSON.stringify({ id, method, params })); }); }
+    return new Promise((res, rej) => { this.pending.set(id, { res, rej }); this.ws.send(JSON.stringify({ id, method, params })); }); }
   async eval(expr) { const r = await this.send('Runtime.evaluate', { expression: expr, returnByValue: true }); return r.result?.value; }
   async mouse(type, x, y, button = 'none', clickCount = 0) {
     await this.send('Input.dispatchMouseEvent', { type, x, y, button, clickCount, buttons: 0 });

@@ -149,12 +149,12 @@ const subNotInList = subs.filter(id => !allowlist.has(id));
 check('🔴 every sub-action in TEL_SUB is in the screens.txt allowlist', subNotInList.length === 0,
   subNotInList.join(' '));
 
-const idDe = (key) => (paresTel.find(([k]) => k === key) || [])[1];
+const idOf = (key) => (paresTel.find(([k]) => k === key) || [])[1];
 check('TEL_IDS HAS the proxmox key, and it points at operacoes.proxmox',
-  idDe('proxmox') === 'operacoes.proxmox', idDe('proxmox'),
+  idOf('proxmox') === 'operacoes.proxmox', idOf('proxmox'),
 );
 check('TEL_IDS HAS the config key, and it points at config',
-  idDe('config') === 'config', idDe('config'),
+  idOf('config') === 'config', idOf('config'),
 );
 
 // The absences that REMAIN are still declared absences: `nodes` (the screen was
@@ -498,8 +498,8 @@ check('🔴 pvxGauge does NOT write to reactive Alpine state',
   !/this\.pvx\.[^=;\n]*=[^=]/.test(gaugeBody),
   'a reactive write inside a render expression is an effect loop');
 check('the hysteresis memory lives outside the component (a Map in the closure)',
-  /const tiersDeHisterese = new Map\(\);/.test(pvxJs) &&
-  /tiersDeHisterese\.set/.test(gaugeBody));
+  /const hysteresisTiers = new Map\(\);/.test(pvxJs) &&
+  /hysteresisTiers\.set/.test(gaugeBody));
 
 // ── the `field:value` filter ──────────────────────────────────────────────
 const filter = new Function('list', 'text', 'segment', 'stateOf',

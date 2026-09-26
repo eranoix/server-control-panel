@@ -50,7 +50,7 @@ const app = {
   _paneSendInput: extract('_paneSendInput', ['pane', 'd']),
   _paneTxFlush: extract('_paneTxFlush', ['pane']),
   _paneEnfileiraOffline: extract('_paneEnfileiraOffline', ['pane', 'd']),
-  _paneEcoOffline: extract('_paneEcoOffline', ['pane', 'd']),
+  _paneEchoOffline: extract('_paneEchoOffline', ['pane', 'd']),
   _looksLikePasswordLine: extract('_looksLikePasswordLine', ['pane']),
   _markSend: extract('_markSend', ['pane', 'd']),
   // Sending now also fires the predictive echo. It is inert in the cases in
@@ -118,9 +118,9 @@ const fakeTerm = (written, line) => ({
 {
   const p = newPane(3);
   _paneSendInput(p, 'x'.repeat(128 * 1024));   // fills the ceiling exactly
-  const antes = p._outboxBytes;
+  const before = p._outboxBytes;
   _paneSendInput(p, 'y');                      // overflows it
-  p._outboxDropped === true && p._outboxBytes === antes
+  p._outboxDropped === true && p._outboxBytes === before
     ? ok('128KB ceiling: stops growing and marks the drop so it can warn')
     : no('byte ceiling not honoured');
 }

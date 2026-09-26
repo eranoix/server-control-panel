@@ -182,7 +182,7 @@ sockets[0].open();
   probes = 0;
   s.kill(1006);
   await wait(500);
-  const antes = sockets.length;
+  const before = sockets.length;
   const hadProbe = probes > 0;
   sockets[sockets.length - 1].kill(1006);   // the 2nd attempt fires the probe
   await wait(800);

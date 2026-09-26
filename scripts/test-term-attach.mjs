@@ -202,18 +202,18 @@ const file = (name, type) => ({ name, type, kind: 'file', getAsFile(){ return th
 // ── 7. _uploadTermFile: the contract with the server ───────────────────────
 {
   let req = null;
-  const campos = [];
-  globalThis.FormData = class { append(k, v, n){ campos.push([k, v, n]); } };
+  const fields = [];
+  globalThis.FormData = class { append(k, v, n){ fields.push([k, v, n]); } };
   globalThis.fetch = (url, opts) => { req = { url, opts }; return Promise.resolve({ ok: true, json: async () => ({ path: '/up/x' }) }); };
   const a = app(['_uploadTermFile'], { token: 'T', showToast(){} });
   await a._uploadTermFile({ name: 'final contract.pdf', type: 'application/pdf' });
   req && req.url === '/api/terminal/upload'
     ? ok('posts to /api/terminal/upload')
     : no('the upload URL changed: ' + (req && req.url));
-  campos.length === 1 && campos[0][0] === 'file'
+  fields.length === 1 && fields[0][0] === 'file'
     ? ok("the multipart field is 'file'")
-    : no('the multipart field is not file: ' + JSON.stringify(campos.map(c=>c[0])));
-  campos[0] && campos[0][2] === 'final contract.pdf'
+    : no('the multipart field is not file: ' + JSON.stringify(fields.map(c=>c[0])));
+  fields[0] && fields[0][2] === 'final contract.pdf'
     ? ok('preserves the original file name (it is what orients whoever reads the path)')
     : no('original name lost in the upload');
 }

@@ -36,11 +36,11 @@ func repoRootDir(t *testing.T) string {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			return dir
 		}
-		pai := filepath.Dir(dir)
-		if pai == dir {
+		parent := filepath.Dir(dir)
+		if parent == dir {
 			break
 		}
-		dir = pai
+		dir = parent
 	}
 	t.Fatalf("could not find the repo root (go.mod) walking up from the test dir")
 	return ""

@@ -47,7 +47,7 @@
 (function () {
   // Gauge hysteresis memory, keyed by "id:gauge". Outside the component on
   // purpose — see the comment in pvxGauge.
-  const tiersDeHisterese = new Map();
+  const hysteresisTiers = new Map();
 
   // ── gauge helpers, OUTSIDE the object ────────────────────────────────────
   //
@@ -209,14 +209,14 @@
       // how many guests fall, which ones, and that the way back is physical.
       pvxRunningGuests() {
         return this.pvxNodes().filter((n) => {
-          if (!this.pvxEhGuest(n)) return false;
+          if (!this.pvxIsGuest(n)) return false;
           const st = (n.status && n.status.value) || '';
           return st === 'running' || st === 'online';
         });
       },
       pvxHostPower(cmd) {
         const n = this.pvxOpenNode();
-        if (!n || !this.pvxEhHost(n)) return;
+        if (!n || !this.pvxIsHost(n)) return;
         const label = n.name || n.id;
         const running = this.pvxRunningGuests();
         const list = running.map((g) => (g.name || g.id)).join(', ') || 'none';
@@ -280,7 +280,7 @@
         const v = this.pvxVal(field);
         return v === null || v === undefined ? '—' : Number(v).toFixed(decimals === undefined ? 1 : decimals);
       },
-      pvxPctDe(usedField, totalField) {
+      pvxPctOf(usedField, totalField) {
         const u = this.pvxVal(usedField), t = this.pvxVal(totalField);
         if (u === null || t === null || !(Number(t) > 0)) return null;
         return (Number(u) / Number(t)) * 100;
@@ -338,7 +338,7 @@
       // Drawable metrics. `pct` says whether the axis is a fixed 0-100 (percentage)
       // or scaled to the observed maximum — scaling a percentage would make 2% CPU
       // look like a spike, and that is the classic automatic-charting mistake.
-      METRICAS_NO: [
+      NODE_METRICS: [
         { id: 'cpu',        rot: 'CPU',        pct: true,  color: '#38bdf8', fmt: 'pct' },
         { id: 'iowait',     rot: 'IO delay',   pct: true,  color: '#f59e0b', fmt: 'pct' },
         { id: 'loadavg',    rot: 'Load',       pct: false, color: '#a78bfa', fmt: 'num' },
@@ -350,7 +350,7 @@
         { id: 'pressureiosome',     rot: 'IO pressure',     pct: true, color: '#fb923c', fmt: 'pct' },
         { id: 'pressurememorysome', rot: 'Memory pressure', pct: true, color: '#e879f9', fmt: 'pct' },
       ],
-      METRICAS_GUEST: [
+      GUEST_METRICS: [
         { id: 'cpu',       rot: 'CPU',      pct: true,  color: '#38bdf8', fmt: 'pct' },
         { id: 'mem',       rot: 'Memory',  pct: false, color: '#22c55e', fmt: 'bytes', cap: 'maxmem' },
         { id: 'disk',      rot: 'Disk',    pct: false, color: '#94a3b8', fmt: 'bytes', cap: 'maxdisk' },
@@ -361,11 +361,11 @@
       ],
       pvxMetrics() {
         const n = this.pvxOpenNode();
-        return this.pvxEhGuest(n) ? this.METRICAS_GUEST : this.METRICAS_NO;
+        return this.pvxIsGuest(n) ? this.GUEST_METRICS : this.NODE_METRICS;
       },
       pvxSeriesTarget() {
         const n = this.pvxOpenNode();
-        return this.pvxEhGuest(n) ? n.id : '';
+        return this.pvxIsGuest(n) ? n.id : '';
       },
       async pvxLoadSeries() {
         const target = this.pvxSeriesTarget();
@@ -542,7 +542,7 @@
         const j = base.lastIndexOf('_');
         return j >= 0 ? base.slice(j + 1) : '';
       },
-      pvxPoolsDoDisco(d) {
+      pvxDiskPools(d) {
         if (!d) return [];
         const serial = String(d.serial || '');
         const ps = (this.pvx.topology && this.pvx.topology.pools) || [];
@@ -790,10 +790,10 @@
         { id: 'snaps',    rot: 'Copies' },
         { id: 'tarefas',  rot: 'Tasks' },
       ],
-      pvxEhGuest(n) { return !!(n && n.kind === 'guest' && n.vmid > 0); },
+      pvxIsGuest(n) { return !!(n && n.kind === 'guest' && n.vmid > 0); },
       pvxNodeTabs(n) {
         if (!n) return [];
-        return this.pvxEhGuest(n) ? this.ABAS_GUEST : this.ABAS_HOST;
+        return this.pvxIsGuest(n) ? this.ABAS_GUEST : this.ABAS_HOST;
       },
       // A tab inherited from a node of ANOTHER type does not exist in the current
       // set. Without this normalisation, going from "Disks" (host) to a guest would
@@ -829,7 +829,7 @@
         // The HOST Summary shows the timezone, and the timezone comes from /sistema.
         // Without this it would be born an em-dash and would only appear after the
         // operator visited another tab — a datum that exists, hidden by navigation order.
-        if (tab === 'summary' && !this.pvx.loaded.sistema && !this.pvxEhGuest(this.pvxOpenNode())) this.pvxLoadSystem();
+        if (tab === 'summary' && !this.pvx.loaded.sistema && !this.pvxIsGuest(this.pvxOpenNode())) this.pvxLoadSystem();
         // The note is the BODY of the summary, so it loads together with the tab — not
         // after a second click.
         if (tab === 'summary') this.pvxLoadNote(this.pvx.open);
@@ -860,7 +860,7 @@
       // goes into `noData`, never in as zero: adding absence up as zero is the
       // classic way for a panel to lie that everything is roomy.
       pvxLabSummary() {
-        const guests = this.pvxNodes().filter((n) => this.pvxEhGuest(n));
+        const guests = this.pvxNodes().filter((n) => this.pvxIsGuest(n));
         let memU = 0, memT = 0, cpuSum = 0, cpuN = 0, noData = 0, running = 0, unknown = 0;
         for (const g of guests) {
           const st = (g.status && g.status.value) || '';
@@ -1443,7 +1443,7 @@
       // root ON THE HYPERVISOR, from where the nine guests can be shut down with one
       // command. Its credential is a different one too — the hypervisor’s read token,
       // because no node token has Sys.Console.
-      pvxEhHost(n) { return !!(n && n.kind === 'host'); },
+      pvxIsHost(n) { return !!(n && n.kind === 'host'); },
       pvxConsoleGuestState(g) {
         // No `this.`: this function is PURE on purpose. The pin harness extracts it and
         // runs it isolated from the object, and a dependency on `this` here would break
@@ -1851,7 +1851,7 @@
         // (`pbs`, today, is exactly that case: it has no node token and is clonable all
         // the same).
         if (action === 'clone' || action === 'backup') {
-          if (!this.pvxEhGuest(n)) {
+          if (!this.pvxIsGuest(n)) {
             return { can: false, motivo: n.kind === 'host'
               ? 'the hypervisor is not a guest — there is nothing to copy here'
               : 'external node: not a guest of this hypervisor' };
@@ -1867,7 +1867,7 @@
             if (!this.pvx.storage) {
               return { can: false, motivo: 'I have not read this hypervisor storage list yet' };
             }
-            if (!this.pvxStoragesDeBackup().length) {
+            if (!this.pvxBackupStorages().length) {
               return { can: false, motivo: 'no storage on this hypervisor accepts backups' };
             }
           }
@@ -2087,12 +2087,12 @@
       // away. The operator follows the real outcome instead of reading a "done" nobody
       // verified.
 
-      // pvxStoragesDeBackup filters the storages that accept `backup`. It comes
+      // pvxBackupStorages filters the storages that accept `backup`. It comes
       // out of pvx.storage, which the Storage tab already loads — there is no
       // second call, and no hand-typed list to go stale when a storage comes or
       // goes (`backupusb` left, and a fixed list would still be offering it
       // today).
-      pvxStoragesDeBackup() {
+      pvxBackupStorages() {
         const pools = (this.pvx.storage && this.pvx.storage.pools) || [];
         return pools.filter(p => Array.isArray(p.content) && p.content.indexOf('backup') >= 0);
       },
@@ -2188,7 +2188,7 @@
       pvxBackupConfirm(n) {
         const state = this.pvxActionState(n, 'backup');
         if (!state.can) { this.showToast(state.motivo, 'err'); return; }
-        const st = this.pvx.bkp.storage || (this.pvxStoragesDeBackup()[0] || {}).id || '';
+        const st = this.pvx.bkp.storage || (this.pvxBackupStorages()[0] || {}).id || '';
         if (!st) { this.showToast('no storage accepts backups', 'err'); return; }
         this.pvx.bkp.storage = st;
         // Rung 1: no dialog. Storing a copy is the only action on this screen that only
@@ -2300,8 +2300,8 @@
         // reactive proxy, and because of that storing the previous tier re-triggers
         // no render at all.
         const key = (n.id || '') + ':' + which;
-        const tier = this.pvxTier(pct, tiersDeHisterese.get(key));
-        tiersDeHisterese.set(key, tier);
+        const tier = this.pvxTier(pct, hysteresisTiers.get(key));
+        hysteresisTiers.set(key, tier);
         return { measured: true, live, pct, tier, text: pvxGaugeText(this, n, which, pct), motivo: '' };
       },
       pvxGaugeColor(m) {

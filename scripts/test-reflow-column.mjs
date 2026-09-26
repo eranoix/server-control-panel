@@ -63,12 +63,12 @@ const pageHtml = `<!doctype html><meta charset="utf-8">
 <script src="/vendor/xterm/xterm.js"></script>
 <script>
 window.__ready = false;
-window.addEventListener('error', e => { window.__erro = String(e.message); });
+window.addEventListener('error', e => { window.__error = String(e.message); });
 const COLS = 56, ROWS = 30;
 const term = new Terminal({ cols: COLS, rows: ROWS, scrollback: 1000, allowProposedApi: true });
 term.open(document.getElementById('t'));
 
-const escreve = (s) => new Promise(r => term.write(s, r));
+const write = (s) => new Promise(r => term.write(s, r));
 
 // Read the whole buffer (scrollback + viewport) as text.
 window.__buffer = () => {
@@ -81,27 +81,27 @@ window.__buffer = () => {
   return out.join('\\n');
 };
 
-// A TUI app "frame": LINHAS lines of exactly COLS characters. At 56 columns each
+// A TUI app "frame": LINES lines of exactly COLS characters. At 56 columns each
 // one takes 1 physical line; at 55, it takes 2 (55 + the remainder). It is the
 // cleanest way to make the physical count change under +-1 column.
-const LINHAS = 5;
-function quadro(mark) {
-  const linhas = [];
-  for (let i = 0; i < LINHAS; i++) {
+const LINES = 5;
+function frame(mark) {
+  const rows = [];
+  for (let i = 0; i < LINES; i++) {
     const tok = 'SENT' + mark + '-L' + i + '-';
-    linhas.push(tok.repeat(Math.ceil(COLS / tok.length)).slice(0, COLS));
+    rows.push(tok.repeat(Math.ceil(COLS / tok.length)).slice(0, COLS));
   }
-  return linhas.join('\\r\\n');
+  return rows.join('\\r\\n');
 }
 // Repaint the way a TUI repaints: go up the N lines IT counted having written,
 // clear from there to the end of the screen, redraw.
-window.__cenario = async (withResize) => {
+window.__scenario = async (withResize) => {
   term.reset();
   term.resize(COLS, ROWS);
-  await escreve(quadro('A'));
+  await write(frame('A'));
   if (withResize) term.resize(COLS - 1, ROWS);   // the spurious +-1 column
-  await escreve('\\x1b[' + (LINHAS - 1) + 'A\\r\\x1b[J');
-  await escreve(quadro('A'));
+  await write('\\x1b[' + (LINES - 1) + 'A\\r\\x1b[J');
+  await write(frame('A'));
   // Count COPIES of the frame: buffer lines that START with the token. Counting
   // occurrences of the token would be misleading — it repeats inside the line
   // itself to fill the 56 columns.
@@ -110,15 +110,15 @@ window.__cenario = async (withResize) => {
 
 // ── the REAL guards, with the REAL Terminal ────────────────────────────────
 window.__safeFit  = new Function('fit', ${JSON.stringify(panelSafeFitBody)});
-window.__mkFitSeguro = () => {
+window.__mkSafeFit = () => {
   // setTimeout/clearTimeout stay out of the parameters on purpose: passing them
   // detached from window makes Chrome throw "Illegal invocation", the try/catch
   // of the guard swallows it, and the pin would fail on a defect OF ITS OWN. Here
   // they resolve to the page globals, as in the real file.
   return new Function('fitAddon', 'term',
-    'let colPend = 0, colTimer = 0;\\n'
+    'let colPending = 0, colTimer = 0;\\n'
     + 'function safeFit(){' + ${JSON.stringify(recoverySafeFitBody)} + '}\\n'
-    + 'return safeFit;')(window.__fitAtual, window.__termAtual);
+    + 'return safeFit;')(window.__currentFit, window.__currentTerm);
 };
 window.__term = term;
 window.__ready = true;
@@ -156,8 +156,8 @@ await page.waitForFunction('window.__ready === true', null, { timeout: 15000 });
 
 // ── 1. THE DAMAGE IS REAL ───────────────────────────────────────────────────
 // Without this the rest would be a guard against an undemonstrated problem.
-const noResize = await page.evaluate('window.__cenario(false)');
-const withResize = await page.evaluate('window.__cenario(true)');
+const noResize = await page.evaluate('window.__scenario(false)');
+const withResize = await page.evaluate('window.__scenario(true)');
 
 noResize === 1
   ? ok('control: with no column change, the repaint REPLACES the frame (1 copy)')
@@ -234,12 +234,12 @@ const rec = await page.evaluate(`(async () => {
   await new Promise(r => setTimeout(r, 400));   // drain the timers of the previous scenario
   t.reset(); t.resize(56, 30);
   let prop = { cols: 56, rows: 30 };
-  window.__termAtual = t;
-  window.__fitAtual = {
+  window.__currentTerm = t;
+  window.__currentFit = {
     proposeDimensions: () => prop,
     fit: () => t.resize(prop.cols, prop.rows),
   };
-  const safeFit = window.__mkFitSeguro();
+  const safeFit = window.__mkSafeFit();
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   prop = { cols: 55, rows: 30 }; safeFit();
   const logo = t.cols;

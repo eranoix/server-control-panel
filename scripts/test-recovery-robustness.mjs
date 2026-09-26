@@ -113,7 +113,7 @@ function buildCtx({ withXterm }) {
 function run(ctx) {
   const names = Object.keys(ctx).filter((n) => n !== '__meta');
   const tail = ';this.__x = { createTerminal, doAction, host, claude, showTab, '
-              + 'logaConsole, consoleText, downloadEvidence, renewSession, reconnectNow, clearConsole };';
+              + 'logConsole, consoleText, downloadEvidence, renewSession, reconnectNow, clearConsole };';
   new Function(...names, script + tail).call(ctx, ...names.map((n) => ctx[n]));
   return ctx.__x;
 }
@@ -176,10 +176,10 @@ function run(ctx) {
       // boundary lands in the middle of a CRLF with no effort at all. Handled
       // wrong, the '\r' of the CRLF erases the whole line — shell output vanishes.
       // (the scrollback of the engine accumulates on purpose — we check the suffix)
-      const antes = pre.textContent;
+      const before = pre.textContent;
       api.host.term.write('first\r');
       api.host.term.write('\nsegunda\r\n');
-      const t2 = pre.textContent.slice(antes.length);
+      const t2 = pre.textContent.slice(before.length);
       (t2 === 'first\nsegunda\n')
         ? ok('no xterm: a CRLF split across two chunks does not swallow the line')
         : no('a split CRLF corrupted the output: ' + JSON.stringify(t2));
@@ -234,7 +234,7 @@ function run(ctx) {
 
   // Evidence: it has to join the console + both screens, without blowing up.
   api.clearConsole();
-  api.logaConsole('$ health', 'ok');
+  api.logConsole('$ health', 'ok');
   let overflowed = null;
   try { api.downloadEvidence(); } catch (e) { overflowed = e; }
   const downloaded = m.created.find((e) => e.tag === 'a' && String(e.download || '').startsWith('recovery-'));

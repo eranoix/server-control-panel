@@ -30,9 +30,9 @@ import (
 // different eras.
 func TestServedMinifiedMatchesCurrentSource(t *testing.T) {
 	sub := SubFS()
-	entries, err := fs.ReadDir(sub, dirDoApp)
+	entries, err := fs.ReadDir(sub, appDir)
 	if err != nil {
-		t.Fatalf("embed with no %s: %v", dirDoApp, err)
+		t.Fatalf("embed with no %s: %v", appDir, err)
 	}
 
 	var sources int
@@ -42,9 +42,9 @@ func TestServedMinifiedMatchesCurrentSource(t *testing.T) {
 			continue
 		}
 		sources++
-		source := path.Join(dirDoApp, nome)
+		source := path.Join(appDir, nome)
 
-		expected := path.Join(dirDoApp, strings.TrimSuffix(nome, ".js")+".min.js")
+		expected := path.Join(appDir, strings.TrimSuffix(nome, ".js")+".min.js")
 		_, exists := fs.Stat(sub, expected)
 
 		min, ok := MinifiedOf(source)
@@ -86,7 +86,7 @@ func TestServedMinifiedMatchesCurrentSource(t *testing.T) {
 	}
 
 	if sources == 0 {
-		t.Fatalf("no .js found in %s — did the app embed disappear?", dirDoApp)
+		t.Fatalf("no .js found in %s — did the app embed disappear?", appDir)
 	}
 }
 
@@ -139,7 +139,7 @@ func TestAdguardStateReachesServedBundle(t *testing.T) {
 		t.Skip("index.html no longer references adguardLoaded")
 	}
 
-	source := path.Join(dirDoApp, "00-shell.js")
+	source := path.Join(appDir, "00-shell.js")
 	served := source
 	if min, ok := MinifiedOf(source); ok {
 		served = min

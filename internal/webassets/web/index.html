@@ -7026,8 +7026,8 @@
                      it disappears in vim/htop and at a password prompt. -->
                 <div>
                   <label for="f-hostTermEco" class="text-gray-400 uppercase">Predictive echo (slow network)</label>
-                  <select id="f-hostTermEco" x-model="hostTermEcoPreditivo"
-                          @change="localStorage.setItem('vpsm_term_eco_preditivo', hostTermEcoPreditivo)"
+                  <select id="f-hostTermEco" x-model="hostTermPredictiveEcho"
+                          @change="localStorage.setItem('vpsm_term_eco_preditivo', hostTermPredictiveEcho)"
                           class="input w-full mt-1" aria-label="Terminal predictive echo">
                     <option value="auto">Automatic — only when the network is slow</option>
                     <option value="sempre">Always</option>
@@ -7038,7 +7038,7 @@
                     when the reply arrives. It does not act in full-screen apps (vim, htop) or at a password prompt.
                   </p>
                 </div>
-                <div x-show="hostTermEcoPreditivo === 'auto'">
+                <div x-show="hostTermPredictiveEcho === 'auto'">
                   <label for="f-hostTermEchoThreshold" class="text-gray-400 uppercase">Echo threshold (ms)</label>
                   <input id="f-hostTermEchoThreshold" type="number" x-model.number="hostTermEchoThreshold"
                          @change="localStorage.setItem('vpsm_term_eco_limiar', String(hostTermEchoThreshold))"
@@ -11161,7 +11161,7 @@
                            root inside a container; the other is root ON THE
                            HYPERVISOR, from where the nine guests go down with one
                            command. The screen says so BEFORE opening, not after. -->
-                      <div x-show="pvxEhHost(pvxOpenNode())" x-cloak
+                      <div x-show="pvxIsHost(pvxOpenNode())" x-cloak
                            class="px-4 py-2 text-[11px] border-b"
                            style="border-color:var(--border);background:#ef444414;color:#ef4444">
                         Hypervisor shell — root on <span class="font-mono" x-text="pvxOpenNode()?.name"></span>.
@@ -11295,7 +11295,7 @@
                                `backupusb`, which has since gone. -->
                           <select class="input input-sm ml-auto" style="max-width:180px" x-model="pvx.bkp.storage"
                                   aria-label="destination storage">
-                            <template x-for="p in pvxStoragesDeBackup()" :key="'bkp-' + p.id">
+                            <template x-for="p in pvxBackupStorages()" :key="'bkp-' + p.id">
                               <option :value="p.id" x-text="p.id + ' — ' + pvxBytes(p.free) + ' free'"></option>
                             </template>
                           </select>
@@ -11314,7 +11314,7 @@
                           This copy erases no other: the request goes without <span class="font-mono">prune-backups</span>,
                           on purpose. A command you press to gain a copy must not erase the ones you already have.
                         </div>
-                        <div x-show="!pvxStoragesDeBackup().length" x-cloak class="text-[11px] mt-2" style="color:var(--warn)">
+                        <div x-show="!pvxBackupStorages().length" x-cloak class="text-[11px] mt-2" style="color:var(--warn)">
                           no storage on this hypervisor accepts backups — there is nowhere to send it
                         </div>
                       </div>
@@ -11505,7 +11505,7 @@
                         </div>
 
                         <!-- The link that was missing: what this disk CARRIES. -->
-                        <template x-for="nome in pvxPoolsDoDisco(d)" :key="d.devpath + nome">
+                        <template x-for="nome in pvxDiskPools(d)" :key="d.devpath + nome">
                           <div class="mt-2 pl-3 text-[11px]" style="border-left:2px solid var(--border)">
                             <span class="opacity-60">loads the pool</span>
                             <span class="font-mono font-semibold ml-1" x-text="nome"></span>
@@ -11514,7 +11514,7 @@
                                   x-text="pvxRedundancy(nome).text"></span>
                           </div>
                         </template>
-                        <div x-show="pvx.topology && !pvxPoolsDoDisco(d).length" x-cloak
+                        <div x-show="pvx.topology && !pvxDiskPools(d).length" x-cloak
                              class="mt-2 pl-3 text-[11px] opacity-50" style="border-left:2px solid var(--border)">
                           <!-- Honest: it cannot be matched without a readable serial. The NVMe
                                in this lab is addressed by `nvme-eui.…`, which carries
@@ -11963,7 +11963,7 @@
                      operator does NOT reach that UI. It only appears with the HOST
                      selected: on a guest, these numbers would be the host's
                      and not those of what is on the screen. -->
-                <div x-show="pvxActiveTab()==='summary' && pvxOpenNode() && !pvxEhGuest(pvxOpenNode())"
+                <div x-show="pvxActiveTab()==='summary' && pvxOpenNode() && !pvxIsGuest(pvxOpenNode())"
                      x-cloak class="space-y-3">
 
                   <div class="grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
@@ -12018,11 +12018,11 @@
                       <div class="flex items-baseline gap-2">
                         <span class="text-[11px] uppercase tracking-wider opacity-60">Memory</span>
                         <span class="ml-auto font-mono tabular-nums font-semibold"
-                              x-text="pvxPctDe('mem_used','mem_total') === null ? '—'
-                                      : pvxPctDe('mem_used','mem_total').toFixed(1) + '%'"></span>
+                              x-text="pvxPctOf('mem_used','mem_total') === null ? '—'
+                                      : pvxPctOf('mem_used','mem_total').toFixed(1) + '%'"></span>
                       </div>
                       <div class="h-2 rounded overflow-hidden mt-1.5" style="background:var(--surface-2)">
-                        <span class="block h-full" :style="pvxBar(pvxPctDe('mem_used','mem_total'))"></span>
+                        <span class="block h-full" :style="pvxBar(pvxPctOf('mem_used','mem_total'))"></span>
                       </div>
                       <div class="text-[11px] opacity-60 mt-1"
                            x-text="pvxBytes(pvxVal('mem_used')) + ' / ' + pvxBytes(pvxVal('mem_total'))"></div>
@@ -12032,11 +12032,11 @@
                       <div class="flex items-baseline gap-2">
                         <span class="text-[11px] uppercase tracking-wider opacity-60">Root disk</span>
                         <span class="ml-auto font-mono tabular-nums font-semibold"
-                              x-text="pvxPctDe('root_used','root_total') === null ? '—'
-                                      : pvxPctDe('root_used','root_total').toFixed(1) + '%'"></span>
+                              x-text="pvxPctOf('root_used','root_total') === null ? '—'
+                                      : pvxPctOf('root_used','root_total').toFixed(1) + '%'"></span>
                       </div>
                       <div class="h-2 rounded overflow-hidden mt-1.5" style="background:var(--surface-2)">
-                        <span class="block h-full" :style="pvxBar(pvxPctDe('root_used','root_total'))"></span>
+                        <span class="block h-full" :style="pvxBar(pvxPctOf('root_used','root_total'))"></span>
                       </div>
                       <div class="text-[11px] opacity-60 mt-1"
                            x-text="pvxBytes(pvxVal('root_used')) + ' / ' + pvxBytes(pvxVal('root_total'))"></div>
@@ -12047,11 +12047,11 @@
                         <span class="text-[11px] uppercase tracking-wider opacity-60">Swap</span>
                         <span class="ml-auto font-mono tabular-nums font-semibold"
                               x-text="pvxVal('swap_total') === 0 ? 'no swap'
-                                      : (pvxPctDe('swap_used','swap_total') === null ? '—'
-                                      : pvxPctDe('swap_used','swap_total').toFixed(1) + '%')"></span>
+                                      : (pvxPctOf('swap_used','swap_total') === null ? '—'
+                                      : pvxPctOf('swap_used','swap_total').toFixed(1) + '%')"></span>
                       </div>
                       <div class="h-2 rounded overflow-hidden mt-1.5" style="background:var(--surface-2)">
-                        <span class="block h-full" :style="pvxBar(pvxPctDe('swap_used','swap_total'))"></span>
+                        <span class="block h-full" :style="pvxBar(pvxPctOf('swap_used','swap_total'))"></span>
                       </div>
                       <!-- "no swap" is a CONFIGURATION, not a missing reading.
                            Showing 0% there would suggest headroom where there is no swap at all. -->

@@ -1483,7 +1483,7 @@ function app() {
     // need restarting; without this the operator has no way to act and the notice
     // becomes permanent noise.
     claudeVer: { instalada: '', defasados: 0, processos: [], open: false, loading: false, restarting: 0 },
-    hostTermEcoPreditivo: localStorage.getItem('vpsm_term_eco_preditivo') || 'auto',
+    hostTermPredictiveEcho: localStorage.getItem('vpsm_term_eco_preditivo') || 'auto',
     hostTermEchoThreshold: parseInt(localStorage.getItem('vpsm_term_eco_limiar') || '60', 10),
     // Help overlay (Ctrl+/ or ?)
     termHelpOpen: false,
@@ -8989,10 +8989,10 @@ function app() {
           this.loadContainers();
           return;
         }
-        const pendLabel = { start:'starting…', stop:'stopping…', restart:'restarting…', kill:'killing…', pause:'pausing…', unpause:'resuming…' }[base] || (base+'…');
+        const pendingLabel = { start:'starting…', stop:'stopping…', restart:'restarting…', kill:'killing…', pause:'pausing…', unpause:'resuming…' }[base] || (base+'…');
         const expected = { start:'running', stop:'exited', kill:'exited', pause:'paused', unpause:'running' }[base];
         const before = c.State;
-        this.pendingActions[id] = pendLabel;
+        this.pendingActions[id] = pendingLabel;
         const delays = [400, 1000, 2000, 4000, 4000, 4000]; // ~15s in total
         const t0 = Date.now();
         let settled = false;
@@ -10635,7 +10635,7 @@ function app() {
               // interval between this send and that frame is the connection's real RTT
               // — that is where the quality pill and the decision to turn on
               // predictive echo come from. Zero extra bytes on the wire.
-              if (!state._pingEm) state._pingEm = Date.now();
+              if (!state._pingAt) state._pingAt = Date.now();
               try { state.ws.send(JSON.stringify({type:'ping', t: Date.now()})); } catch(e){}
               // Reasserts the size along with the heartbeat: two numbers every
               // 20s, deduplicated by the server. It is what guarantees that ANY
@@ -10701,9 +10701,9 @@ function app() {
           }
           state._echoPainted = 0;
           if (state._outbox && state._outbox.length) {
-            const pend = state._outbox.join('');
+            const pending = state._outbox.join('');
             state._outbox = []; state._outboxBytes = 0;
-            try { ws.send(JSON.stringify({ type:'input', data: pend })); } catch(_){}
+            try { ws.send(JSON.stringify({ type:'input', data: pending })); } catch(_){}
           }
           if (state._outboxDropped) {
             state._outboxDropped = false;
@@ -10816,7 +10816,7 @@ function app() {
             fcCheck();
             // Now the cursor is already the server's: we can tell how much of the guess
             // it confirmed and repaint only what is left.
-            try { self._repreveEco(state); } catch(_){}
+            try { self._repredictEcho(state); } catch(_){}
           });
           fcCheck();
         };
@@ -10864,8 +10864,8 @@ function app() {
           }
           const _n = (typeof ev.data === 'string') ? ev.data.length : ((ev.data && ev.data.byteLength) | 0);
           if (_n === 0) {
-            if (state._pingEm) {
-              const rtt = Date.now() - state._pingEm; state._pingEm = 0;
+            if (state._pingAt) {
+              const rtt = Date.now() - state._pingAt; state._pingAt = 0;
               // Exponential moving average: one isolated bad sample must not
               // make the interface flash "terrible connection".
               state.rtt = state.rtt ? Math.round(state.rtt * 0.6 + rtt * 0.4) : rtt;
@@ -10881,7 +10881,7 @@ function app() {
             const dt = Date.now() - state._sentAt; state._sentAt = 0;
             state.eco = state.eco ? Math.round(state.eco * 0.6 + dt * 0.4) : dt;
             state._serverEchoes = true;
-            if (state._ecoTimer) { clearTimeout(state._ecoTimer); state._ecoTimer = 0; }
+            if (state._echoTimer) { clearTimeout(state._echoTimer); state._echoTimer = 0; }
             try { self._updateQuality(state); } catch(_){}
           }
           state._lastDataAt = Date.now();   // used by the hold to detect the end of the burst
@@ -10971,8 +10971,8 @@ function app() {
           // expected ~2s event. With the warning we can tell the user the truth and
           // come back faster. 1001 ("going away") joins it because that is what
           // a proxy in front sends when the upstream restarts.
-          const ehRestart = (ev.code === 1012 || ev.code === 1001);
-          if (ehRestart) state._restarting = true;
+          const isRestart = (ev.code === 1012 || ev.code === 1001);
+          if (isRestart) state._restarting = true;
           state.reconnect.attempts += 1;
           // A deploy is off the air for ~2s (measured in deploy.log). The
           // old backoff started at 1s and DOUBLED, so the 1st attempt landed
@@ -11074,8 +11074,8 @@ function app() {
         const nome = state.sessionName;
         const bytes = self._termPrimerBytes ? self._termPrimerBytes() : 0;
         if (!nome || !bytes) { open(); return; }
-        let abriu = false;
-        const follow = () => { if (abriu) return; abriu = true; open(); };
+        let opened = false;
+        const follow = () => { if (opened) return; opened = true; open(); };
         const cap = setTimeout(() => {
           try { self._markPrimer(state, 'cap'); } catch(_){}
           follow();
@@ -11100,7 +11100,7 @@ function app() {
           .catch(() => null)
           .then(b => b || search('/api/terminal/log-bruto'))
           .then(buf => {
-            if (!buf || abriu || !state.term) return;
+            if (!buf || opened || !state.term) return;
             const u8 = new Uint8Array(buf);
             if (!u8.length) return;
             // In chunks: up to a few MB come through here, and xterm queues
@@ -13710,16 +13710,16 @@ function app() {
         const now = Date.now();
         if (this._buildCheckAt && (now - this._buildCheckAt) < 3000) return;
         this._buildCheckAt = now;
-        if (!this._meuBuild) {
+        if (!this._myBuild) {
           const m = document.querySelector('meta[name="vpsm-build"]');
-          this._meuBuild = (m && m.content) || '';
+          this._myBuild = (m && m.content) || '';
         }
-        if (!this._meuBuild) return;
+        if (!this._myBuild) return;
         const r = await this.api('/api/health');
         if (!r || !r.ok) return;
         const d = await r.json();
         const srv = d && d.build ? String(d.build) : '';
-        if (!srv || srv === this._meuBuild) return;
+        if (!srv || srv === this._myBuild) return;
         if (this._buildWarned === srv) return;
         this._buildWarned = srv;
         this.newVersionAvailable = true;
@@ -13815,7 +13815,7 @@ function app() {
       if (pane._outboxBytes + d.length > 128 * 1024) { pane._outboxDropped = true; return false; }
       pane._outbox.push(d);
       pane._outboxBytes += d.length;
-      this._paneEcoOffline(pane, d);
+      this._paneEchoOffline(pane, d);
       try { this._renderPaneOverlay(pane); } catch(_){}
       return false;
     },
@@ -13832,7 +13832,7 @@ function app() {
     // arrows and Ctrl-* have an effect that only the shell on the other side knows; they go into
     // the queue silently. And the echo STOPS at the first control character of the sequence,
     // because after it we no longer know where the cursor is.
-    _paneEcoOffline(pane, d){
+    _paneEchoOffline(pane, d){
       if (!pane.term) return;
       // The server had stopped echoing before the drop = a password prompt.
       // Echoing here would write the password in clear text on screen. It is the same rule
@@ -13919,7 +13919,7 @@ function app() {
     },
     _canPredict(pane, d){
       if (!pane || !pane.term) return false;
-      const mode = this.hostTermEcoPreditivo || 'auto';
+      const mode = this.hostTermPredictiveEcho || 'auto';
       if (mode === 'nunca') return false;
       // Printable characters only: Enter, arrows and Ctrl-* have an effect that only the
       // program on the other side knows.
@@ -13950,7 +13950,7 @@ function app() {
     // echoed N of our characters, and only the rest is still a guess. Without
     // this, someone typing faster than the network would see the tail of what they typed
     // disappear and come back on every frame.
-    _repreveEco(pane){
+    _repredictEcho(pane){
       const p = pane && pane._pred;
       if (!p || !p.txt) return;
       const term = pane.term;
@@ -13978,9 +13978,9 @@ function app() {
       // that are not echo and would skew both measurements.
       if (!/^[\x20-\x7e\u00a0-\uffff]+$/.test(d)) return;
       if (!pane._sentAt) pane._sentAt = Date.now();
-      if (pane._ecoTimer) return;
-      pane._ecoTimer = setTimeout(() => {
-        pane._ecoTimer = 0;
+      if (pane._echoTimer) return;
+      pane._echoTimer = setTimeout(() => {
+        pane._echoTimer = 0;
         if (pane._sentAt) { pane._serverEchoes = false; pane._sentAt = 0; }
       }, 1500);
     },
@@ -14334,8 +14334,8 @@ function app() {
         // changing `rows` causes no reflow.
         const dc = d.cols - term.cols;
         if (dc === 1 || dc === -1) {
-          if (fit._colPend !== d.cols) {
-            fit._colPend = d.cols;
+          if (fit._colPending !== d.cols) {
+            fit._colPending = d.cols;
             if (fit._colTimer) clearTimeout(fit._colTimer);
             fit._colTimer = setTimeout(() => { fit._colTimer = 0; this._safeFit(fit); }, 300);
             // Rows follow immediately: the prompt must not stay hidden behind
@@ -14343,7 +14343,7 @@ function app() {
             if (d.rows !== term.rows) { try { term.resize(term.cols, d.rows); } catch (_) {} }
             return true;
           }
-          fit._colPend = 0;   // the second measurement agreed: the width really did change
+          fit._colPending = 0;   // the second measurement agreed: the width really did change
           // ── AND IT MUST NOT UNDO THE PREVIOUS ONE ───────────
           // The quarantine filters the isolated spurious event, but not the pair that
           // repeats itself: applying +1 can change the pixel box (a scrollbar
@@ -14364,7 +14364,7 @@ function app() {
           }
           fit._lastFit1col = { dc, em: now };
         } else {
-          fit._colPend = 0;
+          fit._colPending = 0;
           fit._lastFit1col = null;
           if (fit._colTimer) { clearTimeout(fit._colTimer); fit._colTimer = 0; }
         }

@@ -111,7 +111,7 @@ scenario({ ...ALL_CLEAR, hiddenSince: undefined }) === false
 
 // ── 2. Recognising the announced restart ───────────────────────────────────
 {
-  const m = src.match(/const ehRestart = \(([^)]*)\);/);
+  const m = src.match(/const isRestart = \(([^)]*)\);/);
   m && m[1].includes('1012')
     ? ok('close 1012 (Service Restart) is recognised as a deploy')
     : no('the client no longer recognises 1012 — a deploy would look like a network failure again');

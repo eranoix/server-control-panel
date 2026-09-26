@@ -5,8 +5,8 @@ import { fileURLToPath } from 'url';
 // The repo root from THIS file: the pin runs both under `node scripts/...` and
 // under `go test ./internal/webassets/`, whose cwd is the package.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ler = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
-const src = ler('internal/webassets/web/vendor/vpsm/app/41-proxmox.js');
+const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const src = read('internal/webassets/web/vendor/vpsm/app/41-proxmox.js');
 const win = {};
 new Function('window','document','location','setInterval','clearInterval', src)(
   win, {hidden:false,getElementById:()=>null}, {protocol:'http:',host:'x'}, ()=>1, ()=>0);
@@ -26,8 +26,8 @@ const comp = Object.assign({
   _apiError(){}, _errText(e){return String(e)}, $nextTick(){}, loadNodes(){},
 }, mod);
 
-let mau = 0;
-const ok = (nome, cond, extra='') => { console.log((cond?'  ✓ ':'  ✗ ')+nome+(extra?'  → '+extra:'')); if(!cond) mau++; };
+let bad = 0;
+const ok = (nome, cond, extra='') => { console.log((cond?'  ✓ ':'  ✗ ')+nome+(extra?'  → '+extra:'')); if(!cond) bad++; };
 
 // ── contextual tabs ───────────────────────────────────────────────────────
 const host  = comp.nodes.list[0], guest = comp.nodes.list[2];
@@ -155,10 +155,10 @@ ok('the memory percentage matches the sum of the observed ones',
   // The live run caught this BEFORE the deploy: the `pbs` of this lab receives a
   // copy every day from a systemd timer on the host, invisible to /cluster/backup.
   // A boolean "scheduled" would paint it disarmed — wrong in the other direction.
-  const foraDoPve = { storage: 'pbs', total: 65, ultimo_ctime: 1_000_000 - 3 * 3600,
+  const outsidePve = { storage: 'pbs', total: 65, ultimo_ctime: 1_000_000 - 3 * 3600,
                       guests: [1], agendamento: 'fora-do-pve' };
-  const eF = comp.pvxBackupState(foraDoPve);
-  ok('a fresh layer with NO job in PVE stays green', isGreen(comp.pvxBackupStyle(foraDoPve)), eF.color);
+  const eF = comp.pvxBackupState(outsidePve);
+  ok('a fresh layer with NO job in PVE stays green', isGreen(comp.pvxBackupStyle(outsidePve)), eF.color);
   ok('and the screen admits it does not know who schedules it', /does not know by whom/.test(eF.nota), eF.nota);
 
   // A layer that is ACTIVE and old is still a failure — otherwise the fix would
@@ -195,7 +195,7 @@ ok('out of the pause, fetching resumes', loaded===2 && !comp.pvx.paused, 'fetche
 // The screen had three stacked bars and the label existed ONLY in the aria-label —
 // anyone on a screen reader knew, anyone looking did not. These pins demand the
 // VISIBLE label, and that is why they cannot settle for the aria-label.
-const index = ler('internal/webassets/web/index.html');
+const index = read('internal/webassets/web/index.html');
 const section = (() => {
   const i = index.indexOf("currentView==='proxmox'");
   const f = index.indexOf('</section>', index.indexOf('/master-detail grid'));
@@ -347,13 +347,13 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
     ok('the list column asks for no more than 260px', Number(minList) <= 260, minList + 'px');
 
     // The missing link: the class has to be in the GENERATED CSS, not only in the HTML.
-    const css = ler('internal/webassets/web/tailwind.css');
+    const css = read('internal/webassets/web/tailwind.css');
     const valor = `minmax(${m[2]}px,${m[3]}px)`;
     ok('the arbitrary class was emitted into tailwind.css', css.includes(valor),
        css.includes(valor) ? valor : `${valor} MISSING — run "make tailwind"`);
     const idx = css.indexOf(valor);
-    const antes = css.slice(Math.max(0, idx - 4000), idx);
-    const mq = [...antes.matchAll(/min-width: *(\d+)px/g)].pop();
+    const before = css.slice(Math.max(0, idx - 4000), idx);
+    const mq = [...before.matchAll(/min-width: *(\d+)px/g)].pop();
     ok('and under a media query of at most 768px',
        !!mq && Number(mq[1]) <= 768, mq ? mq[1] + 'px' : 'no media query before it');
   }
@@ -369,7 +369,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   // `max-w-[420px]` gives zero and makes a class that is there look absent. The
   // pin builds the escaped selector, the way Tailwind writes it.
   {
-    const generatedCss = ler('internal/webassets/web/tailwind.css');
+    const generatedCss = read('internal/webassets/web/tailwind.css');
     const arbitrary = new Set();
     for (const m2 of section.matchAll(/class="([^"]+)"/g)) {
       for (const cls of m2[1].split(/\s+/)) {
@@ -563,7 +563,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
      comp.pvxConsoleCan({ id: 'lxc/202', kind: 'guest', vmid: 202, credential: { state: 'ausente' } }) === false
      && /node token/.test(comp.pvxConsoleReason({ id: 'lxc/202', kind: 'guest', vmid: 202, credential: { state: 'ausente' } })));
   ok('the screen states what the hypervisor Shell is BEFORE opening it',
-     /pvxEhHost\(pvxOpenNode\(\)\)[\s\S]{0,400}root on/.test(section));
+     /pvxIsHost\(pvxOpenNode\(\)\)[\s\S]{0,400}root on/.test(section));
 }
 
 
@@ -741,6 +741,6 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   ok('an empty note returns an empty string', md('') === '' && md(null) === '' && md(undefined) === '');
 }
 
-console.log(mau ? `\nFAIL — ${mau} case(s)` : '\nPASS — contextual tabs, an honest summary and the automatic pause');
-process.exit(mau?1:0);
+console.log(bad ? `\nFAIL — ${bad} case(s)` : '\nPASS — contextual tabs, an honest summary and the automatic pause');
+process.exit(bad?1:0);
 

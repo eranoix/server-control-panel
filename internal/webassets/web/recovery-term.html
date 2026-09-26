@@ -303,7 +303,7 @@ function createSimpleEngine() {
   const dec = new TextDecoder('utf-8', { fatal: false });
   const CAP = 200 * 1024;          // scrollback: ceiling so the tab does not grow forever
   let text = '';
-  let aoDado = null, aoResize = null;
+  let onDataCb = null, onResizeCb = null;
   let cols = 80, rows = 24;
 
   // A \r landing at the END of a chunk can only be resolved by the next chunk: if
@@ -359,8 +359,8 @@ function createSimpleEngine() {
       if (cb) { try { cb(); } catch (_) {} }
     },
     focus() { try { inp.focus(); } catch (_) {} },
-    onData(f) { aoDado = f; },
-    onResize(f) { aoResize = f; },
+    onData(f) { onDataCb = f; },
+    onResize(f) { onResizeCb = f; },
     open(el) { el.appendChild(box); },
     // Buffer shim: only what the client actually queries (password prompt detection).
     buffer: { active: {
@@ -375,7 +375,7 @@ function createSimpleEngine() {
     _capture() { return text; },
   };
 
-  function send(d) { if (aoDado) { try { aoDado(d); } catch (_) {} } }
+  function send(d) { if (onDataCb) { try { onDataCb(d); } catch (_) {} } }
   function sendLine() {
     const v = inp.value; inp.value = '';
     send(v + '\r');
@@ -403,7 +403,7 @@ function createSimpleEngine() {
     const r = Math.max(5, Math.min(200, Math.floor((h - 16) / 17)));
     if (c === cols && r === rows) return;
     cols = c; rows = r;
-    if (aoResize) { try { aoResize({ cols, rows }); } catch (_) {} }
+    if (onResizeCb) { try { onResizeCb({ cols, rows }); } catch (_) {} }
   } };
 
   return { term, fit };
@@ -414,11 +414,11 @@ const elConn = cfg.pill;
 let ws = null;
 
 const st = {
-  attempts: 0, timerRecon: 0, hb: 0, lastMsg: 0, pingEm: 0,
+  attempts: 0, timerRecon: 0, hb: 0, lastMsg: 0, pingAt: 0,
   queue: [], queueBytes: 0, rafId: 0, pending: 0, paused: false,
   outbox: [], outboxBytes: 0, echoPainted: 0,
   pred: { txt: '', col: 0, line: 0, timer: 0 },
-  rtt: 0, eco: 0, sentAt: 0, ecoTimer: 0, serverEchoes: null,
+  rtt: 0, eco: 0, sentAt: 0, echoTimer: 0, serverEchoes: null,
 };
 
 // The engine choice is wrapped in try/catch, not merely checked: `hasXterm()`
@@ -465,7 +465,7 @@ try {
 // Sibling code to _safeFit in 00-shell.js, duplicated on purpose: this page
 // exists OUTSIDE the SPA so as not to depend on what it is there to repair.
 // test-reflow-column.mjs asserts both sides so they cannot diverge.
-let colPend = 0, colTimer = 0;
+let colPending = 0, colTimer = 0;
 function safeFit() {
   if (!fitAddon) return false;
   try {
@@ -475,16 +475,16 @@ function safeFit() {
     if (!term || !(term.cols >= 2)) { fitAddon.fit(); return true; }
     const dc = d.cols - term.cols;
     if (dc === 1 || dc === -1) {
-      if (colPend !== d.cols) {
-        colPend = d.cols;
+      if (colPending !== d.cols) {
+        colPending = d.cols;
         if (colTimer) clearTimeout(colTimer);
         colTimer = setTimeout(() => { colTimer = 0; safeFit(); }, 300);
         if (d.rows !== term.rows) { try { term.resize(term.cols, d.rows); } catch (_) {} }
         return true;
       }
-      colPend = 0;
+      colPending = 0;
     } else {
-      colPend = 0;
+      colPending = 0;
       if (colTimer) { clearTimeout(colTimer); colTimer = 0; }
     }
     fitAddon.fit();
@@ -519,11 +519,11 @@ function paint() {
 // the server stops reading the PTY, the program blocks on write and nothing is lost.
 const FC_ALTO = 256 * 1024, FC_LOW = 32 * 1024;
 function checkFlow() {
-  const emVoo = st.queueBytes + st.pending;
-  if (!st.paused && emVoo >= FC_ALTO) {
+  const inFlight = st.queueBytes + st.pending;
+  if (!st.paused && inFlight >= FC_ALTO) {
     st.paused = true;
     try { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pause' })); } catch (_) {}
-  } else if (st.paused && emVoo <= FC_LOW) {
+  } else if (st.paused && inFlight <= FC_LOW) {
     st.paused = false;
     try { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resume' })); } catch (_) {}
   }
@@ -542,7 +542,7 @@ function flush() {
   term.write(q[ult], () => {
     st.pending = Math.max(0, st.pending - bytes);
     checkFlow();
-    repreve();
+    repredict();
   });
   checkFlow();
 }
@@ -594,7 +594,7 @@ function eraseGuess() {
 }
 // Confirmation by the CURSOR, as in mosh: the server advanced N columns from
 // the anchor => it echoed N of our characters, and only the rest is still a guess.
-function repreve() {
+function repredict() {
   if (!st.pred.txt) return;
   let buf;
   try { buf = term.buffer.active; } catch (_) { st.pred.txt = ''; return; }
@@ -610,7 +610,7 @@ function repreve() {
 }
 // With no socket: show what was typed, dimmed, instead of leaving the screen
 // dead. It goes away on reattach, erased before the queue is flushed.
-function ecoOffline(d) {
+function echoOffline(d) {
   if (term.simple) return;
   if (st.serverEchoes === false || looksLikePassword()) return;
   let out = '', vis = st.echoPainted;
@@ -632,10 +632,10 @@ function send(d) {
     try { ws.send(enc.encode(d)); } catch (_) { enfileira(d); return; }
     if (/^[\x20-\x7e\u00a0-\uffff]+$/.test(d)) {
       if (!st.sentAt) st.sentAt = Date.now();
-      if (!st.ecoTimer) {
+      if (!st.echoTimer) {
         // Nothing back in 1.5s with a live socket = a prompt that does not echo (password).
-        st.ecoTimer = setTimeout(() => {
-          st.ecoTimer = 0;
+        st.echoTimer = setTimeout(() => {
+          st.echoTimer = 0;
           if (st.sentAt) { st.serverEchoes = false; st.sentAt = 0; }
         }, 1500);
       }
@@ -649,7 +649,7 @@ function enfileira(d) {
   if (st.outboxBytes + d.length > 128 * 1024) return;  // ceiling: does not grow forever
   st.outbox.push(d); st.outboxBytes += d.length;
   if (!cfg.ativo || cfg.ativo()) paint();
-  ecoOffline(d);
+  echoOffline(d);
 }
 
 // ── connection ──────────────────────────────────────────────────────────────
@@ -677,13 +677,13 @@ function open() {
     if (st.echoPainted > 0) { try { term.write('\b \b'.repeat(st.echoPainted)); } catch (_) {} }
     st.echoPainted = 0;
     if (st.outbox.length) {
-      const pend = st.outbox.join(''); st.outbox = []; st.outboxBytes = 0;
-      try { s.send(enc.encode(pend)); } catch (_) {}
+      const pending = st.outbox.join(''); st.outbox = []; st.outboxBytes = 0;
+      try { s.send(enc.encode(pending)); } catch (_) {}
     }
     if (st.hb) clearInterval(st.hb);
     st.hb = setInterval(() => {
       if (!ws || ws.readyState !== 1) return;
-      if (!st.pingEm) st.pingEm = Date.now();
+      if (!st.pingAt) st.pingAt = Date.now();
       try { ws.send(JSON.stringify({ type: 'ping', t: Date.now() })); } catch (_) {}
       // Reassert the size along with the heartbeat: any divergence fixes
       // itself within at most one cycle, instead of leaving the screen corrupted until
@@ -702,8 +702,8 @@ function open() {
     st.lastMsg = Date.now();
     const n = (typeof e.data === 'string') ? e.data.length : ((e.data && e.data.byteLength) | 0);
     if (n === 0) {                       // pong: empty binary frame
-      if (st.pingEm) {
-        const rtt = Date.now() - st.pingEm; st.pingEm = 0;
+      if (st.pingAt) {
+        const rtt = Date.now() - st.pingAt; st.pingAt = 0;
         st.rtt = st.rtt ? Math.round(st.rtt * 0.6 + rtt * 0.4) : rtt;
         conn('open', 'connected · ' + (st.eco || st.rtt) + ' ms');
       }
@@ -713,7 +713,7 @@ function open() {
       const dt = Date.now() - st.sentAt; st.sentAt = 0;
       st.eco = st.eco ? Math.round(st.eco * 0.6 + dt * 0.4) : dt;
       st.serverEchoes = true;
-      if (st.ecoTimer) { clearTimeout(st.ecoTimer); st.ecoTimer = 0; }
+      if (st.echoTimer) { clearTimeout(st.echoTimer); st.echoTimer = 0; }
     }
     const dados = (typeof e.data === 'string') ? e.data : new Uint8Array(e.data);
     st.queue.push(dados);
@@ -929,16 +929,16 @@ async function checkClaude() {
   // The status is otherwise queried only when the tab opens, so the hint would
   // stay "not authenticated" after a login in this tab. Re-query every 15s until
   // authenticated, then stop (the state only changes once).
-  if (!d.autenticado && !recheque) {
-    recheque = setInterval(() => {
+  if (!d.autenticado && !recheck) {
+    recheck = setInterval(() => {
       if (currentTab !== 'claude' || document.hidden) return;
       checkClaude();
     }, 15000);
-  } else if (d.autenticado && recheque) {
-    clearInterval(recheque); recheque = 0;
+  } else if (d.autenticado && recheck) {
+    clearInterval(recheck); recheck = 0;
   }
 }
-let recheque = 0;
+let recheck = 0;
 
 async function startClaude() {
   const btn = document.getElementById('claude-off-btn');
@@ -1062,7 +1062,7 @@ let alreadyWarnedError = false;
 function reportGlobalError(msg) {
   if (alreadyWarnedError) return;
   alreadyWarnedError = true;
-  logaConsole('page error: ' + msg, 'If something stopped responding, use "Save evidence" and reload.', 'err');
+  logConsole('page error: ' + msg, 'If something stopped responding, use "Save evidence" and reload.', 'err');
 }
 window.addEventListener('error', (ev) => {
   reportGlobalError((ev && (ev.message || (ev.error && ev.error.message))) || 'unknown error');
@@ -1074,7 +1074,7 @@ window.addEventListener('unhandledrejection', (ev) => {
 
 // ── quick actions console ──────────────────────────────────────────
 const consoleLines = [];
-function logaConsole(title, body, tom) {
+function logConsole(title, body, tom) {
   const time = new Date().toLocaleTimeString('pt-BR', { hour12: false });
   consoleLines.push({ time, title, corpo: String(body == null ? '' : body).replace(/\s+$/, ''), tom });
   if (consoleLines.length > 200) consoleLines.shift();
@@ -1150,7 +1150,7 @@ function downloadEvidence() {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   } catch (e) {
-    logaConsole('could not save the evidence: ' + e.message, '', 'err');
+    logConsole('could not save the evidence: ' + e.message, '', 'err');
   }
 }
 
@@ -1158,7 +1158,7 @@ async function doAction(name) {
   const status = document.getElementById('action-status');
   if (!confirm('Run action "' + name + '"? This affects the server infrastructure.')) return;
   status.textContent = 'running...'; status.style.color = '#9ca3af';
-  logaConsole('$ ' + name, '');
+  logConsole('$ ' + name, '');
   try {
     const r = await fetch('/recovery/action/' + name, {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -1172,7 +1172,7 @@ async function doAction(name) {
       const msg = d.error || ('HTTP ' + r.status);
       status.textContent = msg;
       status.style.color = '#fca5a5';
-      logaConsole(name + ': FAILED — ' + msg, d.output || '', 'err');
+      logConsole(name + ': FAILED — ' + msg, d.output || '', 'err');
     } else {
       status.textContent = '✓ ' + (d.message || 'ok');
       status.style.color = '#86efac';
@@ -1180,12 +1180,12 @@ async function doAction(name) {
       // does not even exist in this scope (it is local to the factory), so the old line
       // threw a ReferenceError and the catch below repainted SUCCESS as a red
       // error — inviting a second click on `rollback`.
-      logaConsole(name + ': ok', d.output || '', 'ok');
+      logConsole(name + ': ok', d.output || '', 'ok');
     }
   } catch(e) {
     status.textContent = e.message;
     status.style.color = '#fca5a5';
-    logaConsole(name + ': client error — ' + e.message, '', 'err');
+    logConsole(name + ': client error — ' + e.message, '', 'err');
   }
 }
 

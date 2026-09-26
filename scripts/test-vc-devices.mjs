@@ -49,12 +49,12 @@ const STUB = (hasAudio, hasVideo) => `
   Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
     getUserMedia: async (c) => {
       window.__gumCalls.push({ audio: !!c.audio, video: !!c.video });
-      const querAudio = !!c.audio, querVideo = !!c.video;
-      if (querAudio && !${hasAudio}) { const e = new Error('no mic'); e.name = 'NotFoundError'; throw e; }
-      if (querVideo && !${hasVideo}) { const e = new Error('no cam'); e.name = 'NotFoundError'; throw e; }
+      const wantAudio = !!c.audio, wantVideo = !!c.video;
+      if (wantAudio && !${hasAudio}) { const e = new Error('no mic'); e.name = 'NotFoundError'; throw e; }
+      if (wantVideo && !${hasVideo}) { const e = new Error('no cam'); e.name = 'NotFoundError'; throw e; }
       const tracks = [];
-      if (querAudio) tracks.push(fakeTrack('audio'));
-      if (querVideo) tracks.push(fakeTrack('video'));
+      if (wantAudio) tracks.push(fakeTrack('audio'));
+      if (wantVideo) tracks.push(fakeTrack('video'));
       return { getTracks: () => tracks, getAudioTracks: () => tracks.filter(t=>t.kind==='audio'),
                getVideoTracks: () => tracks.filter(t=>t.kind==='video'),
                removeTrack(){}, addTrack(){} };

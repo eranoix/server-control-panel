@@ -46,9 +46,9 @@ import (
 // `minify` target. Format: "//# vpsm-src-sha256=<64 hex>".
 const stampPrefix = "//# vpsm-src-sha256="
 
-// dirDoApp is the only directory with minification — the third-party vendors
+// appDir is the only directory with minification — the third-party vendors
 // (xterm, alpine, monaco) already arrive minified from upstream and do not pass here.
-const dirDoApp = "vendor/vpsm/app"
+const appDir = "vendor/vpsm/app"
 
 // validMinified maps "<x>.js" -> "<x>.min.js" only for the pairs where the
 // minified file's stamp matches the sha256 of the source. Computed once: the
@@ -56,7 +56,7 @@ const dirDoApp = "vendor/vpsm/app"
 var validMinified = sync.OnceValue(func() map[string]string {
 	valid := map[string]string{}
 	sub := SubFS()
-	entries, err := fs.ReadDir(sub, dirDoApp)
+	entries, err := fs.ReadDir(sub, appDir)
 	if err != nil {
 		return valid
 	}
@@ -65,8 +65,8 @@ var validMinified = sync.OnceValue(func() map[string]string {
 		if !strings.HasSuffix(nome, ".js") || strings.HasSuffix(nome, ".min.js") {
 			continue
 		}
-		source := path.Join(dirDoApp, nome)
-		min := path.Join(dirDoApp, strings.TrimSuffix(nome, ".js")+".min.js")
+		source := path.Join(appDir, nome)
+		min := path.Join(appDir, strings.TrimSuffix(nome, ".js")+".min.js")
 		if verify(sub, source, min) {
 			valid[source] = min
 		}

@@ -73,14 +73,14 @@ const INIT = `
   }
   FakeWS.CONNECTING = 0; FakeWS.OPEN = 1; FakeWS.CLOSING = 2; FakeWS.CLOSED = 3;
   window.WebSocket = FakeWS;
-  // Simulated stall: with __travaPrimeiroPC the tab's first RTCPeerConnection
+  // Simulated stall: with __lockFirstPC the tab's first RTCPeerConnection
   // cannot gather a local candidate (relay without TURN), so ICE stays in
   // 'new' with zero local candidates, as seen in real runs.
   window.__pcsCreated = 0;
   const RPC0 = window.RTCPeerConnection;
   window.RTCPeerConnection = function (cfg) {
     window.__pcsCreated++;
-    if (window.__travaPrimeiroPC && window.__pcsCreated === 1) cfg = Object.assign({}, cfg, { iceServers: [], iceTransportPolicy: 'relay' });
+    if (window.__lockFirstPC && window.__pcsCreated === 1) cfg = Object.assign({}, cfg, { iceServers: [], iceTransportPolicy: 'relay' });
     return new RPC0(cfg);
   };
   window.RTCPeerConnection.prototype = RPC0.prototype;
@@ -118,24 +118,24 @@ const INIT = `
   // same frames): median of (b - a) per frame. An underrun hits both at once
   // and cancels out; measuring them one after the other left ~1 dB of noise,
   // enough to hide the 1.7 dB makeup gain.
-  window.__difDb = async (a, b, ms) => {
+  window.__diffDb = async (a, b, ms) => {
     const ctx = new AudioContext();
     const mk = (t) => { const an = ctx.createAnalyser(); an.fftSize = 2048; ctx.createMediaStreamSource(new MediaStream([t])).connect(an); return an; };
     const aa = mk(a), ab = mk(b);
     const ba = new Float32Array(2048), bb = new Float32Array(2048);
     const db = (buf) => { let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i]; const r = Math.sqrt(s / buf.length); return r > 0 ? 20 * Math.log10(r) : -120; };
-    const difs = [], nivA = [];
+    const difs = [], levelsA = [];
     await new Promise((r) => setTimeout(r, 150));
     const fim = performance.now() + ms;
     while (performance.now() < fim) {
       aa.getFloatTimeDomainData(ba); ab.getFloatTimeDomainData(bb);
       const x = db(ba), y = db(bb);
-      if (x > -90 && y > -90) { difs.push(y - x); nivA.push(x); }
+      if (x > -90 && y > -90) { difs.push(y - x); levelsA.push(x); }
       await new Promise((r) => setTimeout(r, 40));
     }
     ctx.close();
     const med = (v) => { if (!v.length) return NaN; v.sort((p, q) => p - q); return v[Math.floor(v.length / 2)]; };
-    return { dif: med(difs), a: med(nivA) };
+    return { diff: med(difs), a: med(levelsA) };
   };
   // Mic reference: own unprocessed capture (the same tone file that feeds the call).
   window.__refMic = async () => (await navigator.mediaDevices.getUserMedia({ audio: { noiseSuppression: false, echoCancellation: false, autoGainControl: false } })).getAudioTracks()[0];
@@ -167,7 +167,7 @@ async function delivery(id, obj) {
 }
 async function open(id, lock) {
   const page = await ctx.newPage();
-  if (lock) await page.addInitScript('window.__travaPrimeiroPC = true;');
+  if (lock) await page.addInitScript('window.__lockFirstPC = true;');
   page.on('pageerror', (e) => console.log('  [' + id + ' pageerror] ' + e.message));
   // Single queue: the real server delivers in order (one WS per client).
   // Without it each __wsOut is a loose async call and offer/ICE/answer could
@@ -259,28 +259,28 @@ const aLocal = (fn, arg) => A.evaluate(fn, arg);
 {
   const r = await aLocal(async () => {
     const ref = await window.__refMic();
-    const out = await window.__difDb(ref, document.querySelector('[data-vc-local="1"]').srcObject.getAudioTracks()[0], 1200);
+    const out = await window.__diffDb(ref, document.querySelector('[data-vc-local="1"]').srcObject.getAudioTracks()[0], 1200);
     ref.stop();
     return out;
   });
-  near(r.dif, 6.02, 0.5)
-    ? ok(`saved volume: 200% applied from connect (sent +${r.dif.toFixed(2)} dB over the mic)`)
-    : no(`saved volume: sent ${r.dif.toFixed(2)} dB over the mic at connect, expected +6.0 (200%)`);
+  near(r.diff, 6.02, 0.5)
+    ? ok(`saved volume: 200% applied from connect (sent +${r.diff.toFixed(2)} dB over the mic)`)
+    : no(`saved volume: sent ${r.diff.toFixed(2)} dB over the mic at connect, expected +6.0 (200%)`);
 }
 await new Promise((r) => setTimeout(r, 3000)); // let the Opus/jitter buffer settle
-const em200 = await received();
+const at200 = await received();
 await aLocal(() => window.VPSMVideoCall.setMicGain(1));
-const em100 = await received();
-near(em200 - em100, 6.02, 1.5)
-  ? ok(`live volume: 200% arrives ${(em200 - em100).toFixed(1)} dB above 100% on the other side`)
-  : no(`live volume: 200% vs 100% gave ${(em200 - em100).toFixed(1)} dB at the receiver (expected ~6)`);
+const at100 = await received();
+near(at200 - at100, 6.02, 1.5)
+  ? ok(`live volume: 200% arrives ${(at200 - at100).toFixed(1)} dB above 100% on the other side`)
+  : no(`live volume: 200% vs 100% gave ${(at200 - at100).toFixed(1)} dB at the receiver (expected ~6)`);
 
 // ── 2. Live volume down ─────────────────────────────────────────────────
 await aLocal(() => window.VPSMVideoCall.setMicGain(0.5));
-const em50 = await received();
-near(em100 - em50, 6.02, 1.5)
-  ? ok(`live volume: 50% arrives ${(em100 - em50).toFixed(1)} dB below 100%`)
-  : no(`live volume: 50% vs 100% gave ${(em100 - em50).toFixed(1)} dB (expected ~6)`);
+const at50 = await received();
+near(at100 - at50, 6.02, 1.5)
+  ? ok(`live volume: 50% arrives ${(at100 - at50).toFixed(1)} dB below 100%`)
+  : no(`live volume: 50% vs 100% gave ${(at100 - at50).toFixed(1)} dB (expected ~6)`);
 
 // ── 3. Limiter ──────────────────────────────────────────────────────────
 // Tone at -10 dBFS × 400% = +2 dBFS would clip without a limiter. With it,
@@ -329,13 +329,13 @@ await aLocal((p) => window.VPSMVideoCall.setMicProcessing(p), SEM_PROC);
   const n = await aLocal(async () => {
     const raw = window.__sttStarts[window.__sttStarts.length - 1].getAudioTracks()[0];
     const sent = document.querySelector('[data-vc-local="1"]').srcObject.getAudioTracks()[0];
-    return window.__difDb(raw, sent, 1200);
+    return window.__diffDb(raw, sent, 1200);
   });
   await aLocal(() => { window.VPSMVideoCall.setSubtitles(false); });
   await new Promise((r) => setTimeout(r, 600)); // fast-toggle guard (500 ms)
-  near(n.dif, 0, 0.3)
-    ? ok(`neutral: 100% sends the same level as the mic (${n.dif >= 0 ? '+' : ''}${n.dif.toFixed(2)} dB)`)
-    : no(`neutral: at 100% the sent level was ${n.dif.toFixed(2)} dB off the mic (limiter makeup gain?)`);
+  near(n.diff, 0, 0.3)
+    ? ok(`neutral: 100% sends the same level as the mic (${n.diff >= 0 ? '+' : ''}${n.diff.toFixed(2)} dB)`)
+    : no(`neutral: at 100% the sent level was ${n.diff.toFixed(2)} dB off the mic (limiter makeup gain?)`);
   await aLocal(() => window.VPSMVideoCall.setMicGain(2));
 }
 
@@ -346,14 +346,14 @@ const stt = await aLocal(async () => {
   const s = window.__sttStarts[window.__sttStarts.length - 1];
   const t = s && s.getAudioTracks()[0];
   const sent = document.querySelector('[data-vc-local="1"]').srcObject.getAudioTracks()[0];
-  const par = await window.__difDb(t, sent, 1200);
-  return { has: !!t, same: t === sent, dbStt: par.a, dif: par.dif };
+  const par = await window.__diffDb(t, sent, 1200);
+  return { has: !!t, same: t === sent, dbStt: par.a, diff: par.diff };
 });
 stt.has ? ok('stt: the call handed a track to transcription') : no('stt: no track handed to STT');
 !stt.same ? ok('stt: the transcription track is NOT the sent one (volume does not apply)') : no('stt: transcription reading the sent track');
-near(stt.dif, 6.02, 0.5)
-  ? ok(`stt: with volume at 200%, transcription reads the raw mic (sent +${stt.dif.toFixed(2)} dB over it)`)
-  : no(`stt: sent ${stt.dif.toFixed(2)} dB over the transcription track, expected +6.0`);
+near(stt.diff, 6.02, 0.5)
+  ? ok(`stt: with volume at 200%, transcription reads the raw mic (sent +${stt.diff.toFixed(2)} dB over it)`)
+  : no(`stt: sent ${stt.diff.toFixed(2)} dB over the transcription track, expected +6.0`);
 near(stt.dbStt, -13, 2)
   ? ok('stt: raw level matches the mic tone (~-13 dBFS RMS)')
   : no(`stt: raw level ${stt.dbStt.toFixed(1)} dBFS, expected ~-13`);
@@ -377,12 +377,12 @@ mute.voltou === true ? ok('mute: unmuting turns the transcription track back on'
 
 // ── 8. Switching mics restarts transcription on the new track ───────────
 const restart = await aLocal(async () => {
-  const antes = window.__sttStarts.length;
-  const old = window.__sttStarts[antes - 1].getAudioTracks()[0];
+  const before = window.__sttStarts.length;
+  const old = window.__sttStarts[before - 1].getAudioTracks()[0];
   await window.VPSMVideoCall.setMicDevice('default');
   await new Promise((r) => setTimeout(r, 300));
   const fresh = window.__sttStarts[window.__sttStarts.length - 1].getAudioTracks()[0];
-  return { newOnes: window.__sttStarts.length - antes, oldState: old.readyState, newState: fresh.readyState, equal: old === fresh };
+  return { newOnes: window.__sttStarts.length - before, oldState: old.readyState, newState: fresh.readyState, equal: old === fresh };
 });
 (restart.newOnes >= 1 && !restart.equal && restart.newState === 'live')
   ? ok('stt: a mic switch restarts transcription on the new (live) track')

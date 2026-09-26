@@ -86,8 +86,8 @@ const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 // Each <template> can nest others (x-for, x-if of sub-blocks); an indexOf for the
 // nearest '</template>' would close too early. Count depth to find the
 // </template> that actually matches the opening.
-function extractBalancedTemplate(html, literalOpening, apartirDe) {
-  const iOpen = html.indexOf(literalOpening, apartirDe);
+function extractBalancedTemplate(html, literalOpening, startingFrom) {
+  const iOpen = html.indexOf(literalOpening, startingFrom);
   if (iOpen < 0) return null;
   const reTag = /<template\b|<\/template>/g;
   reTag.lastIndex = iOpen;

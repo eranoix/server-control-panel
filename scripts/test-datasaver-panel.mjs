@@ -24,14 +24,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ler = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
-const index = ler('internal/webassets/web/index.html');
-const shell = ler('internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+const index = read('internal/webassets/web/index.html');
+const shell = read('internal/webassets/web/vendor/vpsm/app/00-shell.js');
 
-let mau = 0;
+let bad = 0;
 const ok = (nome, cond, extra = '') => {
   console.log((cond ? '  ✓ ' : '  ✗ ') + nome + (extra ? '  → ' + extra : ''));
-  if (!cond) mau++;
+  if (!cond) bad++;
 };
 
 // ── extraction: match braces to grab a {...} block or a function body ───────
@@ -119,14 +119,14 @@ for (const [nome, st] of scenarios) {
 // This is the assertion that would have caught the defect at its source: `saved:{}`
 // was truthy and empty, so every `saved ? saved.X : 0` guard passed and handed
 // back undefined.
-const camposSaved = ['orig', 'out', 'imgs', 'reqs_cut', 'pct'];
+const savedFields = ['orig', 'out', 'imgs', 'reqs_cut', 'pct'];
 ok('the initial state declares saved COMPLETE (not a {} that pretends to exist)',
-   !!initialState && camposSaved.every((c) => typeof initialState.saved?.[c] === 'number'),
+   !!initialState && savedFields.every((c) => typeof initialState.saved?.[c] === 'number'),
    initialState ? JSON.stringify(initialState.saved) : '');
 
 // ── do not return to the antipattern: guard the container, deref the field ─
 const antipadrao = /\(\s*dsStatus\.saved\s*\?\s*dsStatus\.saved\.\w+\s*:/;
 ok('the index does not guard the container to dereference the field', !antipadrao.test(index));
 
-console.log(mau ? `\nFAIL — ${mau} case(s)` : '\nPASS — the Data saver panel survives the initial state and a partial response');
-process.exit(mau ? 1 : 0);
+console.log(bad ? `\nFAIL — ${bad} case(s)` : '\nPASS — the Data saver panel survives the initial state and a partial response');
+process.exit(bad ? 1 : 0);
