@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -474,12 +476,47 @@ func TestHub_EvictThenLeave_NoPanic(t *testing.T) {
 
 // wsTestServer injects the user (?user=) into the context before HandleWS — it
 // replicates what auth.Middleware does in production, with no JWT/ticket in the test.
+//
+// A WebSocket handler keeps running after the upgrade hijacks its connection,
+// and httptest.Server.Close does not wait for hijacked connections. On the way
+// out HandleWS runs onPeerGone, which writes the call registry into the data
+// directory. If the test has already returned, that write races t.TempDir's
+// RemoveAll and the cleanup fails with "directory not empty". So the cleanup
+// here closes the server side of every hijacked connection and waits for each
+// handler to return. It is registered after openTempService, and cleanups run
+// last in, first out, so it finishes before Service.Close and the directory
+// removal.
 func wsTestServer(t *testing.T, s *Service) *httptest.Server {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var (
+		handlers sync.WaitGroup
+		connsMu  sync.Mutex
+		hijacked []net.Conn
+	)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handlers.Add(1)
+		defer handlers.Done()
 		r = r.WithContext(auth.WithUser(r.Context(), r.URL.Query().Get("user")))
 		s.HandleWS(w, r)
 	}))
+	srv.Config.ConnState = func(c net.Conn, state http.ConnState) {
+		if state == http.StateHijacked {
+			connsMu.Lock()
+			hijacked = append(hijacked, c)
+			connsMu.Unlock()
+		}
+	}
+	srv.Start()
+	t.Cleanup(func() {
+		srv.Close()
+		connsMu.Lock()
+		for _, c := range hijacked {
+			_ = c.Close()
+		}
+		connsMu.Unlock()
+		handlers.Wait()
+	})
+	return srv
 }
 
 func wsDial(t *testing.T, srv *httptest.Server, user, room, clientID string) *websocket.Conn {
