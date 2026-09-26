@@ -1982,14 +1982,14 @@
       // The ceiling is the server’s own (the note size limit in the pve package). Duplicating a number
       // is debt, but the alternative — finding out the limit only after writing 9 KB
       // and pressing save — is worse. The server remains the one in charge.
-      NOTA_MAX: 8192,
-      pvxNoteFits() { return (this.pvx.nota.rascunho || '').length <= this.NOTA_MAX; },
+      NOTE_MAX: 8192,
+      pvxNoteFits() { return (this.pvx.nota.rascunho || '').length <= this.NOTE_MAX; },
 
       async pvxSaveNote() {
         const n = this.pvx.nota;
         if (!n.node || n.saving) return;
         if (!this.pvxNoteFits()) {
-          this.showToast('the note went past ' + this.NOTA_MAX + ' characters — a note is meant to be READ', 'err');
+          this.showToast('the note went past ' + this.NOTE_MAX + ' characters — a note is meant to be READ', 'err');
           return;
         }
         n.saving = true;

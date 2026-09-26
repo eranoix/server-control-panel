@@ -2590,7 +2590,7 @@
   .vc-micvol-level { position: absolute; left: 0; top: 0; bottom: 0; width: 0;
                      background: linear-gradient(90deg, rgba(16,185,129,.62), rgba(16,185,129,.28));
                      transition: width .06s linear; }
-  .vc-micvol-level.is-quente { background: linear-gradient(90deg, rgba(245,158,11,.7), rgba(239,68,68,.5)); }
+  .vc-micvol-level.is-hot { background: linear-gradient(90deg, rgba(245,158,11,.7), rgba(239,68,68,.5)); }
   .vc-micvol-marco { position: absolute; left: 50%; top: 4px; bottom: 4px; width: 1px; background: var(--border-strong); opacity: .7; }
   .vc-micvol-track input[type=range] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0;
                                        background: transparent; -webkit-appearance: none; appearance: none; cursor: pointer; }
@@ -2604,7 +2604,7 @@
   .vc-micvol-track input[type=range]:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
   .vc-micvol-scale { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); margin-top: 3px; }
   .vc-micvol-hint { font-size: 10px; color: var(--text-muted); line-height: 1.35; margin-top: 5px; }
-  .vc-micvol-hint.is-quente { color: var(--warning); }
+  .vc-micvol-hint.is-hot { color: var(--warning); }
   .vc-micvol-op { display: flex; flex-direction: column; gap: 1px; min-width: 0; line-height: 1.25; }
   .vc-micvol-op small { font-size: 10.5px; color: var(--text-muted); }
   /* In the devices modal the items inherit the popover look without its side
@@ -2848,15 +2848,15 @@
      version was a thick band with a solid blue button underneath — heavy for
      what is almost always just a note ("no camera, you are joining audio only").
      Severity comes from the left border, not from the whole background. */
-  .vc-lobby-aviso { display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:6px;font-size:12px;line-height:1.45;
+  .vc-lobby-warning { display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border-radius:6px;font-size:12px;line-height:1.45;
                     background:var(--surface-1);border:1px solid var(--surface-3);border-left:3px solid var(--surface-3);color:var(--text-primary); }
-  .vc-lobby-aviso.is-aviso { border-left-color:#d97706;background:rgba(217,119,6,.07); }
-  .vc-lobby-aviso.is-erro  { border-left-color:#dc2626;background:rgba(220,38,38,.07); }
-  .vc-lobby-aviso .ico { flex:0 0 auto;line-height:1.35; }
-  .vc-lobby-aviso .txt { flex:1 1 auto;min-width:0; }
-  .vc-lobby-aviso .action { flex:0 0 auto;background:transparent;border:1px solid var(--surface-3);color:var(--text-primary);
+  .vc-lobby-warning.is-warning { border-left-color:#d97706;background:rgba(217,119,6,.07); }
+  .vc-lobby-warning.is-error  { border-left-color:#dc2626;background:rgba(220,38,38,.07); }
+  .vc-lobby-warning .ico { flex:0 0 auto;line-height:1.35; }
+  .vc-lobby-warning .txt { flex:1 1 auto;min-width:0; }
+  .vc-lobby-warning .action { flex:0 0 auto;background:transparent;border:1px solid var(--surface-3);color:var(--text-primary);
                           padding:3px 9px;border-radius:5px;font-size:11px;cursor:pointer;white-space:nowrap;transition:background .15s ease,border-color .15s ease; }
-  .vc-lobby-aviso .action:hover { background:var(--surface-2);border-color:var(--focus); }
+  .vc-lobby-warning .action:hover { background:var(--surface-2);border-color:var(--focus); }
 
   /* --------------------------------------------------------------------------
      Video call lobby — the "waiting room".
@@ -2876,10 +2876,10 @@
              border:1px solid var(--surface-3);aspect-ratio:16/9; }
   .vc-room > video { width:100%;height:100%;object-fit:cover;display:block; }
   /* With no image there is nothing to frame: the 16:9 would become a huge void. */
-  .vc-room.is-sem-video { aspect-ratio:auto;min-height:190px; }
-  .vc-room-vazio { position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  .vc-room.is-no-video { aspect-ratio:auto;min-height:190px; }
+  .vc-room-empty { position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
                    justify-content:center;gap:8px;color:#8fa0b8;text-align:center;padding:0 24px; }
-  .vc-room-vazio svg { opacity:.55; }
+  .vc-room-empty svg { opacity:.55; }
   /* Gradient on the base only: the pills stay legible without darkening the face. */
   .vc-room-bar { position:absolute;left:0;right:0;bottom:0;display:flex;gap:8px;padding:14px 12px 12px;
                    justify-content:center;align-items:center;flex-wrap:wrap;
@@ -2942,8 +2942,8 @@
     .vc-room-bar { position:static;background:var(--surface-1);border-top:1px solid var(--surface-3);
                      padding:10px;justify-content:flex-start; }
     .vc-room { aspect-ratio:auto; }
-    .vc-room > video, .vc-room-vazio { aspect-ratio:16/9; }
-    .vc-room-vazio { position:static;width:100%; }
+    .vc-room > video, .vc-room-empty { aspect-ratio:16/9; }
+    .vc-room-empty { position:static;width:100%; }
     .vc-pill select { max-width:44vw; }
   }
   /* Footer on a narrow screen: the switch's text broke onto 3 lines and
@@ -7581,45 +7581,45 @@
         <!-- NETWORK & PRIVACY · unified tab (AdGuard + Devices + Data saver) -->
         <!-- It replaces the 3 old tabs: one screen centred on the device.
              currentView==='rede' + PAGE_REMAP rede/adguard/dispositivos/economia. -->
-        <section x-show="currentView==='rede'" x-cloak data-vpsm="rede-unificada">
+        <section x-show="currentView==='rede'" x-cloak data-vpsm="net-unified">
           <style>
-            .rede-kpi{position:relative;overflow:hidden}
-            .rede-kpi.on::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--focus,#22d3ee)}
-            .rede-kpi .kic{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:13px;flex:none}
-            .rede-seg{display:inline-flex;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:2px}
-            .rede-seg button{border:0;background:transparent;color:var(--text-secondary,#95a3b1);font:inherit;font-size:12px;font-weight:560;padding:5px 11px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:.14s}
-            .rede-seg button.active{background:rgba(34,211,238,.14);color:#22d3ee;box-shadow:inset 0 0 0 1px rgba(34,211,238,.4)}
-            .rede-dev{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:14px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:11px 14px;transition:.14s}
-            .rede-dev:hover{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.06)}
-            .rede-avatar{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;font-size:17px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.08);flex:none}
-            .rede-collbl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary,#63707d);font-weight:600;text-align:center}
-            .rede-live{width:6px;height:6px;border-radius:50%;background:#34d399;box-shadow:0 0 6px #34d399;display:inline-block}
+            .net-kpi{position:relative;overflow:hidden}
+            .net-kpi.on::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--focus,#22d3ee)}
+            .net-kpi .kic{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:13px;flex:none}
+            .net-seg{display:inline-flex;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:2px}
+            .net-seg button{border:0;background:transparent;color:var(--text-secondary,#95a3b1);font:inherit;font-size:12px;font-weight:560;padding:5px 11px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:.14s}
+            .net-seg button.active{background:rgba(34,211,238,.14);color:#22d3ee;box-shadow:inset 0 0 0 1px rgba(34,211,238,.4)}
+            .net-dev{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:14px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:11px 14px;transition:.14s}
+            .net-dev:hover{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.06)}
+            .net-avatar{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;font-size:17px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.08);flex:none}
+            .net-collbl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary,#63707d);font-weight:600;text-align:center}
+            .net-live{width:6px;height:6px;border-radius:50%;background:#34d399;box-shadow:0 0 6px #34d399;display:inline-block}
             @media (max-width:640px){
-              .rede-dev{grid-template-columns:1fr auto;grid-template-areas:"who acts" "seg sw";row-gap:12px}
-              .rede-dev .rede-who{grid-area:who}.rede-dev .rede-acts{grid-area:acts}
-              .rede-dev .rede-segc{grid-area:seg}.rede-dev .rede-swc{grid-area:sw;justify-self:end}
-              .rede-collbl{display:none}
+              .net-dev{grid-template-columns:1fr auto;grid-template-areas:"who acts" "seg sw";row-gap:12px}
+              .net-dev .net-who{grid-area:who}.net-dev .net-acts{grid-area:acts}
+              .net-dev .net-segc{grid-area:seg}.net-dev .net-swc{grid-area:sw;justify-self:end}
+              .net-collbl{display:none}
             }
           </style>
 
           <!-- STATUS BAND -->
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 mb-4">
-            <div class="card rede-kpi p-4" :class="adguardLoaded && adguard.protection_enabled ? 'on':''">
+            <div class="card net-kpi p-4" :class="adguardLoaded && adguard.protection_enabled ? 'on':''">
               <div class="flex items-center gap-2 text-xs font-semibold text-gray-400" style="text-transform:uppercase;letter-spacing:.05em"><span class="kic" style="background:rgba(52,211,153,.13);color:#34d399">🛡️</span> DNS filter</div>
               <div class="text-2xl font-bold mt-2" style="line-height:1" x-text="!adguardLoaded ? '—' : (adguard.protection_enabled ? 'On' : 'Paused')"></div>
               <div class="text-xs text-gray-500 mt-1"><span x-show="adguardLoaded"><b class="text-gray-300" x-text="(adguard.blocked_pct||0).toFixed(1)+'%'"></b> blocked · <span x-text="(adguard.num_queries||0).toLocaleString('pt-BR')"></span> queries</span></div>
             </div>
-            <div class="card rede-kpi p-4" :class="dsLoaded ? 'on':''">
+            <div class="card net-kpi p-4" :class="dsLoaded ? 'on':''">
               <div class="flex items-center gap-2 text-xs font-semibold text-gray-400" style="text-transform:uppercase;letter-spacing:.05em"><span class="kic" style="background:rgba(34,211,238,.14);color:#22d3ee">📉</span> Data saver</div>
               <div class="text-2xl font-bold mt-2" style="line-height:1;font-variant-numeric:tabular-nums" x-text="(Number(dsStatus.saved?.pct) || 0).toFixed(0)+'%'"></div>
               <div class="text-xs text-gray-500 mt-1"><b class="text-gray-300" x-text="fmtBytes(Math.max(0, (Number(dsStatus.saved?.orig) || 0) - (Number(dsStatus.saved?.out) || 0)))"></b> saved · <span x-text="(Number(dsStatus.saved?.imgs) || 0).toLocaleString('pt-BR')"></span> images</div>
             </div>
-            <div class="card rede-kpi p-4">
+            <div class="card net-kpi p-4">
               <div class="flex items-center gap-2 text-xs font-semibold text-gray-400" style="text-transform:uppercase;letter-spacing:.05em"><span class="kic" style="background:rgba(139,92,246,.14);color:#a78bfa">📱</span> Devices</div>
               <div class="text-2xl font-bold mt-2" style="line-height:1;font-variant-numeric:tabular-nums" x-text="tunnelDevices.length"></div>
               <div class="text-xs text-gray-500 mt-1"><span x-show="tunnelSummary"><b class="text-gray-300" x-text="tunnelSummary ? tunnelSummary.active_conns : 0"></b> active connections</span></div>
             </div>
-            <div class="card rede-kpi p-4">
+            <div class="card net-kpi p-4">
               <div class="flex items-center gap-2 text-xs font-semibold text-gray-400" style="text-transform:uppercase;letter-spacing:.05em"><span class="kic" style="background:rgba(251,113,133,.12);color:#fb7185">🚫</span> Trackers</div>
               <div class="text-2xl font-bold mt-2" style="line-height:1;font-variant-numeric:tabular-nums" x-text="(Number(dsStatus.saved?.reqs_cut) || 0).toLocaleString('pt-BR')"></div>
               <div class="text-xs text-gray-500 mt-1">truncated in the body</div>
@@ -7640,15 +7640,15 @@
             <template x-if="tunnelError"><div class="text-rose-400 text-sm mt-3" x-text="tunnelError"></div></template>
 
             <div class="flex flex-col gap-2 mt-3" x-show="tunnelLoaded">
-              <div class="rede-dev" style="background:transparent;border-color:transparent;padding-top:0;padding-bottom:0" aria-hidden="true">
-                <div></div><div class="rede-collbl">Out</div><div class="rede-collbl">Data saver</div><div class="rede-collbl" style="min-width:104px">Actions</div>
+              <div class="net-dev" style="background:transparent;border-color:transparent;padding-top:0;padding-bottom:0" aria-hidden="true">
+                <div></div><div class="net-collbl">Out</div><div class="net-collbl">Data saver</div><div class="net-collbl" style="min-width:104px">Actions</div>
               </div>
               <template x-for="d in tunnelDevices" :key="d.uuid">
-                <div class="rede-dev">
-                  <div class="rede-who flex items-center gap-3" style="min-width:0">
-                    <div class="rede-avatar" x-text="/pc|note|desk|win|mac|lin/i.test(d.name)?'💻':'📱'"></div>
+                <div class="net-dev">
+                  <div class="net-who flex items-center gap-3" style="min-width:0">
+                    <div class="net-avatar" x-text="/pc|note|desk|win|mac|lin/i.test(d.name)?'💻':'📱'"></div>
                     <div style="min-width:0">
-                      <div class="font-medium text-sm flex items-center gap-2"><span x-text="d.name" class="truncate"></span> <span class="rede-live" title="through the tunnel"></span></div>
+                      <div class="font-medium text-sm flex items-center gap-2"><span x-text="d.name" class="truncate"></span> <span class="net-live" title="through the tunnel"></span></div>
                       <div class="text-xs" style="display:flex;align-items:center;gap:6px">
                         <span :style="devUsage(d.name).rate_bps > 0 ? 'color:#34d399' : 'color:#63707d'" x-text="'⇅ ' + fmtRate(devUsage(d.name).rate_bps)"></span>
                         <span class="text-gray-500" x-text="'· ' + fmtBytes(devUsage(d.name).total_bytes) + ' total'"></span>
@@ -7656,17 +7656,17 @@
                       </div>
                     </div>
                   </div>
-                  <div class="rede-segc">
-                    <div class="rede-seg">
+                  <div class="net-segc">
+                    <div class="net-seg">
                       <button :class="d.exit==='casa'?'active':''" @click="setDeviceExit(d,'casa')">🏠 Home</button>
                       <button :class="d.exit==='vps'?'active':''" @click="setDeviceExit(d,'vps')">☁️ VPS</button>
                     </div>
                   </div>
-                  <div class="rede-swc" style="justify-self:center">
+                  <div class="net-swc" style="justify-self:center">
                     <button type="button" class="vc-switch" :class="d.datasaver?'is-on':''" @click="setDeviceDatasaver(d, !d.datasaver)"
                             :aria-pressed="d.datasaver?'true':'false'" :aria-label="'Savings for '+d.name"></button>
                   </div>
-                  <div class="rede-acts flex gap-1">
+                  <div class="net-acts flex gap-1">
                     <button class="btn-icon" title="Link / QR" @click="showDeviceLink(d)">🔗</button>
                     <button class="btn-icon" title="Rename" @click="renameDevice(d)">✎</button>
                     <button class="btn-icon" title="Revoke" @click="revokeDevice(d)">🗑</button>
@@ -7820,7 +7820,7 @@
           <div x-show="tunnelLinkOpen" x-cloak class="modal-backdrop" @click="tunnelLinkOpen=false">
             <div class="card p-6 max-w-md w-full text-center" @click.stop>
               <div class="font-semibold mb-3" x-text="'Link from ' + tunnelLinkName"></div>
-              <div class="rede-seg mb-3" style="display:inline-flex">
+              <div class="net-seg mb-3" style="display:inline-flex">
                 <button :class="tunnelLinkVariant==='ws'?'active':''" @click="loadDeviceLink(tunnelLinkVariant='ws')" title="WS/TLS — gets through the work Zscaler">🌐 WS/TLS</button>
                 <button :class="tunnelLinkVariant==='reality'?'active':''" @click="loadDeviceLink(tunnelLinkVariant='reality')" title="Reality — residential; the provider cannot confirm it is a VPN">🛡️ Reality</button>
               </div>
@@ -11394,7 +11394,7 @@
                         <div class="flex flex-wrap items-center gap-2">
                           <span class="text-[11px] font-mono tabular-nums"
                                 :style="pvxNoteFits() ? 'opacity:.5' : 'color:var(--danger)'"
-                                x-text="(pvx.nota.rascunho || '').length + ' / ' + NOTA_MAX"></span>
+                                x-text="(pvx.nota.rascunho || '').length + ' / ' + NOTE_MAX"></span>
                           <span x-show="!pvxNoteFits()" x-cloak class="text-[11px]" style="color:var(--danger)">
                             over the cap — a note is meant to be READ
                           </span>
@@ -16225,13 +16225,13 @@
                         <output x-text="vcMicGainPct()"></output>
                       </div>
                       <div class="vc-micvol-track">
-                        <span class="vc-micvol-level" :class="videocall.micLimiting ? 'is-quente' : ''" :style="'width:'+Math.max(0,Math.min(100,videocall.micLevel||0))+'%'" aria-hidden="true"></span>
+                        <span class="vc-micvol-level" :class="videocall.micLimiting ? 'is-hot' : ''" :style="'width:'+Math.max(0,Math.min(100,videocall.micLevel||0))+'%'" aria-hidden="true"></span>
                         <span class="vc-micvol-marco" aria-hidden="true"></span>
                         <input type="range" min="-2" max="2" step="0.05" :value="vcMicGainPos()" @input="vcSetMicGainPos(parseFloat($event.target.value))" @dblclick="vcSetMicGain(1.0)"
                                aria-label="Microphone volume" :aria-valuetext="vcMicGainPct()"/>
                       </div>
                       <div class="vc-micvol-scale" aria-hidden="true"><span>25%</span><span>100%</span><span>400%</span></div>
-                      <div class="vc-micvol-hint is-quente" x-show="videocall.micLimiting">Too loud: the limiter is holding back the peaks. Turn it down a little.</div>
+                      <div class="vc-micvol-hint is-hot" x-show="videocall.micLimiting">Too loud: the limiter is holding back the peaks. Turn it down a little.</div>
                       <div class="vc-micvol-hint" x-show="!videocall.micLimiting && videocall.muted">Muted: the meter shows what goes out, and right now nothing does.</div>
                     </div>
                     <button class="vc-popover-item" @click.stop="vcSetMicProc('noiseSuppression', !videocall.micProc.noiseSuppression)" :disabled="videocall.micProcBusy">
@@ -16795,8 +16795,8 @@
                    Reading lobbyCaps is defensive on purpose — a deploy does not
                    reload the tab, so this markup can run for a while
                    against an earlier 00-shell.js, where lobbyCaps does not exist. -->
-              <div x-show="(videocall.lobbyError||'').trim()" x-cloak class="vc-lobby-aviso mb-3"
-                   :class="(!videocall.lobbyCaps || videocall.lobbyCaps.audio || videocall.lobbyCaps.video) ? 'is-aviso' : 'is-erro'">
+              <div x-show="(videocall.lobbyError||'').trim()" x-cloak class="vc-lobby-warning mb-3"
+                   :class="(!videocall.lobbyCaps || videocall.lobbyCaps.audio || videocall.lobbyCaps.video) ? 'is-warning' : 'is-error'">
                 <span class="ico" x-text="(!videocall.lobbyCaps || videocall.lobbyCaps.audio || videocall.lobbyCaps.video) ? '⚠' : '⛔'"></span>
                 <span class="txt" x-text="videocall.lobbyError"></span>
                 <button type="button" class="action" @click="vcLobbyOpen(videocall.lobbyForRoomId, videocall.lobbyForPassphrase)">Test again</button>
@@ -16804,13 +16804,13 @@
 
               <!-- The room: a full-screen preview inside the modal, controls anchored
                    inside the frame. -->
-              <div class="vc-room" :class="(videocall.lobbyCaps||{video:true}).video ? '' : 'is-sem-video'">
+              <div class="vc-room" :class="(videocall.lobbyCaps||{video:true}).video ? '' : 'is-no-video'">
                 <!-- Mirrored as in the rest of the call (localMirror): seeing yourself
                      flipped is what everyone expects of a self-image. -->
                 <video id="vc-lobby-preview" autoplay muted playsinline
                        x-show="(videocall.lobbyCaps||{video:true}).video"
                        :style="videocall.localMirror ? 'transform:scaleX(-1)' : ''"></video>
-                <div x-show="!(videocall.lobbyCaps||{video:true}).video" class="vc-room-vazio">
+                <div x-show="!(videocall.lobbyCaps||{video:true}).video" class="vc-room-empty">
                   <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
                     <path d="M2 2l20 20"/><path d="M15 10.5V7a1 1 0 0 0-1-1H7.5"/>
                     <path d="M4.2 6.2A1 1 0 0 0 3 7v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3"/>
@@ -16969,13 +16969,13 @@
                         <output x-text="vcMicGainPct()"></output>
                       </div>
                       <div class="vc-micvol-track">
-                        <span class="vc-micvol-level" :class="videocall.micLimiting ? 'is-quente' : ''" :style="'width:'+Math.max(0,Math.min(100,videocall.micLevel||0))+'%'" aria-hidden="true"></span>
+                        <span class="vc-micvol-level" :class="videocall.micLimiting ? 'is-hot' : ''" :style="'width:'+Math.max(0,Math.min(100,videocall.micLevel||0))+'%'" aria-hidden="true"></span>
                         <span class="vc-micvol-marco" aria-hidden="true"></span>
                         <input type="range" min="-2" max="2" step="0.05" :value="vcMicGainPos()" @input="vcSetMicGainPos(parseFloat($event.target.value))" @dblclick="vcSetMicGain(1.0)"
                                aria-label="Microphone volume" :aria-valuetext="vcMicGainPct()"/>
                       </div>
                       <div class="vc-micvol-scale" aria-hidden="true"><span>25%</span><span>100%</span><span>400%</span></div>
-                      <div class="vc-micvol-hint is-quente" x-show="videocall.micLimiting">Too loud: the limiter is holding back the peaks. Turn it down a little.</div>
+                      <div class="vc-micvol-hint is-hot" x-show="videocall.micLimiting">Too loud: the limiter is holding back the peaks. Turn it down a little.</div>
                       <div class="vc-micvol-hint" x-show="!videocall.micLimiting && videocall.muted">Muted: the meter shows what goes out, and right now nothing does.</div>
                     </div>
                     <button class="vc-popover-item" @click.stop="vcSetMicProc('noiseSuppression', !videocall.micProc.noiseSuppression)" :disabled="videocall.micProcBusy">
@@ -17014,7 +17014,7 @@
                   </div>
                 </div>
 
-                <div class="vc-lobby-aviso is-aviso mt-3" x-show="!videocall.sinkIdSupported">
+                <div class="vc-lobby-warning is-warning mt-3" x-show="!videocall.sinkIdSupported">
                   <span class="ico">⚠</span>
                   <span class="txt">This browser will not let you choose an output — audio goes to the system default.</span>
                 </div>

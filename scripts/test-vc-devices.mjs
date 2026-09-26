@@ -189,21 +189,21 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   const i = html.indexOf('<div x-show="(videocall.lobbyError||\'\').trim()"');
   const j = html.indexOf('</div>', html.indexOf('Test again')) + 6;
   const banner = i >= 0 ? html.slice(i, j) : '';
-  const ci = html.indexOf('.vc-lobby-aviso {');
+  const ci = html.indexOf('.vc-lobby-warning {');
   const css = ci >= 0 ? html.slice(ci, html.indexOf('}', html.indexOf('.action:hover', ci)) + 1) : '';
   const vars = ':root{--surface-1:#111827;--surface-2:#1f2937;--surface-3:#374151;--focus:#2563eb;'
              + '--text-primary:#e5e7eb;--text-muted:#9ca3af}body{background:#0b1220;margin:0;padding:16px}'
              + '[x-cloak]{display:none!important}';
-  if (!banner.includes('vc-lobby-aviso') || !css) {
+  if (!banner.includes('vc-lobby-warning') || !css) {
     no('notice: the lobby notice markup/CSS was not found in index.html');
   } else {
     const page = await browser.newPage({ viewport: { width: 760, height: 260 } });
     const cases = [
-      { n: 'with a message', err: 'No camera was found. You can join anyway — with audio only.', caps: { audio: true, video: false }, ver: true,  sev: 'is-aviso' },
-      { n: 'both missing', err: 'No usable camera or microphone on this computer.', caps: { audio: false, video: false }, ver: true, sev: 'is-erro' },
+      { n: 'with a message', err: 'No camera was found. You can join anyway — with audio only.', caps: { audio: true, video: false }, ver: true,  sev: 'is-warning' },
+      { n: 'both missing', err: 'No usable camera or microphone on this computer.', caps: { audio: false, video: false }, ver: true, sev: 'is-error' },
       { n: 'empty message',  err: '',    caps: { audio: true, video: true }, ver: false },
       { n: 'blank message', err: '   ', caps: { audio: true, video: true }, ver: false },
-      { n: 'tab on an old bundle', err: 'Microphone in use by another program.', caps: undefined, ver: true, sev: 'is-aviso' },
+      { n: 'tab on an old bundle', err: 'Microphone in use by another program.', caps: undefined, ver: true, sev: 'is-warning' },
     ];
     for (const c of cases) {
       const state = JSON.stringify({ lobbyError: c.err, lobbyCaps: c.caps, lobbyForRoomId: 'r', lobbyForPassphrase: '' });
@@ -212,7 +212,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
       await page.addScriptTag({ content: alpine });
       await page.waitForTimeout(200);
       const r = await page.evaluate(() => {
-        const el = document.querySelector('.vc-lobby-aviso');
+        const el = document.querySelector('.vc-lobby-warning');
         if (!el) return { existe: false };
         return { existe: true, display: getComputedStyle(el).display, className: el.className,
                  text: ((el.querySelector('.txt') || {}).textContent || '').trim(),

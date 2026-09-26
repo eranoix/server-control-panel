@@ -688,7 +688,7 @@
 
     { nome: 'NOTE · text above the ceiling locks the save, and the screen SAYS SO', step: () => {
         C().pvxEditNote();
-        C().pvx.nota.rascunho = 'a'.repeat(C().NOTA_MAX + 1);
+        C().pvx.nota.rascunho = 'a'.repeat(C().NOTE_MAX + 1);
       }, expect: () => {
         const save = Array.from(document.querySelectorAll('button')).filter(visible)
           .find(b => (b.getAttribute('@click') || '') === 'pvxSaveNote()');
