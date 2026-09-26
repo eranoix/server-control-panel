@@ -25,7 +25,7 @@ class TrilhaDoCaminhoTest {
     fun `cada degrau aponta para o proprio nivel, acumulado desde a raiz`() {
         val degraus = degrausDoCaminho("/opt/panel/data")
 
-        assertEquals(listOf("/", "opt", "vps-manager", "data"), degraus.map { it.rotulo })
+        assertEquals(listOf("/", "opt", "panel", "data"), degraus.map { it.rotulo })
         assertEquals(
             listOf("/", "/opt", "/opt/panel", "/opt/panel/data"),
             degraus.map { it.caminho },

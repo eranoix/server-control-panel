@@ -52,17 +52,17 @@ class IniciaisTest {
 
     @Test
     fun `duas palavras dao duas iniciais`() {
-        assertEquals("AO", iniciais("Sam Rivera"))
+        assertEquals("SR", iniciais("Sam Rivera"))
     }
 
     @Test
     fun `nome do meio nao entra — o ultimo sobrenome identifica melhor`() {
-        assertEquals("AO", iniciais("Sam Rivera"))
+        assertEquals("SR", iniciais("Sam Lee Rivera"))
     }
 
     @Test
     fun `uma palavra da uma inicial`() {
-        assertEquals("A", iniciais("sam"))
+        assertEquals("S", iniciais("sam"))
     }
 
     @Test

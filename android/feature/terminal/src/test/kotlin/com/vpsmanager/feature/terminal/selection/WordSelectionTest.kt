@@ -133,7 +133,7 @@ class WordSelectionTest {
             cols = 8,
             rows = 4,
             rowFlags = flags,
-            linhas = arrayOf("/opt/vps", "-manager", "/bin", "outra"),
+            linhas = arrayOf("/opt/pan", "el/tools", "/bin", "outra"),
         )
 
         val selecao = selecionarLinha(snapshot, row = 1)
@@ -141,7 +141,7 @@ class WordSelectionTest {
         assertEquals(GridSelection(0, 0, 2, 3), selecao)
         assertEquals(
             "a quebra suave não pode virar quebra de linha no texto copiado",
-            "/opt/panel/bin",
+            "/opt/panel/tools/bin",
             extractSelectedText(snapshot, selecao),
         )
     }
