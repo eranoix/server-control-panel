@@ -1,0 +1,6 @@
+# Override para rodar a demo noutra porta sem tocar no compose versionado.
+#   docker compose -f docker-compose.yml -f test/port-override.yml up -d
+services:
+  server-control-panel:
+    ports: !override
+      - "18767:8765"

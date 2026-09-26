@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Navegador · VPS Manager</title>
+    <link rel="shortcut icon" href="/browser/favicon.ico" />
+    <script src="/browser/baremux/index.js" defer></script>
+    <script src="/browser/uv/uv.bundle.js" defer></script>
+    <script src="/browser/uv/uv.config.js" defer></script>
+    <script src="/browser/register-sw.js" defer></script>
+    <script src="/browser/search.js" defer></script>
+    <script src="/browser/index.js" defer></script>
+    <style>
+      :root {
+        --bg: #0a0e1a;
+        --panel: rgba(20, 28, 48, 0.7);
+        --accent: #38bdf8;
+        --accent2: #818cf8;
+        --text: #e5edff;
+        --muted: #7c89b0;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(1200px 600px at 50% -10%, rgba(56, 189, 248, 0.12), transparent 60%),
+          radial-gradient(900px 500px at 90% 110%, rgba(129, 140, 248, 0.10), transparent 60%),
+          var(--bg);
+        color: var(--text);
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        gap: 28px; padding: 24px;
+      }
+      .logo { display: flex; align-items: center; gap: 14px; }
+      .logo .dot {
+        width: 14px; height: 14px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--accent), var(--accent2));
+        box-shadow: 0 0 18px var(--accent);
+      }
+      .logo h1 { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; margin: 0; }
+      .desc { color: var(--muted); font-size: 14px; max-width: 520px; text-align: center; line-height: 1.5; }
+      #uv-form {
+        display: flex; align-items: center; width: min(640px, 92vw);
+        background: var(--panel); border: 1px solid rgba(120, 140, 200, 0.25);
+        border-radius: 14px; padding: 6px; gap: 6px;
+        backdrop-filter: blur(12px);
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      }
+      #uv-address {
+        flex: 1; background: transparent; border: none; outline: none;
+        color: var(--text); font-size: 16px; padding: 14px 16px;
+      }
+      #uv-address::placeholder { color: var(--muted); }
+      #uv-form button {
+        border: none; cursor: pointer; color: #061018; font-weight: 700;
+        background: linear-gradient(135deg, var(--accent), var(--accent2));
+        border-radius: 10px; padding: 12px 22px; font-size: 15px;
+        transition: transform 0.12s ease, filter 0.12s ease;
+      }
+      #uv-form button:hover { filter: brightness(1.08); transform: translateY(-1px); }
+      #uv-error { color: #fca5a5; font-size: 13px; margin: 4px 0 0; text-align: center; }
+      #uv-error-code { color: var(--muted); font-size: 11px; white-space: pre-wrap; text-align: center; }
+      .hint { color: var(--muted); font-size: 12px; }
+      .hint b { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <div class="logo">
+      <span class="dot"></span>
+      <h1>Navegador tunelado</h1>
+    </div>
+    <p class="desc">
+      Navegação saindo pela sua VPS. O tráfego entre este painel e os sites
+      passa criptografado pelo servidor — a sua rede local só enxerga a conexão
+      com o VPS Manager.
+    </p>
+    <form id="uv-form">
+      <input id="uv-search-engine" value="https://www.google.com/search?q=%s" type="hidden" />
+      <input id="uv-address" type="text" placeholder="Digite uma URL ou busca…" autocomplete="off" autofocus />
+      <button type="submit">Abrir</button>
+    </form>
+    <p class="hint">Saída pelo IP do <b>VPS</b> · sem instalar nada no seu computador</p>
+    <div>
+      <p id="uv-error"></p>
+      <pre id="uv-error-code"></pre>
+    </div>
+  </body>
+</html>
