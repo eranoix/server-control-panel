@@ -38,7 +38,7 @@ package claudeacct
 //
 // The transcripts that predate it have no entry and are NOT attributable. They
 // go into an "unattributed" bucket visible in the panel, with an opportunistic
-// inference from session-env/ (see inferidoPorSessionEnv). Inventing an owner
+// inference from session-env/ (see inferredFromSessionEnv). Inventing an owner
 // for them would be worse than admitting we do not know: a plausible number
 // under the wrong name has no way of being spotted by whoever reads it.
 
@@ -82,7 +82,7 @@ func (s *Store) RecordAttrib(e AttribEntry) error {
 	if !s.hasAccount(e.AccountID) {
 		return nil
 	}
-	linha, err := json.Marshal(e)
+	line, err := json.Marshal(e)
 	if err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ func (s *Store) RecordAttrib(e AttribEntry) error {
 		return err
 	}
 	defer f.Close()
-	_, err = f.Write(append(linha, '\n'))
+	_, err = f.Write(append(line, '\n'))
 	return err
 }
 
@@ -117,14 +117,14 @@ func (s *Store) AccountIDForConfigDir(dir string) string {
 
 // ledger is the query index: per session, the intervals in time order.
 type ledger struct {
-	porSessao map[string][]AttribEntry
+	bySession map[string][]AttribEntry
 }
 
-// carregaLedger reads the whole ledger and sorts each session by time. Corrupted
+// loadLedger reads the whole ledger and sorts each session by time. Corrupted
 // lines are skipped rather than taking the read down: the file is written by an
 // external hook, and a partial append must not cost ALL the attribution.
-func (s *Store) carregaLedger() *ledger {
-	l := &ledger{porSessao: map[string][]AttribEntry{}}
+func (s *Store) loadLedger() *ledger {
+	l := &ledger{bySession: map[string][]AttribEntry{}}
 	f, err := os.Open(s.attribPath())
 	if err != nil {
 		return l
@@ -137,17 +137,17 @@ func (s *Store) carregaLedger() *ledger {
 		if json.Unmarshal(sc.Bytes(), &e) != nil || e.SessionID == "" || e.AccountID == "" {
 			continue
 		}
-		l.porSessao[e.SessionID] = append(l.porSessao[e.SessionID], e)
+		l.bySession[e.SessionID] = append(l.bySession[e.SessionID], e)
 	}
-	for k := range l.porSessao {
-		sort.Slice(l.porSessao[k], func(i, j int) bool {
-			return l.porSessao[k][i].Ts < l.porSessao[k][j].Ts
+	for k := range l.bySession {
+		sort.Slice(l.bySession[k], func(i, j int) bool {
+			return l.bySession[k][i].Ts < l.bySession[k][j].Ts
 		})
 	}
 	return l
 }
 
-// contaEm returns the account that held for (session, instant), or "" when it is
+// accountAt returns the account that held for (session, instant), or "" when it is
 // not known.
 //
 // A session's first entry applies RETROACTIVELY to it: the SessionStart hook
@@ -156,22 +156,22 @@ func (s *Store) carregaLedger() *ledger {
 // precisely the common case for a short one. Back-dating only the FIRST entry is
 // safe: the ones that follow mark real account switches, and those cannot be
 // back-dated without stealing tokens from the previous account.
-func (l *ledger) contaEm(sessao string, ts int64) string {
-	ents := l.porSessao[sessao]
+func (l *ledger) accountAt(session string, ts int64) string {
+	ents := l.bySession[session]
 	if len(ents) == 0 {
 		return ""
 	}
-	conta := ents[0].AccountID
+	account := ents[0].AccountID
 	for _, e := range ents[1:] {
 		if ts < e.Ts {
 			break
 		}
-		conta = e.AccountID
+		account = e.AccountID
 	}
-	return conta
+	return account
 }
 
-// inferidoPorSessionEnv is the opportunistic backfill for the history that
+// inferredFromSessionEnv is the opportunistic backfill for the history that
 // predates the ledger. Claude Code creates <configdir>/session-env/<sessionId>/
 // and that directory is NOT shared between the accounts (measured: 203 under
 // /root/.claude against 380 under /srv/agent-accounts/sam), so its presence is
@@ -182,9 +182,9 @@ func (l *ledger) contaEm(sessao string, ts int64) string {
 // reported separately so nobody confuses what was observed with what was
 // deduced. It is a Claude Code internal, with no contract — if it disappears the
 // effect is the "unattributed" bucket growing, never a wrong number appearing.
-func (s *Store) inferidoPorSessionEnv() map[string]string {
+func (s *Store) inferredFromSessionEnv() map[string]string {
 	out := map[string]string{}
-	ambiguo := map[string]bool{}
+	ambiguous := map[string]bool{}
 	for _, a := range s.Accounts() {
 		base := a.ConfigDir
 		if base == "" {
@@ -199,14 +199,14 @@ func (s *Store) inferidoPorSessionEnv() map[string]string {
 				continue
 			}
 			id := e.Name()
-			if prev, visto := out[id]; visto && prev != a.ID {
-				ambiguo[id] = true // two accounts claim it: no way to decide
+			if prev, seen := out[id]; seen && prev != a.ID {
+				ambiguous[id] = true // two accounts claim it: no way to decide
 				continue
 			}
 			out[id] = a.ID
 		}
 	}
-	for id := range ambiguo {
+	for id := range ambiguous {
 		delete(out, id)
 	}
 	return out

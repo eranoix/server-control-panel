@@ -739,13 +739,13 @@ func (r *Router) handleTerminalRawLog(w http.ResponseWriter, req *http.Request) 
 		writeErr(w, 404, "session not found")
 		return
 	}
-	bytesPedidos := 0
+	requestedBytes := 0
 	if b := req.URL.Query().Get("bytes"); b != "" {
 		if n, err := strconv.Atoi(b); err == nil {
-			bytesPedidos = n
+			requestedBytes = n
 		}
 	}
-	data, total := ptysvc.SessionRawLogTail(user, name, bytesPedidos)
+	data, total := ptysvc.SessionRawLogTail(user, name, requestedBytes)
 	// It goes out as octet-stream and not as JSON/base64: the dashboard writes
 	// these bytes straight into xterm, and putting them through base64 would only
 	// cost a third more bandwidth plus a decode on the side that is already busy
@@ -757,7 +757,7 @@ func (r *Router) handleTerminalRawLog(w http.ResponseWriter, req *http.Request) 
 	_, _ = w.Write(data)
 }
 
-// handleTerminalHistorico returns the session's RENDERED history: the lines
+// handleTerminalHistory returns the session's RENDERED history: the lines
 // that have already scrolled off the screen, as append-only text.
 //
 // It is what the dashboard writes into xterm when opening the session. The
@@ -775,7 +775,7 @@ func (r *Router) handleTerminalRawLog(w http.ResponseWriter, req *http.Request) 
 //
 // Empty is a legitimate answer: a new session, or one that has not yet scrolled
 // a single line off. The dashboard falls back to /log-bruto in that case.
-func (r *Router) handleTerminalHistorico(w http.ResponseWriter, req *http.Request) {
+func (r *Router) handleTerminalHistory(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
 	if user == "" {
 		writeErr(w, 401, "unauthorized")
@@ -790,13 +790,13 @@ func (r *Router) handleTerminalHistorico(w http.ResponseWriter, req *http.Reques
 		writeErr(w, 404, "session not found")
 		return
 	}
-	bytesPedidos := 0
+	requestedBytes := 0
 	if b := req.URL.Query().Get("bytes"); b != "" {
 		if n, err := strconv.Atoi(b); err == nil {
-			bytesPedidos = n
+			requestedBytes = n
 		}
 	}
-	data, total := ptysvc.HistoricoDaSessao(user, name, bytesPedidos)
+	data, total := ptysvc.SessionHistory(user, name, requestedBytes)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Vpsm-Hist-Total", strconv.Itoa(total))

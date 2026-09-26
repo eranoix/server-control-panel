@@ -22,11 +22,11 @@ import (
 // The test exercises the REAL DECISION (tamanhoAplicado.aceita) — replicating the rule
 // inside the test would keep it passing after someone removed the dedup from
 // the code, which is exactly the regression to protect against.
-type aplicacao struct{ cols, rows uint16 }
+type appliedSize struct{ cols, rows uint16 }
 
 // decideResizes runs the REAL DECISION the server takes for each resize
 // message, with a single client attached: the proxy's degenerate guard
-// (`tamanhoSao`) followed by the per-session reconciliation (`registraTamanho`), which is
+// (`sizeIsSane`) followed by the per-session reconciliation (`registerSize`), which is
 // what decides whether anything reaches the PTY.
 //
 // Replicating the rule inside the test would keep it passing after
@@ -37,11 +37,11 @@ type aplicacao struct{ cols, rows uint16 }
 // actually had, and with two clients that stopped the large client from recovering the
 // session after the small one left. The guarantees below are the same; what now
 // enforces them is the session.
-func decideResizes(t *testing.T, mensagens []string) []aplicacao {
+func decideResizes(t *testing.T, messages []string) []appliedSize {
 	t.Helper()
-	sessao := &logCompartilhado{}
-	var aplicadas []aplicacao
-	for _, raw := range mensagens {
+	session := &sharedLog{}
+	var applied []appliedSize
+	for _, raw := range messages {
 		var m ctrlMsg
 		if err := json.Unmarshal([]byte(raw), &m); err != nil {
 			t.Fatalf("invalid json in the test: %v", err)
@@ -49,17 +49,17 @@ func decideResizes(t *testing.T, mensagens []string) []aplicacao {
 		if m.Type != "resize" {
 			continue
 		}
-		if !tamanhoSao(m.Cols, m.Rows) {
+		if !sizeIsSane(m.Cols, m.Rows) {
 			continue
 		}
-		if cols, rows, mudou, _ := sessao.registraTamanho(1, m.Cols, m.Rows, false); mudou {
-			aplicadas = append(aplicadas, aplicacao{cols, rows})
+		if cols, rows, changed, _ := session.registerSize(1, m.Cols, m.Rows, false); changed {
+			applied = append(applied, appliedSize{cols, rows})
 		}
 	}
-	return aplicadas
+	return applied
 }
 
-func TestReafirmarOMesmoTamanhoNaoIncomodaOPrograma(t *testing.T) {
+func TestReassertingSameSizeDoesNotDisturbProgram(t *testing.T) {
 	// What the heartbeat does: repeat the same size indefinitely.
 	msgs := []string{
 		`{"type":"resize","cols":120,"rows":40}`,
@@ -67,16 +67,16 @@ func TestReafirmarOMesmoTamanhoNaoIncomodaOPrograma(t *testing.T) {
 		`{"type":"resize","cols":120,"rows":40}`,
 		`{"type":"resize","cols":120,"rows":40}`,
 	}
-	aplicadas := decideResizes(t, msgs)
-	if len(aplicadas) != 1 {
-		t.Fatalf("applied %d resizes for the same size; wanted 1 — repeated SIGWINCH makes the TUI app clear and repaint the screen on every heartbeat", len(aplicadas))
+	applied := decideResizes(t, msgs)
+	if len(applied) != 1 {
+		t.Fatalf("applied %d resizes for the same size; wanted 1 — repeated SIGWINCH makes the TUI app clear and repaint the screen on every heartbeat", len(applied))
 	}
-	if aplicadas[0] != (aplicacao{120, 40}) {
-		t.Errorf("applied %v, want 120x40", aplicadas[0])
+	if applied[0] != (appliedSize{120, 40}) {
+		t.Errorf("applied %v, want 120x40", applied[0])
 	}
 }
 
-func TestMudancaDeVerdadeAindaChegaAoPty(t *testing.T) {
+func TestRealChangeStillReachesPty(t *testing.T) {
 	// The dedup must not swallow a real change — that would trade one bug for another.
 	msgs := []string{
 		`{"type":"resize","cols":120,"rows":40}`,
@@ -85,14 +85,14 @@ func TestMudancaDeVerdadeAindaChegaAoPty(t *testing.T) {
 		`{"type":"resize","cols":121,"rows":40}`,
 		`{"type":"resize","cols":80,"rows":24}`,
 	}
-	aplicadas := decideResizes(t, msgs)
-	esperado := []aplicacao{{120, 40}, {121, 40}, {80, 24}}
-	if len(aplicadas) != len(esperado) {
-		t.Fatalf("applied %v; want %v", aplicadas, esperado)
+	applied := decideResizes(t, msgs)
+	expected := []appliedSize{{120, 40}, {121, 40}, {80, 24}}
+	if len(applied) != len(expected) {
+		t.Fatalf("applied %v; want %v", applied, expected)
 	}
-	for i := range esperado {
-		if aplicadas[i] != esperado[i] {
-			t.Errorf("resize %d = %v, want %v", i, aplicadas[i], esperado[i])
+	for i := range expected {
+		if applied[i] != expected[i] {
+			t.Errorf("resize %d = %v, want %v", i, applied[i], expected[i])
 		}
 	}
 }
@@ -100,31 +100,31 @@ func TestMudancaDeVerdadeAindaChegaAoPty(t *testing.T) {
 // Reconciliation is what fixes the screen after a divergence: the client
 // re-asserts and the server agrees again, even if the original resize was lost.
 // Without the dedup, this same sequence would bombard the PTY.
-func TestDivergenciaSeCorrigeNaReafirmacao(t *testing.T) {
+func TestDivergenceIsFixedOnReassertion(t *testing.T) {
 	msgs := []string{
 		`{"type":"resize","cols":80,"rows":24}`,  // estado inicial
 		`{"type":"resize","cols":120,"rows":40}`, // user switched windows; this one gets through
 		`{"type":"resize","cols":120,"rows":40}`, // heartbeat reafirma
 		`{"type":"resize","cols":120,"rows":40}`, // coming back to the window reasserts it
 	}
-	aplicadas := decideResizes(t, msgs)
-	if len(aplicadas) != 2 {
-		t.Fatalf("applied %d; wanted 2 (the initial one and the real change)", len(aplicadas))
+	applied := decideResizes(t, msgs)
+	if len(applied) != 2 {
+		t.Fatalf("applied %d; wanted 2 (the initial one and the real change)", len(applied))
 	}
-	if aplicadas[len(aplicadas)-1] != (aplicacao{120, 40}) {
-		t.Errorf("final state %v; the server has to end up agreeing with the client", aplicadas[len(aplicadas)-1])
+	if applied[len(applied)-1] != (appliedSize{120, 40}) {
+		t.Errorf("final state %v; the server has to end up agreeing with the client", applied[len(applied)-1])
 	}
 }
 
 // A degenerate size stays barred: a hidden or buggy client sending 1x1 would
 // make the program redraw into a single column — pure garbage.
-func TestTamanhoDegeneradoContinuaBarrado(t *testing.T) {
+func TestDegenerateSizeStillBlocked(t *testing.T) {
 	msgs := []string{
 		`{"type":"resize","cols":1,"rows":1}`,
 		`{"type":"resize","cols":0,"rows":0}`,
 		`{"type":"resize","cols":5000,"rows":5000}`,
 	}
-	if aplicadas := decideResizes(t, msgs); len(aplicadas) != 0 {
-		t.Errorf("applied %v; none of these sizes may reach the PTY", aplicadas)
+	if applied := decideResizes(t, msgs); len(applied) != 0 {
+		t.Errorf("applied %v; none of these sizes may reach the PTY", applied)
 	}
 }

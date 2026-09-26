@@ -9,34 +9,34 @@ import (
 	"time"
 )
 
-// escreveTranscript writes a minimal transcript with one assistant line.
-func escreveTranscript(t *testing.T, dir, nome string, tokens int64) {
+// writeTranscript writes a minimal transcript with one assistant line.
+func writeTranscript(t *testing.T, dir, nome string, tokens int64) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	linha := `{"type":"assistant","timestamp":"` + time.Now().UTC().Format(time.RFC3339) +
+	line := `{"type":"assistant","timestamp":"` + time.Now().UTC().Format(time.RFC3339) +
 		`","message":{"model":"claude-opus-5","usage":{"input_tokens":` +
 		strconv.FormatInt(tokens, 10) + `,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}` + "\n"
-	if err := os.WriteFile(filepath.Join(dir, nome), []byte(linha), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, nome), []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// escreveIdentidade writes the .claude.json with an email's oauthAccount.
+// writeIdentity writes the .claude.json with an email's oauthAccount.
 //
 // `dir` is the DEFAULT account's claudeHome, and for it the .claude.json lives
 // one level ABOVE (pathsFor: /root/.claude/ but /root/.claude.json). Writing it
 // inside leaves the identity unreadable — and an unreadable identity also yields
 // mismatch=false, meaning the positive test would pass without reading anything.
-func escreveIdentidade(t *testing.T, dir, email, uuid string) {
+func writeIdentity(t *testing.T, dir, email, uuid string) {
 	t.Helper()
-	escreveIdentidadeNoDir(t, filepath.Dir(dir), email, uuid)
+	writeIdentityInDir(t, filepath.Dir(dir), email, uuid)
 }
 
-// escreveIdentidadeNoDir writes the .claude.json exactly in the dir given (the
+// writeIdentityInDir writes the .claude.json exactly in the dir given (the
 // non-default accounts keep the file INSIDE their own config dir).
-func escreveIdentidadeNoDir(t *testing.T, dir, email, uuid string) {
+func writeIdentityInDir(t *testing.T, dir, email, uuid string) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
@@ -58,22 +58,22 @@ func escreveIdentidadeNoDir(t *testing.T, dir, email, uuid string) {
 //
 // The test that existed built projects/ as a REAL directory, which is exactly
 // the case that does not break. This one builds the case that did break.
-func TestUsageAtravessaProjectsSymlinkado(t *testing.T) {
+func TestUsageFollowsSymlinkedProjects(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
 
-	compartilhado := filepath.Join(base, "shared", "projects")
-	escreveTranscript(t, filepath.Join(compartilhado, "-repo"), "s1.jsonl", 1_000_000)
+	shared := filepath.Join(base, "shared", "projects")
+	writeTranscript(t, filepath.Join(shared, "-repo"), "s1.jsonl", 1_000_000)
 
 	home := filepath.Join(base, "claude-home")
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	// This is what the host has: projects/ is a link, not a directory.
-	if err := os.Symlink(compartilhado, filepath.Join(home, "projects")); err != nil {
+	if err := os.Symlink(shared, filepath.Join(home, "projects")); err != nil {
 		t.Fatal(err)
 	}
-	escreveIdentidade(t, home, "jordan@northwind.example", "uuid-jordan")
+	writeIdentity(t, home, "jordan@northwind.example", "uuid-jordan")
 
 	s, err := Open(base, home)
 	if err != nil {
@@ -89,8 +89,8 @@ func TestUsageAtravessaProjectsSymlinkado(t *testing.T) {
 	if u.Sessions != 1 {
 		t.Errorf("sessions=%d, wanted 1", u.Sessions)
 	}
-	if u.Dir != mustEval(t, compartilhado) {
-		t.Errorf("Dir=%q, wanted the resolved tree %q", u.Dir, compartilhado)
+	if u.Dir != mustEval(t, shared) {
+		t.Errorf("Dir=%q, wanted the resolved tree %q", u.Dir, shared)
 	}
 }
 
@@ -106,14 +106,14 @@ func mustEval(t *testing.T, p string) string {
 // An empty sweep must NOT be indistinguishable from "account with no usage": it
 // was that ambiguity that kept the symlink regression invisible. A card with no
 // number has to say why.
-func TestUsageVaziaExplicaOMotivo(t *testing.T) {
+func TestEmptyUsageExplainsReason(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
 	home := filepath.Join(base, "claude-home")
 	if err := os.MkdirAll(filepath.Join(home, "projects"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	escreveIdentidade(t, home, "jordan@northwind.example", "uuid-jordan")
+	writeIdentity(t, home, "jordan@northwind.example", "uuid-jordan")
 
 	s, _ := Open(base, home)
 	jordan, _ := s.AccountByID("jordan")
@@ -132,22 +132,22 @@ func TestUsageVaziaExplicaOMotivo(t *testing.T) {
 // panel drew sam's quota and tokens under the label "Jordan": the same account
 // twice, one of them with the wrong name. A plausible number under the wrong
 // name is worse than no number at all, because nothing about it looks wrong.
-func TestSlotComCredencialDeOutraContaNaoMostraNumero(t *testing.T) {
+func TestSlotWithOtherAccountCredentialHidesNumber(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
 
-	compartilhado := filepath.Join(base, "shared", "projects")
-	escreveTranscript(t, filepath.Join(compartilhado, "-repo"), "s1.jsonl", 5_000_000)
+	shared := filepath.Join(base, "shared", "projects")
+	writeTranscript(t, filepath.Join(shared, "-repo"), "s1.jsonl", 5_000_000)
 
 	home := filepath.Join(base, "claude-home")
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(compartilhado, filepath.Join(home, "projects")); err != nil {
+	if err := os.Symlink(shared, filepath.Join(home, "projects")); err != nil {
 		t.Fatal(err)
 	}
 	// The jordan slot declares jordan, but the credential in the dir is sam's.
-	escreveIdentidade(t, home, "sam.rivera@personal.example", "uuid-sam")
+	writeIdentity(t, home, "sam.rivera@personal.example", "uuid-sam")
 
 	s, _ := Open(base, home)
 	jordan, _ := s.AccountByID("jordan")
@@ -179,21 +179,21 @@ func TestSlotComCredencialDeOutraContaNaoMostraNumero(t *testing.T) {
 
 // The identity declared in the registry is an INTENTION; the credential on disk
 // is the fact. When they match nothing is blocked — the gate must not be a general brake.
-func TestIdentidadeQueBateNaoBloqueia(t *testing.T) {
+func TestMatchingIdentityDoesNotBlock(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
 
-	compartilhado := filepath.Join(base, "shared", "projects")
-	escreveTranscript(t, filepath.Join(compartilhado, "-repo"), "s1.jsonl", 7_000_000)
+	shared := filepath.Join(base, "shared", "projects")
+	writeTranscript(t, filepath.Join(shared, "-repo"), "s1.jsonl", 7_000_000)
 
 	home := filepath.Join(base, "claude-home")
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(compartilhado, filepath.Join(home, "projects")); err != nil {
+	if err := os.Symlink(shared, filepath.Join(home, "projects")); err != nil {
 		t.Fatal(err)
 	}
-	escreveIdentidade(t, home, "Jordan@Northwind.example ", "uuid-jordan") // case/space do not matter
+	writeIdentity(t, home, "Jordan@Northwind.example ", "uuid-jordan") // case/space do not matter
 
 	s, _ := Open(base, home)
 	jordan, _ := s.AccountByID("jordan")

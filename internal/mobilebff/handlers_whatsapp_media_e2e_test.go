@@ -132,11 +132,11 @@ func e2eMediaURL(srv *httptest.Server, jid, msgID string) string {
 	return srv.URL + Prefix + "/whatsapp/chats/" + jid + "/media/" + msgID
 }
 
-// TestE2E_WhatsAppMedia_RangeRequest_Devolve206ComContentRange proves, via a
+// TestE2E_WhatsAppMedia_RangeRequest_Returns206WithContentRange proves, via a
 // real HTTP request (a real TCP socket, not an in-memory ServeHTTP),
 // that the media GET route returns 206 Partial Content with correct
 // Content-Range and Accept-Ranges when the client asks for a byte range.
-func TestE2E_WhatsAppMedia_RangeRequest_Devolve206ComContentRange(t *testing.T) {
+func TestE2E_WhatsAppMedia_RangeRequest_Returns206WithContentRange(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/arquivo.bin"
 	content := []byte("0123456789ABCDEFGHIJ") // 20 bytes, indices 0-19
@@ -210,11 +210,11 @@ func TestE2E_WhatsAppMedia_RangeInsatisfazivel_Devolve416(t *testing.T) {
 	}
 }
 
-// TestE2E_WhatsAppMedia_SemRange_NaoComprimeMidia proves that a full response
+// TestE2E_WhatsAppMedia_NoRange_DoesNotCompressMedia proves that a full response
 // (no Range) of a media Content-Type does not come out gzipped — media is
 // already incompressible binary and isCompressible excludes image/*, so Compress
 // must bypass even with the client announcing Accept-Encoding: gzip.
-func TestE2E_WhatsAppMedia_SemRange_NaoComprimeMidia(t *testing.T) {
+func TestE2E_WhatsAppMedia_NoRange_DoesNotCompressMedia(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/arquivo.bin"
 	content := []byte("conteudo binario de mentirinha, mas grande o bastante pra passar do minGzipBytes se fosse texto comprimivel " +
@@ -250,13 +250,13 @@ func TestE2E_WhatsAppMedia_SemRange_NaoComprimeMidia(t *testing.T) {
 	}
 }
 
-// TestE2E_WhatsAppMedia_ConcorrenciaReal_ColapsaEmUmDownload fires N real
+// TestE2E_WhatsAppMedia_RealConcurrency_CollapsesIntoOneDownload fires N real
 // concurrent HTTP requests (goroutines + srv.Client().Do)
 // for the SAME (jid,msgID) on a simulated cache miss (downloadDelay>0) and proves
 // that the backend only "downloads" once — without that protection, N users opening
 // the same not-yet-cached thumbnail would fire N simultaneous downloads of the
 // same remote file.
-func TestE2E_WhatsAppMedia_ConcorrenciaReal_ColapsaEmUmDownload(t *testing.T) {
+func TestE2E_WhatsAppMedia_RealConcurrency_CollapsesIntoOneDownload(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/arquivo.bin"
 	if err := os.WriteFile(path, []byte("bytes-da-midia"), 0o600); err != nil {

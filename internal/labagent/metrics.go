@@ -17,41 +17,41 @@ import (
 // chain for no gain at all. The project's own rules list client_golang as an
 // option; this is the measured justification for not exercising it here.
 
-type chaveOp struct{ nome, resultado string }
+type opKey struct{ nome, result string }
 
 // Metricas accumulates what the agent publishes.
-type Metricas struct {
-	No     string
-	inicio time.Time
+type Metrics struct {
+	No    string
+	start time.Time
 
 	mu  sync.Mutex
-	ops map[chaveOp]uint64
+	ops map[opKey]uint64
 }
 
-func NovasMetricas(no string) *Metricas {
-	return &Metricas{No: no, inicio: time.Now(), ops: map[chaveOp]uint64{}}
+func NewMetrics(no string) *Metrics {
+	return &Metrics{No: no, start: time.Now(), ops: map[opKey]uint64{}}
 }
 
 // Conta records one execution by operation name and outcome
 // (ok / erro / desconhecida / grande).
-func (m *Metricas) Conta(nome, resultado string) {
+func (m *Metrics) Count(nome, result string) {
 	if m == nil {
 		return
 	}
 	m.mu.Lock()
-	m.ops[chaveOp{nome, resultado}]++
+	m.ops[opKey{nome, result}]++
 	m.mu.Unlock()
 }
 
 // Render returns the body of /metrics.
-func (m *Metricas) Render() string {
+func (m *Metrics) Render() string {
 	var b strings.Builder
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 
 	fmt.Fprintf(&b, "# HELP lab_agent_uptime_seconds Time since the agent started.\n")
 	fmt.Fprintf(&b, "# TYPE lab_agent_uptime_seconds gauge\n")
-	fmt.Fprintf(&b, "lab_agent_uptime_seconds{no=%q} %.0f\n", m.No, time.Since(m.inicio).Seconds())
+	fmt.Fprintf(&b, "lab_agent_uptime_seconds{no=%q} %.0f\n", m.No, time.Since(m.start).Seconds())
 
 	fmt.Fprintf(&b, "# HELP lab_agent_goroutines Live goroutines.\n")
 	fmt.Fprintf(&b, "# TYPE lab_agent_goroutines gauge\n")
@@ -65,20 +65,20 @@ func (m *Metricas) Render() string {
 	fmt.Fprintf(&b, "# TYPE lab_agent_ops_total counter\n")
 
 	m.mu.Lock()
-	chaves := make([]chaveOp, 0, len(m.ops))
+	keys := make([]opKey, 0, len(m.ops))
 	for k := range m.ops {
-		chaves = append(chaves, k)
+		keys = append(keys, k)
 	}
 	// Stable ordering: metric output whose order changes on every scrape is
 	// noise in a diff and gets in the way of any manual comparison.
-	sort.Slice(chaves, func(i, j int) bool {
-		if chaves[i].nome != chaves[j].nome {
-			return chaves[i].nome < chaves[j].nome
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].nome != keys[j].nome {
+			return keys[i].nome < keys[j].nome
 		}
-		return chaves[i].resultado < chaves[j].resultado
+		return keys[i].result < keys[j].result
 	})
-	for _, k := range chaves {
-		fmt.Fprintf(&b, "lab_agent_ops_total{no=%q,op=%q,resultado=%q} %d\n", m.No, k.nome, k.resultado, m.ops[k])
+	for _, k := range keys {
+		fmt.Fprintf(&b, "lab_agent_ops_total{no=%q,op=%q,resultado=%q} %d\n", m.No, k.nome, k.result, m.ops[k])
 	}
 	m.mu.Unlock()
 

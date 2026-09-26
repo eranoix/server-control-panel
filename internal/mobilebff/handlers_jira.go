@@ -489,13 +489,13 @@ func registerJira(api huma.API, deps Deps) {
 
 // --- handlers ----------------------------------------------------------------
 
-// clienteJira resolves the authenticated user's client.
+// jiraClient resolves the authenticated user's client.
 //
 // It distinguishes three situations that must not collapse into the same
 // response: the BFF with no Jira configured (503 — a server problem), the user
 // with no connected account (the caller handles it, because on the board screen
 // that is the connection form) and a real credential error.
-func clienteJira(ctx context.Context, deps Deps) (*jira.Client, string, error) {
+func jiraClient(ctx context.Context, deps Deps) (*jira.Client, string, error) {
 	user := auth.UserFromContext(ctx)
 	if user == "" {
 		return nil, "", huma.Error401Unauthorized("unauthorized")
@@ -510,20 +510,20 @@ func clienteJira(ctx context.Context, deps Deps) (*jira.Client, string, error) {
 	return cli, user, nil
 }
 
-// naoConectado tells whether the error is "this account has not connected Jira
+// notConnected tells whether the error is "this account has not connected Jira
 // yet" — the normal situation for someone who never configured it, not a failure.
-func naoConectado(err error) bool { return errors.Is(err, jira.ErrNotConfigured) }
+func notConnected(err error) bool { return errors.Is(err, jira.ErrNotConfigured) }
 
 func jiraBoardHandler(deps Deps) func(context.Context, *jiraBoardInput) (*jiraBoardOutput, error) {
 	return func(ctx context.Context, in *jiraBoardInput) (*jiraBoardOutput, error) {
 		out := &jiraBoardOutput{}
-		out.Body.Filters = FiltrosDoQuadro(false)
-		out.Body.Filter = filtroValido(in.Filter, false)
+		out.Body.Filters = BoardFilters(false)
+		out.Body.Filter = validFilter(in.Filter, false)
 		out.Body.Columns = []JiraBoardColumn{}
 
-		cli, user, err := clienteJira(ctx, deps)
+		cli, user, err := jiraClient(ctx, deps)
 		if err != nil {
-			if naoConectado(err) {
+			if notConnected(err) {
 				return out, nil // connected:false, HTTP 200
 			}
 			return nil, err
@@ -535,11 +535,11 @@ func jiraBoardHandler(deps Deps) func(context.Context, *jiraBoardInput) (*jiraBo
 		if deps.JiraConfigFor != nil {
 			cfg = deps.JiraConfigFor(user)
 		}
-		projeto := strings.TrimSpace(in.Project)
-		if projeto == "" {
-			projeto = cfg.ProjectKey
+		project := strings.TrimSpace(in.Project)
+		if project == "" {
+			project = cfg.ProjectKey
 		}
-		out.Body.Project = projeto
+		out.Body.Project = project
 
 		if me, err := cli.Myself(ctx); err == nil && me != nil {
 			out.Body.Me = &JiraUserRef{AccountID: me.AccountID, DisplayName: me.DisplayName}
@@ -557,11 +557,11 @@ func jiraBoardHandler(deps Deps) func(context.Context, *jiraBoardInput) (*jiraBo
 		// two different boards depending on whether the app already knew where it
 		// was, and with a board_jql that returns zero the board opened empty and
 		// filled up on refresh.
-		temQuadroProprio := strings.TrimSpace(cfg.BoardJQL) != ""
-		out.Body.Filters = FiltrosDoQuadro(temQuadroProprio)
-		out.Body.Filter = filtroValido(in.Filter, temQuadroProprio)
+		hasOwnBoard := strings.TrimSpace(cfg.BoardJQL) != ""
+		out.Body.Filters = BoardFilters(hasOwnBoard)
+		out.Body.Filter = validFilter(in.Filter, hasOwnBoard)
 
-		jql := JQLDoFiltro(out.Body.Filter, projeto, in.JQL, cfg.BoardJQL)
+		jql := FilterJQL(out.Body.Filter, project, in.JQL, cfg.BoardJQL)
 		out.Body.JQL = jql
 
 		// The quota is PER COLUMN, and that is the fix: with a single search, a
@@ -569,29 +569,29 @@ func jiraBoardHandler(deps Deps) func(context.Context, *jiraBoardInput) (*jiraBo
 		// same column showed two cards under one filter and one under another.
 		// Nobody scrolls through four hundred done issues to find out what is left
 		// to do.
-		porColuna := in.Max
-		if porColuna <= 0 || porColuna > 100 {
-			porColuna = 40
+		perColumn := in.Max
+		if perColumn <= 0 || perColumn > 100 {
+			perColumn = 40
 		}
-		issues, recusa := buscarPorColuna(ctx, cli, cfg.BoardColumns, jql, porColuna)
-		if recusa != "" && len(issues) == 0 {
+		issues, rejection := searchByColumn(ctx, cli, cfg.BoardColumns, jql, perColumn)
+		if rejection != "" && len(issues) == 0 {
 			// A refusal from Jira does NOT wipe the screen: the app keeps project,
 			// filters and user, and shows the reason in place of the cards.
-			out.Body.Error = recusa
-			out.Body.Columns = MontarQuadro(cfg.BoardColumns, nil, 0, "", time.Now())
+			out.Body.Error = rejection
+			out.Body.Columns = BuildBoard(cfg.BoardColumns, nil, 0, "", time.Now())
 			return out, nil
 		}
 		// A column that failed on its own does not wipe the ones that came
 		// through: the refusal shows on top of the board, with the cards we got.
-		out.Body.Error = recusa
-		issues = FiltrarPorBusca(issues, in.Search)
+		out.Body.Error = rejection
+		issues = FilterBySearch(issues, in.Search)
 		out.Body.Total = len(issues)
-		out.Body.Columns = MontarQuadro(cfg.BoardColumns, issues, in.HideDoneDays, in.Sort, time.Now())
+		out.Body.Columns = BuildBoard(cfg.BoardColumns, issues, in.HideDoneDays, in.Sort, time.Now())
 		return out, nil
 	}
 }
 
-// buscarPorColuna runs ONE query per column, in parallel, and returns the union.
+// searchByColumn runs ONE query per column, in parallel, and returns the union.
 //
 // In parallel because these are three to six network calls that do not depend
 // on one another; in series, the board would open in the sum of Jira's
@@ -599,58 +599,58 @@ func jiraBoardHandler(deps Deps) func(context.Context, *jiraBoardInput) (*jiraBo
 //
 // The union is deduplicated by key: an issue can match two columns when the
 // operator configures overlapping names, and duplicating it would make the same
-// card appear twice. Who decides where it lands is [MontarQuadro] — the same
+// card appear twice. Who decides where it lands is [BuildBoard] — the same
 // function the rest of the file uses, and the first matching column wins.
 //
 // A column with no possible restriction (crooked configuration) falls back to
 // the original query: better a board with the old quota than a column left
 // empty with no explanation.
-func buscarPorColuna(
+func searchByColumn(
 	ctx context.Context,
 	cli *jira.Client,
-	colunasBrutas, jql string,
-	porColuna int,
+	rawColumns, jql string,
+	perColumn int,
 ) ([]jira.Issue, string) {
-	colunas := MontarQuadro(colunasBrutas, nil, 0, "", time.Now())
-	onde, ordem := DividirJQL(jql)
+	columns := BuildBoard(rawColumns, nil, 0, "", time.Now())
+	where, order := SplitJQL(jql)
 
-	consultas := make([]string, 0, len(colunas))
-	for _, col := range colunas {
-		restricao := RestricaoDaColuna(col, colunas)
-		if restricao == "" {
+	queries := make([]string, 0, len(columns))
+	for _, col := range columns {
+		restriction := ColumnRestriction(col, columns)
+		if restriction == "" {
 			// No way to isolate this column: a single query, as before.
-			consultas = []string{jql}
+			queries = []string{jql}
 			break
 		}
-		consultas = append(consultas, JQLDaColuna(onde, ordem, restricao))
+		queries = append(queries, ColumnJQL(where, order, restriction))
 	}
-	if len(consultas) == 0 {
-		consultas = []string{jql}
+	if len(queries) == 0 {
+		queries = []string{jql}
 	}
 
-	type resultado struct {
+	type result struct {
 		issues []jira.Issue
 		err    error
 	}
-	res := make([]resultado, len(consultas))
+	res := make([]result, len(queries))
 	var wg sync.WaitGroup
-	for i, q := range consultas {
+	for i, q := range queries {
 		wg.Add(1)
 		go func(i int, q string) {
 			defer wg.Done()
-			issues, _, err := cli.Search(ctx, q, 0, porColuna)
-			res[i] = resultado{issues: issues, err: err}
+			issues, _, err := cli.Search(ctx, q, 0, perColumn)
+			res[i] = result{issues: issues, err: err}
 		}(i, q)
 	}
 	wg.Wait()
 
 	vistas := map[string]bool{}
-	uniao := make([]jira.Issue, 0, porColuna*len(consultas))
-	primeiroErro := ""
+	union := make([]jira.Issue, 0, perColumn*len(queries))
+	firstErr := ""
 	for _, r := range res {
 		if r.err != nil {
-			if primeiroErro == "" {
-				primeiroErro = r.err.Error()
+			if firstErr == "" {
+				firstErr = r.err.Error()
 			}
 			continue
 		}
@@ -659,15 +659,15 @@ func buscarPorColuna(
 				continue
 			}
 			vistas[is.Key] = true
-			uniao = append(uniao, is)
+			union = append(union, is)
 		}
 	}
-	return uniao, primeiroErro
+	return union, firstErr
 }
 
-func filtroValido(f string, comQuadroProprio bool) string {
+func validFilter(f string, withOwnBoard bool) string {
 	f = strings.TrimSpace(strings.ToLower(f))
-	for _, opt := range FiltrosDoQuadro(comQuadroProprio) {
+	for _, opt := range BoardFilters(withOwnBoard) {
 		if opt.Key == f {
 			return f
 		}
@@ -675,61 +675,61 @@ func filtroValido(f string, comQuadroProprio bool) string {
 	return "all"
 }
 
-// colunaPorRotulo finds again the column the app returned.
+// columnByLabel finds again the column the app returned.
 //
 // The label is the key because the label is what travelled to the screen and
 // back. A column that no longer exists (the operator reconfigured the board
 // between the load and the drag) is a 400 naming it — better than moving to a
 // similar-looking column and letting the person find out later.
-func colunaPorRotulo(colunasBrutas, rotulo string) (JiraBoardColumn, error) {
-	rotulo = strings.TrimSpace(rotulo)
-	if rotulo == "" {
+func columnByLabel(rawColumns, label string) (JiraBoardColumn, error) {
+	label = strings.TrimSpace(label)
+	if label == "" {
 		return JiraBoardColumn{}, huma.Error400BadRequest("column is required")
 	}
-	for _, c := range MontarQuadro(colunasBrutas, nil, 0, "", time.Now()) {
-		if strings.EqualFold(c.Label, rotulo) {
+	for _, c := range BuildBoard(rawColumns, nil, 0, "", time.Now()) {
+		if strings.EqualFold(c.Label, label) {
 			return c, nil
 		}
 	}
 	return JiraBoardColumn{}, huma.Error400BadRequest(
-		fmt.Sprintf("column %q does not exist on this board — it may have been reconfigured since the screen loaded", rotulo))
+		fmt.Sprintf("column %q does not exist on this board — it may have been reconfigured since the screen loaded", label))
 }
 
-func colunasBrutasDe(deps Deps, user string) string {
+func rawColumnsFor(deps Deps, user string) string {
 	if deps.JiraConfigFor == nil {
 		return ""
 	}
 	return deps.JiraConfigFor(user).BoardColumns
 }
 
-// moverUma is the core shared between dragging one card and the bulk action.
+// moveOne is the core shared between dragging one card and the bulk action.
 //
 // It returns the resulting status. The error already reads as something written
 // for a human: when there is no transition, it says where it IS possible to go
 // from there, which is the only information capable of turning a refusal into a
 // next step.
-func moverUma(ctx context.Context, cli *jira.Client, col JiraBoardColumn, key string) (string, error) {
+func moveOne(ctx context.Context, cli *jira.Client, col JiraBoardColumn, key string) (string, error) {
 	trs, err := cli.Transitions(ctx, key)
 	if err != nil {
 		return "", err
 	}
-	tr := TransicaoParaColuna(col, trs)
+	tr := TransitionToColumn(col, trs)
 	if tr == nil {
 		// Before crying refusal, check whether the issue is not already there:
 		// the board on screen may have gone stale, and "already in X" is a very
 		// different answer from "the workflow forbids it".
-		if det, e := cli.GetIssue(ctx, key); e == nil && det != nil && issueCaiNaColuna(det.Issue, col) {
+		if det, e := cli.GetIssue(ctx, key); e == nil && det != nil && issueInColumn(det.Issue, col) {
 			return det.Status.Name, nil
 		}
-		destinos := make([]string, 0, len(trs))
+		destinations := make([]string, 0, len(trs))
 		for _, t := range trs {
-			destinos = append(destinos, t.ToName)
+			destinations = append(destinations, t.ToName)
 		}
-		if len(destinos) == 0 {
+		if len(destinations) == 0 {
 			return "", fmt.Errorf("the workflow offers no transition for %s from the current state", key)
 		}
 		return "", fmt.Errorf("the workflow does not take %s to %q; from here you can only go to: %s",
-			key, col.Label, strings.Join(destinos, ", "))
+			key, col.Label, strings.Join(destinations, ", "))
 	}
 	if err := cli.Transition(ctx, key, tr.ID); err != nil {
 		return "", err
@@ -739,7 +739,7 @@ func moverUma(ctx context.Context, cli *jira.Client, col JiraBoardColumn, key st
 
 func jiraMoveHandler(deps Deps) func(context.Context, *jiraMoveInput) (*jiraMoveOutput, error) {
 	return func(ctx context.Context, in *jiraMoveInput) (*jiraMoveOutput, error) {
-		cli, user, err := clienteJira(ctx, deps)
+		cli, user, err := jiraClient(ctx, deps)
 		if err != nil {
 			return nil, err
 		}
@@ -747,11 +747,11 @@ func jiraMoveHandler(deps Deps) func(context.Context, *jiraMoveInput) (*jiraMove
 		if key == "" {
 			return nil, huma.Error400BadRequest("key is required")
 		}
-		col, err := colunaPorRotulo(colunasBrutasDe(deps, user), in.Body.Column)
+		col, err := columnByLabel(rawColumnsFor(deps, user), in.Body.Column)
 		if err != nil {
 			return nil, err
 		}
-		status, err := moverUma(ctx, cli, col, key)
+		status, err := moveOne(ctx, cli, col, key)
 		if err != nil {
 			// 409 and not 500: the server is fine, it is the ACTION that does not fit
 			// the current state. It is the code the app uses to send the card back to
@@ -768,7 +768,7 @@ func jiraMoveHandler(deps Deps) func(context.Context, *jiraMoveInput) (*jiraMove
 
 func jiraIssueHandler(deps Deps) func(context.Context, *jiraIssueInput) (*jiraIssueOutput, error) {
 	return func(ctx context.Context, in *jiraIssueInput) (*jiraIssueOutput, error) {
-		cli, user, err := clienteJira(ctx, deps)
+		cli, user, err := jiraClient(ctx, deps)
 		if err != nil {
 			return nil, err
 		}
@@ -781,7 +781,7 @@ func jiraIssueHandler(deps Deps) func(context.Context, *jiraIssueInput) (*jiraIs
 			return nil, huma.Error502BadGateway(err.Error())
 		}
 
-		colunas := MontarQuadro(colunasBrutasDe(deps, user), []jira.Issue{det.Issue}, 0, "", time.Now())
+		columns := BuildBoard(rawColumnsFor(deps, user), []jira.Issue{det.Issue}, 0, "", time.Now())
 
 		body := JiraIssueResponse{
 			Key:         det.Key,
@@ -789,7 +789,7 @@ func jiraIssueHandler(deps Deps) func(context.Context, *jiraIssueInput) (*jiraIs
 			Description: det.Description,
 			Status:      det.Status.Name,
 			Category:    det.Status.StatusCategory.Key,
-			Column:      rotuloDaColunaDe(colunas, det.Key),
+			Column:      columnLabelOf(columns, det.Key),
 			Labels:      det.Labels,
 			Created:     det.Created,
 			Updated:     det.Updated,
@@ -802,11 +802,11 @@ func jiraIssueHandler(deps Deps) func(context.Context, *jiraIssueInput) (*jiraIs
 		if det.Priority != nil {
 			body.Priority = det.Priority.Name
 		}
-		body.Assignee = refDeUsuario(det.Assignee)
-		body.Reporter = refDeUsuario(det.Reporter)
+		body.Assignee = userRef(det.Assignee)
+		body.Reporter = userRef(det.Reporter)
 
 		for _, s := range det.Subtasks {
-			body.Subtasks = append(body.Subtasks, cartaoDoQuadro(s))
+			body.Subtasks = append(body.Subtasks, boardCard(s))
 		}
 		for _, l := range det.IssueLinks {
 			ref := JiraIssueLinkRef{Relation: l.Relation}
@@ -829,10 +829,10 @@ func jiraIssueHandler(deps Deps) func(context.Context, *jiraIssueInput) (*jiraIs
 			}
 		}
 		if trs, err := cli.Transitions(ctx, key); err == nil {
-			todas := MontarQuadro(colunasBrutasDe(deps, user), nil, 0, "", time.Now())
+			all := BuildBoard(rawColumnsFor(deps, user), nil, 0, "", time.Now())
 			for _, t := range trs {
 				body.Moves = append(body.Moves, JiraMoveOption{
-					Column: rotuloDeDestino(todas, t),
+					Column: destinationLabel(all, t),
 					Status: t.ToName,
 					Name:   t.Name,
 				})
@@ -845,8 +845,8 @@ func jiraIssueHandler(deps Deps) func(context.Context, *jiraIssueInput) (*jiraIs
 	}
 }
 
-func rotuloDaColunaDe(colunas []JiraBoardColumn, key string) string {
-	for _, c := range colunas {
+func columnLabelOf(columns []JiraBoardColumn, key string) string {
+	for _, c := range columns {
 		for _, card := range c.Cards {
 			if card.Key == key {
 				return c.Label
@@ -856,12 +856,12 @@ func rotuloDaColunaDe(colunas []JiraBoardColumn, key string) string {
 	return ""
 }
 
-// rotuloDeDestino translates a transition's destination into the label of the
+// destinationLabel translates a transition's destination into the label of the
 // column it lands in. Without that translation, the menu would offer
 // "EM REVISÃO" while the board shows "Em andamento" — two languages for the
 // same square.
-func rotuloDeDestino(colunas []JiraBoardColumn, t jira.Transition) string {
-	for _, c := range colunas {
+func destinationLabel(columns []JiraBoardColumn, t jira.Transition) string {
+	for _, c := range columns {
 		if c.Category != "" && c.Category == t.ToCat {
 			return c.Label
 		}
@@ -874,7 +874,7 @@ func rotuloDeDestino(colunas []JiraBoardColumn, t jira.Transition) string {
 	return t.ToName
 }
 
-func refDeUsuario(u *jira.User) *JiraUserRef {
+func userRef(u *jira.User) *JiraUserRef {
 	if u == nil {
 		return nil
 	}
@@ -883,16 +883,16 @@ func refDeUsuario(u *jira.User) *JiraUserRef {
 
 func jiraCommentHandler(deps Deps) func(context.Context, *jiraCommentInput) (*jiraCommentOutput, error) {
 	return func(ctx context.Context, in *jiraCommentInput) (*jiraCommentOutput, error) {
-		cli, user, err := clienteJira(ctx, deps)
+		cli, user, err := jiraClient(ctx, deps)
 		if err != nil {
 			return nil, err
 		}
 		key := strings.TrimSpace(in.Body.Key)
-		texto := strings.TrimSpace(in.Body.Text)
-		if key == "" || texto == "" {
+		text := strings.TrimSpace(in.Body.Text)
+		if key == "" || text == "" {
 			return nil, huma.Error400BadRequest("key and text are required")
 		}
-		c, err := cli.AddComment(ctx, key, texto)
+		c, err := cli.AddComment(ctx, key, text)
 		if err != nil {
 			return nil, huma.Error502BadGateway(err.Error())
 		}
@@ -906,7 +906,7 @@ func jiraCommentHandler(deps Deps) func(context.Context, *jiraCommentInput) (*ji
 
 func jiraAssignHandler(deps Deps) func(context.Context, *jiraAssignInput) (*statusOutput, error) {
 	return func(ctx context.Context, in *jiraAssignInput) (*statusOutput, error) {
-		cli, user, err := clienteJira(ctx, deps)
+		cli, user, err := jiraClient(ctx, deps)
 		if err != nil {
 			return nil, err
 		}
@@ -928,21 +928,21 @@ func jiraAssignHandler(deps Deps) func(context.Context, *jiraAssignInput) (*stat
 
 func jiraUsersHandler(deps Deps) func(context.Context, *jiraUsersInput) (*jiraUsersOutput, error) {
 	return func(ctx context.Context, in *jiraUsersInput) (*jiraUsersOutput, error) {
-		cli, _, err := clienteJira(ctx, deps)
+		cli, _, err := jiraClient(ctx, deps)
 		if err != nil {
 			return nil, err
 		}
-		projeto := strings.TrimSpace(in.Project)
-		if projeto == "" {
+		project := strings.TrimSpace(in.Project)
+		if project == "" {
 			return nil, huma.Error400BadRequest("project is required")
 		}
-		lista, err := cli.AssignableUsers(ctx, projeto, strings.TrimSpace(in.Query))
+		list, err := cli.AssignableUsers(ctx, project, strings.TrimSpace(in.Query))
 		if err != nil {
 			return nil, huma.Error502BadGateway(err.Error())
 		}
 		out := &jiraUsersOutput{}
 		out.Body.Users = []JiraUserRef{}
-		for _, u := range lista {
+		for _, u := range list {
 			out.Body.Users = append(out.Body.Users, JiraUserRef{
 				AccountID: u.AccountID, DisplayName: u.DisplayName, AvatarURL: u.AvatarURL(),
 			})
@@ -953,20 +953,20 @@ func jiraUsersHandler(deps Deps) func(context.Context, *jiraUsersInput) (*jiraUs
 
 func jiraMetaHandler(deps Deps) func(context.Context, *jiraMetaInput) (*jiraMetaOutput, error) {
 	return func(ctx context.Context, in *jiraMetaInput) (*jiraMetaOutput, error) {
-		cli, _, err := clienteJira(ctx, deps)
+		cli, _, err := jiraClient(ctx, deps)
 		if err != nil {
 			return nil, err
 		}
-		projeto := strings.TrimSpace(in.Project)
-		if projeto == "" {
+		project := strings.TrimSpace(in.Project)
+		if project == "" {
 			return nil, huma.Error400BadRequest("project is required")
 		}
 		out := &jiraMetaOutput{}
 		out.Body.IssueTypes = []string{}
 		out.Body.Priorities = []string{}
 
-		if tipos, err := cli.IssueTypesForProject(ctx, projeto); err == nil {
-			for _, t := range tipos {
+		if kinds, err := cli.IssueTypesForProject(ctx, project); err == nil {
+			for _, t := range kinds {
 				// A subtask requires a parent issue; offering it in a form that does not
 				// ask for a parent would produce a 400 from Jira on submit.
 				if t.Subtask {
@@ -986,7 +986,7 @@ func jiraMetaHandler(deps Deps) func(context.Context, *jiraMetaInput) (*jiraMeta
 
 func jiraCreateHandler(deps Deps) func(context.Context, *jiraCreateInput) (*jiraCreatedOutput, error) {
 	return func(ctx context.Context, in *jiraCreateInput) (*jiraCreatedOutput, error) {
-		cli, user, err := clienteJira(ctx, deps)
+		cli, user, err := jiraClient(ctx, deps)
 		if err != nil {
 			return nil, err
 		}
@@ -994,7 +994,7 @@ func jiraCreateHandler(deps Deps) func(context.Context, *jiraCreateInput) (*jira
 		if strings.TrimSpace(b.Project) == "" || strings.TrimSpace(b.Summary) == "" || strings.TrimSpace(b.Type) == "" {
 			return nil, huma.Error400BadRequest("project, type and summary are required")
 		}
-		criada, err := cli.CreateIssue(ctx, jira.CreateIssueRequest{
+		created, err := cli.CreateIssue(ctx, jira.CreateIssueRequest{
 			ProjectKey:  strings.TrimSpace(b.Project),
 			IssueType:   strings.TrimSpace(b.Type),
 			Summary:     strings.TrimSpace(b.Summary),
@@ -1008,24 +1008,24 @@ func jiraCreateHandler(deps Deps) func(context.Context, *jiraCreateInput) (*jira
 		if err != nil {
 			return nil, huma.Error502BadGateway(err.Error())
 		}
-		auditar(ctx, deps.Audit, user, "jira.issue.create", criada.Key)
+		auditar(ctx, deps.Audit, user, "jira.issue.create", created.Key)
 
 		out := &jiraCreatedOutput{}
-		out.Body.Key = criada.Key
+		out.Body.Key = created.Key
 		return out, nil
 	}
 }
 
 func jiraBulkMoveHandler(deps Deps) func(context.Context, *jiraBulkMoveInput) (*jiraBulkOutput, error) {
 	return func(ctx context.Context, in *jiraBulkMoveInput) (*jiraBulkOutput, error) {
-		cli, user, err := clienteJira(ctx, deps)
+		cli, user, err := jiraClient(ctx, deps)
 		if err != nil {
 			return nil, err
 		}
 		if len(in.Body.Keys) == 0 {
 			return nil, huma.Error400BadRequest("keys is required")
 		}
-		col, err := colunaPorRotulo(colunasBrutasDe(deps, user), in.Body.Column)
+		col, err := columnByLabel(rawColumnsFor(deps, user), in.Body.Column)
 		if err != nil {
 			return nil, err
 		}
@@ -1036,7 +1036,7 @@ func jiraBulkMoveHandler(deps Deps) func(context.Context, *jiraBulkMoveInput) (*
 			if key == "" {
 				continue
 			}
-			if _, err := moverUma(ctx, cli, col, key); err != nil {
+			if _, err := moveOne(ctx, cli, col, key); err != nil {
 				out.Body.Failed = append(out.Body.Failed, JiraBulkFailure{Key: key, Reason: err.Error()})
 				continue
 			}
@@ -1049,7 +1049,7 @@ func jiraBulkMoveHandler(deps Deps) func(context.Context, *jiraBulkMoveInput) (*
 
 func jiraBulkAssignHandler(deps Deps) func(context.Context, *jiraBulkAssignInput) (*jiraBulkOutput, error) {
 	return func(ctx context.Context, in *jiraBulkAssignInput) (*jiraBulkOutput, error) {
-		cli, user, err := clienteJira(ctx, deps)
+		cli, user, err := jiraClient(ctx, deps)
 		if err != nil {
 			return nil, err
 		}
@@ -1110,14 +1110,14 @@ func jiraSetProjectHandler(deps Deps) func(context.Context, *jiraProjectInput) (
 		if deps.JiraSetProject == nil {
 			return nil, huma.Error503ServiceUnavailable("the Jira integration is unavailable on this server")
 		}
-		projeto := strings.TrimSpace(in.Body.Project)
-		if projeto == "" {
+		project := strings.TrimSpace(in.Body.Project)
+		if project == "" {
 			return nil, huma.Error400BadRequest("project is required")
 		}
-		if err := deps.JiraSetProject(user, projeto); err != nil {
+		if err := deps.JiraSetProject(user, project); err != nil {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		auditar(ctx, deps.Audit, user, "jira.project", projeto)
+		auditar(ctx, deps.Audit, user, "jira.project", project)
 
 		out := &statusOutput{}
 		out.Body.Status = "ok"

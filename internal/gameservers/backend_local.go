@@ -51,36 +51,36 @@ import (
 type BackendLocal struct {
 	m     *Manager
 	no    string
-	cofre *cofreHandles
+	vault *handleVault
 }
 
-// NovoBackendLocal wraps an already constructed Manager.
-func NovoBackendLocal(m *Manager, no string) *BackendLocal {
-	return &BackendLocal{m: m, no: no, cofre: novoCofre(vidaPadraoHandle)}
+// NewBackendLocal wraps an already constructed Manager.
+func NewBackendLocal(m *Manager, no string) *BackendLocal {
+	return &BackendLocal{m: m, no: no, vault: newHandleVault(defaultHandleTTL)}
 }
 
-func (b *BackendLocal) Descrever() string { return "local:" + b.no }
+func (b *BackendLocal) Describe() string { return "local:" + b.no }
 
-func (b *BackendLocal) Abrir(_ context.Context, h Handle) (io.ReadCloser, error) {
-	return b.cofre.Abrir(h)
+func (b *BackendLocal) Open(_ context.Context, h Handle) (io.ReadCloser, error) {
+	return b.vault.Open(h)
 }
 
-// recebidoMax caps what a client can push to the node at once.
+// maxReceived caps what a client can push to the node at once.
 // 600 MiB is the same ceiling the old import handler already applied — it covers
 // a large world with room to spare and leaves no room for an infinite upload.
-const recebidoMax = 600 << 20
+const maxReceived = 600 << 20
 
 // Receber writes the bytes into a temporary on the node and returns the Handle.
 //
 // The file is EPHEMERAL and ANONYMOUS: the client chose neither the name nor the
 // directory, and it disappears once the handle is consumed or expires. That is
 // what lets `world.import` exist without the panel knowing the node's disk.
-func (b *BackendLocal) Receber(_ context.Context, r io.Reader) (Handle, error) {
+func (b *BackendLocal) Receive(_ context.Context, r io.Reader) (Handle, error) {
 	f, err := os.CreateTemp("", "recebido-*.bin")
 	if err != nil {
 		return "", err
 	}
-	n, err := io.Copy(f, io.LimitReader(r, recebidoMax+1))
+	n, err := io.Copy(f, io.LimitReader(r, maxReceived+1))
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -88,14 +88,14 @@ func (b *BackendLocal) Receber(_ context.Context, r io.Reader) (Handle, error) {
 		_ = os.Remove(f.Name())
 		return "", err
 	}
-	if n > recebidoMax {
+	if n > maxReceived {
 		_ = os.Remove(f.Name())
-		return "", fmt.Errorf("upload above the %d byte limit", recebidoMax)
+		return "", fmt.Errorf("upload above the %d byte limit", maxReceived)
 	}
 	// Scope: the received handle is valid for ANY server on this node, because
 	// whoever sends it has not yet said which one they will import into. The real
 	// restriction is at consumption — world.import resolves the server, then uses the path.
-	h, err := b.cofre.Cunhar(escopoRecebido, f.Name(), true)
+	h, err := b.vault.Mint(receivedScope, f.Name(), true)
 	if err != nil {
 		_ = os.Remove(f.Name())
 		return "", err
@@ -103,9 +103,9 @@ func (b *BackendLocal) Receber(_ context.Context, r io.Reader) (Handle, error) {
 	return h, nil
 }
 
-// escopoRecebido is the scope of the artifacts that CAME IN to the node. Its own
+// receivedScope is the scope of the artifacts that CAME IN to the node. Its own
 // constant so that an upload handle never collides with a real server's scope.
-const escopoRecebido = "\x00recebido"
+const receivedScope = "\x00recebido"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ENVELOPES
@@ -117,33 +117,33 @@ const escopoRecebido = "\x00recebido"
 // Convention: every envelope that speaks of a server carries `servidor` with the
 // inventory ID. NEVER a path — that is the whole boundary.
 
-type reqServidor struct {
-	Servidor string `json:"servidor"`
+type reqServer struct {
+	ServerID string `json:"servidor"`
 }
 
-type reqAcao struct {
-	Servidor string `json:"servidor"`
-	Verbo    Verbo  `json:"verbo"`
+type reqAction struct {
+	ServerID string `json:"servidor"`
+	Verb     Verb   `json:"verbo"`
 }
 
 type reqLogs struct {
-	Servidor string `json:"servidor"`
+	ServerID string `json:"servidor"`
 	Tail     string `json:"tail"`
 }
 
-type reqMundo struct {
-	Servidor string `json:"servidor"`
-	Mundo    string `json:"mundo"`
+type reqWorld struct {
+	ServerID string `json:"servidor"`
+	World    string `json:"mundo"`
 }
 
-type reqRenomear struct {
-	Servidor string `json:"servidor"`
+type reqRename struct {
+	ServerID string `json:"servidor"`
 	De       string `json:"de"`
-	Para     string `json:"para"`
+	To       string `json:"para"`
 }
 
-type reqImportar struct {
-	Servidor string `json:"servidor"`
+type reqImport struct {
+	ServerID string `json:"servidor"`
 	Nome     string `json:"nome"`
 	// Handle of a zip that is ALREADY on the node (typically coming from
 	// world.export). Sending the zip from the panel to the node is an upload, it
@@ -160,100 +160,100 @@ type reqImportar struct {
 // the two cases are the same value, and wiping every ban by accident would be
 // indistinguishable from not sending the section at all.
 type reqSettingsPatch struct {
-	Servidor  string                 `json:"servidor"`
-	Jogo      map[string]interface{} `json:"jogo,omitempty"`
-	Server    map[string]interface{} `json:"server,omitempty"`
-	Grupo     map[string]interface{} `json:"grupo,omitempty"`
-	Grupos    *[]Group               `json:"grupos,omitempty"`
-	Banidos   *[]string              `json:"banidos,omitempty"`
-	Reiniciar bool                   `json:"reiniciar,omitempty"`
+	ServerID string                 `json:"servidor"`
+	Game     map[string]interface{} `json:"jogo,omitempty"`
+	Server   map[string]interface{} `json:"server,omitempty"`
+	Group    map[string]interface{} `json:"grupo,omitempty"`
+	Groups   *[]Group               `json:"grupos,omitempty"`
+	Banned   *[]string              `json:"banidos,omitempty"`
+	Restart  bool                   `json:"reiniciar,omitempty"`
 }
 
 type reqRuntimePatch struct {
-	Servidor string            `json:"servidor"`
+	ServerID string            `json:"servidor"`
 	Patch    map[string]string `json:"patch"`
 }
 
-type reqBackupArquivo struct {
-	Servidor string `json:"servidor"`
-	Arquivo  string `json:"arquivo"`
+type reqBackupFile struct {
+	ServerID string `json:"servidor"`
+	File     string `json:"arquivo"`
 }
 
-type reqHistorico struct {
-	Servidor string `json:"servidor"`
-	Horas    int    `json:"horas"`
+type reqHistory struct {
+	ServerID string `json:"servidor"`
+	Hours    int    `json:"horas"`
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DISPATCH
 //
-// A `switch` over the catalog. The `default` is a sentinel: TestBackendLocalServeTodasAsOps
-// walks TodasAsOps and fails if any of them lands here. It is what prevents
+// A `switch` over the catalog. The `default` is a sentinel: TestBackendLocalServesAllOps
+// walks AllOps and fails if any of them lands here. It is what prevents
 // "constant declared, operation never implemented" — the same hole the third
 // exhaustiveness test closes from the other side.
 
-// naoImplementada is the default's sentinel. Fixed text so the test recognizes
+// notImplemented is the default's sentinel. Fixed text so the test recognizes
 // it without depending on formatting.
-const naoImplementada = "operation not implemented in the local back end"
+const notImplemented = "operation not implemented in the local back end"
 
-func (b *BackendLocal) Executar(ctx context.Context, op OpName, corpo json.RawMessage) (json.RawMessage, error) {
-	if len(corpo) == 0 {
-		corpo = json.RawMessage("{}")
+func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMessage) (json.RawMessage, error) {
+	if len(body) == 0 {
+		body = json.RawMessage("{}")
 	}
 	switch op {
 
 	// ── server ───────────────────────────────────────────────────────────────
 	case OpServerList:
-		return empacota(b.m.List())
+		return pack(b.m.List())
 
 	case OpServerStatus:
-		s, err := b.servidor(corpo)
+		s, err := b.server(body)
 		if err != nil {
 			return nil, err
 		}
 		// Triage merged `connection` and `build` in here: the screen fetches ONCE
 		// instead of three times. No new computation — the three values are the
 		// same ones the three old routes returned.
-		return empacota(map[string]interface{}{
+		return pack(map[string]interface{}{
 			"status":     b.m.Status(ctx, s),
 			"connection": b.m.ConnectionInfo(s),
 			"build":      b.m.Build(s),
 		})
 
 	case OpServerAction:
-		var r reqAcao
-		if err := json.Unmarshal(corpo, &r); err != nil {
-			return nil, erroCorpo(err)
+		var r reqAction
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, bodyError(err)
 		}
-		s, ok := b.m.Get(r.Servidor)
+		s, ok := b.m.Get(r.ServerID)
 		if !ok {
-			return nil, erroServidor(r.Servidor)
+			return nil, serverNotFound(r.ServerID)
 		}
-		if !VerbosValidos[r.Verbo] {
-			return nil, fmt.Errorf("invalid verb: %q", string(r.Verbo))
+		if !ValidVerbs[r.Verb] {
+			return nil, fmt.Errorf("invalid verb: %q", string(r.Verb))
 		}
 		// `update` IS a restart with declared intent: the image runs steamcmd at
 		// container start. UpdateNow is the path the panel already uses — kept,
 		// not rewritten.
-		if r.Verbo == VerboUpdate {
+		if r.Verb == VerbUpdate {
 			if err := b.m.UpdateNow(ctx, s); err != nil {
 				return nil, err
 			}
-			return empacota(map[string]interface{}{"ok": true, "verbo": string(r.Verbo)})
+			return pack(map[string]interface{}{"ok": true, "verbo": string(r.Verb)})
 		}
-		if err := b.m.Action(ctx, s, string(r.Verbo)); err != nil {
+		if err := b.m.Action(ctx, s, string(r.Verb)); err != nil {
 			return nil, err
 		}
-		return empacota(map[string]interface{}{"ok": true, "verbo": string(r.Verbo)})
+		return pack(map[string]interface{}{"ok": true, "verbo": string(r.Verb)})
 
 	case OpServerLogs:
 		var r reqLogs
-		if err := json.Unmarshal(corpo, &r); err != nil {
-			return nil, erroCorpo(err)
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, bodyError(err)
 		}
-		s, ok := b.m.Get(r.Servidor)
+		s, ok := b.m.Get(r.ServerID)
 		if !ok {
-			return nil, erroServidor(r.Servidor)
+			return nil, serverNotFound(r.ServerID)
 		}
 		if r.Tail == "" {
 			r.Tail = "200" // same default as the old handler
@@ -262,11 +262,11 @@ func (b *BackendLocal) Executar(ctx context.Context, op OpName, corpo json.RawMe
 		if err != nil {
 			return nil, err
 		}
-		return empacota(map[string]interface{}{"logs": out})
+		return pack(map[string]interface{}{"logs": out})
 
 	// ── world ────────────────────────────────────────────────────────────────
 	case OpWorldList:
-		s, err := b.servidor(corpo)
+		s, err := b.server(body)
 		if err != nil {
 			return nil, err
 		}
@@ -277,112 +277,112 @@ func (b *BackendLocal) Executar(ctx context.Context, op OpName, corpo json.RawMe
 		if w == nil {
 			w = []World{} // the old handler already normalized; `null` breaks the screen
 		}
-		return empacota(map[string]interface{}{"worlds": w})
+		return pack(map[string]interface{}{"worlds": w})
 
 	case OpWorldSwitch:
-		var r reqMundo
-		if err := json.Unmarshal(corpo, &r); err != nil {
-			return nil, erroCorpo(err)
+		var r reqWorld
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, bodyError(err)
 		}
-		s, ok := b.m.Get(r.Servidor)
+		s, ok := b.m.Get(r.ServerID)
 		if !ok {
-			return nil, erroServidor(r.Servidor)
+			return nil, serverNotFound(r.ServerID)
 		}
-		if err := b.m.SwitchWorld(s, r.Mundo); err != nil {
+		if err := b.m.SwitchWorld(s, r.World); err != nil {
 			return nil, err
 		}
-		return empacota(map[string]interface{}{"ok": true, "mundo": r.Mundo})
+		return pack(map[string]interface{}{"ok": true, "mundo": r.World})
 
 	case OpWorldExport:
-		var r reqMundo
-		if err := json.Unmarshal(corpo, &r); err != nil {
-			return nil, erroCorpo(err)
+		var r reqWorld
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, bodyError(err)
 		}
-		s, ok := b.m.Get(r.Servidor)
+		s, ok := b.m.Get(r.ServerID)
 		if !ok {
-			return nil, erroServidor(r.Servidor)
+			return nil, serverNotFound(r.ServerID)
 		}
-		zip, err := b.m.ExportWorld(s, r.Mundo)
+		zip, err := b.m.ExportWorld(s, r.World)
 		if err != nil {
 			return nil, err
 		}
 		// HERE is where the path STOPS. The temporary zip never leaves this
 		// process; what crosses is the token. `efemero: true` because the file is
 		// ours and disappears when whoever downloaded it closes.
-		h, err := b.cofre.Cunhar(s.ID, zip, true)
+		h, err := b.vault.Mint(s.ID, zip, true)
 		if err != nil {
 			return nil, err
 		}
-		return empacota(map[string]interface{}{"handle": string(h), "nome": r.Mundo + ".zip"})
+		return pack(map[string]interface{}{"handle": string(h), "nome": r.World + ".zip"})
 
 	case OpWorldImport:
-		var r reqImportar
-		if err := json.Unmarshal(corpo, &r); err != nil {
-			return nil, erroCorpo(err)
+		var r reqImport
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, bodyError(err)
 		}
-		s, ok := b.m.Get(r.Servidor)
+		s, ok := b.m.Get(r.ServerID)
 		if !ok {
-			return nil, erroServidor(r.Servidor)
+			return nil, serverNotFound(r.ServerID)
 		}
 		// The handle may have two legitimate owners: the server itself (a world
 		// exported from it) or the upload scope (a zip the panel has just sent).
 		// Any other scope is a refusal.
-		a, err := b.cofre.resolver(r.Handle, s.ID)
+		a, err := b.vault.resolver(r.Handle, s.ID)
 		if err != nil {
-			if a, err = b.cofre.resolver(r.Handle, escopoRecebido); err != nil {
+			if a, err = b.vault.resolver(r.Handle, receivedScope); err != nil {
 				return nil, err
 			}
 		}
-		if err := b.m.ImportWorld(s, r.Nome, a.caminho); err != nil {
+		if err := b.m.ImportWorld(s, r.Nome, a.path); err != nil {
 			return nil, err
 		}
-		return empacota(map[string]interface{}{"ok": true, "nome": r.Nome})
+		return pack(map[string]interface{}{"ok": true, "nome": r.Nome})
 
 	case OpWorldRename:
-		var r reqRenomear
-		if err := json.Unmarshal(corpo, &r); err != nil {
-			return nil, erroCorpo(err)
+		var r reqRename
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, bodyError(err)
 		}
-		s, ok := b.m.Get(r.Servidor)
+		s, ok := b.m.Get(r.ServerID)
 		if !ok {
-			return nil, erroServidor(r.Servidor)
+			return nil, serverNotFound(r.ServerID)
 		}
-		if err := b.m.RenameWorld(s, r.De, r.Para); err != nil {
+		if err := b.m.RenameWorld(s, r.De, r.To); err != nil {
 			return nil, err
 		}
-		return empacota(map[string]interface{}{"ok": true})
+		return pack(map[string]interface{}{"ok": true})
 
 	case OpWorldDuplicate:
-		var r reqRenomear
-		if err := json.Unmarshal(corpo, &r); err != nil {
-			return nil, erroCorpo(err)
+		var r reqRename
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, bodyError(err)
 		}
-		s, ok := b.m.Get(r.Servidor)
+		s, ok := b.m.Get(r.ServerID)
 		if !ok {
-			return nil, erroServidor(r.Servidor)
+			return nil, serverNotFound(r.ServerID)
 		}
-		if err := b.m.DuplicateWorld(s, r.De, r.Para); err != nil {
+		if err := b.m.DuplicateWorld(s, r.De, r.To); err != nil {
 			return nil, err
 		}
-		return empacota(map[string]interface{}{"ok": true})
+		return pack(map[string]interface{}{"ok": true})
 
 	case OpWorldDelete:
-		var r reqMundo
-		if err := json.Unmarshal(corpo, &r); err != nil {
-			return nil, erroCorpo(err)
+		var r reqWorld
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, bodyError(err)
 		}
-		s, ok := b.m.Get(r.Servidor)
+		s, ok := b.m.Get(r.ServerID)
 		if !ok {
-			return nil, erroServidor(r.Servidor)
+			return nil, serverNotFound(r.ServerID)
 		}
-		if err := b.m.DeleteWorld(s, r.Mundo); err != nil {
+		if err := b.m.DeleteWorld(s, r.World); err != nil {
 			return nil, err
 		}
-		return empacota(map[string]interface{}{"ok": true})
+		return pack(map[string]interface{}{"ok": true})
 
 	// ── settings ─────────────────────────────────────────────────────────────
 	case OpSettingsGet:
-		s, err := b.servidor(corpo)
+		s, err := b.server(body)
 		if err != nil {
 			return nil, err
 		}
@@ -390,18 +390,18 @@ func (b *BackendLocal) Executar(ctx context.Context, op OpName, corpo json.RawMe
 
 	case OpSettingsPatch:
 		var r reqSettingsPatch
-		if err := json.Unmarshal(corpo, &r); err != nil {
-			return nil, erroCorpo(err)
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, bodyError(err)
 		}
-		s, ok := b.m.Get(r.Servidor)
+		s, ok := b.m.Get(r.ServerID)
 		if !ok {
-			return nil, erroServidor(r.Servidor)
+			return nil, serverNotFound(r.ServerID)
 		}
-		return b.gravaSettings(ctx, s, r)
+		return b.writeSettings(ctx, s, r)
 
 	// ── runtime ──────────────────────────────────────────────────────────────
 	case OpRuntimeGet:
-		s, err := b.servidor(corpo)
+		s, err := b.server(body)
 		if err != nil {
 			return nil, err
 		}
@@ -409,25 +409,25 @@ func (b *BackendLocal) Executar(ctx context.Context, op OpName, corpo json.RawMe
 		if err != nil {
 			return nil, err
 		}
-		return empacota(map[string]interface{}{"options": opts})
+		return pack(map[string]interface{}{"options": opts})
 
 	case OpRuntimePatch:
 		var r reqRuntimePatch
-		if err := json.Unmarshal(corpo, &r); err != nil {
-			return nil, erroCorpo(err)
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, bodyError(err)
 		}
-		s, ok := b.m.Get(r.Servidor)
+		s, ok := b.m.Get(r.ServerID)
 		if !ok {
-			return nil, erroServidor(r.Servidor)
+			return nil, serverNotFound(r.ServerID)
 		}
 		if err := b.m.SetRuntime(s, r.Patch); err != nil {
 			return nil, err
 		}
-		return empacota(map[string]interface{}{"ok": true})
+		return pack(map[string]interface{}{"ok": true})
 
 	// ── backup ───────────────────────────────────────────────────────────────
 	case OpBackupList:
-		s, err := b.servidor(corpo)
+		s, err := b.server(body)
 		if err != nil {
 			return nil, err
 		}
@@ -438,138 +438,138 @@ func (b *BackendLocal) Executar(ctx context.Context, op OpName, corpo json.RawMe
 		if list == nil {
 			list = []Backup{}
 		}
-		return empacota(map[string]interface{}{"backups": list})
+		return pack(map[string]interface{}{"backups": list})
 
 	case OpBackupCreate:
-		s, err := b.servidor(corpo)
+		s, err := b.server(body)
 		if err != nil {
 			return nil, err
 		}
 		// The stamp is generated ON THE NODE, as it already was in the handler.
 		// Letting the client send the stamp would hand it the file name — halfway
 		// to choosing where to write.
-		nome, err := b.m.CreateBackup(s, carimboAgora())
+		nome, err := b.m.CreateBackup(s, nowStamp())
 		if err != nil {
 			return nil, err
 		}
-		return empacota(map[string]interface{}{"ok": true, "arquivo": nome})
+		return pack(map[string]interface{}{"ok": true, "arquivo": nome})
 
 	case OpBackupRestore:
-		var r reqBackupArquivo
-		if err := json.Unmarshal(corpo, &r); err != nil {
-			return nil, erroCorpo(err)
+		var r reqBackupFile
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, bodyError(err)
 		}
-		s, ok := b.m.Get(r.Servidor)
+		s, ok := b.m.Get(r.ServerID)
 		if !ok {
-			return nil, erroServidor(r.Servidor)
+			return nil, serverNotFound(r.ServerID)
 		}
 		// The stop→restore→start sequence comes from the panel's handler, verbatim:
 		// writing to the savegame with the server up corrupts the save. It migrates
 		// here because it has to run WHERE THE CONTAINER IS — leaving it on the
 		// panel's side would mean three network round trips in the middle of an
 		// operation that must not be interrupted.
-		if err := b.m.Action(ctx, s, string(VerboStop)); err != nil {
+		if err := b.m.Action(ctx, s, string(VerbStop)); err != nil {
 			return nil, fmt.Errorf("could not stop the server before restoring: %w", err)
 		}
-		erroRestore := b.m.RestoreBackup(s, r.Arquivo, carimboAgora())
-		erroStart := b.m.Action(ctx, s, string(VerboStart))
-		if erroRestore != nil {
-			return nil, erroRestore
+		restoreErr := b.m.RestoreBackup(s, r.File, nowStamp())
+		startErr := b.m.Action(ctx, s, string(VerbStart))
+		if restoreErr != nil {
+			return nil, restoreErr
 		}
-		aviso := ""
-		if erroStart != nil {
-			aviso = "restored, but the server failed to start: " + erroStart.Error()
+		warning := ""
+		if startErr != nil {
+			warning = "restored, but the server failed to start: " + startErr.Error()
 		}
-		return empacota(map[string]interface{}{"ok": true, "aviso": aviso})
+		return pack(map[string]interface{}{"ok": true, "aviso": warning})
 
 	case OpBackupDownload:
-		var r reqBackupArquivo
-		if err := json.Unmarshal(corpo, &r); err != nil {
-			return nil, erroCorpo(err)
+		var r reqBackupFile
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, bodyError(err)
 		}
-		s, ok := b.m.Get(r.Servidor)
+		s, ok := b.m.Get(r.ServerID)
 		if !ok {
-			return nil, erroServidor(r.Servidor)
+			return nil, serverNotFound(r.ServerID)
 		}
-		p, err := b.m.BackupPath(s, r.Arquivo)
+		p, err := b.m.BackupPath(s, r.File)
 		if err != nil {
 			return nil, err
 		}
 		// `efemero: false` — the backup belongs to the user, it is not a temp of
 		// ours. Deleting it when the download closes would destroy data.
-		h, err := b.cofre.Cunhar(s.ID, p, false)
+		h, err := b.vault.Mint(s.ID, p, false)
 		if err != nil {
 			return nil, err
 		}
-		return empacota(map[string]interface{}{"handle": string(h), "nome": r.Arquivo})
+		return pack(map[string]interface{}{"handle": string(h), "nome": r.File})
 
 	// ── trainer ──────────────────────────────────────────────────────────────
 	case OpTrainerStatus:
 		if !b.m.TrainerAvailable() {
-			return nil, ErroTrainerAusente
+			return nil, ErrTrainerMissing
 		}
 		return b.m.TrainerSnapshot(ctx)
 
 	case OpTrainerApply:
 		if !b.m.TrainerAvailable() {
-			return nil, ErroTrainerAusente
+			return nil, ErrTrainerMissing
 		}
 		msg, err := b.m.TrainerApply(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return empacota(map[string]interface{}{"ok": true, "message": msg})
+		return pack(map[string]interface{}{"ok": true, "message": msg})
 
 	case OpTrainerDesired:
 		if !b.m.TrainerAvailable() {
-			return nil, ErroTrainerAusente
+			return nil, ErrTrainerMissing
 		}
 		var d TrainerDesired
-		if err := json.Unmarshal(corpo, &d); err != nil {
-			return nil, erroCorpo(err)
+		if err := json.Unmarshal(body, &d); err != nil {
+			return nil, bodyError(err)
 		}
 		return b.m.TrainerSetDesired(ctx, d)
 
 	// ── history ──────────────────────────────────────────────────────────────
 	case OpHistoryList:
-		var r reqHistorico
-		if err := json.Unmarshal(corpo, &r); err != nil {
-			return nil, erroCorpo(err)
+		var r reqHistory
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, bodyError(err)
 		}
-		s, ok := b.m.Get(r.Servidor)
+		s, ok := b.m.Get(r.ServerID)
 		if !ok {
-			return nil, erroServidor(r.Servidor)
+			return nil, serverNotFound(r.ServerID)
 		}
-		if r.Horas <= 0 {
-			r.Horas = 6 // same default as the old handler
+		if r.Hours <= 0 {
+			r.Hours = 6 // same default as the old handler
 		}
-		am := b.m.History(s.ID, r.Horas)
+		am := b.m.History(s.ID, r.Hours)
 		if am == nil {
 			am = []Sample{}
 		}
-		return empacota(map[string]interface{}{"samples": am})
+		return pack(map[string]interface{}{"samples": am})
 	}
 
-	return nil, fmt.Errorf("%s: %s", naoImplementada, string(op))
+	return nil, fmt.Errorf("%s: %s", notImplemented, string(op))
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 // servidor decodes the minimal envelope and resolves the Server.
-func (b *BackendLocal) servidor(corpo json.RawMessage) (Server, error) {
-	var r reqServidor
-	if err := json.Unmarshal(corpo, &r); err != nil {
-		return Server{}, erroCorpo(err)
+func (b *BackendLocal) server(body json.RawMessage) (Server, error) {
+	var r reqServer
+	if err := json.Unmarshal(body, &r); err != nil {
+		return Server{}, bodyError(err)
 	}
-	s, ok := b.m.Get(r.Servidor)
+	s, ok := b.m.Get(r.ServerID)
 	if !ok {
-		return Server{}, erroServidor(r.Servidor)
+		return Server{}, serverNotFound(r.ServerID)
 	}
 	return s, nil
 }
 
 func (b *BackendLocal) lerSettings(s Server) (json.RawMessage, error) {
-	jogo, err := b.m.Settings(s)
+	game, err := b.m.Settings(s)
 	if err != nil {
 		return nil, err
 	}
@@ -577,73 +577,73 @@ func (b *BackendLocal) lerSettings(s Server) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	grupos, err := b.m.Groups(s)
+	groups, err := b.m.Groups(s)
 	if err != nil {
 		return nil, err
 	}
-	if grupos == nil {
-		grupos = []Group{}
+	if groups == nil {
+		groups = []Group{}
 	}
-	banidos, err := b.m.Bans(s)
+	banned, err := b.m.Bans(s)
 	if err != nil {
 		return nil, err
 	}
-	if banidos == nil {
-		banidos = []string{}
+	if banned == nil {
+		banned = []string{}
 	}
-	return empacota(map[string]interface{}{
-		"jogo": jogo, "server": srv, "grupos": grupos, "banidos": banidos,
+	return pack(map[string]interface{}{
+		"jogo": game, "server": srv, "grupos": groups, "banidos": banned,
 	})
 }
 
-// gravaSettings applies only the sections present in the envelope.
+// writeSettings applies only the sections present in the envelope.
 //
 // No raw writing: `rawconfig` was NOT ported. Each section goes through the
 // allowlist that already exists in the adapters — it is the narrowing starting
 // to take effect, not a new guard invented here.
-func (b *BackendLocal) gravaSettings(ctx context.Context, s Server, r reqSettingsPatch) (json.RawMessage, error) {
-	if len(r.Jogo) > 0 {
-		if err := b.m.SaveSettings(s, r.Jogo); err != nil {
+func (b *BackendLocal) writeSettings(ctx context.Context, s Server, r reqSettingsPatch) (json.RawMessage, error) {
+	if len(r.Game) > 0 {
+		if err := b.m.SaveSettings(s, r.Game); err != nil {
 			return nil, err
 		}
 	}
-	if len(r.Server) > 0 || len(r.Grupo) > 0 {
-		if err := b.m.SaveServerSettings(s, r.Server, r.Grupo); err != nil {
+	if len(r.Server) > 0 || len(r.Group) > 0 {
+		if err := b.m.SaveServerSettings(s, r.Server, r.Group); err != nil {
 			return nil, err
 		}
 	}
-	if r.Grupos != nil {
-		if err := b.m.SaveGroups(s, *r.Grupos); err != nil {
+	if r.Groups != nil {
+		if err := b.m.SaveGroups(s, *r.Groups); err != nil {
 			return nil, err
 		}
 	}
-	if r.Banidos != nil {
-		if err := b.m.SaveBans(s, *r.Banidos); err != nil {
+	if r.Banned != nil {
+		if err := b.m.SaveBans(s, *r.Banned); err != nil {
 			return nil, err
 		}
 	}
-	reiniciado := false
-	if r.Reiniciar {
+	restarted := false
+	if r.Restart {
 		// Same as the old handler: a restart failure neither undoes the write nor
 		// becomes an error of the operation — the config is ALREADY on disk, and
 		// saying it failed would make the operator write it all over again.
-		if err := b.m.Action(ctx, s, string(VerboRestart)); err == nil {
-			reiniciado = true
+		if err := b.m.Action(ctx, s, string(VerbRestart)); err == nil {
+			restarted = true
 		}
 	}
-	return empacota(map[string]interface{}{"ok": true, "reiniciado": reiniciado})
+	return pack(map[string]interface{}{"ok": true, "reiniciado": restarted})
 }
 
-// carimboAgora is the same format the panel uses today (stampNow).
-func carimboAgora() string { return time.Now().Format("20060102-150405") }
+// nowStamp is the same format the panel uses today (stampNow).
+func nowStamp() string { return time.Now().Format("20060102-150405") }
 
-func erroCorpo(err error) error { return fmt.Errorf("invalid body: %w", err) }
+func bodyError(err error) error { return fmt.Errorf("invalid body: %w", err) }
 
-func erroServidor(id string) error { return fmt.Errorf("server '%s' not found", id) }
+func serverNotFound(id string) error { return fmt.Errorf("server '%s' not found", id) }
 
 // empacota serializes the response. A single function so that no operation
 // invents an output format of its own.
-func empacota(v interface{}) (json.RawMessage, error) {
+func pack(v interface{}) (json.RawMessage, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return nil, err

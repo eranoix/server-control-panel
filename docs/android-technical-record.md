@@ -379,7 +379,7 @@ install screen. Without that second step, one refusal turns into an infinite
 1. The server's replay on attach is capped at 128 KiB and does not reach
    generation `.1` of the rotation.
 2. For his working session, the replay returned **zero**: 3,830 repaints
-   (`ESC[nA`) in the last 256 KiB trip the `fluxoERepintado` guard.
+   (`ESC[nA`) in the last 256 KiB trip the `isRepaintStream` guard.
 3. The panel that fetched the rest asked for **text with the ANSI stripped** —
    and that could not work. Measured on the real log: the last 5,000 lines of
    plain text had **511 non-empty lines and 150 distinct ones**, almost all of

@@ -33,22 +33,22 @@ func newTestClient(t *testing.T, h http.HandlerFunc) (*Client, *httptest.Server)
 // with 403 — here that would be a false green ("no credential" would show on
 // screen when the problem is an ACL, and vice versa).
 func TestErrorClassification(t *testing.T) {
-	casos := []struct {
+	cases := []struct {
 		nome   string
 		status int
-		corpo  string
-		quer   Kind
+		body   string
+		want   Kind
 	}{
 		{"401 revogado", http.StatusUnauthorized, "authentication failure", KindNoCredential},
 		{"403 sem ACL", http.StatusForbidden, "Permission check failed (/vms/206, VM.Audit)", KindForbidden},
 		{"500 hipervisor", http.StatusInternalServerError, "internal error", KindHypervisor},
 		{"400 hipervisor", http.StatusBadRequest, "parameter verification failed", KindHypervisor},
 	}
-	for _, tc := range casos {
+	for _, tc := range cases {
 		t.Run(tc.nome, func(t *testing.T) {
 			c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tc.status)
-				_, _ = w.Write([]byte(tc.corpo))
+				_, _ = w.Write([]byte(tc.body))
 			})
 			err := c.do(context.Background(), http.MethodGet, "/api2/json/version", nil)
 			if err == nil {
@@ -58,14 +58,14 @@ func TestErrorClassification(t *testing.T) {
 			if !ok {
 				t.Fatalf("the error is not a *pve.Error: %T (%v)", err, err)
 			}
-			if pe.Kind != tc.quer {
-				t.Errorf("Kind = %v, want %v", pe.Kind, tc.quer)
+			if pe.Kind != tc.want {
+				t.Errorf("Kind = %v, want %v", pe.Kind, tc.want)
 			}
 			if pe.Status != tc.status {
 				t.Errorf("Status = %d, want %d", pe.Status, tc.status)
 			}
-			if !strings.Contains(pe.Body, tc.corpo) {
-				t.Errorf("Body = %q, want it to contain %q", pe.Body, tc.corpo)
+			if !strings.Contains(pe.Body, tc.body) {
+				t.Errorf("Body = %q, want it to contain %q", pe.Body, tc.body)
 			}
 			if pe.Path != "/api2/json/version" {
 				t.Errorf("Path = %q", pe.Path)
@@ -103,15 +103,15 @@ func TestErrorClassification(t *testing.T) {
 	// from one another. If someone collapses two of them into the same value, this
 	// fails.
 	t.Run("distinct kinds", func(t *testing.T) {
-		vistos := map[Kind]string{}
+		seen := map[Kind]string{}
 		for _, k := range []Kind{KindOK, KindNoCredential, KindForbidden, KindUnreachable, KindHypervisor} {
-			if antigo, ok := vistos[k]; ok {
-				t.Fatalf("duplicate Kind: %s == %s", k, antigo)
+			if old, ok := seen[k]; ok {
+				t.Fatalf("duplicate Kind: %s == %s", k, old)
 			}
-			vistos[k] = k.String()
+			seen[k] = k.String()
 		}
-		if len(vistos) != 5 {
-			t.Fatalf("expected 5 distinct Kinds, saw %d", len(vistos))
+		if len(seen) != 5 {
+			t.Fatalf("expected 5 distinct Kinds, saw %d", len(seen))
 		}
 	})
 }
@@ -120,12 +120,12 @@ func TestErrorClassification(t *testing.T) {
 // "PVEAPIToken=USER@REALM!ID=SEGREDO" with no space, and a token does not need
 // CSRFPreventionToken (HTTPServer.pm:122-129).
 func TestAuthHeader(t *testing.T) {
-	var visto http.Header
-	var vistoPath, vistoMetodo string
+	var seen http.Header
+	var seenPath, seenMethod string
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		visto = r.Header.Clone()
-		vistoPath = r.URL.Path
-		vistoMetodo = r.Method
+		seen = r.Header.Clone()
+		seenPath = r.URL.Path
+		seenMethod = r.Method
 		_, _ = w.Write([]byte(`{"data":{"version":"9.2.2"}}`))
 	})
 
@@ -135,17 +135,17 @@ func TestAuthHeader(t *testing.T) {
 	if err := c.do(context.Background(), http.MethodGet, "/api2/json/version", &out); err != nil {
 		t.Fatalf("do: %v", err)
 	}
-	if got, quer := visto.Get("Authorization"), "PVEAPIToken=lab@pve!t=s3cr3t"; got != quer {
-		t.Errorf("Authorization = %q, want %q", got, quer)
+	if got, want := seen.Get("Authorization"), "PVEAPIToken=lab@pve!t=s3cr3t"; got != want {
+		t.Errorf("Authorization = %q, want %q", got, want)
 	}
-	if v := visto.Get("CSRFPreventionToken"); v != "" {
+	if v := seen.Get("CSRFPreventionToken"); v != "" {
 		t.Errorf("CSRFPreventionToken present (%q) — an API token needs no CSRF", v)
 	}
-	if got := visto.Get("Accept"); got != "application/json" {
+	if got := seen.Get("Accept"); got != "application/json" {
 		t.Errorf("Accept = %q", got)
 	}
-	if vistoPath != "/api2/json/version" || vistoMetodo != http.MethodGet {
-		t.Errorf("request = %s %s", vistoMetodo, vistoPath)
+	if seenPath != "/api2/json/version" || seenMethod != http.MethodGet {
+		t.Errorf("request = %s %s", seenMethod, seenPath)
 	}
 	if out.Version != "9.2.2" {
 		t.Errorf("the {\"data\":…} envelope was not unwrapped: %+v", out)
@@ -157,23 +157,23 @@ func TestAuthHeader(t *testing.T) {
 // timeout, a revoked token turns into "unreachable" and the classification goes
 // false green.
 func TestTimeoutFloor(t *testing.T) {
-	casos := []struct {
+	cases := []struct {
 		nome string
 		in   time.Duration
-		quer time.Duration
+		want time.Duration
 	}{
 		{"zero vira o piso", 0, minTimeout},
 		{"curto é ELEVADO ao piso", 2 * time.Second, minTimeout},
 		{"folgado é respeitado", 30 * time.Second, 30 * time.Second},
 	}
-	for _, tc := range casos {
+	for _, tc := range cases {
 		t.Run(tc.nome, func(t *testing.T) {
 			c, err := New(Config{BaseURL: "http://127.0.0.1:1", TokenID: testTokenID, Secret: testSecret, Timeout: tc.in})
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
-			if c.httpc.Timeout != tc.quer {
-				t.Errorf("timeout = %v, want %v", c.httpc.Timeout, tc.quer)
+			if c.httpc.Timeout != tc.want {
+				t.Errorf("timeout = %v, want %v", c.httpc.Timeout, tc.want)
 			}
 		})
 	}
@@ -182,11 +182,11 @@ func TestTimeoutFloor(t *testing.T) {
 	}
 }
 
-// TestTokenDoCofre: the vault keeps "<tokenid>=<secret>" in a single string —
+// TestTokenFromVault: the vault keeps "<tokenid>=<secret>" in a single string —
 // that was the real false green (every offline pin green, 401 on the first live
 // call). A bare secret, with no "!" in the id, MUST become an error in New,
 // never a silently broken header.
-func TestTokenDoCofre(t *testing.T) {
+func TestTokenFromVault(t *testing.T) {
 	id, seg, err := SplitTokenValue("lab@pve!audit=1234-abcd")
 	if err != nil {
 		t.Fatalf("a valid value from the vault was refused: %v", err)
@@ -215,9 +215,9 @@ func TestTokenDoCofre(t *testing.T) {
 	}
 }
 
-// TestErrorNaoVazaSegredo: the error text is read in the log and on screen. The
+// TestErrorDoesNotLeakSecret: the error text is read in the log and on screen. The
 // body comes from the SERVER; the auth header never goes in.
-func TestErrorNaoVazaSegredo(t *testing.T) {
+func TestErrorDoesNotLeakSecret(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte("authentication failure"))
@@ -231,13 +231,13 @@ func TestErrorNaoVazaSegredo(t *testing.T) {
 	}
 }
 
-// TestBodyTruncado: a giant body from the hypervisor does not become a giant
+// TestBodyTruncated: a giant body from the hypervisor does not become a giant
 // error in the log.
-func TestBodyTruncado(t *testing.T) {
-	grande := strings.Repeat("x", maxBodyBytes*2)
+func TestBodyTruncated(t *testing.T) {
+	big := strings.Repeat("x", maxBodyBytes*2)
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(grande))
+		_, _ = w.Write([]byte(big))
 	})
 	err := c.do(context.Background(), http.MethodGet, "/api2/json/version", nil)
 	pe, ok := err.(*Error)

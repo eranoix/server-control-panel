@@ -5,16 +5,16 @@ import (
 	"time"
 )
 
-// montaProc writes a fake /proc: each entry is (pid, ppid, cmdline).
-func montaProc(t *testing.T, ents ...struct {
+// buildProc writes a fake /proc: each entry is (pid, ppid, cmdline).
+func buildProc(t *testing.T, ents ...struct {
 	pid, ppid int
 	cmd       string
 }) {
 	t.Helper()
 	dir := t.TempDir()
-	anterior := raizProc
-	raizProc = dir
-	t.Cleanup(func() { raizProc = anterior })
+	anterior := procRoot
+	procRoot = dir
+	t.Cleanup(func() { procRoot = anterior })
 
 	for _, e := range ents {
 		d := dir + "/" + itoa(e.pid)
@@ -42,17 +42,17 @@ type ent = struct {
 // socket path in the master's argv. Tree identical to production's:
 //
 //	claude  ->  bash -l  ->  dtach -n /…/session-sox/Servidor.sock -E -z bash -l
-func TestAncestralPorArgvAchaSessaoPeloSocketDoMaster(t *testing.T) {
-	montaProc(t,
+func TestAncestorByArgvFindsSessionViaMasterSocket(t *testing.T) {
+	buildProc(t,
 		ent{300, 301, "claude --continue"},
 		ent{301, 302, "/usr/bin/bash -l"},
 		ent{302, 1, "/usr/bin/dtach -n /opt/panel/data/session-sox/Servidor.sock -E -z /usr/bin/bash -l"},
 	)
-	marcas := map[string]string{
+	marks := map[string]string{
 		"/opt/panel/data/session-sox/Servidor.sock": "Servidor",
 		"/opt/panel/data/session-sox/Css.sock":      "Css",
 	}
-	if got := AncestralPorArgv(300, marcas); got != "Servidor" {
+	if got := AncestralPorArgv(300, marks); got != "Servidor" {
 		t.Fatalf("AncestralPorArgv = %q, want \"Servidor\"", got)
 	}
 }
@@ -60,44 +60,44 @@ func TestAncestralPorArgvAchaSessaoPeloSocketDoMaster(t *testing.T) {
 // A process outside any of the backend's sessions (e.g. a stray multiplexer)
 // still has no owner — inventing one here would make the panel enable a button
 // that would restart the WRONG session.
-func TestAncestralPorArgvNaoInventaDono(t *testing.T) {
-	montaProc(t,
+func TestAncestorByArgvDoesNotInventOwner(t *testing.T) {
+	buildProc(t,
 		ent{400, 401, "claude --continue"},
 		ent{401, 1, "outro-mux new-session -d -s claude-rc claude --continue"},
 	)
-	marcas := map[string]string{"/opt/panel/data/session-sox/Servidor.sock": "Servidor"}
-	if got := AncestralPorArgv(400, marcas); got != "" {
+	marks := map[string]string{"/opt/panel/data/session-sox/Servidor.sock": "Servidor"}
+	if got := AncestralPorArgv(400, marks); got != "" {
 		t.Fatalf("AncestralPorArgv = %q, wanted empty", got)
 	}
 }
 
-func TestAncestralPorArgvSemMarcas(t *testing.T) {
-	montaProc(t, ent{500, 1, "claude"})
+func TestAncestorByArgvNoMarks(t *testing.T) {
+	buildProc(t, ent{500, 1, "claude"})
 	if got := AncestralPorArgv(500, nil); got != "" {
 		t.Fatalf("AncestralPorArgv(nil) = %q, wanted empty", got)
 	}
 }
 
 // The pid itself can be the master (a direct spawn of `dtach -n … claude`).
-func TestAncestralPorArgvCasaNoProprioPid(t *testing.T) {
-	montaProc(t, ent{600, 1, "/usr/bin/dtach -n /opt/panel/data/session-sox/Vpsm.sock -E -z claude"})
-	marcas := map[string]string{"/opt/panel/data/session-sox/Vpsm.sock": "Vpsm"}
-	if got := AncestralPorArgv(600, marcas); got != "Vpsm" {
+func TestAncestorByArgvMatchesOwnPid(t *testing.T) {
+	buildProc(t, ent{600, 1, "/usr/bin/dtach -n /opt/panel/data/session-sox/Vpsm.sock -E -z claude"})
+	marks := map[string]string{"/opt/panel/data/session-sox/Vpsm.sock": "Vpsm"}
+	if got := AncestralPorArgv(600, marks); got != "Vpsm" {
 		t.Fatalf("AncestralPorArgv = %q, want \"Vpsm\"", got)
 	}
 }
 
-// Same reason as TestAncestralNaoEntraEmLaco: a recycled PID has already produced
+// Same reason as TestAncestorDoesNotLoop: a recycled PID has already produced
 // a cycle in this sweep, and a loop here hangs the panel's handler.
-func TestAncestralPorArgvNaoEntraEmLaco(t *testing.T) {
-	montaProc(t,
+func TestAncestorByArgvDoesNotLoop(t *testing.T) {
+	buildProc(t,
 		ent{700, 701, "claude"},
 		ent{701, 700, "bash"},
 	)
-	feito := make(chan string, 1)
-	go func() { feito <- AncestralPorArgv(700, map[string]string{"/nao/casa.sock": "x"}) }()
+	done := make(chan string, 1)
+	go func() { done <- AncestralPorArgv(700, map[string]string{"/nao/casa.sock": "x"}) }()
 	select {
-	case got := <-feito:
+	case got := <-done:
 		if got != "" {
 			t.Fatalf("AncestralPorArgv = %q, wanted empty", got)
 		}

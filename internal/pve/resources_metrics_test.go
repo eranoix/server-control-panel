@@ -23,10 +23,10 @@ import (
 // panel showed it. This is not a layout preference: it is data the hypervisor
 // delivers in every response and that the panel threw away on every tick.
 
-// TestClusterResourcesTrazContadoresPorGuest proves that the parser stopped
+// TestClusterResourcesBringsPerGuestCounters proves that the parser stopped
 // discarding what the hypervisor sends. The assertion is on the TOKEN fixture —
 // the view the panel actually receives.
-func TestClusterResourcesTrazContadoresPorGuest(t *testing.T) {
+func TestClusterResourcesBringsPerGuestCounters(t *testing.T) {
 	raw, err := os.ReadFile(fixtureToken)
 	if err != nil {
 		t.Fatal(err)
@@ -50,10 +50,10 @@ func TestClusterResourcesTrazContadoresPorGuest(t *testing.T) {
 	if !ok {
 		t.Fatal("lxc/201 disappeared from the fixture")
 	}
-	casos := []struct {
-		campo string
+	cases := []struct {
+		field string
 		got   int64
-		quer  int64
+		want  int64
 	}{
 		{"maxcpu", int64(g.MaxCPU), 8},
 		{"mem", g.Mem, 2293985280},
@@ -65,9 +65,9 @@ func TestClusterResourcesTrazContadoresPorGuest(t *testing.T) {
 		{"diskread", g.DiskRead, 1868767232},
 		{"diskwrite", g.DiskWrite, 504193024},
 	}
-	for _, c := range casos {
-		if c.got != c.quer {
-			t.Errorf("lxc/201.%s = %d, want %d — the field is not reaching the parser", c.campo, c.got, c.quer)
+	for _, c := range cases {
+		if c.got != c.want {
+			t.Errorf("lxc/201.%s = %d, want %d — the field is not reaching the parser", c.field, c.got, c.want)
 		}
 	}
 	if g.CPU < 0.076 || g.CPU > 0.077 {
@@ -78,14 +78,14 @@ func TestClusterResourcesTrazContadoresPorGuest(t *testing.T) {
 	}
 }
 
-// 🔴 TestDiscoDeQemuVemZeroNaFonte is the pin for the TRAP, and it lives here
+// 🔴 TestQemuDiskIsZeroAtSource is the pin for the TRAP, and it lives here
 // on purpose: if one day the hypervisor starts reporting QEMU disk (guest agent
 // installed), this test fails and forces a REVIEW of the "not reported" rule
 // instead of leaving it lying in silence.
 //
 // Measured on both QEMU guests of this house (qemu/100 `painel` and qemu/208
 // `dev`): `disk: 0` with a real `maxdisk`. On the EIGHT LXC, real disk.
-func TestDiscoDeQemuVemZeroNaFonte(t *testing.T) {
+func TestQemuDiskIsZeroAtSource(t *testing.T) {
 	raw, err := os.ReadFile(fixtureToken)
 	if err != nil {
 		t.Fatal(err)
@@ -101,11 +101,11 @@ func TestDiscoDeQemuVemZeroNaFonte(t *testing.T) {
 	if err := json.Unmarshal(raw, &env); err != nil {
 		t.Fatal(err)
 	}
-	vistos := 0
+	seen := 0
 	for _, r := range env.Data {
 		switch r.Type {
 		case "qemu":
-			vistos++
+			seen++
 			if r.Disk != 0 {
 				t.Errorf("%s: disk = %d — QEMU started reporting disk; the 'not reported' rule needs revisiting",
 					r.ID, r.Disk)
@@ -114,13 +114,13 @@ func TestDiscoDeQemuVemZeroNaFonte(t *testing.T) {
 				t.Errorf("%s: maxdisk = %d — with no capacity you cannot even say 'not reported'", r.ID, r.MaxDisk)
 			}
 		case "lxc":
-			vistos++
+			seen++
 			if r.Disk <= 0 {
 				t.Errorf("%s: disk = %d — LXC always reports usage in this house; a zero here changes the rule", r.ID, r.Disk)
 			}
 		}
 	}
-	if vistos < 9 {
-		t.Fatalf("only %d guests in the fixture — the assertion lost its reach", vistos)
+	if seen < 9 {
+		t.Fatalf("only %d guests in the fixture — the assertion lost its reach", seen)
 	}
 }

@@ -11,7 +11,7 @@ package api
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // 🔴 THE RULE THAT GOVERNS THIS FILE: each route has ONE token, and the choice
-// lives in a single function (chaveParaOperacao).
+// lives in a single function (keyForOp).
 //
 // Measured against the home hypervisor:
 //
@@ -28,8 +28,8 @@ package api
 // live run proved it, with the UPID carrying `lab@pve!node-lab`.
 //
 // Two divergent sources for the same question have already produced a measured
-// defect in this codebase (see chaveDeCredencial in handlers_nodes.go). That is
-// why the choice is ONE function, and why TestTarefasUsamOTokenAudit pins it by
+// defect in this codebase (see credentialKey in handlers_nodes.go). That is
+// why the choice is ONE function, and why TestTasksUseAuditToken pins it by
 // the KEY THAT WAS READ.
 // ─────────────────────────────────────────────────────────────────────────────
 //
@@ -72,7 +72,7 @@ package api
 // ringing: the privilege can be revoked, and the regression would come back
 // silent.
 //
-// The verdict has ONE source — pve.PodeAuditarDatastore — used both by the
+// The verdict has ONE source — pve.CanAuditDatastore — used both by the
 // poller and by the /permissions route. And it measures PRIVILEGE, not the
 // presence of the "/storage" path: presence only says the token holds SOME
 // privilege there, and a token with /storage in its map but without
@@ -94,47 +94,47 @@ import (
 	"server-control-panel/internal/pve"
 )
 
-// operacaoPVX says what is about to be done on the hypervisor. There are two
+// pvxOp says what is about to be done on the hypervisor. There are two
 // cases because there are two disjoint roles, not because there are two routes.
-type operacaoPVX int
+type pvxOp int
 
 const (
-	// opLeituraHipervisor: tasks, task log, disks and permissions. All of them
+	// opHypervisorRead: tasks, task log, disks and permissions. All of them
 	// require Sys.Audit on /nodes — only the AUDIT token has it.
-	opLeituraHipervisor operacaoPVX = iota
+	opHypervisorRead pvxOp = iota
 	// opGuest: snapshots (list, create, delete). Requires VM.Snapshot on the
 	// guest — only the NODE's token has it, and it is the one that has to show up
 	// in the UPID.
 	opGuest
 )
 
-// chaveParaOperacao is the ONLY function that decides which vault key opens
+// keyForOp is the ONLY function that decides which vault key opens
 // which operation. See the block at the top of the file for the measurement
 // that justifies it.
 //
 // It became a method because the choice of the READ token came to depend on the
 // vault (does `pve_token_painel` exist?), and a free function has no way to ask.
-func (r *Router) chaveParaOperacao(op operacaoPVX, no inventory.Node) string {
+func (r *Router) keyForOp(op pvxOp, no inventory.Node) string {
 	if op == opGuest {
-		return chaveDoNo(no)
+		return nodeKey(no)
 	}
-	return r.segredoDeLeituraDoHipervisor()
+	return r.hypervisorReadSecret()
 }
 
-// clienteParaOperacao resolves token + client, keeping the THREE vault states
+// clientForOp resolves token + client, keeping the THREE vault states
 // apart. A vault that is down (503) and a credential that does not exist (409)
 // call for opposite actions from the operator; collapsing the two into one
 // empty result is the same mistake as handlers_ai.go:186, which already caused
 // a logged defect.
-func (r *Router) clienteParaOperacao(w http.ResponseWriter, op operacaoPVX, no inventory.Node) (hypervisorOps, bool) {
-	chave := r.chaveParaOperacao(op, no)
-	valor, estado := r.tokenDoCofre(chave)
-	switch estado {
+func (r *Router) clientForOp(w http.ResponseWriter, op pvxOp, no inventory.Node) (hypervisorOps, bool) {
+	key := r.keyForOp(op, no)
+	valor, state := r.vaultToken(key)
+	switch state {
 	case vaultInalcancavel:
-		writeErr(w, 503, "vault unreachable — the credential ("+chave+") could not be read")
+		writeErr(w, 503, "vault unreachable — the credential ("+key+") could not be read")
 		return nil, false
-	case vaultAusente:
-		writeErr(w, 409, "missing credential in the vault: "+chave)
+	case vaultMissing:
+		writeErr(w, 409, "missing credential in the vault: "+key)
 		return nil, false
 	}
 	cli, err := r.dial(valor)
@@ -161,8 +161,8 @@ func (r *Router) handleProxmox(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	resto := strings.Trim(strings.TrimPrefix(req.URL.Path, "/api/proxmox"), "/")
-	somenteGET := func() bool {
+	rest := strings.Trim(strings.TrimPrefix(req.URL.Path, "/api/proxmox"), "/")
+	getOnly := func() bool {
 		if req.Method != http.MethodGet {
 			writeErr(w, 405, "method not allowed")
 			return false
@@ -170,91 +170,91 @@ func (r *Router) handleProxmox(w http.ResponseWriter, req *http.Request) {
 		return true
 	}
 
-	switch resto {
+	switch rest {
 	case "":
-		if !somenteGET() {
+		if !getOnly() {
 			return
 		}
-		r.saudeDoHipervisor(w, inv)
+		r.hypervisorHealth(w, inv)
 	case "tasks":
-		if !somenteGET() {
+		if !getOnly() {
 			return
 		}
-		r.tarefasDoHipervisor(w, req, inv)
+		r.hypervisorTasks(w, req, inv)
 	case "tasks/log":
-		if !somenteGET() {
+		if !getOnly() {
 			return
 		}
-		r.logDaTarefa(w, req, inv)
+		r.taskLog(w, req, inv)
 	case "disks":
-		if !somenteGET() {
+		if !getOnly() {
 			return
 		}
-		r.discosDoHipervisor(w, req, inv)
+		r.hypervisorDisks(w, req, inv)
 	case "storage":
-		if !somenteGET() {
+		if !getOnly() {
 			return
 		}
-		r.capacidadeDeStorage(w, inv)
+		r.storageCapacity(w, inv)
 	case "zfs":
-		if !somenteGET() {
+		if !getOnly() {
 			return
 		}
-		r.estadoDosZPools(w, inv)
+		r.zpoolState(w, inv)
 	case "power":
 		// 🔴 POST ONLY, never GET. A hypervisor shutdown reachable by GET would
 		// be reachable by a link, by browser prefetch and by anything that
 		// follows a URL — and this is the one command in the dashboard whose
 		// mistake has no remote undo.
-		r.energiaDoHipervisor(w, req, inv)
+		r.hypervisorPower(w, req, inv)
 	case "rrd":
 		// Series for the NODE or for a guest, depending on ?node=. Live: a chart
 		// is only worth anything if it shows now.
-		if !somenteGET() {
+		if !getOnly() {
 			return
 		}
-		r.serieTemporal(w, req, inv)
+		r.timeSeries(w, req, inv)
 	case "sistema":
 		// Network, DNS, time, certificates — the answers to "what is the bridge's
 		// IP?" and "when does the certificate expire?" that the remote operator
 		// did not have.
-		if !somenteGET() {
+		if !getOnly() {
 			return
 		}
-		r.sistemaDoNo(w, req, inv)
+		r.nodeSystem(w, req, inv)
 	case "pacotes":
-		if !somenteGET() {
+		if !getOnly() {
 			return
 		}
-		r.pacotesDoNo(w, req, inv)
+		r.nodePackages(w, req, inv)
 	case "syslog":
-		if !somenteGET() {
+		if !getOnly() {
 			return
 		}
-		r.syslogDoNo(w, req, inv)
+		r.nodeSyslog(w, req, inv)
 	case "backup":
 		// LIVE and on demand: this is the answer to "when was the last copy?",
 		// and it changes once a day. Putting it in the poller would cost two
 		// calls per tick.
-		if !somenteGET() {
+		if !getOnly() {
 			return
 		}
-		r.frescorDeBackup(w, req, inv)
+		r.backupFreshness(w, req, inv)
 	case "zfs/topologia":
 		// LIVE and on demand: pool topology rarely changes, and the tab is opened
 		// deliberately. Putting this in the poller would cost two calls per tick
 		// to answer a question that does not change between ticks.
-		if !somenteGET() {
+		if !getOnly() {
 			return
 		}
-		r.topologiaDosZPools(w, req, inv)
+		r.zpoolTopology(w, req, inv)
 	case "permissions":
-		if !somenteGET() {
+		if !getOnly() {
 			return
 		}
-		r.permissoesDoToken(w, req, inv)
+		r.tokenPermissions(w, req, inv)
 	case "snapshots":
-		r.snapshotsDoGuest(w, req, inv)
+		r.guestSnapshots(w, req, inv)
 	case "snapshots/rollback":
 		// 🔴 POST ONLY. A rollback reachable by GET would be reachable by browser
 		// prefetch, by a crawler and by a link pasted into a chat.
@@ -262,17 +262,17 @@ func (r *Router) handleProxmox(w http.ResponseWriter, req *http.Request) {
 			writeErr(w, 405, "method not allowed")
 			return
 		}
-		r.rollbackDoGuest(w, req, inv)
+		r.guestRollback(w, req, inv)
 	default:
-		writeErr(w, 404, "unknown route: /api/proxmox/"+resto)
+		writeErr(w, 404, "unknown route: /api/proxmox/"+rest)
 	}
 }
 
-// nomeDoHipervisorNoInventario returns the name of the discovered host. No
+// hypervisorNameInInventory returns the name of the discovered host. No
 // literal hostname lives here: either the poller has already stamped the
 // hypervisor's document, or the name comes from the `host` node that discovery
 // created.
-func nomeDoHipervisorNoInventario(inv inventory.Inventory) string {
+func hypervisorNameInInventory(inv inventory.Inventory) string {
 	if s := strings.TrimSpace(inv.Hypervisor.Node); s != "" {
 		return s
 	}
@@ -284,9 +284,9 @@ func nomeDoHipervisorNoInventario(inv inventory.Inventory) string {
 	return ""
 }
 
-// noDoHipervisorOu409 resolves the host name or explains why it cannot.
-func noDoHipervisorOu409(w http.ResponseWriter, inv inventory.Inventory) (string, bool) {
-	nome := nomeDoHipervisorNoInventario(inv)
+// hypervisorNodeOr409 resolves the host name or explains why it cannot.
+func hypervisorNodeOr409(w http.ResponseWriter, inv inventory.Inventory) (string, bool) {
+	nome := hypervisorNameInInventory(inv)
 	if nome == "" {
 		// Never "pve" by default: guessing a name would make the route return the
 		// hypervisor's error instead of the real state ("the poller has not
@@ -297,20 +297,20 @@ func noDoHipervisorOu409(w http.ResponseWriter, inv inventory.Inventory) (string
 	return nome, true
 }
 
-// saudeDoHipervisor answers from the STORE, without touching the hypervisor.
+// hypervisorHealth answers from the STORE, without touching the hypervisor.
 // Health is a heartbeat and the poller is what collects it (one tick every
 // 30 s); calling from here would turn every screen refresh into a live request
 // AND, worse, would make the displayed age always "0 s", hiding precisely the
 // hypervisor that has gone mute.
-func (r *Router) saudeDoHipervisor(w http.ResponseWriter, inv inventory.Inventory) {
+func (r *Router) hypervisorHealth(w http.ResponseWriter, inv inventory.Inventory) {
 	writeJSON(w, map[string]any{
-		"hypervisor":  inventory.ViewHypervisor(inv.Hypervisor, r.ttl(), r.agora()),
+		"hypervisor":  inventory.ViewHypervisor(inv.Hypervisor, r.ttl(), r.now()),
 		"ttl_seconds": int64(r.ttl().Seconds()),
-		"observed_at": r.agora().Unix(),
+		"observed_at": r.now().Unix(),
 	})
 }
 
-// capacidadeDeStorage answers from the STORE, without touching the hypervisor —
+// storageCapacity answers from the STORE, without touching the hypervisor —
 // same rule as health, and for the same reason.
 //
 // 🔴 Capacity is a HEARTBEAT, not navigation. A pool that fills slowly only
@@ -327,20 +327,20 @@ func (r *Router) saudeDoHipervisor(w http.ResponseWriter, inv inventory.Inventor
 //
 // The response carries `datastore_audit` BECAUSE `pools: []` is ambiguous on
 // its own.
-func (r *Router) capacidadeDeStorage(w http.ResponseWriter, inv inventory.Inventory) {
-	v := inventory.ViewStorage(inv.Hypervisor, r.ttl(), r.agora())
+func (r *Router) storageCapacity(w http.ResponseWriter, inv inventory.Inventory) {
+	v := inventory.ViewStorage(inv.Hypervisor, r.ttl(), r.now())
 	writeJSON(w, map[string]any{
-		"node":            nomeDoHipervisorNoInventario(inv),
+		"node":            hypervisorNameInInventory(inv),
 		"pools":           v.Pools,
 		"datastore_audit": v.DatastoreAudit,
 		"age_seconds":     v.AgeSeconds,
 		"stale":           v.Stale,
 		"ttl_seconds":     int64(r.ttl().Seconds()),
-		"observed_at":     r.agora().Unix(),
+		"observed_at":     r.now().Unix(),
 	})
 }
 
-// estadoDosZPools answers from the STORE, with its OWN timestamp — its age is
+// zpoolState answers from the STORE, with its OWN timestamp — its age is
 // neither health's nor storage's: the three calls fail independently.
 //
 // 🔴 It is the most important route in the lab and the easiest to
@@ -348,19 +348,19 @@ func (r *Router) capacidadeDeStorage(w http.ResponseWriter, inv inventory.Invent
 // redundancy. A pool leaving ONLINE is the most expensive news in the house,
 // and until now that news only existed in the Proxmox UI — which the operator,
 // working fully remotely, cannot reach.
-func (r *Router) estadoDosZPools(w http.ResponseWriter, inv inventory.Inventory) {
-	v := inventory.ViewZPools(inv.Hypervisor, r.ttl(), r.agora())
+func (r *Router) zpoolState(w http.ResponseWriter, inv inventory.Inventory) {
+	v := inventory.ViewZPools(inv.Hypervisor, r.ttl(), r.now())
 	writeJSON(w, map[string]any{
-		"node":        nomeDoHipervisorNoInventario(inv),
+		"node":        hypervisorNameInInventory(inv),
 		"pools":       v.Pools,
 		"age_seconds": v.AgeSeconds,
 		"stale":       v.Stale,
 		"ttl_seconds": int64(r.ttl().Seconds()),
-		"observed_at": r.agora().Unix(),
+		"observed_at": r.now().Unix(),
 	})
 }
 
-// energiaDoHipervisor reboots or shuts down the node ITSELF.
+// hypervisorPower reboots or shuts down the node ITSELF.
 //
 // 🔴 THE ONE ACTION IN THE DASHBOARD WHOSE MISTAKE HAS NO REMOTE UNDO. This
 // machine has no IPMI, and Wake-on-LAN is no help: the host itself is what
@@ -381,90 +381,90 @@ func (r *Router) estadoDosZPools(w http.ResponseWriter, inv inventory.Inventory)
 // Waiting for it would hold the request open precisely while the other end
 // dies; what can still be asserted from this side is that the command was
 // ACCEPTED.
-func (r *Router) energiaDoHipervisor(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
+func (r *Router) hypervisorPower(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
 	if req.Method != http.MethodPost {
 		writeErr(w, 405, "method not allowed — hypervisor power is POST")
 		return
 	}
-	node, ok := noDoHipervisorOu409(w, inv)
+	node, ok := hypervisorNodeOr409(w, inv)
 	if !ok {
 		return
 	}
-	cmd, ok := pve.ComandoDeEnergiaValido(req.URL.Query().Get("command"))
+	cmd, ok := pve.ValidPowerCommand(req.URL.Query().Get("command"))
 	if !ok {
 		writeErr(w, 400, "invalid command — only 'reboot' or 'shutdown'")
 		return
 	}
-	cli, ok := r.clienteParaOperacao(w, opLeituraHipervisor, inventory.Node{})
+	cli, ok := r.clientForOp(w, opHypervisorRead, inventory.Node{})
 	if !ok {
 		return
 	}
 
 	// Audit BEFORE firing. See the comment above: there may be no "afterwards".
-	usuario := auth.UserFrom(req)
-	r.auditEvent(req, usuario, "pve.node-power", string(cmd)+" "+node)
+	user := auth.UserFrom(req)
+	r.auditEvent(req, user, "pve.node-power", string(cmd)+" "+node)
 
 	upid, err := cli.NodePower(req.Context(), node, cmd)
 	if err != nil {
-		writeErr(w, codigoDoErroPVE(err), "hypervisor refused "+string(cmd)+": "+detalheDoErroPVE(err))
+		writeErr(w, pveErrorCode(err), "hypervisor refused "+string(cmd)+": "+pveErrorDetail(err))
 		return
 	}
 
 	// Return WHO goes down with it. The operator has just ordered the shutdown
 	// of the machine hosting these guests, and the list is their last chance to
 	// see what that means — including in a log, later.
-	var afetados []string
+	var affected []string
 	for _, n := range inv.Nodes {
 		if n.Kind != inventory.NodeKindGuest || n.VMID <= 0 {
 			continue
 		}
 		if st := n.Status.Value; st == "running" || st == "online" {
-			afetados = append(afetados, n.ID)
+			affected = append(affected, n.ID)
 		}
 	}
 	writeJSON(w, map[string]any{
 		"node": node, "command": string(cmd), "upid": upid,
-		"guests_afetados": afetados,
-		"observed_at":     r.agora().Unix(),
+		"guests_afetados": affected,
+		"observed_at":     r.now().Unix(),
 		"aviso":           "the command was accepted by the hypervisor; from here on the panel loses contact with it",
 	})
 }
 
-// serieTemporal returns the series for the node or for a guest.
+// timeSeries returns the series for the node or for a guest.
 //
 // 🔴 THE WINDOW GOES THROUGH AN ALLOWLIST. `timeframe` ends up in the
 // hypervisor's URL; without the allowlist, a string coming from the dashboard's
-// query string would become a path inside PVE. pve.JanelaRRDValida is the only
+// query string would become a path inside PVE. pve.ValidRRDWindow is the only
 // source of that list.
 //
 // The series arrives ALREADY AGGREGATED from RRD: the dashboard does not
 // interpolate, does not resample and does not invent points. A hole in the
 // series is a real hole — the hypervisor was off, or RRD had no data yet.
 // Filling it with zeros would make a power cut look like an idle period.
-func (r *Router) serieTemporal(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
-	node, ok := noDoHipervisorOu409(w, inv)
+func (r *Router) timeSeries(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
+	node, ok := hypervisorNodeOr409(w, inv)
 	if !ok {
 		return
 	}
 	q := req.URL.Query()
-	janela, ok := pve.JanelaRRDValida(q.Get("janela"))
+	window, ok := pve.ValidRRDWindow(q.Get("janela"))
 	if !ok {
-		janela = pve.JanelaHora
+		window = pve.WindowHour
 	}
-	cli, ok := r.clienteParaOperacao(w, opLeituraHipervisor, inventory.Node{})
+	cli, ok := r.clientForOp(w, opHypervisorRead, inventory.Node{})
 	if !ok {
 		return
 	}
 
-	alvo := strings.TrimSpace(q.Get("node"))
-	if alvo == "" {
-		pts, err := cli.RRDNode(req.Context(), node, janela)
+	target := strings.TrimSpace(q.Get("node"))
+	if target == "" {
+		pts, err := cli.RRDNode(req.Context(), node, window)
 		if err != nil {
-			writeErr(w, codigoDoErroPVE(err), "hypervisor refused the node series: "+detalheDoErroPVE(err))
+			writeErr(w, pveErrorCode(err), "hypervisor refused the node series: "+pveErrorDetail(err))
 			return
 		}
-		writeJSON(w, map[string]any{"alvo": node, "escopo": "node", "janela": string(janela),
-			"pontos": pts, "observed_at": r.agora().Unix()})
+		writeJSON(w, map[string]any{"alvo": node, "escopo": "node", "janela": string(window),
+			"pontos": pts, "observed_at": r.now().Unix()})
 		return
 	}
 
@@ -472,108 +472,108 @@ func (r *Router) serieTemporal(w http.ResponseWriter, req *http.Request, inv inv
 	// comes from. Accepting the type as a separate query parameter would let the
 	// client claim an LXC is QEMU — and the hypervisor would answer 500 about a
 	// guest that does exist.
-	no, achado := achaNo(inv, alvo)
-	if !achado || no.VMID <= 0 {
-		writeErr(w, 404, "unknown guest in the inventory: "+alvo)
+	no, hit := findNode(inv, target)
+	if !hit || no.VMID <= 0 {
+		writeErr(w, 404, "unknown guest in the inventory: "+target)
 		return
 	}
 	typ := strings.SplitN(no.ID, "/", 2)[0]
-	pts, err := cli.RRDGuest(req.Context(), node, no.VMID, typ, janela)
+	pts, err := cli.RRDGuest(req.Context(), node, no.VMID, typ, window)
 	if err != nil {
-		writeErr(w, codigoDoErroPVE(err), "hypervisor refused the guest series: "+detalheDoErroPVE(err))
+		writeErr(w, pveErrorCode(err), "hypervisor refused the guest series: "+pveErrorDetail(err))
 		return
 	}
-	writeJSON(w, map[string]any{"alvo": no.ID, "escopo": "guest", "janela": string(janela),
-		"pontos": pts, "observed_at": r.agora().Unix()})
+	writeJSON(w, map[string]any{"alvo": no.ID, "escopo": "guest", "janela": string(window),
+		"pontos": pts, "observed_at": r.now().Unix()})
 }
 
-// sistemaDoNo joins network, DNS, time and certificates into a single response.
+// nodeSystem joins network, DNS, time and certificates into a single response.
 //
 // That is four calls to the hypervisor, and one isolated failure does NOT take
 // the others down: each block carries its own error. A response that dies whole
 // because DNS did not answer would hide the bridge's IP, which may well be
 // exactly what the operator came looking for.
-func (r *Router) sistemaDoNo(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
-	node, ok := noDoHipervisorOu409(w, inv)
+func (r *Router) nodeSystem(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
+	node, ok := hypervisorNodeOr409(w, inv)
 	if !ok {
 		return
 	}
-	cli, ok := r.clienteParaOperacao(w, opLeituraHipervisor, inventory.Node{})
+	cli, ok := r.clientForOp(w, opHypervisorRead, inventory.Node{})
 	if !ok {
 		return
 	}
 	ctx := req.Context()
-	out := map[string]any{"node": node, "observed_at": r.agora().Unix()}
+	out := map[string]any{"node": node, "observed_at": r.now().Unix()}
 
 	if v, err := cli.Network(ctx, node); err != nil {
-		out["network_erro"] = detalheDoErroPVE(err)
+		out["network_erro"] = pveErrorDetail(err)
 	} else {
 		out["network"] = v
 	}
 	if v, err := cli.DNS(ctx, node); err != nil {
-		out["dns_erro"] = detalheDoErroPVE(err)
+		out["dns_erro"] = pveErrorDetail(err)
 	} else {
 		out["dns"] = v
 	}
 	if v, err := cli.Time(ctx, node); err != nil {
-		out["time_erro"] = detalheDoErroPVE(err)
+		out["time_erro"] = pveErrorDetail(err)
 	} else {
 		out["time"] = v
 	}
-	if v, err := cli.Certificados(ctx, node); err != nil {
-		out["certificados_erro"] = detalheDoErroPVE(err)
+	if v, err := cli.Certificates(ctx, node); err != nil {
+		out["certificados_erro"] = pveErrorDetail(err)
 	} else {
 		out["certificados"] = v
 	}
 	writeJSON(w, out)
 }
 
-// pacotesDoNo lists the installed packages with their versions.
-func (r *Router) pacotesDoNo(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
-	node, ok := noDoHipervisorOu409(w, inv)
+// nodePackages lists the installed packages with their versions.
+func (r *Router) nodePackages(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
+	node, ok := hypervisorNodeOr409(w, inv)
 	if !ok {
 		return
 	}
-	cli, ok := r.clienteParaOperacao(w, opLeituraHipervisor, inventory.Node{})
+	cli, ok := r.clientForOp(w, opHypervisorRead, inventory.Node{})
 	if !ok {
 		return
 	}
-	ps, err := cli.Pacotes(req.Context(), node)
+	ps, err := cli.Packages(req.Context(), node)
 	if err != nil {
-		writeErr(w, codigoDoErroPVE(err), "hypervisor refused the package list: "+detalheDoErroPVE(err))
+		writeErr(w, pveErrorCode(err), "hypervisor refused the package list: "+pveErrorDetail(err))
 		return
 	}
-	writeJSON(w, map[string]any{"node": node, "pacotes": ps, "observed_at": r.agora().Unix()})
+	writeJSON(w, map[string]any{"node": node, "pacotes": ps, "observed_at": r.now().Unix()})
 }
 
-// syslogDoNo returns the last lines of the hypervisor's journal.
+// nodeSyslog returns the last lines of the hypervisor's journal.
 //
 // The cap is pve.MaxSyslog and it is applied HERE and again in the client —
 // with the SAME constant, never with a copy of the number. Two independent caps
 // diverge the day someone touches one of them.
-func (r *Router) syslogDoNo(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
-	node, ok := noDoHipervisorOu409(w, inv)
+func (r *Router) nodeSyslog(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
+	node, ok := hypervisorNodeOr409(w, inv)
 	if !ok {
 		return
 	}
-	cli, ok := r.clienteParaOperacao(w, opLeituraHipervisor, inventory.Node{})
+	cli, ok := r.clientForOp(w, opHypervisorRead, inventory.Node{})
 	if !ok {
 		return
 	}
-	limite := pve.MaxSyslog
-	if n, err := strconv.Atoi(req.URL.Query().Get("limit")); err == nil && n > 0 && n < limite {
-		limite = n
+	limit := pve.MaxSyslog
+	if n, err := strconv.Atoi(req.URL.Query().Get("limit")); err == nil && n > 0 && n < limit {
+		limit = n
 	}
-	linhas, err := cli.Syslog(req.Context(), node, limite)
+	lines, err := cli.Syslog(req.Context(), node, limit)
 	if err != nil {
-		writeErr(w, codigoDoErroPVE(err), "hypervisor refused the syslog: "+detalheDoErroPVE(err))
+		writeErr(w, pveErrorCode(err), "hypervisor refused the syslog: "+pveErrorDetail(err))
 		return
 	}
-	writeJSON(w, map[string]any{"node": node, "linhas": linhas, "limite": limite,
-		"observed_at": r.agora().Unix()})
+	writeJSON(w, map[string]any{"node": node, "linhas": lines, "limite": limit,
+		"observed_at": r.now().Unix()})
 }
 
-// frescorDeBackup answers "when was the last copy, and of how many guests".
+// backupFreshness answers "when was the last copy, and of how many guests".
 //
 // 🔴 This lab's off-site chain has already died for 14 DAYS in silence, and
 // nothing on screen could say so. Having a backup and being able to say when
@@ -583,12 +583,12 @@ func (r *Router) syslogDoNo(w http.ResponseWriter, req *http.Request, inv invent
 // `pbs` is layer 2 (deduplicated, with verification) and `backupusb` is the
 // rotation. Merging the two into a single number would hide exactly the case
 // that matters — one layer fresh and the other stopped.
-func (r *Router) frescorDeBackup(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
-	node, ok := noDoHipervisorOu409(w, inv)
+func (r *Router) backupFreshness(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
+	node, ok := hypervisorNodeOr409(w, inv)
 	if !ok {
 		return
 	}
-	cli, ok := r.clienteParaOperacao(w, opLeituraHipervisor, inventory.Node{})
+	cli, ok := r.clientForOp(w, opHypervisorRead, inventory.Node{})
 	if !ok {
 		return
 	}
@@ -596,12 +596,12 @@ func (r *Router) frescorDeBackup(w http.ResponseWriter, req *http.Request, inv i
 	// name nailed into the code stops existing the day the operator renames the
 	// datastore, and the symptom would be the screen saying "no backup" about a
 	// datastore that is full — the most expensive lie this screen can tell.
-	v := inventory.ViewStorage(inv.Hypervisor, r.ttl(), r.agora())
-	var alvos []string
+	v := inventory.ViewStorage(inv.Hypervisor, r.ttl(), r.now())
+	var targets []string
 	for _, p := range v.Pools {
 		for _, c := range p.Content {
 			if c == "backup" {
-				alvos = append(alvos, p.ID)
+				targets = append(targets, p.ID)
 				break
 			}
 		}
@@ -613,14 +613,14 @@ func (r *Router) frescorDeBackup(w http.ResponseWriter, req *http.Request, inv i
 	// freshness down: what is lost is the distinction, not the number.
 	// map: storage -> {state, schedule}. Only what HAS a job in PVE goes in; the
 	// absence is meaningful and is read as "outside-pve" further down.
-	type agenda struct{ estado, schedule string }
+	type agenda struct{ state, schedule string }
 	jobs := map[string]agenda{}
-	if js, err := cli.JobsDeBackup(req.Context()); err == nil {
+	if js, err := cli.BackupJobs(req.Context()); err == nil {
 		for _, j := range js {
 			if j.Storage == "" {
 				continue
 			}
-			if j.Agendado() {
+			if j.IsScheduled() {
 				jobs[j.Storage] = agenda{"ativo", j.Schedule}
 			} else {
 				// The job exists and is switched off: SOMEBODY decided that. It
@@ -631,33 +631,33 @@ func (r *Router) frescorDeBackup(w http.ResponseWriter, req *http.Request, inv i
 			}
 		}
 	}
-	estadoDaAgenda := func(st string) (string, string) {
+	scheduleState := func(st string) (string, string) {
 		if a, ok := jobs[st]; ok {
-			return a.estado, a.schedule
+			return a.state, a.schedule
 		}
 		return "fora-do-pve", ""
 	}
 
-	saida := make([]pve.FrescorDeBackup, 0, len(alvos))
-	for _, st := range alvos {
-		f, err := cli.BackupsDoDatastore(req.Context(), node, st)
+	output := make([]pve.BackupFreshness, 0, len(targets))
+	for _, st := range targets {
+		f, err := cli.DatastoreBackups(req.Context(), node, st)
 		if err != nil {
 			// An unreadable datastore must not take the others down, nor turn into
 			// silence: it goes into the list saying it failed, with the reason.
-			est, sch := estadoDaAgenda(st)
-			saida = append(saida, pve.FrescorDeBackup{Storage: st, Erro: detalheDoErroPVE(err),
-				Agendamento: est, Schedule: sch})
+			est, sch := scheduleState(st)
+			output = append(output, pve.BackupFreshness{Storage: st, Error: pveErrorDetail(err),
+				Scheduler: est, Schedule: sch})
 			continue
 		}
-		f.Agendamento, f.Schedule = estadoDaAgenda(st)
-		saida = append(saida, f)
+		f.Scheduler, f.Schedule = scheduleState(st)
+		output = append(output, f)
 	}
 	writeJSON(w, map[string]any{
-		"node": node, "datastores": saida, "observed_at": r.agora().Unix(),
+		"node": node, "datastores": output, "observed_at": r.now().Unix(),
 	})
 }
 
-// topologiaDosZPools answers HOW each pool is built — and, as a consequence,
+// zpoolTopology answers HOW each pool is built — and, as a consequence,
 // what is lost when a disk dies.
 //
 // 🔴 This is the question the screen could not answer. `zfs` says there is an
@@ -669,46 +669,46 @@ func (r *Router) frescorDeBackup(w http.ResponseWriter, req *http.Request, inv i
 // Redundancy here is DERIVED from the topology, never asserted by fixed text. A
 // screen that says "no redundancy" from a hardcoded string starts lying the day
 // someone adds the second NVMe the plan defers to next year.
-func (r *Router) topologiaDosZPools(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
-	node, ok := noDoHipervisorOu409(w, inv)
+func (r *Router) zpoolTopology(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
+	node, ok := hypervisorNodeOr409(w, inv)
 	if !ok {
 		return
 	}
-	cli, ok := r.clienteParaOperacao(w, opLeituraHipervisor, inventory.Node{})
+	cli, ok := r.clientForOp(w, opHypervisorRead, inventory.Node{})
 	if !ok {
 		return
 	}
 	pools, err := cli.ZFSList(req.Context(), node)
 	if err != nil {
-		writeErr(w, codigoDoErroPVE(err), "hypervisor refused the pool list: "+detalheDoErroPVE(err))
+		writeErr(w, pveErrorCode(err), "hypervisor refused the pool list: "+pveErrorDetail(err))
 		return
 	}
-	tops := make([]pve.ZPoolTopologia, 0, len(pools))
+	tops := make([]pve.ZPoolTopology, 0, len(pools))
 	for _, p := range pools {
-		t, err := cli.ZFSTopologia(req.Context(), node, p.Name)
+		t, err := cli.ZFSTopology(req.Context(), node, p.Name)
 		if err != nil {
 			// An unreadable pool must not take the others down — nor turn into
 			// silence. It goes into the list saying it was not read, with the reason.
-			tops = append(tops, pve.ZPoolTopologia{
-				Nome: p.Name, Estado: "DESCONHECIDO",
-				Erros: "could not read the topology: " + detalheDoErroPVE(err),
+			tops = append(tops, pve.ZPoolTopology{
+				Nome: p.Name, State: "DESCONHECIDO",
+				Errors: "could not read the topology: " + pveErrorDetail(err),
 			})
 			continue
 		}
 		tops = append(tops, t)
 	}
 	writeJSON(w, map[string]any{
-		"node": node, "pools": tops, "observed_at": r.agora().Unix(),
+		"node": node, "pools": tops, "observed_at": r.now().Unix(),
 	})
 }
 
-// tarefasDoHipervisor lists the NODE's tasks — LIVE, with the audit token.
-func (r *Router) tarefasDoHipervisor(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
-	node, ok := noDoHipervisorOu409(w, inv)
+// hypervisorTasks lists the NODE's tasks — LIVE, with the audit token.
+func (r *Router) hypervisorTasks(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
+	node, ok := hypervisorNodeOr409(w, inv)
 	if !ok {
 		return
 	}
-	cli, ok := r.clienteParaOperacao(w, opLeituraHipervisor, inventory.Node{})
+	cli, ok := r.clientForOp(w, opHypervisorRead, inventory.Node{})
 	if !ok {
 		return
 	}
@@ -732,29 +732,29 @@ func (r *Router) tarefasDoHipervisor(w http.ResponseWriter, req *http.Request, i
 		opt.VMID = n
 	}
 
-	tarefas, err := cli.TaskList(req.Context(), node, opt)
+	tasks, err := cli.TaskList(req.Context(), node, opt)
 	if err != nil {
-		writeErr(w, codigoDoErroPVE(err), "hypervisor refused the task list: "+detalheDoErroPVE(err))
+		writeErr(w, pveErrorCode(err), "hypervisor refused the task list: "+pveErrorDetail(err))
 		return
 	}
-	if tarefas == nil {
-		tarefas = []pve.Task{}
+	if tasks == nil {
+		tasks = []pve.Task{}
 	}
 	writeJSON(w, map[string]any{
-		"node": node, "tasks": tarefas,
+		"node": node, "tasks": tasks,
 		"errors_only": opt.ErrorsOnly,
-		"observed_at": r.agora().Unix(),
+		"observed_at": r.now().Unix(),
 	})
 }
 
-// logDaTarefa opens the log of ONE task — LIVE, with the audit token.
+// taskLog opens the log of ONE task — LIVE, with the audit token.
 //
 // The UPID goes in the QUERY, not in the path: it contains ':' and ServeMux
 // does not slice that without pain. And there is no limit parameter: the cap
 // (200 lines) belongs to the server, for the same reason internal/pve does not
 // accept it in the signature.
-func (r *Router) logDaTarefa(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
-	node, ok := noDoHipervisorOu409(w, inv)
+func (r *Router) taskLog(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
+	node, ok := hypervisorNodeOr409(w, inv)
 	if !ok {
 		return
 	}
@@ -763,19 +763,19 @@ func (r *Router) logDaTarefa(w http.ResponseWriter, req *http.Request, inv inven
 		writeErr(w, 400, "upid is required")
 		return
 	}
-	cli, ok := r.clienteParaOperacao(w, opLeituraHipervisor, inventory.Node{})
+	cli, ok := r.clientForOp(w, opHypervisorRead, inventory.Node{})
 	if !ok {
 		return
 	}
-	linhas, err := cli.TaskLog(req.Context(), node, upid)
+	lines, err := cli.TaskLog(req.Context(), node, upid)
 	if err != nil {
-		writeErr(w, codigoDoErroPVE(err), "hypervisor refused the log: "+detalheDoErroPVE(err))
+		writeErr(w, pveErrorCode(err), "hypervisor refused the log: "+pveErrorDetail(err))
 		return
 	}
-	if linhas == nil {
-		linhas = []string{}
+	if lines == nil {
+		lines = []string{}
 	}
-	writeJSON(w, map[string]any{"node": node, "upid": upid, "lines": linhas})
+	writeJSON(w, map[string]any{"node": node, "upid": upid, "lines": lines})
 }
 
 // discoView adds the NORMALIZED wearout to the disk. PVE sends a number for an
@@ -787,36 +787,36 @@ type discoView struct {
 	WearoutPct *float64 `json:"wearout_pct"`
 }
 
-// discosDoHipervisor lists the physical disks with SMART — LIVE, audit token.
+// hypervisorDisks lists the physical disks with SMART — LIVE, audit token.
 // Measured at 597 ms, the most expensive route of the set, which is why it is
 // on demand and never enters the poller's tick.
-func (r *Router) discosDoHipervisor(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
-	node, ok := noDoHipervisorOu409(w, inv)
+func (r *Router) hypervisorDisks(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
+	node, ok := hypervisorNodeOr409(w, inv)
 	if !ok {
 		return
 	}
-	cli, ok := r.clienteParaOperacao(w, opLeituraHipervisor, inventory.Node{})
+	cli, ok := r.clientForOp(w, opHypervisorRead, inventory.Node{})
 	if !ok {
 		return
 	}
 	discos, err := cli.DisksList(req.Context(), node)
 	if err != nil {
-		writeErr(w, codigoDoErroPVE(err), "hypervisor refused the disk list: "+detalheDoErroPVE(err))
+		writeErr(w, pveErrorCode(err), "hypervisor refused the disk list: "+pveErrorDetail(err))
 		return
 	}
 	vistas := make([]discoView, 0, len(discos))
 	for _, d := range discos {
 		v := discoView{Disk: d}
-		if pct, temDado := d.WearoutPct(); temDado {
+		if pct, hasData := d.WearoutPct(); hasData {
 			p := pct
 			v.WearoutPct = &p
 		}
 		vistas = append(vistas, v)
 	}
-	writeJSON(w, map[string]any{"node": node, "disks": vistas, "observed_at": r.agora().Unix()})
+	writeJSON(w, map[string]any{"node": node, "disks": vistas, "observed_at": r.now().Unix()})
 }
 
-// permissoesDoToken answers "what can this token do" — LIVE, audit token.
+// tokenPermissions answers "what can this token do" — LIVE, audit token.
 //
 // 🔴 This is the route that explains ON SCREEN, by measurement rather than by
 // promise, what the dashboard can and cannot see of the hypervisor. At first it
@@ -824,39 +824,39 @@ func (r *Router) discosDoHipervisor(w http.ResponseWriter, req *http.Request, in
 // documents its PRESENCE — and the text on screen switches by itself, because
 // what changed was the measurement, not the code.
 //
-// `storage_visivel` comes from pve.PodeAuditarDatastore, the SAME function the
+// `storage_visivel` comes from pve.CanAuditDatastore, the SAME function the
 // poller uses to stamp `datastore_audit`. A copy of the rule here would give two
 // truths about the same question, and the second would age in silence — the
-// defect chaveDeCredencial (handlers_nodes.go) has already cost this codebase.
-func (r *Router) permissoesDoToken(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
-	cli, ok := r.clienteParaOperacao(w, opLeituraHipervisor, inventory.Node{})
+// defect credentialKey (handlers_nodes.go) has already cost this codebase.
+func (r *Router) tokenPermissions(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
+	cli, ok := r.clientForOp(w, opHypervisorRead, inventory.Node{})
 	if !ok {
 		return
 	}
 	perms, err := cli.Permissions(req.Context())
 	if err != nil {
-		writeErr(w, codigoDoErroPVE(err), "hypervisor refused the permissions: "+detalheDoErroPVE(err))
+		writeErr(w, pveErrorCode(err), "hypervisor refused the permissions: "+pveErrorDetail(err))
 		return
 	}
-	storage := pve.PodeAuditarDatastore(perms)
+	storage := pve.CanAuditDatastore(perms)
 	if perms == nil {
 		perms = map[string]map[string]int{}
 	}
 	writeJSON(w, map[string]any{
 		"permissions":     perms,
 		"storage_visivel": storage,
-		"observed_at":     r.agora().Unix(),
+		"observed_at":     r.now().Unix(),
 	})
 }
 
-// snapshotsDoGuest lists, creates and deletes snapshots — LIVE, with the NODE's
+// guestSnapshots lists, creates and deletes snapshots — LIVE, with the NODE's
 // token.
 //
 // 🔴 POST and DELETE only answer 200 after WaitTask (status "stopped" AND
 // exitstatus "OK"). PVE's POST returns 200 as soon as the TASK IS CREATED:
 // passing that 200 straight through would be the screen saying "snapshot ready"
 // for a snapshot that may not even have started.
-func (r *Router) snapshotsDoGuest(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
+func (r *Router) guestSnapshots(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
 	switch req.Method {
 	case http.MethodGet, http.MethodPost, http.MethodDelete:
 	default:
@@ -872,14 +872,14 @@ func (r *Router) snapshotsDoGuest(w http.ResponseWriter, req *http.Request, inv 
 	// dialling out would spend a connection just to find out the screen sent
 	// garbage.
 	if req.Method != http.MethodGet {
-		if err := pve.NomeDeSnapshotValido(nome); err != nil {
+		if err := pve.ValidSnapshotName(nome); err != nil {
 			writeErr(w, 400, err.Error())
 			return
 		}
 	}
 
-	no, achou := achaNo(inv, id)
-	if !achou {
+	no, found := findNode(inv, id)
+	if !found {
 		writeErr(w, 404, "node not found: "+id)
 		return
 	}
@@ -888,64 +888,64 @@ func (r *Router) snapshotsDoGuest(w http.ResponseWriter, req *http.Request, inv 
 		return
 	}
 
-	cli, ok := r.clienteParaOperacao(w, opGuest, no)
+	cli, ok := r.clientForOp(w, opGuest, no)
 	if !ok {
 		return
 	}
-	tipo, host := tipoEHost(no)
+	kind, host := kindAndHost(no)
 	ctx := req.Context()
 
 	if req.Method == http.MethodGet {
-		snaps, err := cli.SnapshotList(ctx, host, no.VMID, tipo)
+		snaps, err := cli.SnapshotList(ctx, host, no.VMID, kind)
 		if err != nil {
-			writeErr(w, codigoDoErroPVE(err), "hypervisor refused the snapshot list: "+detalheDoErroPVE(err))
+			writeErr(w, pveErrorCode(err), "hypervisor refused the snapshot list: "+pveErrorDetail(err))
 			return
 		}
 		// PVE includes the pseudo-entry "current" ("You are here!"), which is no
 		// snapshot at all. Filtering here, rather than on screen, saves every
 		// consumer from having to remember it.
-		vistos := make([]pve.Snapshot, 0, len(snaps))
+		seen := make([]pve.Snapshot, 0, len(snaps))
 		for _, s := range snaps {
 			if s.Name != "current" {
-				vistos = append(vistos, s)
+				seen = append(seen, s)
 			}
 		}
-		writeJSON(w, map[string]any{"node": id, "snapshots": vistos, "observed_at": r.agora().Unix()})
+		writeJSON(w, map[string]any{"node": id, "snapshots": seen, "observed_at": r.now().Unix()})
 		return
 	}
 
 	var upid string
 	var err error
-	acao := "create"
+	action := "create"
 	if req.Method == http.MethodPost {
-		upid, err = cli.SnapshotCreate(ctx, host, no.VMID, tipo, nome, strings.TrimSpace(q.Get("desc")))
+		upid, err = cli.SnapshotCreate(ctx, host, no.VMID, kind, nome, strings.TrimSpace(q.Get("desc")))
 	} else {
-		acao = "delete"
-		upid, err = cli.SnapshotDelete(ctx, host, no.VMID, tipo, nome)
+		action = "delete"
+		upid, err = cli.SnapshotDelete(ctx, host, no.VMID, kind, nome)
 	}
 	if err != nil {
-		writeErr(w, codigoDoErroPVE(err), "hypervisor refused snapshot "+acao+": "+detalheDoErroPVE(err))
+		writeErr(w, pveErrorCode(err), "hypervisor refused snapshot "+action+": "+pveErrorDetail(err))
 		return
 	}
 
-	if _, err := esperaTarefa(ctx, cli, host, upid); err != nil {
+	if _, err := waitTask(ctx, cli, host, upid); err != nil {
 		r.auditEvent(req, auth.UserFrom(req), "pve.snapshot",
-			"node="+id+" acao="+acao+" nome="+nome+" upid="+upid+" status=falhou")
+			"node="+id+" acao="+action+" nome="+nome+" upid="+upid+" status=falhou")
 		// The exitstatus goes in EXPLICITLY: when Status is 0, the pve.Error
 		// formatter takes the Err branch and the Body — which carries the real
 		// reason — never shows up on its own.
-		writeErr(w, 502, "task "+upid+" did not finish cleanly: "+detalheDoErroPVE(err))
+		writeErr(w, 502, "task "+upid+" did not finish cleanly: "+pveErrorDetail(err))
 		return
 	}
 
 	// A mutation on the hypervisor with NO trail is a mutation nobody can
 	// reconstruct afterwards.
 	r.auditEvent(req, auth.UserFrom(req), "pve.snapshot",
-		"node="+id+" acao="+acao+" nome="+nome+" upid="+upid+" status=ok")
-	writeJSON(w, map[string]any{"node": id, "action": acao, "name": nome, "upid": upid, "status": "ok"})
+		"node="+id+" acao="+action+" nome="+nome+" upid="+upid+" status=ok")
+	writeJSON(w, map[string]any{"node": id, "action": action, "name": nome, "upid": upid, "status": "ok"})
 }
 
-// rollbackDoGuest returns the guest to a snapshot's state — LIVE, NODE token.
+// guestRollback returns the guest to a snapshot's state — LIVE, NODE token.
 //
 // ─────────────────────────────────────────────────────────────────────────────
 // 🔴 THE FINDING: the privilege WAS ALREADY GRANTED and the dashboard did not
@@ -974,7 +974,7 @@ func (r *Router) snapshotsDoGuest(w http.ResponseWriter, req *http.Request, inv 
 // that never happened — on a guest the operator would go on believing sat in an
 // earlier state. That is why this route's 200 only goes out after WaitTask.
 // ─────────────────────────────────────────────────────────────────────────────
-func (r *Router) rollbackDoGuest(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
+func (r *Router) guestRollback(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
 	q := req.URL.Query()
 	id := strings.TrimSpace(q.Get("node"))
 	nome := strings.TrimSpace(q.Get("name"))
@@ -982,12 +982,12 @@ func (r *Router) rollbackDoGuest(w http.ResponseWriter, req *http.Request, inv i
 	// The name is rejected BEFORE anything else: it comes from the screen and it
 	// chooses WHICH state the guest will take on. Validating after dialling out
 	// would spend a connection just to find out the screen sent garbage.
-	if err := pve.NomeDeSnapshotValido(nome); err != nil {
+	if err := pve.ValidSnapshotName(nome); err != nil {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	no, achou := achaNo(inv, id)
-	if !achou {
+	no, found := findNode(inv, id)
+	if !found {
 		writeErr(w, 404, "node not found: "+id)
 		return
 	}
@@ -996,22 +996,22 @@ func (r *Router) rollbackDoGuest(w http.ResponseWriter, req *http.Request, inv i
 		return
 	}
 
-	cli, ok := r.clienteParaOperacao(w, opGuest, no)
+	cli, ok := r.clientForOp(w, opGuest, no)
 	if !ok {
 		return
 	}
-	tipo, host := tipoEHost(no)
+	kind, host := kindAndHost(no)
 	ctx := req.Context()
 
-	upid, err := cli.SnapshotRollback(ctx, host, no.VMID, tipo, nome)
+	upid, err := cli.SnapshotRollback(ctx, host, no.VMID, kind, nome)
 	if err != nil {
-		writeErr(w, codigoDoErroPVE(err), "hypervisor refused the rollback: "+detalheDoErroPVE(err))
+		writeErr(w, pveErrorCode(err), "hypervisor refused the rollback: "+pveErrorDetail(err))
 		return
 	}
-	if _, err := esperaTarefa(ctx, cli, host, upid); err != nil {
+	if _, err := waitTask(ctx, cli, host, upid); err != nil {
 		r.auditEvent(req, auth.UserFrom(req), "pve.snapshot",
 			"node="+id+" acao=rollback nome="+nome+" upid="+upid+" status=falhou")
-		writeErr(w, 502, "task "+upid+" did not finish cleanly: "+detalheDoErroPVE(err))
+		writeErr(w, 502, "task "+upid+" did not finish cleanly: "+pveErrorDetail(err))
 		return
 	}
 
@@ -1032,5 +1032,5 @@ func (r *Router) rollbackDoGuest(w http.ResponseWriter, req *http.Request, inv i
 // A button that ALWAYS errors is not an unfinished feature: it is training to
 // ignore errors. The operator learns that this particular red is normal, and
 // the next red, the real one, goes unnoticed. Suspend comes back when CRIU
-// works on this host, measured — not before. TestNenhumaRotaOfereceSuspend is
+// works on this host, measured — not before. TestNoRouteOffersSuspend is
 // the pin.

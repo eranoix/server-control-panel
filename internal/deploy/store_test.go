@@ -9,7 +9,7 @@ import (
 )
 
 // migrado builds a dataDir already in the v2 envelope (the normal state after boot).
-func migrado(t *testing.T, apps ...App) string {
+func migrated(t *testing.T, apps ...App) string {
 	t.Helper()
 	dataDir := setupLegacyAppsDir(t, apps...)
 	if err := MigrateApps(AppsMigration{DataDir: dataDir}); err != nil {
@@ -29,7 +29,7 @@ func TestStoreReadsV2(t *testing.T) {
 		Env:     map[string]string{"FOO": "bar"},
 		Deploys: []DeployRecord{{ID: "d1", Status: "running", Commit: "abc"}},
 	}
-	dataDir := migrado(t, orig, App{Name: "api", Branch: "prod"})
+	dataDir := migrated(t, orig, App{Name: "api", Branch: "prod"})
 	st := Open(dataDir)
 
 	apps, err := st.List()
@@ -59,7 +59,7 @@ func TestStoreReadsV2(t *testing.T) {
 // array back. It is the most likely data-loss mode in this work — one forgotten
 // write path silently undoes the migration on the first deploy.
 func TestStoreRefusesV1AfterMigration(t *testing.T) {
-	dataDir := migrado(t, App{Name: "hello", Branch: "main"})
+	dataDir := migrated(t, App{Name: "hello", Branch: "main"})
 	st := Open(dataDir)
 
 	if err := st.Save(App{Name: "hello", Branch: "main", Port: 9090}); err != nil {
@@ -93,10 +93,10 @@ func TestStoreRefusesV1AfterMigration(t *testing.T) {
 	}
 }
 
-// TestStorePreservaNodeIDAlheio: the compat layer speaks App, which has NO
+// TestStorePreservesForeignNodeID: the compat layer speaks App, which has NO
 // node_id. A naive persist would stamp every deployment with the local node and
 // silently erase the one piece of information the multi-node model exists to keep.
-func TestStorePreservaNodeIDAlheio(t *testing.T) {
+func TestStorePreservesForeignNodeID(t *testing.T) {
 	dataDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dataDir, "deploy"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -116,10 +116,10 @@ func TestStorePreservaNodeIDAlheio(t *testing.T) {
 	}
 
 	f := readEnvelope(t, dataDir)
-	var achou bool
+	var found bool
 	for _, d := range f.Deployments {
 		if d.ProjectID == "hello" {
-			achou = true
+			found = true
 			if d.NodeID != "casa-apps" {
 				t.Fatalf("the node_id of another node was rewritten to %q", d.NodeID)
 			}
@@ -128,7 +128,7 @@ func TestStorePreservaNodeIDAlheio(t *testing.T) {
 			}
 		}
 	}
-	if !achou {
+	if !found {
 		t.Fatalf("another node's deployment VANISHED from the envelope: %+v", f.Deployments)
 	}
 	for _, p := range f.Projects {
@@ -138,11 +138,11 @@ func TestStorePreservaNodeIDAlheio(t *testing.T) {
 	}
 }
 
-// TestStoreRecusaV1SemMigrar: the store does NOT migrate (the server's boot is
+// TestStoreRejectsUnmigratedV1: the store does NOT migrate (the server's boot is
 // what migrates). Meeting v1 here is defence in depth — an error that NAMES
 // what to do, never an empty list (an empty list makes the UI say "no apps" and
 // the next Save wipe the whole registry).
-func TestStoreRecusaV1SemMigrar(t *testing.T) {
+func TestStoreRejectsUnmigratedV1(t *testing.T) {
 	dataDir := setupLegacyAppsDir(t, App{Name: "hello", Branch: "main"})
 	antes := sha256Of(t, appsPath(dataDir))
 
@@ -154,14 +154,14 @@ func TestStoreRecusaV1SemMigrar(t *testing.T) {
 	if !strings.Contains(err.Error(), "vps-manager") || !strings.Contains(err.Error(), "schema_version") {
 		t.Fatalf("the error says neither which binary migrates nor mentions schema_version: %v", err)
 	}
-	if depois := sha256Of(t, appsPath(dataDir)); depois != antes {
+	if after := sha256Of(t, appsPath(dataDir)); after != antes {
 		t.Fatalf("the store's refusal TOUCHED the file")
 	}
 }
 
-// TestStoreAusenteEVazio: a fresh install goes on working (v1 treated a missing
+// TestStoreMissingAndEmpty: a fresh install goes on working (v1 treated a missing
 // file as an empty list, and that must not regress).
-func TestStoreAusenteEVazio(t *testing.T) {
+func TestStoreMissingAndEmpty(t *testing.T) {
 	st := Open(t.TempDir())
 	apps, err := st.List()
 	if err != nil {
@@ -201,7 +201,7 @@ func TestStoreWritePathIsDurable(t *testing.T) {
 // decodable into the current envelope (a guard against accidental
 // concatenation or append).
 func TestStorePersistIsAtomicJSON(t *testing.T) {
-	dataDir := migrado(t, App{Name: "hello"})
+	dataDir := migrated(t, App{Name: "hello"})
 	st := Open(dataDir)
 	for i := 0; i < 5; i++ {
 		if err := st.Save(App{Name: "hello", Port: 8000 + i}); err != nil {

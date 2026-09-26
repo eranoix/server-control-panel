@@ -202,7 +202,7 @@ func urlQueryEscape(s string) string {
 
 // mapUpdateErr translates the domain's errors into HTTP statuses.
 //
-// ErrSemManifesto becomes 503, not 404, on purpose: "no update channel has been
+// ErrNoManifest becomes 503, not 404, on purpose: "no update channel has been
 // published yet" is a transient state of the SERVER (no release has gone through
 // scripts/android-patches.sh yet), not a resource the client asked for wrongly.
 // The app tells the two apart and does not show "update not found" to an
@@ -213,7 +213,7 @@ func urlQueryEscape(s string) string {
 // in the log — the same stance as mapTransferErr.
 func mapUpdateErr(err error) error {
 	switch {
-	case errors.Is(err, androidupdate.ErrSemManifesto):
+	case errors.Is(err, androidupdate.ErrNoManifest):
 		return huma.Error503ServiceUnavailable("update channel not published yet")
 	case errors.Is(err, os.ErrNotExist):
 		return huma.Error404NotFound("update artifact not found")

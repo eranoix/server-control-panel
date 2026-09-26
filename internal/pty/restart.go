@@ -70,9 +70,9 @@ func NotifyRestart() int {
 	liveMu.Unlock()
 
 	msg := websocket.FormatCloseMessage(websocket.CloseServiceRestart, "deploy")
-	prazo := time.Now().Add(250 * time.Millisecond)
+	deadline := time.Now().Add(250 * time.Millisecond)
 	for _, c := range conns {
-		_ = c.WriteControl(websocket.CloseMessage, msg, prazo)
+		_ = c.WriteControl(websocket.CloseMessage, msg, deadline)
 	}
 	return len(conns)
 }

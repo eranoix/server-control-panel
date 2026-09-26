@@ -40,36 +40,36 @@ import (
 // until the panel moves to another machine, which is exactly what this change is
 // doing.
 
-// metodosDeInventarioPermitidos are the ONLY Manager methods the `api` package
+// allowedInventoryMethods are the ONLY Manager methods the `api` package
 // may call.
 //
 // They are not game operations: they read and write the REGISTRY, which lives on
 // the panel and goes on living there. `Get` and `List` answer "which servers
 // exist and on which node"; `SaveInventory` writes that down. None of them touch
 // the game's disk, and that is where the line is.
-var metodosDeInventarioPermitidos = map[string]bool{
+var allowedInventoryMethods = map[string]bool{
 	"List":          true,
 	"Get":           true,
 	"SaveInventory": true,
 	"Reload":        true,
 }
 
-// metodosDeOperacao is the set the panel may NO longer call directly.
+// operationMethods is the set the panel may NO longer call directly.
 // Derived from what exists on *Manager today, minus the inventory ones.
-func metodosDeOperacao(t *testing.T) map[string]bool {
+func operationMethods(t *testing.T) map[string]bool {
 	t.Helper()
-	raiz := raizDoModulo(t)
+	root := moduleRoot(t)
 	fset := token.NewFileSet()
-	achados := map[string]bool{}
-	entradas, err := os.ReadDir(filepath.Join(raiz, "internal", "gameservers"))
+	findings := map[string]bool{}
+	entries, err := os.ReadDir(filepath.Join(root, "internal", "gameservers"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, e := range entradas {
+	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
 			continue
 		}
-		f, err := parser.ParseFile(fset, filepath.Join(raiz, "internal", "gameservers", e.Name()), nil, parser.SkipObjectResolution)
+		f, err := parser.ParseFile(fset, filepath.Join(root, "internal", "gameservers", e.Name()), nil, parser.SkipObjectResolution)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -78,28 +78,28 @@ func metodosDeOperacao(t *testing.T) map[string]bool {
 			if !ok || fn.Recv == nil || len(fn.Recv.List) == 0 {
 				continue
 			}
-			estrela, ok := fn.Recv.List[0].Type.(*ast.StarExpr)
+			star, ok := fn.Recv.List[0].Type.(*ast.StarExpr)
 			if !ok {
 				continue
 			}
-			id, ok := estrela.X.(*ast.Ident)
+			id, ok := star.X.(*ast.Ident)
 			if !ok || id.Name != "Manager" {
 				continue
 			}
-			if !fn.Name.IsExported() || metodosDeInventarioPermitidos[fn.Name.Name] {
+			if !fn.Name.IsExported() || allowedInventoryMethods[fn.Name.Name] {
 				continue
 			}
-			achados[fn.Name.Name] = true
+			findings[fn.Name.Name] = true
 		}
 	}
-	if len(achados) == 0 {
+	if len(findings) == 0 {
 		// Scanning nothing is never approving.
 		t.Fatal("no Manager operation method found — the guard would be blind")
 	}
-	return achados
+	return findings
 }
 
-func raizDoModulo(t *testing.T) string {
+func moduleRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
 	if err != nil {
@@ -115,16 +115,16 @@ func raizDoModulo(t *testing.T) string {
 	return ""
 }
 
-func TestHandlersNaoChamamManagerDireto(t *testing.T) {
-	proibidos := metodosDeOperacao(t)
+func TestHandlersDoNotCallManagerDirectly(t *testing.T) {
+	forbiddenBins := operationMethods(t)
 	fset := token.NewFileSet()
-	dirAPI := filepath.Join(raizDoModulo(t), "internal", "api")
-	entradas, err := os.ReadDir(dirAPI)
+	dirAPI := filepath.Join(moduleRoot(t), "internal", "api")
+	entries, err := os.ReadDir(dirAPI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	varridos := 0
-	for _, e := range entradas {
+	scanned := 0
+	for _, e := range entries {
 		nome := e.Name()
 		if !strings.HasSuffix(nome, ".go") || strings.HasSuffix(nome, "_test.go") {
 			continue
@@ -133,14 +133,14 @@ func TestHandlersNaoChamamManagerDireto(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		varridos++
+		scanned++
 		ast.Inspect(f, func(n ast.Node) bool {
-			chamada, ok := n.(*ast.CallExpr)
+			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
-			sel, ok := chamada.Fun.(*ast.SelectorExpr)
-			if !ok || !proibidos[sel.Sel.Name] {
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || !forbiddenBins[sel.Sel.Name] {
 				return true
 			}
 			// It only matters when the receiver IS the gameMgr: other types in
@@ -152,24 +152,24 @@ func TestHandlersNaoChamamManagerDireto(t *testing.T) {
 				return true
 			}
 			t.Errorf("DIRECT CALL TO THE MANAGER: %s.%s at %s:%d — this screen stayed on the old path and operates the PANEL's disk, not the node's",
-				"gameMgr", sel.Sel.Name, nome, fset.Position(chamada.Pos()).Line)
+				"gameMgr", sel.Sel.Name, nome, fset.Position(call.Pos()).Line)
 			return true
 		})
 	}
-	if varridos == 0 {
+	if scanned == 0 {
 		t.Fatal("no file scanned — green by absence")
 	}
-	t.Logf("%d files scanned, %d operation methods watched", varridos, len(proibidos))
+	t.Logf("%d files scanned, %d operation methods watched", scanned, len(forbiddenBins))
 }
 
-// TestPinoDoManagerMorde: does the pin above measure anything?
-func TestPinoDoManagerMorde(t *testing.T) {
+// TestManagerPinBites: does the pin above measure anything?
+func TestManagerPinBites(t *testing.T) {
 	dir := t.TempDir()
 	arq := filepath.Join(dir, "regressao.go")
-	fonte := `package api
+	source := `package api
 func (r *Router) telaEsquecida() { _ = r.gameMgr.Worlds(srv) }
 `
-	if err := os.WriteFile(arq, []byte(fonte), 0o644); err != nil {
+	if err := os.WriteFile(arq, []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	fset := token.NewFileSet()
@@ -177,23 +177,23 @@ func (r *Router) telaEsquecida() { _ = r.gameMgr.Worlds(srv) }
 	if err != nil {
 		t.Fatal(err)
 	}
-	pegou := false
+	caught := false
 	ast.Inspect(f, func(n ast.Node) bool {
-		chamada, ok := n.(*ast.CallExpr)
+		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
-		sel, ok := chamada.Fun.(*ast.SelectorExpr)
+		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok || sel.Sel.Name != "Worlds" {
 			return true
 		}
 		recept, ok := sel.X.(*ast.SelectorExpr)
 		if ok && recept.Sel.Name == "gameMgr" {
-			pegou = true
+			caught = true
 		}
 		return true
 	})
-	if !pegou {
+	if !caught {
 		t.Error("the guard would NOT catch a screen that went back to calling the Manager")
 	}
 }

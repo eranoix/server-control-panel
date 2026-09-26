@@ -17,66 +17,66 @@ import (
 // the verdict PASSED, not because somebody deleted the check. A guard that no
 // longer knows how to fail has stopped being a guard and become decoration.
 
-// carimbaCapacidade puts capacity, zpools and the verdict into the store with the
+// stampCapacity puts capacity, zpools and the verdict into the store with the
 // stamp asked for. It builds the document ALREADY NORMALIZED — normalization
 // (content into a list, 0|1 into a boolean, fraction into a percentage) belongs to
 // internal/inventory and has its own pin there. What is proved here is what the route DELIVERS.
-func carimbaCapacidade(t *testing.T, st *inventory.Store, pools []inventory.StoragePool, zs []inventory.ZPool, pode bool, quando int64) {
+func stampCapacity(t *testing.T, st *inventory.Store, pools []inventory.StoragePool, zs []inventory.ZPool, can bool, when int64) {
 	t.Helper()
 	if err := st.Replace(func(iv *inventory.Inventory) {
-		iv.Hypervisor.Storage = inventory.Observe(pools, quando)
-		iv.Hypervisor.ZPools = inventory.Observe(zs, quando)
-		iv.Hypervisor.DatastoreAudit = inventory.Observe(pode, quando)
+		iv.Hypervisor.Storage = inventory.Observe(pools, when)
+		iv.Hypervisor.ZPools = inventory.Observe(zs, when)
+		iv.Hypervisor.DatastoreAudit = inventory.Observe(can, when)
 	}); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// poolsVivos and zpoolsVivos are the NUMBERS MEASURED on the home hypervisor
+// livePools and liveZPools are the NUMBERS MEASURED on the home hypervisor
 // after the ACL: 4 storages and 2 zpools. The two most significant of each go
 // here — the image pool and the PBS datastore; rpool and backup.
-func poolsVivos() []inventory.StoragePool {
+func livePools() []inventory.StoragePool {
 	return []inventory.StoragePool{
 		{ID: "local-zfs", Type: "zfspool", Content: []string{"images", "rootdir"},
 			Total: 978416107520, Used: 67198091264, Avail: 911218016256,
-			UsedPct: 6.8680483433912, Ativo: true, Habilitado: true},
+			UsedPct: 6.8680483433912, IsActive: true, IsEnabled: true},
 		{ID: "pbs", Type: "pbs", Content: []string{"backup"},
 			Total: 916405092352, Used: 46299873280, Avail: 870105219072,
-			UsedPct: 5.05233697045147, Ativo: true, Habilitado: true, Compartilhado: true},
+			UsedPct: 5.05233697045147, IsActive: true, IsEnabled: true, IsShared: true},
 	}
 }
 
-func zpoolsVivos() []inventory.ZPool {
+func liveZPools() []inventory.ZPool {
 	return []inventory.ZPool{
 		{Name: "backup", Health: "ONLINE", Saudavel: true, Size: 996432412672, Alloc: 95457288192, Free: 900975124480, FragPct: 0},
 		{Name: "rpool", Health: "ONLINE", Saudavel: true, Size: 1013612281856, Alloc: 70999646208, Free: 942612635648, FragPct: 17},
 	}
 }
 
-// 🔴 TestCapacidadeVemDoStoreSemChamarOHipervisor: capacity and zpool are a
+// 🔴 TestCapacityComesFromStoreWithoutCallingHypervisor: capacity and zpool are a
 // HEARTBEAT, exactly like health — and for the same reason. If the route dialled
 // out, the age on display would always be "0 s" and the block would hide the very
 // case it exists to show: the storage that STOPPED being observed.
-func TestCapacidadeVemDoStoreSemChamarOHipervisor(t *testing.T) {
-	for _, caminho := range []string{"/api/proxmox/storage", "/api/proxmox/zfs"} {
-		t.Run(caminho, func(t *testing.T) {
-			r, st := novoRouterProxmox(t, cofrePadrao(), nil)
-			carimbaCapacidade(t, st, poolsVivos(), zpoolsVivos(), true, agoraDeTeste-45)
+func TestCapacityComesFromStoreWithoutCallingHypervisor(t *testing.T) {
+	for _, path := range []string{"/api/proxmox/storage", "/api/proxmox/zfs"} {
+		t.Run(path, func(t *testing.T) {
+			r, st := newProxmoxRouter(t, defaultVault(), nil)
+			stampCapacity(t, st, livePools(), liveZPools(), true, testNow-45)
 			r.pveDial = func(tokenValor string) (hypervisorOps, error) {
-				t.Fatalf("GET %s dialed the hypervisor — capacity is a heartbeat and comes out of the STORE", caminho)
+				t.Fatalf("GET %s dialed the hypervisor — capacity is a heartbeat and comes out of the STORE", path)
 				return nil, nil
 			}
 
-			w, out := chamaPVX(t, r, http.MethodGet, caminho, "")
+			w, out := callPVX(t, r, http.MethodGet, path, "")
 			if w.Code != 200 {
 				t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 			}
-			idade, tem := out["age_seconds"]
-			if !tem {
+			age, has := out["age_seconds"]
+			if !has {
 				t.Fatalf("response without age_seconds: %s", w.Body)
 			}
-			if idade.(float64) != 45 {
-				t.Errorf("age_seconds = %v, want 45 (the block's own timestamp)", idade)
+			if age.(float64) != 45 {
+				t.Errorf("age_seconds = %v, want 45 (the block's own timestamp)", age)
 			}
 			if _, ok := out["stale"]; !ok {
 				t.Error("response without stale")
@@ -91,14 +91,14 @@ func TestCapacidadeVemDoStoreSemChamarOHipervisor(t *testing.T) {
 	}
 }
 
-// TestStorageEntregaOsQuatroNumerosDaBarra: the screen draws a usage bar, and it
+// TestStorageDeliversFourBarNumbers: the screen draws a usage bar, and it
 // needs the percentage AND the bytes. The percentage alone hides the difference
 // between 90% of 1 GB and 90% of 1 TB.
-func TestStorageEntregaOsQuatroNumerosDaBarra(t *testing.T) {
-	r, st := novoRouterProxmox(t, cofrePadrao(), nil)
-	carimbaCapacidade(t, st, poolsVivos(), zpoolsVivos(), true, agoraDeTeste-10)
+func TestStorageDeliversFourBarNumbers(t *testing.T) {
+	r, st := newProxmoxRouter(t, defaultVault(), nil)
+	stampCapacity(t, st, livePools(), liveZPools(), true, testNow-10)
 
-	w, out := chamaPVX(t, r, http.MethodGet, "/api/proxmox/storage", "")
+	w, out := callPVX(t, r, http.MethodGet, "/api/proxmox/storage", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
@@ -110,9 +110,9 @@ func TestStorageEntregaOsQuatroNumerosDaBarra(t *testing.T) {
 	if p["id"] != "local-zfs" {
 		t.Errorf("id = %v, want local-zfs first", p["id"])
 	}
-	for _, campo := range []string{"used_pct", "used", "total", "avail", "type", "content", "ativo"} {
-		if _, ok := p[campo]; !ok {
-			t.Errorf("pool without %q: %s", campo, w.Body)
+	for _, field := range []string{"used_pct", "used", "total", "avail", "type", "content", "ativo"} {
+		if _, ok := p[field]; !ok {
+			t.Errorf("pool without %q: %s", field, w.Body)
 		}
 	}
 	if pct := p["used_pct"].(float64); pct < 6.8 || pct > 7.0 {
@@ -123,13 +123,13 @@ func TestStorageEntregaOsQuatroNumerosDaBarra(t *testing.T) {
 	}
 }
 
-// TestZfsEntregaSaudeFragEAlocacao: health, frag and alloc/free — the three the
+// TestZfsDeliversHealthFragAndAllocation: health, frag and alloc/free — the three the
 // operator cannot reach from outside the house today.
-func TestZfsEntregaSaudeFragEAlocacao(t *testing.T) {
-	r, st := novoRouterProxmox(t, cofrePadrao(), nil)
-	carimbaCapacidade(t, st, poolsVivos(), zpoolsVivos(), true, agoraDeTeste-10)
+func TestZfsDeliversHealthFragAndAllocation(t *testing.T) {
+	r, st := newProxmoxRouter(t, defaultVault(), nil)
+	stampCapacity(t, st, livePools(), liveZPools(), true, testNow-10)
 
-	w, out := chamaPVX(t, r, http.MethodGet, "/api/proxmox/zfs", "")
+	w, out := callPVX(t, r, http.MethodGet, "/api/proxmox/zfs", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
@@ -144,31 +144,31 @@ func TestZfsEntregaSaudeFragEAlocacao(t *testing.T) {
 	if rp["frag_pct"].(float64) != 17 {
 		t.Errorf("frag_pct = %v, want 17", rp["frag_pct"])
 	}
-	for _, campo := range []string{"alloc", "free", "size"} {
-		if _, ok := rp[campo]; !ok {
-			t.Errorf("zpool without %q", campo)
+	for _, field := range []string{"alloc", "free", "size"} {
+		if _, ok := rp[field]; !ok {
+			t.Errorf("zpool without %q", field)
 		}
 	}
 }
 
-// 🔴 TestVazioComEsemPrivilegioSaoRespostasDIFERENTES is that earlier guard,
+// 🔴 TestEmptyWithAndWithoutPrivilegeAreDIFFERENTResponses is that earlier guard,
 // exercised in BOTH states from the SAME empty list. As long as this test passes,
 // the screen never has to guess why the block is empty.
-func TestVazioComEsemPrivilegioSaoRespostasDIFERENTES(t *testing.T) {
-	casos := []struct {
+func TestEmptyWithAndWithoutPrivilegeAreDIFFERENTResponses(t *testing.T) {
+	cases := []struct {
 		nome string
-		pode bool
+		can  bool
 	}{
 		{"com privilégio: vazio é vazio de verdade", true},
 		{"sem privilégio: vazio é a ACL filtrando", false},
 	}
-	vistos := map[bool]any{}
-	for _, cs := range casos {
+	seen := map[bool]any{}
+	for _, cs := range cases {
 		t.Run(cs.nome, func(t *testing.T) {
-			r, st := novoRouterProxmox(t, cofrePadrao(), nil)
-			carimbaCapacidade(t, st, nil, nil, cs.pode, agoraDeTeste-5)
+			r, st := newProxmoxRouter(t, defaultVault(), nil)
+			stampCapacity(t, st, nil, nil, cs.can, testNow-5)
 
-			w, out := chamaPVX(t, r, http.MethodGet, "/api/proxmox/storage", "")
+			w, out := callPVX(t, r, http.MethodGet, "/api/proxmox/storage", "")
 			if w.Code != 200 {
 				t.Fatalf("status = %d: %s", w.Code, w.Body)
 			}
@@ -179,33 +179,33 @@ func TestVazioComEsemPrivilegioSaoRespostasDIFERENTES(t *testing.T) {
 			if da == nil {
 				t.Fatalf("response without datastore_audit — the screen has no way to tell the two empties apart: %s", w.Body)
 			}
-			if da["value"] != cs.pode {
-				t.Errorf("datastore_audit.value = %v, want %v", da["value"], cs.pode)
+			if da["value"] != cs.can {
+				t.Errorf("datastore_audit.value = %v, want %v", da["value"], cs.can)
 			}
-			if da["observed_at"].(float64) != float64(agoraDeTeste-5) {
+			if da["observed_at"].(float64) != float64(testNow-5) {
 				t.Errorf("verdict without its own timestamp: %v", da["observed_at"])
 			}
-			vistos[cs.pode] = da["value"]
+			seen[cs.can] = da["value"]
 		})
 	}
-	if vistos[true] == vistos[false] {
+	if seen[true] == seen[false] {
 		t.Fatal("the two empties produced the SAME response — the guard stopped telling them apart")
 	}
 }
 
-// 🔴 TestPermissoesUsamOMesmoVereditoDeDatastore: the dashboard may have only ONE
+// 🔴 TestPermissionsUseSameDatastoreVerdict: the dashboard may have only ONE
 // answer to "does this token see storage?". The /permissions route and the
-// capacity block have to come out of the SAME function (pve.PodeAuditarDatastore)
+// capacity block have to come out of the SAME function (pve.CanAuditDatastore)
 // — two copies of the rule diverge in silence, and this repo has already paid for
-// that (chaveDeCredencial, handlers_nodes.go).
+// that (credentialKey, handlers_nodes.go).
 //
 // And both states are exercised: the path being present WITHOUT the privilege has
 // to FAIL, which is the mutation the earlier pass could not catch.
-func TestPermissoesUsamOMesmoVereditoDeDatastore(t *testing.T) {
-	casos := []struct {
+func TestPermissionsUseSameDatastoreVerdict(t *testing.T) {
+	cases := []struct {
 		nome  string
 		perms map[string]map[string]int
-		quer  bool
+		want  bool
 	}{
 		{
 			"antes da ACL: nem caminho, nem privilégio",
@@ -227,22 +227,22 @@ func TestPermissoesUsamOMesmoVereditoDeDatastore(t *testing.T) {
 			true,
 		},
 	}
-	for _, cs := range casos {
+	for _, cs := range cases {
 		t.Run(cs.nome, func(t *testing.T) {
-			fake := &pveFalso{perms: cs.perms}
-			r, _ := novoRouterProxmox(t, cofrePadrao(), fake)
+			fake := &fakePVE{perms: cs.perms}
+			r, _ := newProxmoxRouter(t, defaultVault(), fake)
 
-			w, out := chamaPVX(t, r, http.MethodGet, "/api/proxmox/permissions", "")
+			w, out := callPVX(t, r, http.MethodGet, "/api/proxmox/permissions", "")
 			if w.Code != 200 {
 				t.Fatalf("status = %d: %s", w.Code, w.Body)
 			}
-			if out["storage_visivel"] != cs.quer {
-				t.Errorf("storage_visivel = %v, want %v — the screen's verdict diverged from pve.PodeAuditarDatastore",
-					out["storage_visivel"], cs.quer)
+			if out["storage_visivel"] != cs.want {
+				t.Errorf("storage_visivel = %v, want %v — the screen's verdict diverged from pve.CanAuditDatastore",
+					out["storage_visivel"], cs.want)
 			}
 			// The source of truth, called directly: the two have to agree
 			// ALWAYS, and not only in the cases I remembered to write down.
-			if pve.PodeAuditarDatastore(cs.perms) != cs.quer {
+			if pve.CanAuditDatastore(cs.perms) != cs.want {
 				t.Fatalf("the test case is wrong, not the handler")
 			}
 		})
@@ -251,22 +251,22 @@ func TestPermissoesUsamOMesmoVereditoDeDatastore(t *testing.T) {
 
 // TestCapacidadeSoResponsdeGET: both routes are pure reads. A POST here is
 // neither 404 nor 500 — it is 405, and saying so saves an investigation.
-func TestCapacidadeSoRespondeGET(t *testing.T) {
-	for _, caminho := range []string{"/api/proxmox/storage", "/api/proxmox/zfs"} {
-		r, _ := novoRouterProxmox(t, cofrePadrao(), nil)
-		w, _ := chamaPVX(t, r, http.MethodPost, caminho, "")
+func TestCapacityOnlyAnswersGET(t *testing.T) {
+	for _, path := range []string{"/api/proxmox/storage", "/api/proxmox/zfs"} {
+		r, _ := newProxmoxRouter(t, defaultVault(), nil)
+		w, _ := callPVX(t, r, http.MethodPost, path, "")
 		if w.Code != 405 {
-			t.Errorf("POST %s = %d, want 405", caminho, w.Code)
+			t.Errorf("POST %s = %d, want 405", path, w.Code)
 		}
 	}
 }
 
-// TestCapacidadeNuncaObservadaDizIsso: before the first tick, age -1 and an empty
+// TestCapacityNeverObservedSaysSo: before the first tick, age -1 and an empty
 // list — and the verdict WITHOUT a stamp, so the screen does not report a missing
 // permission that nobody measured.
-func TestCapacidadeNuncaObservadaDizIsso(t *testing.T) {
-	r, _ := novoRouterProxmox(t, cofrePadrao(), nil)
-	w, out := chamaPVX(t, r, http.MethodGet, "/api/proxmox/storage", "")
+func TestCapacityNeverObservedSaysSo(t *testing.T) {
+	r, _ := newProxmoxRouter(t, defaultVault(), nil)
+	w, out := callPVX(t, r, http.MethodGet, "/api/proxmox/storage", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}

@@ -47,10 +47,10 @@ type Op struct {
 	// Muta says whether the operation changes state. Used by the log and by the
 	// write audit; declared here so the answer is a property of the operation
 	// and not of the caller.
-	Muta bool
+	Mutates bool
 
 	// Resumo is the one-line text the screen shows.
-	Resumo string
+	Summary string
 }
 
 // registry is the CLOSED catalogue.
@@ -60,51 +60,51 @@ type Op struct {
 // exhaustiveness test can walk without executing anything.
 //
 // Every entry here has to have a matching constant in
-// gameservers.TodasAsOps, and vice versa. Both sides are demanded by tests —
+// gameservers.AllOps, and vice versa. Both sides are demanded by tests —
 // one without the other is an invisible operation.
 var registry = map[gameservers.OpName]Op{
 	// ── server ────────────────────────────────────────────────────────────────
-	gameservers.OpServerList:   {Handler: (*Agent).opServerList, Muta: false, Resumo: "inventory of the node's servers"},
-	gameservers.OpServerStatus: {Handler: (*Agent).opServerStatus, Muta: false, Resumo: "state, connection and build in a single lookup"},
-	gameservers.OpServerAction: {Handler: (*Agent).opServerAction, Muta: true, Resumo: "start, stop, restart or update"},
-	gameservers.OpServerLogs:   {Handler: (*Agent).opServerLogs, Muta: false, Resumo: "tail of the container logs"},
+	gameservers.OpServerList:   {Handler: (*Agent).opServerList, Mutates: false, Summary: "inventory of the node's servers"},
+	gameservers.OpServerStatus: {Handler: (*Agent).opServerStatus, Mutates: false, Summary: "state, connection and build in a single lookup"},
+	gameservers.OpServerAction: {Handler: (*Agent).opServerAction, Mutates: true, Summary: "start, stop, restart or update"},
+	gameservers.OpServerLogs:   {Handler: (*Agent).opServerLogs, Mutates: false, Summary: "tail of the container logs"},
 
 	// ── world ─────────────────────────────────────────────────────────────────
-	gameservers.OpWorldList:      {Handler: (*Agent).opWorldList, Muta: false, Resumo: "the server's worlds"},
-	gameservers.OpWorldSwitch:    {Handler: (*Agent).opWorldSwitch, Muta: true, Resumo: "switch the active world"},
-	gameservers.OpWorldExport:    {Handler: (*Agent).opWorldExport, Muta: false, Resumo: "pack a world and return a Handle"},
-	gameservers.OpWorldImport:    {Handler: (*Agent).opWorldImport, Muta: true, Resumo: "install a world from a Handle"},
-	gameservers.OpWorldRename:    {Handler: (*Agent).opWorldRename, Muta: true, Resumo: "rename the world's folder"},
-	gameservers.OpWorldDuplicate: {Handler: (*Agent).opWorldDuplicate, Muta: true, Resumo: "copy a world"},
-	gameservers.OpWorldDelete:    {Handler: (*Agent).opWorldDelete, Muta: true, Resumo: "delete a world"},
+	gameservers.OpWorldList:      {Handler: (*Agent).opWorldList, Mutates: false, Summary: "the server's worlds"},
+	gameservers.OpWorldSwitch:    {Handler: (*Agent).opWorldSwitch, Mutates: true, Summary: "switch the active world"},
+	gameservers.OpWorldExport:    {Handler: (*Agent).opWorldExport, Mutates: false, Summary: "pack a world and return a Handle"},
+	gameservers.OpWorldImport:    {Handler: (*Agent).opWorldImport, Mutates: true, Summary: "install a world from a Handle"},
+	gameservers.OpWorldRename:    {Handler: (*Agent).opWorldRename, Mutates: true, Summary: "rename the world's folder"},
+	gameservers.OpWorldDuplicate: {Handler: (*Agent).opWorldDuplicate, Mutates: true, Summary: "copy a world"},
+	gameservers.OpWorldDelete:    {Handler: (*Agent).opWorldDelete, Mutates: true, Summary: "delete a world"},
 
 	// ── settings ──────────────────────────────────────────────────────────────
-	gameservers.OpSettingsGet:   {Handler: (*Agent).opSettingsGet, Muta: false, Resumo: "game config, including groups and bans"},
-	gameservers.OpSettingsPatch: {Handler: (*Agent).opSettingsPatch, Muta: true, Resumo: "change enumerated config fields"},
+	gameservers.OpSettingsGet:   {Handler: (*Agent).opSettingsGet, Mutates: false, Summary: "game config, including groups and bans"},
+	gameservers.OpSettingsPatch: {Handler: (*Agent).opSettingsPatch, Mutates: true, Summary: "change enumerated config fields"},
 
 	// ── runtime ───────────────────────────────────────────────────────────────
-	gameservers.OpRuntimeGet:   {Handler: (*Agent).opRuntimeGet, Muta: false, Resumo: "compose env"},
-	gameservers.OpRuntimePatch: {Handler: (*Agent).opRuntimePatch, Muta: true, Resumo: "change the compose env and recreate the container"},
+	gameservers.OpRuntimeGet:   {Handler: (*Agent).opRuntimeGet, Mutates: false, Summary: "compose env"},
+	gameservers.OpRuntimePatch: {Handler: (*Agent).opRuntimePatch, Mutates: true, Summary: "change the compose env and recreate the container"},
 
 	// ── backup ────────────────────────────────────────────────────────────────
-	gameservers.OpBackupList:     {Handler: (*Agent).opBackupList, Muta: false, Resumo: "available backups"},
-	gameservers.OpBackupCreate:   {Handler: (*Agent).opBackupCreate, Muta: true, Resumo: "create a backup"},
-	gameservers.OpBackupRestore:  {Handler: (*Agent).opBackupRestore, Muta: true, Resumo: "restore a backup"},
-	gameservers.OpBackupDownload: {Handler: (*Agent).opBackupDownload, Muta: false, Resumo: "return a Handle to download a backup"},
+	gameservers.OpBackupList:     {Handler: (*Agent).opBackupList, Mutates: false, Summary: "available backups"},
+	gameservers.OpBackupCreate:   {Handler: (*Agent).opBackupCreate, Mutates: true, Summary: "create a backup"},
+	gameservers.OpBackupRestore:  {Handler: (*Agent).opBackupRestore, Mutates: true, Summary: "restore a backup"},
+	gameservers.OpBackupDownload: {Handler: (*Agent).opBackupDownload, Mutates: false, Summary: "return a Handle to download a backup"},
 
 	// ── trainer ───────────────────────────────────────────────────────────────
-	gameservers.OpTrainerStatus:  {Handler: (*Agent).opTrainerStatus, Muta: false, Resumo: "raw snapshot from tl-agent"},
-	gameservers.OpTrainerApply:   {Handler: (*Agent).opTrainerApply, Muta: true, Resumo: "apply the desired state to the live process"},
-	gameservers.OpTrainerDesired: {Handler: (*Agent).opTrainerDesired, Muta: true, Resumo: "store the desired state"},
+	gameservers.OpTrainerStatus:  {Handler: (*Agent).opTrainerStatus, Mutates: false, Summary: "raw snapshot from tl-agent"},
+	gameservers.OpTrainerApply:   {Handler: (*Agent).opTrainerApply, Mutates: true, Summary: "apply the desired state to the live process"},
+	gameservers.OpTrainerDesired: {Handler: (*Agent).opTrainerDesired, Mutates: true, Summary: "store the desired state"},
 
 	// ── history ───────────────────────────────────────────────────────────────
-	gameservers.OpHistoryList: {Handler: (*Agent).opHistoryList, Muta: false, Resumo: "telemetry samples"},
+	gameservers.OpHistoryList: {Handler: (*Agent).opHistoryList, Mutates: false, Summary: "telemetry samples"},
 }
 
 // Registro returns the operation, and whether it exists. A name outside the
 // catalogue is NOT a generic error: the caller returns 404, so that "does not
 // exist" and "failed" never get confused in a diagnosis.
-func Registro(op gameservers.OpName) (Op, bool) {
+func Lookup(op gameservers.OpName) (Op, bool) {
 	o, ok := registry[op]
 	return o, ok
 }

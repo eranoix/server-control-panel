@@ -17,9 +17,9 @@ import (
 	"testing"
 )
 
-// TestAppOnly_SobreviveCicloSaveLoad writes a config with the marker on,
+// TestAppOnly_SurvivesSaveLoadCycle writes a config with the marker on,
 // reloads it from disk and requires IsAppOnly to still be true.
-func TestAppOnly_SobreviveCicloSaveLoad(t *testing.T) {
+func TestAppOnly_SurvivesSaveLoadCycle(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
 
@@ -70,10 +70,10 @@ func TestAppOnly_SobreviveCicloSaveLoad(t *testing.T) {
 	}
 }
 
-// TestAppOnly_OmitEmptyNaoPoluiConfig proves that anyone not using the
+// TestAppOnly_OmitEmptyKeepsConfigClean proves that anyone not using the
 // feature does not get the field in the file — the config of a normal
 // install stays the same.
-func TestAppOnly_OmitEmptyNaoPoluiConfig(t *testing.T) {
+func TestAppOnly_OmitEmptyKeepsConfigClean(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
 	cfg := &Config{
@@ -96,8 +96,8 @@ func TestAppOnly_OmitEmptyNaoPoluiConfig(t *testing.T) {
 
 	// And the name of the field in the JSON is the contract with the
 	// production config.json (which is hand-edited) — pin it here.
-	marcado := &Config{Users: []User{{Username: "teste", AppOnly: true}}}
-	b, err := json.Marshal(marcado)
+	marked := &Config{Users: []User{{Username: "teste", AppOnly: true}}}
+	b, err := json.Marshal(marked)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}

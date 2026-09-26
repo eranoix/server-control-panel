@@ -183,7 +183,7 @@ func TestMigrateAppsDetectByShape(t *testing.T) {
 		if n := bakCount(t, dataDir); n != 0 {
 			t.Fatalf("the no-op created %d backup(s)", n)
 		}
-		if depois := sha256Of(t, appsPath(dataDir)); depois != antes {
+		if after := sha256Of(t, appsPath(dataDir)); after != antes {
 			t.Fatalf("the no-op rewrote the file")
 		}
 	})
@@ -211,7 +211,7 @@ func TestMigrateAppsDetectByShape(t *testing.T) {
 				!strings.Contains(err.Error(), "schema_version") {
 				t.Fatalf("the error does not classify the refused shape (shape %q): %v", body, err)
 			}
-			if depois := sha256Of(t, appsPath(dataDir)); depois != antes {
+			if after := sha256Of(t, appsPath(dataDir)); after != antes {
 				t.Fatalf("the refusal TOUCHED the file (shape %q)", body)
 			}
 			if n := bakCount(t, dataDir); n != 0 {
@@ -251,8 +251,8 @@ func TestMigrateAppsRollbackOnWriteFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "rollback") {
 		t.Fatalf("the error does not mention the rollback that ran: %v", err)
 	}
-	if depois := sha256Of(t, appsPath(dataDir)); depois != antes {
-		t.Fatalf("the rollback did NOT restore the v1 apps.json (sha %s → %s)", antes, depois)
+	if after := sha256Of(t, appsPath(dataDir)); after != antes {
+		t.Fatalf("the rollback did NOT restore the v1 apps.json (sha %s → %s)", antes, after)
 	}
 	// The restored v1 has to still read as v1 (not a half-written envelope).
 	sh, _, derr := DetectShape(dataDir)
@@ -274,34 +274,34 @@ func TestMigrateAppsConcurrentLock(t *testing.T) {
 	dataDir := setupLegacyAppsDir(t, App{Name: "hello", Branch: "main"})
 	antes := sha256Of(t, appsPath(dataDir))
 
-	filho := exec.Command(os.Args[0], "-test.run=TestAuxiliarSeguraTrava", "-test.v")
-	filho.Env = append(os.Environ(), "DEPLOY_TRAVA_DATADIR="+dataDir)
-	stdin, err := filho.StdinPipe()
+	child := exec.Command(os.Args[0], "-test.run=TestHelperHoldsLock", "-test.v")
+	child.Env = append(os.Environ(), "DEPLOY_TRAVA_DATADIR="+dataDir)
+	stdin, err := child.StdinPipe()
 	if err != nil {
 		t.Fatalf("child stdin: %v", err)
 	}
-	stdout, err := filho.StdoutPipe()
+	stdout, err := child.StdoutPipe()
 	if err != nil {
 		t.Fatalf("child stdout: %v", err)
 	}
-	if err := filho.Start(); err != nil {
+	if err := child.Start(); err != nil {
 		t.Fatalf("starting the child: %v", err)
 	}
 	defer func() {
 		_ = stdin.Close()
-		_ = filho.Wait()
+		_ = child.Wait()
 	}()
 
 	// Wait for the child to announce that the lock is his.
 	sc := bufio.NewScanner(stdout)
-	travado := false
+	locked := false
 	for sc.Scan() {
 		if strings.Contains(sc.Text(), "TRAVADO") {
-			travado = true
+			locked = true
 			break
 		}
 	}
-	if !travado {
+	if !locked {
 		t.Fatalf("the child could not hold the lock")
 	}
 
@@ -309,7 +309,7 @@ func TestMigrateAppsConcurrentLock(t *testing.T) {
 	if !errors.Is(err, ErrConcurrentAppsMigration) {
 		t.Fatalf("a migration with the lock held by another process returned %v, want ErrConcurrentAppsMigration", err)
 	}
-	if depois := sha256Of(t, appsPath(dataDir)); depois != antes {
+	if after := sha256Of(t, appsPath(dataDir)); after != antes {
 		t.Fatalf("the losing migration TOUCHED the file")
 	}
 	if n := bakCount(t, dataDir); n != 0 {
@@ -319,7 +319,7 @@ func TestMigrateAppsConcurrentLock(t *testing.T) {
 	// Release the lock and prove the migration now completes (failing closed is
 	// for retrying, not for giving up — systemd retries the boot).
 	_ = stdin.Close()
-	if err := filho.Wait(); err != nil {
+	if err := child.Wait(); err != nil {
 		t.Fatalf("child: %v", err)
 	}
 	if err := MigrateApps(AppsMigration{DataDir: dataDir}); err != nil {
@@ -330,9 +330,9 @@ func TestMigrateAppsConcurrentLock(t *testing.T) {
 	}
 }
 
-// TestAuxiliarSeguraTrava is not a test: it is TestMigrateAppsConcurrentLock's
+// TestHelperHoldsLock is not a test: it is TestMigrateAppsConcurrentLock's
 // child process. Without the environment variable, it skips.
-func TestAuxiliarSeguraTrava(t *testing.T) {
+func TestHelperHoldsLock(t *testing.T) {
 	dataDir := os.Getenv("DEPLOY_TRAVA_DATADIR")
 	if dataDir == "" {
 		t.Skip("helper for TestMigrateAppsConcurrentLock")
@@ -363,13 +363,13 @@ func TestMigrateAppsAuditAppended(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	achou := false
+	found := false
 	for _, e := range auditLog.Tail(10) {
 		if e.Action == "migration.apps.v2" && e.User == "system" && e.Target == appsPath(dataDir) {
-			achou = true
+			found = true
 		}
 	}
-	if !achou {
+	if !found {
 		t.Fatalf("the migration.apps.v2 event (user=system) is not on the audit trail: %+v", auditLog.Tail(10))
 	}
 
@@ -380,14 +380,14 @@ func TestMigrateAppsAuditAppended(t *testing.T) {
 	}
 }
 
-// TestGuardCLIRecusaFormas: the guard vpsmctl calls BEFORE touching the file.
+// TestGuardCLIRejectsShapes: the guard vpsmctl calls BEFORE touching the file.
 // It accepts only what this binary knows how to read; the rest is a refusal
 // that NAMES the binary — never a rewrite.
-func TestGuardCLIRecusaFormas(t *testing.T) {
-	casos := []struct {
-		nome   string
-		body   string
-		aceita bool
+func TestGuardCLIRejectsShapes(t *testing.T) {
+	cases := []struct {
+		nome    string
+		body    string
+		accepts bool
 	}{
 		{"v2-corrente", `{"schema_version":2,"projects":[],"deployments":[]}`, true},
 		{"v1-array", `[{"name":"hello"}]`, false},
@@ -395,12 +395,12 @@ func TestGuardCLIRecusaFormas(t *testing.T) {
 		{"lixo", `{`, false},
 		{"vazio", ``, false},
 	}
-	for _, c := range casos {
+	for _, c := range cases {
 		t.Run(c.nome, func(t *testing.T) {
 			dataDir := writeRawApps(t, c.body)
 			antes := sha256Of(t, appsPath(dataDir))
 			err := GuardCLI(dataDir)
-			if c.aceita {
+			if c.accepts {
 				if err != nil {
 					t.Fatalf("an acceptable shape was refused: %v", err)
 				}
@@ -415,7 +415,7 @@ func TestGuardCLIRecusaFormas(t *testing.T) {
 			if !strings.Contains(err.Error(), "schema_version") {
 				t.Fatalf("the refusal does not mention schema_version: %v", err)
 			}
-			if depois := sha256Of(t, appsPath(dataDir)); depois != antes {
+			if after := sha256Of(t, appsPath(dataDir)); after != antes {
 				t.Fatalf("the refusal TOUCHED the file")
 			}
 		})
@@ -428,7 +428,7 @@ func TestGuardCLIRecusaFormas(t *testing.T) {
 	})
 }
 
-// TestMigrateAppsEnsaioComArquivoReal runs the migration over a COPY of the
+// TestMigrateAppsDryRunWithRealFile runs the migration over a COPY of the
 // production apps.json and proves both directions: the way out (it becomes v2
 // without losing an app) and the way back (restoring the .bak gives the file
 // back byte for byte).
@@ -436,21 +436,21 @@ func TestGuardCLIRecusaFormas(t *testing.T) {
 // Skipped by default — proving a migration with real data demands the real data:
 //
 //	DEPLOY_ENSAIO_APPS=/caminho/para/apps.json go test ./internal/deploy/ \
-//	    -run TestMigrateAppsEnsaioComArquivoReal -v
+//	    -run TestMigrateAppsDryRunWithRealFile -v
 //
 // The file it points at is NOT modified: the test works on a copy.
-func TestMigrateAppsEnsaioComArquivoReal(t *testing.T) {
-	origem := os.Getenv("DEPLOY_ENSAIO_APPS")
-	if origem == "" {
+func TestMigrateAppsDryRunWithRealFile(t *testing.T) {
+	origin := os.Getenv("DEPLOY_ENSAIO_APPS")
+	if origin == "" {
 		t.Skip("set DEPLOY_ENSAIO_APPS=<path to the real apps.json> for the rehearsal")
 	}
-	raw, err := os.ReadFile(origem)
+	raw, err := os.ReadFile(origin)
 	if err != nil {
-		t.Fatalf("reading %s: %v", origem, err)
+		t.Fatalf("reading %s: %v", origin, err)
 	}
 	var v1 []App
 	if err := json.Unmarshal(raw, &v1); err != nil {
-		t.Fatalf("%s is not a v1 apps.json: %v", origem, err)
+		t.Fatalf("%s is not a v1 apps.json: %v", origin, err)
 	}
 
 	dataDir := writeRawApps(t, string(raw))
@@ -465,18 +465,18 @@ func TestMigrateAppsEnsaioComArquivoReal(t *testing.T) {
 			f.SchemaVersion, len(f.Projects), len(f.Deployments), AppsSchemaVersion, len(v1), len(v1))
 	}
 	// Set against set: no app may vanish and none may appear.
-	nomes := map[string]bool{}
+	names := map[string]bool{}
 	for _, a := range v1 {
-		nomes[a.Name] = true
+		names[a.Name] = true
 	}
 	for _, d := range f.Deployments {
-		if !nomes[d.ProjectID] {
+		if !names[d.ProjectID] {
 			t.Fatalf("deployment %q matches no app from the real file", d.ProjectID)
 		}
-		delete(nomes, d.ProjectID)
+		delete(names, d.ProjectID)
 	}
-	if len(nomes) != 0 {
-		t.Fatalf("apps from the real file that vanished in the migration: %v", nomes)
+	if len(names) != 0 {
+		t.Fatalf("apps from the real file that vanished in the migration: %v", names)
 	}
 
 	// The way back: the operator restores the .bak and the file is identical to the original.
@@ -493,8 +493,8 @@ func TestMigrateAppsEnsaioComArquivoReal(t *testing.T) {
 	if err := os.Rename(bak, appsPath(dataDir)); err != nil {
 		t.Fatalf("restoring the backup: %v", err)
 	}
-	if depois := sha256Of(t, appsPath(dataDir)); depois != antes {
-		t.Fatalf("the rollback of the REAL file did not give the original back (sha %s → %s)", antes, depois)
+	if after := sha256Of(t, appsPath(dataDir)); after != antes {
+		t.Fatalf("the rollback of the REAL file did not give the original back (sha %s → %s)", antes, after)
 	}
 	t.Logf("rehearsal ok: %d app(s) migrated and restored from the backup", len(v1))
 }

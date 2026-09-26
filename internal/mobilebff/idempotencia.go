@@ -40,40 +40,40 @@ import (
 // the keys that matter most — those of whoever was offline when the server
 // came back up.
 type Idempotencia struct {
-	mu       sync.Mutex
-	arquivo  string
-	entradas map[string]entradaIdempotente
-	agora    func() time.Time
+	mu      sync.Mutex
+	file    string
+	entries map[string]idempotentEntry
+	now     func() time.Time
 }
 
-type entradaIdempotente struct {
+type idempotentEntry struct {
 	// Body returned on the first run, repeated verbatim on the retry.
-	Corpo string `json:"corpo"`
+	Body string `json:"corpo"`
 	// HTTP status of the first run.
 	Status int   `json:"status"`
-	Quando int64 `json:"quando_ms"`
+	At     int64 `json:"quando_ms"`
 }
 
 const (
 	// A key is good for one day. Short enough that the table does not grow
 	// without end, and long enough to cover a device that spent the night
 	// offline — which is the case the queue exists to serve.
-	validadeIdempotencia = 24 * time.Hour
+	idempotencyTTL = 24 * time.Hour
 
 	// Cap on entries. Once exceeded, the oldest go. It is not a disk limit:
 	// it is the same honesty limit the client queue has — ten thousand
 	// pending actions mean something is wrong somewhere else.
-	tetoIdempotencia = 10_000
+	idempotencyCap = 10_000
 )
 
 // NovaIdempotencia loads (or creates) the table in dataDir.
 func NovaIdempotencia(dataDir string) *Idempotencia {
 	i := &Idempotencia{
-		arquivo:  filepath.Join(dataDir, "mobile-idempotencia.json"),
-		entradas: map[string]entradaIdempotente{},
-		agora:    time.Now,
+		file:    filepath.Join(dataDir, "mobile-idempotencia.json"),
+		entries: map[string]idempotentEntry{},
+		now:     time.Now,
 	}
-	i.carregar()
+	i.load()
 	return i
 }
 
@@ -82,94 +82,94 @@ func NovaIdempotencia(dataDir string) *Idempotencia {
 // The key MUST include the user: two accounts can generate the same client-side
 // identifier, and a result leaking between them would be worse than having no
 // idempotency at all.
-func (i *Idempotencia) Lembrada(chave string) (corpo string, status int, ok bool) {
-	if i == nil || chave == "" {
+func (i *Idempotencia) Recall(key string) (body string, status int, ok bool) {
+	if i == nil || key == "" {
 		return "", 0, false
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	e, existe := i.entradas[chave]
-	if !existe {
+	e, exists := i.entries[key]
+	if !exists {
 		return "", 0, false
 	}
-	if i.agora().UnixMilli()-e.Quando > validadeIdempotencia.Milliseconds() {
-		delete(i.entradas, chave)
+	if i.now().UnixMilli()-e.At > idempotencyTTL.Milliseconds() {
+		delete(i.entries, key)
 		return "", 0, false
 	}
-	return e.Corpo, e.Status, true
+	return e.Body, e.Status, true
 }
 
 // Lembrar stores the result of this run.
-func (i *Idempotencia) Lembrar(chave, corpo string, status int) {
-	if i == nil || chave == "" {
+func (i *Idempotencia) Remember(key, body string, status int) {
+	if i == nil || key == "" {
 		return
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	i.entradas[chave] = entradaIdempotente{
-		Corpo:  corpo,
+	i.entries[key] = idempotentEntry{
+		Body:   body,
 		Status: status,
-		Quando: i.agora().UnixMilli(),
+		At:     i.now().UnixMilli(),
 	}
-	i.podar()
-	i.gravar()
+	i.prune()
+	i.save()
 }
 
 // podar removes what expired and, if still over the cap, the oldest.
 // Called with the lock held.
-func (i *Idempotencia) podar() {
-	limite := i.agora().UnixMilli() - validadeIdempotencia.Milliseconds()
-	for k, e := range i.entradas {
-		if e.Quando < limite {
-			delete(i.entradas, k)
+func (i *Idempotencia) prune() {
+	limit := i.now().UnixMilli() - idempotencyTTL.Milliseconds()
+	for k, e := range i.entries {
+		if e.At < limit {
+			delete(i.entries, k)
 		}
 	}
-	for len(i.entradas) > tetoIdempotencia {
-		maisVelha, quando := "", int64(1)<<62
-		for k, e := range i.entradas {
-			if e.Quando < quando {
-				maisVelha, quando = k, e.Quando
+	for len(i.entries) > idempotencyCap {
+		oldest, when := "", int64(1)<<62
+		for k, e := range i.entries {
+			if e.At < when {
+				oldest, when = k, e.At
 			}
 		}
-		if maisVelha == "" {
+		if oldest == "" {
 			return
 		}
-		delete(i.entradas, maisVelha)
+		delete(i.entries, oldest)
 	}
 }
 
-func (i *Idempotencia) carregar() {
-	b, err := os.ReadFile(i.arquivo)
+func (i *Idempotencia) load() {
+	b, err := os.ReadFile(i.file)
 	if err != nil {
 		return
 	}
-	var lido map[string]entradaIdempotente
-	if json.Unmarshal(b, &lido) != nil {
+	var loaded map[string]idempotentEntry
+	if json.Unmarshal(b, &loaded) != nil {
 		// Corrupt file: starting empty is the right degradation. The worst
 		// that happens is a retry re-executing; wedging the BFF because a
 		// cache table fails to deserialize would be out of all proportion.
 		return
 	}
-	i.entradas = lido
+	i.entries = loaded
 }
 
 // gravar persists. Called with the lock held.
-func (i *Idempotencia) gravar() {
-	b, err := json.Marshal(i.entradas)
+func (i *Idempotencia) save() {
+	b, err := json.Marshal(i.entries)
 	if err != nil {
 		return
 	}
-	tmp := i.arquivo + ".tmp"
+	tmp := i.file + ".tmp"
 	if os.WriteFile(tmp, b, 0o600) != nil {
 		return
 	}
 	// Atomic rename: a process killed mid-write leaves the previous file
 	// intact instead of a truncated JSON that the next load would discard
 	// entirely.
-	_ = os.Rename(tmp, i.arquivo)
+	_ = os.Rename(tmp, i.file)
 }
 
 // escrever is used by the tests to corrupt the file on purpose.
-func escrever(caminho, conteudo string) error {
-	return os.WriteFile(caminho, []byte(conteudo), 0o600)
+func persistFile(path, content string) error {
+	return os.WriteFile(path, []byte(content), 0o600)
 }

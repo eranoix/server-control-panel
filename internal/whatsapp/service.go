@@ -22,16 +22,16 @@ type Service struct {
 	Client      Backend // WAHA (*Client) or whatsmeow daemon (*meowClient), per user
 	Broadcaster *Broadcaster
 	// hmacSecret is the secret shared with the webhook. It lives behind hmacMu
-	// and is DELIBERATELY unexported: hmacConfere REWRITES it when the vault
+	// and is DELIBERATELY unexported: hmacMatches REWRITES it when the vault
 	// rotates, and HandleWebhook reads it on a PER-REQUEST goroutine — two
 	// messages arriving alongside a rotation would be a write racing a read,
 	// which the Go memory model does not allow. Unexported so nobody can touch
-	// it without going through the lock; use hmacAtual() to read and
-	// hmacTroca() to adopt a new one.
+	// it without going through the lock; use currentHMAC() to read and
+	// hmacRotate() to adopt a new one.
 	hmacMu     sync.RWMutex
 	hmacSecret string
 	// HMACRefresh re-reads the secret from the SOURCE (the vault) and returns the
-	// current value. nil = no refresh (the old behaviour). See Service.hmacAtual.
+	// current value. nil = no refresh (the old behaviour). See Service.currentHMAC.
 	HMACRefresh func() string
 	ServiceUnit string // systemd unit name, e.g. "vpsm-whatsapp.service"
 	GowsDBPath  string // the user's Whatsmeow SQLite; empty = legacy gowsDBPath const

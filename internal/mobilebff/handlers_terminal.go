@@ -96,12 +96,12 @@ type scrollbackInput struct {
 }
 
 type scrollbackOutput struct {
-	// NEVER CACHE. See [semCache].
+	// NEVER CACHE. See [noCache].
 	CacheControl string `header:"Cache-Control"`
 	Body         ScrollbackResponse
 }
 
-// semCache is the `Cache-Control` value of the routes whose body is a SLICE OF
+// noCache is the `Cache-Control` value of the routes whose body is a SLICE OF
 // A LIVE STREAM — the terminal session's log.
 //
 // The same URL returns different content every second, so storing it is
@@ -118,7 +118,7 @@ type scrollbackOutput struct {
 //
 // `no-store` is what the app's cache already respects explicitly, so saying it
 // here fixes any version of it.
-const semCache = "no-store"
+const noCache = "no-store"
 
 // RawLogResponse delivers the session's RAW log — the bytes the PTY wrote,
 // escapes and all — for the app to replay in its own emulator.
@@ -144,7 +144,7 @@ type RawLogResponse struct {
 	Total  int    `json:"total" doc:"Tamanho total do log disponível no servidor"`
 }
 
-// HistoricoResponse delivers the session's RENDERED history — the lines that
+// HistoryResponse delivers the session's RENDERED history — the lines that
 // have already scrolled off the screen, as append-only text.
 //
 // The difference from the raw log is not one of format, it is one of nature:
@@ -164,21 +164,21 @@ type RawLogResponse struct {
 //
 // base64 for the same reason as the raw log: there are still SGR sequences in
 // the stream.
-type HistoricoResponse struct {
+type HistoryResponse struct {
 	Base64 string `json:"base64" doc:"Histórico renderizado da sessão, codificado em base64"`
 	Bytes  int    `json:"bytes" doc:"Quantos bytes de histórico estão nesta resposta"`
 	Total  int    `json:"total" doc:"Tamanho total do histórico disponível no servidor"`
 }
 
-type historicoInput struct {
+type historyInput struct {
 	Name  string `query:"name" required:"true" doc:"Nome da sessão de terminal"`
 	Bytes int    `query:"bytes" default:"2097152" doc:"Teto de bytes do recorte final do histórico"`
 }
 
-type historicoOutput struct {
+type historyOutput struct {
 	// NEVER CACHE, for the same reason as the raw log.
 	CacheControl string `header:"Cache-Control"`
-	Body         HistoricoResponse
+	Body         HistoryResponse
 }
 
 type rawLogInput struct {
@@ -187,7 +187,7 @@ type rawLogInput struct {
 }
 
 type rawLogOutput struct {
-	// NEVER CACHE. See [semCache] — this is the route the app replays into
+	// NEVER CACHE. See [noCache] — this is the route the app replays into
 	// libghostty-vt itself, and it is where an old slice scrambles the screen
 	// instead of merely ageing it.
 	CacheControl string `header:"Cache-Control"`
@@ -246,7 +246,7 @@ func registerTerminal(api huma.API, deps Deps) {
 		Tags:        []string{"mobile", "terminal"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
-	}, terminalHistoricoHandler(cfg, own))
+	}, terminalHistoryHandler(cfg, own))
 }
 
 func terminalSessionsHandler(cfg *config.Config, own *ptysvc.Ownership) func(ctx context.Context, in *struct{}) (*terminalSessionsOutput, error) {
@@ -319,7 +319,7 @@ func terminalScrollbackHandler(cfg *config.Config, own *ptysvc.Ownership) func(c
 		}
 		escapes := !in.Plain
 		data := ptysvc.SessionScrollback(user, name, lines, escapes)
-		return &scrollbackOutput{CacheControl: semCache, Body: ScrollbackResponse{Data: data}}, nil
+		return &scrollbackOutput{CacheControl: noCache, Body: ScrollbackResponse{Data: data}}, nil
 	}
 }
 
@@ -335,7 +335,7 @@ func terminalRawLogHandler(cfg *config.Config, own *ptysvc.Ownership) func(ctx c
 			return nil, huma.Error404NotFound("session not found")
 		}
 		data, total := ptysvc.SessionRawLogTail(user, name, in.Bytes)
-		return &rawLogOutput{CacheControl: semCache, Body: RawLogResponse{
+		return &rawLogOutput{CacheControl: noCache, Body: RawLogResponse{
 			Base64: base64.StdEncoding.EncodeToString(data),
 			Bytes:  len(data),
 			Total:  total,
@@ -343,16 +343,16 @@ func terminalRawLogHandler(cfg *config.Config, own *ptysvc.Ownership) func(ctx c
 	}
 }
 
-func terminalHistoricoHandler(cfg *config.Config, own *ptysvc.Ownership) func(ctx context.Context, in *historicoInput) (*historicoOutput, error) {
-	return func(ctx context.Context, in *historicoInput) (*historicoOutput, error) {
+func terminalHistoryHandler(cfg *config.Config, own *ptysvc.Ownership) func(ctx context.Context, in *historyInput) (*historyOutput, error) {
+	return func(ctx context.Context, in *historyInput) (*historyOutput, error) {
 		user := auth.UserFromContext(ctx)
 		name := strings.TrimSpace(in.Name)
 		// Same ownership gate as the raw log: 404, never 403.
 		if !ptysvc.OwnsSession(user, name, httpx.IsAdmin(cfg, user), own) {
 			return nil, huma.Error404NotFound("session not found")
 		}
-		data, total := ptysvc.HistoricoDaSessao(user, name, in.Bytes)
-		return &historicoOutput{CacheControl: semCache, Body: HistoricoResponse{
+		data, total := ptysvc.SessionHistory(user, name, in.Bytes)
+		return &historyOutput{CacheControl: noCache, Body: HistoryResponse{
 			Base64: base64.StdEncoding.EncodeToString(data),
 			Bytes:  len(data),
 			Total:  total,

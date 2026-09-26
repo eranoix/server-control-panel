@@ -441,20 +441,20 @@ func (s *Store) LoginStatus(accountID string) LoginStatus {
 
 // sameIdentity compares a declared email against the live one. Empty declared
 // means the slot makes no claim, so nothing can contradict it.
-func sameIdentity(declarado, vivo string) bool {
-	d := strings.ToLower(strings.TrimSpace(declarado))
-	v := strings.ToLower(strings.TrimSpace(vivo))
+func sameIdentity(declared, live string) bool {
+	d := strings.ToLower(strings.TrimSpace(declared))
+	v := strings.ToLower(strings.TrimSpace(live))
 	return d == "" || d == v
 }
 
-// comoOutraConta explains, without hedging, WHY the slot is awaiting login:
+// asOtherAccount explains, without hedging, WHY the slot is awaiting login:
 // there is a credential there, it just is not this account's. Without that
 // sentence the operator sees "awaiting login" on a slot the panel calls logged in.
-func comoOutraConta(emailVivo string) string {
-	if strings.TrimSpace(emailVivo) == "" {
+func asOtherAccount(liveEmail string) string {
+	if strings.TrimSpace(liveEmail) == "" {
 		return ""
 	}
-	return " (the credential in this dir belongs to " + emailVivo + ")"
+	return " (the credential in this dir belongs to " + liveEmail + ")"
 }
 
 // Identity is the live identity behind a config dir: who the credential

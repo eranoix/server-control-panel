@@ -85,10 +85,10 @@ const (
 	consoleMaxDim = 10000
 )
 
-// ErrConsoleSemOK marks a handshake that came up but did not confirm. It is a
+// ErrConsoleNoOK marks a handshake that came up but did not confirm. It is a
 // sentinel because the caller swaps the text on account of it: "the guest's
 // console did not answer" is a different diagnosis from "no permission".
-var ErrConsoleSemOK = errors.New("pve: console did not confirm the handshake (expected \"OK\")")
+var ErrConsoleNoOK = errors.New("pve: console did not confirm the handshake (expected \"OK\")")
 
 // ConsoleConn is the narrow cut of *websocket.Conn that the panel's bridge
 // uses. It exists so the handler's test can inject a double without standing up
@@ -136,7 +136,7 @@ func (t *termproxyResp) UnmarshalJSON(raw []byte) error {
 // AUTHENTICATED, plus the UPID of the task (for the audit trail).
 //
 // The caller gets a bidirectional pipe of bytes: write the frames from
-// FrameDeEntrada/FrameDeResize/FrameDeKeepalive and read the terminal output.
+// InputFrame/ResizeFrame/KeepaliveFrame and read the terminal output.
 // Neither the ticket nor the port crosses this boundary.
 func (c *Client) ConsoleAttach(ctx context.Context, node string, vmid int, typ string) (ConsoleConn, string, error) {
 	base, err := guestPath(node, vmid, typ)
@@ -201,7 +201,7 @@ func (c *Client) consoleEm(ctx context.Context, base string) (ConsoleConn, strin
 		}
 		// The URL does NOT go into the error's Path: it carries the vncticket in the
 		// query.
-		return nil, "", &Error{Kind: kindDoStatus(status, err), Status: status,
+		return nil, "", &Error{Kind: kindFromStatus(status, err), Status: status,
 			Path: base + "/vncwebsocket", Err: err}
 	}
 	conn.SetReadLimit(consoleMaxFrame)
@@ -222,7 +222,7 @@ func (c *Client) consoleEm(ctx context.Context, base string) (ConsoleConn, strin
 		_ = conn.Close()
 		// The body does NOT go in: what arrived here could be anything, and the
 		// ticket travelled over this very connection.
-		return nil, "", &Error{Kind: KindHypervisor, Path: base + "/vncwebsocket", Err: ErrConsoleSemOK}
+		return nil, "", &Error{Kind: KindHypervisor, Path: base + "/vncwebsocket", Err: ErrConsoleNoOK}
 	}
 	// Deadlines cleared: what sets the pace now is the panel's bridge, which has
 	// its own keepalive. A deadline inherited from here would kill an idle
@@ -268,10 +268,10 @@ func (c *Client) consoleDialer() *websocket.Dialer {
 	}
 }
 
-// kindDoStatus classifies the UPGRADE failure into the same states as do().
+// kindFromStatus classifies the UPGRADE failure into the same states as do().
 // Without it, a 403 on the upgrade would become "unreachable" and the screen
 // would send the operator hunting the network when the problem is ACL.
-func kindDoStatus(status int, err error) Kind {
+func kindFromStatus(status int, err error) Kind {
 	switch {
 	case status == http.StatusUnauthorized:
 		return KindNoCredential
@@ -286,7 +286,7 @@ func kindDoStatus(status int, err error) Kind {
 	}
 }
 
-// FrameDeEntrada builds the stdin frame of the termproxy protocol.
+// InputFrame builds the stdin frame of the termproxy protocol.
 //
 // 🔴 THE LENGTH IS IN BYTES, and that was measured, not deduced. Against CT 204:
 //
@@ -297,7 +297,7 @@ func kindDoStatus(status int, err error) Kind {
 // `data.length` in JavaScript counts UTF-16 units, so "ç", "é" and emoji typed
 // in the browser would arrive cut. The browser sends text; the one who counts
 // bytes is Go.
-func FrameDeEntrada(dados []byte) []byte {
+func InputFrame(dados []byte) []byte {
 	out := make([]byte, 0, len(dados)+8)
 	out = append(out, "0:"...)
 	out = strconv.AppendInt(out, int64(len(dados)), 10)
@@ -305,20 +305,20 @@ func FrameDeEntrada(dados []byte) []byte {
 	return append(out, dados...)
 }
 
-// FrameDeResize builds the resize frame. It returns nil — and not a crooked
+// ResizeFrame builds the resize frame. It returns nil — and not a crooked
 // frame — for a dimension out of range: cols/rows come from the browser, and a
 // frame termproxy cannot read kills the connection with no explanation.
-func FrameDeResize(cols, rows int) []byte {
+func ResizeFrame(cols, rows int) []byte {
 	if cols <= 0 || rows <= 0 || cols > consoleMaxDim || rows > consoleMaxDim {
 		return nil
 	}
 	return []byte("1:" + strconv.Itoa(cols) + ":" + strconv.Itoa(rows) + ":")
 }
 
-// FrameDeKeepalive is the "2" that pve-xtermjs's main.js sends periodically.
+// KeepaliveFrame is the "2" that pve-xtermjs's main.js sends periodically.
 // Without it termproxy closes the idle session.
-func FrameDeKeepalive() []byte { return []byte("2") }
+func KeepaliveFrame() []byte { return []byte("2") }
 
-// tlsConfigDoCliente returns the TLS pin the transport built, for the WebSocket
+// clientTLSConfig returns the TLS pin the transport built, for the WebSocket
 // dialer to reuse. Outside this file nobody needs it.
-func tlsConfigDoCliente(tr *http.Transport) *tls.Config { return tr.TLSClientConfig }
+func clientTLSConfig(tr *http.Transport) *tls.Config { return tr.TLSClientConfig }

@@ -237,10 +237,10 @@ type Router struct {
 	fcmSender *fcmpush.Sender
 	// sentinela watches whether the home hypervisor is REACHABLE from the VPS —
 	// the one point in the system that can still speak when the house goes down. See hypervisor_watcher.go.
-	sentinela *hipervisorSentinela
-	// sentinelaSink diverts the sentinel's output in tests. In production it is
+	sentinel *hypervisorSentinel
+	// sentinelSink diverts the sentinel's output in tests. In production it is
 	// nil and the event goes to the notification router.
-	sentinelaSink func(notify.Event)
+	sentinelSink func(notify.Event)
 
 	// Agent status telemetry (VPSM agent-ops #3/#4). agentStatus writes the
 	// shared <DataDir>/session-status.json the code-server session extension reads;
@@ -274,10 +274,10 @@ type Router struct {
 	// "live" surface of the app uses (deploy log, health/queue/alerts, notify).
 	// Instantiated once in NewRouter, injected via mobilebff.Deps.Hub.
 	mobileHub *mobilebff.Hub
-	// pararTrabalhadores cancels the context of the background workers started
+	// stopWorkers cancels the context of the background workers started
 	// by StartBackgroundWorkers. nil while nobody has started them — which is
 	// exactly the state of a Router built by a test.
-	pararTrabalhadores context.CancelFunc
+	stopWorkers context.CancelFunc
 
 	// mobileOpsHealthStop stops the ticker of internal/mobilebff.
 	// StartOpsHealthPublisher — called in Shutdown. nil if the Hub was never
@@ -390,7 +390,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	// the log reappears exactly in the window when nobody is watching. In a
 	// goroutine because each recorder spawns a `dtach` client and boot must not
 	// wait on that. See `internal/pty/gravador.go`.
-	go ptysvc.GaranteGravadoresDasSessoesVivas(cfg.DataDir, r.sessReg, r.sessionOwn, cfg.Primary)
+	go ptysvc.EnsureLiveSessionRecorders(cfg.DataDir, r.sessReg, r.sessionOwn, cfg.Primary)
 	if ss, err := sessions.Open(filepath.Join(cfg.DataDir, "sessions.json")); err == nil {
 		r.auth = r.auth.WithSessions(ss)
 		r.sessionsSt = ss
@@ -2075,7 +2075,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	// would believe no server has a node.
 	// It is idempotent and a no-op when the file does not exist, so the cost on
 	// every boot is a single read.
-	if _, err := gameservers.MigrarInventarioParaNo(filepath.Join(r.cfg.DataDir, "gameservers.json")); err != nil {
+	if _, err := gameservers.MigrateInventoryToNode(filepath.Join(r.cfg.DataDir, "gameservers.json")); err != nil {
 		log.Printf("game inventory migration failed (the panel still comes up, but the servers will have no node): %v", err)
 	}
 	r.gameMgr = gameservers.New(r.cfg.DataDir, r.docker)
@@ -2361,14 +2361,14 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	protected.HandleFunc("/api/terminal/code-restore-ping", r.handleCodeRestorePing)    // gatilho de restore do code-server no reload
 	protected.HandleFunc("/api/terminal/assign-session", r.handleTerminalAssignSession) // reassigns the audience (admin-only)
 	protected.HandleFunc("/api/terminal/scrollback", r.handleTerminalScrollback)
-	protected.HandleFunc("/api/terminal/log-bruto", r.handleTerminalRawLog)    // primer do painel: bytes crus (reserva)
-	protected.HandleFunc("/api/terminal/historico", r.handleTerminalHistorico) // panel primer: rendered scrollback
+	protected.HandleFunc("/api/terminal/log-bruto", r.handleTerminalRawLog)  // primer do painel: bytes crus (reserva)
+	protected.HandleFunc("/api/terminal/historico", r.handleTerminalHistory) // panel primer: rendered scrollback
 	protected.HandleFunc("/api/terminal/kill-session", r.handleTerminalKillSession)
 	// Which sessions are running an OLD version of the Claude Code CLI. The CLI
 	// says "Update installed · Restart to update" and the notice stays there
 	// forever without ever saying WHICH sessions need restarting — here that
 	// becomes a fact.
-	protected.HandleFunc("/api/claude/versoes", r.handleClaudeVersoes)
+	protected.HandleFunc("/api/claude/versoes", r.handleClaudeVersions)
 	protected.HandleFunc("/api/claude/recovery/restart", r.handleClaudeRecoveryRestart)
 	// The canonical attachment route (any type at all). The old name stays
 	// registered on the SAME handler because already-open tabs (cached JS) and
@@ -2589,11 +2589,11 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 			// 154 KB → 125 KB for the app bundle. Restricted to the app's own
 			// code — putting monaco (13 MB) in this cache would trade bandwidth
 			// for memory.
-			if corpo, err := fs.ReadFile(sub, strings.TrimPrefix(p, "/")); err == nil {
+			if body, err := fs.ReadFile(sub, strings.TrimPrefix(p, "/")); err == nil {
 				if ct := mime.TypeByExtension(path.Ext(p)); ct != "" {
 					w.Header().Set("Content-Type", ct)
 				}
-				if webassets.ServeBrotliAsset(w, req, p+":"+buildStamp, corpo) {
+				if webassets.ServeBrotliAsset(w, req, p+":"+buildStamp, body) {
 					return
 				}
 				// Brotli did not pay off (the client does not support it, or it
@@ -2677,11 +2677,11 @@ func (r *Router) StartBackgroundWorkers(ctx context.Context) {
 	if r == nil {
 		return
 	}
-	if r.pararTrabalhadores != nil {
-		r.pararTrabalhadores()
+	if r.stopWorkers != nil {
+		r.stopWorkers()
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	r.pararTrabalhadores = cancel
+	r.stopWorkers = cancel
 
 	r.startMetricsCollector(ctx)
 	r.startInventoryPoller(ctx) // discovery + stamping
@@ -2703,9 +2703,9 @@ func (r *Router) Shutdown(ctx context.Context) {
 	// collector is still writing, the pusher is still POSTing and the watcher is
 	// still firing alerts — all against a Router that is already being
 	// dismantled underneath them.
-	if r.pararTrabalhadores != nil {
-		r.pararTrabalhadores()
-		r.pararTrabalhadores = nil
+	if r.stopWorkers != nil {
+		r.stopWorkers()
+		r.stopWorkers = nil
 	}
 	// Stop the scheduler first so no cron tick enqueues new work while we
 	// drain, then bound-drain the queue (caps internally at min(4s, ctx)).

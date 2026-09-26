@@ -99,19 +99,19 @@ func TestMountPublicDeclaresNoSecurity(t *testing.T) {
 	}
 }
 
-// TestRequireBearerRespeitaMarcacaoPrevia documents the escape hatch: a
+// TestRequireBearerRespectsPriorMarking documents the escape hatch: a
 // registrar that has already decided its own operation's security (including an
 // empty slice, which in OpenAPI means "explicitly no security") is not overridden.
-func TestRequireBearerRespeitaMarcacaoPrevia(t *testing.T) {
-	semSeguranca := &huma.Operation{Security: []map[string][]string{}}
-	requireBearer(nil, semSeguranca)
-	if len(semSeguranca.Security) != 0 {
-		t.Errorf("Security = %v, want to stay empty", semSeguranca.Security)
+func TestRequireBearerRespectsPriorMarking(t *testing.T) {
+	noSecurity := &huma.Operation{Security: []map[string][]string{}}
+	requireBearer(nil, noSecurity)
+	if len(noSecurity.Security) != 0 {
+		t.Errorf("Security = %v, want to stay empty", noSecurity.Security)
 	}
 
-	naoMarcada := &huma.Operation{}
-	requireBearer(nil, naoMarcada)
-	if !hasBearer(naoMarcada) {
-		t.Errorf("Security = %v, want it to contain %q", naoMarcada.Security, BearerSchemeName)
+	unmarked := &huma.Operation{}
+	requireBearer(nil, unmarked)
+	if !hasBearer(unmarked) {
+		t.Errorf("Security = %v, want it to contain %q", unmarked.Security, BearerSchemeName)
 	}
 }

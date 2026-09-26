@@ -132,7 +132,7 @@ type PollerConfig struct {
 	Now func() time.Time
 }
 
-func (c *PollerConfig) aplicaPadroes() {
+func (c *PollerConfig) applyDefaults() {
 	if c.Interval <= 0 {
 		c.Interval = defaultInterval
 	}
@@ -164,7 +164,7 @@ type Poller struct {
 // NewPoller assembles the loop. The TTL is kept only for whoever wants to
 // consult it (the view gets its TTL from whoever serialises).
 func NewPoller(store *Store, src PVESource, deps Sources, cfg PollerConfig) *Poller {
-	cfg.aplicaPadroes()
+	cfg.applyDefaults()
 	return &Poller{store: store, pve: src, deps: deps, cfg: cfg}
 }
 
@@ -205,80 +205,80 @@ func (p *Poller) tick(ctx context.Context) (err error) {
 	tctx, cancel := context.WithTimeout(ctx, p.cfg.Timeout)
 	defer cancel()
 
-	agora := p.cfg.Now().Unix()
+	now := p.cfg.Now().Unix()
 
-	recursos, errDescoberta := p.pve.ClusterResources(tctx)
-	if errDescoberta != nil {
+	resources, errDiscovery := p.pve.ClusterResources(tctx)
+	if errDiscovery != nil {
 		// 🔴 The ATTEMPT is timestamped even here, and this is the whole point of the
 		// second clock (pollclock.go). Recording only success would make a poller that
 		// has been failing for half an hour look identical, on screen, to a poller that
 		// died half an hour ago — and the difference between the two is who the
 		// operator wakes at three in the morning.
-		p.registraTentativa(agora, errDescoberta)
+		p.recordAttempt(now, errDiscovery)
 		// 🔴 Invariant 2: a discovery failure does NOT erase and does not create. The
 		// only side effect allowed is marking a credential when the hypervisor
 		// explicitly said 401.
-		if erroDeCredencial(errDescoberta) {
-			if err := p.marcaCredencialRevogada(agora); err != nil {
-				return fmt.Errorf("%w (and failed to mark the credential: %v)", errDescoberta, err)
+		if isCredentialError(errDiscovery) {
+			if err := p.markCredentialRevoked(now); err != nil {
+				return fmt.Errorf("%w (and failed to mark the credential: %v)", errDiscovery, err)
 			}
 		}
-		return fmt.Errorf("discovery: %w", errDescoberta)
+		return fmt.Errorf("discovery: %w", errDiscovery)
 	}
 
 	// The hypervisor's health, in the SAME tick and with the SAME timestamp.
 	// Failing here is news, not a fatality: the document keeps the OLD values and
 	// the OLD timestamp, and the screen shows the age growing — which is the
 	// behaviour the freshness criterion asks for (invariant 2).
-	nomeHV := nomeDoHipervisor(recursos)
-	var saudeHV pve.NodeStatus
-	temSaudeHV := false
+	nomeHV := hypervisorName(resources)
+	var hvHealth pve.NodeStatus
+	hasHVHealth := false
 	if nomeHV != "" {
 		if st, err := p.pve.NodeStatus(tctx, nomeHV); err != nil {
 			log.Printf("inventory poller: health of hypervisor %q unavailable (%v) — keeping the previous stamp", nomeHV, err)
 		} else {
-			saudeHV, temSaudeHV = st, true
+			hvHealth, hasHVHealth = st, true
 		}
 	}
 
 	// Capacity, zpool and the privilege verdict — in the SAME tick, with the SAME
 	// timestamp, and each one failing on its own account. See coletaStorage.
-	cap := p.coletaCapacidade(tctx, nomeHV)
+	cap := p.collectCapacity(tctx, nomeHV)
 
-	observados := p.enderecosEmParalelo(tctx, recursos)
-	seeds := p.carregaSeeds()
-	vivos := p.pingaSeeds(tctx, seeds)
+	observed := p.addressesInParallel(tctx, resources)
+	seeds := p.loadSeeds()
+	alive := p.pingSeeds(tctx, seeds)
 
-	projects, deployments := p.carregaProjects()
-	jobs := p.carregaJobs()
-	services := p.carregaServices()
+	projects, deployments := p.loadProjects()
+	jobs := p.loadJobs()
+	services := p.loadServices()
 
-	var sumiram []string
+	var goneIDs []string
 	errReplace := p.store.Replace(func(inv *Inventory) {
 		inv.SchemaVersion = SchemaVersion
-		inv.LastPollAt, inv.LastPollError = agora, ""
-		aplicaDescoberta(inv, recursos, observados, agora, p.buracoMax())
+		inv.LastPollAt, inv.LastPollError = now, ""
+		applyDiscovery(inv, resources, observed, now, p.maxGap())
 		// Right after discovery: whatever the hypervisor stopped listing is STAMPED as
-		// absent. Nobody is deleted — see marcaSumidos.
-		sumiram = marcaSumidos(inv, recursos, seeds, agora)
-		if temSaudeHV {
-			aplicaHipervisor(inv, nomeHV, saudeHV, agora)
+		// absent. Nobody is deleted — see markGone.
+		goneIDs = markGone(inv, resources, seeds, now)
+		if hasHVHealth {
+			applyHypervisor(inv, nomeHV, hvHealth, now)
 		}
 		// 🔴 Each aplica* is conditional ON ITS OWN. Merging the three into a single
 		// `if` would make a failure of /access/permissions erase the timestamp of the
 		// capacity that was JUST observed — and the screen would show a growing age
 		// over a brand-new number.
-		if cap.temPools {
-			aplicaStorage(inv, cap.pools, agora)
+		if cap.hasPools {
+			applyStorage(inv, cap.pools, now)
 		}
-		if cap.temZPools {
-			aplicaZPools(inv, cap.zpools, agora)
+		if cap.hasZPools {
+			applyZPools(inv, cap.zpools, now)
 		}
-		if cap.temVeredito {
-			aplicaDatastoreAudit(inv, cap.podeAuditar, agora)
+		if cap.hasVerdict {
+			applyDatastoreAudit(inv, cap.canAudit, now)
 		}
-		aplicaSeeds(inv, seeds, vivos, agora)
-		p.aplicaCredenciais(inv)
+		applySeeds(inv, seeds, alive, now)
+		p.applyCredentials(inv)
 		if projects != nil {
 			inv.Projects = projects
 		}
@@ -296,67 +296,67 @@ func (p *Poller) tick(ctx context.Context) (err error) {
 	// the duration of a log write to disk. And recording is mandatory — a node that
 	// vanishes from the screen leaving no trace turns "where is my guest?" into an
 	// investigation.
-	if len(sumiram) > 0 {
+	if len(goneIDs) > 0 {
 		log.Printf("inventory poller: %d node(s) are no longer listed by the hypervisor (marked absent, NOT deleted): %s",
-			len(sumiram), strings.Join(sumiram, ", "))
+			len(goneIDs), strings.Join(goneIDs, ", "))
 	}
 	return errReplace
 }
 
-// registraTentativa writes the second clock's timestamp when the tick does not
+// recordAttempt writes the second clock's timestamp when the tick does not
 // reach the final Replace. It touches NO node: the write is only the loop's
 // clock and the reason, and that is why the failure goes on obeying invariant 2.
 //
 // Failing to write here is a log line, never a tick error: the defect one is
 // trying to report is precisely what matters, and overwriting it with a disk
 // error would hide the news behind the messenger.
-func (p *Poller) registraTentativa(agora int64, causa error) {
-	motivo := ""
-	if causa != nil {
-		motivo = causa.Error()
+func (p *Poller) recordAttempt(now int64, cause error) {
+	reason := ""
+	if cause != nil {
+		reason = cause.Error()
 	}
 	if err := p.store.Replace(func(inv *Inventory) {
-		inv.LastPollAt, inv.LastPollError = agora, motivo
+		inv.LastPollAt, inv.LastPollError = now, reason
 	}); err != nil {
 		log.Printf("inventory poller: could not stamp the attempt (%v)", err)
 	}
 }
 
-// capacidadeColetada is the result of the three capacity calls. The `tem*`
+// collectedCapacity is the result of the three capacity calls. The `tem*`
 // flags are the point: `false` is not "it came back empty", it is "I DID NOT
 // ASK, or nobody answered me" — and only whoever answered has any claim to a
 // new timestamp (invariant 2).
-type capacidadeColetada struct {
+type collectedCapacity struct {
 	pools     []pve.Storage
-	temPools  bool
+	hasPools  bool
 	zpools    []pve.ZPool
-	temZPools bool
+	hasZPools bool
 
-	podeAuditar bool
-	temVeredito bool
+	canAudit   bool
+	hasVerdict bool
 }
 
-// coletaCapacidade fetches storage, zpool and the privilege verdict. A failure
+// collectCapacity fetches storage, zpool and the privilege verdict. A failure
 // of any one of them is NEWS (a log line), never a fatality for the tick: the
 // document keeps the old value and the old timestamp, and it is the age growing
 // on screen that denounces it.
 //
 // With no discovered hypervisor name, nothing is asked — a request with no
 // target is not observation, it is noise (invariant 3).
-func (p *Poller) coletaCapacidade(ctx context.Context, nomeHV string) capacidadeColetada {
-	var out capacidadeColetada
+func (p *Poller) collectCapacity(ctx context.Context, nomeHV string) collectedCapacity {
+	var out collectedCapacity
 	if nomeHV == "" {
 		return out
 	}
 	if ss, err := p.pve.StorageList(ctx, nomeHV); err != nil {
 		log.Printf("inventory poller: storage capacity of %q unavailable (%v) — keeping the previous stamp", nomeHV, err)
 	} else {
-		out.pools, out.temPools = ss, true
+		out.pools, out.hasPools = ss, true
 	}
 	if ps, err := p.pve.ZFSList(ctx, nomeHV); err != nil {
 		log.Printf("inventory poller: zpools of %q unavailable (%v) — keeping the previous stamp", nomeHV, err)
 	} else {
-		out.zpools, out.temZPools = ps, true
+		out.zpools, out.hasZPools = ps, true
 	}
 	// 🔴 The verdict is what separates "there is no storage" from "I cannot see
 	// storage". When the verdict itself fails, the OLD one is kept on purpose:
@@ -365,21 +365,21 @@ func (p *Poller) coletaCapacidade(ctx context.Context, nomeHV string) capacidade
 	if perms, err := p.pve.Permissions(ctx); err != nil {
 		log.Printf("inventory poller: permissions unavailable (%v) — keeping the previous datastore verdict", err)
 	} else {
-		out.podeAuditar, out.temVeredito = pve.PodeAuditarDatastore(perms), true
+		out.canAudit, out.hasVerdict = pve.CanAuditDatastore(perms), true
 	}
 	return out
 }
 
-// enderecosEmParalelo resolves each guest's address concurrently, capped by
+// addressesInParallel resolves each guest's address concurrently, capped by
 // FanOut. A failure on ONE address brings down neither the others nor the tick:
 // what failed was the address, not the guest's existence.
-func (p *Poller) enderecosEmParalelo(ctx context.Context, recursos []pve.Resource) map[string]string {
-	out := make(map[string]string, len(recursos))
+func (p *Poller) addressesInParallel(ctx context.Context, resources []pve.Resource) map[string]string {
+	out := make(map[string]string, len(resources))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, p.cfg.FanOut)
 
-	for _, r := range recursos {
+	for _, r := range resources {
 		if !r.IsGuest() {
 			continue
 		}
@@ -407,7 +407,7 @@ func (p *Poller) enderecosEmParalelo(ctx context.Context, recursos []pve.Resourc
 	return out
 }
 
-// aplicaDescoberta does the upsert by SET. Three cases, and the third is what
+// applyDiscovery does the upsert by SET. Three cases, and the third is what
 // tells this inventory apart from a dumb cache:
 //
 //	in PVE, not in store   → create    (a brand-new guest shows up by itself)
@@ -416,14 +416,14 @@ func (p *Poller) enderecosEmParalelo(ctx context.Context, recursos []pve.Resourc
 //
 // The third never deletes. A guest that vanishes from the hypervisor becomes "not seen for X
 // min" on screen; erasing it would be amnesia presented as truth.
-func aplicaDescoberta(inv *Inventory, recursos []pve.Resource, enderecos map[string]string, agora, buracoMax int64) {
-	porID := indicePorID(inv.Nodes)
+func applyDiscovery(inv *Inventory, resources []pve.Resource, addrs map[string]string, now, maxGap int64) {
+	porID := indexByID(inv.Nodes)
 
 	// The hypervisor itself: it does not appear in /cluster/resources?type=vm, but
 	// its name comes in every row. Deriving it from here keeps discovery driven by
 	// the hypervisor — no hostname written by hand in this file.
 	hosts := map[string]bool{}
-	for _, r := range recursos {
+	for _, r := range resources {
 		if r.Node != "" {
 			hosts[r.Node] = true
 		}
@@ -433,11 +433,11 @@ func aplicaDescoberta(inv *Inventory, recursos []pve.Resource, enderecos map[str
 		n := porID[id]
 		n.ID, n.Name, n.Kind, n.Transport = id, nome, NodeKindHost, TransportPVEAPI
 		// It answered the API at this instant: that is observation, not assumption.
-		n.Status = Observe("online", agora)
+		n.Status = Observe("online", now)
 		porID[id] = n
 	}
 
-	for _, r := range recursos {
+	for _, r := range resources {
 		if !r.IsGuest() {
 			continue
 		}
@@ -445,26 +445,26 @@ func aplicaDescoberta(inv *Inventory, recursos []pve.Resource, enderecos map[str
 		n := anterior
 		n.ID, n.Name, n.Kind, n.Transport = r.ID, r.Name, NodeKindGuest, TransportPVEAPI
 		n.VMID = r.VMID
-		n.Status = Observe(r.Status, agora)
-		n.Uptime = Observe(r.Uptime, agora)
+		n.Status = Observe(r.Status, now)
+		n.Uptime = Observe(r.Uptime, now)
 		n.Template = r.Template == 1
-		aplicaContadores(&n, anterior, r, agora, buracoMax)
-		if addr, ok := enderecos[r.ID]; ok {
+		applyCounters(&n, anterior, r, now, maxGap)
+		if addr, ok := addrs[r.ID]; ok {
 			n.Address = addr
 		}
 		porID[r.ID] = n
 	}
 
-	inv.Nodes = ordenaPorID(porID)
+	inv.Nodes = sortByID(porID)
 }
 
-// removeSumidos deletes from the inventory the nodes the hypervisor STOPPED
+// removeGone deletes from the inventory the nodes the hypervisor STOPPED
 // LISTING.
 //
 // ────────────────────────────────────────────────────────────────────────────
 // 🔴 WHY THIS HAD TO EXIST
 //
-// `aplicaDescoberta` only merges: a guest that vanishes from /cluster/resources
+// `applyDiscovery` only merges: a guest that vanishes from /cluster/resources
 // stays in the document forever, ageing. The operator saw it on the screen — a
 // destroyed guest went on being listed as "expired", inflating "Total 12" and
 // the expired count. A ghost node in a health list is noise in the one place
@@ -493,15 +493,15 @@ func aplicaDescoberta(inv *Inventory, recursos []pve.Resource, enderecos map[str
 // It returns the removed IDs because a node that vanishes from the screen MUST
 // NOT VANISH SILENTLY: the caller records them, and "where is my guest?" starts
 // having an answer in the log.
-func removeSumidos(inv *Inventory, recursos []pve.Resource, seeds []Node) []string {
-	presentes := map[string]bool{}
+func removeGone(inv *Inventory, resources []pve.Resource, seeds []Node) []string {
+	present := map[string]bool{}
 	guests := 0
-	for _, r := range recursos {
+	for _, r := range resources {
 		if r.Node != "" {
-			presentes["node/"+r.Node] = true
+			present["node/"+r.Node] = true
 		}
 		if r.IsGuest() {
-			presentes[r.ID] = true
+			present[r.ID] = true
 			guests++
 		}
 	}
@@ -509,29 +509,29 @@ func removeSumidos(inv *Inventory, recursos []pve.Resource, seeds []Node) []stri
 	if guests == 0 {
 		return nil
 	}
-	declarados := make(map[string]bool, len(seeds))
+	declaredIDs := make(map[string]bool, len(seeds))
 	for _, s := range seeds {
-		declarados[s.ID] = true
+		declaredIDs[s.ID] = true
 	}
 
-	restantes := make([]Node, 0, len(inv.Nodes))
-	var removidos []string
+	remaining := make([]Node, 0, len(inv.Nodes))
+	var removed []string
 	for _, n := range inv.Nodes {
 		// Guard 3: only what the hypervisor owns the discovery of.
-		if n.Transport != TransportPVEAPI || declarados[n.ID] || presentes[n.ID] {
-			restantes = append(restantes, n)
+		if n.Transport != TransportPVEAPI || declaredIDs[n.ID] || present[n.ID] {
+			remaining = append(remaining, n)
 			continue
 		}
-		removidos = append(removidos, n.ID)
+		removed = append(removed, n.ID)
 	}
-	if len(removidos) == 0 {
+	if len(removed) == 0 {
 		return nil
 	}
-	inv.Nodes = restantes
-	return removidos
+	inv.Nodes = remaining
+	return removed
 }
 
-// marcaSumidos stamps the nodes the hypervisor STOPPED LISTING — and deletes
+// markGone stamps the nodes the hypervisor STOPPED LISTING — and deletes
 // none of them.
 //
 // ────────────────────────────────────────────────────────────────────────────
@@ -563,111 +563,111 @@ func removeSumidos(inv *Inventory, recursos []pve.Resource, seeds []Node) []stri
 // The timestamp is that of the FIRST tick in which the absence was seen, and it
 // is not rewritten on every tick: it is what says "gone for how long". And
 // showing up again CLEARS the mark — a node that came back is not an absent node.
-func marcaSumidos(inv *Inventory, recursos []pve.Resource, seeds []Node, agora int64) []string {
-	presentes := map[string]bool{}
+func markGone(inv *Inventory, resources []pve.Resource, seeds []Node, now int64) []string {
+	present := map[string]bool{}
 	guests := 0
-	for _, r := range recursos {
+	for _, r := range resources {
 		if r.Node != "" {
-			presentes["node/"+r.Node] = true
+			present["node/"+r.Node] = true
 		}
 		if r.IsGuest() {
-			presentes[r.ID] = true
+			present[r.ID] = true
 			guests++
 		}
 	}
 	if guests == 0 { // guarda 2
 		return nil
 	}
-	declarados := make(map[string]bool, len(seeds))
+	declaredIDs := make(map[string]bool, len(seeds))
 	for _, s := range seeds {
-		declarados[s.ID] = true
+		declaredIDs[s.ID] = true
 	}
 
-	var novos []string
+	var added []string
 	for i := range inv.Nodes {
 		n := &inv.Nodes[i]
-		if n.Transport != TransportPVEAPI || declarados[n.ID] { // guarda 3
+		if n.Transport != TransportPVEAPI || declaredIDs[n.ID] { // guarda 3
 			continue
 		}
-		if presentes[n.ID] {
+		if present[n.ID] {
 			// It came back: the mark goes. Without this, a guest that returned would stay
 			// labelled absent forever.
-			n.AusenteDesde = 0
+			n.MissingSince = 0
 			continue
 		}
-		if n.AusenteDesde == 0 {
-			n.AusenteDesde = agora
-			novos = append(novos, n.ID)
+		if n.MissingSince == 0 {
+			n.MissingSince = now
+			added = append(added, n.ID)
 		}
 	}
-	return novos
+	return added
 }
 
-// buracoMax is the interval above which two observations stop being neighbours.
+// maxGap is the interval above which two observations stop being neighbours.
 // One tick and a half: one lost tick still produces an honest average, two are
 // already minutes in which the panel was blind and whose "average" would be
 // invention.
-func (p *Poller) buracoMax() int64 {
+func (p *Poller) maxGap() int64 {
 	return int64(p.cfg.Interval.Seconds()*3) / 2
 }
 
-// aplicaContadores translates one row of /cluster/resources into the Node's
+// applyCounters translates one row of /cluster/resources into the Node's
 // timestamped fields — and this is where "0" becomes "I do not know" when that
 // is the case.
-func aplicaContadores(n *Node, anterior Node, r pve.Resource, agora, buracoMax int64) {
-	n.CPUFrac = Observe(r.CPU, agora)
-	n.CPUCores = Observe(r.MaxCPU, agora)
-	n.MemUsed = Observe(r.Mem, agora)
-	n.MemTotal = Observe(r.MaxMem, agora)
-	n.MemHost = Observe(naoSeiQuandoZero(r.MemHost), agora)
-	// 🔴 The disk pair: usage becomes NaoReportado when the hypervisor returns 0
+func applyCounters(n *Node, anterior Node, r pve.Resource, now, maxGap int64) {
+	n.CPUFrac = Observe(r.CPU, now)
+	n.CPUCores = Observe(r.MaxCPU, now)
+	n.MemUsed = Observe(r.Mem, now)
+	n.MemTotal = Observe(r.MaxMem, now)
+	n.MemHost = Observe(unknownIfZero(r.MemHost), now)
+	// 🔴 The disk pair: usage becomes NotReported when the hypervisor returns 0
 	// (QEMU with no guest-agent, measured on both QEMU guests in this house), but
 	// the CAPACITY stays real — it is known with no agent at all.
-	n.DiskUsed = Observe(naoSeiQuandoZero(r.Disk), agora)
-	n.DiskTotal = Observe(r.MaxDisk, agora)
-	n.NetIn = Observe(r.NetIn, agora)
-	n.NetOut = Observe(r.NetOut, agora)
-	n.DiskRead = Observe(r.DiskRead, agora)
-	n.DiskWrite = Observe(r.DiskWrite, agora)
-	n.NetInRate = Observe(taxaEntreObservacoes(anterior.NetIn, r.NetIn, agora, buracoMax), agora)
-	n.NetOutRate = Observe(taxaEntreObservacoes(anterior.NetOut, r.NetOut, agora, buracoMax), agora)
+	n.DiskUsed = Observe(unknownIfZero(r.Disk), now)
+	n.DiskTotal = Observe(r.MaxDisk, now)
+	n.NetIn = Observe(r.NetIn, now)
+	n.NetOut = Observe(r.NetOut, now)
+	n.DiskRead = Observe(r.DiskRead, now)
+	n.DiskWrite = Observe(r.DiskWrite, now)
+	n.NetInRate = Observe(rateBetweenObservations(anterior.NetIn, r.NetIn, now, maxGap), now)
+	n.NetOutRate = Observe(rateBetweenObservations(anterior.NetOut, r.NetOut, now, maxGap), now)
 }
 
-// naoSeiQuandoZero is the translation of "the hypervisor returned 0 because it
+// unknownIfZero is the translation of "the hypervisor returned 0 because it
 // does not know". It exists as a one-line function so that the reason is
 // written ONCE and so the pinning test has a name to cite.
-func naoSeiQuandoZero(v int64) int64 {
+func unknownIfZero(v int64) int64 {
 	if v <= 0 {
-		return NaoReportado
+		return NotReported
 	}
 	return v
 }
 
-// 🔴 taxaEntreObservacoes derives bytes/s from two accumulated counters, and
+// 🔴 rateBetweenObservations derives bytes/s from two accumulated counters, and
 // REFUSES to derive in three cases — each one of them a way of lying:
 //
 //	no previous observation       → there is nothing to derive from
-//	gap larger than buracoMax     → the average would cover minutes nobody watched
+//	gap larger than maxGap     → the average would cover minutes nobody watched
 //	counter lower than the last   → the guest restarted; this is not negative traffic
 //
 // The alternative (dividing anyway) draws a straight line across an absence:
 // exactly what a graph must not do, because the operator has no way of telling
 // "that is how it was" from "I was not looking".
-func taxaEntreObservacoes(anterior Observed[int64], atual, agora, buracoMax int64) int64 {
-	if anterior.ObservedAt <= 0 || agora <= anterior.ObservedAt {
-		return NaoReportado
+func rateBetweenObservations(anterior Observed[int64], current, now, maxGap int64) int64 {
+	if anterior.ObservedAt <= 0 || now <= anterior.ObservedAt {
+		return NotReported
 	}
-	intervalo := agora - anterior.ObservedAt
-	if buracoMax > 0 && intervalo > buracoMax {
-		return NaoReportado
+	interval := now - anterior.ObservedAt
+	if maxGap > 0 && interval > maxGap {
+		return NotReported
 	}
-	if atual < anterior.Value {
-		return NaoReportado
+	if current < anterior.Value {
+		return NotReported
 	}
-	return (atual - anterior.Value) / intervalo
+	return (current - anterior.Value) / interval
 }
 
-func indicePorID(nos []Node) map[string]Node {
+func indexByID(nos []Node) map[string]Node {
 	m := make(map[string]Node, len(nos))
 	for _, n := range nos {
 		m[n.ID] = n
@@ -675,9 +675,9 @@ func indicePorID(nos []Node) map[string]Node {
 	return m
 }
 
-// ordenaPorID returns the nodes in stable ID order — two consecutive reads have
+// sortByID returns the nodes in stable ID order — two consecutive reads have
 // to produce the same document, otherwise the file's diff turns into noise.
-func ordenaPorID(m map[string]Node) []Node {
+func sortByID(m map[string]Node) []Node {
 	out := make([]Node, 0, len(m))
 	for _, n := range m {
 		out = append(out, n)
@@ -690,15 +690,15 @@ func ordenaPorID(m map[string]Node) []Node {
 	return out
 }
 
-// erroDeCredencial says whether the hypervisor answered 401. It is the ONLY
+// isCredentialError says whether the hypervisor answered 401. It is the ONLY
 // error that authorises touching credential state — 403 is ACL, transport is
 // the network.
-func erroDeCredencial(err error) bool {
+func isCredentialError(err error) bool {
 	var pe *pve.Error
 	return errors.As(err, &pe) && pe.Kind == pve.KindNoCredential
 }
 
-// marcaCredencialRevogada records the 401 on the nodes that speak the
+// markCredentialRevoked records the 401 on the nodes that speak the
 // hypervisor API.
 //
 // 🔴 The caveat: the hypervisor's 401 is INDISTINGUISHABLE between a revoked
@@ -708,22 +708,22 @@ func erroDeCredencial(err error) bool {
 // (freshness.go) already answers "expired" on its own, and overwriting that
 // would erase the only clue the operator has that the problem is the calendar,
 // not security.
-func (p *Poller) marcaCredencialRevogada(agora int64) error {
+func (p *Poller) markCredentialRevoked(now int64) error {
 	return p.store.Replace(func(inv *Inventory) {
 		for i := range inv.Nodes {
 			if inv.Nodes[i].Transport != TransportPVEAPI {
 				continue
 			}
 			c := inv.Nodes[i].Credential
-			if c.Expire > 0 && c.Expire < agora {
+			if c.Expire > 0 && c.Expire < now {
 				continue // already expired: "expirada" is the correct reading
 			}
-			inv.Nodes[i].Credential.State = CredRevogada
+			inv.Nodes[i].Credential.State = CredRevoked
 		}
 	})
 }
 
-func (p *Poller) carregaSeeds() []Node {
+func (p *Poller) loadSeeds() []Node {
 	if p.deps.Seeds == nil {
 		return nil
 	}
@@ -735,7 +735,7 @@ func (p *Poller) carregaSeeds() []Node {
 	return seeds
 }
 
-// pingaSeeds checks the liveness of nodes on the "agent" transport. It returns
+// pingSeeds checks the liveness of nodes on the "agent" transport. It returns
 // the set of those that answered — the rest get NO new timestamp, which is
 // exactly how a dead canary ends up with its age growing while the hypervisor
 // nodes from the same tick advance.
@@ -743,8 +743,8 @@ func (p *Poller) carregaSeeds() []Node {
 // The "ssh" transport has no active poll here: there is no ssh client in this
 // package and there will not be — reach by agent is separate work (lab-agent).
 // Pretending to support it would stamp liveness nobody observed.
-func (p *Poller) pingaSeeds(ctx context.Context, seeds []Node) map[string]bool {
-	vivos := map[string]bool{}
+func (p *Poller) pingSeeds(ctx context.Context, seeds []Node) map[string]bool {
+	alive := map[string]bool{}
 	ping := p.deps.AgentPing
 	if ping == nil {
 		ping = pingHealthz
@@ -753,7 +753,7 @@ func (p *Poller) pingaSeeds(ctx context.Context, seeds []Node) map[string]bool {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, p.cfg.FanOut)
 	for _, s := range seeds {
-		if s.Transport != TransportAgente || s.Address == "" {
+		if s.Transport != TransportAgent || s.Address == "" {
 			continue
 		}
 		wg.Add(1)
@@ -769,12 +769,12 @@ func (p *Poller) pingaSeeds(ctx context.Context, seeds []Node) map[string]bool {
 				return
 			}
 			mu.Lock()
-			vivos[s.ID] = true
+			alive[s.ID] = true
 			mu.Unlock()
 		}(s)
 	}
 	wg.Wait()
-	return vivos
+	return alive
 }
 
 // pingHealthz is the default poll of the agent transport. A short timeout
@@ -797,32 +797,32 @@ func pingHealthz(ctx context.Context, address string) error {
 	return nil
 }
 
-// aplicaSeeds integrates the declared nodes. A seed never overwrites the
+// applySeeds integrates the declared nodes. A seed never overwrites the
 // timestamp of a node the hypervisor has just observed; and a seed that did not
 // answer the ping keeps the old timestamp (or zero, if it never answered) — it
 // is the growing age that denounces the dead node.
-func aplicaSeeds(inv *Inventory, seeds []Node, vivos map[string]bool, agora int64) {
+func applySeeds(inv *Inventory, seeds []Node, alive map[string]bool, now int64) {
 	if len(seeds) == 0 {
 		return
 	}
-	porID := indicePorID(inv.Nodes)
+	porID := indexByID(inv.Nodes)
 	for _, s := range seeds {
-		n, existia := porID[s.ID]
-		if !existia {
+		n, existed := porID[s.ID]
+		if !existed {
 			n = s
 		} else {
 			// The seed's declarative fields rule; the timestamp belongs to the observer.
 			n.Name, n.Transport, n.Address, n.Kind = s.Name, s.Transport, s.Address, s.Kind
 		}
-		if vivos[s.ID] {
-			n.Status = Observe("running", agora)
+		if alive[s.ID] {
+			n.Status = Observe("running", now)
 		}
 		porID[s.ID] = n
 	}
-	inv.Nodes = ordenaPorID(porID)
+	inv.Nodes = sortByID(porID)
 }
 
-func (p *Poller) carregaProjects() ([]Project, []Deployment) {
+func (p *Poller) loadProjects() ([]Project, []Deployment) {
 	if p.deps.Projects == nil {
 		return nil, nil
 	}
@@ -834,7 +834,7 @@ func (p *Poller) carregaProjects() ([]Project, []Deployment) {
 	return projs, deps
 }
 
-func (p *Poller) carregaJobs() []JobRef {
+func (p *Poller) loadJobs() []JobRef {
 	if p.deps.Jobs == nil {
 		return nil
 	}
@@ -846,7 +846,7 @@ func (p *Poller) carregaJobs() []JobRef {
 	return jobs
 }
 
-func (p *Poller) carregaServices() []Service {
+func (p *Poller) loadServices() []Service {
 	if p.deps.Services == nil {
 		return nil
 	}
@@ -858,7 +858,7 @@ func (p *Poller) carregaServices() []Service {
 	return svcs
 }
 
-// aplicaCredenciais fills in what the panel knows about each node's credential.
+// applyCredentials fills in what the panel knows about each node's credential.
 //
 // Two rules, and both have already cost dearly:
 //
@@ -871,7 +871,7 @@ func (p *Poller) carregaServices() []Service {
 //     returns an error, and in that case NOTHING is touched — the panel keeps
 //     the last known state instead of announcing that every node lost its
 //     credential.
-func (p *Poller) aplicaCredenciais(inv *Inventory) {
+func (p *Poller) applyCredentials(inv *Inventory) {
 	if p.deps.Credentials == nil {
 		return
 	}
@@ -881,9 +881,9 @@ func (p *Poller) aplicaCredenciais(inv *Inventory) {
 		return
 	}
 	for i := range inv.Nodes {
-		c, temEntrada := creds[inv.Nodes[i].ID]
-		if !temEntrada {
-			if inv.Nodes[i].Credential.State == CredRevogada {
+		c, hasEntry := creds[inv.Nodes[i].ID]
+		if !hasEntry {
+			if inv.Nodes[i].Credential.State == CredRevoked {
 				continue // regra 1
 			}
 			inv.Nodes[i].Credential = Credential{}

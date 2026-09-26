@@ -135,10 +135,10 @@ func TestOpsStatus_System_Shape(t *testing.T) {
 	}
 }
 
-// TestOpsStatus_System_DisksFiltradosEOrdenados: the 2 snaps (squashfs, 100% by
+// TestOpsStatus_System_DisksFilteredAndSorted: the 2 snaps (squashfs, 100% by
 // construction) and the tmpfs drop out; "/" comes first and the rest run from
 // fullest to emptiest.
-func TestOpsStatus_System_DisksFiltradosEOrdenados(t *testing.T) {
+func TestOpsStatus_System_DisksFilteredAndSorted(t *testing.T) {
 	got := relevantDisks(fakeStats().Disks)
 	var mounts []string
 	for _, d := range got {
@@ -161,9 +161,9 @@ func TestOpsStatus_System_DisksFiltradosEOrdenados(t *testing.T) {
 	}
 }
 
-// TestRelevantDisks_MaisCheioPrimeiro proves the ordering is independent of the
+// TestRelevantDisks_FullestFirst proves the ordering is independent of the
 // input order, with "/" not in first position at the source.
-func TestRelevantDisks_MaisCheioPrimeiro(t *testing.T) {
+func TestRelevantDisks_FullestFirst(t *testing.T) {
 	in := []system.DiskInfo{
 		{Mount: "/var", FSType: "ext4", Total: 100, Used: 10, UsedPercent: 10},
 		{Mount: "/data", FSType: "xfs", Total: 100, Used: 90, UsedPercent: 90},
@@ -178,9 +178,9 @@ func TestRelevantDisks_MaisCheioPrimeiro(t *testing.T) {
 	}
 }
 
-// TestPickUplink_IgnoraVirtuais: lo/docker0/br-*/veth*/tailscale0 can never be
+// TestPickUplink_IgnoresVirtual: lo/docker0/br-*/veth*/tailscale0 can never be
 // the card's interface — counting them would double the same byte.
-func TestPickUplink_IgnoraVirtuais(t *testing.T) {
+func TestPickUplink_IgnoresVirtual(t *testing.T) {
 	up, ok := pickUplink(fakeStats().Net)
 	if !ok || up.Name != "eth0" {
 		t.Fatalf("uplink = %q (ok=%v), want eth0", up.Name, ok)
@@ -190,10 +190,10 @@ func TestPickUplink_IgnoraVirtuais(t *testing.T) {
 	}
 }
 
-// TestNetRateTracker_PrecisaDeDuasAmostras: the first sample publishes the
+// TestNetRateTracker_NeedsTwoSamples: the first sample publishes the
 // cumulative counters but NO rate (absent ≠ 0 B/s); the second derives bytes/s
 // from the delta.
-func TestNetRateTracker_PrecisaDeDuasAmostras(t *testing.T) {
+func TestNetRateTracker_NeedsTwoSamples(t *testing.T) {
 	tr := &netRateTracker{}
 	t0 := time.Unix(1700000000, 0)
 	ifaces := []system.NetInfo{{Name: "eth0", BytesSent: 1000, BytesRecv: 2000}}
@@ -222,12 +222,12 @@ func TestNetRateTracker_PrecisaDeDuasAmostras(t *testing.T) {
 	}
 }
 
-// TestNetRateTracker_MesmaColetaNaoDerrubaTaxa is the guard for the 3s cache:
+// TestNetRateTracker_SameSampleDoesNotDropRate is the guard for the 3s cache:
 // the endpoint may be called twice inside the same window and receive the SAME
 // counters. Recomputing there would give a false 0 B/s, and moving the baseline
 // would shrink the next real sample's dt (an inflated rate). Here the previous
 // rate is repeated and the next computation stays correct.
-func TestNetRateTracker_MesmaColetaNaoDerrubaTaxa(t *testing.T) {
+func TestNetRateTracker_SameSampleDoesNotDropRate(t *testing.T) {
 	tr := &netRateTracker{}
 	t0 := time.Unix(1700000000, 0)
 	tr.sample([]system.NetInfo{{Name: "eth0", BytesSent: 0, BytesRecv: 0}}, t0)
@@ -250,9 +250,9 @@ func TestNetRateTracker_MesmaColetaNaoDerrubaTaxa(t *testing.T) {
 	}
 }
 
-// TestNetRateTracker_ContadorRegrediu: the NIC/host restarted. Rebaseline in
+// TestNetRateTracker_CounterWentBackwards: the NIC/host restarted. Rebaseline in
 // silence, without publishing a negative or absurd rate.
-func TestNetRateTracker_ContadorRegrediu(t *testing.T) {
+func TestNetRateTracker_CounterWentBackwards(t *testing.T) {
 	tr := &netRateTracker{}
 	t0 := time.Unix(1700000000, 0)
 	tr.sample([]system.NetInfo{{Name: "eth0", BytesSent: 10_000_000, BytesRecv: 10_000_000}}, t0)
@@ -263,11 +263,11 @@ func TestNetRateTracker_ContadorRegrediu(t *testing.T) {
 	}
 }
 
-// TestOpsStatus_System_AusenteSemDependencia is the absence contract: with no
+// TestOpsStatus_System_MissingWithoutDependency is the absence contract: with no
 // SysStats wired, the "system" key does not exist in the serialized bytes — the
 // app tells "not available" apart from "idle server", which a block of zeros
 // would make indistinguishable.
-func TestOpsStatus_System_AusenteSemDependencia(t *testing.T) {
+func TestOpsStatus_System_MissingWithoutDependency(t *testing.T) {
 	body := getOpsStatusJSON(t, Deps{Cfg: adminCfg(), HealthDetailed: fakeHealthDetailed(true)}, testPrimary)
 	if _, ok := body["system"]; ok {
 		t.Fatalf("system key present without SysStats: %#v", body["system"])
@@ -282,10 +282,10 @@ func TestOpsStatus_System_AusenteSemDependencia(t *testing.T) {
 	}
 }
 
-// TestOpsStatus_System_AusenteQuandoColetaFalha: a collection that errors must
+// TestOpsStatus_System_MissingWhenCollectionFails: a collection that errors must
 // turn neither into zeros nor into a 500 — the rest of the status (health,
 // queue, alerts) still lets the app paint the screen.
-func TestOpsStatus_System_AusenteQuandoColetaFalha(t *testing.T) {
+func TestOpsStatus_System_MissingWhenCollectionFails(t *testing.T) {
 	deps := Deps{
 		Cfg:            adminCfg(),
 		HealthDetailed: fakeHealthDetailed(true),
@@ -302,10 +302,10 @@ func TestOpsStatus_System_AusenteQuandoColetaFalha(t *testing.T) {
 	}
 }
 
-// TestOpsStatus_System_NaoVazaParaNaoAdmin: the resources inherit EXACTLY
+// TestOpsStatus_System_DoesNotLeakToNonAdmin: the resources inherit EXACTLY
 // /ops/status's gate (admin ⇒ 403 for everyone else), with no new policy. A
 // non-admin does not get a trimmed `system`: they get no response at all.
-func TestOpsStatus_System_NaoVazaParaNaoAdmin(t *testing.T) {
+func TestOpsStatus_System_DoesNotLeakToNonAdmin(t *testing.T) {
 	deps := Deps{
 		Cfg:            adminCfg(),
 		HealthDetailed: fakeHealthDetailed(true),

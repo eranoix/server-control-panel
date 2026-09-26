@@ -179,11 +179,11 @@ func TestAndroidPackageID(t *testing.T) {
 	}
 }
 
-// TestLatestAndroidReleaseAchaOPacoteReal is the behaviour test that the one
+// TestLatestAndroidReleaseFindsRealPackage is the behaviour test that the one
 // above protects by construction: with an index-v2.json keyed by the production
 // applicationId, latestAndroidRelease MUST find the highest versionCode. With
 // the constant wrong, this test fails.
-func TestLatestAndroidReleaseAchaOPacoteReal(t *testing.T) {
+func TestLatestAndroidReleaseFindsRealPackage(t *testing.T) {
 	dir := t.TempDir()
 	idx := `{"packages":{"` + androidPackageID + `":{"versions":{` +
 		`"aaa":{"manifest":{"versionName":"0.1.5","versionCode":105},"file":{"name":"/vpsmanager-0.1.5.apk"}},` +

@@ -165,7 +165,7 @@ func (enshrouded) SaveBans(s Server, list []string) error {
 	return writeJSONAtomic(path, cfg, s.Root)
 }
 
-// writeJSONAtomic becomes a thin shell over escreveAtomico: it only marshals and
+// writeJSONAtomic becomes a thin shell over writeAtomic: it only marshals and
 // delegates. Kept (rather than removed) because both callers end up with a
 // one-line diff each — review reads "the writer changed", nothing beyond that.
 //
@@ -175,5 +175,5 @@ func writeJSONAtomic(path string, cfg map[string]interface{}, ref string) error 
 	if err != nil {
 		return err
 	}
-	return escreveAtomico(path, out, ref)
+	return writeAtomic(path, out, ref)
 }

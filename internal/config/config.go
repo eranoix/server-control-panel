@@ -305,11 +305,11 @@ type Config struct {
 	// aliases is the CSS table agendamento.clientes_fllr (CSS re-normalizes on
 	// intake); here the roster is enough for grounding + the exclusion list. The
 	// client-name normalization lives in the intake processor.
-	//   - IntakeClienteRoster: known canonical names (prompt grounding).
-	//   - IntakeClienteExclusions: names/domains that are NEVER a client (Acme,
+	//   - IntakeClientRoster: known canonical names (prompt grounding).
+	//   - IntakeClientExclusions: names/domains that are NEVER a client (Acme,
 	//     vendors, generic providers). Case-insensitive.
-	IntakeClienteRoster     []string `json:"intake_cliente_roster,omitempty"`
-	IntakeClienteExclusions []string `json:"intake_cliente_exclusions,omitempty"`
+	IntakeClientRoster     []string `json:"intake_cliente_roster,omitempty"`
+	IntakeClientExclusions []string `json:"intake_cliente_exclusions,omitempty"`
 
 	// SessionCollectorEnabled turns on the Claude Code session collector — Flow B
 	// piece 1. It ingests RAW sessions (CLI + VS Code extension) from N of Jordan's

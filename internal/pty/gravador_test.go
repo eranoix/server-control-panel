@@ -13,8 +13,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// servidorComGravador brings up a real HostShell over a dataDir of its own.
-func servidorComGravador(t *testing.T, nome string) (dir string, disca func(string) *websocket.Conn) {
+// serverWithRecorder brings up a real HostShell over a dataDir of its own.
+func serverWithRecorder(t *testing.T, nome string) (dir string, dial func(string) *websocket.Conn) {
 	t.Helper()
 	if _, err := exec.LookPath("dtach"); err != nil {
 		t.Skip("no dtach on this machine")
@@ -32,7 +32,7 @@ func servidorComGravador(t *testing.T, nome string) (dir string, disca func(stri
 		HostShell(w, r, "u", true, own, "", dir, reg)
 	}))
 	t.Cleanup(func() {
-		PararGravador(dir, "u", nome)
+		StopRecorder(dir, "u", nome)
 		srv.Close()
 		_ = exec.Command("pkill", "-f", socketPathFor(dir, nome)).Run()
 	})
@@ -61,11 +61,11 @@ func servidorComGravador(t *testing.T, nome string) (dir string, disca func(stri
 // before the fix, lost all five markers — and reattaching recovered none of them.
 // It is the interval in which a person closes the laptop and moves to another
 // computer, that is, exactly the stretch they come back wanting to read.
-func TestGravadorNaoDeixaBuracoNoLogComNinguemAnexado(t *testing.T) {
+func TestRecorderLeavesNoLogGapWithNobodyAttached(t *testing.T) {
 	nome := "gravador-buraco"
-	dir, disca := servidorComGravador(t, nome)
+	dir, dial := serverWithRecorder(t, nome)
 
-	c := disca("")
+	c := dial("")
 	time.Sleep(1500 * time.Millisecond)
 	// Five markers, one every 2s — all AFTER I left.
 	cmd := `(for i in 1 2 3 4 5; do sleep 2; echo MARCA_$i; done) &` + "\r"
@@ -76,33 +76,33 @@ func TestGravadorNaoDeixaBuracoNoLogComNinguemAnexado(t *testing.T) {
 	time.Sleep(14 * time.Second) // the markers come out with nobody attached
 
 	dados, _ := os.ReadFile(sessionLogPath(dir, "u", nome))
-	var faltando []string
+	var missing []string
 	for i := 1; i <= 5; i++ {
 		m := fmt.Sprintf("MARCA_%d", i)
 		if !strings.Contains(string(dados), m) {
-			faltando = append(faltando, m)
+			missing = append(missing, m)
 		}
 	}
-	if len(faltando) > 0 {
-		t.Errorf("lost from the log with nobody attached: %v — the recorder is not holding the session", faltando)
+	if len(missing) > 0 {
+		t.Errorf("lost from the log with nobody attached: %v — the recorder is not holding the session", missing)
 	}
 }
 
 // A session with the recorder attached still responds to the real client's size
 // — the recorder is invisible to the minimum rule.
-func TestSessaoComGravadorAindaSegueOClienteDeVerdade(t *testing.T) {
-	disca := sessaoDeTeste(t, "gravador-min")
+func TestSessionWithRecorderStillFollowsRealClient(t *testing.T) {
+	dial := testSession(t, "gravador-min")
 
-	cliente := disca()
-	cliente.redimensiona(100, 30)
+	client := dial()
+	client.resize(100, 30)
 	time.Sleep(1800 * time.Millisecond)
-	if r, c := cliente.tamanhoDoPrograma(); r != "30" || c != "100" {
+	if r, c := client.programSize(); r != "30" || c != "100" {
 		t.Fatalf("program sees %sx%s; wanted 30x100 — the recorder is being opinionated about the size", r, c)
 	}
 
-	cliente.redimensiona(70, 20)
+	client.resize(70, 20)
 	time.Sleep(1500 * time.Millisecond)
-	if r, c := cliente.tamanhoDoPrograma(); r != "20" || c != "70" {
+	if r, c := client.programSize(); r != "20" || c != "70" {
 		t.Errorf("program sees %sx%s; wanted 20x70", r, c)
 	}
 }
@@ -112,20 +112,20 @@ func TestSessaoComGravadorAindaSegueOClienteDeVerdade(t *testing.T) {
 //
 // Every piece has a test of its own; this is the only one that proves they are
 // WIRED TOGETHER. It was exactly one correct piece with a cut wire (the
-// `esqueceTamanho` whose return value nobody used) that let the original defect
+// `forgetSize` whose return value nobody used) that let the original defect
 // slip through a green battery — see tamanho_da_sessao_e2e_test.go.
-func TestHistoricoChegaDaSessaoVivaAteOQuePainelBusca(t *testing.T) {
+func TestHistoryFlowsFromLiveSessionToPanelFetch(t *testing.T) {
 	nome := "hist-cadeia"
-	dir, disca := servidorComGravador(t, nome)
+	dir, dial := serverWithRecorder(t, nome)
 
-	// HistoricoDaSessao reads from the package's ACTIVE dataDir.
+	// SessionHistory reads from the package's ACTIVE dataDir.
 	reg, err := LoadRegistry(dir + "/reg-ativo.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	InitSessionBackend(dir, reg)
 
-	c := disca("")
+	c := dial("")
 	time.Sleep(1500 * time.Millisecond)
 	// Write more lines than fit on the screen (24): the excess scrolls off and
 	// that is what becomes history.
@@ -135,18 +135,18 @@ func TestHistoricoChegaDaSessaoVivaAteOQuePainelBusca(t *testing.T) {
 	_ = c.Close()
 	time.Sleep(1500 * time.Millisecond)
 
-	dados, total := HistoricoDaSessao("u", nome, 1<<20)
+	dados, total := SessionHistory("u", nome, 1<<20)
 	if total == 0 {
 		t.Fatal("the session history is empty — the recorder→emulator→file chain is cut")
 	}
-	texto := stripANSI(string(dados))
-	faltando := 0
+	text := stripANSI(string(dados))
+	missing := 0
 	for i := 1; i <= 20; i++ { // the first ones have certainly scrolled out by now
-		if !strings.Contains(texto, fmt.Sprintf("LINHA_DE_HISTORICO_%d", i)) {
-			faltando++
+		if !strings.Contains(text, fmt.Sprintf("LINHA_DE_HISTORICO_%d", i)) {
+			missing++
 		}
 	}
-	if faltando > 2 {
-		t.Errorf("%d of the first 20 lines are not in the history (%d bytes read)", faltando, total)
+	if missing > 2 {
+		t.Errorf("%d of the first 20 lines are not in the history (%d bytes read)", missing, total)
 	}
 }

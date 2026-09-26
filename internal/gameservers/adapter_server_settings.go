@@ -169,8 +169,8 @@ func (enshrouded) SaveServerSettings(s Server, srvPatch, grpPatch map[string]int
 	if err != nil {
 		return err
 	}
-	// It preserved the MODE, lost the OWNER. See escreveAtomico in fsatomic.go.
-	return escreveAtomico(path, out, s.Root)
+	// It preserved the MODE, lost the OWNER. See writeAtomic in fsatomic.go.
+	return writeAtomic(path, out, s.Root)
 }
 
 // RenameWorld renames the world's FOLDER (the label the panel uses).
@@ -178,20 +178,20 @@ func (enshrouded) SaveServerSettings(s Server, srvPatch, grpPatch map[string]int
 // The name that shows up inside the game lives compressed in the save (KSC1+ZSTD
 // → BDB1) and is NOT touched here: editing that blob is exactly what proved
 // unfeasible in the save-editor project. Renaming the folder is safe and reversible.
-func (e enshrouded) RenameWorld(s Server, old, novo string) error {
+func (e enshrouded) RenameWorld(s Server, old, fresh string) error {
 	if err := safeName(old); err != nil {
 		return err
 	}
-	if err := safeName(novo); err != nil {
+	if err := safeName(fresh); err != nil {
 		return err
 	}
 	from := filepath.Join(s.Root, "worlds", old)
-	to := filepath.Join(s.Root, "worlds", novo)
+	to := filepath.Join(s.Root, "worlds", fresh)
 	if _, err := os.Stat(from); err != nil {
 		return fmt.Errorf("world '%s' does not exist", old)
 	}
 	if _, err := os.Stat(to); err == nil {
-		return fmt.Errorf("a world named '%s' already exists", novo)
+		return fmt.Errorf("a world named '%s' already exists", fresh)
 	}
 	if err := os.Rename(from, to); err != nil {
 		return err
@@ -203,7 +203,7 @@ func (e enshrouded) RenameWorld(s Server, old, novo string) error {
 		// — a raw `os.WriteFile`, with no Chmod and no Chown. It is what produced
 		// /opt/enshrouded/.active as root:root inside a 4711:4711 tree.
 		// `ref` is s.Root because .active may not exist yet.
-		return escreveAtomico(filepath.Join(s.Root, ".active"), []byte(novo+"\n"), s.Root)
+		return writeAtomic(filepath.Join(s.Root, ".active"), []byte(fresh+"\n"), s.Root)
 	}
 	return nil
 }

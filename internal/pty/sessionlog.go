@@ -50,14 +50,14 @@ type sessionLogWriter struct {
 // nil: if it cannot open one, it returns a no-op writer (f==nil) — the tee turns
 // inert instead of taking HostShell down.
 func openSessionLog(dataDir, user, name string) *sessionLogWriter {
-	return abreEscritor(sessionLogPath(dataDir, user, name))
+	return openWriter(sessionLogPath(dataDir, user, name))
 }
 
-// abreEscritor is openSessionLog by PATH. It exists because the rendered history
+// openWriter is openSessionLog by PATH. It exists because the rendered history
 // (`historico.go`) is another file with the same needs: append, rotation by size
 // and failing silently.
-func abreEscritor(caminho string) *sessionLogWriter {
-	w := &sessionLogWriter{path: caminho}
+func openWriter(path string) *sessionLogWriter {
+	w := &sessionLogWriter{path: path}
 	if err := os.MkdirAll(filepath.Dir(w.path), 0o700); err != nil {
 		return w // no-op
 	}
@@ -92,18 +92,18 @@ func (w *sessionLogWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// descartaUltimos undoes the last n bytes already written.
+// dropLast undoes the last n bytes already written.
 //
 // It exists for one reason only: `dtach`'s chatter can arrive SPLIT across two
 // chunks, and by the time the filter recognises it straddling the boundary, its
 // beginning is already in the file. Without undoing, the filter would stay a
 // rule about the chunk — which is exactly what left `ESC[999H` and
-// `[detached]` recorded in the log. See [escritorDaSessao.Write].
+// `[detached]` recorded in the log. See [sessionWriter.Write].
 //
 // The file is opened with O_APPEND, so truncating is enough: the next write
 // lands at the new end again. Best-effort like the rest of the tee — failing
 // here must not take down anyone's terminal.
-func (w *sessionLogWriter) descartaUltimos(n int) {
+func (w *sessionLogWriter) dropLast(n int) {
 	if w == nil || n <= 0 {
 		return
 	}
@@ -114,11 +114,11 @@ func (w *sessionLogWriter) descartaUltimos(n int) {
 	if w.f == nil || w.size < int64(n) {
 		return
 	}
-	alvo := w.size - int64(n)
-	if err := w.f.Truncate(alvo); err != nil {
+	target := w.size - int64(n)
+	if err := w.f.Truncate(target); err != nil {
 		return
 	}
-	w.size = alvo
+	w.size = target
 }
 
 // rotateLocked renames the current log to <log>.1 (overwriting the previous
@@ -227,7 +227,7 @@ func sessionInAltScreen(data []byte) bool {
 	return lastEnter > lastLeave
 }
 
-// limiteRepintura: how many CUUs of TWO or more lines are enough to say the
+// repaintLimit: how many CUUs of TWO or more lines are enough to say the
 // stream was produced by a differential renderer and not by a shell.
 //
 // Calibrated by counting, across the 30 real session logs on this machine, over
@@ -239,19 +239,19 @@ func sessionInAltScreen(data []byte) bool {
 // The gap between 11 and 33 is empty; 20 sits in the middle of it. Erring on the
 // "it is a shell" side is the cheap side: at worst the operator sees the history
 // exactly as they always have.
-const limiteRepintura = 20
+const repaintLimit = 20
 
-// tailDoLog returns the same slice attachReplay replays. Classifying the WHOLE
+// logTail returns the same slice attachReplay replays. Classifying the WHOLE
 // log would give a false positive for a session that went through a TUI hours
 // ago and is a shell today — what matters is what is going to be replayed.
-func tailDoLog(data []byte) []byte {
+func logTail(data []byte) []byte {
 	if len(data) > maxAttachReplayBytes {
 		return data[len(data)-maxAttachReplayBytes:]
 	}
 	return data
 }
 
-// fluxoERepintado reports whether these bytes came from a renderer that REDRAWS
+// isRepaintStream reports whether these bytes came from a renderer that REDRAWS
 // (Ink/Claude Code, `less`, anything that walks the cursor up to rewrite)
 // instead of a shell, whose output is append-only.
 //
@@ -280,7 +280,7 @@ func tailDoLog(data []byte) []byte {
 // It counts only `ESC [ n A` with n >= 2. `n == 1` (or omitted, or 0, which by
 // ECMA-48 both mean 1) is left out on purpose: that is what readline emits to
 // redraw a two-line prompt, and counting it would classify a plain shell as a TUI.
-func fluxoERepintado(data []byte) bool {
+func isRepaintStream(data []byte) bool {
 	total := 0
 	for i := 0; i+1 < len(data); {
 		if data[i] != 0x1B || data[i+1] != '[' {
@@ -288,22 +288,22 @@ func fluxoERepintado(data []byte) bool {
 			continue
 		}
 		j := i + 2
-		valor, digitos := 0, 0
+		valor, digits := 0, 0
 		for j < len(data) && data[j] >= '0' && data[j] <= '9' {
 			if valor < 1000 { // saturates: an absurd parameter does not become an overflow
 				valor = valor*10 + int(data[j]-'0')
 			}
-			digitos++
+			digits++
 			j++
 		}
 		if j < len(data) && data[j] == 'A' {
-			linhas := valor
-			if digitos == 0 || valor == 0 {
-				linhas = 1
+			lines := valor
+			if digits == 0 || valor == 0 {
+				lines = 1
 			}
-			if linhas >= 2 {
+			if lines >= 2 {
 				total++
-				if total >= limiteRepintura {
+				if total >= repaintLimit {
 					return true
 				}
 			}
@@ -334,7 +334,7 @@ func attachReplay(dataDir, user, name string) []byte {
 	if sessionInAltScreen(data) {
 		return nil
 	}
-	if fluxoERepintado(tailDoLog(data)) {
+	if isRepaintStream(logTail(data)) {
 		return nil
 	}
 	if len(data) > maxAttachReplayBytes {
@@ -350,10 +350,10 @@ func attachReplay(dataDir, user, name string) []byte {
 	// with the content one scroll above. It was missing here; this path is less
 	// used now that the panel primes itself, but it is still live for clients
 	// that do not prime and for when the primer's fetch fails.
-	return semRuidoDoDtachNoFim(semRelatorioDeMouse(data))
+	return trimTrailingDtachNoise(stripMouseReports(data))
 }
 
-// semRelatorioDeMouse strips from the replay the mouse reports that ended up
+// stripMouseReports strips from the replay the mouse reports that ended up
 // recorded in the log.
 //
 // WHY THEY ARE THERE. The log records only the pty's OUTPUT. A mouse report is
@@ -377,15 +377,15 @@ func attachReplay(dataDir, user, name string) []byte {
 // THE 128 KiB CUT CAN LAND IN THE MIDDLE of one of those sequences, and that is
 // why the scanner only consumes while it still has bytes: a sequence truncated
 // at the end disappears whole (it is half a sequence, it draws nothing) and never
-// pushes the index past the end — the same trap TestFluxoERepintado_SequenciaTruncadaNaoEstoura
+// pushes the index past the end — the same trap TestIsRepaintStream_TruncatedSequenceDoesNotOverflow
 // records for the classifier.
-func semRelatorioDeMouse(data []byte) []byte {
+func stripMouseReports(data []byte) []byte {
 	if !bytes.Contains(data, []byte("\x1b[<")) && !bytes.Contains(data, []byte("\x1b[M")) {
 		return data // common path: nothing to do, nothing to copy
 	}
 	out := make([]byte, 0, len(data))
 	for i := 0; i < len(data); {
-		if n := tamanhoDoRelatorioDeMouse(data[i:]); n > 0 {
+		if n := mouseReportLen(data[i:]); n > 0 {
 			i += n
 			continue
 		}
@@ -395,10 +395,10 @@ func semRelatorioDeMouse(data []byte) []byte {
 	return out
 }
 
-// tamanhoDoRelatorioDeMouse returns how many bytes at the start of b make up a
+// mouseReportLen returns how many bytes at the start of b make up a
 // mouse report, or 0 if there is none there. A sequence truncated at the end of
 // the buffer counts in full: what is left of it draws nothing.
-func tamanhoDoRelatorioDeMouse(b []byte) int {
+func mouseReportLen(b []byte) int {
 	if len(b) < 3 || b[0] != 0x1b || b[1] != '[' {
 		return 0
 	}
@@ -484,20 +484,20 @@ func rawLogTail(dataDir, user, name string, maxBytes int) (data []byte, total in
 	if maxBytes <= 0 || maxBytes > maxRawLogTailBytes {
 		maxBytes = maxRawLogTailBytes
 	}
-	corte, total := lerCauda(sessionLogPath(dataDir, user, name), maxBytes)
+	cut, total := readTail(sessionLogPath(dataDir, user, name), maxBytes)
 	if total == 0 {
 		return nil, 0
 	}
-	if len(corte) < total {
+	if len(cut) < total {
 		// It cut: advance past the first line break.
-		if i := bytes.IndexByte(corte, '\n'); i >= 0 && i+1 < len(corte) {
-			corte = corte[i+1:]
+		if i := bytes.IndexByte(cut, '\n'); i >= 0 && i+1 < len(cut) {
+			cut = cut[i+1:]
 		}
 	}
-	return semRuidoDoDtachNoFim(corte), total
+	return trimTrailingDtachNoise(cut), total
 }
 
-// lerCauda returns the last maxBytes of the log (reaching into the previous
+// readTail returns the last maxBytes of the log (reaching into the previous
 // generation when needed) and the total available, WITHOUT loading the whole log
 // into memory.
 //
@@ -505,7 +505,7 @@ func rawLogTail(dataDir, user, name string, maxBytes int) (data []byte, total in
 // slice on every attach, and the permanent recorder makes the log grow even with
 // nobody watching. Reading 16 MiB to return 2 MiB, on every tab opened, would be
 // paying dearly for a cut `ReadAt` knows how to make directly.
-func lerCauda(path string, maxBytes int) ([]byte, int) {
+func readTail(path string, maxBytes int) ([]byte, int) {
 	tam := func(p string) int64 {
 		fi, err := os.Stat(p)
 		if err != nil {
@@ -513,8 +513,8 @@ func lerCauda(path string, maxBytes int) ([]byte, int) {
 		}
 		return fi.Size()
 	}
-	tamAnterior, tamAtual := tam(path+".1"), tam(path)
-	total := int(tamAnterior + tamAtual)
+	tamAnterior, curSize := tam(path+".1"), tam(path)
+	total := int(tamAnterior + curSize)
 	if total == 0 {
 		return nil, 0
 	}
@@ -522,11 +522,11 @@ func lerCauda(path string, maxBytes int) ([]byte, int) {
 		maxBytes = total
 	}
 	// Where to start, in the continuous numbering "previous followed by current".
-	inicio := int64(total - maxBytes)
+	start := int64(total - maxBytes)
 	buf := make([]byte, 0, maxBytes)
 
-	leDe := func(p string, desde int64, quanto int64) {
-		if quanto <= 0 {
+	leDe := func(p string, since int64, amount int64) {
+		if amount <= 0 {
 			return
 		}
 		f, err := os.Open(p)
@@ -534,24 +534,24 @@ func lerCauda(path string, maxBytes int) ([]byte, int) {
 			return
 		}
 		defer f.Close()
-		parte := make([]byte, quanto)
-		n, err := f.ReadAt(parte, desde)
+		part := make([]byte, amount)
+		n, err := f.ReadAt(part, since)
 		if n > 0 {
-			buf = append(buf, parte[:n]...)
+			buf = append(buf, part[:n]...)
 		}
 		_ = err // short or EOF: return what we got, it is best-effort like the rest
 	}
 
-	if inicio < tamAnterior {
-		leDe(path+".1", inicio, tamAnterior-inicio)
-		leDe(path, 0, tamAtual)
+	if start < tamAnterior {
+		leDe(path+".1", start, tamAnterior-start)
+		leDe(path, 0, curSize)
 	} else {
-		leDe(path, inicio-tamAnterior, tamAtual-(inicio-tamAnterior))
+		leDe(path, start-tamAnterior, curSize-(start-tamAnterior))
 	}
 	return buf, total
 }
 
-// semRuidoDoDtachNoFim strips from the END of the slice what `dtach` says to the
+// trimTrailingDtachNoise strips from the END of the slice what `dtach` says to the
 // CLIENT, and nothing else.
 //
 // ## What it says, and why it spoils things
@@ -583,20 +583,20 @@ func lerCauda(path string, maxBytes int) ([]byte, int) {
 //
 // The loop repeats because successive attaches and exits stack up: the "Vpsm"
 // session's file once ended with two clears and one goodbye, in that order.
-func semRuidoDoDtachNoFim(b []byte) []byte {
+func trimTrailingDtachNoise(b []byte) []byte {
 	for {
 		antes := len(b)
 
 		// The goodbye only counts if it is REALLY at the end: an old `[detached]`,
 		// followed by real output, is legitimate history and stays.
-		if i := bytes.LastIndex(b, textoDeSaidaDoDtach); i >= 0 && len(b)-i <= 32 {
-			corte := i
-			if j := bytes.LastIndex(b[:i], marcaDeSaidaDoDtach); j >= 0 && i-j <= 16 {
-				corte = j
+		if i := bytes.LastIndex(b, dtachExitText); i >= 0 && len(b)-i <= 32 {
+			cut := i
+			if j := bytes.LastIndex(b[:i], dtachExitMark); j >= 0 && i-j <= 16 {
+				cut = j
 			}
-			b = b[:corte]
+			b = b[:cut]
 		}
-		b = bytes.TrimSuffix(b, limpezaDeAttachDoDtach)
+		b = bytes.TrimSuffix(b, dtachAttachClear)
 
 		if len(b) == antes {
 			return b

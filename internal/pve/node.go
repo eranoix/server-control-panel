@@ -50,7 +50,7 @@ const (
 	// maxTaskLogLines is the ceiling for ONE task's log, and it is NOT a parameter.
 	// TaskLog's signature deliberately accepts no limit: what does not exist cannot
 	// be relayed from the browser. The reason is do()'s 1 MiB ceiling — a response
-	// above it comes back truncated and turns into ErrRespostaGrande.
+	// above it comes back truncated and turns into ErrResponseTooLarge.
 	maxTaskLogLines = 200
 )
 
@@ -158,16 +158,16 @@ func (c *Client) TaskList(ctx context.Context, node string, opt TaskListOptions)
 	if node == "" {
 		return nil, fmt.Errorf("pve: empty node in TaskList")
 	}
-	limite := opt.Limit
-	if limite <= 0 {
-		limite = defaultTasks
+	limit := opt.Limit
+	if limit <= 0 {
+		limit = defaultTasks
 	}
-	if limite > MaxTasks {
+	if limit > MaxTasks {
 		// Clamp, not an error: the screen asked for too much, and cutting is more
 		// useful than refusing. The ceiling exists because of maxBodyBytes, not by taste.
-		limite = MaxTasks
+		limit = MaxTasks
 	}
-	q := url.Values{"limit": {strconv.Itoa(limite)}}
+	q := url.Values{"limit": {strconv.Itoa(limit)}}
 	if opt.ErrorsOnly {
 		q.Set("errors", "1")
 	}
@@ -185,8 +185,8 @@ func (c *Client) TaskList(ctx context.Context, node string, opt TaskListOptions)
 	return ts, nil
 }
 
-// linhaDeLog is the shape the hypervisor uses in a task log: line number and text.
-type linhaDeLog struct {
+// logLine is the shape the hypervisor uses in a task log: line number and text.
+type logLine struct {
 	N int    `json:"n"`
 	T string `json:"t"`
 }
@@ -196,22 +196,22 @@ type linhaDeLog struct {
 // 🔴 The signature has NO limit parameter, and that is the defence, not an
 // oversight: the ceiling is maxTaskLogLines, fixed here. A long vzdump log
 // easily passes the 1 MiB that do() reads, and a truncated response becomes
-// ErrRespostaGrande — an honest error, but an error. Better to ask for 200 lines.
+// ErrResponseTooLarge — an honest error, but an error. Better to ask for 200 lines.
 func (c *Client) TaskLog(ctx context.Context, node, upid string) ([]string, error) {
 	if node == "" || upid == "" {
 		return nil, fmt.Errorf("pve: node (%q) and upid (%q) are required", node, upid)
 	}
 	q := url.Values{"limit": {strconv.Itoa(maxTaskLogLines)}}
 	p := "/api2/json/nodes/" + url.PathEscape(node) + "/tasks/" + url.PathEscape(upid) + "/log?" + q.Encode()
-	var linhas []linhaDeLog
-	if err := c.do(ctx, http.MethodGet, p, &linhas); err != nil {
+	var lines []logLine
+	if err := c.do(ctx, http.MethodGet, p, &lines); err != nil {
 		return nil, err
 	}
 	// The hypervisor returns them in order, but that order is promised nowhere —
 	// and a log out of order is a log that misleads whoever is hunting the cause.
-	sort.SliceStable(linhas, func(i, j int) bool { return linhas[i].N < linhas[j].N })
-	out := make([]string, 0, len(linhas))
-	for _, l := range linhas {
+	sort.SliceStable(lines, func(i, j int) bool { return lines[i].N < lines[j].N })
+	out := make([]string, 0, len(lines))
+	for _, l := range lines {
 		out = append(out, l.T)
 	}
 	return out, nil
@@ -317,32 +317,32 @@ func (c *Client) Permissions(ctx context.Context) (map[string]map[string]int, er
 // hypervisor was off, or the RRD had no data yet. Filling a hole with zero
 // would make a power cut look like a stretch of idleness.
 
-// JanelaRRD is the requested interval. These are the same names the hypervisor accepts.
-type JanelaRRD string
+// RRDWindow is the requested interval. These are the same names the hypervisor accepts.
+type RRDWindow string
 
 const (
-	JanelaHora JanelaRRD = "hour"
-	JanelaDia  JanelaRRD = "day"
-	JanelaSem  JanelaRRD = "week"
-	JanelaMes  JanelaRRD = "month"
-	JanelaAno  JanelaRRD = "year"
+	WindowHour  RRDWindow = "hour"
+	WindowDay   RRDWindow = "day"
+	WindowWeek  RRDWindow = "week"
+	WindowMonth RRDWindow = "month"
+	WindowYear  RRDWindow = "year"
 )
 
-// JanelaRRDValida exists because the timeframe goes into the hypervisor's URL.
+// ValidRRDWindow exists because the timeframe goes into the hypervisor's URL.
 // Without an allowlist, a string coming from the panel's query would become a
 // path on the hypervisor.
-func JanelaRRDValida(j string) (JanelaRRD, bool) {
-	switch JanelaRRD(j) {
-	case JanelaHora, JanelaDia, JanelaSem, JanelaMes, JanelaAno:
-		return JanelaRRD(j), true
+func ValidRRDWindow(j string) (RRDWindow, bool) {
+	switch RRDWindow(j) {
+	case WindowHour, WindowDay, WindowWeek, WindowMonth, WindowYear:
+		return RRDWindow(j), true
 	}
 	return "", false
 }
 
-// PontoRRD is one sample. The fields are pointers because **absent and zero are
+// RRDPoint is one sample. The fields are pointers because **absent and zero are
 // different things**: `cpu: 0` is an idle machine; an absent `cpu` is a machine
 // about which nothing is known at that instant.
-type PontoRRD struct {
+type RRDPoint struct {
 	Time    int64    `json:"time"`
 	CPU     *float64 `json:"cpu,omitempty"`
 	MaxCPU  *float64 `json:"maxcpu,omitempty"`
@@ -374,11 +374,11 @@ type PontoRRD struct {
 }
 
 // RRDNode returns the hypervisor's series.
-func (c *Client) RRDNode(ctx context.Context, node string, j JanelaRRD) ([]PontoRRD, error) {
+func (c *Client) RRDNode(ctx context.Context, node string, j RRDWindow) ([]RRDPoint, error) {
 	if node == "" {
 		return nil, fmt.Errorf("pve: empty node in RRDNode")
 	}
-	var pts []PontoRRD
+	var pts []RRDPoint
 	p := "/api2/json/nodes/" + url.PathEscape(node) + "/rrddata?timeframe=" + url.QueryEscape(string(j)) + "&cf=AVERAGE"
 	if err := c.do(ctx, http.MethodGet, p, &pts); err != nil {
 		return nil, err
@@ -388,14 +388,14 @@ func (c *Client) RRDNode(ctx context.Context, node string, j JanelaRRD) ([]Ponto
 
 // RRDGuest returns a guest's series. `typ` is "lxc" or "qemu" — the same
 // vocabulary as the id in /cluster/resources.
-func (c *Client) RRDGuest(ctx context.Context, node string, vmid int, typ string, j JanelaRRD) ([]PontoRRD, error) {
+func (c *Client) RRDGuest(ctx context.Context, node string, vmid int, typ string, j RRDWindow) ([]RRDPoint, error) {
 	if node == "" || vmid <= 0 {
 		return nil, fmt.Errorf("pve: invalid node or vmid in RRDGuest")
 	}
 	if typ != "lxc" && typ != "qemu" {
 		return nil, fmt.Errorf("pve: invalid guest type: %q", typ)
 	}
-	var pts []PontoRRD
+	var pts []RRDPoint
 	p := "/api2/json/nodes/" + url.PathEscape(node) + "/" + typ + "/" + strconv.Itoa(vmid) +
 		"/rrddata?timeframe=" + url.QueryEscape(string(j)) + "&cf=AVERAGE"
 	if err := c.do(ctx, http.MethodGet, p, &pts); err != nil {
@@ -450,7 +450,7 @@ type TimeInfo struct {
 }
 
 // Certificado is one entry of /nodes/{n}/certificates/info.
-type Certificado struct {
+type Certificate struct {
 	Filename      string   `json:"filename"`
 	Subject       string   `json:"subject"`
 	Issuer        string   `json:"issuer"`
@@ -463,7 +463,7 @@ type Certificado struct {
 }
 
 // Pacote is one entry of /nodes/{n}/apt/versions.
-type Pacote struct {
+type PackageInfo struct {
 	Package      string `json:"Package"`
 	Title        string `json:"Title"`
 	Version      string `json:"Version"`
@@ -475,8 +475,8 @@ type Pacote struct {
 	CurrentState string `json:"CurrentState"`
 }
 
-// LinhaSyslog is one entry of /nodes/{n}/syslog.
-type LinhaSyslog struct {
+// SyslogLine is one entry of /nodes/{n}/syslog.
+type SyslogLine struct {
 	N    int    `json:"n"`
 	Text string `json:"t"`
 }
@@ -496,13 +496,13 @@ func (c *Client) Time(ctx context.Context, node string) (TimeInfo, error) {
 	return out, c.do(ctx, http.MethodGet, "/api2/json/nodes/"+url.PathEscape(node)+"/time", &out)
 }
 
-func (c *Client) Certificados(ctx context.Context, node string) ([]Certificado, error) {
-	var out []Certificado
+func (c *Client) Certificates(ctx context.Context, node string) ([]Certificate, error) {
+	var out []Certificate
 	return out, c.do(ctx, http.MethodGet, "/api2/json/nodes/"+url.PathEscape(node)+"/certificates/info", &out)
 }
 
-func (c *Client) Pacotes(ctx context.Context, node string) ([]Pacote, error) {
-	var out []Pacote
+func (c *Client) Packages(ctx context.Context, node string) ([]PackageInfo, error) {
+	var out []PackageInfo
 	return out, c.do(ctx, http.MethodGet, "/api2/json/nodes/"+url.PathEscape(node)+"/apt/versions", &out)
 }
 
@@ -511,12 +511,12 @@ func (c *Client) Pacotes(ctx context.Context, node string) ([]Pacote, error) {
 // touches one of them.
 const MaxSyslog = 500
 
-func (c *Client) Syslog(ctx context.Context, node string, limite int) ([]LinhaSyslog, error) {
-	if limite <= 0 || limite > MaxSyslog {
-		limite = MaxSyslog
+func (c *Client) Syslog(ctx context.Context, node string, limit int) ([]SyslogLine, error) {
+	if limit <= 0 || limit > MaxSyslog {
+		limit = MaxSyslog
 	}
-	var out []LinhaSyslog
-	p := "/api2/json/nodes/" + url.PathEscape(node) + "/syslog?limit=" + strconv.Itoa(limite)
+	var out []SyslogLine
+	p := "/api2/json/nodes/" + url.PathEscape(node) + "/syslog?limit=" + strconv.Itoa(limit)
 	return out, c.do(ctx, http.MethodGet, p, &out)
 }
 
@@ -540,19 +540,19 @@ func (c *Client) Syslog(ctx context.Context, node string, limite int) ([]LinhaSy
 // letting a free string through would give the panel the chance to send
 // anything a future hypervisor version might come to accept there.
 
-// ComandoDeEnergia is what can be sent to the NODE. There are two, and never more.
-type ComandoDeEnergia string
+// PowerCommand is what can be sent to the NODE. There are two, and never more.
+type PowerCommand string
 
 const (
-	EnergiaReboot   ComandoDeEnergia = "reboot"
-	EnergiaShutdown ComandoDeEnergia = "shutdown"
+	PowerReboot   PowerCommand = "reboot"
+	PowerShutdown PowerCommand = "shutdown"
 )
 
-// ComandoDeEnergiaValido is the allowlist. Outside it, nothing reaches the hypervisor.
-func ComandoDeEnergiaValido(c string) (ComandoDeEnergia, bool) {
-	switch ComandoDeEnergia(c) {
-	case EnergiaReboot, EnergiaShutdown:
-		return ComandoDeEnergia(c), true
+// ValidPowerCommand is the allowlist. Outside it, nothing reaches the hypervisor.
+func ValidPowerCommand(c string) (PowerCommand, bool) {
+	switch PowerCommand(c) {
+	case PowerReboot, PowerShutdown:
+		return PowerCommand(c), true
 	}
 	return "", false
 }
@@ -564,11 +564,11 @@ func ComandoDeEnergiaValido(c string) (ComandoDeEnergia, bool) {
 // when the machine comes back, and waiting on it would hold the request open
 // exactly while the other side is dying. The caller gets the confirmation that
 // the command WAS ACCEPTED, which is the only thing still assertable from this side.
-func (c *Client) NodePower(ctx context.Context, node string, cmd ComandoDeEnergia) (string, error) {
+func (c *Client) NodePower(ctx context.Context, node string, cmd PowerCommand) (string, error) {
 	if node == "" {
 		return "", fmt.Errorf("pve: empty node in NodePower")
 	}
-	if _, ok := ComandoDeEnergiaValido(string(cmd)); !ok {
+	if _, ok := ValidPowerCommand(string(cmd)); !ok {
 		return "", fmt.Errorf("pve: invalid power command: %q", cmd)
 	}
 	var upid string

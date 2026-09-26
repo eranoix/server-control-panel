@@ -21,15 +21,15 @@ func TestFreshness(t *testing.T) {
 
 	const ttl = 90 * time.Second
 
-	velho := Node{ID: "lxc/207", Name: "apps", Transport: TransportPVEAPI, Kind: NodeKindGuest,
+	stale := Node{ID: "lxc/207", Name: "apps", Transport: TransportPVEAPI, Kind: NodeKindGuest,
 		Status: Observe("running", t0.Add(-5*time.Minute).Unix()),
 		Uptime: Observe(int64(86400), t0.Add(-5*time.Minute).Unix()),
 	}
-	novo := Node{ID: "qemu/208", Name: "dev", Transport: TransportPVEAPI, Kind: NodeKindGuest,
+	fresh := Node{ID: "qemu/208", Name: "dev", Transport: TransportPVEAPI, Kind: NodeKindGuest,
 		Status: Observe("running", t0.Add(-30*time.Second).Unix()),
 		Uptime: Observe(int64(3600), t0.Add(-30*time.Second).Unix()),
 	}
-	vistas := c.View(Inventory{Nodes: []Node{velho, novo}}, ttl)
+	vistas := c.View(Inventory{Nodes: []Node{stale, fresh}}, ttl)
 	if len(vistas) != 2 {
 		t.Fatalf("View returned %d entries, want 2", len(vistas))
 	}
@@ -53,30 +53,30 @@ func TestFreshness(t *testing.T) {
 	// Advancing the injected clock by 10 min expires what was fresh — with no new
 	// poll and no waiting (it is the antidote to leaning on the wall clock).
 	c.now = func() time.Time { return t0.Add(10 * time.Minute) }
-	depois := c.View(Inventory{Nodes: []Node{novo}}, ttl)
-	if depois[0].AgeSeconds != 630 {
-		t.Fatalf("age after advancing the clock = %d s, want 630", depois[0].AgeSeconds)
+	after := c.View(Inventory{Nodes: []Node{fresh}}, ttl)
+	if after[0].AgeSeconds != 630 {
+		t.Fatalf("age after advancing the clock = %d s, want 630", after[0].AgeSeconds)
 	}
-	if !depois[0].Stale {
+	if !after[0].Stale {
 		t.Fatal("the node had to expire when the clock advanced")
 	}
 
 	// The NODE's age is that of the most RECENT timestamp: if any field was
 	// updated, the panel heard the node at that instant.
-	misto := Node{ID: "lxc/205", Name: "observ", Transport: TransportPVEAPI, Kind: NodeKindGuest,
+	mixed := Node{ID: "lxc/205", Name: "observ", Transport: TransportPVEAPI, Kind: NodeKindGuest,
 		Status: Observe("running", t0.Add(-10*time.Second).Unix()),
 		Uptime: Observe(int64(1), t0.Add(-1*time.Hour).Unix()),
 	}
 	c.now = func() time.Time { return t0 }
-	if v := c.View(Inventory{Nodes: []Node{misto}}, ttl); v[0].AgeSeconds != 10 {
+	if v := c.View(Inventory{Nodes: []Node{mixed}}, ttl); v[0].AgeSeconds != 10 {
 		t.Fatalf("age with different timestamps = %d, want 10 (the most recent)", v[0].AgeSeconds)
 	}
 
 	// 🔴 Never observed is NOT "0 s ago". Zero on the screen reads as just-seen —
 	// the exact false green this pin exists to forbid. The marker is a negative
 	// age.
-	nunca := Node{ID: "lxc/299", Name: "novo", Transport: TransportSSH, Kind: NodeKindGuest}
-	v := c.View(Inventory{Nodes: []Node{nunca}}, ttl)
+	never := Node{ID: "lxc/299", Name: "novo", Transport: TransportSSH, Kind: NodeKindGuest}
+	v := c.View(Inventory{Nodes: []Node{never}}, ttl)
 	if v[0].AgeSeconds >= 0 {
 		t.Fatalf("a never-observed node returned age %d — 0 or positive reads as fresh data", v[0].AgeSeconds)
 	}
@@ -89,39 +89,39 @@ func TestFreshness(t *testing.T) {
 // 401 is indistinguishable between revoked and expired; what breaks the tie is
 // the `expire` stored locally, and it is what feeds the expiry warning.
 func TestCredentialStates(t *testing.T) {
-	casos := []struct {
-		nome  string
-		cred  Credential
-		quero string
+	cases := []struct {
+		nome string
+		cred Credential
+		want string
 	}{
 		{"bom", Credential{TokenID: "lab@pve!audit", Expire: t0.Add(30 * 24 * time.Hour).Unix()}, "ok"},
 		{"sem-expire-declarado", Credential{TokenID: "lab@pve!audit"}, "ok"},
 		{"ausente-do-cofre", Credential{}, "ausente"},
 		{"expirada", Credential{TokenID: "lab@pve!audit", Expire: t0.Add(-time.Second).Unix()}, "expirada"},
-		{"revogada", Credential{TokenID: "lab@pve!audit", State: CredRevogada}, "revogada"},
-		{"revogada-e-expirada", Credential{TokenID: "lab@pve!audit", State: CredRevogada,
+		{"revogada", Credential{TokenID: "lab@pve!audit", State: CredRevoked}, "revogada"},
+		{"revogada-e-expirada", Credential{TokenID: "lab@pve!audit", State: CredRevoked,
 			Expire: t0.Add(-time.Hour).Unix()}, "revogada"},
 	}
-	for _, c := range casos {
+	for _, c := range cases {
 		t.Run(c.nome, func(t *testing.T) {
-			if got := credentialState(c.cred, t0); got != c.quero {
-				t.Fatalf("state = %q, want %q", got, c.quero)
+			if got := credentialState(c.cred, t0); got != c.want {
+				t.Fatalf("state = %q, want %q", got, c.want)
 			}
 		})
 	}
 
 	// The strings are a screen contract. Changing them here changes what the
 	// operator reads — and the four have to be DISTINCT from one another.
-	vistos := map[string]bool{}
-	for _, s := range []string{CredOK, CredAusente, CredRevogada, CredExpirada} {
-		if vistos[s] {
+	seen := map[string]bool{}
+	for _, s := range []string{CredOK, CredMissing, CredRevoked, CredExpired} {
+		if seen[s] {
 			t.Fatalf("state %q duplicated — two states merged into one", s)
 		}
-		vistos[s] = true
+		seen[s] = true
 	}
-	if CredOK != "ok" || CredAusente != "ausente" || CredRevogada != "revogada" || CredExpirada != "expirada" {
+	if CredOK != "ok" || CredMissing != "ausente" || CredRevoked != "revogada" || CredExpired != "expirada" {
 		t.Fatalf("the literals changed: %q %q %q %q — the screen depends on them",
-			CredOK, CredAusente, CredRevogada, CredExpirada)
+			CredOK, CredMissing, CredRevoked, CredExpired)
 	}
 
 	// View resolves the state, so nobody has to recompute it in the route.
@@ -129,7 +129,7 @@ func TestCredentialStates(t *testing.T) {
 	c.now = func() time.Time { return t0 }
 	inv := Inventory{Nodes: []Node{{ID: "lxc/207", Name: "apps", Transport: TransportPVEAPI,
 		Kind: NodeKindGuest, Credential: Credential{TokenID: "lab@pve!audit", Expire: t0.Add(-time.Second).Unix()}}}}
-	if got := c.View(inv, time.Minute)[0].Credential.State; got != CredExpirada {
+	if got := c.View(inv, time.Minute)[0].Credential.State; got != CredExpired {
 		t.Fatalf("View did not resolve the credential state: %q", got)
 	}
 }
@@ -154,17 +154,17 @@ func TestViewAlwaysCarriesAge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var entradas []map[string]json.RawMessage
-	if err := json.Unmarshal(b, &entradas); err != nil {
+	var entries []map[string]json.RawMessage
+	if err := json.Unmarshal(b, &entries); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(entradas) != 3 {
-		t.Fatalf("%d entries, want 3", len(entradas))
+	if len(entries) != 3 {
+		t.Fatalf("%d entries, want 3", len(entries))
 	}
-	for i, e := range entradas {
-		for _, chave := range []string{"id", "age_seconds", "stale", "status", "credential"} {
-			if _, ok := e[chave]; !ok {
-				t.Fatalf("entry %d (%s) does not have %q: %s", i, e["id"], chave, b)
+	for i, e := range entries {
+		for _, key := range []string{"id", "age_seconds", "stale", "status", "credential"} {
+			if _, ok := e[key]; !ok {
+				t.Fatalf("entry %d (%s) does not have %q: %s", i, e["id"], key, b)
 			}
 		}
 		var status map[string]any
@@ -177,14 +177,14 @@ func TestViewAlwaysCarriesAge(t *testing.T) {
 	}
 }
 
-// TestFreshnessNaoLeORelogio — the pin for the injectable clock.
+// TestFreshnessDoesNotReadClock — the pin for the injectable clock.
 //
 // A direct call to time.Now() on the calculation path hands the test back to
 // the wall clock: expiry would again demand waiting (which is forbidden) and
 // age would stop being reproducible. The clock comes in through a parameter or
 // through the Clock's field (moulded on internal/telemetry/sink.go:37), and
 // the only place that knows time.Now is the constructor.
-func TestFreshnessNaoLeORelogio(t *testing.T) {
+func TestFreshnessDoesNotReadClock(t *testing.T) {
 	b, err := os.ReadFile("freshness.go")
 	if err != nil {
 		t.Fatalf("reading its own source: %v", err)

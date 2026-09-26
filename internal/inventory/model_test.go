@@ -12,7 +12,7 @@ import (
 // Any value outside {agente, pve-api, ssh} fails, and the error quotes the value
 // received (without that, a wrong transport becomes a "generic error" in the log and vanishes).
 func TestTransportValidation(t *testing.T) {
-	for _, tr := range []Transport{TransportAgente, TransportPVEAPI, TransportSSH} {
+	for _, tr := range []Transport{TransportAgent, TransportPVEAPI, TransportSSH} {
 		n := Node{ID: "n1", Name: "n1", Transport: tr, Kind: NodeKindGuest}
 		if err := n.Validate(); err != nil {
 			t.Fatalf("transport %q should be accepted, got an error: %v", tr, err)
@@ -21,14 +21,14 @@ func TestTransportValidation(t *testing.T) {
 
 	// Close neighbours on purpose: empty string, wrong case, wrong separator and a
 	// trailing space. All of them are plausible typos.
-	for _, ruim := range []string{"", "docker", "PVE-API", "pve_api", "ssh ", "pve-api2"} {
-		n := Node{ID: "n1", Name: "n1", Transport: Transport(ruim), Kind: NodeKindGuest}
+	for _, bad := range []string{"", "docker", "PVE-API", "pve_api", "ssh ", "pve-api2"} {
+		n := Node{ID: "n1", Name: "n1", Transport: Transport(bad), Kind: NodeKindGuest}
 		err := n.Validate()
 		if err == nil {
-			t.Fatalf("transport %q was ACCEPTED — the set is not closed", ruim)
+			t.Fatalf("transport %q was ACCEPTED — the set is not closed", bad)
 		}
-		if !strings.Contains(err.Error(), strconv.Quote(ruim)) {
-			t.Fatalf("the transport error does not mention the received value %q: %v", ruim, err)
+		if !strings.Contains(err.Error(), strconv.Quote(bad)) {
+			t.Fatalf("the transport error does not mention the received value %q: %v", bad, err)
 		}
 	}
 
@@ -46,12 +46,12 @@ func TestTransportValidation(t *testing.T) {
 // TestNodeTransportRoundTrip — the transport crosses the JSON with the SAME
 // literal that the panel and the live verifier compare against.
 func TestNodeTransportRoundTrip(t *testing.T) {
-	casos := map[Transport]string{
-		TransportAgente: "agente",
+	cases := map[Transport]string{
+		TransportAgent:  "agente",
 		TransportPVEAPI: "pve-api",
 		TransportSSH:    "ssh",
 	}
-	for tr, literal := range casos {
+	for tr, literal := range cases {
 		orig := Node{ID: "lxc/207", Name: "apps", Transport: tr, Kind: NodeKindGuest, VMID: 207}
 		b, err := json.Marshal(orig)
 		if err != nil {
@@ -74,8 +74,8 @@ func TestNodeTransportRoundTrip(t *testing.T) {
 
 	// `agente` already exists in the DOMAIN, but no agent has been built yet. The
 	// value has to be accepted by the model even with no support behind it.
-	if !TransportAgente.Valido() {
-		t.Fatal("TransportAgente has to exist in the domain even with no implementation (Phase 8)")
+	if !TransportAgent.Valid() {
+		t.Fatal("TransportAgent has to exist in the domain even with no implementation (Phase 8)")
 	}
 }
 
@@ -112,18 +112,18 @@ func TestSerializationPin(t *testing.T) {
 	if err := json.Unmarshal(nb, &raw); err != nil {
 		t.Fatalf("unmarshal node: %v", err)
 	}
-	for _, campo := range []string{"status", "uptime", "credential", "address", "transport"} {
-		if _, ok := raw[campo]; !ok {
-			t.Fatalf("field %q vanished from the zeroed Node: %s", campo, nb)
+	for _, field := range []string{"status", "uptime", "credential", "address", "transport"} {
+		if _, ok := raw[field]; !ok {
+			t.Fatalf("field %q vanished from the zeroed Node: %s", field, nb)
 		}
 	}
-	for _, campo := range []string{"status", "uptime"} {
+	for _, field := range []string{"status", "uptime"} {
 		var obs map[string]any
-		if err := json.Unmarshal(raw[campo], &obs); err != nil {
-			t.Fatalf("%s is not an object: %v", campo, err)
+		if err := json.Unmarshal(raw[field], &obs); err != nil {
+			t.Fatalf("%s is not an object: %v", field, err)
 		}
 		if _, ok := obs["observed_at"]; !ok {
-			t.Fatalf("%s.observed_at vanished from the zeroed Node: %s", campo, nb)
+			t.Fatalf("%s.observed_at vanished from the zeroed Node: %s", field, nb)
 		}
 	}
 
@@ -147,14 +147,14 @@ func TestSerializationPin(t *testing.T) {
 
 	// Structural pin: no field of the model may pick up omitempty by carelessness
 	// in the types that carry a timestamp.
-	for _, tipo := range []reflect.Type{
+	for _, kind := range []reflect.Type{
 		reflect.TypeOf(Observed[string]{}),
 		reflect.TypeOf(Observed[int64]{}),
 	} {
-		for i := 0; i < tipo.NumField(); i++ {
-			if strings.Contains(tipo.Field(i).Tag.Get("json"), "omitempty") {
+		for i := 0; i < kind.NumField(); i++ {
+			if strings.Contains(kind.Field(i).Tag.Get("json"), "omitempty") {
 				t.Fatalf("%s.%s has omitempty — the timestamp has to be inescapable",
-					tipo, tipo.Field(i).Name)
+					kind, kind.Field(i).Name)
 			}
 		}
 	}
@@ -166,14 +166,14 @@ func TestSerializationPin(t *testing.T) {
 // queue.go:55) and internal/scheduler (scheduler.Job, scheduler.go:30). If
 // anyone hangs an execution method or a function field here, this test fails.
 func TestJobRefIsReference(t *testing.T) {
-	tipo := reflect.TypeOf(JobRef{})
+	kind := reflect.TypeOf(JobRef{})
 
-	querido := []string{"ID", "Kind", "NodeID", "Source"}
-	if tipo.NumField() != len(querido) {
-		t.Fatalf("JobRef has %d fields, want exactly %d (%v)", tipo.NumField(), len(querido), querido)
+	wanted := []string{"ID", "Kind", "NodeID", "Source"}
+	if kind.NumField() != len(wanted) {
+		t.Fatalf("JobRef has %d fields, want exactly %d (%v)", kind.NumField(), len(wanted), wanted)
 	}
-	for i, nome := range querido {
-		f := tipo.Field(i)
+	for i, nome := range wanted {
+		f := kind.Field(i)
 		if f.Name != nome {
 			t.Fatalf("field %d is %q, want %q", i, f.Name, nome)
 		}
@@ -181,7 +181,7 @@ func TestJobRefIsReference(t *testing.T) {
 			t.Fatalf("JobRef.%s is %s — a reference only carries a string", nome, f.Type.Kind())
 		}
 	}
-	if n := tipo.NumMethod(); n != 0 {
+	if n := kind.NumMethod(); n != 0 {
 		t.Fatalf("JobRef gained %d method(s) — the inventory executes nothing", n)
 	}
 	if n := reflect.TypeOf(&JobRef{}).NumMethod(); n != 0 {

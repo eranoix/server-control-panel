@@ -51,11 +51,11 @@ const SchemaVersion = 1
 type Transport string
 
 const (
-	// TransportAgente exists in the domain already, but has NO implementation
+	// TransportAgent exists in the domain already, but has NO implementation
 	// in this phase: the lab-agent comes later. The value is accepted by the
 	// model and refused by whoever goes to dial it — faking support here would
 	// be lying to the planning of the stage that follows.
-	TransportAgente Transport = "agente"
+	TransportAgent Transport = "agente"
 	// TransportPVEAPI is the only transport with an implementation today
 	// (internal/pve): the Proxmox API with a privsep=1 token.
 	TransportPVEAPI Transport = "pve-api"
@@ -64,9 +64,9 @@ const (
 )
 
 // Valido reports whether t is one of the three transports.
-func (t Transport) Valido() bool {
+func (t Transport) Valid() bool {
 	switch t {
-	case TransportAgente, TransportPVEAPI, TransportSSH:
+	case TransportAgent, TransportPVEAPI, TransportSSH:
 		return true
 	}
 	return false
@@ -76,15 +76,15 @@ func (t Transport) Valido() bool {
 type NodeKind string
 
 const (
-	NodeKindHost    NodeKind = "host"    // the hypervisor itself
-	NodeKindGuest   NodeKind = "guest"   // LXC or QEMU managed by that hypervisor
-	NodeKindExterno NodeKind = "externo" // a machine outside the hypervisor (e.g. a rented VPS)
+	NodeKindHost     NodeKind = "host"    // the hypervisor itself
+	NodeKindGuest    NodeKind = "guest"   // LXC or QEMU managed by that hypervisor
+	NodeKindExternal NodeKind = "externo" // a machine outside the hypervisor (e.g. a rented VPS)
 )
 
 // Valido reports whether k is one of the three node kinds.
-func (k NodeKind) Valido() bool {
+func (k NodeKind) Valid() bool {
 	switch k {
-	case NodeKindHost, NodeKindGuest, NodeKindExterno:
+	case NodeKindHost, NodeKindGuest, NodeKindExternal:
 		return true
 	}
 	return false
@@ -108,23 +108,23 @@ func Observe[T any](v T, unixSeconds int64) Observed[T] {
 	return Observed[T]{Value: v, ObservedAt: unixSeconds}
 }
 
-// NaoReportado is the marker for "the hypervisor did not tell me this number".
+// NotReported is the marker for "the hypervisor did not tell me this number".
 //
 // It is the SAME idiom as AgeSeconds (freshness.go), which returns -1 for
 // "never observed" instead of 0 — and for the same reason: on the screen, zero
 // is an assertion. "0% of disk" reads as an empty disk; "0 B/s" reads as no
 // traffic. Both are confident lies about data that does not exist.
-const NaoReportado int64 = -1
+const NotReported int64 = -1
 
 // Credential states of a node. There are FOUR, distinct and never merged: the
 // PVE 401 cannot tell a revoked credential from an expired one, and it is the
 // `expire` kept locally that breaks the tie. The strings are a screen contract
 // — changing them here changes what the operator reads.
 const (
-	CredOK       = "ok"       // token present and within its validity
-	CredAusente  = "ausente"  // there is no token for this node in the vault
-	CredRevogada = "revogada" // the panel deleted/revoked it (DELETE on the hypervisor + vault)
-	CredExpirada = "expirada" // the token's `expire` has already passed — without calling the hypervisor
+	CredOK      = "ok"       // token present and within its validity
+	CredMissing = "ausente"  // there is no token for this node in the vault
+	CredRevoked = "revogada" // the panel deleted/revoked it (DELETE on the hypervisor + vault)
+	CredExpired = "expirada" // the token's `expire` has already passed — without calling the hypervisor
 )
 
 // Credential is what the panel KNOWS about a node's credential. The secret
@@ -148,7 +148,7 @@ type Node struct {
 	Kind    NodeKind `json:"kind"`
 	VMID    int      `json:"vmid"` // 0 when the node is not a hypervisor guest
 
-	// 🔴 AusenteDesde separates "I have not seen it for N" from "the hypervisor
+	// 🔴 MissingSince separates "I have not seen it for N" from "the hypervisor
 	// SAID it is not there any more". They are two different silences and they
 	// ask opposite things of the operator.
 	//
@@ -161,7 +161,7 @@ type Node struct {
 	// and deleting it would be amnesia presented as truth. What changes is that
 	// it stops being confused with a node that has merely aged: "stale" means
 	// the panel could not look; this means the panel looked and did not find it.
-	AusenteDesde int64 `json:"ausente_desde,omitempty"`
+	MissingSince int64 `json:"ausente_desde,omitempty"`
 
 	Status Observed[string] `json:"status"` // "running"|"stopped"|… as the hypervisor returns it
 	Uptime Observed[int64]  `json:"uptime"` // segundos
@@ -177,7 +177,7 @@ type Node struct {
 	// The rule for the day this changes: a field that starts coming from another
 	// call LEAVES Node and becomes its own document, with its own timestamp.
 	//
-	// observedAtDoNo (freshness.go) is NOT taught to look at these fields, and
+	// nodeObservedAt (freshness.go) is NOT taught to look at these fields, and
 	// that is deliberate: it already resolves the node's age from Status/Uptime,
 	// which are timestamped at the same instant. Touching it would change the
 	// age of every node in the inventory because of one new field — and an empty
@@ -188,9 +188,9 @@ type Node struct {
 
 	MemUsed  Observed[int64] `json:"mem_used"`  // bytes INSIDE the guest
 	MemTotal Observed[int64] `json:"mem_total"` // bytes configurados
-	MemHost  Observed[int64] `json:"mem_host"`  // RAM spent on the HOST; NaoReportado on LXC
+	MemHost  Observed[int64] `json:"mem_host"`  // RAM spent on the HOST; NotReported on LXC
 
-	// 🔴 DiskUsed is NaoReportado (-1) when the hypervisor does not know — QEMU
+	// 🔴 DiskUsed is NotReported (-1) when the hypervisor does not know — QEMU
 	// without a guest-agent returns 0, and publishing 0 would draw an empty bar
 	// over a number nobody measured. DiskTotal stays real: capacity is known
 	// even without an agent.
@@ -198,7 +198,7 @@ type Node struct {
 	DiskTotal Observed[int64] `json:"disk_total"`
 
 	// Counters accumulated since the guest booted, and the rates derived from
-	// them. A NaoReportado rate means "there is no deriving it": either it is the
+	// them. A NotReported rate means "there is no deriving it": either it is the
 	// first observation, or there was a gap larger than the poller interval, or
 	// the counter went backwards (the guest restarted). None of those becomes 0 —
 	// 0 B/s reads as "no traffic", which is an assertion, not a gap.
@@ -224,11 +224,11 @@ func (n Node) Validate() error {
 	if n.ID == "" {
 		return fmt.Errorf("node without ID: without a stable key the inventory merges entries")
 	}
-	if !n.Transport.Valido() {
+	if !n.Transport.Valid() {
 		return fmt.Errorf("node %q: transport %s outside the set {agente, pve-api, ssh}",
 			n.ID, strconv.Quote(string(n.Transport)))
 	}
-	if !n.Kind.Valido() {
+	if !n.Kind.Valid() {
 		return fmt.Errorf("node %q: kind %s outside the set {host, guest, externo}",
 			n.ID, strconv.Quote(string(n.Kind)))
 	}

@@ -58,7 +58,7 @@ type Resource struct {
 
 	// Counters accumulated since the guest booted. They only become a rate with
 	// TWO points and the interval between them — and the division must not cross a
-	// hole in observation. See taxaEntreObservacoes, in the inventory.
+	// hole in observation. See rateBetweenObservations, in the inventory.
 	NetIn     int64 `json:"netin"`
 	NetOut    int64 `json:"netout"`
 	DiskRead  int64 `json:"diskread"`

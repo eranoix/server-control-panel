@@ -25,7 +25,7 @@ import (
 // events discarded in 36h, 63 of them real messages. whatsmeow does NOT redeliver
 // a refused event, so each one was gone for good. It was also the burst that
 // took WhatsApp down for 34 minutes.
-func TestEstadoDoDaemonNuncaApontaParaProducaoSobTeste(t *testing.T) {
+func TestDaemonStateNeverPointsToProductionUnderTest(t *testing.T) {
 	os.Unsetenv("WAD_STATE_DIR")
 	got := wadStateDir()
 	if got == "/var/lib/vpsm-wad" {
@@ -39,12 +39,12 @@ func TestEstadoDoDaemonNuncaApontaParaProducaoSobTeste(t *testing.T) {
 // The second barrier is independent of the first: even with WAD_STATE_DIR
 // pointing at a temp dir, restarting the production daemon knocks the user's
 // WhatsApp offline in the middle of the suite.
-func TestRestartDoDaemonEInerteSobTeste(t *testing.T) {
-	marcador := filepath.Join(t.TempDir(), "rodou")
+func TestDaemonRestartIsInertUnderTest(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "rodou")
 	// The real function is the one that matters: if it did not have the guard, it
 	// would call systemctl for real. Here we only assert that it returns inertly.
 	restartWadDaemon()
-	if _, err := os.Stat(marcador); err == nil {
+	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("unexpected side effect")
 	}
 	if !testing.Testing() {
@@ -55,7 +55,7 @@ func TestRestartDoDaemonEInerteSobTeste(t *testing.T) {
 // provisionWad has to REFUSE to write meta.json without an hmac_secret. Writing
 // an empty one makes the daemon omit the X-Webhook-Hmac header; the panel
 // answers 401 "missing hmac" and discards EVERY incoming message, in silence.
-func TestProvisionWadRecusaSegredoVazio(t *testing.T) {
+func TestProvisionWadRejectsEmptySecret(t *testing.T) {
 	m, state := testManager(t)
 	u := mustUser(t, "sam")
 	if err := scopeVault(m, u).Set("waha_hmac_secret", ""); err != nil {

@@ -24,7 +24,7 @@ import (
 	ptysvc "server-control-panel/internal/pty"
 )
 
-func (r *Router) handleClaudeVersoes(w http.ResponseWriter, req *http.Request) {
+func (r *Router) handleClaudeVersions(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		writeErr(w, 405, "method not allowed")
 		return
@@ -34,12 +34,12 @@ func (r *Router) handleClaudeVersoes(w http.ResponseWriter, req *http.Request) {
 	// Session-PID → name map, so we can say WHO each Claude belongs to. Without
 	// it the operator would get a list of PIDs, which helps nobody decide what
 	// to restart.
-	donos := map[int]string{}
-	alvos := map[int]bool{}
+	owners := map[int]string{}
+	targets := map[int]bool{}
 	for _, s := range r.sessReg.List() {
 		if s.PID > 0 {
-			donos[s.PID] = s.Name
-			alvos[s.PID] = true
+			owners[s.PID] = s.Name
+			targets[s.PID] = true
 		}
 	}
 
@@ -52,49 +52,49 @@ func (r *Router) handleClaudeVersoes(w http.ResponseWriter, req *http.Request) {
 	// because there was no owning session.
 	socks := ptysvc.SessionSockets()
 
-	estado := claudever.Levantar(func(pid int) string {
-		if raiz := claudever.AncestralEm(pid, alvos); raiz != 0 {
-			return donos[raiz]
+	state := claudever.Detect(func(pid int) string {
+		if root := claudever.AncestralEm(pid, targets); root != 0 {
+			return owners[root]
 		}
 		return claudever.AncestralPorArgv(pid, socks)
 	})
 
 	// The recovery container is brought up SEPARATELY, on purpose: Levantar
-	// discards it (mesmoMount) because it has its OWN CLI installation, and comparing
+	// discards it (sameMount) because it has its OWN CLI installation, and comparing
 	// against the host's has already called a Claude NEWER than the host "outdated".
 	// Here the reference is its own installation, and Alvo tells the front end that this
 	// one restarts via the container — not by typing into a pane, which it does not have.
-	for _, p := range claudever.LevantarExterno("VPSM_RECOVERY=1", "recovery") {
-		estado.Processos = append(estado.Processos, p)
-		if !p.Atual {
-			estado.Defasados++
+	for _, p := range claudever.DetectExternal("VPSM_RECOVERY=1", "recovery") {
+		state.Processes = append(state.Processes, p)
+		if !p.Current {
+			state.Outdated++
 		}
 	}
 
 	// Only return what the user may see. A non-admin operator has no reason to
 	// see processes from sessions that are not theirs.
 	if !r.isPrimary(user) {
-		visiveis := estado.Processos[:0]
-		for _, p := range estado.Processos {
+		visible := state.Processes[:0]
+		for _, p := range state.Processes {
 			// The recovery Claude belongs to nobody in particular and restarting it
 			// is an admin action — it stays out of the non-primary view.
-			if p.Alvo != "" {
+			if p.Target != "" {
 				continue
 			}
-			if p.Sessao != "" && r.sessionOwn.VisibleTo(p.Sessao, user, false) {
-				visiveis = append(visiveis, p)
+			if p.Session != "" && r.sessionOwn.VisibleTo(p.Session, user, false) {
+				visible = append(visible, p)
 			}
 		}
-		estado.Processos = visiveis
-		estado.Defasados = 0
-		for _, p := range estado.Processos {
-			if !p.Atual {
-				estado.Defasados++
+		state.Processes = visible
+		state.Outdated = 0
+		for _, p := range state.Processes {
+			if !p.Current {
+				state.Outdated++
 			}
 		}
 	}
 
-	writeJSON(w, estado)
+	writeJSON(w, state)
 }
 
 // handleClaudeRecoveryRestart restarts the recovery Claude's container.
@@ -117,7 +117,7 @@ func (r *Router) handleClaudeRecoveryRestart(w http.ResponseWriter, req *http.Re
 	}
 	ctx, cancel := context.WithTimeout(req.Context(), 90*time.Second)
 	defer cancel()
-	if err := recoveryclaude.Reinicia(ctx, r.cfg.DataDir); err != nil {
+	if err := recoveryclaude.Restart(ctx, r.cfg.DataDir); err != nil {
 		writeErr(w, 500, "restart recovery container: "+err.Error())
 		return
 	}

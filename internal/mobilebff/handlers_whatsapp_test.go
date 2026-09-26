@@ -151,7 +151,7 @@ func newWhatsappTestAPI(svc *fakeWhatsappSvc) (huma.API, *http.ServeMux) {
 	return api, mux
 }
 
-func TestWhatsAppChats_ListaOrdemDoStore(t *testing.T) {
+func TestWhatsAppChats_ListsInStoreOrder(t *testing.T) {
 	svc := &fakeWhatsappSvc{chats: []whatsapp.Chat{
 		{JID: "a@s.whatsapp.net", Name: "Ana", UnreadCount: 3, LastMsgTS: 100, LastMsgBody: "oi", AvatarURL: "https://x/a"},
 		{JID: "b@s.whatsapp.net", Name: "Bruno", IsGroup: true},
@@ -192,7 +192,7 @@ func TestWhatsAppChats_Unauthenticated401(t *testing.T) {
 	}
 }
 
-func TestWhatsAppMessages_MapeiaCamposEBackfilling(t *testing.T) {
+func TestWhatsAppMessages_MapsFieldsAndBackfilling(t *testing.T) {
 	svc := &fakeWhatsappSvc{
 		backfilling: true,
 		messages: []whatsapp.Message{
@@ -240,14 +240,14 @@ func TestWhatsAppMessages_MapeiaCamposEBackfilling(t *testing.T) {
 	}
 }
 
-// TestWhatsAppSendMessage_ClientMsgIDIdempotente is the central proof of
+// TestWhatsAppSendMessage_ClientMsgIDIdempotent is the central proof of
 // send idempotency: two POSTs with the SAME client_msg_id, through the whole
 // HTTP layer (a real huma route, not a direct Go function call), result
 // in a single call to SendTextDedup — which in turn only calls
 // Client.SendText once. Here we prove the HTTP end of the chain; the end with
 // the real dedupe is already covered by TestSendTextDedup in
 // internal/whatsapp/service_export_test.go.
-func TestWhatsAppSendMessage_ClientMsgIDIdempotente(t *testing.T) {
+func TestWhatsAppSendMessage_ClientMsgIDIdempotent(t *testing.T) {
 	svc := &fakeWhatsappSvc{sendID: "wamid-999"}
 	_, mux := newWhatsappTestAPI(svc)
 
@@ -291,7 +291,7 @@ func TestWhatsAppSendMessage_ClientMsgIDIdempotente(t *testing.T) {
 	}
 }
 
-func TestWhatsAppSendMessage_ErroDoBackendVira502(t *testing.T) {
+func TestWhatsAppSendMessage_BackendErrorBecomes502(t *testing.T) {
 	svc := &fakeWhatsappSvc{sendErr: errBadGatewayTest}
 	_, mux := newWhatsappTestAPI(svc)
 
@@ -321,7 +321,7 @@ func TestWhatsAppMarkRead_204(t *testing.T) {
 	}
 }
 
-func TestWhatsAppAvatar_StreamaStatusDoService(t *testing.T) {
+func TestWhatsAppAvatar_StreamsServiceStatus(t *testing.T) {
 	svc := &fakeWhatsappSvc{avatarStatus: http.StatusNoContent}
 	_, mux := newWhatsappTestAPI(svc)
 

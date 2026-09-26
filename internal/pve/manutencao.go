@@ -45,11 +45,11 @@ func (c *Client) Reboot(ctx context.Context, node string, vmid int, typ string) 
 // clone. The hypervisor holds the counter; it is the one that knows.
 func (c *Client) NextID(ctx context.Context) (int, error) {
 	// The route returns the number as a JSON STRING ("999"), not as a number.
-	var bruto any
-	if err := c.do(ctx, http.MethodGet, "/api2/json/cluster/nextid", &bruto); err != nil {
+	var raw any
+	if err := c.do(ctx, http.MethodGet, "/api2/json/cluster/nextid", &raw); err != nil {
 		return 0, err
 	}
-	switch v := bruto.(type) {
+	switch v := raw.(type) {
 	case string:
 		n, err := strconv.Atoi(strings.TrimSpace(v))
 		if err != nil {
@@ -59,18 +59,18 @@ func (c *Client) NextID(ctx context.Context) (int, error) {
 	case float64:
 		return int(v), nil
 	default:
-		return 0, fmt.Errorf("pve: /cluster/nextid returned %T, unexpected", bruto)
+		return 0, fmt.Errorf("pve: /cluster/nextid returned %T, unexpected", raw)
 	}
 }
 
-// NomeDeGuestValido refuses what the hypervisor would refuse — and refuses it
+// ValidGuestName refuses what the hypervisor would refuse — and refuses it
 // BEFORE dialling out.
 //
 // The name goes into the query of a POST to the hypervisor. Validating here is
 // not duplicating the hypervisor's validation: it is stopping a string with a
 // slash or a space from becoming another route or another parameter before it
 // leaves here.
-func NomeDeGuestValido(nome string) error {
+func ValidGuestName(nome string) error {
 	if nome == "" || len(nome) > 63 {
 		return fmt.Errorf("pve: invalid guest name (%q) — 1 to 63 characters", nome)
 	}
@@ -89,10 +89,10 @@ func NomeDeGuestValido(nome string) error {
 	return nil
 }
 
-// NomeDeStorageValido refuses a storage name that is not an identifier. It goes
+// ValidStorageName refuses a storage name that is not an identifier. It goes
 // into the query of a POST; a slash or a dot-dot there is a path to something
 // else.
-func NomeDeStorageValido(nome string) error {
+func ValidStorageName(nome string) error {
 	if nome == "" || len(nome) > 64 {
 		return fmt.Errorf("pve: invalid storage (%q)", nome)
 	}
@@ -109,14 +109,14 @@ func NomeDeStorageValido(nome string) error {
 	return nil
 }
 
-// NomeDeNoValido refuses a node name that is not an identifier.
+// ValidNodeName refuses a node name that is not an identifier.
 //
 // `guestPath` interpolates the node into the path without validating — old debt
 // I am not touching here, so as not to change the behaviour of routes that are
 // already proven. But VZDump builds the path ON ITS OWN
 // (`/nodes/<node>/vzdump`), so the validation has to exist on THIS side, or else
 // a node with a slash in it would pick another route.
-func NomeDeNoValido(node string) error {
+func ValidNodeName(node string) error {
 	if node == "" || len(node) > 64 {
 		return fmt.Errorf("pve: invalid node (%q)", node)
 	}
@@ -159,32 +159,32 @@ func NomeDeNoValido(node string) error {
 // For a VM (qemu) there is no equivalent restriction: the hypervisor clones a
 // running VM using drive-mirror, and the only thing it refuses is copying TPM
 // state.
-func (c *Client) Clone(ctx context.Context, node string, vmid int, typ string, novoID int, nome, snapname string) (string, error) {
+func (c *Client) Clone(ctx context.Context, node string, vmid int, typ string, newID int, nome, snapname string) (string, error) {
 	base, err := guestPath(node, vmid, typ)
 	if err != nil {
 		return "", err
 	}
-	if novoID <= 0 {
-		return "", fmt.Errorf("pve: invalid target vmid (%d)", novoID)
+	if newID <= 0 {
+		return "", fmt.Errorf("pve: invalid target vmid (%d)", newID)
 	}
-	if novoID == vmid {
-		return "", fmt.Errorf("pve: target %d is the source guest itself", novoID)
+	if newID == vmid {
+		return "", fmt.Errorf("pve: target %d is the source guest itself", newID)
 	}
 	q := url.Values{
-		"newid": {strconv.Itoa(novoID)},
+		"newid": {strconv.Itoa(newID)},
 		"full":  {"1"},
 	}
 	if snapname != "" {
 		// The same snapshot-name validation used in create/delete/rollback: the
 		// value comes from the screen and goes into the query of a POST to the
 		// hypervisor.
-		if err := NomeDeSnapshotValido(snapname); err != nil {
+		if err := ValidSnapshotName(snapname); err != nil {
 			return "", err
 		}
 		q.Set("snapname", snapname)
 	}
 	if nome != "" {
-		if err := NomeDeGuestValido(nome); err != nil {
+		if err := ValidGuestName(nome); err != nil {
 			return "", err
 		}
 		if typ == "lxc" {
@@ -200,19 +200,19 @@ func (c *Client) Clone(ctx context.Context, node string, vmid int, typ string, n
 	return upid, nil
 }
 
-// ModosDeDump are the modes vzdump accepts, read from the hypervisor source.
+// DumpModes are the modes vzdump accepts, read from the hypervisor source.
 //
 //	snapshot — without stopping the guest (a disk-level consistent copy)
 //	suspend  — freeze, copy, unfreeze
 //	stop     — power off, copy, power back on (the most consistent and the most expensive)
-var ModosDeDump = []string{"snapshot", "suspend", "stop"}
+var DumpModes = []string{"snapshot", "suspend", "stop"}
 
-// CompressoesDeDump likewise. `zstd` is the default on PVE 9 and the one the
+// DumpCompressions likewise. `zstd` is the default on PVE 9 and the one the
 // backup job of this lab used.
-var CompressoesDeDump = []string{"zstd", "lzo", "gzip", "0"}
+var DumpCompressions = []string{"zstd", "lzo", "gzip", "0"}
 
-func naLista(v string, lista []string) bool {
-	for _, x := range lista {
+func inList(v string, list []string) bool {
+	for _, x := range list {
 		if v == x {
 			return true
 		}
@@ -231,29 +231,29 @@ func naLista(v string, lista []string) bool {
 // 🔴 IT DOES NOT SEND `bwlimit`/`ionice`/`performance`: all three require
 // Sys.Modify on '/', and none of them is worth widening a hypervisor privilege
 // for.
-func (c *Client) VZDump(ctx context.Context, node string, vmid int, storage, modo, compress string) (string, error) {
+func (c *Client) VZDump(ctx context.Context, node string, vmid int, storage, mode, compress string) (string, error) {
 	if node == "" {
 		return "", fmt.Errorf("pve: empty node")
 	}
 	if vmid <= 0 {
 		return "", fmt.Errorf("pve: invalid vmid (%d)", vmid)
 	}
-	if err := NomeDeStorageValido(storage); err != nil {
+	if err := ValidStorageName(storage); err != nil {
 		return "", err
 	}
-	if !naLista(modo, ModosDeDump) {
-		return "", fmt.Errorf("pve: invalid dump mode (%q) — %s", modo, strings.Join(ModosDeDump, "|"))
+	if !inList(mode, DumpModes) {
+		return "", fmt.Errorf("pve: invalid dump mode (%q) — %s", mode, strings.Join(DumpModes, "|"))
 	}
-	if !naLista(compress, CompressoesDeDump) {
-		return "", fmt.Errorf("pve: invalid compression (%q) — %s", compress, strings.Join(CompressoesDeDump, "|"))
+	if !inList(compress, DumpCompressions) {
+		return "", fmt.Errorf("pve: invalid compression (%q) — %s", compress, strings.Join(DumpCompressions, "|"))
 	}
-	if err := NomeDeNoValido(node); err != nil {
+	if err := ValidNodeName(node); err != nil {
 		return "", err
 	}
 	q := url.Values{
 		"vmid":     {strconv.Itoa(vmid)},
 		"storage":  {storage},
-		"mode":     {modo},
+		"mode":     {mode},
 		"compress": {compress},
 		// `remove=0`: this dump deletes nothing. See the comment above.
 		"remove": {"0"},
@@ -284,19 +284,19 @@ func (c *Client) VZDump(ctx context.Context, node string, vmid int, storage, mod
 //
 // Absence is NOT an error: a guest with no note is a guest nobody has described
 // yet, and the screen needs to say so instead of showing a failure.
-func (c *Client) Descricao(ctx context.Context, node string, vmid int, typ string) (string, error) {
-	var caminho string
+func (c *Client) Description(ctx context.Context, node string, vmid int, typ string) (string, error) {
+	var path string
 	if vmid > 0 {
 		base, err := guestPath(node, vmid, typ)
 		if err != nil {
 			return "", err
 		}
-		caminho = base + "/config"
+		path = base + "/config"
 	} else {
-		if err := NomeDeNoValido(node); err != nil {
+		if err := ValidNodeName(node); err != nil {
 			return "", err
 		}
-		caminho = "/api2/json/nodes/" + node + "/config"
+		path = "/api2/json/nodes/" + node + "/config"
 	}
 	// The config carries dozens of fields; only the description matters, and
 	// asking for the whole object into a one-field struct is what keeps the
@@ -304,21 +304,21 @@ func (c *Client) Descricao(ctx context.Context, node string, vmid int, typ strin
 	var cfg struct {
 		Description string `json:"description"`
 	}
-	if err := c.do(ctx, http.MethodGet, caminho, &cfg); err != nil {
+	if err := c.do(ctx, http.MethodGet, path, &cfg); err != nil {
 		return "", err
 	}
 	return cfg.Description, nil
 }
 
-// TamanhoMaximoDaNota is the ceiling the panel accepts before dialling out.
+// MaxNoteSize is the ceiling the panel accepts before dialling out.
 //
 // The hypervisor accepts large descriptions, but a note is there to be READ: a
 // text that does not fit on one screen has stopped being a summary. The ceiling
 // exists to refuse here, with a message in the panel's own language, instead of
 // sending 200 KB to the hypervisor and getting an error back.
-const TamanhoMaximoDaNota = 8192
+const MaxNoteSize = 8192
 
-// SetDescricao writes the note of the guest (vmid > 0) or of the node itself
+// SetDescription writes the note of the guest (vmid > 0) or of the node itself
 // (vmid <= 0).
 //
 // 🔴 WRITING THE NOTE IS THE ONLY THING IN THIS BATCH THAT CHANGES
@@ -327,26 +327,26 @@ const TamanhoMaximoDaNota = 8192
 // `description` is an OPTION. The other four — Disk, CPU, Memory, Network —
 // remain denied, and that was MEASURED on the node token after the grant, not
 // assumed.
-func (c *Client) SetDescricao(ctx context.Context, node string, vmid int, typ, texto string) error {
-	if len(texto) > TamanhoMaximoDaNota {
-		return fmt.Errorf("pve: note with %d bytes — the cap is %d", len(texto), TamanhoMaximoDaNota)
+func (c *Client) SetDescription(ctx context.Context, node string, vmid int, typ, text string) error {
+	if len(text) > MaxNoteSize {
+		return fmt.Errorf("pve: note with %d bytes — the cap is %d", len(text), MaxNoteSize)
 	}
-	var caminho string
+	var path string
 	if vmid > 0 {
 		base, err := guestPath(node, vmid, typ)
 		if err != nil {
 			return err
 		}
-		caminho = base + "/config"
+		path = base + "/config"
 	} else {
-		if err := NomeDeNoValido(node); err != nil {
+		if err := ValidNodeName(node); err != nil {
 			return err
 		}
-		caminho = "/api2/json/nodes/" + node + "/config"
+		path = "/api2/json/nodes/" + node + "/config"
 	}
-	q := url.Values{"description": {texto}}
+	q := url.Values{"description": {text}}
 	// PUT, not POST: the guest config is a resource that EXISTS and is being
 	// changed. The hypervisor refuses POST on that route, and sending the wrong
 	// verb would give a 501 that the operator would read as "the panel broke".
-	return c.do(ctx, http.MethodPut, caminho+"?"+q.Encode(), nil)
+	return c.do(ctx, http.MethodPut, path+"?"+q.Encode(), nil)
 }

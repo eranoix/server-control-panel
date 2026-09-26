@@ -17,7 +17,7 @@ import (
 // and a removed guest into a wrong pass; the set says exactly WHO came in or
 // went out.
 func TestClusterResources(t *testing.T) {
-	esperado := []int{100, 201, 202, 203, 204, 205, 206, 207, 208}
+	expected := []int{100, 201, 202, 203, 204, 205, 206, 207, 208}
 
 	for _, path := range []string{fixtureRoot, fixtureToken} {
 		t.Run(path, func(t *testing.T) {
@@ -52,8 +52,8 @@ func TestClusterResources(t *testing.T) {
 				ids = append(ids, r.VMID)
 			}
 			sort.Ints(ids)
-			if fmt.Sprint(ids) != fmt.Sprint(esperado) {
-				t.Fatalf("set of VMIDs = %v, want %v", ids, esperado)
+			if fmt.Sprint(ids) != fmt.Sprint(expected) {
+				t.Fatalf("set of VMIDs = %v, want %v", ids, expected)
 			}
 
 			// Fields the inventory publishes: name, node and status have to arrive.
@@ -61,8 +61,8 @@ func TestClusterResources(t *testing.T) {
 				if r.Name == "" || r.Node == "" || r.Status == "" {
 					t.Errorf("%s: required field empty (%+v)", r.ID, r)
 				}
-				if quer := fmt.Sprintf("%s/%d", r.Type, r.VMID); r.ID != quer {
-					t.Errorf("id = %q, want %q", r.ID, quer)
+				if want := fmt.Sprintf("%s/%d", r.Type, r.VMID); r.ID != want {
+					t.Errorf("id = %q, want %q", r.ID, want)
 				}
 			}
 		})
@@ -73,7 +73,7 @@ func TestClusterResources(t *testing.T) {
 // is a legitimate answer (a narrow ACL), not a transport failure. What it must
 // NOT become is a mute error — deciding whether "empty" is suspicious is the
 // freshness layer's job.
-func TestClusterResourcesVazia(t *testing.T) {
+func TestClusterResourcesEmpty(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"data":[]}`))
 	})
@@ -86,10 +86,10 @@ func TestClusterResourcesVazia(t *testing.T) {
 	}
 }
 
-// TestClusterResourcesPropagaKind: the hypervisor's 403 (insufficient ACL) has
+// TestClusterResourcesPropagatesKind: the hypervisor's 403 (insufficient ACL) has
 // to arrive as KindForbidden, not as "no guests" — an empty inventory presented
 // as the truth is the false-green this whole design forbids.
-func TestClusterResourcesPropagaKind(t *testing.T) {
+func TestClusterResourcesPropagatesKind(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte("Permission check failed (/vms, VM.Audit)"))
@@ -112,77 +112,77 @@ func TestClusterResourcesPropagaKind(t *testing.T) {
 // Treating absence as a failure would make the poller mark a healthy guest as
 // broken.
 func TestGuestAddress(t *testing.T) {
-	casos := []struct {
+	cases := []struct {
 		nome     string
 		typ      string
 		vmid     int
-		corpo    string
-		querPath string
-		quer     string
+		body     string
+		wantPath string
+		want     string
 	}{
 		{
 			nome: "lxc estatico", typ: "lxc", vmid: 207,
-			corpo:    `{"data":{"hostname":"apps","onboot":1,"ostype":"debian","net0":"name=eth0,bridge=vmbr0,gw=192.168.1.1,hwaddr=BC:24:11:82:78:82,ip=192.168.100.47/24,type=veth"}}`,
-			querPath: "/api2/json/nodes/pve/lxc/207/config",
-			quer:     "192.168.100.47",
+			body:     `{"data":{"hostname":"apps","onboot":1,"ostype":"debian","net0":"name=eth0,bridge=vmbr0,gw=192.168.1.1,hwaddr=BC:24:11:82:78:82,ip=192.168.100.47/24,type=veth"}}`,
+			wantPath: "/api2/json/nodes/pve/lxc/207/config",
+			want:     "192.168.100.47",
 		},
 		{
 			nome: "qemu cloud-init", typ: "qemu", vmid: 208,
-			corpo:    `{"data":{"name":"dev","agent":"1","net0":"virtio=BC:24:11:51:B0:58,bridge=vmbr0","ipconfig0":"ip=192.168.100.48/24,gw=192.168.1.1"}}`,
-			querPath: "/api2/json/nodes/pve/qemu/208/config",
-			quer:     "192.168.100.48",
+			body:     `{"data":{"name":"dev","agent":"1","net0":"virtio=BC:24:11:51:B0:58,bridge=vmbr0","ipconfig0":"ip=192.168.100.48/24,gw=192.168.1.1"}}`,
+			wantPath: "/api2/json/nodes/pve/qemu/208/config",
+			want:     "192.168.100.48",
 		},
 		{
 			nome: "lxc dhcp sem ip", typ: "lxc", vmid: 201,
-			corpo:    `{"data":{"hostname":"games","net0":"name=eth0,bridge=vmbr0,hwaddr=BC:24:11:00:00:01,type=veth"}}`,
-			querPath: "/api2/json/nodes/pve/lxc/201/config",
-			quer:     "",
+			body:     `{"data":{"hostname":"games","net0":"name=eth0,bridge=vmbr0,hwaddr=BC:24:11:00:00:01,type=veth"}}`,
+			wantPath: "/api2/json/nodes/pve/lxc/201/config",
+			want:     "",
 		},
 		{
 			nome: "qemu sem ipconfig0", typ: "qemu", vmid: 100,
-			corpo:    `{"data":{"name":"painel","net0":"virtio=BC:24:11:00:00:02,bridge=vmbr0"}}`,
-			querPath: "/api2/json/nodes/pve/qemu/100/config",
-			quer:     "",
+			body:     `{"data":{"name":"painel","net0":"virtio=BC:24:11:00:00:02,bridge=vmbr0"}}`,
+			wantPath: "/api2/json/nodes/pve/qemu/100/config",
+			want:     "",
 		},
 		{
 			nome: "lxc ip=dhcp literal", typ: "lxc", vmid: 203,
-			corpo:    `{"data":{"hostname":"edge","net0":"name=eth0,bridge=vmbr0,ip=dhcp,type=veth"}}`,
-			querPath: "/api2/json/nodes/pve/lxc/203/config",
-			quer:     "",
+			body:     `{"data":{"hostname":"edge","net0":"name=eth0,bridge=vmbr0,ip=dhcp,type=veth"}}`,
+			wantPath: "/api2/json/nodes/pve/lxc/203/config",
+			want:     "",
 		},
 		{
 			nome: "lxc sem net0", typ: "lxc", vmid: 204,
-			corpo:    `{"data":{"hostname":"lab","onboot":1}}`,
-			querPath: "/api2/json/nodes/pve/lxc/204/config",
-			quer:     "",
+			body:     `{"data":{"hostname":"lab","onboot":1}}`,
+			wantPath: "/api2/json/nodes/pve/lxc/204/config",
+			want:     "",
 		},
 	}
 
-	for _, tc := range casos {
+	for _, tc := range cases {
 		t.Run(tc.nome, func(t *testing.T) {
 			c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != tc.querPath {
-					t.Errorf("path = %q, want %q", r.URL.Path, tc.querPath)
+				if r.URL.Path != tc.wantPath {
+					t.Errorf("path = %q, want %q", r.URL.Path, tc.wantPath)
 				}
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(tc.corpo))
+				_, _ = w.Write([]byte(tc.body))
 			})
 			addr, err := c.GuestAddress(context.Background(), "pve", tc.vmid, tc.typ)
 			if err != nil {
 				t.Fatalf("GuestAddress: error %v (a missing ip is NOT an error)", err)
 			}
-			if addr != tc.quer {
-				t.Fatalf("addr = %q, want %q", addr, tc.quer)
+			if addr != tc.want {
+				t.Fatalf("addr = %q, want %q", addr, tc.want)
 			}
 		})
 	}
 }
 
-// TestGuestAddressTipoInvalido: "lxc" and "qemu" are the hypervisor's two
+// TestGuestAddressInvalidType: "lxc" and "qemu" are the hypervisor's two
 // types. A third value would build a path that does not exist and take a 501
 // from the hypervisor — failing closed here is more honest than spending the
 // call.
-func TestGuestAddressTipoInvalido(t *testing.T) {
+func TestGuestAddressInvalidType(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("called the hypervisor with an invalid type")
 	})
@@ -191,9 +191,9 @@ func TestGuestAddressTipoInvalido(t *testing.T) {
 	}
 }
 
-// TestGuestAddressPropagaKind: a 403 on the config is "no permission", not "no
+// TestGuestAddressPropagatesKind: a 403 on the config is "no permission", not "no
 // address". Merging the two would hide a missing ACL behind an empty field.
-func TestGuestAddressPropagaKind(t *testing.T) {
+func TestGuestAddressPropagatesKind(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte("Permission check failed (/vms/207, VM.Audit)"))

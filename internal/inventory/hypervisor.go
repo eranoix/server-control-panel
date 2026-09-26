@@ -4,7 +4,7 @@ package inventory
 //
 // # Why it is not a field of Node (the whole decision of this file)
 //
-// observedAtDoNo (freshness.go) resolves the age of a node by looking at only
+// nodeObservedAt (freshness.go) resolves the age of a node by looking at only
 // two timestamps: Status and Uptime. That is deliberate — those are the two the
 // discovery refreshes on every tick.
 //
@@ -12,7 +12,7 @@ package inventory
 // screen that contradicts itself: the discovery would stamp Status every 30 s
 // and the node's age would show "data from 4 s ago", even with the hypervisor's
 // /status mute for half an hour. Two truths about freshness on the same card.
-// The alternative — teaching observedAtDoNo to look at the new fields — would
+// The alternative — teaching nodeObservedAt to look at the new fields — would
 // drag the age of EVERY node to the most recent timestamp among things that are
 // not observed together.
 //
@@ -37,7 +37,7 @@ import (
 //
 // 🔴 Every measurement field is Observed[T]. Node is the declared exception: it
 // is IDENTITY (the name the discovery returned), not a measurement — a name does
-// not age. TestTodoCampoDoHipervisorTemCarimbo fails any raw field added later.
+// not age. TestEveryHypervisorFieldIsStamped fails any raw field added later.
 type Hypervisor struct {
 	Node string `json:"node"` // discovered name ("pve"); never written by hand
 
@@ -64,8 +64,8 @@ type Hypervisor struct {
 	// 🔴 The THREE below are the hypervisor's, but are NOT part of its health: each
 	// one comes out of a call of its own (/storage, /disks/zfs,
 	// /access/permissions) that fails on its own. That is why they have views of
-	// their own (ViewStorage/ViewZPools) and stay out of observedAtDoHipervisor —
-	// see storage.go, and the test TestCarimboDaSaudeClassificaTodoCampo, which
+	// their own (ViewStorage/ViewZPools) and stay out of hypervisorObservedAt —
+	// see storage.go, and the test TestHealthStampClassifiesEveryField, which
 	// forces every new field of this document to be classified.
 	Storage        Observed[[]StoragePool] `json:"storage"`
 	ZPools         Observed[[]ZPool]       `json:"zpools"`
@@ -82,9 +82,9 @@ type HypervisorView struct {
 	Stale      bool  `json:"stale"`
 }
 
-// observedAtDoHipervisor is the most RECENT timestamp of the node's HEALTH: if
+// hypervisorObservedAt is the most RECENT timestamp of the node's HEALTH: if
 // any measurement from /nodes/{n}/status was refreshed, the panel heard the
-// hypervisor at that instant. Zero = never heard. Sister of observedAtDoNo —
+// hypervisor at that instant. Zero = never heard. Sister of nodeObservedAt —
 // and separated from it on purpose.
 //
 // 🔴 Storage, ZPools and DatastoreAudit stay OUT of this list, and that is the
@@ -92,8 +92,8 @@ type HypervisorView struct {
 // their own; including them would make a /status that answers rejuvenate a
 // capacity block that has been mute for half an hour — the same trap again, one
 // layer up.
-func observedAtDoHipervisor(h Hypervisor) int64 {
-	maisNovo := int64(0)
+func hypervisorObservedAt(h Hypervisor) int64 {
+	newest := int64(0)
 	for _, c := range []int64{
 		h.Version.ObservedAt, h.Uptime.ObservedAt, h.Load.ObservedAt,
 		h.MemTotal.ObservedAt, h.MemUsed.ObservedAt,
@@ -102,67 +102,67 @@ func observedAtDoHipervisor(h Hypervisor) int64 {
 		// The five from the parity with the Proxmox Summary. They all come from the
 		// SAME /nodes/{n}/status call as the ones above, so leaving them out would make
 		// the health timestamp ignore half of what it had itself just observed — it was
-		// TestCarimboDaSaudeClassificaTodoCampo that caught this, and that is exactly
+		// TestHealthStampClassifiesEveryField that caught this, and that is exactly
 		// what it exists for.
 		h.CPU.ObservedAt, h.Wait.ObservedAt, h.Kernel.ObservedAt,
 		h.CPUModel.ObservedAt, h.CPUCores.ObservedAt,
 	} {
-		if c > maisNovo {
-			maisNovo = c
+		if c > newest {
+			newest = c
 		}
 	}
-	return maisNovo
+	return newest
 }
 
 // ViewHypervisor resolves age and expiry on the SERVER, at the instant of
 // serialization. It reuses AgeSeconds and Stale: -1 still means "never
 // observed", and never 0 — "0 s ago" reads as just-seen.
 func ViewHypervisor(h Hypervisor, ttl time.Duration, now time.Time) HypervisorView {
-	carimbo := observedAtDoHipervisor(h)
+	stamp := hypervisorObservedAt(h)
 	return HypervisorView{
 		Hypervisor: h,
-		AgeSeconds: AgeSeconds(carimbo, now),
-		Stale:      Stale(carimbo, ttl, now),
+		AgeSeconds: AgeSeconds(stamp, now),
+		Stale:      Stale(stamp, ttl, now),
 	}
 }
 
-// aplicaHipervisor is the upsert of the health. It is only called when /status
+// applyHypervisor is the upsert of the health. It is only called when /status
 // ANSWERED: a failure keeps the whole document as it was, with the old
 // timestamp, so the screen shows the age growing instead of amnesia.
-func aplicaHipervisor(inv *Inventory, nome string, st pve.NodeStatus, agora int64) {
+func applyHypervisor(inv *Inventory, nome string, st pve.NodeStatus, now int64) {
 	h := inv.Hypervisor
 	if nome != "" {
 		h.Node = nome
 	}
-	h.Version = Observe(st.PVEVersion, agora)
-	h.Uptime = Observe(st.Uptime, agora)
-	h.Load = Observe(loadDeStrings(st.LoadAvg), agora)
-	h.MemTotal = Observe(st.Memory.Total, agora)
-	h.MemUsed = Observe(st.Memory.Used, agora)
-	h.SwapTotal = Observe(st.Swap.Total, agora)
-	h.SwapUsed = Observe(st.Swap.Used, agora)
-	h.RootTotal = Observe(st.RootFS.Total, agora)
-	h.RootUsed = Observe(st.RootFS.Used, agora)
-	h.KSMShared = Observe(st.KSM.Shared, agora)
+	h.Version = Observe(st.PVEVersion, now)
+	h.Uptime = Observe(st.Uptime, now)
+	h.Load = Observe(loadFromStrings(st.LoadAvg), now)
+	h.MemTotal = Observe(st.Memory.Total, now)
+	h.MemUsed = Observe(st.Memory.Used, now)
+	h.SwapTotal = Observe(st.Swap.Total, now)
+	h.SwapUsed = Observe(st.Swap.Used, now)
+	h.RootTotal = Observe(st.RootFS.Total, now)
+	h.RootUsed = Observe(st.RootFS.Used, now)
+	h.KSMShared = Observe(st.KSM.Shared, now)
 	// Parity with the Proxmox Summary panel.
 	//
 	// 🔴 Wait is the IO DELAY, and it is the metric that separates "the machine is
 	// busy" from "the machine is waiting on disk". On a server whose pool is a
 	// single disk, that distinction is the beginning of every diagnosis — and it
 	// did not exist on the screen.
-	h.CPU = Observe(st.CPU, agora)
-	h.Wait = Observe(st.Wait, agora)
-	h.Kernel = Observe(st.KVersion, agora)
-	h.CPUModel = Observe(st.CPUInfo.Model, agora)
-	h.CPUCores = Observe(st.CPUInfo.Cpus, agora)
+	h.CPU = Observe(st.CPU, now)
+	h.Wait = Observe(st.Wait, now)
+	h.Kernel = Observe(st.KVersion, now)
+	h.CPUModel = Observe(st.CPUInfo.Model, now)
+	h.CPUCores = Observe(st.CPUInfo.Cpus, now)
 	inv.Hypervisor = h
 }
 
-// loadDeStrings converts the three windows the hypervisor sends as text
+// loadFromStrings converts the three windows the hypervisor sends as text
 // ("1.14"). An unreadable value becomes 0 and does NOT take the rest down: a
 // strange loadavg cannot cost the whole screen its RAM, its version and its
 // uptime.
-func loadDeStrings(in []string) [3]float64 {
+func loadFromStrings(in []string) [3]float64 {
 	var out [3]float64
 	for i := 0; i < 3 && i < len(in); i++ {
 		if f, err := strconv.ParseFloat(in[i], 64); err == nil {
@@ -172,13 +172,13 @@ func loadDeStrings(in []string) [3]float64 {
 	return out
 }
 
-// nomeDoHipervisor derives the host name from what the discovery returned — no
+// hypervisorName derives the host name from what the discovery returned — no
 // hostname lives in this package (invariant 3 of the poller). If there is more
 // than one, the smallest by string order wins: the tick has to write the same
 // document twice in a row, otherwise the file diff turns into noise.
-func nomeDoHipervisor(recursos []pve.Resource) string {
+func hypervisorName(resources []pve.Resource) string {
 	nome := ""
-	for _, r := range recursos {
+	for _, r := range resources {
 		if r.Node == "" {
 			continue
 		}

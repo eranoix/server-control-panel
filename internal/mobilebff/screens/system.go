@@ -145,16 +145,16 @@ func RegisterSystem(deps SystemDeps) {
 		return buildSystemMetricsScreen(v), nil
 	})
 
-	// Catalog entries. None of the five is somenteAdmin: every builder
+	// Catalog entries. None of the five is adminOnly: every builder
 	// assembles the screen for any viewer — processes and systemd merely omit
 	// the kill-process / restart-unit actions from inside the Envelope, which
 	// is an ACTION filter, not a screen filter. "Metrics" names the three
 	// series the screen carries, because the word alone does not say of what.
-	sdui.RegisterCatalog(systemMetricsScreenID, sdui.GroupSistema, "Metrics (CPU, memory, disk)", sempreVisivel)
-	sdui.RegisterCatalog(systemProcessesScreenID, sdui.GroupSistema, "Processes", sempreVisivel)
-	sdui.RegisterCatalog(systemPortsScreenID, sdui.GroupSistema, "Listening ports", sempreVisivel)
-	sdui.RegisterCatalog(systemSystemdScreenID, sdui.GroupSistema, "Services (systemd)", sempreVisivel)
-	sdui.RegisterCatalog(systemHistoryScreenID, sdui.GroupSistema, "System history", sempreVisivel)
+	sdui.RegisterCatalog(systemMetricsScreenID, sdui.GroupSystem, "Metrics (CPU, memory, disk)", alwaysVisible)
+	sdui.RegisterCatalog(systemProcessesScreenID, sdui.GroupSystem, "Processes", alwaysVisible)
+	sdui.RegisterCatalog(systemPortsScreenID, sdui.GroupSystem, "Listening ports", alwaysVisible)
+	sdui.RegisterCatalog(systemSystemdScreenID, sdui.GroupSystem, "Services (systemd)", alwaysVisible)
+	sdui.RegisterCatalog(systemHistoryScreenID, sdui.GroupSystem, "System history", alwaysVisible)
 
 	registerSystemActions(deps)
 

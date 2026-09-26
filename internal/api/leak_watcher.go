@@ -38,15 +38,15 @@ const (
 	leakInterval   = 5 * time.Minute
 	leakFailBefore = 3 // ciclos consecutivos antes de acreditar na queda
 	leakDedup      = "tunnel:leak"
-	TipoTunnelLeak = "tunnel.leak"      // casa saindo pelo VPS
-	TipoTunnelDown = "tunnel.casa_down" // home exit unreachable
-	TipoTunnelOK   = "tunnel.recovered" // voltou ao normal
+	TypeTunnelLeak = "tunnel.leak"      // casa saindo pelo VPS
+	TypeTunnelDown = "tunnel.casa_down" // home exit unreachable
+	TypeTunnelOK   = "tunnel.recovered" // voltou ao normal
 )
 
-type leakSentinela struct {
+type leakSentinel struct {
 	mu       sync.Mutex
 	fails    int
-	casaDown bool
+	homeDown bool
 	leaking  bool
 	vpsIP    string
 }
@@ -59,7 +59,7 @@ func (r *Router) startLeakWatcher(ctx context.Context) {
 	if _, err := os.Stat(r.cfg.SingboxConfigPath); err != nil {
 		return // no tunnel here — nothing to watch
 	}
-	s := &leakSentinela{}
+	s := &leakSentinel{}
 	go func() {
 		// the first tick after a short delay (lets the boot settle)
 		t := time.NewTimer(30 * time.Second)
@@ -89,7 +89,7 @@ func (r *Router) startLeakWatcher(ctx context.Context) {
 }
 
 // tick proves the house's egress IP and compares it with the VPS's.
-func (s *leakSentinela) tick(r *Router) {
+func (s *leakSentinel) tick(r *Router) {
 	// With no notification channel there is nothing for this watchman to do —
 	// and calling r.notify.Dispatch with r.notify nil would be a nil deref that
 	// takes the process down (the same guard as hypervisor_watcher.go). Exit.
@@ -97,17 +97,17 @@ func (s *leakSentinela) tick(r *Router) {
 		return
 	}
 	vpsIP := s.ensureVPSIP()
-	casaIP, err := s.casaEgressIP(r)
+	homeIP, err := s.homeEgressIP(r)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err != nil || casaIP == "" {
+	if err != nil || homeIP == "" {
 		s.fails++
-		if s.fails >= leakFailBefore && !s.casaDown {
-			s.casaDown = true
+		if s.fails >= leakFailBefore && !s.homeDown {
+			s.homeDown = true
 			r.notify.Dispatch(notify.Event{
-				Type: TipoTunnelDown, Severity: notify.SeverityWarning, Source: "leak-watcher",
+				Type: TypeTunnelDown, Severity: notify.SeverityWarning, Source: "leak-watcher",
 				Title: "Tunnel home exit unreachable",
 				Body:  fmt.Sprintf("The residential exit did not answer for %d cycles (last error: %v). Traffic marked for home may have no route.", s.fails, err),
 				TS:    time.Now().Unix(), DedupKey: leakDedup,
@@ -116,38 +116,38 @@ func (s *leakSentinela) tick(r *Router) {
 		return
 	}
 	// an answer arrived → reset the down counter
-	if s.casaDown {
-		s.casaDown = false
+	if s.homeDown {
+		s.homeDown = false
 		r.notify.Dispatch(notify.Event{
-			Type: TipoTunnelOK, Severity: notify.SeverityInfo, Source: "leak-watcher",
-			Title: "Tunnel home exit is back", Body: "Home exit IP: " + casaIP,
+			Type: TypeTunnelOK, Severity: notify.SeverityInfo, Source: "leak-watcher",
+			Title: "Tunnel home exit is back", Body: "Home exit IP: " + homeIP,
 			TS: time.Now().Unix(), DedupKey: leakDedup,
 		})
 	}
 	s.fails = 0
 
 	// LEAK: the house leaving via the same IP as the VPS.
-	leakNow := vpsIP != "" && casaIP == vpsIP
+	leakNow := vpsIP != "" && homeIP == vpsIP
 	if leakNow && !s.leaking {
 		s.leaking = true
 		r.notify.Dispatch(notify.Event{
-			Type: TipoTunnelLeak, Severity: notify.SeverityCritical, Source: "leak-watcher",
+			Type: TypeTunnelLeak, Severity: notify.SeverityCritical, Source: "leak-watcher",
 			Title: "LEAK: home exit is leaving through the VPS",
-			Body:  fmt.Sprintf("The home exit IP (%s) is the same as the VPS one. Traffic that should leave through the house is going out through the VPS.", casaIP),
+			Body:  fmt.Sprintf("The home exit IP (%s) is the same as the VPS one. Traffic that should leave through the house is going out through the VPS.", homeIP),
 			TS:    time.Now().Unix(), DedupKey: leakDedup,
 		})
 	} else if !leakNow && s.leaking {
 		s.leaking = false
 		r.notify.Dispatch(notify.Event{
-			Type: TipoTunnelOK, Severity: notify.SeverityInfo, Source: "leak-watcher",
-			Title: "Home exit back to normal", Body: "Home exit IP: " + casaIP,
+			Type: TypeTunnelOK, Severity: notify.SeverityInfo, Source: "leak-watcher",
+			Title: "Home exit back to normal", Body: "Home exit IP: " + homeIP,
 			TS: time.Now().Unix(), DedupKey: leakDedup,
 		})
 	}
 }
 
 // ensureVPSIP discovers (once) the VPS's public IP through a direct egress.
-func (s *leakSentinela) ensureVPSIP() string {
+func (s *leakSentinel) ensureVPSIP() string {
 	s.mu.Lock()
 	ip := s.vpsIP
 	s.mu.Unlock()
@@ -163,9 +163,9 @@ func (s *leakSentinela) ensureVPSIP() string {
 	return ip
 }
 
-// casaEgressIP dials the house's SOCKS (read from the config) and fetches the egress IP.
-func (s *leakSentinela) casaEgressIP(r *Router) (string, error) {
-	host, port, user, pass, err := readCasaSOCKS(r.cfg.SingboxConfigPath)
+// homeEgressIP dials the house's SOCKS (read from the config) and fetches the egress IP.
+func (s *leakSentinel) homeEgressIP(r *Router) (string, error) {
+	host, port, user, pass, err := readHomeSOCKS(r.cfg.SingboxConfigPath)
 	if err != nil {
 		return "", err
 	}
@@ -209,8 +209,8 @@ func fetchIP(tr http.RoundTripper) string {
 	return ip
 }
 
-// readCasaSOCKS extracts server/port/user/pass from the "casa" outbound in the config.
-func readCasaSOCKS(configPath string) (host, port, user, pass string, err error) {
+// readHomeSOCKS extracts server/port/user/pass from the "casa" outbound in the config.
+func readHomeSOCKS(configPath string) (host, port, user, pass string, err error) {
 	raw, err := os.ReadFile(configPath)
 	if err != nil {
 		return "", "", "", "", err

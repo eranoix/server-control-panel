@@ -298,7 +298,7 @@ func (r *Router) handleRecoveryAction(w http.ResponseWriter, req *http.Request) 
 		// The manager is EMBEDDED in the binary and is materialised now, so it
 		// cannot go missing because of a branch or a working tree — which is
 		// exactly what broke this button on the first real attempt.
-		cmd, err := recoveryclaude.Comando(r.cfg.DataDir, "up")
+		cmd, err := recoveryclaude.Command(r.cfg.DataDir, "up")
 		if err != nil {
 			output = "could not prepare the container manager: " + err.Error()
 			execErr = err
@@ -352,22 +352,22 @@ func (r *Router) handleRecoveryClaudeStatus(w http.ResponseWriter, req *http.Req
 	// resolve the container first today, but that is luck, not a contract — the
 	// same ambiguity has already made the startup script try `docker start` on a
 	// container that did not exist.
-	estado, _ := exec.CommandContext(req.Context(), "/usr/bin/docker", "container", "inspect",
+	state, _ := exec.CommandContext(req.Context(), "/usr/bin/docker", "container", "inspect",
 		"-f", "{{.State.Status}}", recoveryClaudeContainer).Output()
-	rodando := strings.TrimSpace(string(estado)) == "running"
+	running := strings.TrimSpace(string(state)) == "running"
 	resp := map[string]any{
 		"ok":        true,
-		"existe":    len(strings.TrimSpace(string(estado))) > 0,
-		"rodando":   rodando,
+		"existe":    len(strings.TrimSpace(string(state))) > 0,
+		"rodando":   running,
 		"container": recoveryClaudeContainer,
 	}
-	if rodando {
+	if running {
 		// A login of its own: that is what separates "independent" from "borrows
 		// the host's credential". Without it `claude` opens by asking for
 		// authentication, and the tab has to say so beforehand, not afterwards.
-		autenticado := exec.CommandContext(req.Context(), "/usr/bin/docker", "exec",
+		authed := exec.CommandContext(req.Context(), "/usr/bin/docker", "exec",
 			recoveryClaudeContainer, "test", "-f", "/config/.credentials.json").Run() == nil
-		resp["autenticado"] = autenticado
+		resp["autenticado"] = authed
 		if v, err := exec.CommandContext(req.Context(), "/usr/bin/docker", "exec",
 			recoveryClaudeContainer, "claude", "--version").Output(); err == nil {
 			resp["versao"] = strings.TrimSpace(string(v))
@@ -403,9 +403,9 @@ func (r *Router) handleRecoveryClaudePTY(w http.ResponseWriter, req *http.Reques
 	// resolve the container first today, but that is luck, not a contract — the
 	// same ambiguity has already made the startup script try `docker start` on a
 	// container that did not exist.
-	estado, _ := exec.CommandContext(req.Context(), "/usr/bin/docker", "container", "inspect",
+	state, _ := exec.CommandContext(req.Context(), "/usr/bin/docker", "container", "inspect",
 		"-f", "{{.State.Status}}", recoveryClaudeContainer).Output()
-	if strings.TrimSpace(string(estado)) != "running" {
+	if strings.TrimSpace(string(state)) != "running" {
 		writeErr(w, 409, "container "+recoveryClaudeContainer+" is not running")
 		return
 	}
@@ -424,9 +424,9 @@ func (r *Router) handleRecoveryClaudePTY(w http.ResponseWriter, req *http.Reques
 	}, []string{"CLAUDE_CONFIG_DIR=/config", "VPSM_RECOVERY=1"})
 }
 
-// recoveryTetoAbsoluto caps how long a recovery session can go on being
+// recoveryHardCap caps how long a recovery session can go on being
 // renewed, counted from the LOGIN — not from the last renewal.
-const recoveryTetoAbsoluto = 8 * time.Hour
+const recoveryHardCap = 8 * time.Hour
 
 // handleRecoveryRenew extends the recovery session while work is actually
 // happening.
@@ -451,19 +451,19 @@ func (r *Router) handleRecoveryRenew(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, 401, "unauthorized")
 		return
 	}
-	inicio, err := r.auth.RecoveryTokenStart(c.Value)
+	start, err := r.auth.RecoveryTokenStart(c.Value)
 	if err != nil {
 		writeErr(w, 401, "unauthorized")
 		return
 	}
-	if restante := recoveryTetoAbsoluto - time.Since(inicio); restante <= 0 {
+	if rest := recoveryHardCap - time.Since(start); rest <= 0 {
 		// Deliberately does NOT renew: the cap exists so that a privileged
 		// session does not become permanent just because the tab was left open.
 		r.auditEvent(req, user, "recovery.renew.teto", "")
-		writeErr(w, 403, "recovery session hit the limit of "+recoveryTetoAbsoluto.String()+" — authenticate again")
+		writeErr(w, 403, "recovery session hit the limit of "+recoveryHardCap.String()+" — authenticate again")
 		return
 	}
-	tok, err := r.auth.IssueRecoveryTokenFrom(user, 30*time.Minute, inicio)
+	tok, err := r.auth.IssueRecoveryTokenFrom(user, 30*time.Minute, start)
 	if err != nil {
 		writeErr(w, 500, "issue: "+err.Error())
 		return
@@ -481,7 +481,7 @@ func (r *Router) handleRecoveryRenew(w http.ResponseWriter, req *http.Request) {
 		"ok": true,
 		// How much of the cap is left — the screen warns before it runs out,
 		// instead of letting the operator find out by being disconnected.
-		"restante_seg": int((recoveryTetoAbsoluto - time.Since(inicio)).Seconds()),
+		"restante_seg": int((recoveryHardCap - time.Since(start)).Seconds()),
 	})
 }
 

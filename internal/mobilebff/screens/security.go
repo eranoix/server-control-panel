@@ -34,10 +34,10 @@ const (
 // and PLAN.md's Blocker 3: "rede" was never one screen, it was four genuinely
 // distinct subsystems).
 const (
-	securityUFWScreenID      = "security.ufw"
-	securityAdGuardScreenID  = "security.adguard"
-	securityDevicesScreenID  = "security.devices"
-	securityEconomiaScreenID = "security.economia"
+	securityUFWScreenID       = "security.ufw"
+	securityAdGuardScreenID   = "security.adguard"
+	securityDevicesScreenID   = "security.devices"
+	securityDataSaverScreenID = "security.economia"
 )
 
 // Rows/detail endpoints — one per table or detail screen. Absolute paths
@@ -52,7 +52,7 @@ const (
 	securityUFWDetailEndpoint     = mobilebff.Prefix + "/security/ufw/status"
 	securityAdGuardDetailEndpoint = mobilebff.Prefix + "/security/adguard/status"
 	securityDevicesRowsEndpoint   = mobilebff.Prefix + "/security/devices"
-	securityEconomiaRowsEndpoint  = mobilebff.Prefix + "/security/economia"
+	securityDataSaverRowsEndpoint = mobilebff.Prefix + "/security/economia"
 )
 
 // securityTimestampFormat mirrors dockerTimestampFormat/schedulerTimestampFormat
@@ -84,14 +84,14 @@ func RegisterSecurity(deps SecurityDeps) {
 		return buildSecurityAuditScreenForViewer(v)
 	})
 
-	// Catalog entries. All four are somenteAdmin because the four builders
+	// Catalog entries. All four are adminOnly because the four builders
 	// above are `...ForViewer` — they refuse a non-admin with
 	// ErrScreenNotFound, so for a non-admin these items simply do not exist
 	// in the picker (omission, never a disabled item).
-	sdui.RegisterCatalog(securityUsersScreenID, sdui.GroupSeguranca, "Users", somenteAdmin)
-	sdui.RegisterCatalog(securitySecretsScreenID, sdui.GroupSeguranca, "Vault secrets", somenteAdmin)
-	sdui.RegisterCatalog(securitySessionsScreenID, sdui.GroupSeguranca, "Active sessions", somenteAdmin)
-	sdui.RegisterCatalog(securityAuditScreenID, sdui.GroupSeguranca, "Audit log", somenteAdmin)
+	sdui.RegisterCatalog(securityUsersScreenID, sdui.GroupSecurity, "Users", adminOnly)
+	sdui.RegisterCatalog(securitySecretsScreenID, sdui.GroupSecurity, "Vault secrets", adminOnly)
+	sdui.RegisterCatalog(securitySessionsScreenID, sdui.GroupSecurity, "Active sessions", adminOnly)
+	sdui.RegisterCatalog(securityAuditScreenID, sdui.GroupSecurity, "Audit log", adminOnly)
 
 	registerSecurityActions(deps)
 
@@ -532,18 +532,18 @@ func RegisterNetwork(deps NetworkDeps) {
 	sdui.Register(securityDevicesScreenID, func(_ context.Context, v sdui.Viewer) (*sdui.Envelope, error) {
 		return buildSecurityDevicesScreenForViewer(v)
 	})
-	sdui.Register(securityEconomiaScreenID, func(_ context.Context, v sdui.Viewer) (*sdui.Envelope, error) {
-		return buildSecurityEconomiaScreenForViewer(v)
+	sdui.Register(securityDataSaverScreenID, func(_ context.Context, v sdui.Viewer) (*sdui.Envelope, error) {
+		return buildSecurityDataSaverScreenForViewer(v)
 	})
 
 	// Catalog entries — the same four network screens, all `...ForViewer` and
-	// therefore somenteAdmin. "Network usage" instead of "Economia": the id is
+	// therefore adminOnly. "Network usage" instead of "Economia": the id is
 	// historical (security.economia), but the label has to say what the person
 	// will find, not the internal name of the field.
-	sdui.RegisterCatalog(securityUFWScreenID, sdui.GroupSeguranca, "Firewall (UFW)", somenteAdmin)
-	sdui.RegisterCatalog(securityAdGuardScreenID, sdui.GroupSeguranca, "AdGuard DNS", somenteAdmin)
-	sdui.RegisterCatalog(securityDevicesScreenID, sdui.GroupSeguranca, "Devices (VLESS)", somenteAdmin)
-	sdui.RegisterCatalog(securityEconomiaScreenID, sdui.GroupSeguranca, "Network usage", somenteAdmin)
+	sdui.RegisterCatalog(securityUFWScreenID, sdui.GroupSecurity, "Firewall (UFW)", adminOnly)
+	sdui.RegisterCatalog(securityAdGuardScreenID, sdui.GroupSecurity, "AdGuard DNS", adminOnly)
+	sdui.RegisterCatalog(securityDevicesScreenID, sdui.GroupSecurity, "Devices (VLESS)", adminOnly)
+	sdui.RegisterCatalog(securityDataSaverScreenID, sdui.GroupSecurity, "Network usage", adminOnly)
 
 	registerNetworkActions(deps)
 
@@ -557,7 +557,7 @@ func RegisterNetwork(deps NetworkDeps) {
 		registerSecurityDevicesRows(api, deps, mbDeps)
 	})
 	mobilebff.Register("security.economia.rows", func(api huma.API, mbDeps mobilebff.Deps) {
-		registerSecurityEconomiaRows(api, deps, mbDeps)
+		registerSecurityDataSaverRows(api, deps, mbDeps)
 	})
 
 	sdui.RegisterForbiddenForNonAdmin(securityUFWScreenID, func() []string {
@@ -572,10 +572,10 @@ func RegisterNetwork(deps NetworkDeps) {
 			securityActionDeviceRename, securityActionDeviceSetExit, securityActionDeviceSetDatasaver,
 		}
 	})
-	sdui.RegisterForbiddenForNonAdmin(securityEconomiaScreenID, func() []string {
+	sdui.RegisterForbiddenForNonAdmin(securityDataSaverScreenID, func() []string {
 		// security.economia has no actions at all — same belt-and-suspenders
 		// reasoning as security.audit above.
-		return []string{securityEconomiaScreenID}
+		return []string{securityDataSaverScreenID}
 	})
 }
 
@@ -825,16 +825,16 @@ func securityDeviceRow(d DeviceRow) map[string]any {
 
 // --- security.economia ---------------------------------------------------
 
-func buildSecurityEconomiaScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
+func buildSecurityDataSaverScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
 		return nil, sdui.ErrScreenNotFound
 	}
-	return buildSecurityEconomiaScreen(), nil
+	return buildSecurityDataSaverScreen(), nil
 }
 
-// buildSecurityEconomiaScreen builds the usage-table screen: read-only,
+// buildSecurityDataSaverScreen builds the usage-table screen: read-only,
 // conntrack-derived per-device usage — no actions, no form, no confirm.
-func buildSecurityEconomiaScreen() *sdui.Envelope {
+func buildSecurityDataSaverScreen() *sdui.Envelope {
 	table := sdui.TableComponent{
 		ComponentBase: sdui.ComponentBase{Type: sdui.ComponentTypeTable, ID: "usage-table"},
 		Columns: []sdui.TableColumn{
@@ -844,14 +844,14 @@ func buildSecurityEconomiaScreen() *sdui.Envelope {
 			{Key: "rate_bps", Label: "Rate", Kind: "text"},
 			{Key: "active_conns", Label: "Active connections", Kind: "text"},
 		},
-		RowsSource: sdui.DataSource{Endpoint: securityEconomiaRowsEndpoint},
+		RowsSource: sdui.DataSource{Endpoint: securityDataSaverRowsEndpoint},
 		EmptyState: &sdui.EmptyState{Text: "How much of the tunnel each paired device has used, measured by conntrack. Empty means no traffic since the last reading — a collector that is down shows up as a load error, not as an empty table. Start by pairing a device under Devices (VLESS)."},
 	}
-	screen := sdui.Screen{ID: securityEconomiaScreenID, Title: "Network usage", Components: []sdui.Component{table}}
+	screen := sdui.Screen{ID: securityDataSaverScreenID, Title: "Network usage", Components: []sdui.Component{table}}
 	return &sdui.Envelope{Screen: screen}
 }
 
-func registerSecurityEconomiaRows(api huma.API, deps NetworkDeps, mbDeps mobilebff.Deps) {
+func registerSecurityDataSaverRows(api huma.API, deps NetworkDeps, mbDeps mobilebff.Deps) {
 	registerSecurityRows(api, "getSecurityEconomiaRows", "/security/economia", "Linhas de security.economia", mbDeps.Cfg,
 		func(_ context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.UsageSnapshot()

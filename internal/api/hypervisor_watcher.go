@@ -43,12 +43,12 @@ import (
 // ────────────────────────────────────────────────────────────────────────────
 
 const (
-	// TipoHipervisorInalcancavel and TipoHipervisorVoltou are types of their OWN,
+	// TypeHypervisorUnreachable and TypeHypervisorRecovered are types of their OWN,
 	// not `metric.threshold`: whoever writes a rule on screen needs to tell "the
 	// house went down" from "a metric crossed a threshold". Mixing them would
 	// make the house's rule inherit the routing of any gauge.
-	TipoHipervisorInalcancavel = "hypervisor.unreachable"
-	TipoHipervisorVoltou       = "hypervisor.recovered"
+	TypeHypervisorUnreachable = "hypervisor.unreachable"
+	TypeHypervisorRecovered   = "hypervisor.recovered"
 
 	// dedupHipervisor keeps both ends under the SAME dedup identity: a "went
 	// down" followed by a "came back" is a single story, and the router needs to
@@ -56,18 +56,18 @@ const (
 	dedupHipervisor = "hypervisor:alcance"
 )
 
-type hipervisorSentinela struct {
+type hypervisorSentinel struct {
 	mu        sync.Mutex
-	falhas    int   // consecutive ticks with the hypervisor unreachable
-	caido     bool  // have we already announced the outage?
-	desdeUnix int64 // when the first failure of the run happened
+	failures  int   // consecutive ticks with the hypervisor unreachable
+	down      bool  // have we already announced the outage?
+	sinceUnix int64 // when the first failure of the run happened
 }
 
-// ciclosParaAcreditar is how many consecutive ticks have to fail before the
+// ticksToBelieve is how many consecutive ticks have to fail before the
 // sentinel believes it. Configurable because the test needs 1 and production
 // needs 3 — and a `time.Sleep` in the test would mean waiting on the clock,
 // which is exactly what is forbidden here.
-func (r *Router) ciclosParaAcreditar() int {
+func (r *Router) ticksToBelieve() int {
 	if v := os.Getenv("VPSM_SENTINELA_CICLOS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
@@ -76,7 +76,7 @@ func (r *Router) ciclosParaAcreditar() int {
 	return 3
 }
 
-func (r *Router) intervaloDaSentinela() time.Duration {
+func (r *Router) sentinelInterval() time.Duration {
 	if v := os.Getenv("VPSM_SENTINELA_INTERVALO_S"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return time.Duration(n) * time.Second
@@ -97,24 +97,24 @@ func (r *Router) startHypervisorWatcher(ctx context.Context) {
 				log.Printf("hypervisor sentinel: panic: %v", rec)
 			}
 		}()
-		t := time.NewTicker(r.intervaloDaSentinela())
+		t := time.NewTicker(r.sentinelInterval())
 		defer t.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				r.tickSentinela()
+				r.tickSentinel()
 			}
 		}
 	}()
 }
 
-// tickSentinela reads the inventory and decides whether there is news. It does
+// tickSentinel reads the inventory and decides whether there is news. It does
 // NOT talk to the hypervisor: the poller does that, and having two channels
 // asking the same question would create two truths about whether the house is
 // reachable.
-func (r *Router) tickSentinela() {
+func (r *Router) tickSentinel() {
 	// 🔴 THE GUARD LIVES HERE, and not only at start-up.
 	//
 	// `startHypervisorWatcher` already refuses to start without an inventory, but
@@ -132,30 +132,30 @@ func (r *Router) tickSentinela() {
 		log.Printf("hypervisor sentinel: inventory unreadable (%v) — no verdict", err)
 		return
 	}
-	r.avaliaAlcance(inv, time.Now().Unix())
+	r.checkReachability(inv, time.Now().Unix())
 }
 
-// avaliaAlcance is the pure logic, separated from the clock and from the disk so
+// checkReachability is the pure logic, separated from the clock and from the disk so
 // it can be proven in both directions without waiting for anything.
-func (r *Router) avaliaAlcance(inv inventory.Inventory, agora int64) {
-	if r.sentinela == nil {
-		r.sentinela = &hipervisorSentinela{}
+func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
+	if r.sentinel == nil {
+		r.sentinel = &hypervisorSentinel{}
 	}
-	s := r.sentinela
+	s := r.sentinel
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// The poller stamps the ATTEMPT even when it fails (the second clock), and
 	// records the reason in LastPollError. Empty = the last cycle worked.
-	falhou := inv.LastPollError != ""
+	failed := inv.LastPollError != ""
 
-	if !falhou {
-		s.falhas = 0
-		if s.caido {
-			s.caido = false
-			fora := time.Duration(agora-s.desdeUnix) * time.Second
-			r.dispatchSentinela(notify.Event{
-				Type:     TipoHipervisorVoltou,
+	if !failed {
+		s.failures = 0
+		if s.down {
+			s.down = false
+			fora := time.Duration(now-s.sinceUnix) * time.Second
+			r.dispatchSentinel(notify.Event{
+				Type:     TypeHypervisorRecovered,
 				Severity: "info",
 				Source:   "sentinela:hipervisor",
 				Owner:    r.primaryUser(),
@@ -166,8 +166,8 @@ func (r *Router) avaliaAlcance(inv inventory.Inventory, agora int64) {
 						"HOW LONG IT WAS DOWN: %s.\n"+
 						"WHAT TO CHECK NOW: whether any guest failed to come back up, and whether the "+
 						"overnight backup ran.",
-					r.enderecoDoHipervisor(), duracaoEmPortugues(fora)),
-				TS:       agora,
+					r.hypervisorAddr(), humanDuration(fora)),
+				TS:       now,
 				DedupKey: dedupHipervisor,
 				Labels:   map[string]string{"alvo": "hipervisor", "estado": "voltou"},
 			})
@@ -175,19 +175,19 @@ func (r *Router) avaliaAlcance(inv inventory.Inventory, agora int64) {
 		return
 	}
 
-	s.falhas++
-	if s.falhas == 1 {
-		s.desdeUnix = agora
+	s.failures++
+	if s.failures == 1 {
+		s.sinceUnix = now
 	}
-	if s.caido || s.falhas < r.ciclosParaAcreditar() {
+	if s.down || s.failures < r.ticksToBelieve() {
 		// Already announced, or not yet worth believing. Silence in both cases:
 		// repeating while the problem lasts is what trains people to ignore it.
 		return
 	}
-	s.caido = true
+	s.down = true
 
-	r.dispatchSentinela(notify.Event{
-		Type:     TipoHipervisorInalcancavel,
+	r.dispatchSentinel(notify.Event{
+		Type:     TypeHypervisorUnreachable,
 		Severity: "critical",
 		Source:   "sentinela:hipervisor",
 		Owner:    r.primaryUser(),
@@ -203,26 +203,26 @@ func (r *Router) avaliaAlcance(inv inventory.Inventory, agora int64) {
 				"WHAT THE ERROR SAYS: %s\n"+
 				"HOW TO CHECK: `tailscale ping hypervisor-01`; if the guests answer and it does not, "+
 				"the machine is up and the problem is its network.",
-			s.falhas, r.enderecoDoHipervisor(),
-			time.Unix(s.desdeUnix, 0).UTC().Format("02/01 15:04 UTC"),
-			duracaoEmPortugues(time.Duration(agora-s.desdeUnix)*time.Second),
-			primeiraLinhaDoErro(inv.LastPollError)),
-		TS:       agora,
+			s.failures, r.hypervisorAddr(),
+			time.Unix(s.sinceUnix, 0).UTC().Format("02/01 15:04 UTC"),
+			humanDuration(time.Duration(now-s.sinceUnix)*time.Second),
+			firstErrorLine(inv.LastPollError)),
+		TS:       now,
 		DedupKey: dedupHipervisor,
 		Labels:   map[string]string{"alvo": "hipervisor", "estado": "inalcancavel"},
 	})
 }
 
-// dispatchSentinela is the sentinel's ONLY exit point. `sentinelaSink` exists so
+// dispatchSentinel is the sentinel's ONLY exit point. `sentinelSink` exists so
 // a test can assert WHICH event would go out without building a whole
 // notification router — and, above all, without sending a real message to
 // anybody's phone while the suite runs.
-func (r *Router) dispatchSentinela(ev notify.Event) {
+func (r *Router) dispatchSentinel(ev notify.Event) {
 	// ALWAYS record it, even with no router: an alarm that found no channel is
 	// still news, and the log is the last place where it survives.
 	log.Printf("hypervisor sentinel: %s — %s", ev.Type, ev.Title)
-	if r.sentinelaSink != nil {
-		r.sentinelaSink(ev)
+	if r.sentinelSink != nil {
+		r.sentinelSink(ev)
 		return
 	}
 	if r.notify == nil {
@@ -231,7 +231,7 @@ func (r *Router) dispatchSentinela(ev notify.Event) {
 	r.notify.Dispatch(ev)
 }
 
-func (r *Router) enderecoDoHipervisor() string {
+func (r *Router) hypervisorAddr() string {
 	if r.pveConfig != nil && r.pveConfig.BaseURL != "" {
 		return r.pveConfig.BaseURL
 	}
@@ -245,10 +245,10 @@ func (r *Router) primaryUser() string {
 	return ""
 }
 
-// primeiraLinhaDoErro cuts the poller's error down to its first line and to a
+// firstErrorLine cuts the poller's error down to its first line and to a
 // readable length: the message goes to WhatsApp, and a whole network stack
 // trace there is text nobody reads.
-func primeiraLinhaDoErro(e string) string {
+func firstErrorLine(e string) string {
 	for i := 0; i < len(e); i++ {
 		if e[i] == '\n' {
 			e = e[:i]
@@ -265,8 +265,8 @@ func primeiraLinhaDoErro(e string) string {
 	return e
 }
 
-// duracaoEmPortugues avoids "1h0m0s" in a message somebody reads on a phone.
-func duracaoEmPortugues(d time.Duration) string {
+// humanDuration avoids "1h0m0s" in a message somebody reads on a phone.
+func humanDuration(d time.Duration) string {
 	if d < time.Minute {
 		return fmt.Sprintf("%d s", int(d.Seconds()))
 	}

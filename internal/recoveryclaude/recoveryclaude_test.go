@@ -12,7 +12,7 @@ import (
 // assets and run the manager from there. Two earlier versions died with "no
 // such file or directory" because they read the repository from disk — this
 // test exercises the real path instead of asserting about the text of the code.
-func TestMaterializaEntregaUmGerenciadorExecutavel(t *testing.T) {
+func TestMaterializeDeliversExecutableManager(t *testing.T) {
 	dir := t.TempDir()
 	script, err := Materializa(dir)
 	if err != nil {
@@ -41,7 +41,7 @@ func TestMaterializaEntregaUmGerenciadorExecutavel(t *testing.T) {
 // and absences disappear without anyone noticing. Here it is asserted over the
 // content the BINARY carries — not over the repository file, which may diverge
 // from what was actually embedded.
-func TestOQueOBinarioCarregaNaoApontaProRouter(t *testing.T) {
+func TestEmbeddedPayloadDoesNotPointToRouter(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Materializa(dir); err != nil {
 		t.Fatalf("materialize: %v", err)
@@ -50,7 +50,7 @@ func TestOQueOBinarioCarregaNaoApontaProRouter(t *testing.T) {
 	// it does not — the manager's own `doctor` has to cite it in order to VERIFY
 	// that it is absent, and the first version of this test failed exactly the
 	// check that protects the guarantee.
-	injeta := []string{
+	injected := []string{
 		`ENV ANTHROPIC_BASE_URL`,    // Dockerfile
 		`export ANTHROPIC_BASE_URL`, // shell
 		`-e ANTHROPIC_BASE_URL`,     // docker run
@@ -62,14 +62,14 @@ func TestOQueOBinarioCarregaNaoApontaProRouter(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reading %s: %v", nome, err)
 		}
-		for _, linha := range strings.Split(string(b), "\n") {
-			corte := strings.TrimSpace(linha)
-			if strings.HasPrefix(corte, "#") {
+		for _, line := range strings.Split(string(b), "\n") {
+			cut := strings.TrimSpace(line)
+			if strings.HasPrefix(cut, "#") {
 				continue // a comment explaining the absence is welcome
 			}
-			for _, padrao := range injeta {
-				if strings.Contains(corte, padrao) {
-					t.Errorf("embedded %s points Claude at the router (%s): %q", nome, padrao, corte)
+			for _, fallback := range injected {
+				if strings.Contains(cut, fallback) {
+					t.Errorf("embedded %s points Claude at the router (%s): %q", nome, fallback, cut)
 				}
 			}
 		}
@@ -78,19 +78,19 @@ func TestOQueOBinarioCarregaNaoApontaProRouter(t *testing.T) {
 
 // Always rewriting (instead of skipping when it already exists) is what stops
 // an old deploy's version from surviving on disk after a fix.
-func TestMaterializaSobrescreveVersaoAntiga(t *testing.T) {
+func TestMaterializeOverwritesOldVersion(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Materializa(dir); err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
-	alvo := filepath.Join(dir, "recovery-claude", "manage.sh")
-	if err := os.WriteFile(alvo, []byte("#!/bin/sh\necho versao velha\n"), 0o755); err != nil {
+	target := filepath.Join(dir, "recovery-claude", "manage.sh")
+	if err := os.WriteFile(target, []byte("#!/bin/sh\necho versao velha\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Materializa(dir); err != nil {
 		t.Fatalf("materialize again: %v", err)
 	}
-	b, _ := os.ReadFile(alvo)
+	b, _ := os.ReadFile(target)
 	if strings.Contains(string(b), "versao velha") {
 		t.Error("the old manager survived — a corrected deploy would not reach the disk")
 	}
@@ -98,19 +98,19 @@ func TestMaterializaSobrescreveVersaoAntiga(t *testing.T) {
 
 // A real execution: the materialized manager has to RUN and talk to Docker.
 // Without Docker (CI) it skips — faking coverage would be worse than none.
-func TestGerenciadorMaterializadoRodaDeVerdade(t *testing.T) {
+func TestMaterializedManagerActuallyRuns(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker missing in this environment")
 	}
-	cmd, err := Comando(t.TempDir(), "status")
+	cmd, err := Command(t.TempDir(), "status")
 	if err != nil {
 		t.Fatalf("command: %v", err)
 	}
-	saida, err := cmd.CombinedOutput()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("the materialized manager did not run: %v\n%s", err, saida)
+		t.Fatalf("the materialized manager did not run: %v\n%s", err, output)
 	}
-	if !strings.Contains(string(saida), "estado:") {
-		t.Errorf("unexpected output from the manager:\n%s", saida)
+	if !strings.Contains(string(output), "estado:") {
+		t.Errorf("unexpected output from the manager:\n%s", output)
 	}
 }

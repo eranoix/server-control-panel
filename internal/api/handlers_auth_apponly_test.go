@@ -27,9 +27,9 @@ import (
 	"testing"
 )
 
-// marcaAppOnly turns the app-only mark on for the test router's account, under
+// markAppOnly turns the app-only mark on for the test router's account, under
 // the same cfgMu the handlers use to read.
-func marcaAppOnly(t *testing.T, r *Router, username string) {
+func markAppOnly(t *testing.T, r *Router, username string) {
 	t.Helper()
 	r.cfgMu.Lock()
 	defer r.cfgMu.Unlock()
@@ -42,14 +42,14 @@ func marcaAppOnly(t *testing.T, r *Router, username string) {
 	t.Fatalf("user %q is not in the test router's config", username)
 }
 
-// TestHandleLogin_AppOnly_RecusadoNoPainel proves the heart of the gate: a
+// TestHandleLogin_AppOnly_RejectedOnPanel proves the heart of the gate: a
 // CORRECT password + a marked account -> 401 with no token, indistinguishable
 // from a wrong password.
-func TestHandleLogin_AppOnly_RecusadoNoPainel(t *testing.T) {
+func TestHandleLogin_AppOnly_RejectedOnPanel(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "app@test.local", password: testPassword})
 	r := newLoginTestRouter(t, gt, "appuser", "app@test.local")
-	marcaAppOnly(t, r, "appuser")
+	markAppOnly(t, r, "appuser")
 
 	w, out := doLogin(t, r, map[string]any{"username": "appuser", "password": testPassword})
 	if w.Code != http.StatusUnauthorized {
@@ -65,20 +65,20 @@ func TestHandleLogin_AppOnly_RecusadoNoPainel(t *testing.T) {
 	gt2 := newFakeGoTrue()
 	gt2.addUser(&fakeGoTrueUser{email: "normal@test.local", password: testPassword})
 	r2 := newLoginTestRouter(t, gt2, "normal", "normal@test.local")
-	wErrado, _ := doLogin(t, r2, map[string]any{"username": "normal", "password": "senha-errada"})
-	if got, want := w.Body.String(), wErrado.Body.String(); got != want {
+	wWrong, _ := doLogin(t, r2, map[string]any{"username": "normal", "password": "senha-errada"})
+	if got, want := w.Body.String(), wWrong.Body.String(); got != want {
 		t.Fatalf("gate response = %q, wrong password = %q — they must be identical", got, want)
 	}
 }
 
-// TestHandleLogin_AppOnly_RecusadoTambemPorEmail proves that the gate sits
+// TestHandleLogin_AppOnly_AlsoRejectedByEmail proves that the gate sits
 // AFTER the email→canonical-username normalisation: logging in with the email
 // is not a way around it.
-func TestHandleLogin_AppOnly_RecusadoTambemPorEmail(t *testing.T) {
+func TestHandleLogin_AppOnly_AlsoRejectedByEmail(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "app@test.local", password: testPassword})
 	r := newLoginTestRouter(t, gt, "appuser", "app@test.local")
-	marcaAppOnly(t, r, "appuser")
+	markAppOnly(t, r, "appuser")
 
 	w, out := doLogin(t, r, map[string]any{"username": "App@Test.Local", "password": testPassword})
 	if w.Code != http.StatusUnauthorized {
@@ -89,13 +89,13 @@ func TestHandleLogin_AppOnly_RecusadoTambemPorEmail(t *testing.T) {
 	}
 }
 
-// TestMobileLogin_AppOnly_EntraPeloApp proves that the gate did NOT close the
+// TestMobileLogin_AppOnly_EntersThroughApp proves that the gate did NOT close the
 // app's door: the same account refused above authenticates through MobileLogin.
-func TestMobileLogin_AppOnly_EntraPeloApp(t *testing.T) {
+func TestMobileLogin_AppOnly_EntersThroughApp(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "app@test.local", password: testPassword})
 	r := newLoginTestRouter(t, gt, "appuser", "app@test.local")
-	marcaAppOnly(t, r, "appuser")
+	markAppOnly(t, r, "appuser")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/mobile/auth/login", strings.NewReader("{}"))
 	res, err := r.MobileLogin(req, "appuser", testPassword, "", "Pixel de teste")
@@ -110,13 +110,13 @@ func TestMobileLogin_AppOnly_EntraPeloApp(t *testing.T) {
 	}
 }
 
-// TestHandleRecoveryAuth_AppOnly_Recusado closes the back door: /recovery is a
+// TestHandleRecoveryAuth_AppOnly_Rejected closes the back door: /recovery is a
 // panel entrance (root PTY) and has a credential check of its own.
-func TestHandleRecoveryAuth_AppOnly_Recusado(t *testing.T) {
+func TestHandleRecoveryAuth_AppOnly_Rejected(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "app@test.local", password: testPassword})
 	r := newLoginTestRouter(t, gt, "appuser", "app@test.local")
-	marcaAppOnly(t, r, "appuser")
+	markAppOnly(t, r, "appuser")
 
 	body, _ := json.Marshal(map[string]any{"username": "appuser", "password": testPassword, "totp": "123456"})
 	req := httptest.NewRequest(http.MethodPost, "/recovery/auth", strings.NewReader(string(body)))
@@ -137,9 +137,9 @@ func TestHandleRecoveryAuth_AppOnly_Recusado(t *testing.T) {
 	}
 }
 
-// TestLogin_ContaNormal_EntraNosDoisCaminhos is the counterweight: without the
+// TestLogin_NormalAccount_EntersBothPaths is the counterweight: without the
 // mark, the old behaviour stays intact at both doors.
-func TestLogin_ContaNormal_EntraNosDoisCaminhos(t *testing.T) {
+func TestLogin_NormalAccount_EntersBothPaths(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "normal@test.local", password: testPassword})
 	r := newLoginTestRouter(t, gt, "normal", "normal@test.local")

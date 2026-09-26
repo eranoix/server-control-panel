@@ -16,51 +16,51 @@ import (
 	"server-control-panel/internal/gameservers"
 )
 
-// backDuplo satisfies gameservers.Backend without touching any disk.
-type backDuplo struct {
-	chamadas []gameservers.OpName
-	erro     error
-	recebeu  int64
+// backendDouble satisfies gameservers.Backend without touching any disk.
+type backendDouble struct {
+	calls    []gameservers.OpName
+	failure  error
+	received int64
 }
 
-func (b *backDuplo) Executar(_ context.Context, op gameservers.OpName, _ json.RawMessage) (json.RawMessage, error) {
-	b.chamadas = append(b.chamadas, op)
-	if b.erro != nil {
-		return nil, b.erro
+func (b *backendDouble) Execute(_ context.Context, op gameservers.OpName, _ json.RawMessage) (json.RawMessage, error) {
+	b.calls = append(b.calls, op)
+	if b.failure != nil {
+		return nil, b.failure
 	}
 	return json.RawMessage(`{"ok":true}`), nil
 }
-func (b *backDuplo) Abrir(context.Context, gameservers.Handle) (io.ReadCloser, error) {
+func (b *backendDouble) Open(context.Context, gameservers.Handle) (io.ReadCloser, error) {
 	return nil, nil
 }
-func (b *backDuplo) Receber(_ context.Context, r io.Reader) (gameservers.Handle, error) {
+func (b *backendDouble) Receive(_ context.Context, r io.Reader) (gameservers.Handle, error) {
 	// Consume the body: a double that does not read would let the upload test
 	// pass without a single byte crossing over.
 	n, err := io.Copy(io.Discard, r)
 	if err != nil {
 		return "", err
 	}
-	b.recebeu = n
+	b.received = n
 	return gameservers.Handle("handle-de-teste"), nil
 }
-func (b *backDuplo) Descrever() string { return "duplo de teste" }
+func (b *backendDouble) Describe() string { return "duplo de teste" }
 
-func servidorDeTeste(t *testing.T, token string) (*Servidor, *backDuplo) {
+func testServer(t *testing.T, token string) (*ServerID, *backendDouble) {
 	t.Helper()
-	b := &backDuplo{}
+	b := &backendDouble{}
 	ag := &Agent{No: "teste", Back: b}
-	return NovoServidor(ag, SegredoDeTexto(token), NovasMetricas("teste")), b
+	return NewServer(ag, SecretFromText(token), NewMetrics("teste")), b
 }
 
-func pede(t *testing.T, s *Servidor, metodo, alvo, bearer string, corpo string) *httptest.ResponseRecorder {
+func request(t *testing.T, s *ServerID, method, target, bearer string, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	var body *strings.Reader
-	if corpo == "" {
-		body = strings.NewReader("")
+	var reader *strings.Reader
+	if body == "" {
+		reader = strings.NewReader("")
 	} else {
-		body = strings.NewReader(corpo)
+		reader = strings.NewReader(body)
 	}
-	r := httptest.NewRequest(metodo, alvo, body)
+	r := httptest.NewRequest(method, target, reader)
 	if bearer != "" {
 		r.Header.Set("Authorization", "Bearer "+bearer)
 	}
@@ -69,69 +69,69 @@ func pede(t *testing.T, s *Servidor, metodo, alvo, bearer string, corpo string) 
 	return w
 }
 
-// TestAuthSemSegredoEhInerte — an agent with no secret accepts NOTHING.
+// TestAuthWithoutSecretIsInert — an agent with no secret accepts NOTHING.
 //
 // The half that matters is the second one: even with a syntactically perfect
 // Authorization (another node's bearer, say), the answer is 401. "Inert" means
 // there is no request it accepts — not that it accepts any request at all. An
 // agent that came up with no secret and stayed OPEN would be the worst failure
 // possible in this work, and it would be a silent one.
-func TestAuthSemSegredoEhInerte(t *testing.T) {
-	s, back := servidorDeTeste(t, "")
+func TestAuthWithoutSecretIsInert(t *testing.T) {
+	s, back := testServer(t, "")
 	for _, bearer := range []string{"", "qualquer-coisa", "o-bearer-de-outro-no"} {
-		w := pede(t, s, http.MethodPost, "/v1/op/server.status", bearer, `{}`)
+		w := request(t, s, http.MethodPost, "/v1/op/server.status", bearer, `{}`)
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("bearer %q: expected 401, got %d — an agent with no secret canNOT accept anything", bearer, w.Code)
 		}
 	}
-	if len(back.chamadas) != 0 {
-		t.Errorf("the back end was called %d time(s) with no secret provisioned: %v", len(back.chamadas), back.chamadas)
+	if len(back.calls) != 0 {
+		t.Errorf("the back end was called %d time(s) with no secret provisioned: %v", len(back.calls), back.calls)
 	}
 }
 
-func TestAuthTokenErrado(t *testing.T) {
-	s, back := servidorDeTeste(t, "o-certo")
-	if w := pede(t, s, http.MethodPost, "/v1/op/server.status", "o-errado", `{}`); w.Code != http.StatusUnauthorized {
+func TestAuthWrongToken(t *testing.T) {
+	s, back := testServer(t, "o-certo")
+	if w := request(t, s, http.MethodPost, "/v1/op/server.status", "o-errado", `{}`); w.Code != http.StatusUnauthorized {
 		t.Errorf("expected 401, got %d", w.Code)
 	}
-	if len(back.chamadas) != 0 {
-		t.Errorf("back end reached with the wrong token: %v", back.chamadas)
+	if len(back.calls) != 0 {
+		t.Errorf("back end reached with the wrong token: %v", back.calls)
 	}
 }
 
-func TestAuthTokenCerto(t *testing.T) {
-	s, back := servidorDeTeste(t, "o-certo")
-	w := pede(t, s, http.MethodPost, "/v1/op/server.status", "o-certo", `{}`)
+func TestAuthRightToken(t *testing.T) {
+	s, back := testServer(t, "o-certo")
+	w := request(t, s, http.MethodPost, "/v1/op/server.status", "o-certo", `{}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d — body: %s", w.Code, w.Body.String())
 	}
-	if len(back.chamadas) != 1 || back.chamadas[0] != gameservers.OpServerStatus {
-		t.Errorf("the handler did not reach the back end with the right operation: %v", back.chamadas)
+	if len(back.calls) != 1 || back.calls[0] != gameservers.OpServerStatus {
+		t.Errorf("the handler did not reach the back end with the right operation: %v", back.calls)
 	}
 }
 
-// TestAuthNaoAceitaQueryString — the fanhub regression that must not happen.
+// TestAuthRejectsQueryString — the fanhub regression that must not happen.
 //
 // `fanhub.py:388` accepts `?t=`; a token in the query string leaks into the
 // access log, into Referer and into the browser history. Here, with no header,
 // it is 401 — no matter what comes in the URL.
-func TestAuthNaoAceitaQueryString(t *testing.T) {
-	s, back := servidorDeTeste(t, "o-certo")
-	for _, alvo := range []string{
+func TestAuthRejectsQueryString(t *testing.T) {
+	s, back := testServer(t, "o-certo")
+	for _, target := range []string{
 		"/v1/op/server.status?token=o-certo",
 		"/v1/op/server.status?t=o-certo",
 		"/v1/op/server.status?access_token=o-certo",
 	} {
-		if w := pede(t, s, http.MethodPost, alvo, "", `{}`); w.Code != http.StatusUnauthorized {
-			t.Errorf("%s: expected 401, got %d — a token in the query string is being accepted", alvo, w.Code)
+		if w := request(t, s, http.MethodPost, target, "", `{}`); w.Code != http.StatusUnauthorized {
+			t.Errorf("%s: expected 401, got %d — a token in the query string is being accepted", target, w.Code)
 		}
 	}
-	if len(back.chamadas) != 0 {
-		t.Errorf("back end reached through the query string: %v", back.chamadas)
+	if len(back.calls) != 0 {
+		t.Errorf("back end reached through the query string: %v", back.calls)
 	}
 }
 
-// TestAuthComparaHashDeTamanhoFixo asserts the SHAPE in the AST.
+// TestAuthComparesFixedSizeHash asserts the SHAPE in the AST.
 //
 // Timing cannot be measured stably in a unit test — a test that tried to put a
 // stopwatch on it would be flaky and would get turned off. What can be asserted
@@ -141,14 +141,14 @@ func TestAuthNaoAceitaQueryString(t *testing.T) {
 //
 // Why hash first: ConstantTimeCompare returns early when the lengths differ,
 // which leaks the SIZE of the expected token.
-func TestAuthComparaHashDeTamanhoFixo(t *testing.T) {
-	arquivo := filepath.Join(raizDoRepo(t), "internal", "labagent", "auth.go")
+func TestAuthComparesFixedSizeHash(t *testing.T) {
+	file := filepath.Join(repoRoot(t), "internal", "labagent", "auth.go")
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, arquivo, nil, parser.SkipObjectResolution)
+	f, err := parser.ParseFile(fset, file, nil, parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	var temSum, temCTC bool
+	var hasSum, hasCTC bool
 	ast.Inspect(f, func(n ast.Node) bool {
 		sel, ok := n.(*ast.SelectorExpr)
 		if !ok {
@@ -160,41 +160,41 @@ func TestAuthComparaHashDeTamanhoFixo(t *testing.T) {
 		}
 		switch {
 		case pkg.Name == "sha256" && sel.Sel.Name == "Sum256":
-			temSum = true
+			hasSum = true
 		case pkg.Name == "subtle" && sel.Sel.Name == "ConstantTimeCompare":
-			temCTC = true
+			hasCTC = true
 		}
 		return true
 	})
-	if !temSum {
+	if !hasSum {
 		t.Error("auth.go does not use sha256.Sum256 — without a fixed-length hash, ConstantTimeCompare leaks the token length")
 	}
-	if !temCTC {
+	if !hasCTC {
 		t.Error("auth.go does not use subtle.ConstantTimeCompare")
 	}
 
 	// The matching behaviour: tokens of VERY different lengths take the same
 	// path and both are refused.
-	s := SegredoDeTexto("token-de-tamanho-medio")
-	for _, tentativa := range []string{"x", strings.Repeat("y", 4000)} {
-		if s.confere(tentativa) {
-			t.Errorf("accepted a wrong %d-byte credential", len(tentativa))
+	s := SecretFromText("token-de-tamanho-medio")
+	for _, attempt := range []string{"x", strings.Repeat("y", 4000)} {
+		if s.matches(attempt) {
+			t.Errorf("accepted a wrong %d-byte credential", len(attempt))
 		}
 	}
-	if !s.confere("token-de-tamanho-medio") {
+	if !s.matches("token-de-tamanho-medio") {
 		t.Error("refused the correct credential")
 	}
 }
 
-// TestSegredoAusenteNaoConfere — a zero Segredo refuses even the empty string.
-func TestSegredoAusenteNaoConfere(t *testing.T) {
-	var s Segredo
-	if s.Presente() {
+// TestMissingSecretNeverMatches — a zero Segredo refuses even the empty string.
+func TestMissingSecretNeverMatches(t *testing.T) {
+	var s Secret
+	if s.Present() {
 		t.Error("a zero Segredo claims to be present")
 	}
-	for _, tentativa := range []string{"", "qualquer"} {
-		if s.confere(tentativa) {
-			t.Errorf("a missing Segredo matched %q", tentativa)
+	for _, attempt := range []string{"", "qualquer"} {
+		if s.matches(attempt) {
+			t.Errorf("a missing Segredo matched %q", attempt)
 		}
 	}
 }

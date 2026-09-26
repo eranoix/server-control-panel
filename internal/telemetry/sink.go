@@ -68,9 +68,9 @@ func (s *Sink) Write(rec []byte) error {
 		return ErrEmbedded
 	}
 
-	linha := make([]byte, len(rec)+1)
-	copy(linha, rec)
-	linha[len(rec)] = '\n'
+	line := make([]byte, len(rec)+1)
+	copy(line, rec)
+	line[len(rec)] = '\n'
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -88,7 +88,7 @@ func (s *Sink) Write(rec []byte) error {
 		}
 		s.f, s.day = f, d
 	}
-	_, err := s.f.Write(linha)
+	_, err := s.f.Write(line)
 	return err
 }
 
@@ -107,9 +107,9 @@ func (s *Sink) Close() error {
 // ReadStats is the result of reading one telemetry file.
 type ReadStats struct{ Valid, Invalid int }
 
-// maxLinha is the reader's ceiling: a valid record fits in maxRecord, and the
+// maxLine is the reader's ceiling: a valid record fits in maxRecord, and the
 // slack exists only so a corrupted line is COUNTED instead of blowing the scanner.
-const maxLinha = 64 << 10
+const maxLine = 64 << 10
 
 // ReadDay returns the valid records and COUNTS the invalid ones.
 //
@@ -127,14 +127,14 @@ func ReadDay(path string, fn func(map[string]any)) (ReadStats, error) {
 	defer f.Close()
 
 	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), maxLinha)
+	sc.Buffer(make([]byte, 0, 64*1024), maxLine)
 	for sc.Scan() {
-		linha := bytes.TrimSpace(sc.Bytes())
-		if len(linha) == 0 {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 {
 			continue
 		}
 		var m map[string]any
-		if err := json.Unmarshal(linha, &m); err != nil {
+		if err := json.Unmarshal(line, &m); err != nil {
 			st.Invalid++
 			continue
 		}
@@ -143,7 +143,7 @@ func ReadDay(path string, fn func(map[string]any)) (ReadStats, error) {
 			fn(m)
 		}
 	}
-	// A line longer than maxLinha makes the scanner stop with bufio.ErrTooLong.
+	// A line longer than maxLine makes the scanner stop with bufio.ErrTooLong.
 	// That is content corruption, not I/O failure: it counts as invalid and the
 	// read ends — reported, never silent.
 	if err := sc.Err(); err != nil {

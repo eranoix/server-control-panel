@@ -65,14 +65,14 @@ type JiraBoardColumn struct {
 	Cards       []JiraBoardCard `json:"cards" required:"true"`
 }
 
-// colunasDefault mirrors the three CATEGORY columns the web panel uses when the
+// defaultColumns mirrors the three CATEGORY columns the web panel uses when the
 // operator has not configured columns of their own.
 //
 // Category and not name: a status name is translatable and customizable per
 // project; `statusCategory.key` is one of the three values Jira guarantees. A
 // column by name would break in any project that calls "To Do" "Backlog" —
 // which is this very project's case.
-func colunasDefault() []JiraBoardColumn {
+func defaultColumns() []JiraBoardColumn {
 	return []JiraBoardColumn{
 		{Label: "A fazer", Category: "new"},
 		{Label: "Em andamento", Category: "indeterminate"},
@@ -80,7 +80,7 @@ func colunasDefault() []JiraBoardColumn {
 	}
 }
 
-// colunasConfiguradas reads the `jira_board_columns` JSON out of the vault.
+// configuredColumns reads the `jira_board_columns` JSON out of the vault.
 //
 // It returns nil when there is no configuration, when the JSON fails to
 // deserialize, or when the list is empty — in all of those cases the caller
@@ -88,35 +88,35 @@ func colunasDefault() []JiraBoardColumn {
 // error: the board keeps working with the defaults, exactly as the web panel
 // does (`catch(e){ console.warn(...) }`). A board that refuses to open because
 // a preference is crooked is worse than a board with the default columns.
-func colunasConfiguradas(brutas string) []JiraBoardColumn {
-	brutas = strings.TrimSpace(brutas)
-	if brutas == "" {
+func configuredColumns(raw string) []JiraBoardColumn {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
 		return nil
 	}
-	var lidas []jira.BoardColumn
-	if err := json.Unmarshal([]byte(brutas), &lidas); err != nil || len(lidas) == 0 {
+	var reads []jira.BoardColumn
+	if err := json.Unmarshal([]byte(raw), &reads); err != nil || len(reads) == 0 {
 		return nil
 	}
-	out := make([]JiraBoardColumn, 0, len(lidas))
-	for i, c := range lidas {
-		rotulo := strings.TrimSpace(c.Label)
-		if rotulo == "" {
-			rotulo = "Coluna " + strconv.Itoa(i+1)
+	out := make([]JiraBoardColumn, 0, len(reads))
+	for i, c := range reads {
+		label := strings.TrimSpace(c.Label)
+		if label == "" {
+			label = "Coluna " + strconv.Itoa(i+1)
 		}
-		nomes := make([]string, 0, len(c.StatusNames))
+		names := make([]string, 0, len(c.StatusNames))
 		for _, n := range c.StatusNames {
 			if n = strings.TrimSpace(n); n != "" {
-				nomes = append(nomes, n)
+				names = append(names, n)
 			}
 		}
-		out = append(out, JiraBoardColumn{Label: rotulo, StatusNames: nomes})
+		out = append(out, JiraBoardColumn{Label: label, StatusNames: names})
 	}
 	return out
 }
 
-// MontarQuadro distributes the issues across the columns.
+// BuildBoard distributes the issues across the columns.
 //
-// [ocultarConcluidasApos], when greater than zero, hides issues that have been
+// [hideDoneAfter], when greater than zero, hides issues that have been
 // done for more days than that — the same retention as the panel
 // (`jiraIssueVisible`). It keeps the "Concluído" column from becoming a
 // two-year-old morgue your thumb never finishes scrolling through.
@@ -124,64 +124,64 @@ func colunasConfiguradas(brutas string) []JiraBoardColumn {
 // [ordem] is "field:direction" (`updated:desc`, `key:asc`, `name:asc`,
 // `type:asc`); empty or unknown preserves the order Jira returned, which is
 // already the JQL's.
-func MontarQuadro(
-	colunasBrutas string,
+func BuildBoard(
+	rawColumns string,
 	issues []jira.Issue,
-	ocultarConcluidasApos int,
-	ordem string,
-	agora time.Time,
+	hideDoneAfter int,
+	order string,
+	now time.Time,
 ) []JiraBoardColumn {
-	colunas := colunasConfiguradas(colunasBrutas)
-	porNome := colunas != nil
+	columns := configuredColumns(rawColumns)
+	porNome := columns != nil
 	if !porNome {
-		colunas = colunasDefault()
+		columns = defaultColumns()
 	}
 
-	var orfas []jira.Issue
+	var orphans []jira.Issue
 	for _, is := range issues {
-		if !issueVisivel(is, ocultarConcluidasApos, agora) {
+		if !issueVisible(is, hideDoneAfter, now) {
 			continue
 		}
-		destino := -1
-		for i := range colunas {
-			if issueCaiNaColuna(is, colunas[i]) {
-				destino = i
+		dest := -1
+		for i := range columns {
+			if issueInColumn(is, columns[i]) {
+				dest = i
 				break
 			}
 		}
-		if destino < 0 {
-			orfas = append(orfas, is)
+		if dest < 0 {
+			orphans = append(orphans, is)
 			continue
 		}
-		colunas[destino].Cards = append(colunas[destino].Cards, cartaoDoQuadro(is))
+		columns[dest].Cards = append(columns[dest].Cards, boardCard(is))
 	}
 
 	// The "Outros" column only exists when there is an orphan. A well-configured
 	// board does not earn a permanent empty column just to prove it is complete.
-	if porNome && len(orfas) > 0 {
-		sobra := JiraBoardColumn{Label: "Outros", Fallback: true}
-		for _, is := range orfas {
-			sobra.Cards = append(sobra.Cards, cartaoDoQuadro(is))
+	if porNome && len(orphans) > 0 {
+		leftover := JiraBoardColumn{Label: "Outros", Fallback: true}
+		for _, is := range orphans {
+			leftover.Cards = append(leftover.Cards, boardCard(is))
 		}
-		colunas = append(colunas, sobra)
+		columns = append(columns, leftover)
 	}
 
-	for i := range colunas {
+	for i := range columns {
 		// Cards is never nil in the response: the client tells "empty column"
 		// from "column that did not come" by the column's presence, not by null.
-		if colunas[i].Cards == nil {
-			colunas[i].Cards = []JiraBoardCard{}
+		if columns[i].Cards == nil {
+			columns[i].Cards = []JiraBoardCard{}
 		}
-		ordenarCartoes(colunas[i].Cards, ordem)
+		sortCards(columns[i].Cards, order)
 	}
-	return colunas
+	return columns
 }
 
-// issueCaiNaColuna is the SAME question the move screen asks later, and that is
+// issueInColumn is the SAME question the move screen asks later, and that is
 // why it is a single function: if it said "yes, it is already in this column"
 // by one criterion and the board drew by another, dragging a card onto the
 // column it is already in would turn into a real transition.
-func issueCaiNaColuna(is jira.Issue, col JiraBoardColumn) bool {
+func issueInColumn(is jira.Issue, col JiraBoardColumn) bool {
 	if col.Fallback {
 		return false
 	}
@@ -197,26 +197,26 @@ func issueCaiNaColuna(is jira.Issue, col JiraBoardColumn) bool {
 	return false
 }
 
-// issueVisivel applies the done-issue retention.
+// issueVisible applies the done-issue retention.
 //
 // An issue with an unreadable date is always visible: disappearing because a
 // timestamp could not be parsed is losing work over a formatting detail.
-func issueVisivel(is jira.Issue, ocultarConcluidasApos int, agora time.Time) bool {
-	if ocultarConcluidasApos <= 0 {
+func issueVisible(is jira.Issue, hideDoneAfter int, now time.Time) bool {
+	if hideDoneAfter <= 0 {
 		return true
 	}
 	if is.Status.StatusCategory.Key != "done" {
 		return true
 	}
-	quando := primeiroNaoVazio(is.Updated, is.Created)
-	t, ok := horaDoJira(quando)
+	when := firstNonEmpty(is.Updated, is.Created)
+	t, ok := parseJiraTime(when)
 	if !ok {
 		return true
 	}
-	return agora.Sub(t) <= time.Duration(ocultarConcluidasApos)*24*time.Hour
+	return now.Sub(t) <= time.Duration(hideDoneAfter)*24*time.Hour
 }
 
-func cartaoDoQuadro(is jira.Issue) JiraBoardCard {
+func boardCard(is jira.Issue) JiraBoardCard {
 	c := JiraBoardCard{
 		Key:      is.Key,
 		Summary:  is.Summary,
@@ -240,65 +240,65 @@ func cartaoDoQuadro(is jira.Issue) JiraBoardCard {
 	return c
 }
 
-// ordenarCartoes sorts in place. An unknown order is a deliberate no-op — the
+// sortCards sorts in place. An unknown order is a deliberate no-op — the
 // client may be newer than the server and ask for a criterion the latter does
 // not know yet; returning the JQL's order is correct degradation, not an error.
-func ordenarCartoes(cards []JiraBoardCard, ordem string) {
-	campo, desc := decomporOrdem(ordem)
-	if campo == "" {
+func sortCards(cards []JiraBoardCard, order string) {
+	field, desc := splitOrder(order)
+	if field == "" {
 		return
 	}
-	menor := func(a, b JiraBoardCard) bool {
-		switch campo {
+	less := func(a, b JiraBoardCard) bool {
+		switch field {
 		case "name":
 			return strings.ToLower(a.Summary) < strings.ToLower(b.Summary)
 		case "key":
-			return numeroDaChave(a.Key) < numeroDaChave(b.Key)
+			return keyNumber(a.Key) < keyNumber(b.Key)
 		case "type":
 			return strings.ToLower(a.Type) < strings.ToLower(b.Type)
 		case "updated":
-			ta, _ := horaDoJira(a.Updated)
-			tb, _ := horaDoJira(b.Updated)
+			ta, _ := parseJiraTime(a.Updated)
+			tb, _ := parseJiraTime(b.Updated)
 			return ta.Before(tb)
 		}
 		return false
 	}
 	sort.SliceStable(cards, func(i, j int) bool {
 		if desc {
-			return menor(cards[j], cards[i])
+			return less(cards[j], cards[i])
 		}
-		return menor(cards[i], cards[j])
+		return less(cards[i], cards[j])
 	})
 }
 
-func decomporOrdem(ordem string) (campo string, desc bool) {
-	ordem = strings.ToLower(strings.TrimSpace(ordem))
-	if ordem == "" || ordem == "none" {
+func splitOrder(order string) (field string, desc bool) {
+	order = strings.ToLower(strings.TrimSpace(order))
+	if order == "" || order == "none" {
 		return "", false
 	}
-	partes := strings.SplitN(ordem, ":", 2)
-	campo = partes[0]
-	switch campo {
+	parts := strings.SplitN(order, ":", 2)
+	field = parts[0]
+	switch field {
 	case "name", "key", "type", "updated":
 	default:
 		return "", false
 	}
-	return campo, len(partes) == 2 && partes[1] == "desc"
+	return field, len(parts) == 2 && parts[1] == "desc"
 }
 
-// numeroDaChave extracts the numeric tail of an issue key. Sorting a key as text
+// keyNumber extracts the numeric tail of an issue key. Sorting a key as text
 // would put ...-100 before ...-99, which is the wrong order in any project that
 // gets past two digits.
-func numeroDaChave(chave string) int {
-	i := strings.LastIndex(chave, "-")
+func keyNumber(key string) int {
+	i := strings.LastIndex(key, "-")
 	if i < 0 {
 		return 0
 	}
-	n, _ := strconv.Atoi(chave[i+1:])
+	n, _ := strconv.Atoi(key[i+1:])
 	return n
 }
 
-// TransicaoParaColuna finds the transition that takes the issue to the column.
+// TransitionToColumn finds the transition that takes the issue to the column.
 //
 // It returns nil when NO transition gets there. That is not a failure of the app
 // nor of the server: it is the project's workflow forbidding that jump (you do
@@ -306,21 +306,21 @@ func numeroDaChave(chave string) int {
 // review). The caller turns that nil into an explained refusal, and the card
 // GOES BACK to where it was — dropping it and appearing to have moved is the
 // worst possible outcome, because the person goes on believing they moved it.
-func TransicaoParaColuna(col JiraBoardColumn, transicoes []jira.Transition) *jira.Transition {
+func TransitionToColumn(col JiraBoardColumn, transitions []jira.Transition) *jira.Transition {
 	if col.Category != "" {
-		for i := range transicoes {
-			if transicoes[i].ToCat == col.Category {
-				return &transicoes[i]
+		for i := range transitions {
+			if transitions[i].ToCat == col.Category {
+				return &transitions[i]
 			}
 		}
 		return nil
 	}
 	// By name: try each of the column's names, in the order the operator wrote
 	// them — the first is their preferred one.
-	for _, quero := range col.StatusNames {
-		for i := range transicoes {
-			if strings.EqualFold(transicoes[i].ToName, quero) {
-				return &transicoes[i]
+	for _, want := range col.StatusNames {
+		for i := range transitions {
+			if strings.EqualFold(transitions[i].ToName, want) {
+				return &transitions[i]
 			}
 		}
 	}
@@ -330,7 +330,7 @@ func TransicaoParaColuna(col JiraBoardColumn, transicoes []jira.Transition) *jir
 // The web panel's quick filters, in the same order and with the same meaning.
 // The label travels with them so the app does not keep a second list that ages
 // on its own.
-var filtrosRapidos = []struct {
+var quickFilters = []struct {
 	Key   string
 	Label string
 }{
@@ -343,7 +343,7 @@ var filtrosRapidos = []struct {
 	{"custom", "JQL"},
 }
 
-// filtroDoQuadroProprio is the JQL the operator configured as THEIR board
+// ownBoardFilter is the JQL the operator configured as THEIR board
 // (`jira_board_jql` in the vault). It is only offered when it exists.
 //
 // It is a NAMED filter, and that is the fix for a real defect: before, a
@@ -357,7 +357,7 @@ var filtrosRapidos = []struct {
 // Choosing explicitly is what makes the result explainable: an empty board under
 // "My board" says the stored query matches nothing — and not that the app
 // failed.
-var filtroDoQuadroProprio = JiraFilterOption{Key: "board", Label: "My board"}
+var ownBoardFilter = JiraFilterOption{Key: "board", Label: "My board"}
 
 // JiraFilterOption is one quick filter offered to the app.
 type JiraFilterOption struct {
@@ -365,75 +365,75 @@ type JiraFilterOption struct {
 	Label string `json:"label"`
 }
 
-// FiltrosDoQuadro returns the catalogue of quick filters.
+// BoardFilters returns the catalogue of quick filters.
 //
-// [comQuadroProprio] adds "My board" — only when the operator has in fact
+// [withOwnBoard] adds "My board" — only when the operator has in fact
 // configured a board JQL. Offering a filter with no query behind it would be a
 // button that does nothing.
-func FiltrosDoQuadro(comQuadroProprio bool) []JiraFilterOption {
-	out := make([]JiraFilterOption, 0, len(filtrosRapidos)+1)
-	for _, f := range filtrosRapidos {
+func BoardFilters(withOwnBoard bool) []JiraFilterOption {
+	out := make([]JiraFilterOption, 0, len(quickFilters)+1)
+	for _, f := range quickFilters {
 		out = append(out, JiraFilterOption{Key: f.Key, Label: f.Label})
 	}
-	if comQuadroProprio {
-		out = append(out, filtroDoQuadroProprio)
+	if withOwnBoard {
+		out = append(out, ownBoardFilter)
 	}
 	return out
 }
 
-// JQLDoFiltro translates a quick filter into JQL, mirroring the web panel's
+// FilterJQL translates a quick filter into JQL, mirroring the web panel's
 // `applyJiraFilter` line by line.
 //
-// [jqlCustom] is only used by the "custom" filter and [jqlDoQuadro] only by the
+// [jqlCustom] is only used by the "custom" filter and [boardJQL] only by the
 // "board" one; in all the others both are ignored on purpose — a loose JQL
 // travelling alongside a named filter would be a second source of truth about
 // what the board is showing, and that is exactly how the board came to open
 // empty and fill up on refresh.
-func JQLDoFiltro(filtro, projeto, jqlCustom, jqlDoQuadro string) string {
-	projeto = strings.TrimSpace(projeto)
+func FilterJQL(filter, project, jqlCustom, boardJQL string) string {
+	project = strings.TrimSpace(project)
 	// "My board" with no stored query is not a state: it falls back to "all",
 	// which is what a person would expect from a filter that filters nothing.
-	if filtro == filtroDoQuadroProprio.Key {
-		if q := strings.TrimSpace(jqlDoQuadro); q != "" {
+	if filter == ownBoardFilter.Key {
+		if q := strings.TrimSpace(boardJQL); q != "" {
 			return q
 		}
-		filtro = "all"
+		filter = "all"
 	}
-	onde := ""
-	if projeto != "" {
-		onde = "project = " + projeto + " AND "
+	where := ""
+	if project != "" {
+		where = "project = " + project + " AND "
 	}
-	switch filtro {
+	switch filter {
 	case "mine":
-		return onde + "assignee = currentUser() AND statusCategory != Done ORDER BY rank ASC"
+		return where + "assignee = currentUser() AND statusCategory != Done ORDER BY rank ASC"
 	case "todo":
-		return onde + `statusCategory = "To Do" ORDER BY rank ASC`
+		return where + `statusCategory = "To Do" ORDER BY rank ASC`
 	case "inprogress":
-		return onde + `statusCategory = "In Progress" ORDER BY updated DESC`
+		return where + `statusCategory = "In Progress" ORDER BY updated DESC`
 	case "last7":
-		return onde + "updated >= -7d ORDER BY updated DESC"
+		return where + "updated >= -7d ORDER BY updated DESC"
 	case "reported":
-		return onde + "reporter = currentUser() ORDER BY updated DESC"
+		return where + "reporter = currentUser() ORDER BY updated DESC"
 	case "custom":
 		return strings.TrimSpace(jqlCustom)
 	default: // "all" and any filter this server does not know yet
-		if projeto == "" {
+		if project == "" {
 			return "ORDER BY updated DESC"
 		}
 		// Without a clause after the AND, the AND dangles and Jira refuses.
-		return "project = " + projeto + " ORDER BY updated DESC"
+		return "project = " + project + " ORDER BY updated DESC"
 	}
 }
 
-// FiltrarPorBusca applies the free-text search over whatever the JQL already
+// FilterBySearch applies the free-text search over whatever the JQL already
 // brought back.
 //
 // It is a TEXT filter over the page in hand, not a second query: the web panel
 // does the same (`jiraFilteredIssues`). The difference matters to whoever reads
 // the result — "not found" here means "not in this search", not "not in Jira".
-func FiltrarPorBusca(issues []jira.Issue, busca string) []jira.Issue {
-	busca = strings.ToLower(strings.TrimSpace(busca))
-	if busca == "" {
+func FilterBySearch(issues []jira.Issue, search string) []jira.Issue {
+	search = strings.ToLower(strings.TrimSpace(search))
+	if search == "" {
 		return issues
 	}
 	out := make([]jira.Issue, 0, len(issues))
@@ -442,17 +442,17 @@ func FiltrarPorBusca(issues []jira.Issue, busca string) []jira.Issue {
 		if is.Assignee != nil {
 			campos = append(campos, is.Assignee.DisplayName)
 		}
-		if strings.Contains(strings.ToLower(strings.Join(campos, " ")), busca) {
+		if strings.Contains(strings.ToLower(strings.Join(campos, " ")), search) {
 			out = append(out, is)
 		}
 	}
 	return out
 }
 
-// horaDoJira reads Jira's timestamp, which arrives as RFC3339 with a
+// parseJiraTime reads Jira's timestamp, which arrives as RFC3339 with a
 // colon-less zone offset ("2026-09-09T12:00:00.000-0300") — a format
 // time.RFC3339 alone does not accept.
-func horaDoJira(s string) (time.Time, bool) {
+func parseJiraTime(s string) (time.Time, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return time.Time{}, false
@@ -470,7 +470,7 @@ func horaDoJira(s string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func primeiroNaoVazio(vs ...string) string {
+func firstNonEmpty(vs ...string) string {
 	for _, v := range vs {
 		if strings.TrimSpace(v) != "" {
 			return v
@@ -494,36 +494,36 @@ func primeiroNaoVazio(vs ...string) string {
 // is wrong. A board has a quota PER COLUMN, because that is how it is read:
 // nobody scrolls four hundred done issues to find out what is still to do.
 
-// DividirJQL separates the search clause from the ordering one.
+// SplitJQL separates the search clause from the ordering one.
 //
 // Necessary because the column restriction goes in BEFORE the `ORDER BY` — a
 // `... ORDER BY updated DESC AND status = "X"` is invalid syntax, and that is
 // exactly the error naive concatenation produces.
-func DividirJQL(jql string) (onde, ordem string) {
-	corte := indiceDoOrderBy(jql)
-	if corte < 0 {
+func SplitJQL(jql string) (where, order string) {
+	cut := orderByIndex(jql)
+	if cut < 0 {
 		return strings.TrimSpace(jql), ""
 	}
-	return strings.TrimSpace(jql[:corte]), strings.TrimSpace(jql[corte:])
+	return strings.TrimSpace(jql[:cut]), strings.TrimSpace(jql[cut:])
 }
 
-// indiceDoOrderBy finds the top-level "ORDER BY", ignoring case. It does not try
+// orderByIndex finds the top-level "ORDER BY", ignoring case. It does not try
 // to understand parentheses: JQL allows no subquery with an ORDER BY inside, so
 // the first occurrence is always the trailing one.
-func indiceDoOrderBy(jql string) int {
+func orderByIndex(jql string) int {
 	alto := strings.ToUpper(jql)
-	for _, marca := range []string{"ORDER BY", "ORDER  BY"} {
-		if i := strings.Index(alto, marca); i >= 0 {
+	for _, mark := range []string{"ORDER BY", "ORDER  BY"} {
+		if i := strings.Index(alto, mark); i >= 0 {
 			return i
 		}
 	}
 	return -1
 }
 
-// categoriaEmJQL translates the category's stable key into the name JQL expects.
+// categoryJQL translates the category's stable key into the name JQL expects.
 // These are the three values Jira guarantees; anything else returns "".
-func categoriaEmJQL(chave string) string {
-	switch chave {
+func categoryJQL(key string) string {
+	switch key {
 	case "new":
 		return "To Do"
 	case "indeterminate":
@@ -534,68 +534,68 @@ func categoriaEmJQL(chave string) string {
 	return ""
 }
 
-// RestricaoDaColuna is the slice of JQL that isolates one column's issues.
+// ColumnRestriction is the slice of JQL that isolates one column's issues.
 //
 // The "Outros" column is the complement of the others (`status NOT IN (...)`) —
 // the only way to ASK Jira for something defined as "whatever is none of the
 // rest". It returns "" when the column has no way to restrict itself, and in
 // that case the caller falls back to the single search.
-func RestricaoDaColuna(col JiraBoardColumn, todas []JiraBoardColumn) string {
+func ColumnRestriction(col JiraBoardColumn, all []JiraBoardColumn) string {
 	if col.Fallback {
-		var nomes []string
-		for _, c := range todas {
+		var names []string
+		for _, c := range all {
 			for _, n := range c.StatusNames {
-				nomes = append(nomes, aspasJQL(n))
+				names = append(names, quoteJQL(n))
 			}
 		}
-		if len(nomes) == 0 {
+		if len(names) == 0 {
 			return ""
 		}
-		return "status NOT IN (" + strings.Join(nomes, ", ") + ")"
+		return "status NOT IN (" + strings.Join(names, ", ") + ")"
 	}
 	if col.Category != "" {
-		nome := categoriaEmJQL(col.Category)
+		nome := categoryJQL(col.Category)
 		if nome == "" {
 			return ""
 		}
-		return `statusCategory = ` + aspasJQL(nome)
+		return `statusCategory = ` + quoteJQL(nome)
 	}
 	if len(col.StatusNames) == 0 {
 		return ""
 	}
-	nomes := make([]string, 0, len(col.StatusNames))
+	names := make([]string, 0, len(col.StatusNames))
 	for _, n := range col.StatusNames {
-		nomes = append(nomes, aspasJQL(n))
+		names = append(names, quoteJQL(n))
 	}
-	return "status IN (" + strings.Join(nomes, ", ") + ")"
+	return "status IN (" + strings.Join(names, ", ") + ")"
 }
 
-// aspasJQL wraps the value in double quotes, escaping any it contains. A status
+// quoteJQL wraps the value in double quotes, escaping any it contains. A status
 // name with quotes in it is rare; a name with UNESCAPED quotes would break the
 // board's entire query, and not just that column.
-func aspasJQL(v string) string {
+func quoteJQL(v string) string {
 	return `"` + strings.ReplaceAll(v, `"`, `\"`) + `"`
 }
 
-// JQLDaColuna composes one column's query.
+// ColumnJQL composes one column's query.
 //
 // The filter's clause goes inside parentheses because it may contain an `OR` —
 // and without the parentheses the column's `AND` would bind only to the last
 // term, silently widening the result.
-func JQLDaColuna(onde, ordem, restricao string) string {
-	partes := make([]string, 0, 2)
-	if onde = strings.TrimSpace(onde); onde != "" {
-		partes = append(partes, "("+onde+")")
+func ColumnJQL(where, order, restriction string) string {
+	parts := make([]string, 0, 2)
+	if where = strings.TrimSpace(where); where != "" {
+		parts = append(parts, "("+where+")")
 	}
-	if restricao = strings.TrimSpace(restricao); restricao != "" {
-		partes = append(partes, restricao)
+	if restriction = strings.TrimSpace(restriction); restriction != "" {
+		parts = append(parts, restriction)
 	}
-	consulta := strings.Join(partes, " AND ")
-	if ordem = strings.TrimSpace(ordem); ordem != "" {
-		if consulta == "" {
-			return ordem
+	query := strings.Join(parts, " AND ")
+	if order = strings.TrimSpace(order); order != "" {
+		if query == "" {
+			return order
 		}
-		return consulta + " " + ordem
+		return query + " " + order
 	}
-	return consulta
+	return query
 }

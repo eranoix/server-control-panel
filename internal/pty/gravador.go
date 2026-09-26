@@ -59,18 +59,18 @@ import (
 )
 
 // gravador is the `dtach -a` client that only records.
-type gravador struct {
+type recorder struct {
 	cmd  *exec.Cmd
 	ptmx *os.File
 	// This session's server screen. It lives here because what asks for it is the
 	// history handler, and the recorder is the sole owner of its lifecycle — see
-	// [telaDe].
-	tela  *telaDaSessao
-	fecha sync.Once
+	// [screenOf].
+	screen    *sessionScreen
+	closeOnce sync.Once
 }
 
-func (g *gravador) para() {
-	g.fecha.Do(func() {
+func (g *recorder) stop() {
+	g.closeOnce.Do(func() {
 		if g.ptmx != nil {
 			_ = g.ptmx.Close()
 		}
@@ -82,46 +82,46 @@ func (g *gravador) para() {
 }
 
 var (
-	gravadoresMu sync.Mutex
+	recordersMu sync.Mutex
 	// key = the session's log path (it identifies the session AND the owner).
-	gravadores = map[string]*gravador{}
+	recorders = map[string]*recorder{}
 )
 
-// GaranteGravador starts the session's recorder, if the session exists and does
+// EnsureRecorder starts the session's recorder, if the session exists and does
 // not already have one. Idempotent and best-effort: failing here costs the hole
 // in the log that already existed before, never someone's terminal.
 //
 // It NEVER creates a session. The backend's `Attach` creates the master when it
 // does not exist, and a recorder that resurrected a dead session would be a
 // creative way of never letting anything end — hence the `Has` check first.
-func GaranteGravador(dataDir, user, name string, reg *Registry) {
+func EnsureRecorder(dataDir, user, name string, reg *Registry) {
 	if dataDir == "" || user == "" || name == "" {
 		return
 	}
-	chave := sessionLogPath(dataDir, user, name)
+	key := sessionLogPath(dataDir, user, name)
 
-	gravadoresMu.Lock()
-	if _, jaTem := gravadores[chave]; jaTem {
-		gravadoresMu.Unlock()
+	recordersMu.Lock()
+	if _, already := recorders[key]; already {
+		recordersMu.Unlock()
 		return
 	}
 	// Reserve the key before leaving the lock: two connections arriving together
 	// must not open two recorders for the same session (that would be two `dtach`
 	// clients and two writes of the same byte).
-	gravadores[chave] = nil
-	gravadoresMu.Unlock()
+	recorders[key] = nil
+	recordersMu.Unlock()
 
-	g, err := abreGravador(dataDir, user, name, reg, chave)
-	gravadoresMu.Lock()
+	g, err := openRecorder(dataDir, user, name, reg, key)
+	recordersMu.Lock()
 	if err != nil {
-		delete(gravadores, chave)
+		delete(recorders, key)
 	} else {
-		gravadores[chave] = g
+		recorders[key] = g
 	}
-	gravadoresMu.Unlock()
+	recordersMu.Unlock()
 }
 
-func abreGravador(dataDir, user, name string, reg *Registry, chave string) (*gravador, error) {
+func openRecorder(dataDir, user, name string, reg *Registry, key string) (*recorder, error) {
 	backend := NewSessionBackend(dataDir, reg)
 	if viva, err := backend.Has(name); err != nil || !viva {
 		return nil, os.ErrNotExist
@@ -135,41 +135,41 @@ func abreGravador(dataDir, user, name string, reg *Registry, chave string) (*gra
 	if err != nil {
 		return nil, err
 	}
-	g := &gravador{cmd: cmd, ptmx: ptmx}
+	g := &recorder{cmd: cmd, ptmx: ptmx}
 
-	tee, sessao, id, soltar := pegarLogDaSessao(dataDir, user, name)
+	tee, session, id, release := acquireSessionLog(dataDir, user, name)
 	// The server screen: the same stream, passed through an emulator, so that the
 	// lines LEAVING it become the session's rendered history. An observer, never a
 	// middleman — see `historico.go`.
-	tela := novaTelaDaSessao(dataDir, user, name)
-	g.tela = tela
-	if sessao != nil {
+	screen := newSessionScreen(dataDir, user, name)
+	g.screen = screen
+	if session != nil {
 		// Obeys the session's size without having an opinion about it — see the
 		// header. The server screen has to stay at the SAME size as the pty: that is
 		// what makes the program's `ESC[nA` land on the line it meant, and it is why
 		// the history comes out without repeated copies.
-		aplicar := func(cols, rows uint16) {
+		apply := func(cols, rows uint16) {
 			if cols < 2 || rows < 1 {
 				return
 			}
 			_ = pty.Setsize(ptmx, &pty.Winsize{Cols: cols, Rows: rows})
-			tela.redimensiona(cols, rows)
+			screen.resize(cols, rows)
 		}
-		if c, r := sessao.registraAplicador(id, aplicar); c > 0 && r > 0 {
-			aplicar(c, r)
+		if c, r := session.registerApplier(id, apply); c > 0 && r > 0 {
+			apply(c, r)
 		}
 	}
 
 	go func() {
 		defer func() {
-			soltar()
-			tela.fecha()
-			g.para()
-			gravadoresMu.Lock()
-			if atual := gravadores[chave]; atual == g {
-				delete(gravadores, chave)
+			release()
+			screen.closeOnce()
+			g.stop()
+			recordersMu.Lock()
+			if current := recorders[key]; current == g {
+				delete(recorders, key)
 			}
-			gravadoresMu.Unlock()
+			recordersMu.Unlock()
 		}()
 		buf := make([]byte, 32*1024)
 		for {
@@ -178,10 +178,10 @@ func abreGravador(dataDir, user, name string, reg *Registry, chave string) (*gra
 				// The log FIRST. The screen is observation: if the emulator dies, the
 				// raw record is still standing.
 				_, _ = tee.Write(buf[:n])
-				tela.alimenta(buf[:n])
+				screen.feed(buf[:n])
 				// The notice to subscribers (connections in frame mode) goes OUTSIDE the
-				// screen's lock — see [telaDaSessao.escoaAviso].
-				tela.escoaAviso()
+				// screen's lock — see [sessionScreen.flushNotice].
+				screen.flushNotice()
 			}
 			if err != nil {
 				// Normal end: the session died and the `dtach -a` went with it.
@@ -192,42 +192,42 @@ func abreGravador(dataDir, user, name string, reg *Registry, chave string) (*gra
 	return g, nil
 }
 
-// telaDe returns a session's server screen, or nil when there is no live
+// screenOf returns a session's server screen, or nil when there is no live
 // recorder for it (a dead session, or one never attached since the last boot).
 // nil is a legitimate answer: the on-disk history still holds, there is just no
 // snapshot of the live screen to add to it.
-func telaDe(dataDir, user, name string) *telaDaSessao {
+func screenOf(dataDir, user, name string) *sessionScreen {
 	if dataDir == "" || user == "" || name == "" {
 		return nil
 	}
-	chave := sessionLogPath(dataDir, user, name)
-	gravadoresMu.Lock()
-	defer gravadoresMu.Unlock()
-	if g := gravadores[chave]; g != nil {
-		return g.tela
+	key := sessionLogPath(dataDir, user, name)
+	recordersMu.Lock()
+	defer recordersMu.Unlock()
+	if g := recorders[key]; g != nil {
+		return g.screen
 	}
 	return nil
 }
 
-// PararGravador shuts down a session's recorder. Used when its log stops being
+// StopRecorder shuts down a session's recorder. Used when its log stops being
 // that file — today, on a rename: the name changes, the log path changes, and an
 // old recorder would keep feeding the file of a name that no longer exists. The
 // new name's recorder comes up on the next attach.
-func PararGravador(dataDir, user, name string) {
+func StopRecorder(dataDir, user, name string) {
 	if dataDir == "" || user == "" || name == "" {
 		return
 	}
-	chave := sessionLogPath(dataDir, user, name)
-	gravadoresMu.Lock()
-	g := gravadores[chave]
-	delete(gravadores, chave)
-	gravadoresMu.Unlock()
+	key := sessionLogPath(dataDir, user, name)
+	recordersMu.Lock()
+	g := recorders[key]
+	delete(recorders, key)
+	recordersMu.Unlock()
 	if g != nil {
-		g.para()
+		g.stop()
 	}
 }
 
-// GaranteGravadoresDasSessoesVivas starts the recorder of every session that
+// EnsureLiveSessionRecorders starts the recorder of every session that
 // already exists. Called at boot: without it, a session that survived a deploy
 // would have no recorder until somebody opened a tab on it — and the hole in the
 // log would come back in exactly the window where nobody is watching.
@@ -235,33 +235,33 @@ func PararGravador(dataDir, user, name string) {
 // (`config.Primary`), a session without a prefix belongs to its pool and only it
 // can adopt the session — so the log is its log. Without that, a session in those
 // conditions had no recorder until someone attached, which is the usual hole.
-func GaranteGravadoresDasSessoesVivas(dataDir string, reg *Registry, own *Ownership, primario string) {
+func EnsureLiveSessionRecorders(dataDir string, reg *Registry, own *Ownership, primary string) {
 	if dataDir == "" || own == nil {
 		return
 	}
-	sessoes, err := NewSessionBackend(dataDir, reg).List()
+	sessions, err := NewSessionBackend(dataDir, reg).List()
 	if err != nil {
 		return
 	}
-	ligados := 0
-	for _, s := range sessoes {
+	attached := 0
+	for _, s := range sessions {
 		nome, _ := s["name"].(string)
 		if nome == "" {
 			continue
 		}
-		dono := own.Owner(nome)
-		if dono == "" || dono == AudienceAll {
+		owner := own.Owner(nome)
+		if owner == "" || owner == AudienceAll {
 			// With no registered owner the log would have no path — it is per user.
 			// The adoption rule already answers whose it is: the primary's.
-			dono = primario
+			owner = primary
 		}
-		if dono == "" {
+		if owner == "" {
 			continue
 		}
-		GaranteGravador(dataDir, dono, nome, reg)
-		ligados++
+		EnsureRecorder(dataDir, owner, nome, reg)
+		attached++
 	}
-	if ligados > 0 {
-		log.Printf("[pty] log recorder attached to %d session(s) already alive", ligados)
+	if attached > 0 {
+		log.Printf("[pty] log recorder attached to %d session(s) already alive", attached)
 	}
 }

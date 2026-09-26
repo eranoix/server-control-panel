@@ -88,7 +88,7 @@ func (p *pusher) event(user, event string, payload interface{}) {
 }
 
 // reloadSecret is injected by the manager: it re-reads meta.json from disk and
-// reports whether the secret changed. See manager.recarregaMeta.
+// reports whether the secret changed. See manager.reloadMeta.
 func (p *pusher) reloadSecret(user string) (string, bool) {
 	if p.reloadOf == nil {
 		return "", false
@@ -119,7 +119,7 @@ func (p *pusher) deliver(user, event, url, secret string, body []byte) {
 			code := resp.StatusCode
 			// The body says WHICH 401 this is ("missing hmac" vs "bad hmac"); throwing
 			// it away was what turned diagnosis into guesswork.
-			corpo, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 			resp.Body.Close()
 			if code >= 200 && code < 300 {
 				return // sucesso
@@ -129,9 +129,9 @@ func (p *pusher) deliver(user, event, url, secret string, body []byte) {
 				// on every boot. Re-reading and retrying ONCE fixes by itself what
 				// used to need a manual restart, and without it the message is lost
 				// (whatsmeow does not redeliver a refused event).
-				if novo, mudou := p.reloadSecret(user); mudou {
+				if fresh, changed := p.reloadSecret(user); changed {
 					log.Printf("wad push %s/%s: HTTP %d — secret reloaded from disk, retrying", user, event, code)
-					secret = novo
+					secret = fresh
 					continue
 				}
 			}
@@ -149,14 +149,14 @@ func (p *pusher) deliver(user, event, url, secret string, body []byte) {
 				// were already identical.
 				hint := ""
 				if code == http.StatusUnauthorized || code == http.StatusForbidden {
-					motivo := strings.TrimSpace(string(corpo))
+					reason := strings.TrimSpace(string(body))
 					switch {
-					case strings.Contains(motivo, "missing"):
+					case strings.Contains(reason, "missing"):
 						hint = " (the daemon did not sign it: hmac_secret is EMPTY in the meta.json of " + user + ")"
-					case strings.Contains(motivo, "bad hmac"):
+					case strings.Contains(reason, "bad hmac"):
 						hint = " (the secrets DIFFER between meta.json and the running panel, and re-reading the disk did not fix it — the panel is holding a stale secret in cache; restart vps-manager)"
 					default:
-						hint = " (response: " + motivo + ")"
+						hint = " (response: " + reason + ")"
 					}
 				}
 				log.Printf("wad push %s/%s: DROPPED — HTTP %d permanent%s", user, event, code, hint)

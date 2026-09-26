@@ -13,9 +13,9 @@ import (
 // Two defects are defended here, and both have already bitten this repo:
 //
 //  1. 🔴 AGE HITCHING A RIDE. The hypervisor was split off from the Node
-//     because observedAtDoNo fuses together the timestamps of things that are
+//     because nodeObservedAt fuses together the timestamps of things that are
 //     not observed together. Storage and zpool come out of TWO OTHER calls —
-//     if their timestamp went into observedAtDoHipervisor, a /status that
+//     if their timestamp went into hypervisorObservedAt, a /status that
 //     still answers would keep the card green while capacity ages in silence.
 //     Same defect, one layer up.
 //
@@ -26,7 +26,7 @@ import (
 //     SAME document, with a timestamp of its own, so that no screen is ever
 //     built out of half a truth.
 
-func poolsDeTeste() []pve.Storage {
+func testPools() []pve.Storage {
 	return []pve.Storage{
 		{Storage: "local-zfs", Type: "zfspool", Content: "images,rootdir",
 			Total: 978416107520, Used: 67198091264, Avail: 911218016256,
@@ -37,7 +37,7 @@ func poolsDeTeste() []pve.Storage {
 	}
 }
 
-func zpoolsDeTeste() []pve.ZPool {
+func testZPools() []pve.ZPool {
 	return []pve.ZPool{
 		{Name: "backup", Health: "ONLINE", Size: 996432412672, Alloc: 95457288192, Free: 900975124480, Frag: 0},
 		{Name: "rpool", Health: "ONLINE", Size: 1013612281856, Alloc: 70999646208, Free: 942612635648, Frag: 17},
@@ -46,40 +46,40 @@ func zpoolsDeTeste() []pve.ZPool {
 
 // -------------------------------------------------- timestamp of its OWN ----
 
-// 🔴 TestIdadeDoStorageNaoPegaCaronaNaSaude is the central test of this file.
+// 🔴 TestStorageAgeDoesNotPiggybackOnHealth is the central test of this file.
 //
 // Real scenario: the node's /status keeps answering (the poller stamps it on
 // every tick), but /nodes/pve/storage has started failing. If the age of the
 // capacity block comes out of the hypervisor's timestamp, the screen shows
 // 6.9% used with a "live" badge over a number from half an hour ago.
-func TestIdadeDoStorageNaoPegaCaronaNaSaude(t *testing.T) {
+func TestStorageAgeDoesNotPiggybackOnHealth(t *testing.T) {
 	var inv Inventory
 	// t=1,800,000,000: capacity is observed.
-	aplicaStorage(&inv, poolsDeTeste(), 1800000000)
-	aplicaZPools(&inv, zpoolsDeTeste(), 1800000000)
+	applyStorage(&inv, testPools(), 1800000000)
+	applyZPools(&inv, testZPools(), 1800000000)
 	// t=1,800,000,300 (5 min later): ONLY health answers.
-	aplicaHipervisor(&inv, "pve", statusDeTeste(), 1800000300)
+	applyHypervisor(&inv, "pve", testStatus(), 1800000300)
 
-	agora := time.Unix(1800000300, 0)
-	if v := ViewHypervisor(inv.Hypervisor, 90*time.Second, agora); v.AgeSeconds != 0 {
+	now := time.Unix(1800000300, 0)
+	if v := ViewHypervisor(inv.Hypervisor, 90*time.Second, now); v.AgeSeconds != 0 {
 		t.Errorf("health age = %d, want 0 — it was JUST observed", v.AgeSeconds)
 	}
-	vs := ViewStorage(inv.Hypervisor, 90*time.Second, agora)
+	vs := ViewStorage(inv.Hypervisor, 90*time.Second, now)
 	if vs.AgeSeconds != 300 {
 		t.Errorf("storage age = %d, want 300 — it is riding on the health timestamp (A-5)", vs.AgeSeconds)
 	}
 	if !vs.Stale {
 		t.Error("a 5-minute-old storage with a 90 s TTL has to count as expired")
 	}
-	vz := ViewZPools(inv.Hypervisor, 90*time.Second, agora)
+	vz := ViewZPools(inv.Hypervisor, 90*time.Second, now)
 	if vz.AgeSeconds != 300 {
 		t.Errorf("zpools age = %d, want 300 (its own timestamp)", vz.AgeSeconds)
 	}
 }
 
-// 🔴 TestCarimboDaSaudeClassificaTodoCampo is the STRUCTURAL version of the
+// 🔴 TestHealthStampClassifiesEveryField is the STRUCTURAL version of the
 // test above. It discovers, field by field through reflection, which
-// measurements feed observedAtDoHipervisor — and demands that the set be
+// measurements feed hypervisorObservedAt — and demands that the set be
 // EXACTLY the declared one.
 //
 // Without it, the next field added to the document lands in one of the two
@@ -87,10 +87,10 @@ func TestIdadeDoStorageNaoPegaCaronaNaSaude(t *testing.T) {
 // deserving to, it rejuvenates the card; if it stays out without deserving
 // to, its age never counts. The classification becomes a mandatory DECISION
 // rather than an oversight.
-func TestCarimboDaSaudeClassificaTodoCampo(t *testing.T) {
+func TestHealthStampClassifiesEveryField(t *testing.T) {
 	// Outside health on purpose: each one comes from its OWN call to the
 	// hypervisor and has its own view (ViewStorage/ViewZPools).
-	foraDaSaude := map[string]bool{
+	outsideHealth := map[string]bool{
 		"Storage":        true,
 		"ZPools":         true,
 		"DatastoreAudit": true,
@@ -106,30 +106,30 @@ func TestCarimboDaSaudeClassificaTodoCampo(t *testing.T) {
 		// health function sees it.
 		h := reflect.New(tp).Elem()
 		h.Field(i).FieldByName("ObservedAt").SetInt(1800000000)
-		visto := observedAtDoHipervisor(h.Interface().(Hypervisor)) == 1800000000
+		seen := hypervisorObservedAt(h.Interface().(Hypervisor)) == 1800000000
 
-		if foraDaSaude[f.Name] && visto {
+		if outsideHealth[f.Name] && seen {
 			t.Errorf("%s entra no carimbo da SAÚDE — ele rejuvenesceria o card do hipervisor "+
 				"com uma observação que não é dele (A-5)", f.Name)
 		}
-		if !foraDaSaude[f.Name] && !visto {
+		if !outsideHealth[f.Name] && !seen {
 			t.Errorf("%s NÃO entra no carimbo da saúde — a idade dele nunca contaria "+
 				"(ou ele é campo novo que ninguém classificou)", f.Name)
 		}
 	}
 }
 
-// TestNuncaObservadoDizIssoNosBlocosNovos: -1 is the marker, and never 0.
-func TestNuncaObservadoDizIssoNosBlocosNovos(t *testing.T) {
-	agora := time.Unix(1800000000, 0)
-	vs := ViewStorage(Hypervisor{}, 90*time.Second, agora)
+// TestNeverObservedSaysSoInNewBlocks: -1 is the marker, and never 0.
+func TestNeverObservedSaysSoInNewBlocks(t *testing.T) {
+	now := time.Unix(1800000000, 0)
+	vs := ViewStorage(Hypervisor{}, 90*time.Second, now)
 	if vs.AgeSeconds != -1 || !vs.Stale {
 		t.Errorf("never-observed storage = age %d stale %v, want -1/true", vs.AgeSeconds, vs.Stale)
 	}
 	if vs.Pools == nil {
 		t.Error("Pools nil becomes `null` in the JSON; the screen needs [] to say 'nothing here'")
 	}
-	vz := ViewZPools(Hypervisor{}, 90*time.Second, agora)
+	vz := ViewZPools(Hypervisor{}, 90*time.Second, now)
 	if vz.AgeSeconds != -1 || !vz.Stale {
 		t.Errorf("never-observed zpools = age %d stale %v, want -1/true", vz.AgeSeconds, vz.Stale)
 	}
@@ -140,22 +140,22 @@ func TestNuncaObservadoDizIssoNosBlocosNovos(t *testing.T) {
 
 // ------------------------------------------------- empty ≠ no permission ----
 
-// 🔴 TestVazioComPrivilegioNaoEIgualAVazioSemPrivilegio: BOTH lists are empty
+// 🔴 TestEmptyWithPrivilegeDiffersFromEmptyWithoutPrivilege: BOTH lists are empty
 // and the two screens have to be different. It is the whole trap in a single
 // test.
-func TestVazioComPrivilegioNaoEIgualAVazioSemPrivilegio(t *testing.T) {
-	agora := time.Unix(1800000000, 0)
+func TestEmptyWithPrivilegeDiffersFromEmptyWithoutPrivilege(t *testing.T) {
+	now := time.Unix(1800000000, 0)
 
 	var comPriv Inventory
-	aplicaStorage(&comPriv, nil, 1800000000)
-	aplicaDatastoreAudit(&comPriv, true, 1800000000)
+	applyStorage(&comPriv, nil, 1800000000)
+	applyDatastoreAudit(&comPriv, true, 1800000000)
 
-	var semPriv Inventory
-	aplicaStorage(&semPriv, nil, 1800000000)
-	aplicaDatastoreAudit(&semPriv, false, 1800000000)
+	var noPriv Inventory
+	applyStorage(&noPriv, nil, 1800000000)
+	applyDatastoreAudit(&noPriv, false, 1800000000)
 
-	a := ViewStorage(comPriv.Hypervisor, 90*time.Second, agora)
-	b := ViewStorage(semPriv.Hypervisor, 90*time.Second, agora)
+	a := ViewStorage(comPriv.Hypervisor, 90*time.Second, now)
+	b := ViewStorage(noPriv.Hypervisor, 90*time.Second, now)
 	if len(a.Pools) != 0 || len(b.Pools) != 0 {
 		t.Fatal("both lists have to be empty — that is the premise")
 	}
@@ -173,10 +173,10 @@ func TestVazioComPrivilegioNaoEIgualAVazioSemPrivilegio(t *testing.T) {
 	}
 }
 
-// TestVereditoNuncaObservadoNaoMenteDeVerde: with no observation at all, the
+// TestNeverObservedVerdictDoesNotFakeGreen: with no observation at all, the
 // timestamp is 0. Whoever reads it has to be able to say "I do not know yet"
 // instead of "not allowed".
-func TestVereditoNuncaObservadoNaoMenteDeVerde(t *testing.T) {
+func TestNeverObservedVerdictDoesNotFakeGreen(t *testing.T) {
 	v := ViewStorage(Hypervisor{}, 90*time.Second, time.Unix(1800000000, 0))
 	if v.DatastoreAudit.ObservedAt != 0 {
 		t.Errorf("ObservedAt = %d, want 0 (never observed)", v.DatastoreAudit.ObservedAt)
@@ -188,12 +188,12 @@ func TestVereditoNuncaObservadoNaoMenteDeVerde(t *testing.T) {
 
 // -------------------------------------------------------- data conversion ---
 
-// TestPoolsChegamNormalizados: `content` becomes a list, 0|1 becomes a boolean
+// TestPoolsArriveNormalized: `content` becomes a list, 0|1 becomes a boolean
 // and the fraction becomes a percentage. The screen FORMATS; it does not
 // interpret.
-func TestPoolsChegamNormalizados(t *testing.T) {
+func TestPoolsArriveNormalized(t *testing.T) {
 	var inv Inventory
-	aplicaStorage(&inv, poolsDeTeste(), 1800000000)
+	applyStorage(&inv, testPools(), 1800000000)
 	ps := inv.Hypervisor.Storage.Value
 	if len(ps) != 2 {
 		t.Fatalf("len = %d", len(ps))
@@ -205,23 +205,23 @@ func TestPoolsChegamNormalizados(t *testing.T) {
 	if len(lz.Content) != 2 || lz.Content[0] != "images" || lz.Content[1] != "rootdir" {
 		t.Errorf("Content = %v, want [images rootdir]", lz.Content)
 	}
-	if !lz.Ativo || !lz.Habilitado || lz.Compartilhado {
-		t.Errorf("flags = active %v enabled %v shared %v", lz.Ativo, lz.Habilitado, lz.Compartilhado)
+	if !lz.IsActive || !lz.IsEnabled || lz.IsShared {
+		t.Errorf("flags = active %v enabled %v shared %v", lz.IsActive, lz.IsEnabled, lz.IsShared)
 	}
 	if lz.UsedPct < 6.8 || lz.UsedPct > 7.0 {
 		t.Errorf("UsedPct = %v, want ~6.87 (from the PVE's used_fraction)", lz.UsedPct)
 	}
-	if ps[1].ID != "pbs" || !ps[1].Compartilhado {
+	if ps[1].ID != "pbs" || !ps[1].IsShared {
 		t.Errorf("pbs = %+v, want shared", ps[1])
 	}
 }
 
-// 🔴 TestUsedPctDegradaParaAContaQuandoOPVENaoManda: the day a hypervisor
+// 🔴 TestUsedPctFallsBackToComputedWhenPVEOmitsIt: the day a hypervisor
 // upgrade stops sending `used_fraction`, a FULL disk would show up at 0% — an
 // empty, green bar. The fallback is the arithmetic, never zero.
-func TestUsedPctDegradaParaAContaQuandoOPVENaoManda(t *testing.T) {
+func TestUsedPctFallsBackToComputedWhenPVEOmitsIt(t *testing.T) {
 	var inv Inventory
-	aplicaStorage(&inv, []pve.Storage{{
+	applyStorage(&inv, []pve.Storage{{
 		Storage: "quase-cheio", Type: "dir",
 		Total: 1000, Used: 950, Avail: 50, UsedFraction: 0, Active: 1, Enabled: 1,
 	}}, 1800000000)
@@ -231,16 +231,16 @@ func TestUsedPctDegradaParaAContaQuandoOPVENaoManda(t *testing.T) {
 	}
 	// A total of zero must not become a division by zero, nor 100%.
 	var inv2 Inventory
-	aplicaStorage(&inv2, []pve.Storage{{Storage: "vazio", Total: 0, Used: 0}}, 1800000000)
+	applyStorage(&inv2, []pve.Storage{{Storage: "vazio", Total: 0, Used: 0}}, 1800000000)
 	if got := inv2.Hypervisor.Storage.Value[0].UsedPct; got != 0 {
 		t.Errorf("UsedPct of a storage with no total = %v, want 0", got)
 	}
 }
 
-// TestZPoolsChegamComSaudeLiteral: DEGRADED becomes nothing but DEGRADED.
-func TestZPoolsChegamComSaudeLiteral(t *testing.T) {
+// TestZPoolsArriveWithLiteralHealth: DEGRADED becomes nothing but DEGRADED.
+func TestZPoolsArriveWithLiteralHealth(t *testing.T) {
 	var inv Inventory
-	aplicaZPools(&inv, []pve.ZPool{
+	applyZPools(&inv, []pve.ZPool{
 		{Name: "rpool", Health: "DEGRADED", Size: 100, Alloc: 40, Free: 60, Frag: 3},
 	}, 1800000000)
 	p := inv.Hypervisor.ZPools.Value[0]

@@ -44,10 +44,10 @@ const ManifestName = "manifest.json"
 // an unknown version instead of guessing what the fields mean.
 const SchemaVersion = 1
 
-// ErrSemManifesto means there is no update catalogue yet — the NORMAL state
+// ErrNoManifest means there is no update catalogue yet — the NORMAL state
 // before the first publication, never a defect. Whoever serves HTTP should
 // translate it into "channel not published yet", not into a 500.
-var ErrSemManifesto = errors.New("androidupdate: manifest missing")
+var ErrNoManifest = errors.New("androidupdate: manifest missing")
 
 // Release describes the target signed APK (the newest published version).
 // SHA256 is the hash of the **signed** APK, the same value the app computes
@@ -104,7 +104,7 @@ func Load(dataDir string) (*Manifest, error) {
 	raw, err := os.ReadFile(filepath.Join(Dir(dataDir), ManifestName))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, ErrSemManifesto
+			return nil, ErrNoManifest
 		}
 		return nil, err
 	}
@@ -115,18 +115,18 @@ func Load(dataDir string) (*Manifest, error) {
 	if m.SchemaVersion != SchemaVersion {
 		return nil, fmt.Errorf("androidupdate: unknown schema_version %d (expected %d)", m.SchemaVersion, SchemaVersion)
 	}
-	m.Latest.SHA256 = normalizaHash(m.Latest.SHA256)
+	m.Latest.SHA256 = normalizeHash(m.Latest.SHA256)
 	if len(m.Latest.SHA256) != 64 {
 		return nil, errors.New("androidupdate: latest.sha256 is not a 64-character hex SHA-256")
 	}
-	if err := validaArtefato(&m.Full, "full"); err != nil {
+	if err := validateArtifact(&m.Full, "full"); err != nil {
 		return nil, err
 	}
 	for i := range m.Patches {
-		if err := validaArtefato(&m.Patches[i], "patch"); err != nil {
+		if err := validateArtifact(&m.Patches[i], "patch"); err != nil {
 			return nil, err
 		}
-		m.Patches[i].FromSHA256 = normalizaHash(m.Patches[i].FromSHA256)
+		m.Patches[i].FromSHA256 = normalizeHash(m.Patches[i].FromSHA256)
 		if len(m.Patches[i].FromSHA256) != 64 {
 			return nil, fmt.Errorf("androidupdate: invalid patches[%d].from_sha256", i)
 		}
@@ -134,14 +134,14 @@ func Load(dataDir string) (*Manifest, error) {
 	return &m, nil
 }
 
-func validaArtefato(a *Artifact, kind string) error {
+func validateArtifact(a *Artifact, kind string) error {
 	if a.Kind != kind {
 		return fmt.Errorf("androidupdate: artifact with kind %q, expected %q", a.Kind, kind)
 	}
-	if err := caminhoRelativoSeguro(a.File); err != nil {
+	if err := safeRelativePath(a.File); err != nil {
 		return fmt.Errorf("androidupdate: artifact %q: %w", a.File, err)
 	}
-	a.SHA256 = normalizaHash(a.SHA256)
+	a.SHA256 = normalizeHash(a.SHA256)
 	if len(a.SHA256) != 64 {
 		return fmt.Errorf("androidupdate: artifact %q has no valid sha256", a.File)
 	}
@@ -151,32 +151,32 @@ func validaArtefato(a *Artifact, kind string) error {
 	return nil
 }
 
-// caminhoRelativoSeguro refuses any File that is not a relative, clean path
+// safeRelativePath refuses any File that is not a relative, clean path
 // contained within the updates directory.
-func caminhoRelativoSeguro(p string) error {
+func safeRelativePath(p string) error {
 	if p == "" {
 		return errors.New("empty path")
 	}
 	if filepath.IsAbs(p) || strings.HasPrefix(p, "/") {
 		return errors.New("absolute path is not allowed")
 	}
-	limpo := filepath.Clean(p)
-	if limpo != p {
+	clean := filepath.Clean(p)
+	if clean != p {
 		return errors.New("path not normalized")
 	}
-	if limpo == ".." || strings.HasPrefix(limpo, ".."+string(filepath.Separator)) {
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return errors.New("path escapes the updates directory")
 	}
 	return nil
 }
 
-func normalizaHash(s string) string {
+func normalizeHash(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
 // UpToDate reports whether the APK whose base is baseSHA256 already IS the newest version.
 func (m *Manifest) UpToDate(baseSHA256 string) bool {
-	b := normalizaHash(baseSHA256)
+	b := normalizeHash(baseSHA256)
 	return b != "" && b == m.Latest.SHA256
 }
 
@@ -185,7 +185,7 @@ func (m *Manifest) UpToDate(baseSHA256 string) bool {
 // approximates: an unknown base (a version outside the retention window, a
 // local build, an APK from another origin) simply has no patch.
 func (m *Manifest) PatchFor(baseSHA256 string) *Artifact {
-	b := normalizaHash(baseSHA256)
+	b := normalizeHash(baseSHA256)
 	if b == "" || b == m.Latest.SHA256 {
 		return nil
 	}
@@ -230,8 +230,8 @@ func OpenArtifact(dataDir, file string) (*os.File, os.FileInfo, *Artifact, error
 	if art == nil {
 		return nil, nil, nil, os.ErrNotExist
 	}
-	caminho := filepath.Join(Dir(dataDir), art.File)
-	f, err := os.Open(caminho)
+	path := filepath.Join(Dir(dataDir), art.File)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, nil, nil, err
 	}

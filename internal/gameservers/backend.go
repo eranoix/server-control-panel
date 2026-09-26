@@ -24,9 +24,9 @@ import (
 // boundary is a path the client gets to choose, and the day the panel sends a
 // path the agent stops being narrow without any new route having appeared. Owner
 // and mode are resolved ON THE OTHER SIDE, by looking at the disk (see
-// escreveAtomico in fsatomic.go) — never negotiated by the protocol.
+// writeAtomic in fsatomic.go) — never negotiated by the protocol.
 //
-// This is machine-checked by TestBackendNaoVazaSemanticaDeArquivo, which walks
+// This is machine-checked by TestBackendDoesNotLeakFileSemantics, which walks
 // this file's AST. It is a pin, not good intentions.
 //
 // Where a path used to pass, a `Handle` passes now: an OPAQUE identifier, issued
@@ -44,21 +44,21 @@ type Handle string
 // Its own type instead of a free string: this is what stops `server.action` from
 // turning into free execution on the inside. An unknown verb is refused by the
 // recipient, and adding a verb requires adding a constant.
-type Verbo string
+type Verb string
 
 const (
-	VerboStart   Verbo = "start"
-	VerboStop    Verbo = "stop"
-	VerboRestart Verbo = "restart"
-	// VerboUpdate is a restart with declared intent: the image runs steamcmd at
+	VerbStart   Verb = "start"
+	VerbStop    Verb = "stop"
+	VerbRestart Verb = "restart"
+	// VerbUpdate is a restart with declared intent: the image runs steamcmd at
 	// container start, so updating IS restarting. Keeping the verb apart keeps the
 	// intent readable in the log and on screen, without inventing a new path.
-	VerboUpdate Verbo = "update"
+	VerbUpdate Verb = "update"
 )
 
-// VerbosValidos is the closed set, so the recipient can refuse everything else.
-var VerbosValidos = map[Verbo]bool{
-	VerboStart: true, VerboStop: true, VerboRestart: true, VerboUpdate: true,
+// ValidVerbs is the closed set, so the recipient can refuse everything else.
+var ValidVerbs = map[Verb]bool{
+	VerbStart: true, VerbStop: true, VerbRestart: true, VerbUpdate: true,
 }
 
 // Backend executes named operations from the catalog.
@@ -70,14 +70,14 @@ var VerbosValidos = map[Verbo]bool{
 // is trivially circumvented; requiring the shape is not.
 type Backend interface {
 	// Executar runs a catalog operation and returns the response document.
-	// A name outside TodasAsOps is refused by the recipient.
-	Executar(ctx context.Context, op OpName, corpo json.RawMessage) (json.RawMessage, error)
+	// A name outside AllOps is refused by the recipient.
+	Execute(ctx context.Context, op OpName, body json.RawMessage) (json.RawMessage, error)
 
 	// Abrir returns the content of an artifact previously referenced by a Handle.
 	// Separate from Executar because a stream does not fit in a JSON document —
 	// and it is the only point where file bytes cross the boundary.
 	// The caller closes.
-	Abrir(ctx context.Context, h Handle) (io.ReadCloser, error)
+	Open(ctx context.Context, h Handle) (io.ReadCloser, error)
 
 	// Receber is the REVERSE path of Abrir: the client hands over bytes and gets
 	// back a Handle to reference them in a later operation (world.import is the case).
@@ -88,10 +88,10 @@ type Backend interface {
 	// disk, which is exactly what this boundary forbids.
 	//
 	// Added afterwards, closing the gap the first implementation had declared.
-	Receber(ctx context.Context, r io.Reader) (Handle, error)
+	Receive(ctx context.Context, r io.Reader) (Handle, error)
 
 	// Descrever identifies the recipient, for diagnostics and for the screen.
-	Descrever() string
+	Describe() string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -106,7 +106,7 @@ type Backend interface {
 // These declarations live HERE, and not in backend_local.go, because they are
 // contract — they belong to the interface, not to one implementer.
 
-// ErroHandleInvalido is the single answer for a handle that does not exist, has
+// ErrHandleInvalid is the single answer for a handle that does not exist, has
 // expired or belongs to another server. See why the message is single in
 // handles.go:resolver. Sentinels are `const`, not `var`: errorHandle is a string
 // type, so the constant is a compile-time literal and NOBODY can reassign it at
@@ -115,31 +115,31 @@ type Backend interface {
 type errorHandle string
 
 const (
-	ErroHandleInvalido errorHandle = "handle is invalid, expired or from another server"
+	ErrHandleInvalid errorHandle = "handle is invalid, expired or from another server"
 
-	// ErroTrainerAusente separates "there is no trainer on this machine" from "the
+	// ErrTrainerMissing separates "there is no trainer on this machine" from "the
 	// trainer failed" — the old handler already returned 404 here, and it survives.
-	ErroTrainerAusente errorHandle = "trainer is not installed on this machine"
+	ErrTrainerMissing errorHandle = "trainer is not installed on this machine"
 )
 
 func (e errorHandle) Error() string { return string(e) }
 
-// ErroAutorizacao is 401/403 from the node: the credential does not work. Its own
+// AuthorizationError is 401/403 from the node: the credential does not work. Its own
 // type so `errors.As` can tell it apart without matching a message substring.
-type ErroAutorizacao struct{ Msg string }
+type AuthorizationError struct{ Msg string }
 
-func (e *ErroAutorizacao) Error() string { return e.Msg }
+func (e *AuthorizationError) Error() string { return e.Msg }
 
-// ErroOperacaoDesconhecida is 404 from the node: the name is not in THAT agent's
-// catalog. Separate from ErroOperacao because it means an incompatible version
+// UnknownOperationError is 404 from the node: the name is not in THAT agent's
+// catalog. Separate from OperationError because it means an incompatible version
 // between panel and node, not a defect in the operation.
-type ErroOperacaoDesconhecida struct{ Op OpName }
+type UnknownOperationError struct{ Op OpName }
 
-func (e *ErroOperacaoDesconhecida) Error() string {
+func (e *UnknownOperationError) Error() string {
 	return "unknown operation on node: " + string(e.Op)
 }
 
-// ErroOperacao is the failure of the operation itself, with the message the node gave.
-type ErroOperacao struct{ Msg string }
+// OperationError is the failure of the operation itself, with the message the node gave.
+type OperationError struct{ Msg string }
 
-func (e *ErroOperacao) Error() string { return e.Msg }
+func (e *OperationError) Error() string { return e.Msg }

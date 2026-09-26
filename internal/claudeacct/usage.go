@@ -167,10 +167,10 @@ func costOf(st UsageStat, model string) float64 {
 // the 402 MB of sweeping. Storing the raw fact, the ledger can change at will:
 // only the query redoes the arithmetic, and that costs microseconds.
 type msgAgg struct {
-	ts     int64
-	sessao string
-	modelo string
-	tokens UsageStat
+	ts      int64
+	session string
+	model   string
+	tokens  UsageStat
 }
 
 type fileAgg struct {
@@ -236,46 +236,46 @@ func (s *Store) UsageAll() UsageReport {
 	todayKey := now.Format("2006-01-02")
 	sevenKey := now.AddDate(0, 0, -6).Format("2006-01-02")
 
-	contas := s.Accounts()
-	led := s.carregaLedger()
-	inferido := s.inferidoPorSessionEnv()
+	accounts := s.Accounts()
+	led := s.loadLedger()
+	inferred := s.inferredFromSessionEnv()
 
-	rep := UsageReport{LedgerSessions: len(led.porSessao)}
-	for _, ents := range led.porSessao {
+	rep := UsageReport{LedgerSessions: len(led.bySession)}
+	for _, ents := range led.bySession {
 		rep.LedgerEntries += len(ents)
 	}
 
 	// One accumulator per account, plus the bucket for the unknown.
 	type acc struct {
-		u        *AccountUsage
-		byModel  map[string]*UsageStat
-		sessoes  map[string]bool
-		ultimoTs int64
-		ultimaSe string
+		u           *AccountUsage
+		byModel     map[string]*UsageStat
+		sessions    map[string]bool
+		lastTs      int64
+		lastSession string
 	}
-	novo := func(id, label string) *acc {
+	fresh := func(id, label string) *acc {
 		return &acc{
-			u:       &AccountUsage{AccountID: id, Label: label},
-			byModel: map[string]*UsageStat{},
-			sessoes: map[string]bool{},
+			u:        &AccountUsage{AccountID: id, Label: label},
+			byModel:  map[string]*UsageStat{},
+			sessions: map[string]bool{},
 		}
 	}
 	accs := map[string]*acc{}
-	bloqueada := map[string]bool{}
-	for _, a := range contas {
-		accs[a.ID] = novo(a.ID, a.Label)
+	blocked := map[string]bool{}
+	for _, a := range accounts {
+		accs[a.ID] = fresh(a.ID, a.Label)
 		// Identity gate: a slot whose credential belongs to another identity
 		// receives no tokens at all.
 		if ls := s.LoginStatus(a.ID); ls.IdentityMismatch {
-			bloqueada[a.ID] = true
-			accs[a.ID].u.Error = "waiting for login" + comoOutraConta(ls.Email)
+			blocked[a.ID] = true
+			accs[a.ID].u.Error = "waiting for login" + asOtherAccount(ls.Email)
 		}
 	}
-	desconhecido := novo("", "Unattributed")
+	unknown := fresh("", "Unattributed")
 
 	// UNIQUE dirs: that is what avoids reading the shared tree twice.
 	dirs := map[string][]string{} // resolved dir → accounts that see it
-	for _, a := range contas {
+	for _, a := range accounts {
 		d := s.ProjectsDir(a)
 		if d == "" {
 			if accs[a.ID].u.Error == "" {
@@ -304,9 +304,9 @@ func (s *Store) UsageAll() UsageReport {
 				return nil
 			}
 			for _, m := range agg.msgs {
-				dono := led.contaEm(m.sessao, m.ts)
-				inferida := false
-				if dono == "" {
+				owner := led.accountAt(m.session, m.ts)
+				wasInferred := false
+				if owner == "" {
 					// With no ledger, in order of strength of evidence:
 					//
 					//  1. A tree EXCLUSIVE to one account. Not a guess: if only
@@ -318,9 +318,9 @@ func (s *Store) UsageAll() UsageReport {
 					//     falls to the session-env signal (which is per account)
 					//     and, if not even that decides, to the unknown bucket.
 					if len(ids) == 1 {
-						dono = ids[0]
-					} else if cand, ok := inferido[m.sessao]; ok && contem(ids, cand) {
-						dono, inferida = cand, true
+						owner = ids[0]
+					} else if cand, ok := inferred[m.session]; ok && contains(ids, cand) {
+						owner, wasInferred = cand, true
 					}
 				}
 				// An account blocked by the identity gate falls into the unknown
@@ -328,47 +328,47 @@ func (s *Store) UsageAll() UsageReport {
 				// knowing which slot to credit it to. Dropping it silently would
 				// break the one property that makes this panel auditable — that
 				// sum(accounts) + unattributed == the tree's gross total.
-				alvo := desconhecido
-				if dono != "" && !bloqueada[dono] {
-					if a, ok := accs[dono]; ok {
-						alvo = a
+				target := unknown
+				if owner != "" && !blocked[owner] {
+					if a, ok := accs[owner]; ok {
+						target = a
 					}
 				}
 
 				st := m.tokens
-				st.CostUSD = costOf(st, m.modelo)
+				st.CostUSD = costOf(st, m.model)
 				dia := time.Unix(m.ts, 0).Local().Format("2006-01-02")
 
-				alvo.u.Total.add(st)
+				target.u.Total.add(st)
 				if dia >= sevenKey {
-					alvo.u.Last7d.add(st)
+					target.u.Last7d.add(st)
 				}
 				if dia == todayKey {
-					alvo.u.Today.add(st)
+					target.u.Today.add(st)
 				}
-				if inferida {
-					alvo.u.InferredTokens += st.TotalTokens()
+				if wasInferred {
+					target.u.InferredTokens += st.TotalTokens()
 				}
-				bm := alvo.byModel[m.modelo]
+				bm := target.byModel[m.model]
 				if bm == nil {
 					bm = &UsageStat{}
-					alvo.byModel[m.modelo] = bm
+					target.byModel[m.model] = bm
 				}
 				bm.add(st)
-				alvo.sessoes[m.sessao] = true
-				if m.ts > alvo.ultimoTs {
-					alvo.ultimoTs, alvo.ultimaSe = m.ts, m.sessao
+				target.sessions[m.session] = true
+				if m.ts > target.lastTs {
+					target.lastTs, target.lastSession = m.ts, m.session
 				}
 			}
 			return nil
 		})
 	}
 
-	fecha := func(a *acc) AccountUsage {
-		a.u.Sessions = len(a.sessoes)
-		a.u.LastActivity = a.ultimoTs
-		for modelo, st := range a.byModel {
-			a.u.ByModel = append(a.u.ByModel, ModelUsage{Model: modelo, UsageStat: *st})
+	closeOnce := func(a *acc) AccountUsage {
+		a.u.Sessions = len(a.sessions)
+		a.u.LastActivity = a.lastTs
+		for model, st := range a.byModel {
+			a.u.ByModel = append(a.u.ByModel, ModelUsage{Model: model, UsageStat: *st})
 		}
 		sort.Slice(a.u.ByModel, func(i, j int) bool {
 			return a.u.ByModel[i].TotalTokens() > a.u.ByModel[j].TotalTokens()
@@ -378,14 +378,14 @@ func (s *Store) UsageAll() UsageReport {
 		}
 		return *a.u
 	}
-	for _, a := range contas {
-		rep.Accounts = append(rep.Accounts, fecha(accs[a.ID]))
+	for _, a := range accounts {
+		rep.Accounts = append(rep.Accounts, closeOnce(accs[a.ID]))
 	}
-	rep.Unattributed = fecha(desconhecido)
+	rep.Unattributed = closeOnce(unknown)
 	return rep
 }
 
-func contem(xs []string, x string) bool {
+func contains(xs []string, x string) bool {
 	for _, v := range xs {
 		if v == x {
 			return true
@@ -412,9 +412,9 @@ func intern(v string) string {
 	return v
 }
 
-// sessaoDoArquivo is the fallback when the line carries no sessionId: the
+// sessionFromFile is the fallback when the line carries no sessionId: the
 // transcript's name IS the session id.
-func sessaoDoArquivo(path string) string {
+func sessionFromFile(path string) string {
 	return strings.TrimSuffix(filepath.Base(path), ".jsonl")
 }
 
@@ -536,12 +536,12 @@ func aggregateFile(path string) *fileAgg {
 		st.Messages = 1
 		// The session comes from the LINE, not from the file name: a `--continue`
 		// can append to an existing transcript, and the name would lie.
-		sessao := rec.SessionID
-		if sessao == "" {
-			sessao = sessaoDoArquivo(path)
+		session := rec.SessionID
+		if session == "" {
+			session = sessionFromFile(path)
 		}
 		agg.msgs = append(agg.msgs, msgAgg{
-			ts: ts.Unix(), sessao: intern(sessao), modelo: intern(model), tokens: st,
+			ts: ts.Unix(), session: intern(session), model: intern(model), tokens: st,
 		})
 		agg.hadUsage = true
 	}

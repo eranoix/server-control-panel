@@ -61,9 +61,9 @@ import (
 	"testing"
 )
 
-// binariosDeHipervisor are the commands the panel must NOT invoke. Each one has
+// hypervisorBinaries are the commands the panel must NOT invoke. Each one has
 // an equivalent API route, and it is the route the design rule mandates.
-var binariosDeHipervisor = map[string]string{
+var hypervisorBinaries = map[string]string{
 	"pct":   "use POST /nodes/{node}/lxc/{vmid}/status/{verb} (internal/pve/power.go)",
 	"qm":    "use POST /nodes/{node}/qemu/{vmid}/status/{verb} (internal/pve/power.go)",
 	"pvesh": "use o cliente internal/pve — do() é o construtor único",
@@ -76,17 +76,17 @@ var binariosDeHipervisor = map[string]string{
 // has to be written down, with a reason, instead of the pin being loosened.
 var allowlist = map[string]string{}
 
-// diretoriosIgnorados are not Go code of the panel.
-var diretoriosIgnorados = map[string]bool{
+// ignoredDirs are not Go code of the panel.
+var ignoredDirs = map[string]bool{
 	".git": true, "node_modules": true, "testdata": true,
 	"vendor": true, ".tools": true, "bin": true,
 }
 
-type achado struct {
-	Arquivo string
-	Linha   int
-	Binario string
-	Como    string // "literal" or "variável"
+type hit struct {
+	File   string
+	Line   int
+	Binary string
+	Como   string // "literal" or "variável"
 }
 
 // scanHypervisorShellOut walks the tree starting at root and returns every call
@@ -97,15 +97,15 @@ type achado struct {
 // It also returns how many files were scanned: a pin that scans nothing stays
 // green by ABSENCE, and green by absence is the defect that has already turned
 // up six times in this work.
-func scanHypervisorShellOut(root string) (achados []achado, varridos int, err error) {
+func scanHypervisorShellOut(root string) (findings []hit, scanned int, err error) {
 	fset := token.NewFileSet()
 
-	walkErr := filepath.WalkDir(root, func(caminho string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if diretoriosIgnorados[d.Name()] || strings.HasPrefix(d.Name(), ".") && d.Name() != "." {
+			if ignoredDirs[d.Name()] || strings.HasPrefix(d.Name(), ".") && d.Name() != "." {
 				return filepath.SkipDir
 			}
 			return nil
@@ -113,29 +113,29 @@ func scanHypervisorShellOut(root string) (achados []achado, varridos int, err er
 		if !strings.HasSuffix(d.Name(), ".go") || strings.HasSuffix(d.Name(), "_test.go") {
 			return nil
 		}
-		rel, _ := filepath.Rel(root, caminho)
+		rel, _ := filepath.Rel(root, path)
 		if _, ok := allowlist[filepath.ToSlash(rel)]; ok {
 			return nil
 		}
 
-		arq, perr := parser.ParseFile(fset, caminho, nil, 0)
+		arq, perr := parser.ParseFile(fset, path, nil, 0)
 		if perr != nil {
 			return perr
 		}
-		varridos++
+		scanned++
 
-		nomeExec := nomeLocalDeOsExec(arq)
+		nomeExec := localOsExecName(arq)
 		if nomeExec == "" {
 			return nil // the file does not even import os/exec
 		}
-		literais := literaisDeString(arq)
+		literals := stringLiterals(arq)
 
 		ast.Inspect(arq, func(n ast.Node) bool {
-			chamada, ok := n.(*ast.CallExpr)
+			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
-			sel, ok := chamada.Fun.(*ast.SelectorExpr)
+			sel, ok := call.Fun.(*ast.SelectorExpr)
 			if !ok {
 				return true
 			}
@@ -146,37 +146,37 @@ func scanHypervisorShellOut(root string) (achados []achado, varridos int, err er
 			if sel.Sel.Name != "Command" && sel.Sel.Name != "CommandContext" {
 				return true
 			}
-			for _, arg := range chamada.Args {
-				valor, como, ok := resolveString(arg, literais)
+			for _, arg := range call.Args {
+				valor, como, ok := resolveString(arg, literals)
 				if !ok {
 					continue
 				}
 				// Compare the BASENAME: "/usr/sbin/pct" is the same command.
 				base := filepath.Base(strings.TrimSpace(valor))
-				if _, proibido := binariosDeHipervisor[base]; !proibido {
+				if _, forbidden := hypervisorBinaries[base]; !forbidden {
 					continue
 				}
-				achados = append(achados, achado{
-					Arquivo: filepath.ToSlash(rel),
-					Linha:   fset.Position(arg.Pos()).Line,
-					Binario: base,
-					Como:    como,
+				findings = append(findings, hit{
+					File:   filepath.ToSlash(rel),
+					Line:   fset.Position(arg.Pos()).Line,
+					Binary: base,
+					Como:   como,
 				})
 			}
 			return true
 		})
 		return nil
 	})
-	return achados, varridos, walkErr
+	return findings, scanned, walkErr
 }
 
-// nomeLocalDeOsExec returns the name under which "os/exec" was imported in this
+// localOsExecName returns the name under which "os/exec" was imported in this
 // file (normally "exec", but an alias would change that and the regex would not
 // even see it).
-func nomeLocalDeOsExec(arq *ast.File) string {
+func localOsExecName(arq *ast.File) string {
 	for _, imp := range arq.Imports {
-		caminho, err := strconv.Unquote(imp.Path.Value)
-		if err != nil || caminho != "os/exec" {
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil || path != "os/exec" {
 			continue
 		}
 		if imp.Name != nil {
@@ -187,16 +187,16 @@ func nomeLocalDeOsExec(arq *ast.File) string {
 	return ""
 }
 
-// literaisDeString maps identifier → string literal assigned to it in the same
+// stringLiterals maps identifier → string literal assigned to it in the same
 // file. It is what closes the `bin := "pct"` false negative.
-func literaisDeString(arq *ast.File) map[string]string {
+func stringLiterals(arq *ast.File) map[string]string {
 	lits := map[string]string{}
-	guarda := func(nome ast.Expr, valor ast.Expr) {
+	record := func(nome ast.Expr, valor ast.Expr) {
 		id, ok := nome.(*ast.Ident)
 		if !ok {
 			return
 		}
-		if s, ok := literalDeString(valor); ok {
+		if s, ok := stringLiteral(valor); ok {
 			lits[id.Name] = s
 		}
 	}
@@ -205,13 +205,13 @@ func literaisDeString(arq *ast.File) map[string]string {
 		case *ast.AssignStmt:
 			for i, lhs := range v.Lhs {
 				if i < len(v.Rhs) {
-					guarda(lhs, v.Rhs[i])
+					record(lhs, v.Rhs[i])
 				}
 			}
 		case *ast.ValueSpec:
 			for i, nome := range v.Names {
 				if i < len(v.Values) {
-					guarda(nome, v.Values[i])
+					record(nome, v.Values[i])
 				}
 			}
 		}
@@ -220,7 +220,7 @@ func literaisDeString(arq *ast.File) map[string]string {
 	return lits
 }
 
-func literalDeString(e ast.Expr) (string, bool) {
+func stringLiteral(e ast.Expr) (string, bool) {
 	b, ok := e.(*ast.BasicLit)
 	if !ok || b.Kind != token.STRING {
 		return "", false
@@ -232,12 +232,12 @@ func literalDeString(e ast.Expr) (string, bool) {
 	return s, true
 }
 
-func resolveString(e ast.Expr, literais map[string]string) (valor, como string, ok bool) {
-	if s, ok := literalDeString(e); ok {
+func resolveString(e ast.Expr, literals map[string]string) (valor, como string, ok bool) {
+	if s, ok := stringLiteral(e); ok {
 		return s, "literal", true
 	}
 	if id, isID := e.(*ast.Ident); isID {
-		if s, achou := literais[id.Name]; achou {
+		if s, found := literals[id.Name]; found {
 			return s, "variável " + id.Name, true
 		}
 	}
@@ -247,20 +247,20 @@ func resolveString(e ast.Expr, literais map[string]string) (valor, como string, 
 // TestNoHypervisorShellOut is the pin itself: the REAL tree of the panel, today
 // and forever, without a single invocation of pct/qm/pvesh.
 func TestNoHypervisorShellOut(t *testing.T) {
-	raiz := repoRoot(t)
+	root := repoRoot(t)
 	total := 0
 	for _, dir := range []string{"internal", "cmd"} {
-		achados, varridos, err := scanHypervisorShellOut(filepath.Join(raiz, dir))
+		findings, scanned, err := scanHypervisorShellOut(filepath.Join(root, dir))
 		if err != nil {
 			t.Fatalf("scanning %s: %v", dir, err)
 		}
-		if varridos == 0 {
+		if scanned == 0 {
 			t.Fatalf("%s: no .go scanned — the guard would be green by ABSENCE", dir)
 		}
-		total += varridos
-		for _, a := range achados {
+		total += scanned
+		for _, a := range findings {
 			t.Errorf("%s/%s:%d invokes %q (%s) — %s",
-				dir, a.Arquivo, a.Linha, a.Binario, a.Como, binariosDeHipervisor[a.Binario])
+				dir, a.File, a.Line, a.Binary, a.Como, hypervisorBinaries[a.Binary])
 		}
 	}
 	t.Logf("%d production .go files scanned, 0 hypervisor shell-outs", total)
@@ -274,114 +274,114 @@ func TestNoHypervisorShellOut(t *testing.T) {
 // one the plan demanded explicitly: a command coming from a VARIABLE — the real
 // hole in the regex detector, and the reason this pin is go/ast.
 func TestNoHypervisorShellOutBites(t *testing.T) {
-	casos := []struct {
-		nome    string
-		fonte   string
-		acha    bool
-		binario string
-		como    string
+	cases := []struct {
+		nome   string
+		source string
+		finds  bool
+		binary string
+		como   string
 	}{
 		{
 			nome: "literal direto",
-			fonte: `package x
+			source: `package x
 import "os/exec"
 func f() { _ = exec.Command("pct", "exec", "207", "--", "ls") }`,
-			acha: true, binario: "pct", como: "literal",
+			finds: true, binary: "pct", como: "literal",
 		},
 		{
 			nome: "comando vindo de VARIAVEL (o furo da regex)",
-			fonte: `package x
+			source: `package x
 import "os/exec"
 func f() { bin := "pct"; _ = exec.Command(bin, "start", "207") }`,
-			acha: true, binario: "pct", como: "variável bin",
+			finds: true, binary: "pct", como: "variável bin",
 		},
 		{
 			nome: "escondido atras de ssh (argumento do meio)",
-			fonte: `package x
+			source: `package x
 import "os/exec"
 func f() { _ = exec.Command("ssh", "hypervisor-01", "qm", "start", "208") }`,
-			acha: true, binario: "qm", como: "literal",
+			finds: true, binary: "qm", como: "literal",
 		},
 		{
 			nome: "caminho absoluto",
-			fonte: `package x
+			source: `package x
 import ctx "context"
 import xc "os/exec"
 func f() { _ = xc.CommandContext(ctx.TODO(), "/usr/sbin/pvesh", "get", "/cluster/resources") }`,
-			acha: true, binario: "pvesh", como: "literal",
+			finds: true, binary: "pvesh", como: "literal",
 		},
 		{
 			// Negative control 1: the false positive MEASURED in the real tree
 			// (internal/queue/runners_watchdog.go:45). If this case fails, the pin is
 			// of the kind somebody turns off.
 			nome: "identificador diskUsedPct nao e chamada",
-			fonte: `package x
+			source: `package x
 // pct here is just a word in a comment: pct, qm, pvesh.
 func diskUsedPct(path string) (pct int, err error) { return 0, nil }`,
-			acha: false,
+			finds: false,
 		},
 		{
 			// Negative control 2: a legitimate exec.Command stays allowed — the panel
 			// runs git, docker and systemctl all the time.
 			nome: "exec.Command legitimo passa",
-			fonte: `package x
+			source: `package x
 import "os/exec"
 func f() { _ = exec.Command("systemctl", "restart", "vps-manager") }`,
-			acha: false,
+			finds: false,
 		},
 	}
 
-	for _, tc := range casos {
+	for _, tc := range cases {
 		t.Run(tc.nome, func(t *testing.T) {
 			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, "fixture.go"), []byte(tc.fonte), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "fixture.go"), []byte(tc.source), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			achados, varridos, err := scanHypervisorShellOut(dir)
+			findings, scanned, err := scanHypervisorShellOut(dir)
 			if err != nil {
 				t.Fatalf("scan: %v", err)
 			}
-			if varridos != 1 {
-				t.Fatalf("scanned %d files, want 1", varridos)
+			if scanned != 1 {
+				t.Fatalf("scanned %d files, want 1", scanned)
 			}
-			if !tc.acha {
-				if len(achados) != 0 {
-					t.Fatalf("FALSE POSITIVE: %+v", achados)
+			if !tc.finds {
+				if len(findings) != 0 {
+					t.Fatalf("FALSE POSITIVE: %+v", findings)
 				}
 				return
 			}
-			if len(achados) == 0 {
-				t.Fatalf("FALSE NEGATIVE: the detector did NOT find %q — the guard's green would be empty", tc.binario)
+			if len(findings) == 0 {
+				t.Fatalf("FALSE NEGATIVE: the detector did NOT find %q — the guard's green would be empty", tc.binary)
 			}
-			a := achados[0]
-			if a.Binario != tc.binario || a.Como != tc.como {
-				t.Fatalf("finding = %+v, want binary %q as %q", a, tc.binario, tc.como)
+			a := findings[0]
+			if a.Binary != tc.binary || a.Como != tc.como {
+				t.Fatalf("finding = %+v, want binary %q as %q", a, tc.binary, tc.como)
 			}
-			if a.Linha <= 0 || a.Arquivo != "fixture.go" {
+			if a.Line <= 0 || a.File != "fixture.go" {
 				t.Fatalf("finding with no usable file:line: %+v", a)
 			}
 		})
 	}
 }
 
-// TestShellOutIgnoraTestes documents the scope cut with an assertion instead of
+// TestShellOutIgnoresTests documents the scope cut with an assertion instead of
 // leaving it only in the comment: a fixture in _test.go is not a
 // reimplementation in the agent. If this cut ever stops holding, this is where
 // it changes.
-func TestShellOutIgnoraTestes(t *testing.T) {
+func TestShellOutIgnoresTests(t *testing.T) {
 	dir := t.TempDir()
-	fonte := `package x
+	source := `package x
 import "os/exec"
 func f() { _ = exec.Command("pct", "start", "207") }`
-	if err := os.WriteFile(filepath.Join(dir, "fixture_test.go"), []byte(fonte), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "fixture_test.go"), []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	achados, varridos, err := scanHypervisorShellOut(dir)
+	findings, scanned, err := scanHypervisorShellOut(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if varridos != 0 || len(achados) != 0 {
-		t.Fatalf("_test.go entered the scan: scanned=%d findings=%+v", varridos, achados)
+	if scanned != 0 || len(findings) != 0 {
+		t.Fatalf("_test.go entered the scan: scanned=%d findings=%+v", scanned, findings)
 	}
 }
 

@@ -70,19 +70,19 @@ func LoadSeeds(dataDir string) ([]Node, error) {
 		return nil, fmt.Errorf("seeds: %s malformed: %w", path, err)
 	}
 
-	vistos := make(map[string]bool, len(seeds))
+	seen := make(map[string]bool, len(seeds))
 	for i, s := range seeds {
 		if err := s.Validate(); err != nil {
 			return nil, fmt.Errorf("seeds: %s, entry %d: %w", path, i, err)
 		}
-		if vistos[s.ID] {
+		if seen[s.ID] {
 			// Two seeds with the same ID would merge nodes silently — the last
 			// one would win and the operator would never learn which was
 			// dropped.
 			return nil, fmt.Errorf("seeds: %s, entry %d: duplicate ID %q", path, i, s.ID)
 		}
-		vistos[s.ID] = true
-		if s.Transport == TransportAgente && s.Address == "" {
+		seen[s.ID] = true
+		if s.Transport == TransportAgent && s.Address == "" {
 			// A transport that requires active polling, with no address, is a
 			// node that will never be observed, presented as though it were.
 			return nil, fmt.Errorf("seeds: %s, entry %d: node %q with transport agente requires address", path, i, s.ID)

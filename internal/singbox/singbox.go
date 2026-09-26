@@ -51,7 +51,7 @@ var deviceInbounds = map[string]bool{"vless-ws-in": true, "vless-reality-in": tr
 // Exit values.
 const (
 	ExitVPS  = "vps"  // default outbound (direct) — leaves through the VPS
-	ExitCasa = "casa" // casa outbound — leaves through the house (residential)
+	ExitHome = "casa" // casa outbound — leaves through the house (residential)
 )
 
 // Data-saver proxy outbound tags (defined in config.json). A device with
@@ -59,7 +59,7 @@ const (
 // exit; the proxy (mitmproxy) recompresses and leaves through the right exit.
 const (
 	outProxyVPS  = "proxy-vps"
-	outProxyCasa = "proxy-casa"
+	outProxyHome = "proxy-casa"
 )
 
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$`)
@@ -68,7 +68,7 @@ var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$`)
 type Device struct {
 	Name      string `json:"name"`              // slug, unique — VLESS user name + auth_user key
 	UUID      string `json:"uuid"`              // the secret in the link
-	Exit      string `json:"exit"`              // ExitVPS | ExitCasa
+	Exit      string `json:"exit"`              // ExitVPS | ExitHome
 	Datasaver bool   `json:"datasaver"`         // web (80/443) through the compression proxy
 	Created   int64  `json:"created,omitempty"` // unix, from the registry
 }
@@ -157,7 +157,7 @@ func outbounds(doc map[string]any) []map[string]any {
 }
 
 // ProxyEndpoint returns the "host:port" of the data-saver proxy outbound for an
-// exit (proxy-vps for ExitVPS, proxy-casa for ExitCasa). The handler probes this
+// exit (proxy-vps for ExitVPS, proxy-casa for ExitHome). The handler probes this
 // before turning data-saver on, so enabling never routes a device through a
 // proxy that is down/unreachable (that was the NXDOMAIN outage — VPSM-ds-safe).
 func (m *Manager) ProxyEndpoint(exit string) (string, error) {
@@ -168,8 +168,8 @@ func (m *Manager) ProxyEndpoint(exit string) (string, error) {
 		return "", err
 	}
 	tag := outProxyVPS
-	if exit == ExitCasa {
-		tag = outProxyCasa
+	if exit == ExitHome {
+		tag = outProxyHome
 	}
 	for _, ob := range outbounds(doc) {
 		if t, _ := ob["tag"].(string); t == tag {
@@ -233,12 +233,12 @@ func authUsersFor(doc map[string]any, match func(rm map[string]any) bool) map[st
 	return out
 }
 
-// casaMembers: names whose exit is casa (auth_user in ANY rule bound to the
+// homeMembers: names whose exit is casa (auth_user in ANY rule bound to the
 // casa outbound — the plain casa rule or the proxy-casa rule).
-func casaMembers(doc map[string]any) map[string]bool {
+func homeMembers(doc map[string]any) map[string]bool {
 	return authUsersFor(doc, func(rm map[string]any) bool {
 		out, _ := rm["outbound"].(string)
-		return out == ExitCasa || out == outProxyCasa
+		return out == ExitHome || out == outProxyHome
 	})
 }
 
@@ -246,7 +246,7 @@ func casaMembers(doc map[string]any) map[string]bool {
 func dsMembers(doc map[string]any) map[string]bool {
 	return authUsersFor(doc, func(rm map[string]any) bool {
 		out, _ := rm["outbound"].(string)
-		return out == outProxyVPS || out == outProxyCasa
+		return out == outProxyVPS || out == outProxyHome
 	})
 }
 
@@ -264,7 +264,7 @@ func dsMembers(doc map[string]any) map[string]bool {
 // Non-web from datasaver∩casa falls to rule 4 (casa); non-web from datasaver∩vps
 // falls through to the end (direct). Banks/pinning go out without MITM via the proxy's own
 // ignore_hosts list — they need no rule here.
-func setManagedRules(doc map[string]any, casaSet, dsSet map[string]bool) {
+func setManagedRules(doc map[string]any, homeSet, dsSet map[string]bool) {
 	route, _ := doc["route"].(map[string]any)
 	if route == nil {
 		route = map[string]any{}
@@ -282,11 +282,11 @@ func setManagedRules(doc map[string]any, casaSet, dsSet map[string]bool) {
 		}
 		preserved = append(preserved, r)
 	}
-	dsCasa := map[string]bool{}
+	dsHome := map[string]bool{}
 	dsVps := map[string]bool{}
 	for n := range dsSet {
-		if casaSet[n] {
-			dsCasa[n] = true
+		if homeSet[n] {
+			dsHome[n] = true
 		} else {
 			dsVps[n] = true
 		}
@@ -297,9 +297,9 @@ func setManagedRules(doc map[string]any, casaSet, dsSet map[string]bool) {
 			"auth_user": toList(dsSet), "network": "udp", "port": float64(443), "action": "reject",
 		})
 	}
-	if len(dsCasa) > 0 {
+	if len(dsHome) > 0 {
 		managed = append(managed, map[string]any{
-			"auth_user": toList(dsCasa), "port": []any{float64(80), float64(443)}, "outbound": outProxyCasa,
+			"auth_user": toList(dsHome), "port": []any{float64(80), float64(443)}, "outbound": outProxyHome,
 		})
 	}
 	if len(dsVps) > 0 {
@@ -307,9 +307,9 @@ func setManagedRules(doc map[string]any, casaSet, dsSet map[string]bool) {
 			"auth_user": toList(dsVps), "port": []any{float64(80), float64(443)}, "outbound": outProxyVPS,
 		})
 	}
-	if len(casaSet) > 0 {
+	if len(homeSet) > 0 {
 		managed = append(managed, map[string]any{
-			"auth_user": toList(casaSet), "outbound": ExitCasa,
+			"auth_user": toList(homeSet), "outbound": ExitHome,
 		})
 	}
 	route["rules"] = append(preserved, managed...)
@@ -342,7 +342,7 @@ func (m *Manager) List() ([]Device, error) {
 		return nil, err
 	}
 	reg := m.loadRegistry()
-	casa := casaMembers(doc)
+	home := homeMembers(doc)
 	ds := dsMembers(doc)
 	seen := map[string]Device{}
 	for _, ib := range inbounds(doc) {
@@ -364,8 +364,8 @@ func (m *Manager) List() ([]Device, error) {
 			d.Name = name
 			d.UUID = uuid
 			d.Exit = ExitVPS
-			if casa[name] {
-				d.Exit = ExitCasa
+			if home[name] {
+				d.Exit = ExitHome
 			}
 			d.Datasaver = ds[name]
 			if r, ok := reg[name]; ok {
@@ -461,10 +461,10 @@ func (m *Manager) Remove(ctx context.Context, uuid string) error {
 	if removedName == "" {
 		return fmt.Errorf("device not found")
 	}
-	casaSet, dsSet := casaMembers(doc), dsMembers(doc)
-	delete(casaSet, removedName)
+	homeSet, dsSet := homeMembers(doc), dsMembers(doc)
+	delete(homeSet, removedName)
 	delete(dsSet, removedName)
-	setManagedRules(doc, casaSet, dsSet)
+	setManagedRules(doc, homeSet, dsSet)
 	if err := m.save(doc); err != nil {
 		return err
 	}
@@ -474,8 +474,8 @@ func (m *Manager) Remove(ctx context.Context, uuid string) error {
 
 // SetExit moves a device between VPS and casa by editing the casa auth_user list.
 func (m *Manager) SetExit(ctx context.Context, uuid, exit string) error {
-	if exit != ExitVPS && exit != ExitCasa {
-		return fmt.Errorf("invalid exit: use %q or %q", ExitVPS, ExitCasa)
+	if exit != ExitVPS && exit != ExitHome {
+		return fmt.Errorf("invalid exit: use %q or %q", ExitVPS, ExitHome)
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -487,13 +487,13 @@ func (m *Manager) SetExit(ctx context.Context, uuid, exit string) error {
 	if name == "" {
 		return fmt.Errorf("device not found")
 	}
-	casaSet, dsSet := casaMembers(doc), dsMembers(doc)
-	if exit == ExitCasa {
-		casaSet[name] = true
+	homeSet, dsSet := homeMembers(doc), dsMembers(doc)
+	if exit == ExitHome {
+		homeSet[name] = true
 	} else {
-		delete(casaSet, name)
+		delete(homeSet, name)
 	}
-	setManagedRules(doc, casaSet, dsSet)
+	setManagedRules(doc, homeSet, dsSet)
 	if err := m.save(doc); err != nil {
 		return err
 	}
@@ -514,13 +514,13 @@ func (m *Manager) SetDatasaver(ctx context.Context, uuid string, on bool) error 
 	if name == "" {
 		return fmt.Errorf("device not found")
 	}
-	casaSet, dsSet := casaMembers(doc), dsMembers(doc)
+	homeSet, dsSet := homeMembers(doc), dsMembers(doc)
 	if on {
 		dsSet[name] = true
 	} else {
 		delete(dsSet, name)
 	}
-	setManagedRules(doc, casaSet, dsSet)
+	setManagedRules(doc, homeSet, dsSet)
 	if err := m.save(doc); err != nil {
 		return err
 	}
@@ -571,16 +571,16 @@ func (m *Manager) Rename(ctx context.Context, uuid, newName string) error {
 			}
 		}
 	}
-	casaSet, dsSet := casaMembers(doc), dsMembers(doc)
-	if casaSet[old] {
-		delete(casaSet, old)
-		casaSet[newName] = true
+	homeSet, dsSet := homeMembers(doc), dsMembers(doc)
+	if homeSet[old] {
+		delete(homeSet, old)
+		homeSet[newName] = true
 	}
 	if dsSet[old] {
 		delete(dsSet, old)
 		dsSet[newName] = true
 	}
-	setManagedRules(doc, casaSet, dsSet)
+	setManagedRules(doc, homeSet, dsSet)
 	if err := m.save(doc); err != nil {
 		return err
 	}

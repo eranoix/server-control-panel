@@ -13,7 +13,7 @@ import (
 // The boot reconcile already covered this case; the reaper did not. It trusted
 // the file, re-applied "running" forever and never reached the dead-scope
 // branch — a job running for good, with no process behind it at all.
-func TestReaperInterrompeDetachedComScopeMortoEmRuntime(t *testing.T) {
+func TestReaperInterruptsDetachedWithDeadScopeAtRuntime(t *testing.T) {
 	dir := t.TempDir()
 	q, err := NewQueue(Options{DataDir: dir, Workers: 1, MaxKeep: 50})
 	if err != nil {

@@ -31,7 +31,7 @@ package pty
 // session in two windows of different sizes.
 //
 // So the minimum is not "the server decides and the client copes". It is **"the server
-// decides AND SAYS SO, and the client draws that"**. Hence [avisarTamanho].
+// decides AND SAYS SO, and the client draws that"**. Hence [notifySize].
 //
 // ## Why a server-side emulator is NOT required
 //
@@ -100,53 +100,53 @@ package pty
 // — and then the session can sit at the LARGEST, which is the size of whoever is
 // actually working. The minimum survives only as a ceiling for the client that
 // does not yet know how to receive a crop.
-type tamanhoDoCliente struct {
+type clientSize struct {
 	cols, rows uint16
-	// aceitaQuadro: this client knows how to receive a RENDERED CROP of the
+	// acceptsFrame: this client knows how to receive a RENDERED CROP of the
 	// session's screen (`quadro.go`) when its window is smaller than it. A client
 	// that does not only knows how to draw the raw stream, and therefore stays a
 	// CEILING on the session's size — see [recalcula].
-	aceitaQuadro bool
+	acceptsFrame bool
 }
 
-// registraTamanho records what this connection wants and returns the session's
+// registerSize records what this connection wants and returns the session's
 // EFFECTIVE size (the smallest among those attached), whether it changed, and
 // who to notify.
 //
 // The appliers come out as a list so the caller fires them OUTSIDE the lock:
 // applying means writing to a websocket (and an ioctl), and writing while
 // holding the session mutex is how you invent a deadlock between two connections.
-func (c *logCompartilhado) registraTamanho(id int64, cols, rows uint16, aceitaQuadro bool) (uint16, uint16, bool, []func(uint16, uint16)) {
+func (c *sharedLog) registerSize(id int64, cols, rows uint16, acceptsFrame bool) (uint16, uint16, bool, []func(uint16, uint16)) {
 	// A degenerate size never gets in, and here that matters MORE than it did
 	// under "whoever spoke last": there, a client sending 1x1 ruined only itself;
 	// under the minimum, it drags the whole session down with it.
 	if cols < 2 || rows < 1 || cols > 1000 || rows > 1000 {
-		return c.aplicadoCols, c.aplicadoRows, false, nil
+		return c.appliedCols, c.appliedRows, false, nil
 	}
-	if c.tamanhos == nil {
-		c.tamanhos = map[int64]tamanhoDoCliente{}
+	if c.sizes == nil {
+		c.sizes = map[int64]clientSize{}
 	}
-	c.tamanhos[id] = tamanhoDoCliente{cols: cols, rows: rows, aceitaQuadro: aceitaQuadro}
-	return c.recalcula()
+	c.sizes[id] = clientSize{cols: cols, rows: rows, acceptsFrame: acceptsFrame}
+	return c.recompute()
 }
 
-// esqueceTamanho takes whoever left out of the calculation. Without this, a
+// forgetSize takes whoever left out of the calculation. Without this, a
 // small client that closed would keep shrinking the session forever.
 //
 // THE CALLER HAS TO USE WHAT THIS RETURNS. For a while it did not: the
-// `soltar` of [pegarLogDaSessao] called `esqueceTamanho(id)` and threw all four
+// `soltar` of [acquireSessionLog] called `forgetSize(id)` and threw all four
 // return values away. The test for this rule kept passing — it measures the
 // function's return — and even so, in production, closing the small tab left
 // the session stuck at its size forever. Measured end to end: after the 80x24
 // client left, the program kept painting 24x80 while the other drew 38x110,
 // and not even the heartbeat fixed it.
-func (c *logCompartilhado) esqueceTamanho(id int64) (uint16, uint16, bool, []func(uint16, uint16)) {
-	delete(c.tamanhos, id)
-	delete(c.aplicadores, id)
-	return c.recalcula()
+func (c *sharedLog) forgetSize(id int64) (uint16, uint16, bool, []func(uint16, uint16)) {
+	delete(c.sizes, id)
+	delete(c.appliers, id)
+	return c.recompute()
 }
 
-// registraAplicador records HOW to put the session's effective size on this
+// registerApplier records HOW to put the session's effective size on this
 // connection, and returns what is already in force.
 //
 // Note that it is an APPLIER, not a notice. It used to hold only "how to talk to
@@ -159,14 +159,14 @@ func (c *logCompartilhado) esqueceTamanho(id int64) (uint16, uint16, bool, []fun
 // That is why EVERY connection registers an applier, including one that did not
 // ask for `size=1`: touching its pty is mandatory either way; telling the client
 // is what is optional.
-func (c *logCompartilhado) registraAplicador(id int64, aplicar func(uint16, uint16)) (uint16, uint16) {
-	logsDeSessaoMu.Lock()
-	defer logsDeSessaoMu.Unlock()
-	if c.aplicadores == nil {
-		c.aplicadores = map[int64]func(uint16, uint16){}
+func (c *sharedLog) registerApplier(id int64, apply func(uint16, uint16)) (uint16, uint16) {
+	sessionLogsMu.Lock()
+	defer sessionLogsMu.Unlock()
+	if c.appliers == nil {
+		c.appliers = map[int64]func(uint16, uint16){}
 	}
-	c.aplicadores[id] = aplicar
-	return c.aplicadoCols, c.aplicadoRows
+	c.appliers[id] = apply
+	return c.appliedCols, c.appliedRows
 }
 
 // recalcula decides the SESSION's size.
@@ -194,47 +194,47 @@ func (c *logCompartilhado) registraAplicador(id int64, aplicar func(uint16, uint
 //
 // With nobody who accepts frames, this degenerates into exactly the old rule —
 // which is what makes the change safe for anyone not yet updated.
-func (c *logCompartilhado) recalcula() (uint16, uint16, bool, []func(uint16, uint16)) {
-	var alvoCols, alvoRows uint16 // LARGEST among those that accept a frame
-	var tetoCols, tetoRows uint16 // SMALLEST among those that do not
-	for _, t := range c.tamanhos {
-		if t.aceitaQuadro {
-			if t.cols > alvoCols {
-				alvoCols = t.cols
+func (c *sharedLog) recompute() (uint16, uint16, bool, []func(uint16, uint16)) {
+	var targetCols, targetRows uint16 // LARGEST among those that accept a frame
+	var capCols, capRows uint16       // SMALLEST among those that do not
+	for _, t := range c.sizes {
+		if t.acceptsFrame {
+			if t.cols > targetCols {
+				targetCols = t.cols
 			}
-			if t.rows > alvoRows {
-				alvoRows = t.rows
+			if t.rows > targetRows {
+				targetRows = t.rows
 			}
 			continue
 		}
-		if tetoCols == 0 || t.cols < tetoCols {
-			tetoCols = t.cols
+		if capCols == 0 || t.cols < capCols {
+			capCols = t.cols
 		}
-		if tetoRows == 0 || t.rows < tetoRows {
-			tetoRows = t.rows
+		if capRows == 0 || t.rows < capRows {
+			capRows = t.rows
 		}
 	}
-	cols, rows := alvoCols, alvoRows
-	if tetoCols > 0 && (cols == 0 || tetoCols < cols) {
-		cols = tetoCols
+	cols, rows := targetCols, targetRows
+	if capCols > 0 && (cols == 0 || capCols < cols) {
+		cols = capCols
 	}
-	if tetoRows > 0 && (rows == 0 || tetoRows < rows) {
-		rows = tetoRows
+	if capRows > 0 && (rows == 0 || capRows < rows) {
+		rows = capRows
 	}
 	if cols == 0 || rows == 0 {
 		// Nobody attached with a known size: keep what is there. Touching the
 		// PTY when the last client leaves would make the program re-lay out
 		// against a screen nobody is watching, and the next attach would find
 		// the frame half-done.
-		return c.aplicadoCols, c.aplicadoRows, false, nil
+		return c.appliedCols, c.appliedRows, false, nil
 	}
-	if cols == c.aplicadoCols && rows == c.aplicadoRows {
+	if cols == c.appliedCols && rows == c.appliedRows {
 		return cols, rows, false, nil
 	}
-	c.aplicadoCols, c.aplicadoRows = cols, rows
-	aplicadores := make([]func(uint16, uint16), 0, len(c.aplicadores))
-	for _, a := range c.aplicadores {
-		aplicadores = append(aplicadores, a)
+	c.appliedCols, c.appliedRows = cols, rows
+	appliers := make([]func(uint16, uint16), 0, len(c.appliers))
+	for _, a := range c.appliers {
+		appliers = append(appliers, a)
 	}
-	return cols, rows, true, aplicadores
+	return cols, rows, true, appliers
 }

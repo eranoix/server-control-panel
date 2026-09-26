@@ -32,15 +32,15 @@ func textToADF(text string) map[string]any {
 	lines := strings.Split(text, "\n")
 	content := make([]any, 0, len(lines))
 	for _, line := range lines {
-		para := map[string]any{
+		stop := map[string]any{
 			"type": "paragraph",
 		}
 		if line != "" {
-			para["content"] = []any{
+			stop["content"] = []any{
 				map[string]any{"type": "text", "text": line},
 			}
 		}
-		content = append(content, para)
+		content = append(content, stop)
 	}
 	return map[string]any{
 		"type":    "doc",

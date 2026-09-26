@@ -18,60 +18,60 @@ import (
 // agent stops being narrow without a single new route having appeared. It is
 // how the property gets lost with no signal at all.
 
-// termosProibidos matches by identifier name (parameter/result) and by the
+// forbiddenTerms matches by identifier name (parameter/result) and by the
 // written type.
-var termosProibidos = []string{"path", "caminho", "mode", "modo", "uid", "gid", "filemode"}
+var forbiddenTerms = []string{"path", "caminho", "mode", "modo", "uid", "gid", "filemode"}
 
-// varreInterfaceBackend returns the violations found in the given file.
+// scanBackendInterface returns the violations found in the given file.
 // Kept separate from the test so the NEGATIVE CONTROL can reuse exactly the
 // same scan over a legitimate fixture — an instrument that only knows how to
 // fail things is the instrument somebody turns off.
-func varreInterfaceBackend(t *testing.T, arquivo string) (violacoes []string, metodos int) {
+func scanBackendInterface(t *testing.T, file string) (violations []string, methodCount int) {
 	t.Helper()
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, arquivo, nil, parser.SkipObjectResolution)
+	f, err := parser.ParseFile(fset, file, nil, parser.SkipObjectResolution)
 	if err != nil {
-		t.Fatalf("parse of %s: %v", arquivo, err)
+		t.Fatalf("parse of %s: %v", file, err)
 	}
 
-	suspeito := func(s string) bool {
+	suspicious := func(s string) bool {
 		b := strings.ToLower(s)
-		for _, termo := range termosProibidos {
-			if b == termo || strings.HasSuffix(b, termo) {
+		for _, term := range forbiddenTerms {
+			if b == term || strings.HasSuffix(b, term) {
 				return true
 			}
 		}
 		return false
 	}
 
-	// textoDoTipo renders the type in comparable form (e.g. "os.FileMode").
-	var textoDoTipo func(ast.Expr) string
-	textoDoTipo = func(e ast.Expr) string {
+	// typeText renders the type in comparable form (e.g. "os.FileMode").
+	var typeText func(ast.Expr) string
+	typeText = func(e ast.Expr) string {
 		switch v := e.(type) {
 		case *ast.Ident:
 			return v.Name
 		case *ast.SelectorExpr:
-			return textoDoTipo(v.X) + "." + v.Sel.Name
+			return typeText(v.X) + "." + v.Sel.Name
 		case *ast.StarExpr:
-			return textoDoTipo(v.X)
+			return typeText(v.X)
 		case *ast.ArrayType:
-			return textoDoTipo(v.Elt)
+			return typeText(v.Elt)
 		}
 		return ""
 	}
 
-	confere := func(campos *ast.FieldList, onde, metodo string) {
+	matches := func(campos *ast.FieldList, where, method string) {
 		if campos == nil {
 			return
 		}
-		for _, campo := range campos.List {
-			tipo := textoDoTipo(campo.Type)
-			if suspeito(tipo) {
-				violacoes = append(violacoes, metodo+": "+onde+" de tipo "+tipo)
+		for _, field := range campos.List {
+			kind := typeText(field.Type)
+			if suspicious(kind) {
+				violations = append(violations, method+": "+where+" de tipo "+kind)
 			}
-			for _, nome := range campo.Names {
-				if suspeito(nome.Name) {
-					violacoes = append(violacoes, metodo+": "+onde+" chamado "+nome.Name)
+			for _, nome := range field.Names {
+				if suspicious(nome.Name) {
+					violations = append(violations, method+": "+where+" chamado "+nome.Name)
 				}
 			}
 		}
@@ -87,40 +87,40 @@ func varreInterfaceBackend(t *testing.T, arquivo string) (violacoes []string, me
 			if !ok || len(m.Names) == 0 {
 				continue
 			}
-			metodos++
-			confere(ft.Params, "parâmetro", m.Names[0].Name)
-			confere(ft.Results, "resultado", m.Names[0].Name)
+			methodCount++
+			matches(ft.Params, "parâmetro", m.Names[0].Name)
+			matches(ft.Results, "resultado", m.Names[0].Name)
 		}
 		return true
 	})
-	return violacoes, metodos
+	return violations, methodCount
 }
 
-func TestBackendNaoVazaSemanticaDeArquivo(t *testing.T) {
-	arquivo := filepath.Join(raizDoRepo(t), "internal", "gameservers", "backend.go")
-	violacoes, metodos := varreInterfaceBackend(t, arquivo)
-	if metodos == 0 {
+func TestBackendDoesNotLeakFileSemantics(t *testing.T) {
+	file := filepath.Join(repoRoot(t), "internal", "gameservers", "backend.go")
+	violations, methodCount := scanBackendInterface(t, file)
+	if methodCount == 0 {
 		t.Fatal("no interface method scanned — green by ABSENCE")
 	}
-	if len(violacoes) > 0 {
+	if len(violations) > 0 {
 		t.Errorf("fronteira violada — semântica de arquivo atravessando a fronteira:\n  %s\n"+
 			"Caminho que atravessa é caminho que o cliente escolhe. Use Handle opaco.",
-			strings.Join(violacoes, "\n  "))
+			strings.Join(violations, "\n  "))
 	}
-	t.Logf("%d interface methods scanned, 0 violations", metodos)
+	t.Logf("%d interface methods scanned, 0 violations", methodCount)
 }
 
-// TestBackendVarreduraMordeEControlaNegativo — does the scan measure anything?
+// TestBackendScanBitesAndControlsNegative — does the scan measure anything?
 //
 // Two synthetic fixtures: one with the violation (it must fail) and one with a
 // legitimate method (it must NOT fail). Without the second, a pin that failed
 // everything would pass in this file and would break the real interface the
 // first time anyone extended it.
-func TestBackendVarreduraMordeEControlaNegativo(t *testing.T) {
+func TestBackendScanBitesAndControlsNegative(t *testing.T) {
 	dir := t.TempDir()
 
-	ruim := filepath.Join(dir, "ruim.go")
-	if err := os.WriteFile(ruim, []byte(`package x
+	bad := filepath.Join(dir, "ruim.go")
+	if err := os.WriteFile(bad, []byte(`package x
 import "os"
 type Backend interface {
 	Gravar(path string, modo os.FileMode) error
@@ -128,7 +128,7 @@ type Backend interface {
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if v, m := varreInterfaceBackend(t, ruim); len(v) == 0 {
+	if v, m := scanBackendInterface(t, bad); len(v) == 0 {
 		t.Errorf("FALSE NEGATIVE: the scan saw neither `path string` nor `os.FileMode` (%d methods scanned)", m)
 	} else {
 		t.Logf("it bit as it should: %s", strings.Join(v, "; "))
@@ -144,7 +144,7 @@ type Backend interface {
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if v, m := varreInterfaceBackend(t, bom); len(v) != 0 {
+	if v, m := scanBackendInterface(t, bom); len(v) != 0 {
 		t.Errorf("FALSE POSITIVE on the legitimate method (%d scanned): %s", m, strings.Join(v, "; "))
 	}
 }

@@ -70,14 +70,14 @@ func (r *Router) handleTerminalPreview(w http.ResponseWriter, req *http.Request)
 // line; failing that, the last useful line. Empty when there is nothing
 // readable (a clean shell, say). Used on the Backups tab to give context
 // without opening anything.
-func sessionSummary(s ptysvc.SessionSnapshot) string { return sessionbackup.Resumo(s) }
+func sessionSummary(s ptysvc.SessionSnapshot) string { return sessionbackup.Summary(s) }
 
 // summarizePane reduces the pane capture to a readable summary: it drops blank
 // lines, separators and TUI box borders, takes the last ~14 useful lines (the
 // bottom of the screen = the most recent) and extracts a headline from claude's
 // "recap:" line when there is one.
 func summarizePane(raw string) (headline, body string) {
-	return sessionbackup.ResumoDePainel(raw)
+	return sessionbackup.PanelSummary(raw)
 }
 
 // handleTerminalRenameSession renames a session and carries ownership with it.
@@ -117,8 +117,8 @@ func (r *Router) handleTerminalRenameSession(w http.ResponseWriter, req *http.Re
 	// start the new one HERE — leaving it to the next attach would open a window
 	// in which the renamed session had nobody recording it, which is exactly the
 	// hole the recorder exists to close.
-	ptysvc.PararGravador(r.cfg.DataDir, user, body.Name)
-	ptysvc.GaranteGravador(r.cfg.DataDir, user, ptysvc.SafeSessionName(body.NewName), r.sessReg)
+	ptysvc.StopRecorder(r.cfg.DataDir, user, body.Name)
+	ptysvc.EnsureRecorder(r.cfg.DataDir, user, ptysvc.SafeSessionName(body.NewName), r.sessReg)
 	r.auditEvent(req, user, "terminal.rename", body.Name+"->"+body.NewName)
 	writeJSON(w, map[string]string{"status": "ok", "name": ptysvc.SafeSessionName(body.NewName)})
 }
@@ -219,7 +219,7 @@ func (r *Router) handleTerminalRestore(w http.ResponseWriter, req *http.Request)
 		writeErr(w, 400, "bad json")
 		return
 	}
-	if !sessionbackup.IDValido(body.ID) {
+	if !sessionbackup.ValidID(body.ID) {
 		writeErr(w, 400, "invalid backup id")
 		return
 	}
@@ -281,7 +281,7 @@ func (r *Router) handleTerminalBackupDelete(w http.ResponseWriter, req *http.Req
 		writeErr(w, 400, "bad json")
 		return
 	}
-	if !sessionbackup.IDValido(body.ID) {
+	if !sessionbackup.ValidID(body.ID) {
 		writeErr(w, 400, "invalid backup id")
 		return
 	}
@@ -300,11 +300,11 @@ func (r *Router) handleTerminalBackupDelete(w http.ResponseWriter, req *http.Req
 		writeErr(w, 500, err.Error())
 		return
 	}
-	alvo := body.ID
+	target := body.ID
 	if body.Name != "" {
-		alvo += "#" + ptysvc.SafeSessionName(body.Name)
+		target += "#" + ptysvc.SafeSessionName(body.Name)
 	}
-	r.auditEvent(req, user, "terminal.backup_delete", alvo)
+	r.auditEvent(req, user, "terminal.backup_delete", target)
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
@@ -512,7 +512,7 @@ func (r *Router) pruneSessionBackups(user string, keep int) {
 // touches neither bundles (manual/auto) nor backups of other sessions — each
 // session has its own independent retention.
 func (r *Router) pruneSessionBackupsForSession(user, session string, keep int) {
-	r.backupStore().PruneSessao(user, session, keep)
+	r.backupStore().PruneSession(user, session, keep)
 }
 
 // readSessionBackup reads and deserialises a backup. The id has already been

@@ -20,9 +20,9 @@ import (
 	"server-control-panel/internal/jira"
 )
 
-// jiraFalso answers the minimum the board queries. Each route returns what the
+// fakeJira answers the minimum the board queries. Each route returns what the
 // real route would return, in the shape the client already knows how to read.
-func jiraFalso(t *testing.T, transicoes string) *httptest.Server {
+func fakeJira(t *testing.T, transitions string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -41,7 +41,7 @@ func jiraFalso(t *testing.T, transicoes string) *httptest.Server {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
-			_, _ = w.Write([]byte(transicoes))
+			_, _ = w.Write([]byte(transitions))
 		default:
 			// Some issue, for the "already in the column" path.
 			_, _ = w.Write([]byte(`{"id":"1","key":"TASK-1","fields":{"summary":"cair a fila","status":{"name":"Backlog","statusCategory":{"key":"new"}}}}`))
@@ -51,7 +51,7 @@ func jiraFalso(t *testing.T, transicoes string) *httptest.Server {
 	return srv
 }
 
-func depsComJira(srv *httptest.Server) Deps {
+func depsWithJira(srv *httptest.Server) Deps {
 	return Deps{
 		Cfg: adminCfg(),
 		JiraFor: func(user string) (*jira.Client, error) {
@@ -63,15 +63,15 @@ func depsComJira(srv *httptest.Server) Deps {
 	}
 }
 
-func chamar(t *testing.T, deps Deps, metodo, caminho, corpo string) *httptest.ResponseRecorder {
+func call(t *testing.T, deps Deps, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	mux := http.NewServeMux()
 	Mount(mux, deps)
 	var req *http.Request
-	if corpo == "" {
-		req = httptest.NewRequest(metodo, "/api/mobile/v1"+caminho, nil)
+	if body == "" {
+		req = httptest.NewRequest(method, "/api/mobile/v1"+path, nil)
 	} else {
-		req = httptest.NewRequest(metodo, "/api/mobile/v1"+caminho, strings.NewReader(corpo))
+		req = httptest.NewRequest(method, "/api/mobile/v1"+path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req = req.WithContext(auth.WithUser(req.Context(), testPrimary))
@@ -80,9 +80,9 @@ func chamar(t *testing.T, deps Deps, metodo, caminho, corpo string) *httptest.Re
 	return rec
 }
 
-func TestQuadroDevolveColunasComCartoesDistribuidos(t *testing.T) {
-	srv := jiraFalso(t, `{"transitions":[]}`)
-	rec := chamar(t, depsComJira(srv), http.MethodGet, "/jira/board", "")
+func TestBoardReturnsColumnsWithDistributedCards(t *testing.T) {
+	srv := fakeJira(t, `{"transitions":[]}`)
+	rec := call(t, depsWithJira(srv), http.MethodGet, "/jira/board", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -112,7 +112,7 @@ func TestQuadroDevolveColunasComCartoesDistribuidos(t *testing.T) {
 	}
 }
 
-func TestQuadroSemContaLigadaResponde200ComFormulario(t *testing.T) {
+func TestBoardWithoutLinkedAccountReturns200WithForm(t *testing.T) {
 	// Never having connected is everybody's initial state, not a failure. A 4xx
 	// would make the app show "could not load" with a retry button that is never
 	// going to work.
@@ -120,7 +120,7 @@ func TestQuadroSemContaLigadaResponde200ComFormulario(t *testing.T) {
 		Cfg:     adminCfg(),
 		JiraFor: func(string) (*jira.Client, error) { return nil, jira.ErrNotConfigured },
 	}
-	rec := chamar(t, deps, http.MethodGet, "/jira/board", "")
+	rec := call(t, deps, http.MethodGet, "/jira/board", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -134,12 +134,12 @@ func TestQuadroSemContaLigadaResponde200ComFormulario(t *testing.T) {
 	}
 }
 
-func TestMoverAplicaATransicaoQueChegaNaColuna(t *testing.T) {
-	srv := jiraFalso(t, `{"transitions":[
+func TestMoveAppliesTransitionReachingColumn(t *testing.T) {
+	srv := fakeJira(t, `{"transitions":[
 		{"id":"11","name":"Iniciar","to":{"name":"Em Progresso","statusCategory":{"key":"indeterminate"}}},
 		{"id":"31","name":"Concluir","to":{"name":"Pronto","statusCategory":{"key":"done"}}}
 	]}`)
-	rec := chamar(t, depsComJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"Concluído"}`)
+	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"Concluído"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -152,15 +152,15 @@ func TestMoverAplicaATransicaoQueChegaNaColuna(t *testing.T) {
 	}
 }
 
-func TestSemTransicaoParaAColunaResponde409ComOsDestinosPossiveis(t *testing.T) {
+func TestNoTransitionToColumnReturns409WithPossibleDestinations(t *testing.T) {
 	// 409 and not 500: the server is fine, it is the ACTION that does not fit the
 	// current state. It is the code by which the app sends the card back to its
 	// original column instead of showing "server error". And the reason has to say
 	// where it IS possible to go — that is what turns the refusal into a next step.
-	srv := jiraFalso(t, `{"transitions":[
+	srv := fakeJira(t, `{"transitions":[
 		{"id":"11","name":"Iniciar","to":{"name":"Em Progresso","statusCategory":{"key":"indeterminate"}}}
 	]}`)
-	rec := chamar(t, depsComJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-2","column":"Concluído"}`)
+	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-2","column":"Concluído"}`)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409 (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -169,34 +169,34 @@ func TestSemTransicaoParaAColunaResponde409ComOsDestinosPossiveis(t *testing.T) 
 	}
 }
 
-func TestMoverParaAColunaOndeAIssueJaEstaNaoEErro(t *testing.T) {
+func TestMoveToColumnIssueIsAlreadyInIsNotError(t *testing.T) {
 	// The board on screen may have gone stale. "Already in X" is a very different
 	// answer from "the workflow forbids it", and confusing the two would send the
 	// card back for no reason.
-	srv := jiraFalso(t, `{"transitions":[]}`)
-	rec := chamar(t, depsComJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"A fazer"}`)
+	srv := fakeJira(t, `{"transitions":[]}`)
+	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"A fazer"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
 	}
 }
 
-func TestColunaInexistenteNoQuadroE400(t *testing.T) {
+func TestColumnMissingFromBoardIs400(t *testing.T) {
 	// The operator may have reconfigured the board between the load and the drag.
 	// Moving to a "similar-looking" column would be worse than refusing.
-	srv := jiraFalso(t, `{"transitions":[]}`)
-	rec := chamar(t, depsComJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"Coluna que não existe"}`)
+	srv := fakeJira(t, `{"transitions":[]}`)
+	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"Coluna que não existe"}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (body=%s)", rec.Code, rec.Body.String())
 	}
 }
 
-func TestLoteDevolveOQueFoiEOQueNaoFoi(t *testing.T) {
+func TestBatchReturnsWhatSucceededAndWhatFailed(t *testing.T) {
 	// A batch is not atomic against Jira: every issue has its own workflow. An
 	// "ok" for the set would hide precisely the ones that need action.
-	srv := jiraFalso(t, `{"transitions":[
+	srv := fakeJira(t, `{"transitions":[
 		{"id":"11","name":"Iniciar","to":{"name":"Em Progresso","statusCategory":{"key":"indeterminate"}}}
 	]}`)
-	rec := chamar(t, depsComJira(srv), http.MethodPost, "/jira/bulk/move",
+	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/bulk/move",
 		`{"issue_keys":["TASK-1","TASK-2"],"column":"Em andamento"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d (body=%s)", rec.Code, rec.Body.String())
@@ -208,22 +208,22 @@ func TestLoteDevolveOQueFoiEOQueNaoFoi(t *testing.T) {
 	}
 }
 
-func TestSemJiraNoServidorAsRotasRespondem503EmVezDePanic(t *testing.T) {
+func TestWithoutJiraOnServerRoutesReturn503InsteadOfPanic(t *testing.T) {
 	// Same pattern as the other optional fields of Deps: absence degrades, it
 	// never brings the process down.
-	rec := chamar(t, Deps{Cfg: adminCfg()}, http.MethodGet, "/jira/board", "")
+	rec := call(t, Deps{Cfg: adminCfg()}, http.MethodGet, "/jira/board", "")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 (body=%s)", rec.Code, rec.Body.String())
 	}
 }
 
-func TestIssueTrazOsDestinosNoVocabularioDasColunas(t *testing.T) {
+func TestIssueCarriesDestinationsInColumnVocabulary(t *testing.T) {
 	// Whoever sees "Em andamento" on the board should not have to translate
 	// "Em Progresso" in their head in the move menu.
-	srv := jiraFalso(t, `{"transitions":[
+	srv := fakeJira(t, `{"transitions":[
 		{"id":"11","name":"Iniciar","to":{"name":"Em Progresso","statusCategory":{"key":"indeterminate"}}}
 	]}`)
-	rec := chamar(t, depsComJira(srv), http.MethodGet, "/jira/issue?key=TASK-1", "")
+	rec := call(t, depsWithJira(srv), http.MethodGet, "/jira/issue?key=TASK-1", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -240,22 +240,22 @@ func TestIssueTrazOsDestinosNoVocabularioDasColunas(t *testing.T) {
 	}
 }
 
-// jiraQuePassaFome returns 99 done issues for ANY search that does not restrict
+// starvingJira returns 99 done issues for ANY search that does not restrict
 // the category, and a single "to do" when the search asks for To Do. It is the
 // exact shape of the reported defect: with a single search, the done issues ate
 // the quota and the left-hand column came back empty.
-func jiraQuePassaFome(t *testing.T) (*httptest.Server, *[]string) {
+func starvingJira(t *testing.T) (*httptest.Server, *[]string) {
 	t.Helper()
-	var consultas []string
+	var queries []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if !strings.Contains(r.URL.Path, "/search") {
 			_, _ = w.Write([]byte(`{}`))
 			return
 		}
-		corpo, _ := io.ReadAll(r.Body)
-		jql := string(corpo) + r.URL.RawQuery
-		consultas = append(consultas, jql)
+		body, _ := io.ReadAll(r.Body)
+		jql := string(body) + r.URL.RawQuery
+		queries = append(queries, jql)
 
 		switch {
 		case strings.Contains(jql, "To Do"):
@@ -279,15 +279,15 @@ func jiraQuePassaFome(t *testing.T) (*httptest.Server, *[]string) {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	return srv, &consultas
+	return srv, &queries
 }
 
-func TestColunaNaoPassaFomePorCausaDeOutra(t *testing.T) {
+func TestColumnNotStarvedByAnother(t *testing.T) {
 	// The defect in the owner's screenshots: the same project showed "A fazer 2"
 	// under the "A fazer" filter and "A fazer 1" under the "Todas" filter. The
 	// column was losing a card because of the done issues.
-	srv, consultas := jiraQuePassaFome(t)
-	rec := chamar(t, depsComJira(srv), http.MethodGet, "/jira/board?max=40", "")
+	srv, queries := starvingJira(t)
+	rec := call(t, depsWithJira(srv), http.MethodGet, "/jira/board?max=40", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -305,12 +305,12 @@ func TestColunaNaoPassaFomePorCausaDeOutra(t *testing.T) {
 		t.Error("the done ones keep coming — they just stop trampling the others")
 	}
 	// One query PER COLUMN: it is the only way for each one to have its own quota.
-	if len(*consultas) < 3 {
-		t.Errorf("expected one search per column, there were %d: %v", len(*consultas), *consultas)
+	if len(*queries) < 3 {
+		t.Errorf("expected one search per column, there were %d: %v", len(*queries), *queries)
 	}
 }
 
-func TestUmaColunaQueFalhaNaoApagaAsOutras(t *testing.T) {
+func TestFailingColumnDoesNotEraseOthers(t *testing.T) {
 	// The refusal shows on top of the board, with the cards we managed to bring.
 	// Wiping everything because of one column would lose what already worked.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -319,8 +319,8 @@ func TestUmaColunaQueFalhaNaoApagaAsOutras(t *testing.T) {
 			_, _ = w.Write([]byte(`{}`))
 			return
 		}
-		corpo, _ := io.ReadAll(r.Body)
-		if strings.Contains(string(corpo)+r.URL.RawQuery, "In Progress") {
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body)+r.URL.RawQuery, "In Progress") {
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(`{"errorMessages":["JQL invalido"]}`))
 			return
@@ -331,7 +331,7 @@ func TestUmaColunaQueFalhaNaoApagaAsOutras(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	rec := chamar(t, depsComJira(srv), http.MethodGet, "/jira/board", "")
+	rec := call(t, depsWithJira(srv), http.MethodGet, "/jira/board", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
@@ -345,7 +345,7 @@ func TestUmaColunaQueFalhaNaoApagaAsOutras(t *testing.T) {
 	}
 }
 
-func TestPrimeiraCargaEIGUALAoRefresh(t *testing.T) {
+func TestFirstLoadEqualsRefresh(t *testing.T) {
 	// The DEFECT reported by the owner: entering Tasks showed three empty
 	// columns, and only a refresh filled the board.
 	//
@@ -359,8 +359,8 @@ func TestPrimeiraCargaEIGUALAoRefresh(t *testing.T) {
 	// The same filter, with the same project, gave two different boards depending
 	// on whether the client had already learned where it was. This test exists so
 	// that the two loads never diverge again.
-	srv := jiraFalso(t, `{"transitions":[]}`)
-	deps := depsComJira(srv)
+	srv := fakeJira(t, `{"transitions":[]}`)
+	deps := depsWithJira(srv)
 	deps.JiraConfigFor = func(user string) jira.Config {
 		// A configured board_jql that matches NOTHING — exactly the owner's case.
 		// If it goes back to hijacking the filter, this test fails.
@@ -372,57 +372,57 @@ func TestPrimeiraCargaEIGUALAoRefresh(t *testing.T) {
 		}
 	}
 
-	primeira := chamar(t, deps, http.MethodGet, "/jira/board", "")
-	segunda := chamar(t, deps, http.MethodGet, "/jira/board?project=VPSM", "")
+	first := call(t, deps, http.MethodGet, "/jira/board", "")
+	second := call(t, deps, http.MethodGet, "/jira/board?project=VPSM", "")
 
 	var a, b JiraBoardResponse
-	if err := json.Unmarshal(primeira.Body.Bytes(), &a); err != nil {
+	if err := json.Unmarshal(first.Body.Bytes(), &a); err != nil {
 		t.Fatalf("decode 1: %v", err)
 	}
-	if err := json.Unmarshal(segunda.Body.Bytes(), &b); err != nil {
+	if err := json.Unmarshal(second.Body.Bytes(), &b); err != nil {
 		t.Fatalf("decode 2: %v", err)
 	}
 
 	if a.JQL != b.JQL {
 		t.Errorf("the first load used a different JQL than the refresh:\n  1a: %q\n  2a: %q", a.JQL, b.JQL)
 	}
-	cartoes := func(r JiraBoardResponse) int {
+	cardCount := func(r JiraBoardResponse) int {
 		n := 0
 		for _, c := range r.Columns {
 			n += len(c.Cards)
 		}
 		return n
 	}
-	if cartoes(a) != cartoes(b) {
-		t.Errorf("first load brought %d cards and the refresh %d", cartoes(a), cartoes(b))
+	if cardCount(a) != cardCount(b) {
+		t.Errorf("first load brought %d cards and the refresh %d", cardCount(a), cardCount(b))
 	}
-	if cartoes(a) == 0 {
+	if cardCount(a) == 0 {
 		t.Error("the first load has to bring the cards, not three empty columns")
 	}
 }
 
-func TestMeuQuadroEscolhidoDePropositoUSAOJQLDoOperador(t *testing.T) {
+func TestMyBoardChosenOnPurposeUsesOperatorJQL(t *testing.T) {
 	// The operator's JQL was not thrown away — it became a NAMED filter. An empty
 	// board there says the stored query matches nothing, not that the app failed.
-	srv := jiraFalso(t, `{"transitions":[]}`)
-	deps := depsComJira(srv)
+	srv := fakeJira(t, `{"transitions":[]}`)
+	deps := depsWithJira(srv)
 	deps.JiraConfigFor = func(user string) jira.Config {
 		return jira.Config{Site: srv.URL, ProjectKey: "VPSM", BoardJQL: "assignee = currentUser()", HasToken: true}
 	}
 
-	rec := chamar(t, deps, http.MethodGet, "/jira/board?filter=board", "")
+	rec := call(t, deps, http.MethodGet, "/jira/board?filter=board", "")
 	var body JiraBoardResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
 	if !strings.Contains(body.JQL, "assignee = currentUser()") {
 		t.Errorf("the 'Meu quadro' filter has to use the operator's JQL: %q", body.JQL)
 	}
-	temOpcao := false
+	hasOption := false
 	for _, f := range body.Filters {
 		if f.Key == "board" {
-			temOpcao = true
+			hasOption = true
 		}
 	}
-	if !temOpcao {
+	if !hasOption {
 		t.Error("with board_jql configured, the filter has to be OFFERED")
 	}
 }

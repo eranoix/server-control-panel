@@ -40,11 +40,11 @@ const (
 	// use and blocks a DOS via a curl loop on /ws/shell?name=test$i. Could become
 	// configurable through a flag/env later.
 	maxSessionsPerUser = 20
-	// esperaParaOClienteSair: how long teardown waits for the client (`dtach -a`)
+	// clientExitWait: how long teardown waits for the client (`dtach -a`)
 	// to leave on its own before SIGKILL. Two seconds is an eternity for a
 	// process that only has to close two descriptors and exit, and short
 	// enough that it never holds the handler for a noticeable time.
-	esperaParaOClienteSair = 2 * time.Second
+	clientExitWait = 2 * time.Second
 )
 
 var upgrader = websocket.Upgrader{
@@ -90,7 +90,7 @@ type ctrlMsg struct {
 // the chosen account. NOTE: `new-session -A` only applies -e when CREATING the
 // session — switching accounts requires killing + recreating the pane (the env
 // is frozen at first attach). The UI surfaces this.
-// primingDoServidor decides, for one connection, which of the TWO mechanisms the
+// serverPriming decides, for one connection, which of the TWO mechanisms the
 // server has to "fill the client's screen" should run: re-emitting the
 // recorded history (`attachReplay`) and forcing the remote program to repaint
 // (`repaint-wobble`).
@@ -103,9 +103,9 @@ type ctrlMsg struct {
 //	attach=1  → "I already have the screen" (reconnect): no history, no repaint.
 //	replay=0  → "I rebuild the screen": no history, no repaint.
 //	none      → client that does not prime itself (the web panel): both.
-func primingDoServidor(attach, replay string) (mandarHistorico, forcarRepaint bool) {
+func serverPriming(attach, replay string) (sendHistory, forceRepaint bool) {
 	attachFresco := attach != "1"
-	clienteReconstroiATela := replay == "0"
+	clientRebuildsScreen := replay == "0"
 	// HISTORY and REPAINT are DIFFERENT questions again, and this time the
 	// separation is the right answer, not the defect.
 	//
@@ -118,7 +118,7 @@ func primingDoServidor(attach, replay string) (mandarHistorico, forcarRepaint bo
 	//
 	// On a reconnect (attach=1) neither runs: the client's in-memory grid is
 	// intact, and repainting over it would duplicate.
-	return attachFresco && !clienteReconstroiATela, attachFresco
+	return attachFresco && !clientRebuildsScreen, attachFresco
 }
 
 func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool, own *Ownership, claudeConfigDir string, dataDir string, reg *Registry) {
@@ -302,21 +302,21 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 			return
 		}
 		_ = cmd.Process.Signal(syscall.SIGHUP)
-		encerrou := make(chan struct{})
+		ended := make(chan struct{})
 		go func() {
 			_, _ = cmd.Process.Wait()
-			close(encerrou)
+			close(ended)
 		}()
 		select {
-		case <-encerrou:
+		case <-ended:
 			return
-		case <-time.After(esperaParaOClienteSair):
+		case <-time.After(clientExitWait):
 		}
 		log.Printf("[pty] client did not exit on SIGHUP, killing it (session %q)", sessionName)
 		_ = cmd.Process.Kill()
 		select {
-		case <-encerrou:
-		case <-time.After(esperaParaOClienteSair):
+		case <-ended:
+		case <-time.After(clientExitWait):
 			log.Printf("[pty] client survived SIGKILL (session %q) — releasing the slot anyway", sessionName)
 		}
 	}()
@@ -327,23 +327,23 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	// is wired in from the very start so the log is already populated when read.
 	//
 	// ONE writer per SESSION, shared by every connection — see
-	// [pegarLogDaSessao]. Opening one per connection wrote every byte once per
+	// [acquireSessionLog]. Opening one per connection wrote every byte once per
 	// attached client, and the Android app, which rebuilds the screen by replaying
 	// this log, got the same frame twice.
 	var tee io.Writer
-	var sessaoCompartilhada *logCompartilhado
-	var idDaConexao int64
+	var sharedSession *sharedLog
+	var connID int64
 	if dataDir != "" {
-		slog, compartilhado, id, soltar := pegarLogDaSessao(dataDir, user, sessionName)
-		defer soltar()
+		slog, shared, id, release := acquireSessionLog(dataDir, user, sessionName)
+		defer release()
 		tee = slog
-		sessaoCompartilhada = compartilhado
-		idDaConexao = id
+		sharedSession = shared
+		connID = id
 		// The log must not stop when this tab closes: the session stays alive
 		// producing output, and without a recorder of its own none of that is
 		// written anywhere. See `gravador.go` — idempotent, best-effort, and it
 		// never creates a session.
-		GaranteGravador(dataDir, user, sessionName, reg)
+		EnsureRecorder(dataDir, user, sessionName, reg)
 	}
 
 	// ── Scrollback priming on a FRESH attach (dtach keeps no screen) ──────────
@@ -356,18 +356,18 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	//
 	// `replay=0` is the client saying "I AM THE ONE WHO REBUILDS THE SCREEN" — and
 	// that waives BOTH mechanisms here: this block and the repaint-wobble below.
-	// See [clienteReconstroiATela] for why tying the two together is right, and
+	// See [clientRebuildsScreen] for why tying the two together is right, and
 	// why splitting them cost the operator three corrupted screens.
-	mandarHistorico, forcarRepaint := primingDoServidor(
+	sendHistory, forceRepaint := serverPriming(
 		r.URL.Query().Get("attach"),
 		r.URL.Query().Get("replay"),
 	)
 	// The same "I rebuild the screen" that decides the history also decides whether
 	// `dtach`'s attach-time clear is allowed to reach this client — see
 	// [aparadorDaLimpezaDeAttach].
-	clientePrimaAPropriaTela := r.URL.Query().Get("replay") == "0"
+	clientPrimesOwnScreen := r.URL.Query().Get("replay") == "0"
 
-	if dataDir != "" && mandarHistorico {
+	if dataDir != "" && sendHistory {
 		if rep := attachReplay(dataDir, user, sessionName); len(rep) > 0 {
 			_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
 			_ = conn.WriteMessage(websocket.BinaryMessage, rep)
@@ -388,8 +388,8 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	var (
 		szMu               sync.Mutex
 		lastCols, lastRows uint16
-		avisarCliente      func(uint16, uint16)
-		escreverNoCliente  func([]byte) error
+		notifyClient       func(uint16, uint16)
+		writeToClient      func([]byte) error
 		repaintOnce        sync.Once
 	)
 
@@ -402,24 +402,24 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	//
 	// This is what lets the session sit at the LARGEST client instead of the
 	// smallest — that is, the phone stops shrinking the desktop.
-	aceitaQuadro := r.URL.Query().Get("quadro") == "1"
+	acceptsFrame := r.URL.Query().Get("quadro") == "1"
 	var (
-		quadroMu               sync.Mutex
-		quadro                 *quadroDoCliente
-		janelaCols, janelaRows uint16 // a janela REAL deste cliente
-		rolouAcumulado         int
-		pararQuadro            func()
+		frameMu          sync.Mutex
+		frame            *clientFrame
+		winCols, winRows uint16 // a janela REAL deste cliente
+		scrolledTotal    int
+		stopFrame        func()
 	)
-	sinalDeQuadro := make(chan struct{}, 1)
-	emModoQuadro := func() bool {
-		quadroMu.Lock()
-		defer quadroMu.Unlock()
-		return quadro != nil
+	frameSignal := make(chan struct{}, 1)
+	inFrameMode := func() bool {
+		frameMu.Lock()
+		defer frameMu.Unlock()
+		return frame != nil
 	}
 
 	// ── THE SIZE BELONGS TO THE SESSION, AND IT RULES EVERY CLIENT ───────
 	//
-	// aplicaTamanho puts the session's EFFECTIVE size on THIS connection, and does
+	// applySize puts the session's EFFECTIVE size on THIS connection, and does
 	// both halves together because they are a single decision:
 	//
 	//  1. the pty of THIS connection — it is what this `dtach -a` reports to the
@@ -435,37 +435,37 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	// Reapplying the same size is cheap and safe: the kernel compares the winsize
 	// before signalling (`tty_do_resize`), so an identical TIOCSWINSZ does NOT
 	// raise SIGWINCH and does not make the program repaint.
-	aplicaTamanho := func(cols, rows uint16) {
+	applySize := func(cols, rows uint16) {
 		if cols < 2 || rows < 1 {
 			return
 		}
 		szMu.Lock()
 		lastCols, lastRows = cols, rows
-		avisar := avisarCliente
+		notifyFn := notifyClient
 		szMu.Unlock()
 		// The pty of THIS connection goes to the session's size even in frame
 		// mode: it is what this `dtach -a` reports to the master, and that is what
 		// stops this client from dragging the session down to its own size.
 		_ = pty.Setsize(ptmx, &pty.Winsize{Cols: cols, Rows: rows})
 
-		quadroMu.Lock()
-		jc, jr := janelaCols, janelaRows
-		menorQueASessao := aceitaQuadro && jc >= 2 && jr >= 1 && (jc < cols || jr < rows)
-		if menorQueASessao {
-			if quadro == nil {
-				quadro = novoQuadroDoCliente(int(jc), int(jr))
+		frameMu.Lock()
+		jc, jr := winCols, winRows
+		smallerThanSession := acceptsFrame && jc >= 2 && jr >= 1 && (jc < cols || jr < rows)
+		if smallerThanSession {
+			if frame == nil {
+				frame = newClientFrame(int(jc), int(jr))
 			} else {
-				quadro.redimensiona(int(jc), int(jr))
+				frame.resize(int(jc), int(jr))
 			}
-		} else if quadro != nil {
+		} else if frame != nil {
 			// The session now fits in its window: back to the raw stream, which is
 			// cheaper and is the usual path. The program will repaint.
-			quadro = nil
+			frame = nil
 		}
-		emQuadro := quadro != nil
-		quadroMu.Unlock()
+		inFrame := frame != nil
+		frameMu.Unlock()
 
-		if emQuadro {
+		if inFrame {
 			// In frame mode it draws ITS OWN grid — being told "draw
 			// 120x40" in a 53x45 window is exactly the defect frame mode
 			// exists to prevent.
@@ -476,17 +476,17 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 			// and the FitAddon obeys — see `_gradeSessao` in 00-shell.js). Sending
 			// its own window is how you say "go back to drawing your own size"
 			// using the mechanism that already exists, instead of inventing another.
-			if avisar != nil {
-				avisar(jc, jr)
+			if notifyFn != nil {
+				notifyFn(jc, jr)
 			}
 			select {
-			case sinalDeQuadro <- struct{}{}:
+			case frameSignal <- struct{}{}:
 			default:
 			}
 			return
 		}
-		if avisar != nil {
-			avisar(cols, rows)
+		if notifyFn != nil {
+			notifyFn(cols, rows)
 		}
 	}
 	// ── THE FRAME PUMP ───────────────────────────────────────────────────
@@ -496,22 +496,22 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	// session log. Composing and writing to the websocket in there would let one
 	// slow client hold up the record of the entire session. The notice only raises
 	// a flag; the work happens here.
-	if aceitaQuadro && dataDir != "" {
-		tela := telaDe(dataDir, user, sessionName)
-		if tela != nil {
-			cancelaAssinatura := tela.assina(func(rolou int) {
-				quadroMu.Lock()
-				rolouAcumulado += rolou
-				quadroMu.Unlock()
+	if acceptsFrame && dataDir != "" {
+		screen := screenOf(dataDir, user, sessionName)
+		if screen != nil {
+			unsubscribe := screen.subscribe(func(scrolled int) {
+				frameMu.Lock()
+				scrolledTotal += scrolled
+				frameMu.Unlock()
 				select {
-				case sinalDeQuadro <- struct{}{}:
+				case frameSignal <- struct{}{}:
 				default: // a signal is already pending: the next frame covers it
 				}
 			})
-			fimDoQuadro := make(chan struct{})
-			pararQuadro = func() {
-				cancelaAssinatura()
-				close(fimDoQuadro)
+			frameDone := make(chan struct{})
+			stopFrame = func() {
+				unsubscribe()
+				close(frameDone)
 			}
 			go func() {
 				defer func() {
@@ -521,38 +521,38 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 				}()
 				for {
 					select {
-					case <-fimDoQuadro:
+					case <-frameDone:
 						return
-					case <-sinalDeQuadro:
+					case <-frameSignal:
 					}
 					// Coalesce whatever arrives over the next few milliseconds:
 					// fast typing does not need one frame per keystroke.
 					time.Sleep(16 * time.Millisecond)
 
-					quadroMu.Lock()
-					q := quadro
-					rolou := rolouAcumulado
-					rolouAcumulado = 0
-					quadroMu.Unlock()
+					frameMu.Lock()
+					q := frame
+					scrolled := scrolledTotal
+					scrolledTotal = 0
+					frameMu.Unlock()
 					if q == nil {
 						continue
 					}
 					szMu.Lock()
-					escreve := escreverNoCliente
+					writeOut := writeToClient
 					szMu.Unlock()
-					if escreve == nil {
+					if writeOut == nil {
 						continue
 					}
-					var saida []byte
-					if b := q.rolou(rolou); len(b) > 0 {
-						saida = append(saida, b...)
+					var output []byte
+					if b := q.scrolled(scrolled); len(b) > 0 {
+						output = append(output, b...)
 					}
-					grade, cur, visivel := tela.telaECursor()
-					if b := q.atualiza(grade, cur, visivel); len(b) > 0 {
-						saida = append(saida, b...)
+					grade, cur, visible := screen.screenAndCursor()
+					if b := q.update(grade, cur, visible); len(b) > 0 {
+						output = append(output, b...)
 					}
-					if len(saida) > 0 {
-						if err := escreve(saida); err != nil {
+					if len(output) > 0 {
+						if err := writeOut(output); err != nil {
 							return
 						}
 					}
@@ -563,9 +563,9 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 
 	// Registered RIGHT AWAY, before the first resize: that way a connection that
 	// arrives mid-session gets the size in force without having had to speak.
-	if sessaoCompartilhada != nil {
-		if c, r := sessaoCompartilhada.registraAplicador(idDaConexao, aplicaTamanho); c > 0 && r > 0 {
-			aplicaTamanho(c, r)
+	if sharedSession != nil {
+		if c, r := sharedSession.registerApplier(connID, applySize); c > 0 && r > 0 {
+			applySize(c, r)
 		}
 	}
 	wobble := func() {
@@ -635,8 +635,8 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		// scrolls, nothing is truncated, and since rows do not change where text
 		// wraps, nothing is reflowed. The intermediate frame is the same frame one
 		// row taller, and the final repaint covers all of it.
-		maior := pty.Winsize{Cols: c, Rows: rw + 1}
-		_ = pty.Setsize(ptmx, &maior)
+		bigger := pty.Winsize{Cols: c, Rows: rw + 1}
+		_ = pty.Setsize(ptmx, &bigger)
 		time.Sleep(350 * time.Millisecond)
 		szMu.Lock() // restore to the most recent size
 		c2, r2 := lastCols, lastRows
@@ -645,7 +645,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 			c2, r2 = c, rw
 		}
 		_ = pty.Setsize(ptmx, &pty.Winsize{Cols: c2, Rows: r2})
-		log.Printf("[pty] repaint wobble on attach: %dx%d → %dx%d → %dx%d (session %q)", c, rw, maior.Cols, maior.Rows, c2, r2, sessionName)
+		log.Printf("[pty] repaint wobble on attach: %dx%d → %dx%d → %dx%d (session %q)", c, rw, bigger.Cols, bigger.Rows, c2, r2, sessionName)
 	}
 	// Fallback: if the client reconnects WITHOUT resending a resize (no re-fit), we
 	// still force a repaint using the master's current size. Cancelled at teardown
@@ -715,10 +715,10 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	// this different from repeating the mistake, is that the nudge now GROWS instead
 	// of shrinking: see the comment in the body of `wobble`.
 	//
-	// The decision lives in [primingDoServidor], above, and that is where it is tested.
+	// The decision lives in [serverPriming], above, and that is where it is tested.
 	defer func() {
-		if pararQuadro != nil {
-			pararQuadro()
+		if stopFrame != nil {
+			stopFrame()
 		}
 	}()
 
@@ -727,7 +727,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	go func() {
 		select {
 		case <-time.After(600 * time.Millisecond):
-			if forcarRepaint {
+			if forceRepaint {
 				repaintOnce.Do(func() { go wobble() })
 			}
 		case <-attachDone:
@@ -737,15 +737,15 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	// `size=1` is the client saying it UNDERSTANDS the effective-size notice and
 	// that it will draw the SESSION's grid. Anyone who does not ask carries on as
 	// before — an old client would receive the JSON and write it to the screen.
-	querAviso := r.URL.Query().Get("size") == "1"
+	wantsNotice := r.URL.Query().Get("size") == "1"
 
 	// pedido*: what THIS client last asked for. It serves only the instrumentation
 	// below — what rules the pty is the session's EFFECTIVE size, kept in
-	// last* by [aplicaTamanho]. Confusing the two is what made the
+	// last* by [applySize]. Confusing the two is what made the
 	// repaint-wobble restore this client's raw request on top of the
 	// effective size, silently trampling the minimum.
 	// Only the proxy's read loop touches this, and it is single-threaded.
-	var pedidoCols, pedidoRows uint16
+	var reqCols, reqRows uint16
 	proxy(conn, ptmx, func(cols, rows uint16) {
 		// INSTRUMENTATION: every size change makes a differentially redrawing
 		// app (Ink/Claude Code) repaint the WHOLE FRAME. If the frame is taller
@@ -759,103 +759,103 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		// restored at 53 having left from 52. Without this record, the correlation
 		// between opening the keyboard and duplicating stays a guess — with it, it
 		// becomes a measurement.
-		if pedidoRows != 0 && (pedidoCols != cols || pedidoRows != rows) {
-			log.Printf("[pty] client resize: %dx%d → %dx%d (session %q)", pedidoCols, pedidoRows, cols, rows, sessionName)
+		if reqRows != 0 && (reqCols != cols || reqRows != rows) {
+			log.Printf("[pty] client resize: %dx%d → %dx%d (session %q)", reqCols, reqRows, cols, rows, sessionName)
 		}
-		pedidoCols, pedidoRows = cols, rows
+		reqCols, reqRows = cols, rows
 		// This client's REAL window. In frame mode its pty sits at the SESSION's
 		// size, so this is the only place holding the true size — and it is what
 		// the crop is computed against.
-		quadroMu.Lock()
-		janelaCols, janelaRows = cols, rows
-		if quadro != nil {
-			quadro.redimensiona(int(cols), int(rows))
+		frameMu.Lock()
+		winCols, winRows = cols, rows
+		if frame != nil {
+			frame.resize(int(cols), int(rows))
 		}
-		quadroMu.Unlock()
+		frameMu.Unlock()
 		// The PTY sits at the LARGEST among the clients that accept frame mode —
 		// see `tamanho_da_sessao.go`. With a single client this is the identity;
 		// with two, it is the difference between converging and fighting forever.
-		if sessaoCompartilhada == nil {
-			aplicaTamanho(cols, rows)
+		if sharedSession == nil {
+			applySize(cols, rows)
 		} else {
-			logsDeSessaoMu.Lock()
-			efetivoCols, efetivoRows, mudou, aplicadores := sessaoCompartilhada.registraTamanho(idDaConexao, cols, rows, aceitaQuadro)
-			logsDeSessaoMu.Unlock()
-			if mudou {
-				if efetivoCols != cols || efetivoRows != rows {
+			sessionLogsMu.Lock()
+			effCols, effRows, changed, appliers := sharedSession.registerSize(connID, cols, rows, acceptsFrame)
+			sessionLogsMu.Unlock()
+			if changed {
+				if effCols != cols || effRows != rows {
 					log.Printf("[pty] effective size (smallest across clients): %dx%d (session %q)",
-						efetivoCols, efetivoRows, sessionName)
+						effCols, effRows, sessionName)
 				}
 				// OUTSIDE the lock: applying means writing to a websocket and an
 				// ioctl, and doing that while holding the session mutex is how you
 				// invent a deadlock between two connections.
-				for _, aplicar := range aplicadores {
-					aplicar(efetivoCols, efetivoRows)
+				for _, apply := range appliers {
+					apply(effCols, effRows)
 				}
 			} else {
 				// The SESSION has not changed, but THIS client may have just
 				// arrived: its pty is born 0x0 and needs the effective size
 				// either way. Returning early here is what left a new
 				// connection depending on the wobble to get sized.
-				aplicaTamanho(efetivoCols, efetivoRows)
+				applySize(effCols, effRows)
 			}
 		}
 		// first resize from the client = it has just attached → fire the repaint (fresh attach only).
-		if forcarRepaint {
+		if forceRepaint {
 			repaintOnce.Do(func() { go wobble() })
 		}
-	}, tee, func(avisar func(uint16, uint16), escreve func([]byte) error) {
+	}, tee, func(notifyFn func(uint16, uint16), writeOut func([]byte) error) {
 		szMu.Lock()
-		escreverNoCliente = escreve
+		writeToClient = writeOut
 		szMu.Unlock()
-		if !querAviso {
+		if !wantsNotice {
 			return
 		}
-		// From here on [aplicaTamanho] tells the client too. And it announces what
+		// From here on [applySize] tells the client too. And it announces what
 		// is already in force: a client arriving mid-session needs to know the
 		// session's size BEFORE the first byte, otherwise it draws the first frame
 		// on the wrong grid.
 		szMu.Lock()
-		avisarCliente = avisar
+		notifyClient = notifyFn
 		cols, rows := lastCols, lastRows
 		szMu.Unlock()
 		// A client that accepts frame mode does NOT get the initial notice: at this
 		// instant we still do not know its window (the first resize has not arrived),
 		// and telling "draw the session's grid" to a client that will end up in frame
 		// mode is exactly the defect frame mode prevents. If it turns out to be big
-		// enough, the notice goes out from [aplicaTamanho] right afterwards.
-		if cols > 0 && rows > 0 && !aceitaQuadro && !emModoQuadro() {
-			avisar(cols, rows)
+		// enough, the notice goes out from [applySize] right afterwards.
+		if cols > 0 && rows > 0 && !acceptsFrame && !inFrameMode() {
+			notifyFn(cols, rows)
 		}
-	}, func(p []byte, primeiro bool) []byte {
+	}, func(p []byte, first bool) []byte {
 		// In frame mode the raw stream does not go to this client: it is drawn for
 		// the SESSION's grid and would land entirely in the wrong place in the
 		// smaller window. What draws there is the compositor (`quadro.go`).
-		if emModoQuadro() {
+		if inFrameMode() {
 			return nil
 		}
-		if primeiro && clientePrimaAPropriaTela {
-			return bytes.TrimPrefix(p, limpezaDeAttachDoDtach)
+		if first && clientPrimesOwnScreen {
+			return bytes.TrimPrefix(p, dtachAttachClear)
 		}
 		return p
 	}, func(x int) {
-		quadroMu.Lock()
-		q := quadro
-		quadroMu.Unlock()
+		frameMu.Lock()
+		q := frame
+		frameMu.Unlock()
 		if q == nil {
 			return
 		}
-		colsDaSessao := 0
+		sessionCols := 0
 		if dataDir != "" {
-			if tela := telaDe(dataDir, user, sessionName); tela != nil {
-				colsDaSessao, _ = tela.tamanho()
+			if screen := screenOf(dataDir, user, sessionName); screen != nil {
+				sessionCols, _ = screen.size()
 			}
 		}
-		quadroMu.Lock()
-		q.desloca(x, colsDaSessao)
-		quadroMu.Unlock()
+		frameMu.Lock()
+		q.shift(x, sessionCols)
+		frameMu.Unlock()
 		select {
-		case sinalDeQuadro <- struct{}{}:
+		case frameSignal <- struct{}{}:
 		default:
 		}
 	})
@@ -918,7 +918,7 @@ func (h wsFromHijacked) Close() error                { return h.w.Close() }
 
 type resizer func(cols, rows uint16)
 
-// tamanhoSao rejects degenerate sizes. A hidden or buggy client sending 1x1
+// sizeIsSane rejects degenerate sizes. A hidden or buggy client sending 1x1
 // would make the program redraw into a single column, which is pure garbage; the
 // ceiling keeps out the absurdities at the other end.
 //
@@ -948,7 +948,7 @@ type resizer func(cols, rows uint16)
 //
 // Re-asserting stays cheap, which is what the recovery path needed; what no
 // longer exists is the per-connection memory that blocked the correction.
-func tamanhoSao(cols, rows uint16) bool {
+func sizeIsSane(cols, rows uint16) bool {
 	return cols >= 2 && rows >= 1 && cols <= 1000 && rows <= 1000
 }
 
@@ -956,7 +956,7 @@ func tamanhoSao(cols, rows uint16) bool {
 // It enforces ping/pong keepalive, read/write deadlines and serialises all
 // writes to the websocket through a single mutex so the ping goroutine and
 // the PTY-output goroutine never race on the underlying conn.
-// avisoDeTamanho is the control frame that tells the client the session's
+// sizeNotice is the control frame that tells the client the session's
 // EFFECTIVE size — the smallest among the attached clients.
 //
 // It is the second half of the classic multiplexer rule: the server picks the
@@ -967,13 +967,13 @@ func tamanhoSao(cols, rows uint16) bool {
 //
 // It goes as TEXT, not as PTY bytes, so it does not pass through the client's
 // emulator: it is a conversation between server and client, not program output.
-type avisoDeTamanho struct {
+type sizeNotice struct {
 	Type string `json:"type"`
 	Cols uint16 `json:"cols"`
 	Rows uint16 `json:"rows"`
 }
 
-// filtroDeSaida decides what of the PTY reaches THIS connection. It receives the
+// outputFilter decides what of the PTY reaches THIS connection. It receives the
 // chunk and whether it is the FIRST of this connection; returning nil/empty
 // swallows the chunk.
 //
@@ -985,9 +985,9 @@ type avisoDeTamanho struct {
 //   - in frame mode (`quadro.go`) the raw stream is drawn for the SESSION's
 //     grid and would land entirely in the wrong place in the client's smaller
 //     window — what draws there is the compositor, not the PTY.
-type filtroDeSaida func(p []byte, primeiro bool) []byte
+type outputFilter func(p []byte, first bool) []byte
 
-func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.Writer, aoPoderEscrever func(avisarTamanho func(uint16, uint16), escreverBytes func([]byte) error), filtra filtroDeSaida, desloca func(int)) {
+func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.Writer, onWritable func(notifySize func(uint16, uint16), writeBytes func([]byte) error), filterFn outputFilter, shift func(int)) {
 	conn.SetReadLimit(maxMessage)
 	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error {
@@ -1008,9 +1008,9 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 	}
 	// Only clients that ASKED for the notice receive it — see `HostShell`. An old
 	// client that does not understand the frame would write JSON to the screen.
-	if aoPoderEscrever != nil {
-		aoPoderEscrever(func(cols, rows uint16) {
-			b, err := json.Marshal(avisoDeTamanho{Type: "size", Cols: cols, Rows: rows})
+	if onWritable != nil {
+		onWritable(func(cols, rows uint16) {
+			b, err := json.Marshal(sizeNotice{Type: "size", Cols: cols, Rows: rows})
 			if err != nil {
 				return
 			}
@@ -1095,7 +1095,7 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 			}
 		}()
 		buf := make([]byte, readChunk)
-		primeiroBloco := true
+		firstBlock := true
 		for {
 			waitIfPaused() // backpressure: bloqueia enquanto o cliente pediu pausa
 			n, err := rwc.Read(buf)
@@ -1106,13 +1106,13 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 				if tee != nil {
 					_, _ = tee.Write(buf[:n])
 				}
-				saida := buf[:n]
-				if filtra != nil {
-					saida = filtra(saida, primeiroBloco)
+				output := buf[:n]
+				if filterFn != nil {
+					output = filterFn(output, firstBlock)
 				}
-				primeiroBloco = false
-				if len(saida) > 0 {
-					if werr := writeBinary(saida); werr != nil {
+				firstBlock = false
+				if len(output) > 0 {
+					if werr := writeBinary(output); werr != nil {
 						shutdown()
 						return
 					}
@@ -1163,15 +1163,15 @@ func proxy(conn *websocket.Conn, rwc io.ReadWriteCloser, resize resizer, tee io.
 					switch m.Type {
 					case "resize":
 						// No per-connection dedup: what reaches the PTY is decided
-						// by the session. See [tamanhoSao].
-						if resize != nil && tamanhoSao(m.Cols, m.Rows) {
+						// by the session. See [sizeIsSane].
+						if resize != nil && sizeIsSane(m.Cols, m.Rows) {
 							resize(m.Cols, m.Rows)
 						}
 					case "pan":
 						// Pans this client's crop horizontally. Inert outside
 						// frame mode.
-						if desloca != nil {
-							desloca(m.X)
+						if shift != nil {
+							shift(m.X)
 						}
 					case "input":
 						_, _ = rwc.Write([]byte(m.Data))

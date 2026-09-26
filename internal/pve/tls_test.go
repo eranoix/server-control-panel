@@ -10,11 +10,11 @@ import (
 	"testing"
 )
 
-// caDeTeste returns the path of a valid CA PEM. It reuses the REAL hypervisor
+// testCA returns the path of a valid CA PEM. It reuses the REAL hypervisor
 // CA when it is on this host's disk (data/pve/pve-root-ca.pem); otherwise it
 // generates an ephemeral one — the test is about the MECHANICS of the pin, not
 // about this particular CA.
-func caDeTeste(t *testing.T) string {
+func testCA(t *testing.T) string {
 	t.Helper()
 	if b, err := os.ReadFile("/opt/panel/data/pve/pve-root-ca.pem"); err == nil && len(b) > 0 {
 		p := filepath.Join(t.TempDir(), "ca.pem")
@@ -30,7 +30,7 @@ func caDeTeste(t *testing.T) string {
 // TestTLSPinning: the transport has to come out with its own RootCAs, a forced
 // ServerName and — the pin that matters — InsecureSkipVerify FALSE.
 func TestTLSPinning(t *testing.T) {
-	tr, err := newTransport(caDeTeste(t), "hypervisor.local", "198.51.100.20")
+	tr, err := newTransport(testCA(t), "hypervisor.local", "198.51.100.20")
 	if err != nil {
 		t.Fatalf("newTransport: %v", err)
 	}
@@ -57,12 +57,12 @@ func TestTLSPinning(t *testing.T) {
 	// False-green antidote: RootCAs != nil does not prove a pin if the pool is the
 	// system one. This pool has to be a NEW pool, with exactly 1 certificate.
 	pool := x509.NewCertPool()
-	pem, _ := os.ReadFile(caDeTeste(t))
+	pem, _ := os.ReadFile(testCA(t))
 	if !pool.AppendCertsFromPEM(pem) {
 		t.Fatal("the CA PEM did not go into a fresh pool")
 	}
-	if got, quer := len(cfg.RootCAs.Subjects()), len(pool.Subjects()); got != quer { //nolint:staticcheck
-		t.Errorf("RootCAs has %d subjects, want %d (the system pool has hundreds)", got, quer)
+	if got, want := len(cfg.RootCAs.Subjects()), len(pool.Subjects()); got != want { //nolint:staticcheck
+		t.Errorf("RootCAs has %d subjects, want %d (the system pool has hundreds)", got, want)
 	}
 }
 
@@ -76,11 +76,11 @@ func TestTLSBadCA(t *testing.T) {
 		t.Error("a nonexistent CA file was accepted")
 	}
 
-	ruim := filepath.Join(dir, "ruim.pem")
-	if err := os.WriteFile(ruim, []byte("isto nao e um certificado\n"), 0o600); err != nil {
+	bad := filepath.Join(dir, "ruim.pem")
+	if err := os.WriteFile(bad, []byte("isto nao e um certificado\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := newTransport(ruim, "hypervisor.local", "")
+	_, err := newTransport(bad, "hypervisor.local", "")
 	if err == nil {
 		t.Fatal("an invalid PEM was accepted — it would silently fall back to the system pool")
 	}
@@ -97,21 +97,21 @@ func TestTLSBadCA(t *testing.T) {
 // is preserved — the equivalent of curl's --resolve, already proven live. The
 // name hypervisor.local does not resolve in any DNS of this project.
 func TestResolveDial(t *testing.T) {
-	casos := []struct {
+	cases := []struct {
 		nome    string
 		resolve string
 		addr    string
-		quer    string
+		want    string
 	}{
 		{"troca o host, mantém a porta", "198.51.100.20", "hypervisor.local:8006", "198.51.100.20:8006"},
 		{"outra porta", "198.51.100.20", "hypervisor.local:443", "198.51.100.20:443"},
 		{"sem resolve, passa reto", "", "hypervisor.local:8006", "hypervisor.local:8006"},
 		{"endereço sem porta passa reto", "198.51.100.20", "hypervisor.local", "hypervisor.local"},
 	}
-	for _, tc := range casos {
+	for _, tc := range cases {
 		t.Run(tc.nome, func(t *testing.T) {
-			if got := redirectAddr(tc.addr, tc.resolve); got != tc.quer {
-				t.Errorf("redirectAddr(%q,%q) = %q, want %q", tc.addr, tc.resolve, got, tc.quer)
+			if got := redirectAddr(tc.addr, tc.resolve); got != tc.want {
+				t.Errorf("redirectAddr(%q,%q) = %q, want %q", tc.addr, tc.resolve, got, tc.want)
 			}
 		})
 	}

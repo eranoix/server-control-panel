@@ -36,18 +36,18 @@ import (
 // Backup sources. They label the track the file belongs to, and that is what
 // separates the retention domains so that one track never erases the other's.
 const (
-	OrigemManual     = "manual"
-	OrigemAutomatica = "auto"
-	OrigemAgendada   = "scheduled"
+	SourceManual    = "manual"
+	SourceAuto      = "auto"
+	SourceScheduled = "scheduled"
 )
 
-// idValido matches exactly the id format that [Store.Write] produces. It is
+// validIDRe matches exactly the id format that [Store.Write] produces. It is
 // the defence against directory traversal on every route that accepts an id
 // from the user: the id becomes a file name, and an id with `../` a path.
-var idValido = regexp.MustCompile(`^[0-9]+$`)
+var validIDRe = regexp.MustCompile(`^[0-9]+$`)
 
-// IDValido reports whether an id coming from the user may become a file name.
-func IDValido(id string) bool { return idValido.MatchString(id) }
+// ValidID reports whether an id coming from the user may become a file name.
+func ValidID(id string) bool { return validIDRe.MatchString(id) }
 
 // Store is a server's backup folder. It keeps only the `dataDir` because the
 // rest of the path is derived from the user — no per-request state.
@@ -89,7 +89,7 @@ func (s *Store) Write(user string, bk ptysvc.Backup) error {
 }
 
 // Read reads and deserializes a backup. The `id` must already have gone
-// through [IDValido] when it came from the user.
+// through [ValidID] when it came from the user.
 func (s *Store) Read(user, id string) (ptysvc.Backup, error) {
 	var bk ptysvc.Backup
 	dir, err := s.Dir(user)
@@ -106,22 +106,22 @@ func (s *Store) Read(user, id string) (ptysvc.Backup, error) {
 	return bk, nil
 }
 
-// SessaoNoBackup is one session inside a backup, already summarized.
-type SessaoNoBackup struct {
-	Nome   string `json:"name"`
-	Resumo string `json:"summary"`
-	Linhas int    `json:"lines"`
+// BackedUpSession is one session inside a backup, already summarized.
+type BackedUpSession struct {
+	Nome    string `json:"name"`
+	Summary string `json:"summary"`
+	Lines   int    `json:"lines"`
 }
 
 // Meta is a backup's metadata — everything but the scrollback, which is the
 // heavy part. A listing of 10 backups of 7 sessions would load megabytes of
 // history just to draw 10 rows of a list.
 type Meta struct {
-	ID      string           `json:"id"`
-	Criado  int64            `json:"created"`
-	Origem  string           `json:"source,omitempty"`
-	Sessoes []SessaoNoBackup `json:"sessions"`
-	Bytes   int64            `json:"bytes"`
+	ID       string            `json:"id"`
+	Created  int64             `json:"created"`
+	Source   string            `json:"source,omitempty"`
+	Sessions []BackedUpSession `json:"sessions"`
+	Bytes    int64             `json:"bytes"`
 }
 
 // List returns the user's backups, newest first.
@@ -130,10 +130,10 @@ func (s *Store) List(user string) []Meta {
 	if err != nil {
 		return []Meta{}
 	}
-	entradas, _ := os.ReadDir(dir)
-	out := make([]Meta, 0, len(entradas))
-	for _, e := range entradas {
-		id, ok := idDoArquivo(e)
+	entries, _ := os.ReadDir(dir)
+	out := make([]Meta, 0, len(entries))
+	for _, e := range entries {
+		id, ok := idFromFile(e)
 		if !ok {
 			continue
 		}
@@ -141,38 +141,38 @@ func (s *Store) List(user string) []Meta {
 		if err != nil {
 			continue
 		}
-		var tamanho int64
+		var size int64
 		if info, err := e.Info(); err == nil {
-			tamanho = info.Size()
+			size = info.Size()
 		}
-		sessoes := make([]SessaoNoBackup, 0, len(bk.Sessions))
+		sessions := make([]BackedUpSession, 0, len(bk.Sessions))
 		for _, sn := range bk.Sessions {
-			sessoes = append(sessoes, SessaoNoBackup{
-				Nome:   sn.Name,
-				Resumo: Resumo(sn),
-				Linhas: contaLinhas(sn),
+			sessions = append(sessions, BackedUpSession{
+				Nome:    sn.Name,
+				Summary: Summary(sn),
+				Lines:   countLines(sn),
 			})
 		}
 		out = append(out, Meta{
-			ID: bk.ID, Criado: bk.Created, Origem: bk.Source,
-			Sessoes: sessoes, Bytes: tamanho,
+			ID: bk.ID, Created: bk.Created, Source: bk.Source,
+			Sessions: sessions, Bytes: size,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Criado > out[j].Criado })
+	sort.Slice(out, func(i, j int) bool { return out[i].Created > out[j].Created })
 	return out
 }
 
 // Delete removes a whole backup or — with `sessao` filled in — only that one
 // session inside it. A backup left with no sessions is deleted: a file with an
 // empty list would show up in the listing promising to restore nothing.
-func (s *Store) Delete(user, id, sessao string) error {
+func (s *Store) Delete(user, id, session string) error {
 	dir, err := s.Dir(user)
 	if err != nil {
 		return err
 	}
 	path := filepath.Join(dir, id+".json")
 
-	if sessao == "" {
+	if session == "" {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -183,14 +183,14 @@ func (s *Store) Delete(user, id, sessao string) error {
 	if err != nil {
 		return err
 	}
-	alvo := ptysvc.SafeSessionName(sessao)
-	mantidas := bk.Sessions[:0]
+	target := ptysvc.SafeSessionName(session)
+	kept := bk.Sessions[:0]
 	for _, sn := range bk.Sessions {
-		if ptysvc.SafeSessionName(sn.Name) != alvo {
-			mantidas = append(mantidas, sn)
+		if ptysvc.SafeSessionName(sn.Name) != target {
+			kept = append(kept, sn)
 		}
 	}
-	bk.Sessions = mantidas
+	bk.Sessions = kept
 	if len(bk.Sessions) == 0 {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err
@@ -201,26 +201,26 @@ func (s *Store) Delete(user, id, sessao string) error {
 }
 
 // Prune keeps only the `keep` most recent backups of the user, IGNORING the
-// per-session backups made by the scheduler ([OrigemAgendada]). Those have
-// their own per-session retention ([Store.PruneSessao]); if the collector's
+// per-session backups made by the scheduler ([SourceScheduled]). Those have
+// their own per-session retention ([Store.PruneSession]); if the collector's
 // global pruning counted them, a workday with many scheduled sessions would
 // silently erase the history just created.
 func (s *Store) Prune(user string, keep int) {
-	s.podar(user, keep, func(bk ptysvc.Backup) bool { return bk.Source != OrigemAgendada })
+	s.prune(user, keep, func(bk ptysvc.Backup) bool { return bk.Source != SourceScheduled })
 }
 
-// PruneSessao keeps only the `keep` most recent scheduled backups of ONE
+// PruneSession keeps only the `keep` most recent scheduled backups of ONE
 // session. It touches neither bundles (manual/auto) nor backups of other
 // sessions — each session has independent retention.
-func (s *Store) PruneSessao(user, sessao string, keep int) {
+func (s *Store) PruneSession(user, session string, keep int) {
 	if keep <= 0 {
 		return
 	}
-	alvo := ptysvc.SafeSessionName(sessao)
-	s.podar(user, keep, func(bk ptysvc.Backup) bool {
-		return bk.Source == OrigemAgendada &&
+	target := ptysvc.SafeSessionName(session)
+	s.prune(user, keep, func(bk ptysvc.Backup) bool {
+		return bk.Source == SourceScheduled &&
 			len(bk.Sessions) == 1 &&
-			ptysvc.SafeSessionName(bk.Sessions[0].Name) == alvo
+			ptysvc.SafeSessionName(bk.Sessions[0].Name) == target
 	})
 }
 
@@ -228,46 +228,46 @@ func (s *Store) PruneSessao(user, sessao string, keep int) {
 // ones. The order comes from the id (UnixNano), not from the mtime: the mtime
 // changes when the file is rewritten — deleting a session from inside a backup
 // rewrites it — and that would make an old backup look like the newest one.
-func (s *Store) podar(user string, keep int, elegivel func(ptysvc.Backup) bool) {
+func (s *Store) prune(user string, keep int, eligible func(ptysvc.Backup) bool) {
 	dir, err := s.Dir(user)
 	if err != nil {
 		return
 	}
-	entradas, _ := os.ReadDir(dir)
-	type arquivo struct {
+	entries, _ := os.ReadDir(dir)
+	type file struct {
 		nome string
 		ts   int64
 	}
-	candidatos := make([]arquivo, 0, len(entradas))
-	for _, e := range entradas {
-		id, ok := idDoArquivo(e)
+	candidates := make([]file, 0, len(entries))
+	for _, e := range entries {
+		id, ok := idFromFile(e)
 		if !ok {
 			continue
 		}
 		bk, err := s.Read(user, id)
-		if err != nil || !elegivel(bk) {
+		if err != nil || !eligible(bk) {
 			continue
 		}
 		ts, _ := strconv.ParseInt(id, 10, 64)
-		candidatos = append(candidatos, arquivo{nome: e.Name(), ts: ts})
+		candidates = append(candidates, file{nome: e.Name(), ts: ts})
 	}
-	if len(candidatos) <= keep {
+	if len(candidates) <= keep {
 		return
 	}
-	sort.Slice(candidatos, func(i, j int) bool { return candidatos[i].ts > candidatos[j].ts })
-	for _, f := range candidatos[keep:] {
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].ts > candidates[j].ts })
+	for _, f := range candidates[keep:] {
 		_ = os.Remove(filepath.Join(dir, f.nome))
 	}
 }
 
-func idDoArquivo(e os.DirEntry) (string, bool) {
+func idFromFile(e os.DirEntry) (string, bool) {
 	if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 		return "", false
 	}
 	return strings.TrimSuffix(e.Name(), ".json"), true
 }
 
-func contaLinhas(s ptysvc.SessionSnapshot) int {
+func countLines(s ptysvc.SessionSnapshot) int {
 	total := 0
 	for _, w := range s.Windows {
 		for _, p := range w.Panes {
@@ -282,7 +282,7 @@ func contaLinhas(s ptysvc.SessionSnapshot) int {
 
 // Resumo returns ONE line saying what the session is about, so the listing can
 // show "what this backup was of" without opening anything.
-func Resumo(s ptysvc.SessionSnapshot) string {
+func Summary(s ptysvc.SessionSnapshot) string {
 	var sb strings.Builder
 	for _, w := range s.Windows {
 		for _, p := range w.Panes {
@@ -292,11 +292,11 @@ func Resumo(s ptysvc.SessionSnapshot) string {
 			}
 		}
 	}
-	manchete, corpo := ResumoDePainel(sb.String())
+	manchete, body := PanelSummary(sb.String())
 	out := manchete
-	if out == "" && corpo != "" {
-		linhas := strings.Split(strings.TrimRight(corpo, "\n"), "\n")
-		out = strings.TrimSpace(linhas[len(linhas)-1])
+	if out == "" && body != "" {
+		lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+		out = strings.TrimSpace(lines[len(lines)-1])
 	}
 	if len(out) > 140 {
 		out = out[:140] + "…"
@@ -304,14 +304,14 @@ func Resumo(s ptysvc.SessionSnapshot) string {
 	return out
 }
 
-// ResumoDePainel reduces a capture-pane to something readable: it drops empty
+// PanelSummary reduces a capture-pane to something readable: it drops empty
 // lines, separators and TUI borders, takes the last ~14 useful lines (the
 // bottom of the screen is the most recent) and extracts a headline from the
 // claude "recap:" line when there is one.
-func ResumoDePainel(bruto string) (manchete, corpo string) {
-	linhas := strings.Split(bruto, "\n")
-	limpas := make([]string, 0, len(linhas))
-	for _, ln := range linhas {
+func PanelSummary(raw string) (manchete, body string) {
+	lines := strings.Split(raw, "\n")
+	cleaned := make([]string, 0, len(lines))
+	for _, ln := range lines {
 		t := strings.TrimSpace(ln)
 		if t == "" {
 			continue
@@ -324,7 +324,7 @@ func ResumoDePainel(bruto string) (manchete, corpo string) {
 		// `root@host:/dir#` with nothing after it, and a summary made only of that
 		// spends two lines of the screen to say "this session is idle" — which is
 		// what the ABSENCE of a summary already says, for free.
-		if promptVazio(t) {
+		if emptyPrompt(t) {
 			continue
 		}
 		if i := strings.Index(t, "recap:"); i >= 0 {
@@ -334,34 +334,34 @@ func ResumoDePainel(bruto string) (manchete, corpo string) {
 			}
 			manchete = h
 		}
-		limpas = append(limpas, t)
+		cleaned = append(cleaned, t)
 	}
-	if len(limpas) > 14 {
-		limpas = limpas[len(limpas)-14:]
+	if len(cleaned) > 14 {
+		cleaned = cleaned[len(cleaned)-14:]
 	}
-	corpo = strings.Join(limpas, "\n")
-	if len(corpo) > 1600 {
-		corpo = corpo[len(corpo)-1600:]
+	body = strings.Join(cleaned, "\n")
+	if len(body) > 1600 {
+		body = body[len(body)-1600:]
 	}
-	return manchete, corpo
+	return manchete, body
 }
 
-// promptVazio recognizes a line that is only the shell prompt, with no command
+// emptyPrompt recognizes a line that is only the shell prompt, with no command
 // after it. It covers the standard `user@host:path$` form (and `#` for root),
 // which is what this server's sessions use.
 //
 // Deliberately conservative: it only discards when the `$`/`#` is the LAST
 // character. A prompt with a command (`root@host:/opt# make build`) is
 // informative, and is precisely what the summary exists to show.
-func promptVazio(linha string) bool {
-	if linha == "" {
+func emptyPrompt(line string) bool {
+	if line == "" {
 		return false
 	}
-	fim := linha[len(linha)-1]
+	fim := line[len(line)-1]
 	if fim != '$' && fim != '#' {
 		return false
 	}
-	arroba := strings.IndexByte(linha, '@')
-	doisPontos := strings.IndexByte(linha, ':')
-	return arroba > 0 && doisPontos > arroba
+	atIdx := strings.IndexByte(line, '@')
+	colonIdx := strings.IndexByte(line, ':')
+	return atIdx > 0 && colonIdx > atIdx
 }

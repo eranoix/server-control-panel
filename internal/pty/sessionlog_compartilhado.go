@@ -60,7 +60,7 @@ import (
 // So the scribe becomes a LEASE rather than an office. Whoever writes renews;
 // whoever arrives only takes over if the lease has expired. A living scribe never
 // loses the post (it renews on every chunk, and the chunks arrive together for
-// everyone); a scribe that stopped is replaced in [validadeDoArrendamento],
+// everyone); a scribe that stopped is replaced in [leaseValidity],
 // without depending on its courtesy to leave.
 //
 // The price is explicit: on a handover, up to one lease window of output is
@@ -72,60 +72,60 @@ import (
 // legitimate repetition — a double `\r\n` the program really emitted, a progress
 // bar repainting the same. The only correct answer is not to write twice.
 var (
-	logsDeSessaoMu sync.Mutex
-	logsDeSessao   = map[string]*logCompartilhado{}
+	sessionLogsMu sync.Mutex
+	sessionLogs   = map[string]*sharedLog{}
 )
 
-type logCompartilhado struct {
+type sharedLog struct {
 	w *sessionLogWriter
 	// Attached connections, in arrival order. The first one is the scribe.
-	conexoes []int64
-	proximo  int64
+	conns []int64
+	next  int64
 
 	// The size each connection asked for, and what is actually on the PTY. See
 	// `tamanho_da_sessao.go`: the PTY sits at the SMALLEST among the clients,
 	// which is the only rule that converges when there is more than one.
-	tamanhos     map[int64]tamanhoDoCliente
-	aplicadoCols uint16
-	aplicadoRows uint16
+	sizes       map[int64]clientSize
+	appliedCols uint16
+	appliedRows uint16
 	// How to PUT the session's effective size on each connection — its pty and,
 	// for whoever asked, the client's grid. See `tamanho_da_sessao.go`.
-	aplicadores map[int64]func(uint16, uint16)
+	appliers map[int64]func(uint16, uint16)
 
 	// The write lease: who is recording now, and when it last recorded. See
-	// [escritorDaSessao.Write].
-	escriba       int64
-	ultimaEscrita time.Time
+	// [sessionWriter.Write].
+	scribe    int64
+	lastWrite time.Time
 }
 
-// relogioDaSessao is replaceable in tests — the lease is a rule about TIME, and
+// sessionClock is replaceable in tests — the lease is a rule about TIME, and
 // testing it with `time.Sleep` would trade an assertion for a bet.
-var relogioDaSessao = time.Now
+var sessionClock = time.Now
 
-// escritorDaSessao is what every connection receives. Only the scribe really writes.
+// sessionWriter is what every connection receives. Only the scribe really writes.
 //
 // The diversion happens at WRITE time, not at handout time, on purpose: who
 // decides changes when a connection leaves, and a decision frozen at attach time
 // would leave the session with no log as soon as the first tab closed.
-type escritorDaSessao struct {
-	compartilhado *logCompartilhado
-	id            int64
+type sessionWriter struct {
+	shared *sharedLog
+	id     int64
 
 	// Whether this connection's first chunk has yet to go through — see
-	// [limpezaDeAttachDoDtach].
-	primeiroBloco bool
+	// [dtachAttachClear].
+	firstBlock bool
 	// The first bytes, held while they may still be the attach-time clear
 	// arriving split.
-	inicio []byte
-	// The last [bytesDeCauda] this connection wrote, so a `dtach` literal that
+	start []byte
+	// The last [tailBytes] this connection wrote, so a `dtach` literal that
 	// straddles a chunk boundary can still be recognised.
-	cauda []byte
+	tail []byte
 
 	// Whether `dtach`'s goodbye has already shown up — see [despedidaDoDtach].
-	despediu bool
+	saidFarewell bool
 }
 
-// limpezaDeAttachDoDtach is what `dtach` writes onto the NEW client's screen
+// dtachAttachClear is what `dtach` writes onto the NEW client's screen
 // when it attaches: "go to the top, erase everything".
 //
 // The sequence is literally inside the binary (a `grep` over /usr/bin/dtach
@@ -152,7 +152,7 @@ type escritorDaSessao struct {
 // place. If a program happened to begin its output with that same sequence at
 // the instant of the attach, the price would be the replay keeping one extra old
 // frame — nothing next to the guaranteed black screen the cut prevents.
-var limpezaDeAttachDoDtach = []byte("\x1b[H\x1b[J")
+var dtachAttachClear = []byte("\x1b[H\x1b[J")
 
 // despedidaDoDtach is what `dtach` writes when the client DETACHES:
 //
@@ -178,11 +178,11 @@ var limpezaDeAttachDoDtach = []byte("\x1b[H\x1b[J")
 // phrases are true for that screen and lies for the record. Anything new the
 // multiplexer starts saying to the client joins this same list.
 var (
-	marcaDeSaidaDoDtach = []byte("\x1b[999H")
-	textoDeSaidaDoDtach = []byte("[detached]")
+	dtachExitMark = []byte("\x1b[999H")
+	dtachExitText = []byte("[detached]")
 )
 
-// validadeDoArrendamento: how long the scribe keeps the post without writing
+// leaseValidity: how long the scribe keeps the post without writing
 // anything.
 //
 // The number comes from the gap between the two scales involved. A session's
@@ -194,9 +194,9 @@ var (
 //
 // A second and a half sits three orders of magnitude above the skew between
 // clients and is still short for the hole.
-const validadeDoArrendamento = 1500 * time.Millisecond
+const leaseValidity = 1500 * time.Millisecond
 
-// bytesDeCauda: how much of what it has already written this connection
+// tailBytes: how much of what it has already written this connection
 // remembers, in order to recognise a `dtach` literal that arrives SPLIT across
 // two chunks.
 //
@@ -210,13 +210,13 @@ const validadeDoArrendamento = 1500 * time.Millisecond
 //
 // 48 bytes cover the whole goodbye with room to spare for the `ESC[999H` that
 // precedes it.
-const bytesDeCauda = 48
+const tailBytes = 48
 
-func (e *escritorDaSessao) Write(p []byte) (int, error) {
+func (e *sessionWriter) Write(p []byte) (int, error) {
 	n := len(p)
 	// After the goodbye nothing more comes from the program — only the rest of
 	// `dtach`'s farewell. Once it has started, everything from this connection goes.
-	if e.despediu {
+	if e.saidFarewell {
 		return n, nil
 	}
 
@@ -224,43 +224,43 @@ func (e *escritorDaSessao) Write(p []byte) (int, error) {
 	// While the start of this connection may still be `dtach`'s "erase the screen",
 	// the bytes wait: there are at most 6 of them, and this is the only moment where
 	// holding them is correct (nobody is reading the log in that millisecond).
-	if e.primeiroBloco {
-		e.inicio = append(e.inicio, p...)
-		if len(e.inicio) < len(limpezaDeAttachDoDtach) {
-			if bytes.HasPrefix(limpezaDeAttachDoDtach, e.inicio) {
+	if e.firstBlock {
+		e.start = append(e.start, p...)
+		if len(e.start) < len(dtachAttachClear) {
+			if bytes.HasPrefix(dtachAttachClear, e.start) {
 				return n, nil // ainda pode ser a limpeza: espera o resto
 			}
 		}
-		e.primeiroBloco = false
-		p = bytes.TrimPrefix(e.inicio, limpezaDeAttachDoDtach)
-		e.inicio = nil
+		e.firstBlock = false
+		p = bytes.TrimPrefix(e.start, dtachAttachClear)
+		e.start = nil
 	}
 
 	// ── The goodbye, recognised ACROSS the boundary ──────────────────────
 	// The search runs over tail+p. When the match starts in the tail, part of the
 	// literal HAS ALREADY BEEN WRITTEN: the writer undoes exactly those bytes. That
 	// is what makes the filter a rule about the STREAM, and not about the chunk.
-	combinado := p
-	if len(e.cauda) > 0 {
-		combinado = append(append(make([]byte, 0, len(e.cauda)+len(p)), e.cauda...), p...)
+	combined := p
+	if len(e.tail) > 0 {
+		combined = append(append(make([]byte, 0, len(e.tail)+len(p)), e.tail...), p...)
 	}
-	if i := bytes.Index(combinado, textoDeSaidaDoDtach); i >= 0 {
+	if i := bytes.Index(combined, dtachExitText); i >= 0 {
 		// It is only `dtach`'s goodbye if the `ESC[999H` comes right before — it is
 		// what scrolls the screen, and it is what tells the multiplexer's farewell
 		// apart from a program that happened to print the word. Without that
 		// requirement, a `grep [detached]` in a session silenced its log until reconnect.
-		corte := -1
-		if j := bytes.LastIndex(combinado[:i], marcaDeSaidaDoDtach); j >= 0 && i-j <= 16 {
-			corte = j
+		cut := -1
+		if j := bytes.LastIndex(combined[:i], dtachExitMark); j >= 0 && i-j <= 16 {
+			cut = j
 		}
-		if corte >= 0 {
-			e.despediu = true
-			jaEscrito := len(e.cauda) - corte // pode ser <= 0 se o corte cai em p
-			if jaEscrito > 0 {
-				e.compartilhado.w.descartaUltimos(jaEscrito)
+		if cut >= 0 {
+			e.saidFarewell = true
+			alreadyWritten := len(e.tail) - cut // pode ser <= 0 se o corte cai em p
+			if alreadyWritten > 0 {
+				e.shared.w.dropLast(alreadyWritten)
 				p = nil
 			} else {
-				p = p[:corte-len(e.cauda)]
+				p = p[:cut-len(e.tail)]
 			}
 		}
 	}
@@ -268,33 +268,33 @@ func (e *escritorDaSessao) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return n, nil
 	}
-	agora := relogioDaSessao()
+	now := sessionClock()
 
-	logsDeSessaoMu.Lock()
-	souAEscriba := e.compartilhado.escriba == e.id
-	arrendamentoVenceu := agora.Sub(e.compartilhado.ultimaEscrita) >= validadeDoArrendamento
-	if souAEscriba || e.compartilhado.escriba == 0 || arrendamentoVenceu {
-		e.compartilhado.escriba = e.id
-		e.compartilhado.ultimaEscrita = agora
-		souAEscriba = true
+	sessionLogsMu.Lock()
+	iAmScribe := e.shared.scribe == e.id
+	leaseExpired := now.Sub(e.shared.lastWrite) >= leaseValidity
+	if iAmScribe || e.shared.scribe == 0 || leaseExpired {
+		e.shared.scribe = e.id
+		e.shared.lastWrite = now
+		iAmScribe = true
 	}
-	logsDeSessaoMu.Unlock()
+	sessionLogsMu.Unlock()
 
-	if !souAEscriba {
+	if !iAmScribe {
 		// Report success: the PTY pump must not treat "I am not the one
 		// recording" as a write error.
 		return len(p), nil
 	}
-	if _, err := e.compartilhado.w.Write(p); err != nil {
+	if _, err := e.shared.w.Write(p); err != nil {
 		return n, err
 	}
 	// Keep the tail of only what THIS connection actually wrote.
-	if len(p) >= bytesDeCauda {
-		e.cauda = append(e.cauda[:0], p[len(p)-bytesDeCauda:]...)
+	if len(p) >= tailBytes {
+		e.tail = append(e.tail[:0], p[len(p)-tailBytes:]...)
 	} else {
-		e.cauda = append(e.cauda, p...)
-		if len(e.cauda) > bytesDeCauda {
-			e.cauda = append(e.cauda[:0], e.cauda[len(e.cauda)-bytesDeCauda:]...)
+		e.tail = append(e.tail, p...)
+		if len(e.tail) > tailBytes {
+			e.tail = append(e.tail[:0], e.tail[len(e.tail)-tailBytes:]...)
 		}
 	}
 	// Report the ORIGINAL length: whoever writes into the tee must not find out
@@ -302,32 +302,32 @@ func (e *escritorDaSessao) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-// pegarLogDaSessao registers this connection and returns its writer plus the
+// acquireSessionLog registers this connection and returns its writer plus the
 // function that unregisters it — call that exactly once (`defer`).
 //
 // It NEVER returns nil, for the same reason `openSessionLog` does not: the
 // terminal must not break because of the log.
-func pegarLogDaSessao(dataDir, user, name string) (io.Writer, *logCompartilhado, int64, func()) {
-	chave := sessionLogPath(dataDir, user, name)
+func acquireSessionLog(dataDir, user, name string) (io.Writer, *sharedLog, int64, func()) {
+	key := sessionLogPath(dataDir, user, name)
 
-	logsDeSessaoMu.Lock()
-	compartilhado, existe := logsDeSessao[chave]
-	if !existe {
-		compartilhado = &logCompartilhado{w: openSessionLog(dataDir, user, name)}
-		logsDeSessao[chave] = compartilhado
+	sessionLogsMu.Lock()
+	shared, exists := sessionLogs[key]
+	if !exists {
+		shared = &sharedLog{w: openSessionLog(dataDir, user, name)}
+		sessionLogs[key] = shared
 	}
-	compartilhado.proximo++
-	id := compartilhado.proximo
-	compartilhado.conexoes = append(compartilhado.conexoes, id)
-	logsDeSessaoMu.Unlock()
+	shared.next++
+	id := shared.next
+	shared.conns = append(shared.conns, id)
+	sessionLogsMu.Unlock()
 
-	var umaVez sync.Once
-	soltar := func() {
-		umaVez.Do(func() {
-			logsDeSessaoMu.Lock()
-			for i, c := range compartilhado.conexoes {
+	var once sync.Once
+	release := func() {
+		once.Do(func() {
+			sessionLogsMu.Lock()
+			for i, c := range shared.conns {
 				if c == id {
-					compartilhado.conexoes = append(compartilhado.conexoes[:i], compartilhado.conexoes[i+1:]...)
+					shared.conns = append(shared.conns[:i], shared.conns[i+1:]...)
 					break
 				}
 			}
@@ -338,33 +338,33 @@ func pegarLogDaSessao(dataDir, user, name string) (io.Writer, *logCompartilhado,
 			// for everyone who stayed, and someone has to apply it. Discarding these
 			// return values was the defect — the session stayed stuck at the size of
 			// whoever closed their tab, with nothing able to restore it.
-			efCols, efRows, mudou, aplicadores := compartilhado.esqueceTamanho(id)
+			efCols, efRows, changed, appliers := shared.forgetSize(id)
 			// And release the lease right away, instead of making the next chunk
 			// wait for it to expire. Leaving politely has to be faster than dying
 			// in silence.
-			if compartilhado.escriba == id {
-				compartilhado.escriba = 0
+			if shared.scribe == id {
+				shared.scribe = 0
 			}
-			ultimo := len(compartilhado.conexoes) == 0
-			if ultimo {
-				delete(logsDeSessao, chave)
+			last := len(shared.conns) == 0
+			if last {
+				delete(sessionLogs, key)
 			}
-			logsDeSessaoMu.Unlock()
+			sessionLogsMu.Unlock()
 			// Close OUTSIDE the lock: `Close` takes the writer's mutex, and holding
 			// both at once is how you invent a lock ordering for someone to violate
 			// later.
-			if ultimo {
-				_ = compartilhado.w.Close()
+			if last {
+				_ = shared.w.Close()
 			}
 			// OUTSIDE the lock, for the usual reason: applying means writing to a
 			// websocket and an ioctl.
-			if mudou {
-				for _, aplicar := range aplicadores {
-					aplicar(efCols, efRows)
+			if changed {
+				for _, apply := range appliers {
+					apply(efCols, efRows)
 				}
 			}
 		})
 	}
-	return &escritorDaSessao{compartilhado: compartilhado, id: id, primeiroBloco: true},
-		compartilhado, id, soltar
+	return &sessionWriter{shared: shared, id: id, firstBlock: true},
+		shared, id, release
 }

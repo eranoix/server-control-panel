@@ -7,20 +7,20 @@ import (
 	"testing"
 )
 
-// escreveLog builds both generations of a session's log and returns the dataDir.
-func escreveLog(t *testing.T, geracaoAnterior, atual string) string {
+// writeLog builds both generations of a session's log and returns the dataDir.
+func writeLog(t *testing.T, prevGeneration, current string) string {
 	t.Helper()
 	dd := t.TempDir()
-	caminho := sessionLogPath(dd, "sam", "Aplicativo")
-	if err := os.MkdirAll(filepath.Dir(caminho), 0o700); err != nil {
+	path := sessionLogPath(dd, "sam", "Aplicativo")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if geracaoAnterior != "" {
-		if err := os.WriteFile(caminho+".1", []byte(geracaoAnterior), 0o600); err != nil {
+	if prevGeneration != "" {
+		if err := os.WriteFile(path+".1", []byte(prevGeneration), 0o600); err != nil {
 			t.Fatalf("escreve .1: %v", err)
 		}
 	}
-	if err := os.WriteFile(caminho, []byte(atual), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(current), 0o600); err != nil {
 		t.Fatalf("escreve log: %v", err)
 	}
 	return dd
@@ -28,8 +28,8 @@ func escreveLog(t *testing.T, geracaoAnterior, atual string) string {
 
 // A log that fits entirely in the request comes out whole, and Total is the real
 // size — Total is how the app can say "this is all there is".
-func TestRawLogTail_LogInteiroQuandoCabe(t *testing.T) {
-	dd := escreveLog(t, "velho\n", "novo\n")
+func TestRawLogTail_WholeLogWhenItFits(t *testing.T) {
+	dd := writeLog(t, "velho\n", "novo\n")
 
 	data, total := rawLogTail(dd, "sam", "Aplicativo", 1<<20)
 
@@ -45,20 +45,20 @@ func TestRawLogTail_LogInteiroQuandoCabe(t *testing.T) {
 // sequence is garbage PRINTED on the operator's screen (the rest of it becomes
 // text). The cut advances past the first line break, and this test proves the
 // split sequence does not survive.
-func TestRawLogTail_CortaEmQuebraDeLinhaNuncaNoMeioDeUmEscape(t *testing.T) {
-	completo := strings.Repeat("preenchimento\n", 100) + "\x1b[31mvermelho\x1b[0m\nfim\n"
-	dd := escreveLog(t, "", completo)
+func TestRawLogTail_CutsAtNewlineNeverMidEscape(t *testing.T) {
+	full := strings.Repeat("preenchimento\n", 100) + "\x1b[31mvermelho\x1b[0m\nfim\n"
+	dd := writeLog(t, "", full)
 
 	// A ceiling that lands INSIDE the "\x1b[31m" if nobody fixes the start.
-	alvo := len("vermelho\x1b[0m\nfim\n") + 4
+	target := len("vermelho\x1b[0m\nfim\n") + 4
 
-	data, total := rawLogTail(dd, "sam", "Aplicativo", alvo)
+	data, total := rawLogTail(dd, "sam", "Aplicativo", target)
 
-	if total != len(completo) {
-		t.Fatalf("total = %d, wanted %d (the total is the log's, not the slice's)", total, len(completo))
+	if total != len(full) {
+		t.Fatalf("total = %d, wanted %d (the total is the log's, not the slice's)", total, len(full))
 	}
-	if len(data) >= len(completo) {
-		t.Fatalf("the slice should be smaller than the log (%d >= %d)", len(data), len(completo))
+	if len(data) >= len(full) {
+		t.Fatalf("the slice should be smaller than the log (%d >= %d)", len(data), len(full))
 	}
 	if strings.HasPrefix(string(data), "31m") || strings.HasPrefix(string(data), "[31m") {
 		t.Fatalf("slice started in the middle of an escape: %q", string(data))
@@ -72,7 +72,7 @@ func TestRawLogTail_CortaEmQuebraDeLinhaNuncaNoMeioDeUmEscape(t *testing.T) {
 }
 
 // A session with no log at all (it never had a client attached) is a normal case, not an error.
-func TestRawLogTail_SemLogDevolveVazio(t *testing.T) {
+func TestRawLogTail_NoLogReturnsEmpty(t *testing.T) {
 	data, total := rawLogTail(t.TempDir(), "sam", "nunca-existiu", 1<<20)
 	if data != nil || total != 0 {
 		t.Fatalf("want (nil, 0), got (%q, %d)", string(data), total)

@@ -36,18 +36,18 @@ import (
 // failure".
 // ────────────────────────────────────────────────────────────────────────────
 
-// clienteDeManutencao returns the client carrying the DASHBOARD's token and,
+// maintenanceClient returns the client carrying the DASHBOARD's token and,
 // with it, the reason in plain language when it cannot — because "it did not
 // work" with no reason is the difference between the operator fixing it in a
 // minute and raising a ticket with themselves.
-func (r *Router) clienteDeManutencao(w http.ResponseWriter) (hypervisorOps, bool) {
-	valor, estado := r.tokenDoCofre(pveSecretPainel)
-	switch estado {
+func (r *Router) maintenanceClient(w http.ResponseWriter) (hypervisorOps, bool) {
+	valor, state := r.vaultToken(pveSecretPanel)
+	switch state {
 	case vaultInalcancavel:
 		writeErr(w, 503, "vault unreachable — the panel credential could not be read")
 		return nil, false
-	case vaultAusente:
-		writeErr(w, 409, "clone and store copy use the panel credential ("+pveSecretPainel+
+	case vaultMissing:
+		writeErr(w, 409, "clone and store copy use the panel credential ("+pveSecretPanel+
 			"), which is not in the vault — the node token will not do because it has neither VM.Allocate nor Datastore.AllocateSpace")
 		return nil, false
 	}
@@ -59,17 +59,17 @@ func (r *Router) clienteDeManutencao(w http.ResponseWriter) (hypervisorOps, bool
 	return cli, true
 }
 
-// guestDoInventario resolves the id from the screen into a real guest. The host
+// inventoryGuest resolves the id from the screen into a real guest. The host
 // and an external node land here with DIFFERENT messages, because the
 // operator's actions differ: one is not clonable by nature, the other does not
 // even belong to this hypervisor.
-func (r *Router) guestDoInventario(w http.ResponseWriter, st *inventory.Store, id string) (inventory.Node, bool) {
+func (r *Router) inventoryGuest(w http.ResponseWriter, st *inventory.Store, id string) (inventory.Node, bool) {
 	inv, err := st.Snapshot()
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return inventory.Node{}, false
 	}
-	no, ok := achaNo(inv, id)
+	no, ok := findNode(inv, id)
 	if !ok {
 		writeErr(w, 404, "node not found: "+id)
 		return inventory.Node{}, false
@@ -85,30 +85,30 @@ func (r *Router) guestDoInventario(w http.ResponseWriter, st *inventory.Store, i
 	return no, true
 }
 
-// cloneDoNo: GET prepares, POST executes.
+// nodeClone: GET prepares, POST executes.
 //
 // The GET exists so that nobody has to TYPE the destination VMID. What knows
 // which id is free is the hypervisor (/cluster/nextid); guessing from the list
 // on screen races anything else that allocates in the meantime.
-func (r *Router) cloneDoNo(w http.ResponseWriter, req *http.Request, st *inventory.Store, id string) {
-	no, ok := r.guestDoInventario(w, st, id)
+func (r *Router) nodeClone(w http.ResponseWriter, req *http.Request, st *inventory.Store, id string) {
+	no, ok := r.inventoryGuest(w, st, id)
 	if !ok {
 		return
 	}
-	cli, ok := r.clienteDeManutencao(w)
+	cli, ok := r.maintenanceClient(w)
 	if !ok {
 		return
 	}
-	tipo, node := tipoEHost(no)
+	kind, node := kindAndHost(no)
 	ctx := req.Context()
 
 	if req.Method == http.MethodGet {
 		prox, err := cli.NextID(ctx)
 		if err != nil {
-			writeErr(w, codigoDoErroPVE(err), "could not ask for the next free id: "+err.Error())
+			writeErr(w, pveErrorCode(err), "could not ask for the next free id: "+err.Error())
 			return
 		}
-		ligado := ehGuestLigado(no)
+		running := isGuestRunning(no)
 
 		// 🔴 A RUNNING CONTAINER ONLY CLONES FROM A SNAPSHOT — A MEASURED RULE.
 		//
@@ -119,11 +119,11 @@ func (r *Router) cloneDoNo(w http.ResponseWriter, req *http.Request, st *invento
 		//
 		// The screen needs to know BEFORE the operator clicks, otherwise they
 		// fill in the form and take an error from the hypervisor in the face.
-		precisaSnap := ligado && tipo == "lxc"
+		needsSnap := running && kind == "lxc"
 		snaps := []string{}
-		if precisaSnap {
-			if lista, err := cli.SnapshotList(ctx, node, no.VMID, tipo); err == nil {
-				for _, sn := range lista {
+		if needsSnap {
+			if list, err := cli.SnapshotList(ctx, node, no.VMID, kind); err == nil {
+				for _, sn := range list {
 					// "current" is PVE's "You are here!" pseudo-entry, not a
 					// real snapshot.
 					if sn.Name != "" && sn.Name != "current" {
@@ -133,22 +133,22 @@ func (r *Router) cloneDoNo(w http.ResponseWriter, req *http.Request, st *invento
 			}
 		}
 		writeJSON(w, map[string]any{
-			"precisa_snapshot": precisaSnap,
+			"precisa_snapshot": needsSnap,
 			"snapshots":        snaps,
 			"origem":           id,
 			"origem_nome":      no.Name,
-			"tipo":             tipo,
+			"tipo":             kind,
 			"next_id":          prox,
-			"sugestao":         sugestaoDeNome(no.Name),
+			"sugestao":         suggestName(no.Name),
 			// The warning travels with the data because it depends on the guest's
 			// STATE, and the screen must not recompute a consistency rule on its own.
-			"ligado": ehGuestLigado(no),
+			"ligado": isGuestRunning(no),
 		})
 		return
 	}
 
 	var body struct {
-		NovoID   int    `json:"novo_id"`
+		NewID    int    `json:"novo_id"`
 		Nome     string `json:"nome"`
 		Snapshot string `json:"snapshot"`
 	}
@@ -156,7 +156,7 @@ func (r *Router) cloneDoNo(w http.ResponseWriter, req *http.Request, st *invento
 		writeErr(w, 400, "bad json")
 		return
 	}
-	if body.NovoID <= 0 {
+	if body.NewID <= 0 {
 		writeErr(w, 400, "novo_id missing — ask for the next free one with GET first")
 		return
 	}
@@ -165,41 +165,41 @@ func (r *Router) cloneDoNo(w http.ResponseWriter, req *http.Request, st *invento
 	// reach the operator (tab closed, network dropping). The record of what was
 	// ASKED FOR must not depend on what was ANSWERED.
 	r.auditEvent(req, auth.UserFrom(req), "pve.clone",
-		fmt.Sprintf("origem=%s destino=%d nome=%s snap=%s status=pedido", id, body.NovoID, body.Nome, body.Snapshot))
+		fmt.Sprintf("origem=%s destino=%d nome=%s snap=%s status=pedido", id, body.NewID, body.Nome, body.Snapshot))
 
 	// Refuse HERE, with the message that resolves it, instead of letting the
 	// hypervisor return its own. The difference is that this one says what to DO.
-	if ehGuestLigado(no) && tipo == "lxc" && strings.TrimSpace(body.Snapshot) == "" {
+	if isGuestRunning(no) && kind == "lxc" && strings.TrimSpace(body.Snapshot) == "" {
 		writeErr(w, 409, "this container is RUNNING: the hypervisor only clones a running container from a snapshot. "+
 			"Take a snapshot in this same tab and pick it, or shut the guest down first.")
 		return
 	}
-	upid, err := cli.Clone(ctx, node, no.VMID, tipo, body.NovoID, strings.TrimSpace(body.Nome), strings.TrimSpace(body.Snapshot))
+	upid, err := cli.Clone(ctx, node, no.VMID, kind, body.NewID, strings.TrimSpace(body.Nome), strings.TrimSpace(body.Snapshot))
 	if err != nil {
 		r.auditEvent(req, auth.UserFrom(req), "pve.clone",
-			fmt.Sprintf("origem=%s destino=%d status=recusado erro=%s", id, body.NovoID, err.Error()))
-		writeErr(w, codigoDoErroPVE(err), "hypervisor refused the clone: "+err.Error())
+			fmt.Sprintf("origem=%s destino=%d status=recusado erro=%s", id, body.NewID, err.Error()))
+		writeErr(w, pveErrorCode(err), "hypervisor refused the clone: "+err.Error())
 		return
 	}
 	r.auditEvent(req, auth.UserFrom(req), "pve.clone",
-		fmt.Sprintf("origem=%s destino=%d upid=%s status=aceita", id, body.NovoID, upid))
+		fmt.Sprintf("origem=%s destino=%d upid=%s status=aceita", id, body.NewID, upid))
 
 	// 🔴 "accepted", never "ok". See the file header.
 	writeJSON(w, map[string]any{
-		"origem": id, "destino": body.NovoID, "upid": upid, "status": "aceita",
+		"origem": id, "destino": body.NewID, "upid": upid, "status": "aceita",
 		"node": node,
 	})
 }
 
-// backupDoNo tells the hypervisor to store a copy NOW.
-func (r *Router) backupDoNo(w http.ResponseWriter, req *http.Request, st *inventory.Store, id string) {
-	no, ok := r.guestDoInventario(w, st, id)
+// nodeBackup tells the hypervisor to store a copy NOW.
+func (r *Router) nodeBackup(w http.ResponseWriter, req *http.Request, st *inventory.Store, id string) {
+	no, ok := r.inventoryGuest(w, st, id)
 	if !ok {
 		return
 	}
 	var body struct {
 		Storage  string `json:"storage"`
-		Modo     string `json:"modo"`
+		Mode     string `json:"modo"`
 		Compress string `json:"compress"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -212,39 +212,39 @@ func (r *Router) backupDoNo(w http.ResponseWriter, req *http.Request, st *invent
 	}
 	// Defaults that hold no surprises: `snapshot` does not stop the guest, and
 	// `zstd` is PVE 9's and what this lab's disabled job used.
-	if body.Modo == "" {
-		body.Modo = "snapshot"
+	if body.Mode == "" {
+		body.Mode = "snapshot"
 	}
 	if body.Compress == "" {
 		body.Compress = "zstd"
 	}
 
-	cli, ok := r.clienteDeManutencao(w)
+	cli, ok := r.maintenanceClient(w)
 	if !ok {
 		return
 	}
-	_, node := tipoEHost(no)
+	_, node := kindAndHost(no)
 
 	r.auditEvent(req, auth.UserFrom(req), "pve.backup",
-		fmt.Sprintf("no=%s storage=%s modo=%s status=pedido", id, body.Storage, body.Modo))
+		fmt.Sprintf("no=%s storage=%s modo=%s status=pedido", id, body.Storage, body.Mode))
 
-	upid, err := cli.VZDump(req.Context(), node, no.VMID, body.Storage, body.Modo, body.Compress)
+	upid, err := cli.VZDump(req.Context(), node, no.VMID, body.Storage, body.Mode, body.Compress)
 	if err != nil {
 		r.auditEvent(req, auth.UserFrom(req), "pve.backup",
 			fmt.Sprintf("node=%s storage=%s status=refused error=%s", id, body.Storage, err.Error()))
-		writeErr(w, codigoDoErroPVE(err), "hypervisor refused the backup: "+err.Error())
+		writeErr(w, pveErrorCode(err), "hypervisor refused the backup: "+err.Error())
 		return
 	}
 	r.auditEvent(req, auth.UserFrom(req), "pve.backup",
 		fmt.Sprintf("no=%s storage=%s upid=%s status=aceita", id, body.Storage, upid))
 
 	writeJSON(w, map[string]any{
-		"node_id": id, "storage": body.Storage, "modo": body.Modo,
+		"node_id": id, "storage": body.Storage, "modo": body.Mode,
 		"upid": upid, "status": "aceita", "node": node,
 	})
 }
 
-// esperaTarefa is the ONLY place in the package that interprets the end of a
+// waitTask is the ONLY place in the package that interprets the end of a
 // hypervisor task. It exists because of a defect measured in the live run: the
 // clone transferred 768 MB, created the guest and finished on `WARNINGS: 1` —
 // and the dashboard would have told the operator it had failed.
@@ -258,9 +258,9 @@ func (r *Router) backupDoNo(w http.ResponseWriter, req *http.Request, st *invent
 //
 // Three callers had the same `if err := WaitTask(...); err != nil` line, and
 // three copies would diverge the day someone touched one of them.
-func esperaTarefa(ctx context.Context, cli hypervisorOps, node, upid string) (avisos string, err error) {
+func waitTask(ctx context.Context, cli hypervisorOps, node, upid string) (warnings string, err error) {
 	if e := cli.WaitTask(ctx, node, upid); e != nil {
-		if a, ok := pve.TarefaComAvisos(e); ok {
+		if a, ok := pve.AsTaskWarning(e); ok {
 			return a.Exit, nil
 		}
 		return "", e
@@ -268,7 +268,7 @@ func esperaTarefa(ctx context.Context, cli hypervisorOps, node, upid string) (av
 	return "", nil
 }
 
-// notaDoNo delivers the explanation of what that node DOES.
+// nodeNote delivers the explanation of what that node DOES.
 //
 // 🔴 THE ORIGIN TRAVELS WITH THE TEXT. The screen has to be able to say WHERE
 // it came from — "this is the Proxmox note" is different from "this is
@@ -276,13 +276,13 @@ func esperaTarefa(ctx context.Context, cli hypervisorOps, node, upid string) (av
 // unreachable note become the same thing on screen, and they are opposite
 // problems: one asks for somebody to write it, the other for somebody to fix
 // the access.
-func (r *Router) notaDoNo(w http.ResponseWriter, req *http.Request, st *inventory.Store, id string) {
+func (r *Router) nodeNote(w http.ResponseWriter, req *http.Request, st *inventory.Store, id string) {
 	inv, err := st.Snapshot()
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	no, ok := achaNo(inv, id)
+	no, ok := findNode(inv, id)
 	if !ok {
 		writeErr(w, 404, "node not found: "+id)
 		return
@@ -302,7 +302,7 @@ func (r *Router) notaDoNo(w http.ResponseWriter, req *http.Request, st *inventor
 	// 🔴 READING ASKS FOR THE READ CREDENTIAL; WRITING REQUIRES THE DASHBOARD'S.
 	//
 	// Today the two coincide, and the comment says so rather than pretending to
-	// a prettier design: `segredoDeLeituraDoHipervisor()` PREFERS the dashboard's
+	// a prettier design: `hypervisorReadSecret()` PREFERS the dashboard's
 	// token when it exists in the vault. The separation matters on the day it
 	// does NOT exist — and that day is precisely the day of a revocation or of a
 	// half-configured vault.
@@ -314,14 +314,14 @@ func (r *Router) notaDoNo(w http.ResponseWriter, req *http.Request, st *inventor
 	var cli hypervisorOps
 	var ok2 bool
 	if req.Method == http.MethodPut {
-		cli, ok2 = r.clienteDeManutencao(w)
+		cli, ok2 = r.maintenanceClient(w)
 		if !ok2 {
 			return
 		}
 	} else {
-		valor, estado := r.tokenDoCofre(r.segredoDeLeituraDoHipervisor())
-		if estado != vaultOK {
-			writeErr(w, 503, "hypervisor read credential: "+estado)
+		valor, state := r.vaultToken(r.hypervisorReadSecret())
+		if state != vaultOK {
+			writeErr(w, 503, "hypervisor read credential: "+state)
 			return
 		}
 		var err error
@@ -332,7 +332,7 @@ func (r *Router) notaDoNo(w http.ResponseWriter, req *http.Request, st *inventor
 		}
 	}
 
-	tipo, node := tipoEHost(no)
+	kind, node := kindAndHost(no)
 	vmid := no.VMID
 	if no.Kind == inventory.NodeKindHost {
 		// The hypervisor has its own note, in /nodes/<node>/config. `vmid <= 0`
@@ -347,9 +347,9 @@ func (r *Router) notaDoNo(w http.ResponseWriter, req *http.Request, st *inventor
 			writeErr(w, 400, "bad json")
 			return
 		}
-		if len(body.Markdown) > pve.TamanhoMaximoDaNota {
+		if len(body.Markdown) > pve.MaxNoteSize {
 			writeErr(w, 400, fmt.Sprintf("note is %d bytes — the cap is %d, because a note is meant to be READ",
-				len(body.Markdown), pve.TamanhoMaximoDaNota))
+				len(body.Markdown), pve.MaxNoteSize))
 			return
 		}
 		// AUDIT the size and the target, never the CONTENT: the note describes the
@@ -357,23 +357,23 @@ func (r *Router) notaDoNo(w http.ResponseWriter, req *http.Request, st *inventor
 		// more people and kept for longer than the note itself.
 		r.auditEvent(req, auth.UserFrom(req), "pve.nota",
 			fmt.Sprintf("no=%s bytes=%d status=pedido", id, len(body.Markdown)))
-		if err := cli.SetDescricao(req.Context(), node, vmid, tipo, body.Markdown); err != nil {
+		if err := cli.SetDescription(req.Context(), node, vmid, kind, body.Markdown); err != nil {
 			r.auditEvent(req, auth.UserFrom(req), "pve.nota",
 				fmt.Sprintf("node=%s status=refused error=%s", id, err.Error()))
-			writeErr(w, codigoDoErroPVE(err), "hypervisor refused to write the note: "+err.Error())
+			writeErr(w, pveErrorCode(err), "hypervisor refused to write the note: "+err.Error())
 			return
 		}
 		r.auditEvent(req, auth.UserFrom(req), "pve.nota",
 			fmt.Sprintf("no=%s bytes=%d status=ok", id, len(body.Markdown)))
-		origem := "pve-notes"
+		origin := "pve-notes"
 		if strings.TrimSpace(body.Markdown) == "" {
-			origem = "vazia"
+			origin = "vazia"
 		}
-		writeJSON(w, map[string]any{"node": id, "markdown": body.Markdown, "origem": origem, "status": "ok"})
+		writeJSON(w, map[string]any{"node": id, "markdown": body.Markdown, "origem": origin, "status": "ok"})
 		return
 	}
 
-	txt, err := cli.Descricao(req.Context(), node, vmid, tipo)
+	txt, err := cli.Description(req.Context(), node, vmid, kind)
 	if err != nil {
 		// 🔴 A NODE THAT DISAPPEARED FROM THE HYPERVISOR GETS ITS OWN ANSWER.
 		//
@@ -397,33 +397,33 @@ func (r *Router) notaDoNo(w http.ResponseWriter, req *http.Request, st *inventor
 			})
 			return
 		}
-		writeErr(w, codigoDoErroPVE(err), "could not read the note on the hypervisor: "+err.Error())
+		writeErr(w, pveErrorCode(err), "could not read the note on the hypervisor: "+err.Error())
 		return
 	}
-	origem := "pve-notes"
+	origin := "pve-notes"
 	if strings.TrimSpace(txt) == "" {
 		// 🔴 EMPTY IS NOT AN ERROR. A guest with no note is a guest nobody has
 		// described, and the screen has to say WHERE to write one instead of
 		// showing a blank.
-		origem = "vazia"
+		origin = "vazia"
 	}
-	writeJSON(w, map[string]any{"node": id, "markdown": txt, "origem": origem})
+	writeJSON(w, map[string]any{"node": id, "markdown": txt, "origem": origin})
 }
 
-// sugestaoDeNome builds the clone's name from the source's name, already inside
+// suggestName builds the clone's name from the source's name, already inside
 // the hostname rules — because the operator should not discover that "cópia de
 // lab" is invalid only after typing it.
-func sugestaoDeNome(origem string) string {
-	limpo := make([]rune, 0, len(origem)+6)
-	for _, r := range strings.ToLower(origem) {
+func suggestName(origin string) string {
+	clean := make([]rune, 0, len(origin)+6)
+	for _, r := range strings.ToLower(origin) {
 		switch {
 		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			limpo = append(limpo, r)
-		case r == '-' && len(limpo) > 0:
-			limpo = append(limpo, r)
+			clean = append(clean, r)
+		case r == '-' && len(clean) > 0:
+			clean = append(clean, r)
 		}
 	}
-	base := strings.Trim(string(limpo), "-")
+	base := strings.Trim(string(clean), "-")
 	if base == "" {
 		base = "clone"
 	}
@@ -434,10 +434,10 @@ func sugestaoDeNome(origem string) string {
 	return strings.Trim(s, "-")
 }
 
-// ehGuestLigado answers the question that changes the confirmation's WARNING:
+// isGuestRunning answers the question that changes the confirmation's WARNING:
 // copying a running guest produces a crash-consistent copy, as if the cable had
 // been pulled midway. That is not a reason to forbid it — it is a reason to WARN.
-func ehGuestLigado(n inventory.Node) bool {
+func isGuestRunning(n inventory.Node) bool {
 	st := strings.ToLower(strings.TrimSpace(n.Status.Value))
 	return st == "running" || st == "online"
 }

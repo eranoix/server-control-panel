@@ -22,8 +22,8 @@ import (
 // The pair is what lets us prove, over real HTTP, both halves of the contract:
 // what shows up and — more importantly — what is OMITTED.
 func init() {
-	sdui.RegisterCatalog("test.screens.basic", sdui.GroupSistema, "Tela básica", func(sdui.Viewer) bool { return true })
-	sdui.RegisterCatalog("test.screens.adminonly", sdui.GroupSeguranca, "Só admin", func(v sdui.Viewer) bool { return v.IsAdmin() })
+	sdui.RegisterCatalog("test.screens.basic", sdui.GroupSystem, "Tela básica", func(sdui.Viewer) bool { return true })
+	sdui.RegisterCatalog("test.screens.adminonly", sdui.GroupSecurity, "Só admin", func(v sdui.Viewer) bool { return v.IsAdmin() })
 }
 
 func listScreens(t *testing.T, username string) (*httptest.ResponseRecorder, ScreensResponse) {
@@ -108,13 +108,13 @@ func TestListScreens_NonAdminOmitsForbiddenSection(t *testing.T) {
 		t.Errorf("the non-admin's body mentions the admin-only screen — filtering has to be by OMISSION, never an item marked as unavailable: %s", rec.Body.String())
 	}
 
-	var temBasic bool
+	var hasBasic bool
 	for _, s := range resp.Sections {
 		if s.ID == "test.screens.basic" {
-			temBasic = true
+			hasBasic = true
 		}
 	}
-	if !temBasic {
+	if !hasBasic {
 		t.Errorf("non-admin lost the section they CAN open: %v", sectionIDs(resp))
 	}
 }
@@ -141,15 +141,15 @@ func TestListScreens_GroupsArriveContiguous(t *testing.T) {
 	_, resp := listScreens(t, "screenadmin")
 
 	seen := map[string]bool{}
-	atual := ""
+	current := ""
 	for _, s := range resp.Sections {
-		if s.Group == atual {
+		if s.Group == current {
 			continue
 		}
 		if seen[s.Group] {
-			t.Errorf("group %q reappears after %q — items in a group must be contiguous", s.Group, atual)
+			t.Errorf("group %q reappears after %q — items in a group must be contiguous", s.Group, current)
 		}
 		seen[s.Group] = true
-		atual = s.Group
+		current = s.Group
 	}
 }

@@ -171,9 +171,9 @@ func (enshrouded) SaveSettings(s Server, patch map[string]interface{}) error {
 	}
 	// The previous idiom (WriteFile + Chmod + Rename) preserved the MODE and
 	// silently lost the OWNER — the container reads as 4711 and aborts the next
-	// boot, far from the action that caused it. escreveAtomico takes owner, mode
+	// boot, far from the action that caused it. writeAtomic takes owner, mode
 	// and durability from the disk.
-	return escreveAtomico(path, out, s.Root)
+	return writeAtomic(path, out, s.Root)
 }
 
 func (enshrouded) Backups(s Server) ([]Backup, error) {

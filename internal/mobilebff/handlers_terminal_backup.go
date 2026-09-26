@@ -31,14 +31,14 @@ import (
 
 func init() { Register("terminal-backup", registerTerminalBackup) }
 
-// ipDoClienteKey carries the client IP from the raw `*http.Request` to the typed
+// clientIPKey carries the client IP from the raw `*http.Request` to the typed
 // handler, which only receives a context.Context.
 //
 // It exists because `httpx.AuditEvent` takes the IP from the request, and
 // passing `nil` there is not an option: `auth.ClientIP` dereferences
 // `r.RemoteAddr` and would panic. Auditing without an IP is no good either —
 // "who restored a backup" without "from where" is half an audit record.
-type ipDoClienteKey struct{}
+type clientIPKey struct{}
 
 // comAuditoria is requireAuth plus capturing the IP. Same shape as
 // captureJTI in handlers_terminal.go, for the same reason: the information exists
@@ -49,16 +49,16 @@ func comAuditoria(ctx huma.Context, next func(huma.Context)) {
 		httpx.WriteErr(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	next(huma.WithValue(ctx, ipDoClienteKey{}, auth.ClientIP(req)))
+	next(huma.WithValue(ctx, clientIPKey{}, auth.ClientIP(req)))
 }
 
 // auditar records an event with the IP captured by [comAuditoria].
-func auditar(ctx context.Context, log *auth.AuditLog, user, acao, alvo string) {
+func auditar(ctx context.Context, log *auth.AuditLog, user, action, target string) {
 	if log == nil {
 		return
 	}
-	ip, _ := ctx.Value(ipDoClienteKey{}).(string)
-	log.Append(auth.Event{User: user, Action: acao, Target: alvo, IP: ip})
+	ip, _ := ctx.Value(clientIPKey{}).(string)
+	log.Append(auth.Event{User: user, Action: action, Target: target, IP: ip})
 }
 
 // BackupSessionSummary is a session inside a backup, already summarized — the
@@ -252,15 +252,15 @@ func registerTerminalBackup(api huma.API, deps Deps) {
 func listBackupsHandler(store *sessionbackup.Store) func(context.Context, *struct{}) (*backupsListOutput, error) {
 	return func(ctx context.Context, _ *struct{}) (*backupsListOutput, error) {
 		user := auth.UserFromContext(ctx)
-		metas := store.List(user)
-		out := make([]BackupSummary, 0, len(metas))
-		for _, m := range metas {
-			sessoes := make([]BackupSessionSummary, 0, len(m.Sessoes))
-			for _, s := range m.Sessoes {
-				sessoes = append(sessoes, BackupSessionSummary{Name: s.Nome, Summary: s.Resumo, Lines: s.Linhas})
+		metadata := store.List(user)
+		out := make([]BackupSummary, 0, len(metadata))
+		for _, m := range metadata {
+			sessions := make([]BackupSessionSummary, 0, len(m.Sessions))
+			for _, s := range m.Sessions {
+				sessions = append(sessions, BackupSessionSummary{Name: s.Nome, Summary: s.Summary, Lines: s.Lines})
 			}
 			out = append(out, BackupSummary{
-				ID: m.ID, Created: m.Criado, Source: m.Origem, Bytes: m.Bytes, Sessions: sessoes,
+				ID: m.ID, Created: m.Created, Source: m.Source, Bytes: m.Bytes, Sessions: sessions,
 			})
 		}
 		return &backupsListOutput{Body: out}, nil
@@ -275,39 +275,39 @@ func createBackupHandler(
 	idem *Idempotencia,
 ) func(context.Context, *createBackupInput) (*createBackupOutput, error) {
 	return func(ctx context.Context, in *createBackupInput) (*createBackupOutput, error) {
-		return lembrarResultado(idem, chaveDoContexto(ctx, in.IdemKey), func() (*createBackupOutput, error) {
+		return rememberResult(idem, keyFromContext(ctx, in.IdemKey), func() (*createBackupOutput, error) {
 			user := auth.UserFromContext(ctx)
 			primary := httpx.IsAdmin(cfg, user)
 
-			var nomes []string
+			var names []string
 			if nome := strings.TrimSpace(in.Body.Name); nome != "" {
 				// 404 and not 403: to someone who is not the owner, the session does not exist. A
 				// 403 would confirm the name exists in another account.
 				if !ptysvc.OwnsSession(user, nome, primary, own) {
 					return nil, huma.Error404NotFound("session not found")
 				}
-				nomes = []string{nome}
+				names = []string{nome}
 			} else {
-				sessoes, err := ptysvc.SessionListForUser(user, primary, own)
+				sessions, err := ptysvc.SessionListForUser(user, primary, own)
 				if err != nil {
 					return nil, huma.Error500InternalServerError("list sessions: " + err.Error())
 				}
-				for _, s := range sessoes {
+				for _, s := range sessions {
 					if n, _ := s["name"].(string); n != "" {
-						nomes = append(nomes, n)
+						names = append(names, n)
 					}
 				}
 			}
-			if len(nomes) == 0 {
+			if len(names) == 0 {
 				return nil, huma.Error400BadRequest("no session to back up")
 			}
 
 			bk := ptysvc.Backup{
 				ID:      strconv.FormatInt(time.Now().UnixNano(), 10),
 				Created: time.Now().Unix(),
-				Source:  sessionbackup.OrigemManual,
+				Source:  sessionbackup.SourceManual,
 			}
-			for _, n := range nomes {
+			for _, n := range names {
 				snap, err := ptysvc.SnapshotSession(n, ptysvc.DefaultScrollbackLines)
 				if err != nil {
 					continue // the session vanished mid-backup — skip it
@@ -336,9 +336,9 @@ func restoreBackupHandler(
 	idem *Idempotencia,
 ) func(context.Context, *restoreBackupInput) (*restoreBackupOutput, error) {
 	return func(ctx context.Context, in *restoreBackupInput) (*restoreBackupOutput, error) {
-		return lembrarResultado(idem, chaveDoContexto(ctx, in.IdemKey), func() (*restoreBackupOutput, error) {
+		return rememberResult(idem, keyFromContext(ctx, in.IdemKey), func() (*restoreBackupOutput, error) {
 			user := auth.UserFromContext(ctx)
-			if !sessionbackup.IDValido(in.Body.ID) {
+			if !sessionbackup.ValidID(in.Body.ID) {
 				return nil, huma.Error400BadRequest("invalid backup id")
 			}
 			bk, err := store.Read(user, in.Body.ID)
@@ -355,28 +355,28 @@ func restoreBackupHandler(
 			// The quota counts what already exists PLUS what this restore is going to
 			// create: restoring a bundle of 7 sessions into an account that already has 5
 			// must not breach the limit just because it is a single request.
-			existentes := len(own.SessionsOf(user))
-			restauradas, puladas := 0, 0
+			existing := len(own.SessionsOf(user))
+			restored, skipped := 0, 0
 			for _, s := range bk.Sessions {
 				if in.Body.Name != "" && s.Name != ptysvc.SafeSessionName(in.Body.Name) {
 					continue
 				}
-				if existentes+restauradas >= ptysvc.MaxSessionsPerUser {
-					puladas++
+				if existing+restored >= ptysvc.MaxSessionsPerUser {
+					skipped++
 					continue
 				}
 				if err := ptysvc.RestoreSession(s, scratch); err != nil {
-					puladas++
+					skipped++
 					continue
 				}
 				// The recreated session belongs to whoever restored it.
 				_ = own.Claim(ptysvc.SafeSessionName(s.Name), user)
-				restauradas++
+				restored++
 			}
 			auditar(ctx, audit, user, "terminal.restore", in.Body.ID)
 
 			out := &restoreBackupOutput{}
-			out.Body = RestoreBackupResponse{Restored: restauradas, Skipped: puladas}
+			out.Body = RestoreBackupResponse{Restored: restored, Skipped: skipped}
 			return out, nil
 		})
 	}
@@ -388,9 +388,9 @@ func deleteBackupHandler(
 	idem *Idempotencia,
 ) func(context.Context, *deleteBackupInput) (*deleteBackupOutput, error) {
 	return func(ctx context.Context, in *deleteBackupInput) (*deleteBackupOutput, error) {
-		return lembrarResultado(idem, chaveDoContexto(ctx, in.IdemKey), func() (*deleteBackupOutput, error) {
+		return rememberResult(idem, keyFromContext(ctx, in.IdemKey), func() (*deleteBackupOutput, error) {
 			user := auth.UserFromContext(ctx)
-			if !sessionbackup.IDValido(in.ID) {
+			if !sessionbackup.ValidID(in.ID) {
 				return nil, huma.Error400BadRequest("invalid backup id")
 			}
 			if err := store.Delete(user, in.ID, in.Name); err != nil {
@@ -399,11 +399,11 @@ func deleteBackupHandler(
 				}
 				return nil, huma.Error500InternalServerError(err.Error())
 			}
-			alvo := in.ID
+			target := in.ID
 			if in.Name != "" {
-				alvo += "#" + ptysvc.SafeSessionName(in.Name)
+				target += "#" + ptysvc.SafeSessionName(in.Name)
 			}
-			auditar(ctx, audit, user, "terminal.backup_delete", alvo)
+			auditar(ctx, audit, user, "terminal.backup_delete", target)
 
 			out := &deleteBackupOutput{}
 			out.Body.Status = "ok"
@@ -419,23 +419,23 @@ func renameSessionHandler(
 	idem *Idempotencia,
 ) func(context.Context, *renameSessionInput) (*statusOutput, error) {
 	return func(ctx context.Context, in *renameSessionInput) (*statusOutput, error) {
-		return lembrarResultado(idem, chaveDoContexto(ctx, in.IdemKey), func() (*statusOutput, error) {
+		return rememberResult(idem, keyFromContext(ctx, in.IdemKey), func() (*statusOutput, error) {
 			user := auth.UserFromContext(ctx)
 			de := strings.TrimSpace(in.Body.From)
-			para := ptysvc.SafeSessionName(strings.TrimSpace(in.Body.To))
-			if de == "" || para == "" {
+			stop := ptysvc.SafeSessionName(strings.TrimSpace(in.Body.To))
+			if de == "" || stop == "" {
 				return nil, huma.Error400BadRequest("from and to are required")
 			}
 			if !ptysvc.OwnsSession(user, de, httpx.IsAdmin(cfg, user), own) {
 				return nil, huma.Error404NotFound("session not found")
 			}
-			if err := ptysvc.SessionRename(de, para); err != nil {
+			if err := ptysvc.SessionRename(de, stop); err != nil {
 				return nil, huma.Error500InternalServerError(err.Error())
 			}
 			// Ownership follows the name. Without this the renamed session disappears from
 			// its own owner's list — the registry would keep pointing at the old name.
-			_ = own.Rename(ptysvc.SafeSessionName(de), para)
-			auditar(ctx, audit, user, "terminal.rename", de+"→"+para)
+			_ = own.Rename(ptysvc.SafeSessionName(de), stop)
+			auditar(ctx, audit, user, "terminal.rename", de+"→"+stop)
 
 			out := &statusOutput{}
 			out.Body.Status = "ok"

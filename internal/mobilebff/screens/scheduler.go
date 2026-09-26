@@ -45,12 +45,12 @@ func Register(deps SchedulerDeps) {
 	sdui.Register(schedulerJobsScreenID, func(_ context.Context, v sdui.Viewer) (*sdui.Envelope, error) {
 		return buildSchedulerJobsScreen(deps, v)
 	})
-	// Catalog entry: sempreVisivel. The builder assembles the screen for any
+	// Catalog entry: alwaysVisible. The builder assembles the screen for any
 	// viewer and filters the KINDS the person may schedule (AuthorizedKinds)
 	// from inside the Envelope — a content filter, not a screen filter, so
 	// hiding the item from the picker would only create an unexplained gap
 	// for the non-admin.
-	sdui.RegisterCatalog(schedulerJobsScreenID, sdui.GroupAutomacao, "Scheduler", sempreVisivel)
+	sdui.RegisterCatalog(schedulerJobsScreenID, sdui.GroupAutomation, "Scheduler", alwaysVisible)
 	registerSchedulerActions(deps)
 	mobilebff.Register("scheduler.jobs.rows", func(api huma.API, mbDeps mobilebff.Deps) {
 		registerSchedulerRows(api, deps, mbDeps)

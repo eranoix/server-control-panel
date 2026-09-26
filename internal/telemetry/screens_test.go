@@ -6,20 +6,20 @@ import (
 	"testing"
 )
 
-// gruposConhecidos are the 8 navigation groups from docs/INVENTARIO-LAB.md,
+// knownGroups are the 8 navigation groups from docs/INVENTARIO-LAB.md,
 // plus the two SOLO screens — `dashboard` and `config` — which belong to no
 // group at all because they do not live in a tab bar.
-var gruposConhecidos = map[string]struct{}{
+var knownGroups = map[string]struct{}{
 	"dashboard": {}, "sistema": {}, "jogos": {}, "docker": {},
 	"dev": {}, "seguranca": {}, "apps": {}, "operacoes": {},
 	"config": {},
 }
 
-// telasSolo are the legitimate ONE-segment ids: a screen that exists alone,
+// soloScreens are the legitimate ONE-segment ids: a screen that exists alone,
 // with no tab bar. Any other 1-segment id is a group emitted without a tab.
-var telasSolo = map[string]struct{}{"dashboard": {}, "config": {}}
+var soloScreens = map[string]struct{}{"dashboard": {}, "config": {}}
 
-const totalEsperado = 76 // 46 tab-level + 29 sub-actions + the `unknown` bucket
+const wantTotal = 76 // 46 tab-level + 29 sub-actions + the `unknown` bucket
 
 // TestScreenIDsMatchInventory is the test the research demands: it fails any id
 // that does not match the inventory. Without it, triage receives ids that
@@ -28,18 +28,18 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 	all := AllScreens()
 
 	t.Run("total-76", func(t *testing.T) {
-		if len(all) != totalEsperado {
-			t.Fatalf("expected=%d observed=%d ids in the canonical list", totalEsperado, len(all))
+		if len(all) != wantTotal {
+			t.Fatalf("expected=%d observed=%d ids in the canonical list", wantTotal, len(all))
 		}
 	})
 
 	t.Run("no-duplicates", func(t *testing.T) {
-		vistos := make(map[string]int, len(all))
+		seen := make(map[string]int, len(all))
 		for i, id := range all {
-			if j, dup := vistos[id]; dup {
+			if j, dup := seen[id]; dup {
 				t.Errorf("duplicate id %q on lines %d and %d", id, j+1, i+1)
 			}
-			vistos[id] = i
+			seen[id] = i
 		}
 	})
 
@@ -48,12 +48,12 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 			if id == "unknown" {
 				continue
 			}
-			grupo := id
+			group := id
 			if i := strings.Index(id, "."); i >= 0 {
-				grupo = id[:i]
+				group = id[:i]
 			}
-			if _, ok := gruposConhecidos[grupo]; !ok {
-				t.Errorf("id %q has group %q outside the 8 groups of the INVENTARIO-LAB", id, grupo)
+			if _, ok := knownGroups[group]; !ok {
+				t.Errorf("id %q has group %q outside the 8 groups of the INVENTARIO-LAB", id, group)
 			}
 		}
 	})
@@ -66,7 +66,7 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 			if id == "unknown" || strings.Contains(id, ".") {
 				continue
 			}
-			if _, ok := telasSolo[id]; !ok {
+			if _, ok := soloScreens[id]; !ok {
 				t.Errorf("the 1-segment id %q is not a standalone screen — a group with no tab is not a screen", id)
 			}
 		}
@@ -114,7 +114,7 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 
 	// Counts that pin the shape of the list down against careless editing.
 	t.Run("counts-per-family", func(t *testing.T) {
-		conta := func(pref string) int {
+		account := func(pref string) int {
 			n := 0
 			for _, id := range all {
 				if strings.HasPrefix(id, pref) {
@@ -132,7 +132,7 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 			{"dev.ai.", 5},
 			{"operacoes.git.", 7},
 		} {
-			if got := conta(c.pref); got != c.want {
+			if got := account(c.pref); got != c.want {
 				t.Errorf("prefix %q: expected=%d observed=%d", c.pref, c.want, got)
 			}
 		}

@@ -22,12 +22,12 @@ import (
 	"server-control-panel/internal/auth"
 )
 
-// TestWSShell_BilheteAutenticaHandshake: with a valid ticket the upgrade happens
+// TestWSShell_TicketAuthenticatesHandshake: with a valid ticket the upgrade happens
 // (101) and the handler runs. It uses attach=1 on a session that does not exist
 // to prove the handler was reached WITHOUT creating any shell: the legitimate
 // owner gets close code 4404 ("session ended"), a signal that only goes to
 // whoever may touch the name.
-func TestWSShell_BilheteAutenticaHandshake(t *testing.T) {
+func TestWSShell_TicketAuthenticatesHandshake(t *testing.T) {
 	r := newSmokeRouter(t)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
@@ -61,15 +61,15 @@ func TestWSShell_BilheteAutenticaHandshake(t *testing.T) {
 	}
 }
 
-// TestWSShell_BilheteDeOutroUsuarioNaoAbreSessaoAlheia: the ticket has to carry
+// TestWSShell_OtherUsersTicketCannotOpenForeignSession: the ticket has to carry
 // the RIGHT owner to the handler. The session belongs to "sam"; the ticket is
 // "beto"'s (non-admin). If the Middleware injected the wrong identity — or
 // none — HostShell's ownership gate would decide with the wrong user, and that
 // would be silent privilege escalation.
-func TestWSShell_BilheteDeOutroUsuarioNaoAbreSessaoAlheia(t *testing.T) {
+func TestWSShell_OtherUsersTicketCannotOpenForeignSession(t *testing.T) {
 	r := newSmokeRouter(t)
-	const sessao = "sessao-do-sam"
-	if err := r.sessionOwn.Claim(sessao, "sam"); err != nil {
+	const session = "sessao-do-sam"
+	if err := r.sessionOwn.Claim(session, "sam"); err != nil {
 		t.Fatalf("Claim: %v", err)
 	}
 	srv := httptest.NewServer(r)
@@ -78,7 +78,7 @@ func TestWSShell_BilheteDeOutroUsuarioNaoAbreSessaoAlheia(t *testing.T) {
 
 	ticket := auth.IssueWSTicket("beto", "jti-do-beto")
 	conn, resp, err := websocket.DefaultDialer.Dial(
-		wsURL+"/ws/shell?name="+sessao+"&attach=1&ticket="+ticket, nil)
+		wsURL+"/ws/shell?name="+session+"&attach=1&ticket="+ticket, nil)
 	if err != nil {
 		status := 0
 		if resp != nil {
@@ -97,13 +97,13 @@ func TestWSShell_BilheteDeOutroUsuarioNaoAbreSessaoAlheia(t *testing.T) {
 		t.Fatalf("response = %q, expected \"session not found\" — beto's ticket attached to sam's session", msg)
 	}
 	// And ownership must not have been stolen along the way.
-	if dono := r.sessionOwn.Owner(sessao); dono != "sam" {
-		t.Fatalf("session owner = %q, expected \"sam\"", dono)
+	if owner := r.sessionOwn.Owner(session); owner != "sam" {
+		t.Fatalf("session owner = %q, expected \"sam\"", owner)
 	}
 }
 
-// TestWSShell_SemCredencialContinua401: the counter-proof — the gate did not loosen.
-func TestWSShell_SemCredencialContinua401(t *testing.T) {
+// TestWSShell_NoCredentialStill401: the counter-proof — the gate did not loosen.
+func TestWSShell_NoCredentialStill401(t *testing.T) {
 	r := newSmokeRouter(t)
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)

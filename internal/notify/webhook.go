@@ -39,16 +39,16 @@ func (w *WebhookChannel) Send(ctx context.Context, ev Event, cfg ChannelConfig) 
 	// the public what broke and when; the only safe version is the one that
 	// carries nothing.
 	body := []byte(cfg.FixedBody)
-	tipo := "text/plain; charset=utf-8"
+	kind := "text/plain; charset=utf-8"
 	if cfg.FixedBody == "" {
 		body, _ = json.Marshal(ev)
-		tipo = "application/json"
+		kind = "application/json"
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.URL, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", tipo)
+	req.Header.Set("Content-Type", kind)
 	req.Header.Set("User-Agent", "vps-manager-notify/1")
 	resp, err := w.client.Do(req)
 	if err != nil {

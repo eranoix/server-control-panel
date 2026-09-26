@@ -26,7 +26,7 @@ package api
 //
 // RBAC: reading is open to any authenticated session; EVERY mutation requires
 // the primary account. The check stays at the same points — it lives in
-// `executaOp`, with `escrita: true`, and was not reimplemented in the agent:
+// `execOp`, with `escrita: true`, and was not reimplemented in the agent:
 // session and permission belong to the dashboard and already existed.
 
 import (
@@ -88,36 +88,36 @@ func (r *Router) handleGameServers(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	saida := []map[string]interface{}{}
+	output := []map[string]interface{}{}
 	for _, s := range r.gameMgr.List() {
 		item := map[string]interface{}{"id": s.ID, "name": s.Name, "game": s.Game, "node": s.No}
 
-		back, destino, err := r.backendPara(s)
+		back, dest, err := r.backendFor(s)
 		if err != nil {
 			item["err"] = err.Error()
-			saida = append(saida, item)
+			output = append(output, item)
 			continue
 		}
 		env, _ := json.Marshal(map[string]string{"servidor": s.ID})
-		doc, err := back.Executar(req.Context(), gameservers.OpServerStatus, env)
+		doc, err := back.Execute(req.Context(), gameservers.OpServerStatus, env)
 		if err != nil {
-			_, msg := traduzErroDeNo(err, destino.Nome)
+			_, msg := translateNodeError(err, dest.Nome)
 			item["err"] = msg
-			saida = append(saida, item)
+			output = append(output, item)
 			continue
 		}
-		var completo map[string]interface{}
-		if err := json.Unmarshal(doc, &completo); err != nil {
-			item["err"] = "unreadable response from node '" + destino.Nome + "'"
-			saida = append(saida, item)
+		var full map[string]interface{}
+		if err := json.Unmarshal(doc, &full); err != nil {
+			item["err"] = "unreadable response from node '" + dest.Nome + "'"
+			output = append(output, item)
 			continue
 		}
-		for k, v := range completo {
+		for k, v := range full {
 			item[k] = v
 		}
-		saida = append(saida, item)
+		output = append(output, item)
 	}
-	httpx.WriteJSON(w, map[string]interface{}{"servers": saida})
+	httpx.WriteJSON(w, map[string]interface{}{"servers": output})
 }
 
 // handleGameServerSub serves /api/gameservers/<id>/<resource>[/<action>].
@@ -159,40 +159,40 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
 			return
 		}
-		verbo := gameservers.Verbo(body.Action)
-		if !gameservers.VerbosValidos[verbo] {
+		verb := gameservers.Verb(body.Action)
+		if !gameservers.ValidVerbs[verb] {
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid action")
 			return
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpServerAction,
-			map[string]interface{}{"servidor": srv.ID, "verbo": string(verbo)}, true)
+		doc, ok := r.execOp(w, req, srv, gameservers.OpServerAction,
+			map[string]interface{}{"servidor": srv.ID, "verbo": string(verb)}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "update": // 27-case: `update` — virou VERBO de server.action
 		// Updating IS restarting (steamcmd runs when the container starts). The
 		// route still exists because the screen still calls it; what changed is
 		// that it is no longer an operation of the catalogue's own.
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpServerAction,
-			map[string]interface{}{"servidor": srv.ID, "verbo": string(gameservers.VerboUpdate)}, true)
+		doc, ok := r.execOp(w, req, srv, gameservers.OpServerAction,
+			map[string]interface{}{"servidor": srv.ID, "verbo": string(gameservers.VerbUpdate)}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "logs": // 27-case: `logs`
 		tail := req.URL.Query().Get("tail")
 		if tail == "" {
 			tail = "200"
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpServerLogs,
+		doc, ok := r.execOp(w, req, srv, gameservers.OpServerLogs,
 			map[string]interface{}{"servidor": srv.ID, "tail": tail}, false)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	// ── fields of server.status (no longer routes of their own) ──────────────
 
@@ -200,33 +200,33 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		// The triage merged the two into `server.status`. The routes still answer
 		// so as not to break the old screen during the transition, but they serve
 		// the document's SECTION — not a lookup of their own.
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpServerStatus,
+		doc, ok := r.execOp(w, req, srv, gameservers.OpServerStatus,
 			map[string]interface{}{"servidor": srv.ID}, false)
 		if !ok {
 			return
 		}
-		var completo map[string]json.RawMessage
-		if err := json.Unmarshal(doc, &completo); err != nil {
+		var full map[string]json.RawMessage
+		if err := json.Unmarshal(doc, &full); err != nil {
 			httpx.WriteErr(w, http.StatusBadGateway, "unreadable response from the node")
 			return
 		}
-		escreveBruto(w, completo[resource])
+		writeRaw(w, full[resource])
 
 	// ── settings sections (no longer routes of their own) ────────────────────
 
 	case "groups": // 27-case: `groups`
 		if req.Method == http.MethodGet {
-			doc, ok := r.executaOp(w, req, srv, gameservers.OpSettingsGet,
+			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
 				map[string]interface{}{"servidor": srv.ID}, false)
 			if !ok {
 				return
 			}
-			var completo map[string]json.RawMessage
-			if err := json.Unmarshal(doc, &completo); err != nil {
+			var full map[string]json.RawMessage
+			if err := json.Unmarshal(doc, &full); err != nil {
 				httpx.WriteErr(w, http.StatusBadGateway, "unreadable response from the node")
 				return
 			}
-			httpx.WriteJSON(w, map[string]interface{}{"groups": json.RawMessage(completo["grupos"])})
+			httpx.WriteJSON(w, map[string]interface{}{"groups": json.RawMessage(full["grupos"])})
 			return
 		}
 		var gbody struct {
@@ -237,27 +237,27 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
 			return
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpSettingsPatch, map[string]interface{}{
+		doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsPatch, map[string]interface{}{
 			"servidor": srv.ID, "grupos": gbody.Groups, "reiniciar": gbody.Restart,
 		}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "bans": // 27-case: `bans`
 		if req.Method == http.MethodGet {
-			doc, ok := r.executaOp(w, req, srv, gameservers.OpSettingsGet,
+			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
 				map[string]interface{}{"servidor": srv.ID}, false)
 			if !ok {
 				return
 			}
-			var completo map[string]json.RawMessage
-			if err := json.Unmarshal(doc, &completo); err != nil {
+			var full map[string]json.RawMessage
+			if err := json.Unmarshal(doc, &full); err != nil {
 				httpx.WriteErr(w, http.StatusBadGateway, "unreadable response from the node")
 				return
 			}
-			httpx.WriteJSON(w, map[string]interface{}{"bans": json.RawMessage(completo["banidos"])})
+			httpx.WriteJSON(w, map[string]interface{}{"bans": json.RawMessage(full["banidos"])})
 			return
 		}
 		var bbody struct {
@@ -267,28 +267,28 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
 			return
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpSettingsPatch,
+		doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsPatch,
 			map[string]interface{}{"servidor": srv.ID, "banidos": bbody.Bans}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	// ── configuration ────────────────────────────────────────────────────────
 
 	case "server": // `server` — server options + default group
 		if req.Method == http.MethodGet {
-			doc, ok := r.executaOp(w, req, srv, gameservers.OpSettingsGet,
+			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
 				map[string]interface{}{"servidor": srv.ID}, false)
 			if !ok {
 				return
 			}
-			var completo map[string]json.RawMessage
-			if err := json.Unmarshal(doc, &completo); err != nil {
+			var full map[string]json.RawMessage
+			if err := json.Unmarshal(doc, &full); err != nil {
 				httpx.WriteErr(w, http.StatusBadGateway, "unreadable response from the node")
 				return
 			}
-			escreveBruto(w, completo["server"])
+			writeRaw(w, full["server"])
 			return
 		}
 		var body struct {
@@ -300,27 +300,27 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
 			return
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpSettingsPatch, map[string]interface{}{
+		doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsPatch, map[string]interface{}{
 			"servidor": srv.ID, "server": body.Server, "grupo": body.Group, "reiniciar": body.Restart,
 		}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "settings": // 27-case: `settings`
 		if req.Method == http.MethodGet {
-			doc, ok := r.executaOp(w, req, srv, gameservers.OpSettingsGet,
+			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
 				map[string]interface{}{"servidor": srv.ID}, false)
 			if !ok {
 				return
 			}
-			var completo map[string]json.RawMessage
-			if err := json.Unmarshal(doc, &completo); err != nil {
+			var full map[string]json.RawMessage
+			if err := json.Unmarshal(doc, &full); err != nil {
 				httpx.WriteErr(w, http.StatusBadGateway, "unreadable response from the node")
 				return
 			}
-			escreveBruto(w, completo["jogo"])
+			writeRaw(w, full["jogo"])
 			return
 		}
 		var body struct {
@@ -335,13 +335,13 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			httpx.WriteErr(w, http.StatusBadRequest, "empty patch")
 			return
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpSettingsPatch, map[string]interface{}{
+		doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsPatch, map[string]interface{}{
 			"servidor": srv.ID, "jogo": body.Patch, "reiniciar": body.Restart,
 		}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "rawconfig": // 27-case: `rawconfig`
 		// ⚠️ A DELIBERATE NARROWING. Writing FREE TEXT no longer exists on this
@@ -354,19 +354,19 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		// a file the server executes as config is no longer possible — before
 		// there was a single semantic guard; now there is a field allowlist.
 		if req.Method == http.MethodGet {
-			doc, ok := r.executaOp(w, req, srv, gameservers.OpSettingsGet,
+			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
 				map[string]interface{}{"servidor": srv.ID}, false)
 			if !ok {
 				return
 			}
-			escreveBruto(w, doc)
+			writeRaw(w, doc)
 			return
 		}
 		var cbody struct {
 			Text    string                 `json:"text"`
 			Server  map[string]interface{} `json:"server"`
 			Group   map[string]interface{} `json:"group"`
-			Jogo    map[string]interface{} `json:"jogo"`
+			Game    map[string]interface{} `json:"jogo"`
 			Restart bool                   `json:"restart"`
 		}
 		if err := httpx.DecodeBody(req.Body, &cbody); err != nil {
@@ -378,27 +378,27 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 				"free-text writes were removed: send enumerated fields in 'server', 'group' or 'jogo'")
 			return
 		}
-		if len(cbody.Server) == 0 && len(cbody.Group) == 0 && len(cbody.Jogo) == 0 {
+		if len(cbody.Server) == 0 && len(cbody.Group) == 0 && len(cbody.Game) == 0 {
 			httpx.WriteErr(w, http.StatusBadRequest, "no field to write")
 			return
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpSettingsPatch, map[string]interface{}{
+		doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsPatch, map[string]interface{}{
 			"servidor": srv.ID, "server": cbody.Server, "grupo": cbody.Group,
-			"jogo": cbody.Jogo, "reiniciar": cbody.Restart,
+			"jogo": cbody.Game, "reiniciar": cbody.Restart,
 		}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "runtime": // 27-case: `runtime`
 		if req.Method == http.MethodGet {
-			doc, ok := r.executaOp(w, req, srv, gameservers.OpRuntimeGet,
+			doc, ok := r.execOp(w, req, srv, gameservers.OpRuntimeGet,
 				map[string]interface{}{"servidor": srv.ID}, false)
 			if !ok {
 				return
 			}
-			escreveBruto(w, doc)
+			writeRaw(w, doc)
 			return
 		}
 		var rbody struct {
@@ -408,86 +408,86 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
 			return
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpRuntimePatch,
+		doc, ok := r.execOp(w, req, srv, gameservers.OpRuntimePatch,
 			map[string]interface{}{"servidor": srv.ID, "patch": rbody.Patch}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	// ── telemetry ────────────────────────────────────────────────────────────
 
 	case "history": // 27-case: `history`
-		horas := 6
+		hours := 6
 		if v := req.URL.Query().Get("hours"); v != "" {
 			if n, err := strconv.Atoi(v); err == nil {
-				horas = n
+				hours = n
 			}
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpHistoryList,
-			map[string]interface{}{"servidor": srv.ID, "horas": horas}, false)
+		doc, ok := r.execOp(w, req, srv, gameservers.OpHistoryList,
+			map[string]interface{}{"servidor": srv.ID, "horas": hours}, false)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	// ── trainer ──────────────────────────────────────────────────────────────
 
 	case "trainer": // 27-case: `trainer`
 		if req.Method == http.MethodGet {
-			doc, ok := r.executaOp(w, req, srv, gameservers.OpTrainerStatus,
+			doc, ok := r.execOp(w, req, srv, gameservers.OpTrainerStatus,
 				map[string]interface{}{"servidor": srv.ID}, false)
 			if !ok {
 				return
 			}
-			escreveBruto(w, doc)
+			writeRaw(w, doc)
 			return
 		}
 		if action == "apply" {
-			doc, ok := r.executaOp(w, req, srv, gameservers.OpTrainerApply,
+			doc, ok := r.execOp(w, req, srv, gameservers.OpTrainerApply,
 				map[string]interface{}{"servidor": srv.ID}, true)
 			if !ok {
 				return
 			}
-			escreveBruto(w, doc)
+			writeRaw(w, doc)
 			return
 		}
-		var desejado gameservers.TrainerDesired
-		if err := httpx.DecodeBody(req.Body, &desejado); err != nil {
+		var desired gameservers.TrainerDesired
+		if err := httpx.DecodeBody(req.Body, &desired); err != nil {
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
 			return
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpTrainerDesired, desejado, true)
+		doc, ok := r.execOp(w, req, srv, gameservers.OpTrainerDesired, desired, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	// ── worlds ───────────────────────────────────────────────────────────────
 
 	case "worlds": // `worlds` + 6 actions
-		r.mundosDeJogo(w, req, srv, action)
+		r.gameWorlds(w, req, srv, action)
 
 	// ── backups ──────────────────────────────────────────────────────────────
 
 	case "backups": // `backups` + 4 actions
-		r.backupsDeJogo(w, req, srv, action)
+		r.gameBackups(w, req, srv, action)
 
 	default:
 		httpx.WriteErr(w, http.StatusNotFound, "unknown resource: "+resource)
 	}
 }
 
-// mundosDeJogo covers the 7 `case`s of the world family.
-func (r *Router) mundosDeJogo(w http.ResponseWriter, req *http.Request, srv gameservers.Server, action string) {
+// gameWorlds covers the 7 `case`s of the world family.
+func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gameservers.Server, action string) {
 	switch action {
 	case "": // 27-case: `worlds` ""
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpWorldList,
+		doc, ok := r.execOp(w, req, srv, gameservers.OpWorldList,
 			map[string]interface{}{"servidor": srv.ID}, false)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "switch": // 27-case: `worlds/switch`
 		var body struct {
@@ -497,24 +497,24 @@ func (r *Router) mundosDeJogo(w http.ResponseWriter, req *http.Request, srv game
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
 			return
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpWorldSwitch,
+		doc, ok := r.execOp(w, req, srv, gameservers.OpWorldSwitch,
 			map[string]interface{}{"servidor": srv.ID, "mundo": body.World}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "export": // 27-case: `worlds/export`
 		// Here is the structural difference: the handler does NOT receive a path.
 		// It asks for the operation, gets an opaque Handle and tells the back-end
 		// to open it. The one holding the disk is the node, from start to finish.
 		nome := req.URL.Query().Get("world")
-		doc, back, destino, ok := r.executaComBackend(w, req, srv, gameservers.OpWorldExport,
+		doc, back, dest, ok := r.execWithBackend(w, req, srv, gameservers.OpWorldExport,
 			map[string]interface{}{"servidor": srv.ID, "mundo": nome}, false)
 		if !ok {
 			return
 		}
-		entregaArtefato(w, req, back, destino, doc, nomeSeguroParaDownload(nome, "mundo")+".zip")
+		deliverArtifact(w, req, back, dest, doc, safeDownloadName(nome, "mundo")+".zip")
 
 	case "import": // 27-case: `worlds/import`
 		if _, ok := r.mustPrimary(w, req); !ok {
@@ -524,17 +524,17 @@ func (r *Router) mundosDeJogo(w http.ResponseWriter, req *http.Request, srv game
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid upload")
 			return
 		}
-		arquivo, cab, err := req.FormFile("file")
+		file, cab, err := req.FormFile("file")
 		if err != nil {
 			httpx.WriteErr(w, http.StatusBadRequest, "file is missing")
 			return
 		}
-		defer arquivo.Close()
+		defer file.Close()
 		if cab.Size > 600<<20 {
 			httpx.WriteErr(w, http.StatusBadRequest, "file larger than 600 MB")
 			return
 		}
-		back, destino, err := r.backendPara(srv)
+		back, dest, err := r.backendFor(srv)
 		if err != nil {
 			httpx.WriteErr(w, http.StatusBadRequest, err.Error())
 			return
@@ -542,10 +542,10 @@ func (r *Router) mundosDeJogo(w http.ResponseWriter, req *http.Request, srv game
 		// The zip goes to the NODE and comes back as a Handle. The dashboard never
 		// writes the file to a disk of its own: if it did, the path would start
 		// crossing the boundary again on the next call.
-		h, err := back.Receber(req.Context(), arquivo)
+		h, err := back.Receive(req.Context(), file)
 		if err != nil {
-			codigo, msg := traduzErroDeNo(err, destino.Nome)
-			httpx.WriteErr(w, codigo, msg)
+			code, msg := translateNodeError(err, dest.Nome)
+			httpx.WriteErr(w, code, msg)
 			return
 		}
 		// The SAME back-end as the upload: the handle lives in its vault. Asking
@@ -553,14 +553,14 @@ func (r *Router) mundosDeJogo(w http.ResponseWriter, req *http.Request, srv game
 		env, _ := json.Marshal(map[string]interface{}{
 			"servidor": srv.ID, "nome": req.FormValue("name"), "handle": string(h),
 		})
-		doc, err := back.Executar(req.Context(), gameservers.OpWorldImport, env)
-		r.auditaJogo(req, destino.Nome, srv.ID, gameservers.OpWorldImport, err)
+		doc, err := back.Execute(req.Context(), gameservers.OpWorldImport, env)
+		r.auditGame(req, dest.Nome, srv.ID, gameservers.OpWorldImport, err)
 		if err != nil {
-			codigo, msg := traduzErroDeNo(err, destino.Nome)
-			httpx.WriteErr(w, codigo, msg)
+			code, msg := translateNodeError(err, dest.Nome)
+			httpx.WriteErr(w, code, msg)
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "rename": // 27-case: `worlds/rename`
 		var body struct {
@@ -571,12 +571,12 @@ func (r *Router) mundosDeJogo(w http.ResponseWriter, req *http.Request, srv game
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
 			return
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpWorldRename,
+		doc, ok := r.execOp(w, req, srv, gameservers.OpWorldRename,
 			map[string]interface{}{"servidor": srv.ID, "de": body.World, "para": body.Name}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "duplicate": // 27-case: `worlds/duplicate`
 		var body struct {
@@ -587,12 +587,12 @@ func (r *Router) mundosDeJogo(w http.ResponseWriter, req *http.Request, srv game
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
 			return
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpWorldDuplicate,
+		doc, ok := r.execOp(w, req, srv, gameservers.OpWorldDuplicate,
 			map[string]interface{}{"servidor": srv.ID, "de": body.World, "para": body.Name}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "delete": // 27-case: `worlds/delete`
 		var body struct {
@@ -602,36 +602,36 @@ func (r *Router) mundosDeJogo(w http.ResponseWriter, req *http.Request, srv game
 			httpx.WriteErr(w, http.StatusBadRequest, "invalid body")
 			return
 		}
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpWorldDelete,
+		doc, ok := r.execOp(w, req, srv, gameservers.OpWorldDelete,
 			map[string]interface{}{"servidor": srv.ID, "mundo": body.World}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	default:
 		httpx.WriteErr(w, http.StatusNotFound, "unknown action on worlds: "+action)
 	}
 }
 
-// backupsDeJogo covers the 5 `case`s of the backup family.
-func (r *Router) backupsDeJogo(w http.ResponseWriter, req *http.Request, srv gameservers.Server, action string) {
+// gameBackups covers the 5 `case`s of the backup family.
+func (r *Router) gameBackups(w http.ResponseWriter, req *http.Request, srv gameservers.Server, action string) {
 	switch action {
 	case "": // 27-case: `backups` ""
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpBackupList,
+		doc, ok := r.execOp(w, req, srv, gameservers.OpBackupList,
 			map[string]interface{}{"servidor": srv.ID}, false)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "create": // 27-case: `backups/create`
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpBackupCreate,
+		doc, ok := r.execOp(w, req, srv, gameservers.OpBackupCreate,
 			map[string]interface{}{"servidor": srv.ID}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "restore": // 27-case: `backups/restore`
 		var body struct {
@@ -644,35 +644,35 @@ func (r *Router) backupsDeJogo(w http.ResponseWriter, req *http.Request, srv gam
 		// The stop→restore→start sequence moved to the back-end, where the
 		// container is. It used to live here and made three round trips; now it is
 		// one single operation, and the network cannot interrupt it midway.
-		doc, ok := r.executaOp(w, req, srv, gameservers.OpBackupRestore,
+		doc, ok := r.execOp(w, req, srv, gameservers.OpBackupRestore,
 			map[string]interface{}{"servidor": srv.ID, "arquivo": body.File}, true)
 		if !ok {
 			return
 		}
-		escreveBruto(w, doc)
+		writeRaw(w, doc)
 
 	case "download": // 27-case: `backups/download`
-		arquivo := req.URL.Query().Get("file")
-		doc, back, destino, ok := r.executaComBackend(w, req, srv, gameservers.OpBackupDownload,
-			map[string]interface{}{"servidor": srv.ID, "arquivo": arquivo}, false)
+		file := req.URL.Query().Get("file")
+		doc, back, dest, ok := r.execWithBackend(w, req, srv, gameservers.OpBackupDownload,
+			map[string]interface{}{"servidor": srv.ID, "arquivo": file}, false)
 		if !ok {
 			return
 		}
-		entregaArtefato(w, req, back, destino, doc, nomeSeguroParaDownload(arquivo, "backup.zip"))
+		deliverArtifact(w, req, back, dest, doc, safeDownloadName(file, "backup.zip"))
 
 	default:
 		httpx.WriteErr(w, http.StatusNotFound, "unknown action on backups: "+action)
 	}
 }
 
-// entregaArtefato opens the Handle returned by an operation and streams the bytes.
+// deliverArtifact opens the Handle returned by an operation and streams the bytes.
 //
 // No path, no `http.ServeFile`: the artifact may be on another machine, and the
 // dashboard only knows how to ask for it by token.
-func entregaArtefato(
+func deliverArtifact(
 	w http.ResponseWriter, req *http.Request,
-	back gameservers.Backend, destino gameservers.DestinoNo,
-	doc json.RawMessage, nomeSugerido string,
+	back gameservers.Backend, dest gameservers.NodeTarget,
+	doc json.RawMessage, suggestedName string,
 ) {
 	var env struct {
 		Handle string `json:"handle"`
@@ -681,16 +681,16 @@ func entregaArtefato(
 		httpx.WriteErr(w, http.StatusBadGateway, "the node did not return a reference for the file")
 		return
 	}
-	rc, err := back.Abrir(req.Context(), gameservers.Handle(env.Handle))
+	rc, err := back.Open(req.Context(), gameservers.Handle(env.Handle))
 	if err != nil {
-		codigo, msg := traduzErroDeNo(err, destino.Nome)
-		httpx.WriteErr(w, codigo, msg)
+		code, msg := translateNodeError(err, dest.Nome)
+		httpx.WriteErr(w, code, msg)
 		return
 	}
 	defer rc.Close()
 
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+nomeSugerido+`"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+suggestedName+`"`)
 	if _, err := io.Copy(w, rc); err != nil {
 		// The header has already gone out: writing an error body would produce a
 		// corrupted file that LOOKS complete. Only the log records it.

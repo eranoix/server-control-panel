@@ -489,7 +489,7 @@ type NetworkDeps struct {
 	// RemoveDevice mirrors singbox.Manager.Remove.
 	RemoveDevice func(ctx context.Context, uuid string) error
 	// SetDeviceExit mirrors singbox.Manager.SetExit (exit must be
-	// singbox.ExitVPS or singbox.ExitCasa — validated in security_actions.go
+	// singbox.ExitVPS or singbox.ExitHome — validated in security_actions.go
 	// before this is called, same posture as docker_actions.go validating
 	// prune kinds before calling DockerDeps.Prune).
 	SetDeviceExit func(ctx context.Context, uuid, exit string) error

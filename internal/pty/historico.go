@@ -51,109 +51,109 @@ import (
 	"server-control-panel/internal/pty/vt10x"
 )
 
-// colunasPadrao/linhasPadrao: the size the screen is born at, before the first
+// defaultCols/defaultRows: the size the screen is born at, before the first
 // client states its own. It is not a guess: it is the size `dtach` itself uses
 // when nobody has spoken, so the screen starts out agreeing with the PTY.
 const (
-	colunasPadrao = 80
-	linhasPadrao  = 24
+	defaultCols = 80
+	defaultRows = 24
 )
 
-// telaDaSessao is the emulator that follows a session and pours what leaves the
+// sessionScreen is the emulator that follows a session and pours what leaves the
 // screen into the history file.
-type telaDaSessao struct {
-	mu       sync.Mutex
-	vt       *vt10x.State
-	arquivo  *sessionLogWriter
-	restante []byte // bytes of a rune split at the block boundary
-	morta    bool   // a panic switched this screen off
-	nome     string
+type sessionScreen struct {
+	mu   sync.Mutex
+	vt   *vt10x.State
+	file *sessionLogWriter
+	rest []byte // bytes of a rune split at the block boundary
+	dead bool   // a panic switched this screen off
+	nome string
 
 	// Whoever wants to know the screen changed — the connections in frame mode
 	// (`quadro.go`). `rolou` is how many lines left during the chunk: scrolling is
 	// handled as scrolling, not as a repaint.
-	assinantesMu sync.Mutex
-	assinantes   map[int64]func(rolou int)
-	proximoAssin int64
-	// rolouNoBloco counts, WITHIN one alimenta, how many lines left.
-	rolouNoBloco int
-	// The notice `alimenta` left for `escoaAviso` to fire outside the lock.
-	pendenteDeAviso  int
-	temAvisoPendente bool
+	subscribersMu sync.Mutex
+	subscribers   map[int64]func(scrolled int)
+	nextSubID     int64
+	// scrolledInBlock counts, WITHIN one alimenta, how many lines left.
+	scrolledInBlock int
+	// The notice `alimenta` left for `flushNotice` to fire outside the lock.
+	pendingNotice    int
+	hasPendingNotice bool
 }
 
 // assina registers whoever wants to be told the screen changed. It returns how
 // to cancel — call that exactly once.
-func (t *telaDaSessao) assina(fn func(rolou int)) func() {
+func (t *sessionScreen) subscribe(fn func(scrolled int)) func() {
 	if t == nil || fn == nil {
 		return func() {}
 	}
-	t.assinantesMu.Lock()
-	if t.assinantes == nil {
-		t.assinantes = map[int64]func(int){}
+	t.subscribersMu.Lock()
+	if t.subscribers == nil {
+		t.subscribers = map[int64]func(int){}
 	}
-	t.proximoAssin++
-	id := t.proximoAssin
-	t.assinantes[id] = fn
-	t.assinantesMu.Unlock()
+	t.nextSubID++
+	id := t.nextSubID
+	t.subscribers[id] = fn
+	t.subscribersMu.Unlock()
 	return func() {
-		t.assinantesMu.Lock()
-		delete(t.assinantes, id)
-		t.assinantesMu.Unlock()
+		t.subscribersMu.Lock()
+		delete(t.subscribers, id)
+		t.subscribersMu.Unlock()
 	}
 }
 
-// avisaAssinantes fires OUTSIDE the screen's lock: whoever receives it will read
+// notifySubscribers fires OUTSIDE the screen's lock: whoever receives it will read
 // the screen next, and reading while holding the writer's lock is how you invent
 // a deadlock.
-func (t *telaDaSessao) avisaAssinantes(rolou int) {
-	t.assinantesMu.Lock()
-	fns := make([]func(int), 0, len(t.assinantes))
-	for _, f := range t.assinantes {
+func (t *sessionScreen) notifySubscribers(scrolled int) {
+	t.subscribersMu.Lock()
+	fns := make([]func(int), 0, len(t.subscribers))
+	for _, f := range t.subscribers {
 		fns = append(fns, f)
 	}
-	t.assinantesMu.Unlock()
+	t.subscribersMu.Unlock()
 	for _, f := range fns {
-		f(rolou)
+		f(scrolled)
 	}
 }
 
-// telaECursor returns a copy of the visible screen, the cursor and whether it is
+// screenAndCursor returns a copy of the visible screen, the cursor and whether it is
 // visible — what the frame compositor needs in order to draw.
-func (t *telaDaSessao) telaECursor() ([][]vt10x.Glyph, vt10x.Cursor, bool) {
+func (t *sessionScreen) screenAndCursor() ([][]vt10x.Glyph, vt10x.Cursor, bool) {
 	if t == nil {
 		return nil, vt10x.Cursor{}, false
 	}
 	t.mu.Lock()
-	morta := t.morta
+	dead := t.dead
 	t.mu.Unlock()
-	if morta {
+	if dead {
 		return nil, vt10x.Cursor{}, false
 	}
-	return t.vt.TelaAtual(), t.vt.CursorAtual(), t.vt.CursorVisivel()
+	return t.vt.CurrentScreen(), t.vt.LockedCursor(), t.vt.LockedCursorVisible()
 }
 
 // tamanho returns the server screen's grid — the SESSION's grid.
-func (t *telaDaSessao) tamanho() (cols, rows int) {
+func (t *sessionScreen) size() (cols, rows int) {
 	if t == nil {
 		return 0, 0
 	}
-	return t.vt.Tamanho()
+	return t.vt.LockedSize()
 }
 
-func novaTelaDaSessao(dataDir, user, name string) *telaDaSessao {
-	t := &telaDaSessao{
-		vt:      vt10x.Novo(colunasPadrao, linhasPadrao),
-		arquivo: abreEscritor(sessionHistPath(dataDir, user, name)),
-		nome:    name,
+func newSessionScreen(dataDir, user, name string) *sessionScreen {
+	t := &sessionScreen{
+		vt:   vt10x.New(defaultCols, defaultRows),
+		file: openWriter(sessionHistPath(dataDir, user, name)),
+		nome: name,
 	}
-	t.vt.AoRolarParaFora(func(linhas [][]vt10x.Glyph) {
+	t.vt.OnScrollOut(func(lines [][]vt10x.Glyph) {
 		// Called with the emulator's lock held: serialising is cheap (it is text)
 		// and the writer is absolutely best-effort, like the rest of the tee.
-		for _, l := range linhas {
-			_, _ = t.arquivo.Write(vt10x.EmBytes(l))
+		for _, l := range lines {
+			_, _ = t.file.Write(vt10x.EmBytes(l))
 		}
-		t.rolouNoBloco += len(linhas)
+		t.scrolledInBlock += len(lines)
 	})
 	return t
 }
@@ -164,80 +164,80 @@ func novaTelaDaSessao(dataDir, user, name string) *telaDaSessao {
 // delivers whatever `read()` returned, and a multibyte character straddles that
 // boundary all the time. Without this, every boundary would become a wrong
 // character in the history.
-func (t *telaDaSessao) alimenta(p []byte) {
+func (t *sessionScreen) feed(p []byte) {
 	if t == nil {
 		return
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.morta {
+	if t.dead {
 		return
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			t.morta = true
+			t.dead = true
 			log.Printf("[pty] history of session %q turned off by a panic in the emulator: %v", t.nome, r)
 		}
 	}()
 	dados := p
-	if len(t.restante) > 0 {
-		dados = append(append(make([]byte, 0, len(t.restante)+len(p)), t.restante...), p...)
-		t.restante = nil
+	if len(t.rest) > 0 {
+		dados = append(append(make([]byte, 0, len(t.rest)+len(p)), t.rest...), p...)
+		t.rest = nil
 	}
-	t.rolouNoBloco = 0
+	t.scrolledInBlock = 0
 	n, err := t.vt.Write(dados)
-	rolou := t.rolouNoBloco
+	scrolled := t.scrolledInBlock
 	if err == nil && n < len(dados) {
 		// A rune split at the end: keep it for the next chunk. The ceiling stops a
 		// binary stream (which never completes a rune) growing this without limit.
-		if sobra := dados[n:]; len(sobra) <= 8 {
-			t.restante = append([]byte(nil), sobra...)
+		if leftover := dados[n:]; len(leftover) <= 8 {
+			t.rest = append([]byte(nil), leftover...)
 		}
 	}
-	// Notifying goes OUTSIDE the lock — see [avisaAssinantes]. The recover's
+	// Notifying goes OUTSIDE the lock — see [notifySubscribers]. The recover's
 	// defer above has already run by the time this function returns, so the
 	// notice does not leave here on a goroutine; it leaves on the way out, with
 	// the lock released by the defer.
-	t.pendenteDeAviso = rolou
-	t.temAvisoPendente = true
+	t.pendingNotice = scrolled
+	t.hasPendingNotice = true
 }
 
-// escoaAviso releases the notice `alimenta` left pending. Separate because
+// flushNotice releases the notice `alimenta` left pending. Separate because
 // `alimenta` holds the lock until it returns (the recover needs it) and
 // notifying while holding it would invite a deadlock with whoever is about to
 // READ the screen.
-func (t *telaDaSessao) escoaAviso() {
+func (t *sessionScreen) flushNotice() {
 	if t == nil {
 		return
 	}
 	t.mu.Lock()
-	tem, rolou := t.temAvisoPendente, t.pendenteDeAviso
-	t.temAvisoPendente, t.pendenteDeAviso = false, 0
+	has, scrolled := t.hasPendingNotice, t.pendingNotice
+	t.hasPendingNotice, t.pendingNotice = false, 0
 	t.mu.Unlock()
-	if tem {
-		t.avisaAssinantes(rolou)
+	if has {
+		t.notifySubscribers(scrolled)
 	}
 }
 
 // redimensiona puts the server's screen at the session's EFFECTIVE size — the
 // same one the program is looking at. That is what makes `ESC[nA` land in the
 // right place and, in consequence, the history come out without repeated copies.
-func (t *telaDaSessao) redimensiona(cols, rows uint16) {
+func (t *sessionScreen) resize(cols, rows uint16) {
 	if t == nil || cols < 2 || rows < 1 {
 		return
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.morta {
+	if t.dead {
 		return
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			t.morta = true
+			t.dead = true
 			log.Printf("[pty] history of session %q turned off by a panic in the resize: %v", t.nome, r)
 		}
 	}()
-	t.vt.Redimensiona(int(cols), int(rows))
+	t.vt.Resize(int(cols), int(rows))
 }
 
 // instantaneo serialises the VISIBLE lines of the screen, trimming the empty
@@ -252,14 +252,14 @@ func (t *telaDaSessao) redimensiona(cols, rows uint16) {
 // Measured in the browser before it existed: the second PC saw the old lines and
 // did NOT see the latest ones — a regression the primer introduced by asking for
 // `replay=0`, because the raw chunk the server used to send covered that part.
-func (t *telaDaSessao) instantaneo() []byte {
+func (t *sessionScreen) snapshot() []byte {
 	if t == nil {
 		return nil
 	}
 	t.mu.Lock()
-	morta := t.morta
+	dead := t.dead
 	t.mu.Unlock()
-	if morta {
+	if dead {
 		return nil
 	}
 	// On the alternate screen (vim, htop) the program is what redraws, in the
@@ -267,13 +267,13 @@ func (t *telaDaSessao) instantaneo() []byte {
 	if t.vt.EmAltScreen() {
 		return nil
 	}
-	linhas := t.vt.TelaAtual()
-	fim := len(linhas)
-	for fim > 0 && len(bytes.TrimSpace(stripANSIBytes(vt10x.EmBytes(linhas[fim-1])))) == 0 {
+	lines := t.vt.CurrentScreen()
+	fim := len(lines)
+	for fim > 0 && len(bytes.TrimSpace(stripANSIBytes(vt10x.EmBytes(lines[fim-1])))) == 0 {
 		fim--
 	}
 	var buf bytes.Buffer
-	for _, l := range linhas[:fim] {
+	for _, l := range lines[:fim] {
 		buf.Write(vt10x.EmBytes(l))
 	}
 	return buf.Bytes()
@@ -281,57 +281,57 @@ func (t *telaDaSessao) instantaneo() []byte {
 
 func stripANSIBytes(b []byte) []byte { return []byte(stripANSI(string(b))) }
 
-func (t *telaDaSessao) fecha() {
+func (t *sessionScreen) closeOnce() {
 	if t == nil {
 		return
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	_ = t.arquivo.Close()
+	_ = t.file.Close()
 }
 
-// HistoricoDaSessao returns the last maxBytes of the rendered history — what the
+// SessionHistory returns the last maxBytes of the rendered history — what the
 // panel writes into the xterm when it opens the session. Append-only text: no
 // replay, no repeated copies, already at the session's width.
-func HistoricoDaSessao(user, name string, maxBytes int) ([]byte, int) {
+func SessionHistory(user, name string, maxBytes int) ([]byte, int) {
 	if maxBytes <= 0 || maxBytes > maxRawLogTailBytes {
 		maxBytes = maxRawLogTailBytes
 	}
 	dd := activeDD()
-	corte, total := lerCauda(sessionHistPath(dd, user, name), maxBytes)
-	if len(corte) < total {
+	cut, total := readTail(sessionHistPath(dd, user, name), maxBytes)
+	if len(cut) < total {
 		// It cut in the middle of a line: start on the next one. Half a line at
 		// the top of the history is just dirt.
-		if i := indiceDaProximaLinha(corte); i >= 0 {
-			corte = corte[i:]
+		if i := nextLineIndex(cut); i >= 0 {
+			cut = cut[i:]
 		}
 	}
 	// And the LIVE SCREEN at the end: the file covers what left, the snapshot
 	// covers what is still in view. Only for a stream that does NOT redraw — in a
 	// program that repaints, the one that draws the current screen is the program
 	// itself, in the attach repaint, and painting over it would duplicate.
-	if tela := telaDe(dd, user, name); tela != nil && !fluxoRecenteRepinta(dd, user, name) {
-		if inst := tela.instantaneo(); len(inst) > 0 {
-			corte = append(corte, inst...)
+	if screen := screenOf(dd, user, name); screen != nil && !recentStreamRepaints(dd, user, name) {
+		if inst := screen.snapshot(); len(inst) > 0 {
+			cut = append(cut, inst...)
 			total += len(inst)
 		}
 	}
 	if total == 0 {
 		return nil, 0
 	}
-	return corte, total
+	return cut, total
 }
 
-// fluxoRecenteRepinta reports whether the session's recent output came from a
+// recentStreamRepaints reports whether the session's recent output came from a
 // renderer that redraws. It uses the SAME calibrated classifier as
-// `attachReplay` (see `limiteRepintura`), over the log's tail — reading the
+// `attachReplay` (see `repaintLimit`), over the log's tail — reading the
 // whole log to answer this on every attach would cost more and be no more exact.
-func fluxoRecenteRepinta(dataDir, user, name string) bool {
-	cauda, _ := lerCauda(sessionLogPath(dataDir, user, name), maxAttachReplayBytes)
-	return len(cauda) > 0 && fluxoERepintado(cauda)
+func recentStreamRepaints(dataDir, user, name string) bool {
+	tail, _ := readTail(sessionLogPath(dataDir, user, name), maxAttachReplayBytes)
+	return len(tail) > 0 && isRepaintStream(tail)
 }
 
-func indiceDaProximaLinha(b []byte) int {
+func nextLineIndex(b []byte) int {
 	for i := 0; i+1 < len(b); i++ {
 		if b[i] == '\r' && b[i+1] == '\n' {
 			return i + 2

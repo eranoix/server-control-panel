@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-func nodeExemplo(id string) Node {
+func sampleNode(id string) Node {
 	return Node{ID: id, Name: id, Transport: TransportPVEAPI, Kind: NodeKindGuest}
 }
 
@@ -27,11 +27,11 @@ func idsDe(inv Inventory) []string {
 	return out
 }
 
-// TestStoreOpenAusenteEhVazio — a missing file is a LEGITIMATE empty
+// TestStoreOpenMissingIsEmpty — a missing file is a LEGITIMATE empty
 // inventory. Mistaking that for an error would make the first boot fail;
 // mistaking the opposite (corrupt read as empty) would erase the inventory on
 // the next write — which is why the two cases have separate tests.
-func TestStoreOpenAusenteEhVazio(t *testing.T) {
+func TestStoreOpenMissingIsEmpty(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Open(dir)
 	if err != nil {
@@ -58,24 +58,24 @@ func TestStoreDurableWrite(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	if err := s.Replace(func(inv *Inventory) {
-		inv.Nodes = append(inv.Nodes, nodeExemplo("lxc/207"), nodeExemplo("qemu/208"))
+		inv.Nodes = append(inv.Nodes, sampleNode("lxc/207"), sampleNode("qemu/208"))
 	}); err != nil {
 		t.Fatalf("Replace: %v", err)
 	}
 
-	entradas, err := os.ReadDir(filepath.Dir(s.Path()))
+	entries, err := os.ReadDir(filepath.Dir(s.Path()))
 	if err != nil {
 		t.Fatalf("ReadDir: %v", err)
 	}
-	var nomes []string
-	for _, e := range entradas {
-		nomes = append(nomes, e.Name())
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
 		if strings.HasSuffix(e.Name(), ".new") || strings.HasSuffix(e.Name(), ".tmp") {
 			t.Fatalf("orphan temporary on disk: %s", e.Name())
 		}
 	}
 	if _, err := os.Stat(s.Path()); err != nil {
-		t.Fatalf("inventory.json does not exist after the Replace (%v); directory: %v", err, nomes)
+		t.Fatalf("inventory.json does not exist after the Replace (%v); directory: %v", err, names)
 	}
 
 	// Reload through a NEW Store — it is what the other process does.
@@ -121,28 +121,28 @@ func reflect_DeepEqualStrings(a, b []string) bool {
 // TestStoreCorruptFile — a truncated/corrupt file is a HARD ERROR naming the
 // path. Starting empty in silence would erase the inventory on the next write.
 func TestStoreCorruptFile(t *testing.T) {
-	casos := map[string]string{
+	cases := map[string]string{
 		"truncado":   `{"schema_version":1,"nodes":[{"id":"lxc/2`,
 		"vazio":      "",
 		"lixo":       "nao sou json",
 		"tipoerrado": `["isto e uma lista, nao o envelope"]`,
 	}
-	for nome, conteudo := range casos {
+	for nome, content := range cases {
 		t.Run(nome, func(t *testing.T) {
 			dir := t.TempDir()
 			if err := os.MkdirAll(filepath.Join(dir, "inventory"), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			alvo := filepath.Join(dir, "inventory", "inventory.json")
-			if err := os.WriteFile(alvo, []byte(conteudo), 0o600); err != nil {
+			target := filepath.Join(dir, "inventory", "inventory.json")
+			if err := os.WriteFile(target, []byte(content), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			_, err := Open(dir)
 			if err == nil {
 				t.Fatalf("Open ACCEPTED inventory %s — an empty inventory in place of an error erases data", nome)
 			}
-			if !strings.Contains(err.Error(), alvo) {
-				t.Fatalf("the error does not name the path %q: %v", alvo, err)
+			if !strings.Contains(err.Error(), target) {
+				t.Fatalf("the error does not name the path %q: %v", target, err)
 			}
 		})
 	}
@@ -154,15 +154,15 @@ func TestStoreCorruptFile(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(dir, "inventory"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		alvo := filepath.Join(dir, "inventory", "inventory.json")
-		if err := os.WriteFile(alvo, []byte(`{"schema_version":99,"nodes":[]}`), 0o600); err != nil {
+		target := filepath.Join(dir, "inventory", "inventory.json")
+		if err := os.WriteFile(target, []byte(`{"schema_version":99,"nodes":[]}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		_, err := Open(dir)
 		if err == nil {
 			t.Fatal("Open accepted an envelope from a future version")
 		}
-		if !strings.Contains(err.Error(), "99") || !strings.Contains(err.Error(), alvo) {
+		if !strings.Contains(err.Error(), "99") || !strings.Contains(err.Error(), target) {
 			t.Fatalf("the version error mentions neither version nor path: %v", err)
 		}
 	})
@@ -191,7 +191,7 @@ func TestStoreConcurrent(t *testing.T) {
 				return
 			}
 			errs[i] = s.Replace(func(inv *Inventory) {
-				inv.Nodes = append(inv.Nodes, nodeExemplo("n-"+strconv.Itoa(i)))
+				inv.Nodes = append(inv.Nodes, sampleNode("n-"+strconv.Itoa(i)))
 			})
 		}(i)
 	}
@@ -210,14 +210,14 @@ func TestStoreConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
-	querido := make([]string, 0, n)
+	wanted := make([]string, 0, n)
 	for i := 0; i < n; i++ {
-		querido = append(querido, "n-"+strconv.Itoa(i))
+		wanted = append(wanted, "n-"+strconv.Itoa(i))
 	}
-	sort.Strings(querido)
-	if got := idsDe(inv); !reflect_DeepEqualStrings(got, querido) {
+	sort.Strings(wanted)
+	if got := idsDe(inv); !reflect_DeepEqualStrings(got, wanted) {
 		t.Fatalf("mutations lost: %d of %d arrived\n  missing: %v",
-			len(got), n, faltantes(querido, got))
+			len(got), n, missingFrom(wanted, got))
 	}
 
 	// And the file is still valid JSON, not a hybrid of two writes.
@@ -225,20 +225,20 @@ func TestStoreConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var conferindo Inventory
-	if err := json.Unmarshal(b, &conferindo); err != nil {
+	var checking Inventory
+	if err := json.Unmarshal(b, &checking); err != nil {
 		t.Fatalf("inventory.json is not valid JSON after the concurrency: %v", err)
 	}
 }
 
-func faltantes(querido, got []string) []string {
-	tem := map[string]bool{}
+func missingFrom(wanted, got []string) []string {
+	has := map[string]bool{}
 	for _, g := range got {
-		tem[g] = true
+		has[g] = true
 	}
 	var out []string
-	for _, q := range querido {
-		if !tem[q] {
+	for _, q := range wanted {
+		if !has[q] {
 			out = append(out, q)
 		}
 	}
@@ -255,12 +255,12 @@ func TestStoreCrossProcess(t *testing.T) {
 		t.Skip("child process")
 	}
 	dir := t.TempDir()
-	const processos, porProcesso = 4, 25
+	const procCount, perProcess = 4, 25
 
 	var wg sync.WaitGroup
-	saidas := make([]string, processos)
-	falhas := make([]error, processos)
-	for p := 0; p < processos; p++ {
+	outputs := make([]string, procCount)
+	failures := make([]error, procCount)
+	for p := 0; p < procCount; p++ {
 		wg.Add(1)
 		go func(p int) {
 			defer wg.Done()
@@ -268,16 +268,16 @@ func TestStoreCrossProcess(t *testing.T) {
 			cmd.Env = append(os.Environ(),
 				"INVENTORY_CHILD_DIR="+dir,
 				"INVENTORY_CHILD_PREFIX=p"+strconv.Itoa(p),
-				"INVENTORY_CHILD_N="+strconv.Itoa(porProcesso),
+				"INVENTORY_CHILD_N="+strconv.Itoa(perProcess),
 			)
 			out, err := cmd.CombinedOutput()
-			saidas[p], falhas[p] = string(out), err
+			outputs[p], failures[p] = string(out), err
 		}(p)
 	}
 	wg.Wait()
-	for p, err := range falhas {
+	for p, err := range failures {
 		if err != nil {
-			t.Fatalf("child %d failed: %v\n%s", p, err, saidas[p])
+			t.Fatalf("child %d failed: %v\n%s", p, err, outputs[p])
 		}
 	}
 
@@ -289,17 +289,17 @@ func TestStoreCrossProcess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
-	querido := make([]string, 0, processos*porProcesso)
-	for p := 0; p < processos; p++ {
-		for i := 0; i < porProcesso; i++ {
-			querido = append(querido, fmt.Sprintf("p%d-%d", p, i))
+	wanted := make([]string, 0, procCount*perProcess)
+	for p := 0; p < procCount; p++ {
+		for i := 0; i < perProcess; i++ {
+			wanted = append(wanted, fmt.Sprintf("p%d-%d", p, i))
 		}
 	}
-	sort.Strings(querido)
+	sort.Strings(wanted)
 	got := idsDe(inv)
-	if !reflect_DeepEqualStrings(got, querido) {
+	if !reflect_DeepEqualStrings(got, wanted) {
 		t.Fatalf("CROSS-PROCESS lost update: %d of %d entries survived\n  missing: %v",
-			len(got), len(querido), faltantes(querido, got))
+			len(got), len(wanted), missingFrom(wanted, got))
 	}
 }
 
@@ -311,7 +311,7 @@ func TestStoreChildAppend(t *testing.T) {
 	if dir == "" {
 		t.Skip("helper for TestStoreCrossProcess")
 	}
-	prefixo := os.Getenv("INVENTORY_CHILD_PREFIX")
+	prefix := os.Getenv("INVENTORY_CHILD_PREFIX")
 	n, err := strconv.Atoi(os.Getenv("INVENTORY_CHILD_N"))
 	if err != nil {
 		t.Fatalf("INVENTORY_CHILD_N: %v", err)
@@ -322,7 +322,7 @@ func TestStoreChildAppend(t *testing.T) {
 	}
 	for i := 0; i < n; i++ {
 		if err := s.Replace(func(inv *Inventory) {
-			inv.Nodes = append(inv.Nodes, nodeExemplo(fmt.Sprintf("%s-%d", prefixo, i)))
+			inv.Nodes = append(inv.Nodes, sampleNode(fmt.Sprintf("%s-%d", prefix, i)))
 		}); err != nil {
 			t.Fatalf("Replace %d: %v", i, err)
 		}
@@ -345,14 +345,14 @@ func TestStoreWritePathIsDurable(t *testing.T) {
 	}
 	src := string(b)
 
-	exigidos := map[string]*regexp.Regexp{
+	required := map[string]*regexp.Regexp{
 		"Sync() do arquivo temporário": regexp.MustCompile(`f\.Sync\(\)`),
 		"Sync() do diretório":          regexp.MustCompile(`d(ir)?f?\.Sync\(\)`),
 		"flock entre processos":        regexp.MustCompile(`syscall\.Flock\(`),
 		"mutex de pacote":              regexp.MustCompile(`(?m)^var \w+Mu sync\.Mutex`),
 		"rename atômico":               regexp.MustCompile(`os\.Rename\(`),
 	}
-	for desc, re := range exigidos {
+	for desc, re := range required {
 		if !re.MatchString(src) {
 			t.Fatalf("store.go lost %s (pattern %s)", desc, re)
 		}
@@ -365,17 +365,17 @@ func TestStoreWritePathIsDurable(t *testing.T) {
 	}
 }
 
-// TestStoreRecusaNoInvalido — the closed set of transports is only truly
+// TestStoreRejectsInvalidNode — the closed set of transports is only truly
 // closed if the disk refuses one too. An invalid node fails the ENTIRE write
 // and the previous file stays intact (no writing half of it).
-func TestStoreRecusaNoInvalido(t *testing.T) {
+func TestStoreRejectsInvalidNode(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Open(dir)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	if err := s.Replace(func(inv *Inventory) {
-		inv.Nodes = append(inv.Nodes, nodeExemplo("lxc/207"))
+		inv.Nodes = append(inv.Nodes, sampleNode("lxc/207"))
 	}); err != nil {
 		t.Fatalf("valid Replace: %v", err)
 	}

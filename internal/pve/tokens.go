@@ -42,27 +42,27 @@ func (t *TokenInfo) UnmarshalJSON(raw []byte) error {
 		return err
 	}
 	*t = TokenInfo(aux.cru)
-	t.Privsep = numeroOuStringVerdadeiro(aux.Privsep)
+	t.Privsep = truthyNumberOrString(aux.Privsep)
 	return nil
 }
 
-func numeroOuStringVerdadeiro(raw json.RawMessage) bool {
+func truthyNumberOrString(raw json.RawMessage) bool {
 	s := strings.Trim(strings.TrimSpace(string(raw)), `"`)
 	return s == "1" || s == "true"
 }
 
-// ExpiraEmDias returns how many days are left before the token expires,
+// ExpiresInDays returns how many days are left before the token expires,
 // measured against the clock passed as an argument (unix seconds).
 //
 // The clock is a PARAMETER, not time.Now(): a criterion that is met by waiting
 // is forbidden, and the only way to prove "it warns before expiry" without
 // waiting months is to inject the instant. Negative = already expired. The
 // second return is false when the token has no deadline at all.
-func (t TokenInfo) ExpiraEmDias(agora int64) (dias int, vence bool) {
+func (t TokenInfo) ExpiresInDays(now int64) (days int, expires bool) {
 	if t.Expire == 0 {
 		return 0, false
 	}
-	d := t.Expire - agora
+	d := t.Expire - now
 	if d < 0 {
 		// Integer division in Go truncates towards zero; -1 s would become 0 days and
 		// an expired token would show up as "expires today".
@@ -73,7 +73,7 @@ func (t TokenInfo) ExpiraEmDias(agora int64) (dias int, vence bool) {
 
 // ListTokens returns the tokens of a hypervisor user.
 func (c *Client) ListTokens(ctx context.Context, user string) ([]TokenInfo, error) {
-	if err := userIDValido(user); err != nil {
+	if err := validUserID(user); err != nil {
 		return nil, err
 	}
 	var toks []TokenInfo
@@ -121,7 +121,7 @@ func (c *Client) DeleteToken(ctx context.Context, user, tokenID string) error {
 }
 
 func tokenPath(user, tokenID string) (string, error) {
-	if err := userIDValido(user); err != nil {
+	if err := validUserID(user); err != nil {
 		return "", err
 	}
 	if tokenID == "" || strings.ContainsAny(tokenID, "/?#") || strings.Contains(tokenID, "..") {
@@ -130,10 +130,10 @@ func tokenPath(user, tokenID string) (string, error) {
 	return "/api2/json/access/users/" + url.PathEscape(user) + "/token/" + url.PathEscape(tokenID), nil
 }
 
-// userIDValido requires the USER@REALM form. Without the realm, the path points
+// validUserID requires the USER@REALM form. Without the realm, the path points
 // at another hypervisor resource — and the operation that matters most here is
 // a DELETE.
-func userIDValido(user string) error {
+func validUserID(user string) error {
 	at := strings.Index(user, "@")
 	if at <= 0 || at == len(user)-1 || strings.ContainsAny(user, "/?#") || strings.Contains(user, "..") {
 		return fmt.Errorf("pve: invalid userid (%q, expected USER@REALM)", user)

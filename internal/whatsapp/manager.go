@@ -161,7 +161,7 @@ func (m *Manager) buildService(u scope.User) (*Service, error) {
 		WAHAAPIKey:  apiKey,
 		HMACSecret:  hmacSec,
 		// Source of truth for when the cached value goes stale (see
-		// Service.hmacConfere). Reads the vault at call time, not the value
+		// Service.hmacMatches). Reads the vault at call time, not the value
 		// captured here.
 		HMACRefresh: func() string {
 			v, _ := scope.NewUserVault(m.opts.Vault, u).Get("waha_hmac_secret")

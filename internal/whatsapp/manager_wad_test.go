@@ -39,7 +39,7 @@ func testManager(t *testing.T) (*Manager, string) {
 // restarts the daemon, N users = N restarts within milliseconds, systemd cuts
 // it off with start-limit-hit and the daemon ends up DEAD. Reprovisioning with
 // nothing changed has to be a no-op.
-func TestProvisionWadNaoReiniciaQuandoNadaMuda(t *testing.T) {
+func TestProvisionWadDoesNotRestartWhenNothingChanges(t *testing.T) {
 	m, _ := testManager(t)
 	u, err := scope.New("sam")
 	if err != nil {
@@ -72,7 +72,7 @@ func TestProvisionWadNaoReiniciaQuandoNadaMuda(t *testing.T) {
 
 // A real change, on the other hand (the `enabled` flag removed = the user went
 // back to WAHA and is being re-migrated), still demands the restart.
-func TestProvisionWadReiniciaQuandoEstadoMuda(t *testing.T) {
+func TestProvisionWadRestartsWhenStateChanges(t *testing.T) {
 	m, state := testManager(t)
 	u, _ := scope.New("sam")
 
@@ -136,7 +136,7 @@ func TestDaemonAlive(t *testing.T) {
 	}
 }
 
-func TestDaemonAliveRejeitaHTTPErro(t *testing.T) {
+func TestDaemonAliveRejectsHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))

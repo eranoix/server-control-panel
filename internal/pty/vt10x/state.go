@@ -85,7 +85,7 @@ type State struct {
 
 	// vps-manager PATCH: who receives the lines that leave through the top.
 	// See `vpsm.go` and the patch in [State.scrollUp].
-	aoRolarParaFora func(linhas [][]Glyph)
+	onScrollOut func(lines [][]Glyph)
 
 	w             io.Writer
 	mu            sync.Mutex
@@ -491,14 +491,14 @@ func (t *State) scrollUp(orig, n int) {
 	//
 	// It only counts when the scroll is of the whole screen (orig == 0): scrolling inside
 	// a region defined by a program is that program's scratch space, not history.
-	if t.aoRolarParaFora != nil && orig == 0 && n > 0 && t.mode&ModeAltScreen == 0 {
-		saindo := make([][]Glyph, 0, n)
+	if t.onScrollOut != nil && orig == 0 && n > 0 && t.mode&ModeAltScreen == 0 {
+		leaving := make([][]Glyph, 0, n)
 		for i := orig; i < orig+n && i < len(t.lines); i++ {
-			linha := make([]Glyph, len(t.lines[i]))
-			copy(linha, t.lines[i])
-			saindo = append(saindo, linha)
+			line := make([]Glyph, len(t.lines[i]))
+			copy(line, t.lines[i])
+			leaving = append(leaving, line)
 		}
-		t.aoRolarParaFora(saindo)
+		t.onScrollOut(leaving)
 	}
 	t.clear(0, orig, t.cols-1, orig+n-1)
 	t.changed |= ChangedScreen

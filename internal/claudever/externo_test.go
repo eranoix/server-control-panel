@@ -6,25 +6,25 @@ import (
 	"testing"
 )
 
-// montaExterno writes a fake /proc with a process in ANOTHER mount namespace
+// buildExternal writes a fake /proc with a process in ANOTHER mount namespace
 // (which is what marks a container), with its environ and its root at <pid>/root.
-func montaExterno(t *testing.T, pid int, exe, env, refSymlink string, mesmoNS bool) string {
+func buildExternal(t *testing.T, pid int, exe, env, refSymlink string, sameNS bool) string {
 	t.Helper()
 	dir := t.TempDir()
-	anterior := raizProc
-	raizProc = dir
-	t.Cleanup(func() { raizProc = anterior })
+	anterior := procRoot
+	procRoot = dir
+	t.Cleanup(func() { procRoot = anterior })
 
 	// /proc/self/ns/mnt — the "server's" namespace
 	self := filepath.Join(dir, "self", "ns")
 	if err := os.MkdirAll(self, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	alvoSelf := filepath.Join(dir, "ns-host")
-	if err := os.WriteFile(alvoSelf, []byte("x"), 0o644); err != nil {
+	selfTarget := filepath.Join(dir, "ns-host")
+	if err := os.WriteFile(selfTarget, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(alvoSelf, filepath.Join(self, "mnt")); err != nil {
+	if err := os.Symlink(selfTarget, filepath.Join(self, "mnt")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -33,14 +33,14 @@ func montaExterno(t *testing.T, pid int, exe, env, refSymlink string, mesmoNS bo
 		t.Fatal(err)
 	}
 	// same ns → points at the same file; different → another file
-	alvoDele := alvoSelf
-	if !mesmoNS {
-		alvoDele = filepath.Join(dir, "ns-container")
-		if err := os.WriteFile(alvoDele, []byte("y"), 0o644); err != nil {
+	theirTarget := selfTarget
+	if !sameNS {
+		theirTarget = filepath.Join(dir, "ns-container")
+		if err := os.WriteFile(theirTarget, []byte("y"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.Symlink(alvoDele, filepath.Join(d, "ns", "mnt")); err != nil {
+	if err := os.Symlink(theirTarget, filepath.Join(d, "ns", "mnt")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(exe, filepath.Join(d, "exe")); err != nil {
@@ -53,11 +53,11 @@ func montaExterno(t *testing.T, pid int, exe, env, refSymlink string, mesmoNS bo
 		t.Fatal(err)
 	}
 	if refSymlink != "" {
-		raizDele := filepath.Join(d, "root", "root", ".local", "bin")
-		if err := os.MkdirAll(raizDele, 0o755); err != nil {
+		theirRoot := filepath.Join(d, "root", "root", ".local", "bin")
+		if err := os.MkdirAll(theirRoot, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Symlink(refSymlink, filepath.Join(raizDele, "claude")); err != nil {
+		if err := os.Symlink(refSymlink, filepath.Join(theirRoot, "claude")); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -68,77 +68,77 @@ const verDir = "/root/.local/share/claude/versions/"
 
 // The point of the feature: the container's reference is ITS OWN installation,
 // not the host's. A process on 2.1.241 with the container on 2.1.246 = really behind.
-func TestLevantarExternoComparaComAInstalacaoDoContainer(t *testing.T) {
-	montaExterno(t, 900, verDir+"2.1.241", "VPSM_RECOVERY=1\x00HOME=/root\x00", verDir+"2.1.246", false)
+func TestDetectExternalComparesWithContainerInstall(t *testing.T) {
+	buildExternal(t, 900, verDir+"2.1.241", "VPSM_RECOVERY=1\x00HOME=/root\x00", verDir+"2.1.246", false)
 
-	got := LevantarExterno("VPSM_RECOVERY=1", "recovery")
+	got := DetectExternal("VPSM_RECOVERY=1", "recovery")
 	if len(got) != 1 {
 		t.Fatalf("found %d processes, want 1", len(got))
 	}
 	p := got[0]
-	if p.Versao != "2.1.241" || p.Ref != "2.1.246" {
-		t.Fatalf("versao=%q ref=%q, want 2.1.241 / 2.1.246", p.Versao, p.Ref)
+	if p.Version != "2.1.241" || p.Ref != "2.1.246" {
+		t.Fatalf("versao=%q ref=%q, want 2.1.241 / 2.1.246", p.Version, p.Ref)
 	}
-	if p.Atual {
+	if p.Current {
 		t.Fatal("Atual=true, but 2.1.241 is BEHIND 2.1.246")
 	}
-	if p.Alvo != "recovery" {
-		t.Fatalf("Alvo=%q, want \"recovery\"", p.Alvo)
+	if p.Target != "recovery" {
+		t.Fatalf("Alvo=%q, want \"recovery\"", p.Target)
 	}
 }
 
-// The regression mesmoMount had already fixed and that this code must NOT
+// The regression sameMount had already fixed and that this code must NOT
 // reintroduce: a container NEWER than the host is not behind. Here the host does
 // not even enter the tally — the reference is the container's own.
-func TestLevantarExternoNaoChamaDeDefasadoQuemEstaEmDia(t *testing.T) {
-	montaExterno(t, 901, verDir+"2.1.246", "VPSM_RECOVERY=1\x00", verDir+"2.1.246", false)
+func TestDetectExternalDoesNotFlagUpToDate(t *testing.T) {
+	buildExternal(t, 901, verDir+"2.1.246", "VPSM_RECOVERY=1\x00", verDir+"2.1.246", false)
 
-	got := LevantarExterno("VPSM_RECOVERY=1", "recovery")
+	got := DetectExternal("VPSM_RECOVERY=1", "recovery")
 	if len(got) != 1 {
 		t.Fatalf("found %d, want 1", len(got))
 	}
-	if !got[0].Atual {
+	if !got[0].Current {
 		t.Fatal("Atual=false for a process on the SAME version as its container")
 	}
 }
 
 // A HOST process must not leak in here — Levantar takes care of it, with the
 // host's reference. Listing it twice would give two rows for the same Claude.
-func TestLevantarExternoIgnoraProcessoDoMesmoNamespace(t *testing.T) {
-	montaExterno(t, 902, verDir+"2.1.241", "VPSM_RECOVERY=1\x00", verDir+"2.1.246", true)
+func TestDetectExternalIgnoresSameNamespaceProcess(t *testing.T) {
+	buildExternal(t, 902, verDir+"2.1.241", "VPSM_RECOVERY=1\x00", verDir+"2.1.246", true)
 
-	if got := LevantarExterno("VPSM_RECOVERY=1", "recovery"); len(got) != 0 {
+	if got := DetectExternal("VPSM_RECOVERY=1", "recovery"); len(got) != 0 {
 		t.Fatalf("found %d, wanted 0 (same mount namespace)", len(got))
 	}
 }
 
 // A container WITHOUT the marker is not the recovery one — restarting the wrong
 // container would take something else down.
-func TestLevantarExternoExigeOMarcador(t *testing.T) {
-	montaExterno(t, 903, verDir+"2.1.241", "HOME=/root\x00OUTRO=1\x00", verDir+"2.1.246", false)
+func TestDetectExternalRequiresMarker(t *testing.T) {
+	buildExternal(t, 903, verDir+"2.1.241", "HOME=/root\x00OUTRO=1\x00", verDir+"2.1.246", false)
 
-	if got := LevantarExterno("VPSM_RECOVERY=1", "recovery"); len(got) != 0 {
+	if got := DetectExternal("VPSM_RECOVERY=1", "recovery"); len(got) != 0 {
 		t.Fatalf("found %d, wanted 0 (no VPSM_RECOVERY)", len(got))
 	}
 }
 
 // With no readable reference symlink there is no way to assert being behind — and
 // asserting "behind" with no basis would make the panel ask for a pointless restart.
-func TestLevantarExternoSemReferenciaNaoAcusaDefasagem(t *testing.T) {
-	montaExterno(t, 904, verDir+"2.1.241", "VPSM_RECOVERY=1\x00", "", false)
+func TestDetectExternalNoReferenceReportsNoLag(t *testing.T) {
+	buildExternal(t, 904, verDir+"2.1.241", "VPSM_RECOVERY=1\x00", "", false)
 
-	got := LevantarExterno("VPSM_RECOVERY=1", "recovery")
+	got := DetectExternal("VPSM_RECOVERY=1", "recovery")
 	if len(got) != 1 {
 		t.Fatalf("found %d, want 1", len(got))
 	}
-	if got[0].Ref != "" || !got[0].Atual {
-		t.Fatalf("ref=%q atual=%v; with no reference it has to assume up to date", got[0].Ref, got[0].Atual)
+	if got[0].Ref != "" || !got[0].Current {
+		t.Fatalf("ref=%q atual=%v; with no reference it has to assume up to date", got[0].Ref, got[0].Current)
 	}
 }
 
-func TestLevantarExternoSemMarcadorVazio(t *testing.T) {
-	montaExterno(t, 905, verDir+"2.1.241", "VPSM_RECOVERY=1\x00", verDir+"2.1.246", false)
-	if got := LevantarExterno("", "recovery"); len(got) != 0 {
+func TestDetectExternalNoMarkerIsEmpty(t *testing.T) {
+	buildExternal(t, 905, verDir+"2.1.241", "VPSM_RECOVERY=1\x00", verDir+"2.1.246", false)
+	if got := DetectExternal("", "recovery"); len(got) != 0 {
 		t.Fatalf("found %d with an empty marker, wanted 0", len(got))
 	}
 }

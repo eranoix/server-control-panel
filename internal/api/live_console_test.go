@@ -38,15 +38,15 @@ import (
 	"server-control-panel/internal/auth"
 )
 
-// guestsDeConsole are the targets of the measurement. There are FOUR of them,
+// consoleGuests are the targets of the measurement. There are FOUR of them,
 // of TWO kinds, on purpose: the defect that motivated this care was a
 // `vncproxy 204` failing on the host, and measuring on a single guest would have
 // declared the path good on a sample of size 1. `pbs` is in for the opposite
 // reason: it has NO token, and the test demands that the refusal be explained.
-var guestsDeConsole = []struct {
+var consoleGuests = []struct {
 	id       string
 	nome     string
-	temToken bool
+	hasToken bool
 }{
 	{"lxc/204", "lab", true},
 	{"lxc/207", "apps", true},
@@ -55,19 +55,19 @@ var guestsDeConsole = []struct {
 	{"lxc/202", "pbs", false},
 }
 
-func TestLiveConsoleDoGuest(t *testing.T) {
+func TestLiveGuestConsole(t *testing.T) {
 	if os.Getenv("LAB_PVC_LIVE") != "1" {
 		t.Skip("live proof turned off — run with LAB_PVC_LIVE=1 (it really OPENS a console on the guests)")
 	}
 	t0 := time.Now().UTC()
-	r, cancel := routerVivo(t)
+	r, cancel := liveRouter(t)
 	defer cancel()
 
-	trilha, err := auth.NewAuditLog(filepath.Join(t.TempDir(), "audit.log"))
+	trail, err := auth.NewAuditLog(filepath.Join(t.TempDir(), "audit.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.audit = trilha
+	r.audit = trail
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.handleProxmoxConsole(w, req.WithContext(auth.WithUser(req.Context(), r.cfg.Primary)))
@@ -85,12 +85,12 @@ func TestLiveConsoleDoGuest(t *testing.T) {
 	}
 
 	// ── 2. live console, guest by guest ───────────────────────────────────
-	abertos := 0
-	for _, g := range guestsDeConsole {
+	opened := 0
+	for _, g := range consoleGuests {
 		g := g
 		t.Run(g.nome, func(t *testing.T) {
 			conn, resp, err := websocket.DefaultDialer.Dial(base+"?node="+g.id, nil)
-			if !g.temToken {
+			if !g.hasToken {
 				// 🔴 CT 202 has no node token. The refusal has to NAME the key
 				// that is missing — a generic "error" sends the operator
 				// hunting for a defect where there is none.
@@ -101,10 +101,10 @@ func TestLiveConsoleDoGuest(t *testing.T) {
 				if resp == nil || resp.StatusCode != http.StatusConflict {
 					t.Fatalf("%s: status = %v, want 409", g.id, resp)
 				}
-				corpo := make([]byte, 512)
-				n, _ := resp.Body.Read(corpo)
-				if !strings.Contains(string(corpo[:n]), "pve_token_node_pbs") {
-					t.Errorf("%s: body = %s, want it to name the missing key", g.id, corpo[:n])
+				body := make([]byte, 512)
+				n, _ := resp.Body.Read(body)
+				if !strings.Contains(string(body[:n]), "pve_token_node_pbs") {
+					t.Errorf("%s: body = %s, want it to name the missing key", g.id, body[:n])
 				}
 				t.Logf("%-9s %-7s → 409 naming the missing key (no node token, and the screen SAYS so)", g.id, g.nome)
 				return
@@ -134,7 +134,7 @@ func TestLiveConsoleDoGuest(t *testing.T) {
 				t.Fatalf("%s (%s): o hipervisor recusou o console: %v", g.id, g.nome, pronto["message"])
 			}
 
-			marca := "PVC-" + g.nome
+			mark := "PVC-" + g.nome
 			if err := conn.WriteJSON(map[string]any{"type": "resize", "cols": 100, "rows": 30}); err != nil {
 				t.Fatal(err)
 			}
@@ -147,20 +147,20 @@ func TestLiveConsoleDoGuest(t *testing.T) {
 			// SetReadDeadline. A single reader pushing into a channel lets the
 			// outer loop decide how long to wait without ever hurting the
 			// connection.
-			bytesDoTTY := make(chan []byte, 64)
-			erroDeLeitura := make(chan error, 1)
+			ttyBytes := make(chan []byte, 64)
+			readErr := make(chan error, 1)
 			go func() {
 				for {
 					mt, dados, err := conn.ReadMessage()
 					if err != nil {
-						erroDeLeitura <- err
-						close(bytesDoTTY)
+						readErr <- err
+						close(ttyBytes)
 						return
 					}
 					if mt == websocket.BinaryMessage {
 						cp := make([]byte, len(dados))
 						copy(cp, dados)
-						bytesDoTTY <- cp
+						ttyBytes <- cp
 					}
 				}
 			}()
@@ -183,33 +183,33 @@ func TestLiveConsoleDoGuest(t *testing.T) {
 			// converge. Ctrl-U erases the half-typed line; Enter forces a fresh
 			// prompt; and if nobody answers, send it again.
 			var antes strings.Builder
-			limite := time.Now().Add(60 * time.Second)
-			sincronizado := false
+			limit := time.Now().Add(60 * time.Second)
+			synced := false
 		sync:
-			for !sincronizado && time.Now().Before(limite) {
+			for !synced && time.Now().Before(limit) {
 				if err := conn.WriteJSON(map[string]any{"type": "input", "data": "\x15\n"}); err != nil {
 					t.Fatalf("%s: write to the console: %v", g.id, err)
 				}
-				espera := time.After(5 * time.Second)
+				timeout := time.After(5 * time.Second)
 				for {
 					select {
-					case dados, ok := <-bytesDoTTY:
+					case dados, ok := <-ttyBytes:
 						if !ok {
 							t.Fatalf("%s (%s): console closed during synchronization (received %q): %v",
-								g.id, g.nome, antes.String(), <-erroDeLeitura)
+								g.id, g.nome, antes.String(), <-readErr)
 						}
 						antes.Write(dados)
-						if ttyEcoa(antes.String()) {
-							sincronizado = true
+						if ttyEchoes(antes.String()) {
+							synced = true
 							break sync
 						}
-					case <-espera:
+					case <-timeout:
 						// Silence: getty may be respawning. Insist.
 						continue sync
 					}
 				}
 			}
-			if !sincronizado {
+			if !synced {
 				t.Fatalf("%s (%s): the tty did not reach a prompt that echoes after 60 s of retrying (received %q)",
 					g.id, g.nome, antes.String())
 			}
@@ -219,22 +219,22 @@ func TestLiveConsoleDoGuest(t *testing.T) {
 			// WITHOUT "\n": a tty in canonical mode echoes character by character,
 			// so the echo proves the round trip without SUBMITTING anything —
 			// nothing runs in somebody else's shell and no login is left pending.
-			if err := conn.WriteJSON(map[string]any{"type": "input", "data": "echo " + marca}); err != nil {
+			if err := conn.WriteJSON(map[string]any{"type": "input", "data": "echo " + mark}); err != nil {
 				t.Fatal(err)
 			}
-			var saida strings.Builder
-			prazoEco := time.After(15 * time.Second)
-			for !strings.Contains(saida.String(), marca) {
+			var output strings.Builder
+			echoDeadline := time.After(15 * time.Second)
+			for !strings.Contains(output.String(), mark) {
 				select {
-				case dados, ok := <-bytesDoTTY:
+				case dados, ok := <-ttyBytes:
 					if !ok {
 						t.Fatalf("%s (%s): console closed before the echo (received %q): %v",
-							g.id, g.nome, saida.String(), <-erroDeLeitura)
+							g.id, g.nome, output.String(), <-readErr)
 					}
-					saida.Write(dados)
-				case <-prazoEco:
+					output.Write(dados)
+				case <-echoDeadline:
 					t.Fatalf("%s (%s): nothing came back from the terminal in 15 s (received %q)",
-						g.id, g.nome, saida.String())
+						g.id, g.nome, output.String())
 				}
 			}
 
@@ -244,17 +244,17 @@ func TestLiveConsoleDoGuest(t *testing.T) {
 			// was that trace that broke the next round.
 			_ = conn.WriteJSON(map[string]any{"type": "input", "data": "\x15"})
 
-			abertos++
-			limpo := strings.ReplaceAll(strings.TrimSpace(saida.String()), "\r", "")
-			if len(limpo) > 90 {
-				limpo = limpo[len(limpo)-90:]
+			opened++
+			clean := strings.ReplaceAll(strings.TrimSpace(output.String()), "\r", "")
+			if len(clean) > 90 {
+				clean = clean[len(clean)-90:]
 			}
-			t.Logf("%-9s %-7s → live console, %d bytes back … %q", g.id, g.nome, saida.Len(), limpo)
+			t.Logf("%-9s %-7s → live console, %d bytes back … %q", g.id, g.nome, output.Len(), clean)
 		})
 	}
-	if abertos < 2 {
+	if opened < 2 {
 		t.Fatalf("console measured on %d guest(s) — the measurement needs more than one,"+
-			"porque `vncproxy 204` já falhou neste host e uma amostra de 1 daria o caminho por bom", abertos)
+			"porque `vncproxy 204` já falhou neste host e uma amostra de 1 daria o caminho por bom", opened)
 	}
 
 	// ── 3. the trail, at both ends, for every session ────────────────────
@@ -272,41 +272,41 @@ func TestLiveConsoleDoGuest(t *testing.T) {
 	// The property that matters is unchanged — every session records an open
 	// AND a close — only measured with a deadline instead of in a blink.
 	// The deadline is the difference between "it did not happen" and "it had not happened yet".
-	var abriu, fechou int
-	limite := time.Now().Add(10 * time.Second)
+	var opens, closes int
+	limit := time.Now().Add(10 * time.Second)
 	for {
-		abriu, fechou = 0, 0
-		for _, e := range trilha.Tail(200) {
+		opens, closes = 0, 0
+		for _, e := range trail.Tail(200) {
 			if e.Action != "pve.console" {
 				continue
 			}
 			if strings.Contains(e.Target, "acao=abriu") {
-				abriu++
+				opens++
 			}
 			if strings.Contains(e.Target, "acao=fechou") {
-				fechou++
+				closes++
 			}
 		}
-		if (abriu == fechou && abriu >= abertos) || time.Now().After(limite) {
+		if (opens == closes && opens >= opened) || time.Now().After(limit) {
 			break
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
-	if abriu != fechou || abriu < abertos {
+	if opens != closes || opens < opened {
 		t.Errorf("trail: %d opens and %d closes for %d sessions, even after 10 s of waiting"+
-			"— o console tem de registrar os dois extremos", abriu, fechou, abertos)
+			"— o console tem de registrar os dois extremos", opens, closes, opened)
 	}
-	t.Logf("trail: %d opens and %d closes recorded (the price of the exception to §7.3)", abriu, fechou)
+	t.Logf("trail: %d opens and %d closes recorded (the price of the exception to §7.3)", opens, closes)
 
 	// 🔴 And the secret is NOT in the trail. An audit log that keeps a
 	// credential is a password file under another name.
-	valorDoCofre, _ := r.tokenDoCofre("pve_token_node_lab")
-	segredo := valorDoCofre
-	if i := strings.Index(valorDoCofre, "="); i > 0 {
-		segredo = valorDoCofre[i+1:]
+	vaultValue, _ := r.vaultToken("pve_token_node_lab")
+	secret := vaultValue
+	if i := strings.Index(vaultValue, "="); i > 0 {
+		secret = vaultValue[i+1:]
 	}
-	for _, e := range trilha.Tail(200) {
-		if segredo != "" && strings.Contains(e.Target, segredo) {
+	for _, e := range trail.Tail(200) {
+		if secret != "" && strings.Contains(e.Target, secret) {
 			t.Fatal("the trail carries the token's secret")
 		}
 	}
@@ -314,7 +314,7 @@ func TestLiveConsoleDoGuest(t *testing.T) {
 	t.Logf("proof window: [t0=%s t1=%s]", t0.Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339))
 }
 
-// 🔴 TestLiveRollbackNaoRepassaO200DoPVE is that PVE pitfall proved LIVE on the
+// 🔴 TestLiveRollbackDoesNotRelayPVE200 is that PVE pitfall proved LIVE on the
 // most destructive route of the dashboard — without destroying anything.
 //
 // Measured with the node token:
@@ -326,17 +326,17 @@ func TestLiveConsoleDoGuest(t *testing.T) {
 // If the dashboard passed that 200 along, the screen would say "restored" for a
 // rollback that never happened — and the operator would start believing the guest
 // is in an earlier state. The route has to answer 502 WITH the reason.
-func TestLiveRollbackNaoRepassaO200DoPVE(t *testing.T) {
+func TestLiveRollbackDoesNotRelayPVE200(t *testing.T) {
 	if os.Getenv("LAB_PVC_LIVE") != "1" {
 		t.Skip("live proof turned off — run with LAB_PVC_LIVE=1")
 	}
-	r, cancel := routerVivo(t)
+	r, cancel := liveRouter(t)
 	defer cancel()
 
 	// A name that is valid for PVE and nonexistent by construction: the rollback
 	// dies looking the snapshot up, before touching any disk.
-	const inexistente = "pvc-prova-viva-inexistente"
-	w, out := pvxPOST(t, r, "/api/proxmox/snapshots/rollback?node=lxc/204&name="+inexistente)
+	const nonexistent = "pvc-prova-viva-inexistente"
+	w, out := pvxPOST(t, r, "/api/proxmox/snapshots/rollback?node=lxc/204&name="+nonexistent)
 	if w.Code != 502 {
 		t.Fatalf("status = %d, want 502 (body=%s)", w.Code, w.Body)
 	}
@@ -363,21 +363,21 @@ func TestLiveRollbackNaoRepassaO200DoPVE(t *testing.T) {
 	t.Log("/api/proxmox/suspend → 404, as decided (the reason is written in the code)")
 }
 
-func pvxPOST(t *testing.T, r *Router, caminho string) (*httptest.ResponseRecorder, map[string]any) {
+func pvxPOST(t *testing.T, r *Router, path string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	w := httptest.NewRecorder()
-	r.handleProxmox(w, req(t, http.MethodPost, caminho, ""))
+	r.handleProxmox(w, req(t, http.MethodPost, path, ""))
 	var out map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &out)
 	return w, out
 }
 
-// ttyEcoa says whether the terminal is in a state that ECHOES what is typed.
+// ttyEchoes says whether the terminal is in a state that ECHOES what is typed.
 //
 // The login PASSWORD prompt is precisely what does NOT echo, and it was the one
 // swallowing the test's marker in silence until the deadline blew. A login prompt
 // and a shell prompt echo; anything else is treated as "not typeable yet".
-func ttyEcoa(s string) bool {
+func ttyEchoes(s string) bool {
 	t := strings.TrimRight(s, " \r\n\x00")
 	return strings.HasSuffix(t, "login:") || strings.HasSuffix(t, "#") || strings.HasSuffix(t, "$")
 }

@@ -42,47 +42,47 @@ import "testing"
 // the nudge ceasing to SHRINK and starting to GROW. Shrinking scrolls the screen
 // and loses content; growing only adds blank lines at the bottom. See the body
 // of `wobble`.
-func TestHistoricoERepaintRespondemPerguntasDiferentes(t *testing.T) {
-	casos := []struct {
-		nome                     string
-		attach, replay           string
-		querHistorico, querPaint bool
+func TestHistoryAndRepaintAnswerDifferentQuestions(t *testing.T) {
+	cases := []struct {
+		nome                   string
+		attach, replay         string
+		wantHistory, wantPaint bool
 	}{
 		{
 			// The app: it primes the past on its own, but it needs the program to
 			// draw the now.
 			nome:   "app, fresh attach",
 			attach: "", replay: "0",
-			querHistorico: false, querPaint: true,
+			wantHistory: false, wantPaint: true,
 		},
 		{
 			// The web panel: it rebuilds nothing on its own. Both.
 			nome:   "web panel, fresh attach",
 			attach: "", replay: "",
-			querHistorico: true, querPaint: true,
+			wantHistory: true, wantPaint: true,
 		},
 		{
 			// Reconnect: the in-memory grid is intact on both sides.
 			// Repainting would duplicate; replaying history would duplicate.
 			nome:   "reconnect",
 			attach: "1", replay: "",
-			querHistorico: false, querPaint: false,
+			wantHistory: false, wantPaint: false,
 		},
 		{
 			nome:   "app reconnect",
 			attach: "1", replay: "0",
-			querHistorico: false, querPaint: false,
+			wantHistory: false, wantPaint: false,
 		},
 	}
 
-	for _, c := range casos {
+	for _, c := range cases {
 		t.Run(c.nome, func(t *testing.T) {
-			historico, repaint := primingDoServidor(c.attach, c.replay)
-			if historico != c.querHistorico {
-				t.Errorf("mandarHistorico = %v, want %v", historico, c.querHistorico)
+			history, repaint := serverPriming(c.attach, c.replay)
+			if history != c.wantHistory {
+				t.Errorf("sendHistory = %v, want %v", history, c.wantHistory)
 			}
-			if repaint != c.querPaint {
-				t.Errorf("forcarRepaint = %v, want %v", repaint, c.querPaint)
+			if repaint != c.wantPaint {
+				t.Errorf("forceRepaint = %v, want %v", repaint, c.wantPaint)
 			}
 		})
 	}
@@ -90,9 +90,9 @@ func TestHistoricoERepaintRespondemPerguntasDiferentes(t *testing.T) {
 
 // NO RECONNECT REPAINTS. It is the one rule that did not change in either turn:
 // with the client's grid intact, repainting over it duplicates.
-func TestReconexaoNuncaRepinta(t *testing.T) {
+func TestReconnectNeverRepaints(t *testing.T) {
 	for _, replay := range []string{"", "0", "1"} {
-		if _, repaint := primingDoServidor("1", replay); repaint {
+		if _, repaint := serverPriming("1", replay); repaint {
 			t.Errorf("replay=%q: reconnect asked for repaint", replay)
 		}
 	}

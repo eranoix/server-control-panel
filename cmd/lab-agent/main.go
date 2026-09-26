@@ -29,10 +29,10 @@ import (
 	"server-control-panel/internal/labagent"
 )
 
-// backIndisponivel is the back end for when the wiring to the node could NOT
+// unavailableBackend is the back end for when the wiring to the node could NOT
 // be made.
 //
-// THIS IS NOW SETTLED: the local back end really is wired (see montaBackend
+// THIS IS NOW SETTLED: the local back end really is wired (see buildBackend
 // just below). This type stopped being the normal path and became the FAILURE
 // path — what is left when the node's Docker does not answer or the data
 // directory does not exist.
@@ -47,20 +47,20 @@ import (
 // the deploy's health gate decides, and an agent that refused to start because of
 // Docker would be indistinguishable from a broken binary — the contract would
 // roll back a binary that was fine. Same reasoning as for the missing token.
-type backIndisponivel struct{ motivo string }
+type unavailableBackend struct{ reason string }
 
-func (b backIndisponivel) Executar(context.Context, gameservers.OpName, json.RawMessage) (json.RawMessage, error) {
-	return nil, fmt.Errorf("%s", b.motivo)
+func (b unavailableBackend) Execute(context.Context, gameservers.OpName, json.RawMessage) (json.RawMessage, error) {
+	return nil, fmt.Errorf("%s", b.reason)
 }
-func (b backIndisponivel) Abrir(context.Context, gameservers.Handle) (io.ReadCloser, error) {
-	return nil, fmt.Errorf("%s", b.motivo)
+func (b unavailableBackend) Open(context.Context, gameservers.Handle) (io.ReadCloser, error) {
+	return nil, fmt.Errorf("%s", b.reason)
 }
-func (b backIndisponivel) Receber(context.Context, io.Reader) (gameservers.Handle, error) {
-	return "", fmt.Errorf("%s", b.motivo)
+func (b unavailableBackend) Receive(context.Context, io.Reader) (gameservers.Handle, error) {
+	return "", fmt.Errorf("%s", b.reason)
 }
-func (b backIndisponivel) Descrever() string { return "back end unavailable: " + b.motivo }
+func (b unavailableBackend) Describe() string { return "back end unavailable: " + b.reason }
 
-// montaBackend wires THIS node's local back end: the game inventory that lives
+// buildBackend wires THIS node's local back end: the game inventory that lives
 // on the disk here and the Docker that runs here.
 //
 // That is the difference between the agent and the panel: the panel operates the
@@ -68,19 +68,19 @@ func (b backIndisponivel) Descrever() string { return "back end unavailable: " +
 // installed on. The same internal/gameservers serves both — all that changes is
 // which machine the dataDir and the socket come from, and that is why extracting
 // that package had to happen before this line.
-func montaBackend(no, dataDir string) gameservers.Backend {
+func buildBackend(no, dataDir string) gameservers.Backend {
 	if dataDir == "" {
-		return backIndisponivel{motivo: "no node data directory (LAB_AGENT_DATA_DIR is empty)"}
+		return unavailableBackend{reason: "no node data directory (LAB_AGENT_DATA_DIR is empty)"}
 	}
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		return backIndisponivel{motivo: fmt.Sprintf("data directory %s unreachable: %v", dataDir, err)}
+		return unavailableBackend{reason: fmt.Sprintf("data directory %s unreachable: %v", dataDir, err)}
 	}
 	dc, err := docker.New()
 	if err != nil {
 		// Name the socket: "docker indisponivel" without saying WHERE sends the
 		// investigation to the wrong place when the problem is the unit's
 		// ReadWritePaths and not the daemon.
-		return backIndisponivel{motivo: fmt.Sprintf("docker on this node is unavailable: %v", err)}
+		return unavailableBackend{reason: fmt.Sprintf("docker on this node is unavailable: %v", err)}
 	}
 
 	// A PING at start-up, and the reason is the unit.
@@ -95,8 +95,8 @@ func montaBackend(no, dataDir string) gameservers.Backend {
 	// It does NOT bring the agent down nor swap the back end: Docker may be coming
 	// up alongside it, and an agent that refused to serve because of that would stop
 	// answering /healthz and make the contract revert a binary that was fine.
-	ctxPing, cancela := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancela()
+	ctxPing, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	if err := dc.Ping(ctxPing); err != nil {
 		log.Printf("lab-agent: ALERT — the Docker socket did not answer the ping (%v). "+
 			"The back end is wired up, but every container operation will fail. "+
@@ -105,28 +105,28 @@ func montaBackend(no, dataDir string) gameservers.Backend {
 	} else {
 		log.Printf("lab-agent: docker on this node answered the ping")
 	}
-	return gameservers.NovoBackendLocal(gameservers.New(dataDir, dc), no)
+	return gameservers.NewBackendLocal(gameservers.New(dataDir, dc), no)
 }
 
 // carimbo is filled in at link time (-ldflags -X). With no value, in a
 // hand-made build, it says so instead of lying about a number.
-var carimbo = "sem-carimbo"
+var stamp = "sem-carimbo"
 
 func main() {
 	var (
-		no       = flag.String("no", envOu("LAB_AGENT_NO", "desconhecido"), "node name (label in /metrics)")
-		tokenArq = flag.String("token-file", envOu("LAB_AGENT_TOKEN_FILE", "/etc/lab-agent/token"), "0600 file holding this node's bearer token")
-		bridge   = flag.String("bridge-ip", envOu("LAB_AGENT_BRIDGE_IP", ""), "internal bridge IP to listen on (required; a wildcard is refused)")
-		porta    = flag.Int("porta", envInt("LAB_AGENT_PORTA", 8710), "port for both listeners")
-		dataDir  = flag.String("data-dir", envOu("LAB_AGENT_DATA_DIR", ""), "node data directory (game inventory and history)")
+		no       = flag.String("no", envOr("LAB_AGENT_NO", "desconhecido"), "node name (label in /metrics)")
+		tokenArq = flag.String("token-file", envOr("LAB_AGENT_TOKEN_FILE", "/etc/lab-agent/token"), "0600 file holding this node's bearer token")
+		bridge   = flag.String("bridge-ip", envOr("LAB_AGENT_BRIDGE_IP", ""), "internal bridge IP to listen on (required; a wildcard is refused)")
+		port     = flag.Int("porta", envInt("LAB_AGENT_PORTA", 8710), "port for both listeners")
+		dataDir  = flag.String("data-dir", envOr("LAB_AGENT_DATA_DIR", ""), "node data directory (game inventory and history)")
 	)
 	flag.Parse()
 
-	seg, err := labagent.SegredoDeArquivo(*tokenArq)
+	seg, err := labagent.SecretFromFile(*tokenArq)
 	if err != nil {
 		log.Fatalf("lab-agent: %v", err)
 	}
-	if !seg.Presente() {
+	if !seg.Present() {
 		// It comes up ANYWAY, and inert. Two reasons: the deploy's health gate needs
 		// /healthz answering before the token is provisioned, and an agent that refused
 		// to start without a token would be indistinguishable from a broken one. Inert
@@ -134,37 +134,37 @@ func main() {
 		log.Printf("lab-agent: WARNING — no secret at %s: the agent comes up INERT (401 on every operation). /healthz keeps answering.", *tokenArq)
 	}
 
-	back := montaBackend(*no, *dataDir)
-	log.Printf("lab-agent: back-end = %s", back.Descrever())
+	back := buildBackend(*no, *dataDir)
+	log.Printf("lab-agent: back-end = %s", back.Describe())
 	ag := &labagent.Agent{No: *no, Back: back}
-	srv := labagent.NovoServidor(ag, seg, labagent.NovasMetricas(*no))
+	srv := labagent.NewServer(ag, seg, labagent.NewMetrics(*no))
 
-	ctx, para := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer para()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	log.Printf("lab-agent: carimbo=%s", carimbo)
-	log.Printf("lab-agent: node=%s listening on 127.0.0.1:%d and %s:%d", *no, *porta, *bridge, *porta)
-	if err := srv.Escuta(ctx, *bridge, *porta); err != nil {
+	log.Printf("lab-agent: carimbo=%s", stamp)
+	log.Printf("lab-agent: node=%s listening on 127.0.0.1:%d and %s:%d", *no, *port, *bridge, *port)
+	if err := srv.Listen(ctx, *bridge, *port); err != nil {
 		log.Fatalf("lab-agent: %v", err)
 	}
 	log.Printf("lab-agent: shut down")
 }
 
-func envOu(chave, padrao string) string {
-	if v := os.Getenv(chave); v != "" {
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
 		return v
 	}
-	return padrao
+	return fallback
 }
 
-func envInt(chave string, padrao int) int {
-	v := os.Getenv(chave)
+func envInt(key string, fallback int) int {
+	v := os.Getenv(key)
 	if v == "" {
-		return padrao
+		return fallback
 	}
 	var n int
 	if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
-		return padrao
+		return fallback
 	}
 	return n
 }

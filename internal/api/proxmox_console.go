@@ -81,8 +81,8 @@ const (
 	consoleMaxClientMsg = 256 << 10
 )
 
-// mensagemDoBrowser is what the client sends. It is the SAME format as /ws/shell.
-type mensagemDoBrowser struct {
+// browserMessage is what the client sends. It is the SAME format as /ws/shell.
+type browserMessage struct {
 	Type string `json:"type"`
 	Data string `json:"data"`
 	Cols int    `json:"cols"`
@@ -109,7 +109,7 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	usuario, ok := r.mustPrimary(w, req)
+	user, ok := r.mustPrimary(w, req)
 	if !ok {
 		return
 	}
@@ -129,8 +129,8 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 		writeErr(w, 400, "node is required (e.g. node=lxc/204)")
 		return
 	}
-	no, achou := achaNo(inv, id)
-	if !achou {
+	no, found := findNode(inv, id)
+	if !found {
 		writeErr(w, 404, "node not found: "+id)
 		return
 	}
@@ -144,31 +144,31 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 	// the hypervisor's READ token (the full-access one) and not a node token —
 	// no node token has Sys.Console, and reusing one here would give a confusing
 	// 403 instead of a working screen.
-	ehHost := no.Kind == inventory.NodeKindHost
-	if !ehHost && (no.Kind != inventory.NodeKindGuest || no.VMID <= 0) {
+	isHost := no.Kind == inventory.NodeKindHost
+	if !isHost && (no.Kind != inventory.NodeKindGuest || no.VMID <= 0) {
 		writeErr(w, 400, "node "+id+" is neither a guest nor the hypervisor — there is no console for it")
 		return
 	}
 
 	// The console's credential is the NODE's. The audit token gets 403 on
 	// VM.Console — measured: "Permission check failed (/vms/204, VM.Console)".
-	// clienteParaOperacao already separates the THREE vault states, and its 409
+	// clientForOp already separates the THREE vault states, and its 409
 	// NAMES the key that is missing: that is how CT 202 (`pbs`), which has no
 	// node token, becomes a sentence on the screen instead of a spinning one.
 	op := opGuest
-	if ehHost {
-		op = opLeituraHipervisor
+	if isHost {
+		op = opHypervisorRead
 	}
-	cli, ok := r.clienteParaOperacao(w, op, no)
+	cli, ok := r.clientForOp(w, op, no)
 	if !ok {
 		return
 	}
 
-	tipo, host := tipoEHost(no)
-	if ehHost {
+	kind, host := kindAndHost(no)
+	if isHost {
 		host = no.Name
 		if host == "" {
-			host = nomeDoHipervisorNoInventario(inv)
+			host = hypervisorNameInInventory(inv)
 		}
 	}
 
@@ -187,59 +187,59 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 	// A single writer: the ping, the terminal's output and the control frames
 	// come from different goroutines, and gorilla/websocket does not accept two
 	// writers.
-	var escritorMu sync.Mutex
-	enviar := func(tipoFrame int, dados []byte) error {
-		escritorMu.Lock()
-		defer escritorMu.Unlock()
+	var writeMu sync.Mutex
+	send := func(frameType int, dados []byte) error {
+		writeMu.Lock()
+		defer writeMu.Unlock()
 		_ = clientConn.SetWriteDeadline(time.Now().Add(consoleWriteWait))
-		return clientConn.WriteMessage(tipoFrame, dados)
+		return clientConn.WriteMessage(frameType, dados)
 	}
-	enviarControle := func(v any) {
+	sendControl := func(v any) {
 		b, err := json.Marshal(v)
 		if err != nil {
 			return
 		}
-		_ = enviar(websocket.TextMessage, b)
+		_ = send(websocket.TextMessage, b)
 	}
 
 	var upConn pve.ConsoleConn
 	var upid string
-	if ehHost {
+	if isHost {
 		upConn, upid, err = cli.ConsoleAttachNode(req.Context(), host)
 	} else {
-		upConn, upid, err = cli.ConsoleAttach(req.Context(), host, no.VMID, tipo)
+		upConn, upid, err = cli.ConsoleAttach(req.Context(), host, no.VMID, kind)
 	}
 	if err != nil {
 		// The hypervisor's reason goes to the screen WHOLE: "no permission",
 		// "guest stopped" and "termproxy failed" call for different actions, and
 		// it was precisely one of those failures (CT 204's `vncproxy`) that the
 		// operator saw as a screen spinning with no explanation.
-		enviarControle(map[string]any{
+		sendControl(map[string]any{
 			"type":    "error",
 			"code":    "console-indisponivel",
 			"fatal":   true,
-			"message": "the hypervisor refused the console for " + id + ": " + detalheDoErroPVE(err),
+			"message": "the hypervisor refused the console for " + id + ": " + pveErrorDetail(err),
 		})
-		r.auditEvent(req, usuario, "pve.console", "node="+id+" acao=abriu status=recusado motivo="+detalheDoErroPVE(err))
-		r.auditEvent(req, usuario, "pve.console", "node="+id+" acao=fechou status=recusado")
+		r.auditEvent(req, user, "pve.console", "node="+id+" acao=abriu status=recusado motivo="+pveErrorDetail(err))
+		r.auditEvent(req, user, "pve.console", "node="+id+" acao=fechou status=recusado")
 		return
 	}
 	defer upConn.Close()
 
 	// 🔴 THE TRAIL, at BOTH ends. A single event, on opening, would leave a
 	// session left open and forgotten indistinguishable from a two-second one.
-	inicio := time.Now()
-	r.auditEvent(req, usuario, "pve.console", "node="+id+" acao=abriu upid="+upid)
+	start := time.Now()
+	r.auditEvent(req, user, "pve.console", "node="+id+" acao=abriu upid="+upid)
 	defer func() {
-		r.auditEvent(req, usuario, "pve.console",
-			fmt.Sprintf("node=%s acao=fechou upid=%s duracao=%s", id, upid, time.Since(inicio).Round(time.Second)))
+		r.auditEvent(req, user, "pve.console",
+			fmt.Sprintf("node=%s acao=fechou upid=%s duracao=%s", id, upid, time.Since(start).Round(time.Second)))
 	}()
 
-	enviarControle(map[string]any{"type": "ready", "node": id, "vmid": no.VMID, "guest": no.Name})
+	sendControl(map[string]any{"type": "ready", "node": id, "vmid": no.VMID, "guest": no.Name})
 
 	pronto := make(chan struct{})
-	var fecharUma sync.Once
-	fechar := func() { fecharUma.Do(func() { close(pronto) }) }
+	var closeOnce sync.Once
+	shutdown := func() { closeOnce.Do(func() { close(pronto) }) }
 
 	var wg sync.WaitGroup
 
@@ -247,7 +247,7 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer fechar()
+		defer shutdown()
 		for {
 			_, dados, err := upConn.ReadMessage()
 			if err != nil {
@@ -256,7 +256,7 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 			// BINARY, always. Going through a string here would break ANSI
 			// sequences and UTF-8 split across two frames — and the terminal would
 			// draw junk.
-			if err := enviar(websocket.BinaryMessage, dados); err != nil {
+			if err := send(websocket.BinaryMessage, dados); err != nil {
 				return
 			}
 		}
@@ -266,28 +266,28 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer fechar()
+		defer shutdown()
 		for {
 			_, cru, err := clientConn.ReadMessage()
 			if err != nil {
 				return
 			}
-			var m mensagemDoBrowser
+			var m browserMessage
 			if err := json.Unmarshal(cru, &m); err != nil {
 				continue
 			}
 			var frame []byte
 			switch m.Type {
 			case "input":
-				// pve.FrameDeEntrada counts BYTES. It is the only reason this
+				// pve.InputFrame counts BYTES. It is the only reason this
 				// translation cannot live in the browser.
-				frame = pve.FrameDeEntrada([]byte(m.Data))
+				frame = pve.InputFrame([]byte(m.Data))
 			case "resize":
 				// nil when the dimension is absurd: a malformed frame kills the
 				// connection with no explanation, and cols/rows come from the browser.
-				frame = pve.FrameDeResize(m.Cols, m.Rows)
+				frame = pve.ResizeFrame(m.Cols, m.Rows)
 			case "ping":
-				frame = pve.FrameDeKeepalive()
+				frame = pve.KeepaliveFrame()
 			default:
 				continue
 			}
@@ -315,13 +315,13 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 			case <-pronto:
 				return
 			case <-t.C:
-				if err := enviar(websocket.PingMessage, nil); err != nil {
-					fechar()
+				if err := send(websocket.PingMessage, nil); err != nil {
+					shutdown()
 					return
 				}
 				_ = upConn.SetWriteDeadline(time.Now().Add(consoleWriteWait))
-				if err := upConn.WriteMessage(websocket.BinaryMessage, pve.FrameDeKeepalive()); err != nil {
-					fechar()
+				if err := upConn.WriteMessage(websocket.BinaryMessage, pve.KeepaliveFrame()); err != nil {
+					shutdown()
 					return
 				}
 			}

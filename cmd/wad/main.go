@@ -35,7 +35,7 @@ type manager struct {
 
 	mu       sync.RWMutex
 	sessions map[string]*session
-	metas    map[string]userMeta
+	metadata map[string]userMeta
 }
 
 func main() {
@@ -46,10 +46,10 @@ func main() {
 	m := &manager{
 		stateDir: stateDir,
 		sessions: map[string]*session{},
-		metas:    map[string]userMeta{},
+		metadata: map[string]userMeta{},
 	}
 	m.push = newPusher(webhookBase, m.hmacSecretOf)
-	m.push.reloadOf = m.recarregaMeta
+	m.push.reloadOf = m.reloadMeta
 
 	if err := m.loadAll(context.Background()); err != nil {
 		log.Printf("wad: loadAll: %v", err)
@@ -122,7 +122,7 @@ func (m *manager) loadUser(ctx context.Context, user string) error {
 
 	m.mu.Lock()
 	old := m.sessions[user] // may already exist across a reload
-	m.metas[user] = meta
+	m.metadata[user] = meta
 	m.sessions[user] = sess
 	m.mu.Unlock()
 
@@ -146,10 +146,10 @@ func (m *manager) loadUser(ctx context.Context, user string) error {
 func (m *manager) hmacSecretOf(user string) string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.metas[user].HMACSecret
+	return m.metadata[user].HMACSecret
 }
 
-// recarregaMeta re-reads meta.json from disk and refreshes the in-memory
+// reloadMeta re-reads meta.json from disk and refreshes the in-memory
 // secret. Returns the new secret and whether it CHANGED.
 //
 // It exists because of an observed failure mode: the in-memory secret (read at
@@ -159,7 +159,7 @@ func (m *manager) hmacSecretOf(user string) string {
 // panel rewrites it on every boot), re-reading it on a 401 fixes by itself what
 // used to require noticing the outage and restarting the daemon by hand. Over
 // 36h that cost 63 real messages.
-func (m *manager) recarregaMeta(user string) (string, bool) {
+func (m *manager) reloadMeta(user string) (string, bool) {
 	raw, err := os.ReadFile(filepath.Join(m.stateDir, user, "meta.json"))
 	if err != nil {
 		return "", false
@@ -170,13 +170,13 @@ func (m *manager) recarregaMeta(user string) (string, bool) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	antigo := m.metas[user].HMACSecret
-	if meta.HMACSecret == "" || meta.HMACSecret == antigo {
-		return antigo, false
+	old := m.metadata[user].HMACSecret
+	if meta.HMACSecret == "" || meta.HMACSecret == old {
+		return old, false
 	}
-	atual := m.metas[user]
-	atual.HMACSecret = meta.HMACSecret
-	m.metas[user] = atual
+	current := m.metadata[user]
+	current.HMACSecret = meta.HMACSecret
+	m.metadata[user] = current
 	return meta.HMACSecret, true
 }
 
@@ -191,7 +191,7 @@ func (m *manager) auth(h func(http.ResponseWriter, *http.Request, *session)) htt
 	return func(w http.ResponseWriter, r *http.Request) {
 		user := r.PathValue("user")
 		m.mu.RLock()
-		meta, okMeta := m.metas[user]
+		meta, okMeta := m.metadata[user]
 		sess := m.sessions[user]
 		m.mu.RUnlock()
 		if !okMeta || sess == nil {

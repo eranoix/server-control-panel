@@ -132,9 +132,9 @@ const (
 	OpHistoryList OpName = "history.list"
 )
 
-// FamiliasValidas is the CLOSED set of families. An operation whose family is
-// not here fails TestCatalogoNomesBemFormados.
-var FamiliasValidas = map[string]bool{
+// ValidFamilies is the CLOSED set of families. An operation whose family is
+// not here fails TestCatalogNamesWellFormed.
+var ValidFamilies = map[string]bool{
 	"server":   true,
 	"world":    true,
 	"settings": true,
@@ -144,15 +144,15 @@ var FamiliasValidas = map[string]bool{
 	"history":  true,
 }
 
-// TodasAsOps is the canonical list.
+// AllOps is the canonical list.
 //
-// ⚠️ THE COUNT IS NOT A CONTRACT. No test asserts `len(TodasAsOps) == 23`, and
+// ⚠️ THE COUNT IS NOT A CONTRACT. No test asserts `len(AllOps) == 23`, and
 // that is deliberate: an absolute count is itself the defect — an invariants
 // script once stayed stuck at 21 when there were already 65, and nobody noticed
 // because the number looked intentional. What gets asserted is a PROPERTY (every
 // name distinct, shape `familia.verbo`, family in the closed set, constant and
 // registry entry in correspondence), never a number.
-var TodasAsOps = []OpName{
+var AllOps = []OpName{
 	OpServerList, OpServerStatus, OpServerAction, OpServerLogs,
 	OpWorldList, OpWorldSwitch, OpWorldExport, OpWorldImport,
 	OpWorldRename, OpWorldDuplicate, OpWorldDelete,

@@ -35,7 +35,7 @@ const (
 
 // recurso is the slice of /cluster/resources that the inventory uses. Counter
 // fields are left out on purpose: what is proved here is the SHAPE.
-type recurso struct {
+type resource struct {
 	ID     string `json:"id"`
 	Type   string `json:"type"`
 	VMID   int    `json:"vmid"`
@@ -44,14 +44,14 @@ type recurso struct {
 	Status string `json:"status"`
 }
 
-func lerFixture(t *testing.T, path string) []recurso {
+func lerFixture(t *testing.T, path string) []resource {
 	t.Helper()
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading %s: %v", path, err)
 	}
 	var env struct {
-		Data []recurso `json:"data"`
+		Data []resource `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &env); err != nil {
 		t.Fatalf("parse %s: %v", path, err)
@@ -62,7 +62,7 @@ func lerFixture(t *testing.T, path string) []recurso {
 	return env.Data
 }
 
-func vmidsDeGuests(rs []recurso) []int {
+func guestVMIDs(rs []resource) []int {
 	var out []int
 	for _, r := range rs {
 		if r.Type == "qemu" || r.Type == "lxc" {
@@ -77,14 +77,14 @@ func vmidsDeGuests(rs []recurso) []int {
 // would turn a new guest into a failure and a removed guest into a wrong pass;
 // the set says exactly WHO came in or went out.
 func TestFixtureShape(t *testing.T) {
-	esperado := []int{100, 201, 202, 203, 204, 205, 206, 207, 208}
+	expected := []int{100, 201, 202, 203, 204, 205, 206, 207, 208}
 
 	for _, path := range []string{fixtureRoot, fixtureToken} {
 		t.Run(path, func(t *testing.T) {
 			rs := lerFixture(t, path)
-			got := vmidsDeGuests(rs)
-			if fmt.Sprint(got) != fmt.Sprint(esperado) {
-				t.Errorf("set of VMIDs = %v, want %v (missing/extra say who)", got, esperado)
+			got := guestVMIDs(rs)
+			if fmt.Sprint(got) != fmt.Sprint(expected) {
+				t.Errorf("set of VMIDs = %v, want %v (missing/extra say who)", got, expected)
 			}
 			for _, r := range rs {
 				if r.Type != "qemu" && r.Type != "lxc" {
@@ -93,8 +93,8 @@ func TestFixtureShape(t *testing.T) {
 				if r.VMID <= 0 {
 					t.Errorf("%s: vmid = %d", r.ID, r.VMID)
 				}
-				if quer := fmt.Sprintf("%s/%d", r.Type, r.VMID); r.ID != quer {
-					t.Errorf("id = %q, want %q", r.ID, quer)
+				if want := fmt.Sprintf("%s/%d", r.Type, r.VMID); r.ID != want {
+					t.Errorf("id = %q, want %q", r.ID, want)
 				}
 				if r.Name == "" || r.Node == "" || r.Status == "" {
 					t.Errorf("%s: required field empty (%+v)", r.ID, r)
@@ -104,21 +104,21 @@ func TestFixtureShape(t *testing.T) {
 	}
 }
 
-// TestFixtureVisoesDiferem pins the measured difference between the two views.
+// TestFixtureViewsDiffer pins the measured difference between the two views.
 // If the two ever become identical, one of them was re-recorded from the wrong
 // source — and the type-filter test would become decorative.
-func TestFixtureVisoesDiferem(t *testing.T) {
+func TestFixtureViewsDiffer(t *testing.T) {
 	root := lerFixture(t, fixtureRoot)
 	tok := lerFixture(t, fixtureToken)
 
-	tipos := func(rs []recurso) map[string]int {
+	kinds := func(rs []resource) map[string]int {
 		m := map[string]int{}
 		for _, r := range rs {
 			m[r.Type]++
 		}
 		return m
 	}
-	tr, tt := tipos(root), tipos(tok)
+	tr, tt := kinds(root), kinds(tok)
 	if tr["storage"] == 0 {
 		t.Error("the root's view lost the storage entries — the parser is left with nothing to ignore")
 	}
@@ -130,11 +130,11 @@ func TestFixtureVisoesDiferem(t *testing.T) {
 	}
 }
 
-// TestClientDecodificaFixture closes the loop: the client's own do(), serving
+// TestClientDecodesFixture closes the loop: the client's own do(), serving
 // the REAL fixture, has to return the guests. It proves that the {"data":…}
 // envelope and the field cut match the actual hypervisor, not a convenience
 // JSON written by hand.
-func TestClientDecodificaFixture(t *testing.T) {
+func TestClientDecodesFixture(t *testing.T) {
 	raw, err := os.ReadFile(fixtureToken)
 	if err != nil {
 		t.Fatal(err)
@@ -147,23 +147,23 @@ func TestClientDecodificaFixture(t *testing.T) {
 		_, _ = w.Write(raw)
 	})
 
-	var rs []recurso
+	var rs []resource
 	if err := c.do(context.Background(), http.MethodGet, "/api2/json/cluster/resources", &rs); err != nil {
 		t.Fatalf("do: %v", err)
 	}
-	if got, quer := fmt.Sprint(vmidsDeGuests(rs)), "[100 201 202 203 204 205 206 207 208]"; got != quer {
-		t.Fatalf("decoded VMIDs = %s, want %s", got, quer)
+	if got, want := fmt.Sprint(guestVMIDs(rs)), "[100 201 202 203 204 205 206 207 208]"; got != want {
+		t.Fatalf("decoded VMIDs = %s, want %s", got, want)
 	}
 }
 
-// TestSemCorpoDataFalha: a 200 response without the envelope must not turn into
+// TestMissingDataBodyFails: a 200 response without the envelope must not turn into
 // a silent "empty list" — an empty inventory presented as truth is the false
 // green the freshness criterion exists to forbid.
-func TestSemCorpoDataFalha(t *testing.T) {
+func TestMissingDataBodyFails(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"outra":[]}`))
 	})
-	var rs []recurso
+	var rs []resource
 	err := c.do(context.Background(), http.MethodGet, "/api2/json/cluster/resources", &rs)
 	if err == nil {
 		t.Fatal("a 200 with no \"data\" was accepted as success")

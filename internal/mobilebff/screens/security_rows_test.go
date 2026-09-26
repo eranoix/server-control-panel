@@ -91,7 +91,7 @@ func newSecurityRowsMux(secDeps SecurityDeps, netDeps NetworkDeps) *http.ServeMu
 	registerSecurityUFWDetail(api, netDeps, mbDeps)
 	registerSecurityAdGuardDetail(api, netDeps, mbDeps)
 	registerSecurityDevicesRows(api, netDeps, mbDeps)
-	registerSecurityEconomiaRows(api, netDeps, mbDeps)
+	registerSecurityDataSaverRows(api, netDeps, mbDeps)
 	return mux
 }
 
@@ -387,10 +387,10 @@ func TestSecurityDevicesRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestSecurityEconomiaRows_WireShape pins
+// TestSecurityDataSaverRows_WireShape pins
 // {"rows":[{"id","name","port","total_bytes","rate_bps","active_conns"}]},
 // proving bytes/rate are pre-formatted strings, never raw numbers.
-func TestSecurityEconomiaRows_WireShape(t *testing.T) {
+func TestSecurityDataSaverRows_WireShape(t *testing.T) {
 	mux := newSecurityRowsMux(fakeSecurityRowsDeps(), fakeNetworkRowsDeps())
 	rec, body := doSecurityRowsRequest(t, mux, "/security/economia", "sec-admin")
 	if rec.Code != http.StatusOK {
@@ -414,12 +414,12 @@ func TestSecurityEconomiaRows_WireShape(t *testing.T) {
 	}
 }
 
-// TestSecurityRows_IndisponivelNaoViraTabelaVazia pins the distinction this
+// TestSecurityRows_UnavailableDoesNotBecomeEmptyTable pins the distinction this
 // error channel exists to make: "nothing happened" and "it could not be read"
 // are opposite answers for someone looking at a security screen, and both
 // arrived as the same empty list — to the point where the empty-state copy
 // had to admit the ambiguity in writing.
-func TestSecurityRows_IndisponivelNaoViraTabelaVazia(t *testing.T) {
+func TestSecurityRows_UnavailableDoesNotBecomeEmptyTable(t *testing.T) {
 	t.Run("audit down doesn't answer 200", func(t *testing.T) {
 		sec := fakeSecurityRowsDeps()
 		sec.ListAuditEvents = func(AuditFilter) ([]AuditRow, error) {

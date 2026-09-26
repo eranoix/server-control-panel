@@ -110,11 +110,11 @@ func TestSecretRedactionAndPreservation(t *testing.T) {
 //
 // This test plants recognisable data in EVERY field of the event and requires
 // that none of it shows up in the POST body.
-func TestWebhookComCorpoFixoNaoVazaNada(t *testing.T) {
-	var visto []byte
+func TestWebhookWithFixedBodyLeaksNothing(t *testing.T) {
+	var seen []byte
 	var contentType string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		visto, _ = io.ReadAll(r.Body)
+		seen, _ = io.ReadAll(r.Body)
 		contentType = r.Header.Get("Content-Type")
 	}))
 	defer srv.Close()
@@ -129,21 +129,21 @@ func TestWebhookComCorpoFixoNaoVazaNada(t *testing.T) {
 		Labels:   map[string]string{"alvo": "hipervisor", "ip": "192.168.100.50"},
 		DedupKey: "hypervisor:alcance",
 	}
-	const fixo = "home: something needs attention. check the private channel."
+	const fixedBody = "home: something needs attention. check the private channel."
 
 	ch := NewWebhookChannel()
-	if err := ch.Send(context.Background(), ev, ChannelConfig{URL: srv.URL, FixedBody: fixo}); err != nil {
+	if err := ch.Send(context.Background(), ev, ChannelConfig{URL: srv.URL, FixedBody: fixedBody}); err != nil {
 		t.Fatal(err)
 	}
-	if string(visto) != fixo {
-		t.Fatalf("body = %q, want exactly the fixed text", visto)
+	if string(seen) != fixedBody {
+		t.Fatalf("body = %q, want exactly the fixed text", seen)
 	}
-	for _, segredo := range []string{
+	for _, secret := range []string{
 		"hypervisor.unreachable", "critical", "sentinela", "sam", "unreachable",
 		"hypervisor.local", "rpool", "sdb", "192.168.100.50", "hypervisor:alcance",
 	} {
-		if strings.Contains(string(visto), segredo) {
-			t.Errorf("🔴 %q LEAKED to the public destination: %s", segredo, visto)
+		if strings.Contains(string(seen), secret) {
+			t.Errorf("🔴 %q LEAKED to the public destination: %s", secret, seen)
 		}
 	}
 	if !strings.HasPrefix(contentType, "text/plain") {
@@ -155,11 +155,11 @@ func TestWebhookComCorpoFixoNaoVazaNada(t *testing.T) {
 // pointed at a private destination (n8n, an internal Discord) keeps receiving
 // the whole Event — which is exactly what it is for. Without this test,
 // "fixing the leak" could have turned into "breaking every webhook".
-func TestWebhookSemCorpoFixoContinuaMandandoOEvento(t *testing.T) {
-	var visto []byte
+func TestWebhookWithoutFixedBodyStillSendsEvent(t *testing.T) {
+	var seen []byte
 	var contentType string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		visto, _ = io.ReadAll(r.Body)
+		seen, _ = io.ReadAll(r.Body)
 		contentType = r.Header.Get("Content-Type")
 	}))
 	defer srv.Close()
@@ -169,12 +169,12 @@ func TestWebhookSemCorpoFixoContinuaMandandoOEvento(t *testing.T) {
 	if err := ch.Send(context.Background(), ev, ChannelConfig{URL: srv.URL}); err != nil {
 		t.Fatal(err)
 	}
-	var voltou Event
-	if err := json.Unmarshal(visto, &voltou); err != nil {
-		t.Fatalf("the body stopped being the Event as JSON: %s", visto)
+	var received Event
+	if err := json.Unmarshal(seen, &received); err != nil {
+		t.Fatalf("the body stopped being the Event as JSON: %s", seen)
 	}
-	if voltou.Type != "job.failed" || voltou.Title != "deploy falhou" {
-		t.Errorf("the event arrived incomplete: %+v", voltou)
+	if received.Type != "job.failed" || received.Title != "deploy falhou" {
+		t.Errorf("the event arrived incomplete: %+v", received)
 	}
 	if !strings.HasPrefix(contentType, "application/json") {
 		t.Errorf("content-type = %q", contentType)

@@ -51,28 +51,28 @@ type BackendHTTP struct {
 }
 
 const (
-	// respostaMax caps the response document. Without it, a compromised (or just
+	// maxResponse caps the response document. Without it, a compromised (or just
 	// broken) agent takes the panel down through memory — the panel is the work
 	// tool, and a node must not be able to kill it.
-	respostaMax = 8 << 20 // 8 MiB
+	maxResponse = 8 << 20 // 8 MiB
 
-	// tempoOperacao is the ceiling of a named operation. Genuinely long operations
+	// operationTimeout is the ceiling of a named operation. Genuinely long operations
 	// (restore, update) are container start/stop, which Docker returns from fast;
 	// the work carries on afterwards.
-	tempoOperacao = 60 * time.Second
+	operationTimeout = 60 * time.Second
 
-	// tempoArtefato is bigger because a file passes through there: a large world
+	// artifactTimeout is bigger because a file passes through there: a large world
 	// over a LAN bridge takes longer than an operation and must not die halfway.
-	tempoArtefato = 15 * time.Minute
+	artifactTimeout = 15 * time.Minute
 )
 
-// NovoBackendHTTP assembles a node's client.
+// NewBackendHTTP assembles a node's client.
 //
 // `base` is the agent's root (e.g. http://10.0.0.5:9977). The token is mandatory:
 // an agent with no secret is inert and answers 401 to everything, so a client
 // without a token would only produce a confusing authorization error — failing
 // here names the cause.
-func NovoBackendHTTP(base, token, no string) (*BackendHTTP, error) {
+func NewBackendHTTP(base, token, no string) (*BackendHTTP, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, fmt.Errorf("http back-end of node %q requires a token: the agent answers 401 to everything without a credential", no)
 	}
@@ -87,37 +87,37 @@ func NovoBackendHTTP(base, token, no string) (*BackendHTTP, error) {
 		base:   u,
 		token:  token,
 		no:     no,
-		client: &http.Client{Timeout: tempoArtefato},
+		client: &http.Client{Timeout: artifactTimeout},
 	}, nil
 }
 
-func (b *BackendHTTP) Descrever() string { return "http:" + b.no + " (" + b.base.Host + ")" }
+func (b *BackendHTTP) Describe() string { return "http:" + b.no + " (" + b.base.Host + ")" }
 
-func (b *BackendHTTP) Executar(ctx context.Context, op OpName, corpo json.RawMessage) (json.RawMessage, error) {
+func (b *BackendHTTP) Execute(ctx context.Context, op OpName, body json.RawMessage) (json.RawMessage, error) {
 	// Validate against the catalog BEFORE dialing: a name this binary does not
 	// know is a programming error in the panel, and finding it out through a 404
 	// from the node would spend a network round trip to say what was known here.
-	if !opConhecida(op) {
-		return nil, &ErroOperacaoDesconhecida{Op: op}
+	if !knownOp(op) {
+		return nil, &UnknownOperationError{Op: op}
 	}
-	if len(corpo) == 0 {
-		corpo = json.RawMessage("{}")
+	if len(body) == 0 {
+		body = json.RawMessage("{}")
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, tempoOperacao)
+	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
 	defer cancel()
 
-	alvo := *b.base
+	target := *b.base
 	// PathEscape on the name: it comes from a catalog constant, but escaping is
 	// what keeps the sentence "the client does not assemble paths" true.
-	alvo.Path = strings.TrimRight(alvo.Path, "/") + "/v1/op/" + url.PathEscape(string(op))
+	target.Path = strings.TrimRight(target.Path, "/") + "/v1/op/" + url.PathEscape(string(op))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, alvo.String(), bytes.NewReader(corpo))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	b.autoriza(req)
+	b.authorize(req)
 
 	res, err := b.client.Do(req)
 	if err != nil {
@@ -125,39 +125,39 @@ func (b *BackendHTTP) Executar(ctx context.Context, op OpName, corpo json.RawMes
 	}
 	defer res.Body.Close()
 
-	bruto, err := io.ReadAll(io.LimitReader(res.Body, respostaMax+1))
+	raw, err := io.ReadAll(io.LimitReader(res.Body, maxResponse+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading the response from node %q: %w", b.no, err)
 	}
-	if len(bruto) > respostaMax {
-		return nil, fmt.Errorf("response from node %q above the %d byte limit", b.no, respostaMax)
+	if len(raw) > maxResponse {
+		return nil, fmt.Errorf("response from node %q above the %d byte limit", b.no, maxResponse)
 	}
 
 	switch {
 	case res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden:
 		// A 401 must NOT become "the operation failed". They are opposite actions for
 		// the operator — one is to swap the token, the other is to go look at the node.
-		return nil, &ErroAutorizacao{Msg: fmt.Sprintf("node %q rejected the credential (HTTP %d)", b.no, res.StatusCode)}
+		return nil, &AuthorizationError{Msg: fmt.Sprintf("node %q rejected the credential (HTTP %d)", b.no, res.StatusCode)}
 	case res.StatusCode == http.StatusNotFound:
-		return nil, &ErroOperacaoDesconhecida{Op: op}
+		return nil, &UnknownOperationError{Op: op}
 	case res.StatusCode != http.StatusOK:
-		return nil, &ErroOperacao{Msg: mensagemDeErro(bruto, res.StatusCode, b.no)}
+		return nil, &OperationError{Msg: errorMessage(raw, res.StatusCode, b.no)}
 	}
-	return json.RawMessage(bruto), nil
+	return json.RawMessage(raw), nil
 }
 
-func (b *BackendHTTP) Abrir(ctx context.Context, h Handle) (io.ReadCloser, error) {
+func (b *BackendHTTP) Open(ctx context.Context, h Handle) (io.ReadCloser, error) {
 	if strings.TrimSpace(string(h)) == "" {
-		return nil, ErroHandleInvalido
+		return nil, ErrHandleInvalid
 	}
-	alvo := *b.base
-	alvo.Path = strings.TrimRight(alvo.Path, "/") + "/v1/artefato/" + url.PathEscape(string(h))
+	target := *b.base
+	target.Path = strings.TrimRight(target.Path, "/") + "/v1/artefato/" + url.PathEscape(string(h))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, alvo.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	b.autoriza(req)
+	b.authorize(req)
 
 	res, err := b.client.Do(req)
 	if err != nil {
@@ -166,14 +166,14 @@ func (b *BackendHTTP) Abrir(ctx context.Context, h Handle) (io.ReadCloser, error
 	switch {
 	case res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden:
 		res.Body.Close()
-		return nil, &ErroAutorizacao{Msg: fmt.Sprintf("node %q rejected the credential (HTTP %d)", b.no, res.StatusCode)}
+		return nil, &AuthorizationError{Msg: fmt.Sprintf("node %q rejected the credential (HTTP %d)", b.no, res.StatusCode)}
 	case res.StatusCode == http.StatusNotFound:
 		res.Body.Close()
-		return nil, ErroHandleInvalido
+		return nil, ErrHandleInvalid
 	case res.StatusCode != http.StatusOK:
-		corpo, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
 		res.Body.Close()
-		return nil, &ErroOperacao{Msg: mensagemDeErro(corpo, res.StatusCode, b.no)}
+		return nil, &OperationError{Msg: errorMessage(body, res.StatusCode, b.no)}
 	}
 	// The caller closes (Backend.Abrir's contract).
 	return res.Body, nil
@@ -184,49 +184,49 @@ func (b *BackendHTTP) Abrir(ctx context.Context, h Handle) (io.ReadCloser, error
 // A direct stream, no multipart and no base64: the request body IS the artifact.
 // Multipart would exist in order to carry the NAME along, and the name is
 // exactly what must not cross the boundary.
-func (b *BackendHTTP) Receber(ctx context.Context, r io.Reader) (Handle, error) {
-	alvo := *b.base
-	alvo.Path = strings.TrimRight(alvo.Path, "/") + "/v1/artefato"
+func (b *BackendHTTP) Receive(ctx context.Context, r io.Reader) (Handle, error) {
+	target := *b.base
+	target.Path = strings.TrimRight(target.Path, "/") + "/v1/artefato"
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, alvo.String(), r)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), r)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
-	b.autoriza(req)
+	b.authorize(req)
 
 	res, err := b.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("node %q unreachable: %w", b.no, err)
 	}
 	defer res.Body.Close()
-	corpo, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
 
 	switch {
 	case res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden:
-		return "", &ErroAutorizacao{Msg: fmt.Sprintf("node %q rejected the credential (HTTP %d)", b.no, res.StatusCode)}
+		return "", &AuthorizationError{Msg: fmt.Sprintf("node %q rejected the credential (HTTP %d)", b.no, res.StatusCode)}
 	case res.StatusCode != http.StatusOK:
-		return "", &ErroOperacao{Msg: mensagemDeErro(corpo, res.StatusCode, b.no)}
+		return "", &OperationError{Msg: errorMessage(body, res.StatusCode, b.no)}
 	}
 	var env struct {
 		Handle string `json:"handle"`
 	}
-	if err := json.Unmarshal(corpo, &env); err != nil || env.Handle == "" {
+	if err := json.Unmarshal(body, &env); err != nil || env.Handle == "" {
 		return "", fmt.Errorf("node %q returned no handle for the artifact sent", b.no)
 	}
 	return Handle(env.Handle), nil
 }
 
 // autoriza puts the bearer in the HEADER, never in the URL. See the file header.
-func (b *BackendHTTP) autoriza(r *http.Request) {
+func (b *BackendHTTP) authorize(r *http.Request) {
 	r.Header.Set("Authorization", "Bearer "+b.token)
 }
 
-// opConhecida consults the catalog. It walks TodasAsOps instead of keeping a map
+// knownOp consults the catalog. It walks AllOps instead of keeping a map
 // of its own: a map of its own is a second list that one day falls out of sync
 // with the first, which is the defect the closed catalog exists not to have.
-func opConhecida(op OpName) bool {
-	for _, o := range TodasAsOps {
+func knownOp(op OpName) bool {
+	for _, o := range AllOps {
 		if o == op {
 			return true
 		}
@@ -234,13 +234,13 @@ func opConhecida(op OpName) bool {
 	return false
 }
 
-// mensagemDeErro extracts the agent's error field, with a readable indent.
-func mensagemDeErro(bruto []byte, codigo int, no string) string {
+// errorMessage extracts the agent's error field, with a readable indent.
+func errorMessage(raw []byte, code int, no string) string {
 	var env struct {
-		Erro string `json:"erro"`
+		Error string `json:"erro"`
 	}
-	if json.Unmarshal(bruto, &env) == nil && env.Erro != "" {
-		return env.Erro
+	if json.Unmarshal(raw, &env) == nil && env.Error != "" {
+		return env.Error
 	}
-	return fmt.Sprintf("node %q answered HTTP %d", no, codigo)
+	return fmt.Sprintf("node %q answered HTTP %d", no, code)
 }

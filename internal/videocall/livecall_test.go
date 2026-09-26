@@ -51,7 +51,7 @@ func expectNoRing(t *testing.T, sub *PresenceSub, d time.Duration) {
 
 // --- the registry alone -------------------------------------------------
 
-func TestCallRegistry_PrimeiroJoinToca(t *testing.T) {
+func TestCallRegistry_FirstJoinRings(t *testing.T) {
 	r := newCallRegistry(filepath.Join(t.TempDir(), "active-calls.json"))
 	now := time.Now().Unix()
 	dec := r.OnJoin("R", "alice", "cid-a", false, now)
@@ -63,7 +63,7 @@ func TestCallRegistry_PrimeiroJoinToca(t *testing.T) {
 	}
 }
 
-func TestCallRegistry_RejoinDoMesmoClienteNaoToca(t *testing.T) {
+func TestCallRegistry_SameClientRejoinDoesNotRing(t *testing.T) {
 	r := newCallRegistry(filepath.Join(t.TempDir(), "active-calls.json"))
 	now := time.Now().Unix()
 	first := r.OnJoin("R", "alice", "cid-a", false, now)
@@ -79,7 +79,7 @@ func TestCallRegistry_RejoinDoMesmoClienteNaoToca(t *testing.T) {
 	}
 }
 
-func TestCallRegistry_SegundoParticipanteNaoTocaDeNovo(t *testing.T) {
+func TestCallRegistry_SecondParticipantDoesNotRingAgain(t *testing.T) {
 	r := newCallRegistry(filepath.Join(t.TempDir(), "active-calls.json"))
 	now := time.Now().Unix()
 	r.OnJoin("R", "alice", "cid-a", false, now)
@@ -92,7 +92,7 @@ func TestCallRegistry_SegundoParticipanteNaoTocaDeNovo(t *testing.T) {
 	}
 }
 
-func TestCallRegistry_ResumeHintSilencia(t *testing.T) {
+func TestCallRegistry_ResumeHintSilences(t *testing.T) {
 	r := newCallRegistry(filepath.Join(t.TempDir(), "active-calls.json"))
 	now := time.Now().Unix()
 	// No live call at all, but the client declares it is resuming.
@@ -105,7 +105,7 @@ func TestCallRegistry_ResumeHintSilencia(t *testing.T) {
 	}
 }
 
-func TestCallRegistry_GraceExpiraEChamadaNovaToca(t *testing.T) {
+func TestCallRegistry_GraceExpiresAndNewCallRings(t *testing.T) {
 	r := newCallRegistry(filepath.Join(t.TempDir(), "active-calls.json"))
 	now := time.Now().Unix()
 	r.OnJoin("R", "alice", "cid-a", false, now)
@@ -117,7 +117,7 @@ func TestCallRegistry_GraceExpiraEChamadaNovaToca(t *testing.T) {
 	}
 }
 
-func TestCallRegistry_QuedaMantemChamada_DesligarEncerra(t *testing.T) {
+func TestCallRegistry_DropKeepsCall_HangupEnds(t *testing.T) {
 	r := newCallRegistry(filepath.Join(t.TempDir(), "active-calls.json"))
 	now := time.Now().Unix()
 	r.OnJoin("R", "alice", "cid-a", false, now)
@@ -140,7 +140,7 @@ func TestCallRegistry_QuedaMantemChamada_DesligarEncerra(t *testing.T) {
 	}
 }
 
-func TestCallRegistry_DedupPorDestinatario(t *testing.T) {
+func TestCallRegistry_DedupPerRecipient(t *testing.T) {
 	r := newCallRegistry(filepath.Join(t.TempDir(), "active-calls.json"))
 	now := time.Now().Unix()
 	if !r.AllowRing("R", "sam", now) {
@@ -157,7 +157,7 @@ func TestCallRegistry_DedupPorDestinatario(t *testing.T) {
 	}
 }
 
-func TestCallRegistry_TouchMantemViva(t *testing.T) {
+func TestCallRegistry_TouchKeepsAlive(t *testing.T) {
 	r := newCallRegistry(filepath.Join(t.TempDir(), "active-calls.json"))
 	now := time.Now().Unix()
 	r.OnJoin("R", "alice", "cid-a", false, now)
@@ -169,7 +169,7 @@ func TestCallRegistry_TouchMantemViva(t *testing.T) {
 	}
 }
 
-func TestCallRegistry_GCEncerraChamadaVencida(t *testing.T) {
+func TestCallRegistry_GCEndsExpiredCall(t *testing.T) {
 	r := newCallRegistry(filepath.Join(t.TempDir(), "active-calls.json"))
 	now := time.Now().Unix()
 	r.OnJoin("R", "alice", "cid-a", false, now)
@@ -184,10 +184,10 @@ func TestCallRegistry_GCEncerraChamadaVencida(t *testing.T) {
 
 // --- persistence: the DEPLOY case ---------------------------------------
 
-// TestCallRegistry_SobreviveAoRestart is the test that stands for the reported
+// TestCallRegistry_SurvivesRestart is the test that stands for the reported
 // bug: during a call, a deploy restarts the process; the client reconnects on
 // its own; the ringer must NOT sound.
-func TestCallRegistry_SobreviveAoRestart(t *testing.T) {
+func TestCallRegistry_SurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "active-calls.json")
 
@@ -214,7 +214,7 @@ func TestCallRegistry_SobreviveAoRestart(t *testing.T) {
 	}
 }
 
-func TestCallRegistry_NaoRessuscitaChamadaAntiga(t *testing.T) {
+func TestCallRegistry_DoesNotReviveOldCall(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "active-calls.json")
 	r1 := newCallRegistry(path)
@@ -238,7 +238,7 @@ func TestCallRegistry_NaoRessuscitaChamadaAntiga(t *testing.T) {
 	}
 }
 
-func TestCallRegistry_ArquivoCorrompidoNaoDerruba(t *testing.T) {
+func TestCallRegistry_CorruptFileDoesNotCrash(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "active-calls.json")
 	if err := os.WriteFile(path, []byte("{lixo nao json"), 0o600); err != nil {
@@ -252,7 +252,7 @@ func TestCallRegistry_ArquivoCorrompidoNaoDerruba(t *testing.T) {
 
 // --- per-device policy --------------------------------------------------
 
-func TestDeviceStore_PoliticaPorAparelho(t *testing.T) {
+func TestDeviceStore_PolicyPerDevice(t *testing.T) {
 	d := newDeviceStore(filepath.Join(t.TempDir(), "ring-devices.json"))
 	now := time.Now().Unix()
 
@@ -299,7 +299,7 @@ func TestDeviceStore_PoliticaPorAparelho(t *testing.T) {
 	}
 }
 
-func TestDeviceStore_PersisteEEsquece(t *testing.T) {
+func TestDeviceStore_PersistsAndForgets(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ring-devices.json")
 	d1 := newDeviceStore(path)
@@ -319,7 +319,7 @@ func TestDeviceStore_PersisteEEsquece(t *testing.T) {
 	}
 }
 
-func TestPresenceHub_RingRespeitaAparelhoSilenciado(t *testing.T) {
+func TestPresenceHub_RingRespectsMutedDevice(t *testing.T) {
 	p := NewPresenceHub()
 	d := newDeviceStore(filepath.Join(t.TempDir(), "ring-devices.json"))
 	p.RingPolicy = func(user, deviceID string, now int64) bool { return d.ShouldRing(user, deviceID, now) }
@@ -373,10 +373,10 @@ func TestPresenceHub_WantsRing(t *testing.T) {
 
 // --- integration in the Service ----------------------------------------
 
-// TestService_DeployNaoTocaCampainha is the end-to-end test of the reported
+// TestService_DeployDoesNotRing is the end-to-end test of the reported
 // symptom: a call in progress, the process restarts, the other side
 // reconnects — and Sam's panel must NOT ring.
-func TestService_DeployNaoTocaCampainha(t *testing.T) {
+func TestService_DeployDoesNotRing(t *testing.T) {
 	dir := t.TempDir()
 	s := openServiceAt(t, dir)
 	room, err := s.CreateRoom("sam", "Nosso Momento")
@@ -419,9 +419,9 @@ func TestService_DeployNaoTocaCampainha(t *testing.T) {
 	s.Presence.Unsubscribe(mac)
 }
 
-// TestService_AtenderEmUmAparelhoCalaOsOutros covers the second half of the
+// TestService_AnsweringOnOneDeviceSilencesOthers covers the second half of the
 // symptom: I answered on the Mac and Windows kept ringing / trying to connect.
-func TestService_AtenderEmUmAparelhoCalaOsOutros(t *testing.T) {
+func TestService_AnsweringOnOneDeviceSilencesOthers(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
 	room, _ := s.CreateRoom("sam", "Nosso Momento")
@@ -448,9 +448,9 @@ func TestService_AtenderEmUmAparelhoCalaOsOutros(t *testing.T) {
 	}
 }
 
-// TestService_DesligarLimpaModalPendente: an ended call has to erase the
+// TestService_HangupClearsPendingModal: an ended call has to erase the
 // "Call from X" left on the screen of whoever did not answer.
-func TestService_DesligarLimpaModalPendente(t *testing.T) {
+func TestService_HangupClearsPendingModal(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
 	room, _ := s.CreateRoom("sam", "Nosso Momento")
@@ -471,9 +471,9 @@ func TestService_DesligarLimpaModalPendente(t *testing.T) {
 	}
 }
 
-// TestService_LigacaoDepoisDeDesligarVoltaATocar makes sure the fix did not
+// TestService_CallAfterHangupRingsAgain makes sure the fix did not
 // become a permanent silencer.
-func TestService_LigacaoDepoisDeDesligarVoltaATocar(t *testing.T) {
+func TestService_CallAfterHangupRingsAgain(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
 	room, _ := s.CreateRoom("sam", "Nosso Momento")
@@ -525,12 +525,12 @@ func wsDialQ(t *testing.T, srv *httptest.Server, user, room, clientID string, ex
 	return c
 }
 
-// TestHandleWS_ReconexaoNaoTocaCampainha_E2E exercises the REAL deployed path
+// TestHandleWS_ReconnectDoesNotRing_E2E exercises the REAL deployed path
 // — query parsing, Peer, Hub.Join and the ring decision — and not just the
 // registry in isolation. An earlier test proved that the Hub in isolation can
 // pass while the handler is wrong; here the same guarantee is given for the
 // ring.
-func TestHandleWS_ReconexaoNaoTocaCampainha_E2E(t *testing.T) {
+func TestHandleWS_ReconnectDoesNotRing_E2E(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
 	room, _ := s.CreateRoom("sam", "Nosso Momento")
@@ -561,10 +561,10 @@ func TestHandleWS_ReconexaoNaoTocaCampainha_E2E(t *testing.T) {
 	expectNoRing(t, win, 500*time.Millisecond)
 }
 
-// TestHandleWS_LeaveExplicitoEncerraChamada_E2E proves the "hung up" vs
+// TestHandleWS_ExplicitLeaveEndsCall_E2E proves the "hung up" vs
 // "dropped" discriminator end to end: the `leave` message the client sends on
 // hangup has to end the session (and clear the others' modal).
-func TestHandleWS_LeaveExplicitoEncerraChamada_E2E(t *testing.T) {
+func TestHandleWS_ExplicitLeaveEndsCall_E2E(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
 	room, _ := s.CreateRoom("sam", "Nosso Momento")

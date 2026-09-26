@@ -243,20 +243,20 @@ func TestCatalogCheckerCatchesLie(t *testing.T) {
 	// only delivers it to admins. The non-admin would see an item that 404s.
 	// "mentira-omitida": the builder delivers to everyone; the catalog
 	// hides it from everyone. The screen becomes unreachable from the picker.
-	const oferecida, omitida = "mentira.oferecida", "mentira.omitida"
+	const offered, omitted = "mentira.oferecida", "mentira.omitida"
 
 	catalogFor := func(v sdui.Viewer) []sdui.CatalogEntry {
-		return []sdui.CatalogEntry{{ID: oferecida, Group: sdui.GroupSistema, Label: "Oferecida"}}
+		return []sdui.CatalogEntry{{ID: offered, Group: sdui.GroupSystem, Label: "Oferecida"}}
 	}
 	build := func(_ context.Context, id string, v sdui.Viewer) (*sdui.Envelope, error) {
-		if id == oferecida && !v.IsAdmin() {
+		if id == offered && !v.IsAdmin() {
 			return nil, sdui.ErrScreenNotFound
 		}
 		return &sdui.Envelope{}, nil
 	}
 
 	mismatches, err := checkCatalogAgainstBuilders(
-		context.Background(), []string{oferecida, omitida}, viewers, catalogFor, build,
+		context.Background(), []string{offered, omitted}, viewers, catalogFor, build,
 	)
 	if err != nil {
 		t.Fatalf("checkCatalogAgainstBuilders: %v", err)
@@ -267,9 +267,9 @@ func TestCatalogCheckerCatchesLie(t *testing.T) {
 		got[m.Screen+"/"+m.Role] = true
 	}
 	for _, want := range []string{
-		oferecida + "/nonadmin", // catalog offers, builder 404
-		omitida + "/admin",      // builder assembles, catalog omits
-		omitida + "/nonadmin",
+		offered + "/nonadmin", // catalog offers, builder 404
+		omitted + "/admin",    // builder assembles, catalog omits
+		omitted + "/nonadmin",
 	} {
 		if !got[want] {
 			t.Errorf("the verifier did NOT catch the lie %q — mismatches: %+v", want, mismatches)
@@ -278,8 +278,8 @@ func TestCatalogCheckerCatchesLie(t *testing.T) {
 	// The only legitimate combination is oferecida/admin: the catalog offers and
 	// the builder delivers. If it shows up as a mismatch, the checker is
 	// reporting a false positive.
-	if got[oferecida+"/admin"] {
-		t.Errorf("the verifier flagged a false positive on %q/admin (catalog and builder agree)", oferecida)
+	if got[offered+"/admin"] {
+		t.Errorf("the verifier flagged a false positive on %q/admin (catalog and builder agree)", offered)
 	}
 }
 

@@ -30,7 +30,7 @@ import (
 // problem in silence. The fixtures in this file are the LITERAL response of the
 // hypervisor after the ACL, saved off the wire.
 //
-// 🔴 The test that matters most here is TestPodeAuditarDatastoreExigeOPrivilegio.
+// 🔴 The test that matters most here is TestCanAuditDatastoreRequiresPrivilege.
 // It defends the distinction that whole earlier pass existed to install: `200`
 // with an empty list is indistinguishable from "does not exist", and what breaks
 // the tie is the privilege MEASURED — not the presence of the path in the map.
@@ -41,7 +41,7 @@ const (
 	fixturePerms   = "testdata/access-permissions-auditor.json"
 )
 
-func corpoDaFixture(t *testing.T, path string) string {
+func fixtureBody(t *testing.T, path string) string {
 	t.Helper()
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -52,12 +52,12 @@ func corpoDaFixture(t *testing.T, path string) string {
 
 // ------------------------------------------------------------ StorageList ---
 
-// TestStorageListLeAFormaReal uses the LITERAL response of /nodes/pve/storage —
+// TestStorageListReadsRealShape uses the LITERAL response of /nodes/pve/storage —
 // 4 storages, with `active`/`enabled`/`shared` arriving as 0|1 (the hypervisor
 // does not send JSON booleans) and `content` as a comma-separated list, not as
 // an array.
-func TestStorageListLeAFormaReal(t *testing.T) {
-	c, vista := capturaURL(t, corpoDaFixture(t, fixtureStorage))
+func TestStorageListReadsRealShape(t *testing.T) {
+	c, vista := captureURL(t, fixtureBody(t, fixtureStorage))
 
 	ss, err := c.StorageList(context.Background(), "pve")
 	if err != nil {
@@ -88,35 +88,35 @@ func TestStorageListLeAFormaReal(t *testing.T) {
 	}
 	// content is "images,rootdir": a string, not an array. Whoever wants a list
 	// uses Conteudos(), and that is the one the screen consumes.
-	if got := lz.Conteudos(); strings.Join(got, ",") != "images,rootdir" {
+	if got := lz.ContentList(); strings.Join(got, ",") != "images,rootdir" {
 		t.Errorf("local-zfs.Conteudos() = %v, want [images rootdir] in a stable order", got)
 	}
-	if !lz.Ativo() || !lz.Habilitado() {
-		t.Errorf("local-zfs ativo=%v habilitado=%v — the PVE sends 1, not true", lz.Ativo(), lz.Habilitado())
+	if !lz.IsActive() || !lz.IsEnabled() {
+		t.Errorf("local-zfs ativo=%v habilitado=%v — the PVE sends 1, not true", lz.IsActive(), lz.IsEnabled())
 	}
 	pbs, ok := porID["pbs"]
 	if !ok {
 		t.Fatal("pbs missing")
 	}
-	if !pbs.Compartilhado() {
+	if !pbs.IsShared() {
 		t.Error("pbs.Compartilhado() = false — the fixture carries shared=1")
 	}
-	if porID["local"].Compartilhado() {
+	if porID["local"].IsShared() {
 		t.Error("local.Compartilhado() = true — the fixture carries shared=0")
 	}
 }
 
-// TestStorageListOrdemEEstavel: the hypervisor promises no ordering, and a
+// TestStorageListOrderIsStable: the hypervisor promises no ordering, and a
 // document that changes order on every tick becomes a noise diff in the
 // persisted inventory.
-func TestStorageListOrdemEEstavel(t *testing.T) {
-	const corpo = `{"data":[
+func TestStorageListOrderIsStable(t *testing.T) {
+	const body = `{"data":[
 	  {"storage":"pbs","type":"pbs"},
 	  {"storage":"local","type":"dir"},
 	  {"storage":"backupusb","type":"dir"},
 	  {"storage":"local-zfs","type":"zfspool"}
 	]}`
-	c, _ := capturaURL(t, corpo)
+	c, _ := captureURL(t, body)
 	ss, err := c.StorageList(context.Background(), "pve")
 	if err != nil {
 		t.Fatalf("StorageList: %v", err)
@@ -125,18 +125,18 @@ func TestStorageListOrdemEEstavel(t *testing.T) {
 	for _, s := range ss {
 		ids = append(ids, s.Storage)
 	}
-	quer := "backupusb,local,local-zfs,pbs"
-	if strings.Join(ids, ",") != quer {
-		t.Errorf("order = %v, want %s (sorted by id)", ids, quer)
+	want := "backupusb,local,local-zfs,pbs"
+	if strings.Join(ids, ",") != want {
+		t.Errorf("order = %v, want %s (sorted by id)", ids, want)
 	}
 }
 
 // ---------------------------------------------------------------- ZFSList ---
 
-// TestZFSListLeAFormaReal uses the LITERAL response of /nodes/pve/disks/zfs —
+// TestZFSListReadsRealShape uses the LITERAL response of /nodes/pve/disks/zfs —
 // the route that returned 403 before the ACL and now brings back both pools.
-func TestZFSListLeAFormaReal(t *testing.T) {
-	c, vista := capturaURL(t, corpoDaFixture(t, fixtureZFS))
+func TestZFSListReadsRealShape(t *testing.T) {
+	c, vista := captureURL(t, fixtureBody(t, fixtureZFS))
 
 	ps, err := c.ZFSList(context.Background(), "pve")
 	if err != nil {
@@ -168,12 +168,12 @@ func TestZFSListLeAFormaReal(t *testing.T) {
 	}
 }
 
-// 🔴 TestZFSListPoolDegradadoNaoVemComoOnline: the reason this block exists. A
+// 🔴 TestZFSListDegradedPoolIsNotOnline: the reason this block exists. A
 // DEGRADED pool on a SINGLE-DISK server is the most expensive news in the lab,
 // and the parser cannot normalise that away into nothing.
-func TestZFSListPoolDegradadoNaoVemComoOnline(t *testing.T) {
-	const corpo = `{"data":[{"name":"rpool","health":"DEGRADED","size":1,"alloc":1,"free":0,"frag":0,"dedup":1}]}`
-	c, _ := capturaURL(t, corpo)
+func TestZFSListDegradedPoolIsNotOnline(t *testing.T) {
+	const body = `{"data":[{"name":"rpool","health":"DEGRADED","size":1,"alloc":1,"free":0,"frag":0,"dedup":1}]}`
+	c, _ := captureURL(t, body)
 	ps, err := c.ZFSList(context.Background(), "pve")
 	if err != nil {
 		t.Fatalf("ZFSList: %v", err)
@@ -188,7 +188,7 @@ func TestZFSListPoolDegradadoNaoVemComoOnline(t *testing.T) {
 
 // -------------------------------------------------- empty is not an error ---
 
-// 🔴 TestVazioNaoEErroNasRotasNovas: the hypervisor envelope has THREE shapes of
+// 🔴 TestEmptyIsNotErrorOnNewRoutes: the hypervisor envelope has THREE shapes of
 // "nothing" and only ONE of them is a protocol defect.
 //
 //	{"data":[]}    → empty list. A legitimate answer ("there is no storage here").
@@ -200,32 +200,32 @@ func TestZFSListPoolDegradadoNaoVemComoOnline(t *testing.T) {
 // Without this pin, one of the first two would become "hypervisor error" on a
 // screen that should be saying "nothing here" — and the operator would go
 // hunting for a defect in the panel.
-func TestVazioNaoEErroNasRotasNovas(t *testing.T) {
-	casos := []struct {
+func TestEmptyIsNotErrorOnNewRoutes(t *testing.T) {
+	cases := []struct {
 		nome    string
-		corpo   string
-		querErr bool
+		body    string
+		wantErr bool
 	}{
 		{"lista vazia", `{"data":[]}`, false},
 		{"data null", `{"data":null}`, false},
 		{"sem envelope", `{"nao-e-data":[]}`, true},
 	}
-	for _, cs := range casos {
+	for _, cs := range cases {
 		t.Run(cs.nome+"/storage", func(t *testing.T) {
-			c, _ := capturaURL(t, cs.corpo)
+			c, _ := captureURL(t, cs.body)
 			ss, err := c.StorageList(context.Background(), "pve")
-			if (err != nil) != cs.querErr {
-				t.Fatalf("error = %v, wantErr = %v", err, cs.querErr)
+			if (err != nil) != cs.wantErr {
+				t.Fatalf("error = %v, wantErr = %v", err, cs.wantErr)
 			}
 			if err == nil && len(ss) != 0 {
 				t.Errorf("len = %d, want 0", len(ss))
 			}
 		})
 		t.Run(cs.nome+"/zfs", func(t *testing.T) {
-			c, _ := capturaURL(t, cs.corpo)
+			c, _ := captureURL(t, cs.body)
 			ps, err := c.ZFSList(context.Background(), "pve")
-			if (err != nil) != cs.querErr {
-				t.Fatalf("error = %v, wantErr = %v", err, cs.querErr)
+			if (err != nil) != cs.wantErr {
+				t.Fatalf("error = %v, wantErr = %v", err, cs.wantErr)
 			}
 			if err == nil && len(ps) != 0 {
 				t.Errorf("len = %d, want 0", len(ps))
@@ -234,11 +234,11 @@ func TestVazioNaoEErroNasRotasNovas(t *testing.T) {
 	}
 }
 
-// TestRotasNovasExigemNo: an empty node builds /nodes//storage, which the
+// TestNewRoutesRequireNode: an empty node builds /nodes//storage, which the
 // hypervisor answers with something that is not what was asked for. Refusing
 // here is cheaper.
-func TestRotasNovasExigemNo(t *testing.T) {
-	c, _ := capturaURL(t, `{"data":[]}`)
+func TestNewRoutesRequireNode(t *testing.T) {
+	c, _ := captureURL(t, `{"data":[]}`)
 	if _, err := c.StorageList(context.Background(), ""); err == nil {
 		t.Error("StorageList with an empty node should fail")
 	}
@@ -247,10 +247,10 @@ func TestRotasNovasExigemNo(t *testing.T) {
 	}
 }
 
-// TestZFSListForbiddenContinuaSendoForbidden: before the ACL this route returned
+// TestZFSListForbiddenStaysForbidden: before the ACL this route returned
 // 403, and that state has to keep ARRIVING as "no permission" — never as an
 // empty list. It is half of the distinction the permission guard defends.
-func TestZFSListForbiddenContinuaSendoForbidden(t *testing.T) {
+func TestZFSListForbiddenStaysForbidden(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"data":null,"errors":{"path":"Permission check failed"}}`))
@@ -267,7 +267,7 @@ func TestZFSListForbiddenContinuaSendoForbidden(t *testing.T) {
 
 // ---------------------------------------------- the privilege verdict ------
 
-// 🔴 TestPodeAuditarDatastoreExigeOPrivilegio is the guard from that earlier
+// 🔴 TestCanAuditDatastoreRequiresPrivilege is the guard from that earlier
 // pass, hardened.
 //
 // That pass answered "storage visible" with `strings.HasPrefix(caminho,
@@ -278,11 +278,11 @@ func TestZFSListForbiddenContinuaSendoForbidden(t *testing.T) {
 // false-green is back, now with the guard's blessing.
 //
 // The correct verdict is the PRIVILEGE, on any path that covers the storage.
-func TestPodeAuditarDatastoreExigeOPrivilegio(t *testing.T) {
-	casos := []struct {
+func TestCanAuditDatastoreRequiresPrivilege(t *testing.T) {
+	cases := []struct {
 		nome  string
 		perms map[string]map[string]int
-		quer  bool
+		want  bool
 	}{
 		{"mapa vazio", map[string]map[string]int{}, false},
 		{"nil", nil, false},
@@ -330,45 +330,45 @@ func TestPodeAuditarDatastoreExigeOPrivilegio(t *testing.T) {
 			false,
 		},
 	}
-	for _, cs := range casos {
+	for _, cs := range cases {
 		t.Run(cs.nome, func(t *testing.T) {
-			if got := PodeAuditarDatastore(cs.perms); got != cs.quer {
-				t.Errorf("PodeAuditarDatastore = %v, want %v", got, cs.quer)
+			if got := CanAuditDatastore(cs.perms); got != cs.want {
+				t.Errorf("CanAuditDatastore = %v, want %v", got, cs.want)
 			}
 		})
 	}
 }
 
-// TestPodeAuditarDatastoreNoMapaVIVO: the same verdict, over the LITERAL
+// TestCanAuditDatastoreOnLiveMap: the same verdict, over the LITERAL
 // response of /access/permissions after the ACL. It is the pin that ties the
 // guard to the real hypervisor — without it the test above proves only my
 // arithmetic.
-func TestPodeAuditarDatastoreNoMapaVIVO(t *testing.T) {
+func TestCanAuditDatastoreOnLiveMap(t *testing.T) {
 	var env struct {
 		Data map[string]map[string]int `json:"data"`
 	}
-	if err := json.Unmarshal([]byte(corpoDaFixture(t, fixturePerms)), &env); err != nil {
+	if err := json.Unmarshal([]byte(fixtureBody(t, fixturePerms)), &env); err != nil {
 		t.Fatalf("parsing the fixture: %v", err)
 	}
 	if len(env.Data) == 0 {
 		t.Fatal("empty permissions fixture")
 	}
-	if !PodeAuditarDatastore(env.Data) {
+	if !CanAuditDatastore(env.Data) {
 		t.Errorf("the LIVE map (%d paths) does not authorize datastore — the 2026-08-20 ACL should have changed that",
 			len(env.Data))
 	}
 	// And the negative half, on the same map: removing the privilege from EVERY
 	// path that covers storage has to fail again. Without this half, the test would
 	// pass with a function that returns a fixed `true`.
-	for caminho, privs := range env.Data {
-		if caminho == "/" || caminho == "/storage" || strings.HasPrefix(caminho, "/storage/") {
+	for path, privs := range env.Data {
+		if path == "/" || path == "/storage" || strings.HasPrefix(path, "/storage/") {
 			delete(privs, "Datastore.Audit")
 			delete(privs, "Datastore.Allocate")
 			delete(privs, "Datastore.AllocateSpace")
 			delete(privs, "Datastore.AllocateTemplate")
 		}
 	}
-	if PodeAuditarDatastore(env.Data) {
+	if CanAuditDatastore(env.Data) {
 		t.Error("with no Datastore.* on any storage path, the verdict stayed true")
 	}
 }

@@ -10,17 +10,17 @@ import (
 	"time"
 )
 
-const upidFalso = "UPID:pve:00001F2A:03C4D5E6:68A3B1C0:vzstart:207:lab@pve!admin:"
+const fakeUPID = "UPID:pve:00001F2A:03C4D5E6:68A3B1C0:vzstart:207:lab@pve!admin:"
 
 // TestPowerOps proves the exact path per type (lxc vs qemu) and the verb, and
 // that the function returns the RAW UPID. The UPID is not decoration: it is the
 // task's identifier in the hypervisor's own log and the only key for finding
 // out whether it finished well.
 func TestPowerOps(t *testing.T) {
-	casos := []struct {
+	cases := []struct {
 		nome     string
-		chamar   func(*Client) (string, error)
-		querPath string
+		call     func(*Client) (string, error)
+		wantPath string
 	}{
 		{"start lxc", func(c *Client) (string, error) {
 			return c.Start(context.Background(), "pve", 207, "lxc")
@@ -41,34 +41,34 @@ func TestPowerOps(t *testing.T) {
 			return c.SnapshotDelete(context.Background(), "pve", 208, "qemu", "antes-do-cutover")
 		}, "/api2/json/nodes/pve/qemu/208/snapshot/antes-do-cutover"},
 	}
-	for _, tc := range casos {
+	for _, tc := range cases {
 		t.Run(tc.nome, func(t *testing.T) {
 			c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != tc.querPath {
-					t.Errorf("path = %q, want %q", r.URL.Path, tc.querPath)
+				if r.URL.Path != tc.wantPath {
+					t.Errorf("path = %q, want %q", r.URL.Path, tc.wantPath)
 				}
-				querMetodo := http.MethodPost
+				wantMethod := http.MethodPost
 				if strings.HasPrefix(tc.nome, "snapshot delete") {
-					querMetodo = http.MethodDelete
+					wantMethod = http.MethodDelete
 				}
-				if r.Method != querMetodo {
-					t.Errorf("method = %s, want %s", r.Method, querMetodo)
+				if r.Method != wantMethod {
+					t.Errorf("method = %s, want %s", r.Method, wantMethod)
 				}
-				_, _ = w.Write([]byte(`{"data":"` + upidFalso + `"}`))
+				_, _ = w.Write([]byte(`{"data":"` + fakeUPID + `"}`))
 			})
-			upid, err := tc.chamar(c)
+			upid, err := tc.call(c)
 			if err != nil {
 				t.Fatalf("error: %v", err)
 			}
-			if upid != upidFalso {
-				t.Fatalf("upid = %q, want %q (raw, with no rewriting)", upid, upidFalso)
+			if upid != fakeUPID {
+				t.Fatalf("upid = %q, want %q (raw, with no rewriting)", upid, fakeUPID)
 			}
 		})
 	}
 }
 
-// TestPowerOpsTipoInvalido: fails closed before spending a call.
-func TestPowerOpsTipoInvalido(t *testing.T) {
+// TestPowerOpsInvalidType: fails closed before spending a call.
+func TestPowerOpsInvalidType(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("called the hypervisor with an invalid type")
 	})
@@ -113,17 +113,17 @@ func TestWaitTask(t *testing.T) {
 	t.Run("running until stopped OK", func(t *testing.T) {
 		var n int32
 		c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-			if quer := "/api2/json/nodes/pve/tasks/" + upidFalso + "/status"; r.URL.Path != quer {
-				t.Errorf("path = %q, want %q", r.URL.Path, quer)
+			if want := "/api2/json/nodes/pve/tasks/" + fakeUPID + "/status"; r.URL.Path != want {
+				t.Errorf("path = %q, want %q", r.URL.Path, want)
 			}
 			if atomic.AddInt32(&n, 1) < 3 {
-				_, _ = w.Write([]byte(`{"data":{"status":"running","upid":"` + upidFalso + `"}}`))
+				_, _ = w.Write([]byte(`{"data":{"status":"running","upid":"` + fakeUPID + `"}}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"data":{"status":"stopped","exitstatus":"OK","upid":"` + upidFalso + `"}}`))
+			_, _ = w.Write([]byte(`{"data":{"status":"stopped","exitstatus":"OK","upid":"` + fakeUPID + `"}}`))
 		})
 		c.taskPoll = time.Millisecond
-		if err := c.WaitTask(context.Background(), "pve", upidFalso); err != nil {
+		if err := c.WaitTask(context.Background(), "pve", fakeUPID); err != nil {
 			t.Fatalf("WaitTask: %v", err)
 		}
 		if n < 3 {
@@ -136,7 +136,7 @@ func TestWaitTask(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":{"status":"stopped","exitstatus":"command 'lxc-start' failed with exit code 1"}}`))
 		})
 		c.taskPoll = time.Millisecond
-		err := c.WaitTask(context.Background(), "pve", upidFalso)
+		err := c.WaitTask(context.Background(), "pve", fakeUPID)
 		if err == nil {
 			t.Fatal("a task that ended in error was accepted as success (Trap 6)")
 		}
@@ -157,7 +157,7 @@ func TestWaitTask(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":{"status":"stopped"}}`))
 		})
 		c.taskPoll = time.Millisecond
-		if err := c.WaitTask(context.Background(), "pve", upidFalso); err == nil {
+		if err := c.WaitTask(context.Background(), "pve", fakeUPID); err == nil {
 			t.Fatal("stopped with no exitstatus was accepted as success")
 		}
 	})
@@ -178,59 +178,59 @@ func TestWaitTaskTimeout(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":{"status":"running"}}`))
 	})
 	const poll = 2 * time.Second
-	const prazo = 40 * time.Millisecond
+	const deadline = 40 * time.Millisecond
 	c.taskPoll = poll
 
-	ctx, cancel := context.WithTimeout(context.Background(), prazo)
+	ctx, cancel := context.WithTimeout(context.Background(), deadline)
 	defer cancel()
 
-	feito := make(chan error, 1)
-	inicio := time.Now()
-	go func() { feito <- c.WaitTask(ctx, "pve", upidFalso) }()
+	done := make(chan error, 1)
+	start := time.Now()
+	go func() { done <- c.WaitTask(ctx, "pve", fakeUPID) }()
 
 	select {
-	case err := <-feito:
-		levou := time.Since(inicio)
+	case err := <-done:
+		took := time.Since(start)
 		if err == nil {
 			t.Fatal("an expired ctx returned success")
 		}
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("error = %v, want it to wrap context.DeadlineExceeded", err)
 		}
-		if levou >= poll {
-			t.Fatalf("WaitTask took %v to give up with a deadline of %v — it slept the whole tick (%v) instead of waking on the ctx", levou, prazo, poll)
+		if took >= poll {
+			t.Fatalf("WaitTask took %v to give up with a deadline of %v — it slept the whole tick (%v) instead of waking on the ctx", took, deadline, poll)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("WaitTask did not respect the ctx — infinite loop")
 	}
 }
 
-// TestWaitTaskPropagaKind: a 401 during the wait is "no credential" (a token
+// TestWaitTaskPropagatesKind: a 401 during the wait is "no credential" (a token
 // revoked IN THE MIDDLE of the operation — exactly the revocation drill), not
 // "the task failed".
-func TestWaitTaskPropagaKind(t *testing.T) {
+func TestWaitTaskPropagatesKind(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte("authentication failure"))
 	})
 	c.taskPoll = time.Millisecond
-	err := c.WaitTask(context.Background(), "pve", upidFalso)
+	err := c.WaitTask(context.Background(), "pve", fakeUPID)
 	pe, ok := err.(*Error)
 	if !ok || pe.Kind != KindNoCredential {
 		t.Fatalf("error = %v (%T), want *Error KindNoCredential", err, err)
 	}
 }
 
-// 🔴 TestSnapshotNomeInvalido: the snapshot name comes from the SCREEN and goes
+// 🔴 TestSnapshotInvalidName: the snapshot name comes from the SCREEN and goes
 // into a path on the hypervisor. Without validation, "../../status/stop" would
 // turn into another route — and the wrong operation on a write path is the
 // worst class of defect there is here. Fails closed: the hypervisor is not even
 // called.
-func TestSnapshotNomeInvalido(t *testing.T) {
+func TestSnapshotInvalidName(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("called the hypervisor with an invalid name: %s %s", r.Method, r.URL.Path)
 	})
-	nomes := []string{
+	names := []string{
 		"",
 		"../../status/stop",
 		"com/barra",
@@ -239,7 +239,7 @@ func TestSnapshotNomeInvalido(t *testing.T) {
 		"1comeca-com-digito",
 		strings.Repeat("x", 65),
 	}
-	for _, nome := range nomes {
+	for _, nome := range names {
 		t.Run(nome, func(t *testing.T) {
 			if _, err := c.SnapshotCreate(context.Background(), "pve", 207, "lxc", nome, ""); err == nil {
 				t.Errorf("SnapshotCreate(%q) was accepted", nome)
@@ -252,15 +252,15 @@ func TestSnapshotNomeInvalido(t *testing.T) {
 	// And the contrapositive: the legitimate name used by the drill HAS to pass —
 	// otherwise the validation would be "reject everything", which is also a false
 	// green.
-	var chamou bool
+	var called bool
 	c2, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		chamou = true
-		_, _ = w.Write([]byte(`{"data":"` + upidFalso + `"}`))
+		called = true
+		_, _ = w.Write([]byte(`{"data":"` + fakeUPID + `"}`))
 	})
 	if _, err := c2.SnapshotCreate(context.Background(), "pve", 207, "lxc", "antes-do-cutover_v2", "ok"); err != nil {
 		t.Fatalf("a legitimate name was refused: %v", err)
 	}
-	if !chamou {
+	if !called {
 		t.Fatal("a legitimate name did not reach the hypervisor")
 	}
 }
@@ -281,14 +281,14 @@ func TestSnapshotNomeInvalido(t *testing.T) {
 // hidden stays reachable by whoever holds the token, and with no record at all.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TestSnapshotRollbackPathEVerbo pins the exact path on both guest types. A
+// TestSnapshotRollbackPathAndVerb pins the exact path on both guest types. A
 // wrong path here does not return 404: it returns the rollback of the WRONG
 // resource.
-func TestSnapshotRollbackPathEVerbo(t *testing.T) {
-	casos := []struct {
+func TestSnapshotRollbackPathAndVerb(t *testing.T) {
+	cases := []struct {
 		nome     string
-		chamar   func(*Client) (string, error)
-		querPath string
+		call     func(*Client) (string, error)
+		wantPath string
 	}{
 		{"lxc", func(c *Client) (string, error) {
 			return c.SnapshotRollback(context.Background(), "pve", 204, "lxc", "antes-do-cutover")
@@ -297,53 +297,53 @@ func TestSnapshotRollbackPathEVerbo(t *testing.T) {
 			return c.SnapshotRollback(context.Background(), "pve", 208, "qemu", "antes-do-cutover")
 		}, "/api2/json/nodes/pve/qemu/208/snapshot/antes-do-cutover/rollback"},
 	}
-	for _, tc := range casos {
+	for _, tc := range cases {
 		t.Run(tc.nome, func(t *testing.T) {
-			var vistoPath, vistoMetodo string
+			var seenPath, seenMethod string
 			c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-				vistoPath, vistoMetodo = r.URL.Path, r.Method
-				_, _ = w.Write([]byte(`{"data":"` + upidFalso + `"}`))
+				seenPath, seenMethod = r.URL.Path, r.Method
+				_, _ = w.Write([]byte(`{"data":"` + fakeUPID + `"}`))
 			})
-			upid, err := tc.chamar(c)
+			upid, err := tc.call(c)
 			if err != nil {
 				t.Fatalf("SnapshotRollback: %v", err)
 			}
-			if vistoPath != tc.querPath {
-				t.Errorf("path = %q, want %q", vistoPath, tc.querPath)
+			if seenPath != tc.wantPath {
+				t.Errorf("path = %q, want %q", seenPath, tc.wantPath)
 			}
-			if vistoMetodo != http.MethodPost {
-				t.Errorf("method = %q, want POST", vistoMetodo)
+			if seenMethod != http.MethodPost {
+				t.Errorf("method = %q, want POST", seenMethod)
 			}
-			if upid != upidFalso {
-				t.Errorf("upid = %q, want %q — without it there is neither WaitTask nor trail", upid, upidFalso)
+			if upid != fakeUPID {
+				t.Errorf("upid = %q, want %q — without it there is neither WaitTask nor trail", upid, fakeUPID)
 			}
 		})
 	}
 }
 
-// 🔴 TestSnapshotRollbackRecusaNomeInvalido: the name comes from the SCREEN and
+// 🔴 TestSnapshotRollbackRejectsInvalidName: the name comes from the SCREEN and
 // goes into the path of a DESTRUCTIVE operation. It is the same rule as
 // create/delete, and here it counts for more: a name that escapes its resource
 // chooses which state the guest is going to take on.
-func TestSnapshotRollbackRecusaNomeInvalido(t *testing.T) {
+func TestSnapshotRollbackRejectsInvalidName(t *testing.T) {
 	for _, nome := range []string{"", "../../nodes/pve/qemu/100/status/stop", "com espaço", "acentuação", "9comeca-com-numero", strings.Repeat("a", 65)} {
-		var discou bool
+		var dialed bool
 		c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-			discou = true
-			_, _ = w.Write([]byte(`{"data":"` + upidFalso + `"}`))
+			dialed = true
+			_, _ = w.Write([]byte(`{"data":"` + fakeUPID + `"}`))
 		})
 		if _, err := c.SnapshotRollback(context.Background(), "pve", 204, "lxc", nome); err == nil {
 			t.Errorf("SnapshotRollback(%q) was accepted", nome)
 		}
-		if discou {
+		if dialed {
 			t.Errorf("SnapshotRollback(%q) actually dialed — the name has to be refused BEFORE that", nome)
 		}
 	}
 }
 
-// TestSnapshotRollbackSemPrivilegioETipado: a 403 becomes KindForbidden, so the
+// TestSnapshotRollbackWithoutPrivilegeIsTyped: a 403 becomes KindForbidden, so the
 // screen says "no permission" instead of "it failed".
-func TestSnapshotRollbackSemPrivilegioETipado(t *testing.T) {
+func TestSnapshotRollbackWithoutPrivilegeIsTyped(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"data":null}`))

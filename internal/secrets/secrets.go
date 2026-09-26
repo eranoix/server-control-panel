@@ -416,19 +416,19 @@ func (s *Store) ReloadIfChanged() (bool, error) {
 		return false, err
 	}
 	s.mu.RLock()
-	igual := fi.ModTime().Equal(s.lastMod) && fi.Size() == s.lastSize
+	unchanged := fi.ModTime().Equal(s.lastMod) && fi.Size() == s.lastSize
 	pp := string(s.passphrase)
 	s.mu.RUnlock()
-	if igual {
+	if unchanged {
 		return false, nil
 	}
-	novo, err := Open(s.path, pp)
+	fresh, err := Open(s.path, pp)
 	if err != nil {
 		return false, err
 	}
 	s.mu.Lock()
-	s.data, s.salt, s.key, s.needsResalt = novo.data, novo.salt, novo.key, novo.needsResalt
-	s.lastMod, s.lastSize = novo.lastMod, novo.lastSize
+	s.data, s.salt, s.key, s.needsResalt = fresh.data, fresh.salt, fresh.key, fresh.needsResalt
+	s.lastMod, s.lastSize = fresh.lastMod, fresh.lastSize
 	s.mu.Unlock()
 	return true, nil
 }

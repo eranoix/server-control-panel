@@ -182,9 +182,9 @@ func TestSendTextDedup(t *testing.T) {
 	}
 }
 
-// TestSendTextDedupDiferentesClientMsgIDNaoDeduplicam makes sure the dedupe key
+// TestSendTextDedupDifferentClientMsgIDsDoNotDedup makes sure the dedupe key
 // is the client_msg_id — distinct messages are still sent.
-func TestSendTextDedupDiferentesClientMsgIDNaoDeduplicam(t *testing.T) {
+func TestSendTextDedupDifferentClientMsgIDsDoNotDedup(t *testing.T) {
 	backend := &fakeExportBackend{sendTextID: "wamid-1"}
 	svc := newExportTestService(t, backend)
 
@@ -202,11 +202,11 @@ func TestSendTextDedupDiferentesClientMsgIDNaoDeduplicam(t *testing.T) {
 	}
 }
 
-// TestMessagesForDisplayDisparaBackfillQuandoStoreLocalEstaAtras covers the
+// TestMessagesForDisplayTriggersBackfillWhenLocalStoreBehind covers the
 // backfill-on-open path: an empty local store (fewer than the limit) triggers
 // backfillFromWAHA/requestHistoryGap, exactly as handleMessagesList always
 // triggered it.
-func TestMessagesForDisplayDisparaBackfillQuandoStoreLocalEstaAtras(t *testing.T) {
+func TestMessagesForDisplayTriggersBackfillWhenLocalStoreBehind(t *testing.T) {
 	backend := &fakeExportBackend{
 		chatMessagesPaged: []wahaHistoryMsg{
 			{ID: "wamid-100", From: "5511999998888@c.us", Timestamp: 1700000000, Body: "olá"},
@@ -229,10 +229,10 @@ func TestMessagesForDisplayDisparaBackfillQuandoStoreLocalEstaAtras(t *testing.T
 	}
 }
 
-// TestMessagesForDisplaySemBackfillQuandoStoreJaCompleto: the local store
+// TestMessagesForDisplayNoBackfillWhenStoreComplete: the local store
 // already holds `limit` messages and there is no newer chat in the overview →
 // no backfill is triggered.
-func TestMessagesForDisplaySemBackfillQuandoStoreJaCompleto(t *testing.T) {
+func TestMessagesForDisplayNoBackfillWhenStoreComplete(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
 	jid := "5511999998888@c.us"
@@ -266,7 +266,7 @@ func TestMarkRead(t *testing.T) {
 	}
 }
 
-func TestMarkReadSemErro(t *testing.T) {
+func TestMarkReadNoError(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
 	if err := svc.MarkRead("jid"); err != nil {
@@ -274,11 +274,11 @@ func TestMarkReadSemErro(t *testing.T) {
 	}
 }
 
-// TestServeAvatarSemFoto covers the proxy with no URL available at all (no
+// TestServeAvatarNoPhoto covers the proxy with no URL available at all (no
 // cache, no chat carrying an AvatarURL, Backend.GetProfilePicture returns
 // empty): it answers 204 (contact with no photo), the same contract as the
 // original handleAvatar.
-func TestServeAvatarSemFoto(t *testing.T) {
+func TestServeAvatarNoPhoto(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
 
@@ -291,10 +291,10 @@ func TestServeAvatarSemFoto(t *testing.T) {
 	}
 }
 
-// TestHandleAvatarDelegaParaServeAvatar makes sure the extraction did not break
+// TestHandleAvatarDelegatesToServeAvatar makes sure the extraction did not break
 // the legacy path: handleAvatar (parsing r.URL.Path) still serves the same 204
 // when there is no photo.
-func TestHandleAvatarDelegaParaServeAvatar(t *testing.T) {
+func TestHandleAvatarDelegatesToServeAvatar(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
 
@@ -307,10 +307,10 @@ func TestHandleAvatarDelegaParaServeAvatar(t *testing.T) {
 	}
 }
 
-// TestDownloadMediaForMessageCacheHitNaoBaixaDaRede covers the short-circuit:
+// TestDownloadMediaForMessageCacheHitSkipsNetwork covers the short-circuit:
 // Media.Path already points at a file that exists under MediaRoot → it returns
 // right away, without calling Client.DownloadFile a single time.
-func TestDownloadMediaForMessageCacheHitNaoBaixaDaRede(t *testing.T) {
+func TestDownloadMediaForMessageCacheHitSkipsNetwork(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
 	jid := "5511999998888@c.us"
@@ -349,10 +349,10 @@ func TestDownloadMediaForMessageCacheHitNaoBaixaDaRede(t *testing.T) {
 	}
 }
 
-// TestDownloadMediaForMessageCacheMissBaixaEPersiste covers the cache miss:
+// TestDownloadMediaForMessageCacheMissDownloadsAndPersists covers the cache miss:
 // with no local file, it downloads through WAHA (Client.GetChatMessagesWithMedia
 // + DownloadFile) and writes to <chatDir>/<safeID>.<ext>, updating the store.
-func TestDownloadMediaForMessageCacheMissBaixaEPersiste(t *testing.T) {
+func TestDownloadMediaForMessageCacheMissDownloadsAndPersists(t *testing.T) {
 	jid := "5511999998888@c.us"
 	msgID := "wamid.NAOCACHEADO"
 	backend := &fakeExportBackend{
@@ -409,10 +409,10 @@ func TestDownloadMediaForMessageCacheMissBaixaEPersiste(t *testing.T) {
 	}
 }
 
-// TestDownloadMediaForMessageMensagemInexistenteDevolve404 pins the exact
+// TestDownloadMediaForMessageUnknownMessageReturns404 pins the exact
 // status (404) that the legacy JSON handler always returned when the message
 // does not exist in the local store.
-func TestDownloadMediaForMessageMensagemInexistenteDevolve404(t *testing.T) {
+func TestDownloadMediaForMessageUnknownMessageReturns404(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
 
@@ -429,11 +429,11 @@ func TestDownloadMediaForMessageMensagemInexistenteDevolve404(t *testing.T) {
 	}
 }
 
-// TestDownloadMediaForMessageConcorrenciaColapsaEmUmDownload proves that N
+// TestDownloadMediaForMessageConcurrencyCollapsesToOneDownload proves that N
 // concurrent requests for the SAME (chatJID,msgID), not yet cached, result in
 // ONE single network download — without that, opening the same media in
 // parallel (two tabs, an automatic retry) would fire N identical downloads.
-func TestDownloadMediaForMessageConcorrenciaColapsaEmUmDownload(t *testing.T) {
+func TestDownloadMediaForMessageConcurrencyCollapsesToOneDownload(t *testing.T) {
 	jid := "5511999998888@c.us"
 	msgID := "wamid.CONCORRENTE"
 	release := make(chan struct{})
@@ -521,10 +521,10 @@ func TestSendFileDedupColapsaPorClientMsgID(t *testing.T) {
 	}
 }
 
-// TestSendFileDedupPersisteBytesLocalmente makes sure the bytes that were sent
+// TestSendFileDedupPersistsBytesLocally makes sure the bytes that were sent
 // stay in MediaRoot under the <chatDir>/<safeID>.<ext> layout — so the media
 // shows up inline, with no "Download", after a reload.
-func TestSendFileDedupPersisteBytesLocalmente(t *testing.T) {
+func TestSendFileDedupPersistsBytesLocally(t *testing.T) {
 	backend := &fakeExportBackend{sendFileID: "wamid-file-2"}
 	svc := newExportTestService(t, backend)
 	jid := "5511999998888@c.us"
@@ -546,11 +546,11 @@ func TestSendFileDedupPersisteBytesLocalmente(t *testing.T) {
 	}
 }
 
-// TestSendFileDedupInfereTipoQuandoVazio makes sure an empty msgType/mimeType
+// TestSendFileDedupInfersTypeWhenEmpty makes sure an empty msgType/mimeType
 // is inferred (guessMsgType / extension) exactly as handleSendFile always did
 // — the mobile BFF depends on this because guessMsgType is not
 // exported.
-func TestSendFileDedupInfereTipoQuandoVazio(t *testing.T) {
+func TestSendFileDedupInfersTypeWhenEmpty(t *testing.T) {
 	backend := &fakeExportBackend{sendFileID: "wamid-file-3"}
 	svc := newExportTestService(t, backend)
 	jid := "jid"
@@ -631,9 +631,9 @@ func TestServeMediaRelRangeInsatisfazivelDevolve416(t *testing.T) {
 	}
 }
 
-// TestServeMediaRelRejeitaTraversal makes sure the anti-traversal
+// TestServeMediaRelRejectsTraversal makes sure the anti-traversal
 // (safeMediaPath + re-anchor check) is still active after the extraction.
-func TestServeMediaRelRejeitaTraversal(t *testing.T) {
+func TestServeMediaRelRejectsTraversal(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
 

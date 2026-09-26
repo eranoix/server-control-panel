@@ -20,84 +20,84 @@ import (
 //	invariant 3 — no hostname lives in the poller: the node comes from the
 //	              discovery.
 
-// fontePVEStorage is the fakePVE from poller_test.go extended with the three
+// pveStorageSource is the fakePVE from poller_test.go extended with the three
 // new calls. A double of its own (and not more fields on fakePVE) because these
 // tests need to register an error PER CALL — that is what separates "the
 // storage failed" from "the tick failed".
-type fontePVEStorage struct {
-	recursos []pve.Resource
+type pveStorageSource struct {
+	resources []pve.Resource
 
-	status     pve.NodeStatus
-	erroStatus error
+	status    pve.NodeStatus
+	statusErr error
 
-	pools     []pve.Storage
-	erroPools error
-	noPools   string
+	pools    []pve.Storage
+	poolsErr error
+	noPools  string
 
-	zpools     []pve.ZPool
-	erroZPools error
-	noZPools   string
+	zpools    []pve.ZPool
+	zpoolsErr error
+	noZPools  string
 
-	perms     map[string]map[string]int
-	erroPerms error
+	perms    map[string]map[string]int
+	permsErr error
 
-	chamadasPools int
+	poolCalls int
 }
 
-func (f *fontePVEStorage) ClusterResources(ctx context.Context) ([]pve.Resource, error) {
-	return f.recursos, nil
+func (f *pveStorageSource) ClusterResources(ctx context.Context) ([]pve.Resource, error) {
+	return f.resources, nil
 }
-func (f *fontePVEStorage) GuestAddress(ctx context.Context, node string, vmid int, typ string) (string, error) {
+func (f *pveStorageSource) GuestAddress(ctx context.Context, node string, vmid int, typ string) (string, error) {
 	return "", nil
 }
-func (f *fontePVEStorage) NodeStatus(ctx context.Context, node string) (pve.NodeStatus, error) {
-	return f.status, f.erroStatus
+func (f *pveStorageSource) NodeStatus(ctx context.Context, node string) (pve.NodeStatus, error) {
+	return f.status, f.statusErr
 }
-func (f *fontePVEStorage) StorageList(ctx context.Context, node string) ([]pve.Storage, error) {
-	f.chamadasPools++
+func (f *pveStorageSource) StorageList(ctx context.Context, node string) ([]pve.Storage, error) {
+	f.poolCalls++
 	f.noPools = node
-	return f.pools, f.erroPools
+	return f.pools, f.poolsErr
 }
-func (f *fontePVEStorage) ZFSList(ctx context.Context, node string) ([]pve.ZPool, error) {
+func (f *pveStorageSource) ZFSList(ctx context.Context, node string) ([]pve.ZPool, error) {
 	f.noZPools = node
-	return f.zpools, f.erroZPools
+	return f.zpools, f.zpoolsErr
 }
-func (f *fontePVEStorage) Permissions(ctx context.Context) (map[string]map[string]int, error) {
-	return f.perms, f.erroPerms
+func (f *pveStorageSource) Permissions(ctx context.Context) (map[string]map[string]int, error) {
+	return f.perms, f.permsErr
 }
 
-// recursosRenomeados returns the discovery with a node name that is NOT "pve".
+// renamedResources returns the discovery with a node name that is NOT "pve".
 // It is the instrument of invariant 3: if somebody nails the hostname into the
 // poller, the tests in this file point at the wrong name.
-func recursosRenomeados() []pve.Resource {
+func renamedResources() []pve.Resource {
 	return []pve.Resource{
 		{ID: "lxc/204", Type: "lxc", VMID: 204, Name: "lab", Node: "hipervisor-renomeado", Status: "running"},
 	}
 }
 
-func pollerDeStorage(t *testing.T, f *fontePVEStorage, agora int64) (*Poller, *Store) {
+func storagePoller(t *testing.T, f *pveStorageSource, now int64) (*Poller, *Store) {
 	t.Helper()
 	st, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	p := NewPoller(st, f, Sources{}, PollerConfig{
-		Now: func() time.Time { return time.Unix(agora, 0) },
+		Now: func() time.Time { return time.Unix(now, 0) },
 	})
 	return p, st
 }
 
-// TestTickColetaCapacidadeEZpool: the happy path, with the node name coming
+// TestTickCollectsCapacityAndZpool: the happy path, with the node name coming
 // from the DISCOVERY (invariant 3) — no "pve" nailed into the poller.
-func TestTickColetaCapacidadeEZpool(t *testing.T) {
-	f := &fontePVEStorage{
-		recursos: recursosRenomeados(),
-		status:   statusDeTeste(),
-		pools:    poolsDeTeste(),
-		zpools:   zpoolsDeTeste(),
-		perms:    map[string]map[string]int{"/": {"Datastore.Audit": 1}},
+func TestTickCollectsCapacityAndZpool(t *testing.T) {
+	f := &pveStorageSource{
+		resources: renamedResources(),
+		status:    testStatus(),
+		pools:     testPools(),
+		zpools:    testZPools(),
+		perms:     map[string]map[string]int{"/": {"Datastore.Audit": 1}},
 	}
-	p, st := pollerDeStorage(t, f, 1800000000)
+	p, st := storagePoller(t, f, 1800000000)
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}
@@ -123,27 +123,27 @@ func TestTickColetaCapacidadeEZpool(t *testing.T) {
 	}
 }
 
-// 🔴 TestFalhaDoStorageNaoApagaOsPools is invariant 2 on the new block. Silent
+// 🔴 TestStorageFailureKeepsPools is invariant 2 on the new block. Silent
 // amnesia is WORSE than stale data: "no storage" and "I have not been able to
 // see the storage for 30 min" are opposite readings, and only the second sends
 // the operator to look at the hypervisor.
-func TestFalhaDoStorageNaoApagaOsPools(t *testing.T) {
-	f := &fontePVEStorage{
-		recursos: recursosRenomeados(),
-		status:   statusDeTeste(),
-		pools:    poolsDeTeste(),
-		zpools:   zpoolsDeTeste(),
-		perms:    map[string]map[string]int{"/": {"Datastore.Audit": 1}},
+func TestStorageFailureKeepsPools(t *testing.T) {
+	f := &pveStorageSource{
+		resources: renamedResources(),
+		status:    testStatus(),
+		pools:     testPools(),
+		zpools:    testZPools(),
+		perms:     map[string]map[string]int{"/": {"Datastore.Audit": 1}},
 	}
-	p, st := pollerDeStorage(t, f, 1800000000)
+	p, st := storagePoller(t, f, 1800000000)
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("tick 1: %v", err)
 	}
 
 	// Tick 2, 5 min later: the three new calls fail.
-	f.erroPools = errors.New("hipervisor mudo")
-	f.erroZPools = errors.New("hipervisor mudo")
-	f.erroPerms = errors.New("hipervisor mudo")
+	f.poolsErr = errors.New("hipervisor mudo")
+	f.zpoolsErr = errors.New("hipervisor mudo")
+	f.permsErr = errors.New("hipervisor mudo")
 	p2 := NewPoller(st, f, Sources{}, PollerConfig{
 		Now: func() time.Time { return time.Unix(1800000300, 0) },
 	})
@@ -176,30 +176,30 @@ func TestFalhaDoStorageNaoApagaOsPools(t *testing.T) {
 	}
 }
 
-// TestSemNomeDeHipervisorNaoPergunta: with no discovery there is no node, and
+// TestNoHypervisorNameDoesNotAsk: with no discovery there is no node, and
 // asking for the capacity of "" is fabricating a request with no target.
-func TestSemNomeDeHipervisorNaoPergunta(t *testing.T) {
-	f := &fontePVEStorage{recursos: []pve.Resource{}}
-	p, _ := pollerDeStorage(t, f, 1800000000)
+func TestNoHypervisorNameDoesNotAsk(t *testing.T) {
+	f := &pveStorageSource{resources: []pve.Resource{}}
+	p, _ := storagePoller(t, f, 1800000000)
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}
-	if f.chamadasPools != 0 {
-		t.Errorf("StorageList was called %d time(s) with no hypervisor discovered", f.chamadasPools)
+	if f.poolCalls != 0 {
+		t.Errorf("StorageList was called %d time(s) with no hypervisor discovered", f.poolCalls)
 	}
 }
 
 // 🔴 TestSemPrivilegioOVereditoVira false: the hypervisor returns 200 with []
 // and the panel has to record BOTH things — the empty list AND the reason for it.
-func TestSemPrivilegioOVereditoViraFalso(t *testing.T) {
-	f := &fontePVEStorage{
-		recursos: recursosRenomeados(),
-		status:   statusDeTeste(),
-		pools:    nil, // this is EXACTLY what the hypervisor returns without the ACL
-		zpools:   nil,
-		perms:    map[string]map[string]int{"/vms/204": {"VM.Audit": 1}, "/nodes": {"Sys.Audit": 1}},
+func TestNoPrivilegeVerdictBecomesFalse(t *testing.T) {
+	f := &pveStorageSource{
+		resources: renamedResources(),
+		status:    testStatus(),
+		pools:     nil, // this is EXACTLY what the hypervisor returns without the ACL
+		zpools:    nil,
+		perms:     map[string]map[string]int{"/vms/204": {"VM.Audit": 1}, "/nodes": {"Sys.Audit": 1}},
 	}
-	p, st := pollerDeStorage(t, f, 1800000000)
+	p, st := storagePoller(t, f, 1800000000)
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}

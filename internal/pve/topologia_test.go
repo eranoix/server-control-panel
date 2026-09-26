@@ -2,23 +2,23 @@ package pve
 
 import "testing"
 
-func TestSerialDoCaminho(t *testing.T) {
-	casos := []struct{ in, quer string }{
+func TestSerialFromPath(t *testing.T) {
+	cases := []struct{ in, want string }{
 		{"/dev/disk/by-id/usb-Seagate_Expansion_NAA9N1KZ-0:0-part1", "NAA9N1KZ"},
 		{"/dev/disk/by-id/nvme-eui.0000000625124629caf25b035000017e-part3", ""},
 		{"/dev/disk/by-id/ata-Samsung_SSD_870_S5Y2NJ0R123456-part1", "S5Y2NJ0R123456"},
 		{"", ""},
 	}
-	for _, c := range casos {
-		if got := SerialDoCaminho(c.in); got != c.quer {
-			t.Errorf("SerialDoCaminho(%q) = %q, want %q", c.in, got, c.quer)
+	for _, c := range cases {
+		if got := SerialFromPath(c.in); got != c.want {
+			t.Errorf("SerialFromPath(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }
 
-func TestTipoDeVdev(t *testing.T) {
-	casos := []struct {
-		nome, tipo string
+func TestVdevType(t *testing.T) {
+	cases := []struct {
+		nome, kind string
 		red        bool
 	}{
 		{"mirror-0", "mirror", true},
@@ -32,10 +32,10 @@ func TestTipoDeVdev(t *testing.T) {
 		{"coisa-nova-99", "listra", false},
 		{"/dev/sda", "listra", false},
 	}
-	for _, c := range casos {
-		tipo, red := tipoDeVdev(c.nome)
-		if tipo != c.tipo || red != c.red {
-			t.Errorf("tipoDeVdev(%q) = (%q,%v), want (%q,%v)", c.nome, tipo, red, c.tipo, c.red)
+	for _, c := range cases {
+		kind, red := vdevType(c.nome)
+		if kind != c.kind || red != c.red {
+			t.Errorf("vdevType(%q) = (%q,%v), want (%q,%v)", c.nome, kind, red, c.kind, c.red)
 		}
 	}
 }

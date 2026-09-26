@@ -11,4 +11,4 @@ import (
 func itoa(i int) string              { return strconv.Itoa(i) }
 func mkdirAll(p string) error        { return os.MkdirAll(p, 0o755) }
 func writeFile(p, s string) error    { return os.WriteFile(p, []byte(s), 0o644) }
-func timeoutCurto() <-chan time.Time { return time.After(2 * time.Second) }
+func shortTimeout() <-chan time.Time { return time.After(2 * time.Second) }

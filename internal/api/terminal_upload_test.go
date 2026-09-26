@@ -20,7 +20,7 @@ import (
 // it is the point where a mistake is expensive: a ".." that gets through writes
 // outside the tenant's directory.
 func TestSafeUploadName(t *testing.T) {
-	casos := []struct {
+	cases := []struct {
 		nome string
 		in   string
 		want string
@@ -41,7 +41,7 @@ func TestSafeUploadName(t *testing.T) {
 		{"newline não vira quebra", "a\nb.txt", "ab.txt"},
 		{"underscores colapsam", "a    b     c.txt", "a_b_c.txt"},
 	}
-	for _, c := range casos {
+	for _, c := range cases {
 		t.Run(c.nome, func(t *testing.T) {
 			if got := safeUploadName(c.in); got != c.want {
 				t.Fatalf("safeUploadName(%q) = %q, want %q", c.in, got, c.want)
@@ -53,12 +53,12 @@ func TestSafeUploadName(t *testing.T) {
 // A huge name must not blow past the filesystem limit, and the extension has to
 // survive the truncation — it is what tells whoever reads the path (person or
 // tool) what the file is.
-func TestSafeUploadNameLimite(t *testing.T) {
-	longo := ""
+func TestSafeUploadNameLimit(t *testing.T) {
+	long := ""
 	for i := 0; i < 500; i++ {
-		longo += "a"
+		long += "a"
 	}
-	got := safeUploadName(longo + ".pdf")
+	got := safeUploadName(long + ".pdf")
 	if len(got) > 96 {
 		t.Fatalf("name ended up with %d chars, above the 96 limit", len(got))
 	}
@@ -70,12 +70,12 @@ func TestSafeUploadNameLimite(t *testing.T) {
 // Regression guard: the old handler returned 415 for anything that was not an
 // image. No result of safeUploadName may contain a separator — that is what
 // guarantees filepath.Join stays inside the tenant's dir.
-func TestSafeUploadNameNuncaTemSeparador(t *testing.T) {
-	entradas := []string{
+func TestSafeUploadNameNeverHasSeparator(t *testing.T) {
+	entries := []string{
 		"../x", "a/b", `a\b`, "/etc/passwd", `..\..\win.ini`,
 		"nor mal.pdf", "arquivo.tar.gz", "ção.txt",
 	}
-	for _, in := range entradas {
+	for _, in := range entries {
 		got := safeUploadName(in)
 		for _, r := range got {
 			if r == '/' || r == '\\' {
@@ -93,15 +93,15 @@ func TestSafeUploadNameNuncaTemSeparador(t *testing.T) {
 // real multipart, writes the file in the right place. It is the proof that the
 // image/* lock came out without opening a hole in the write path.
 
-func postArquivo(t *testing.T, r *Router, campo, nome string, corpo []byte) *httptest.ResponseRecorder {
+func postFile(t *testing.T, r *Router, field, nome string, body []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
-	fw, err := mw.CreateFormFile(campo, nome)
+	fw, err := mw.CreateFormFile(field, nome)
 	if err != nil {
 		t.Fatalf("CreateFormFile: %v", err)
 	}
-	if _, err := fw.Write(corpo); err != nil {
+	if _, err := fw.Write(body); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	mw.Close()
@@ -113,17 +113,17 @@ func postArquivo(t *testing.T, r *Router, campo, nome string, corpo []byte) *htt
 	return w
 }
 
-func routerDeTeste(t *testing.T) (*Router, string) {
+func testRouter(t *testing.T) (*Router, string) {
 	t.Helper()
 	dir := t.TempDir()
 	return &Router{cfg: &config.Config{DataDir: dir, Primary: "sam"}}, dir
 }
 
-func TestUploadAceitaNaoImagem(t *testing.T) {
-	r, _ := routerDeTeste(t)
+func TestUploadAcceptsNonImage(t *testing.T) {
+	r, _ := testRouter(t)
 	// Minimal PDF: before the fix this hit 415 ("the file is not an image").
 	pdf := []byte("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n%%EOF\n")
-	w := postArquivo(t, r, "file", "contrato cliente.pdf", pdf)
+	w := postFile(t, r, "file", "contrato cliente.pdf", pdf)
 	if w.Code != 200 {
 		t.Fatalf("PDF rejected with %d: %s", w.Code, w.Body.String())
 	}
@@ -154,18 +154,18 @@ func TestUploadAceitaNaoImagem(t *testing.T) {
 	}
 }
 
-func TestUploadTiposVariados(t *testing.T) {
-	r, _ := routerDeTeste(t)
-	casos := []struct{ nome, conteudo string }{
+func TestUploadVariousTypes(t *testing.T) {
+	r, _ := testRouter(t)
+	cases := []struct{ nome, content string }{
 		{"planilha.csv", "a,b,c\n1,2,3\n"},
 		{"log do servidor.log", "2026-08-18 erro\n"},
 		{"notas.md", "# titulo\n"},
 		{"pacote.tar.gz", "\x1f\x8b\x08\x00binário"},
 		{"sem-extensao", "conteúdo qualquer"},
 	}
-	for _, c := range casos {
+	for _, c := range cases {
 		t.Run(c.nome, func(t *testing.T) {
-			w := postArquivo(t, r, "file", c.nome, []byte(c.conteudo))
+			w := postFile(t, r, "file", c.nome, []byte(c.content))
 			if w.Code != 200 {
 				t.Fatalf("%s rejected with %d: %s", c.nome, w.Code, w.Body.String())
 			}
@@ -176,37 +176,37 @@ func TestUploadTiposVariados(t *testing.T) {
 // Compatibility: cached tabs and the code-server extension still send the "image"
 // field. If that breaks, image pasting stops working in every browser that has not
 // reloaded the page — and nobody connects a bug like that to a deploy.
-func TestUploadAceitaCampoLegadoImage(t *testing.T) {
-	r, _ := routerDeTeste(t)
+func TestUploadAcceptsLegacyImageField(t *testing.T) {
+	r, _ := testRouter(t)
 	png := []byte("\x89PNG\r\n\x1a\n" + strings.Repeat("x", 40))
-	if w := postArquivo(t, r, "image", "paste.png", png); w.Code != 200 {
+	if w := postFile(t, r, "image", "paste.png", png); w.Code != 200 {
 		t.Fatalf("legacy field 'image' rejected with %d: %s", w.Code, w.Body.String())
 	}
 }
 
 // A name carrying traversal must not escape the tenant's upload directory.
-func TestUploadNaoEscapaDoDiretorio(t *testing.T) {
-	r, dir := routerDeTeste(t)
-	w := postArquivo(t, r, "file", "../../../../tmp/invadido.txt", []byte("x"))
+func TestUploadStaysInsideDirectory(t *testing.T) {
+	r, dir := testRouter(t)
+	w := postFile(t, r, "file", "../../../../tmp/invadido.txt", []byte("x"))
 	if w.Code != 200 {
 		t.Fatalf("expected to write with a sanitized name, got %d: %s", w.Code, w.Body.String())
 	}
 	var resp struct{ Path string }
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	limpo := filepath.Clean(resp.Path)
-	if !strings.HasPrefix(limpo, filepath.Clean(dir)+string(os.PathSeparator)) {
-		t.Fatalf("wrote OUTSIDE the tenant's DataDir: %s", limpo)
+	clean := filepath.Clean(resp.Path)
+	if !strings.HasPrefix(clean, filepath.Clean(dir)+string(os.PathSeparator)) {
+		t.Fatalf("wrote OUTSIDE the tenant's DataDir: %s", clean)
 	}
-	if strings.Contains(limpo, "..") {
-		t.Fatalf("final path still contains traversal: %s", limpo)
+	if strings.Contains(clean, "..") {
+		t.Fatalf("final path still contains traversal: %s", clean)
 	}
 	if _, err := os.Stat("/tmp/invadido.txt"); err == nil {
 		t.Fatalf("wrote to /tmp/invadido.txt — traversal got through")
 	}
 }
 
-func TestUploadExigeArquivo(t *testing.T) {
-	r, _ := routerDeTeste(t)
+func TestUploadRequiresFile(t *testing.T) {
+	r, _ := testRouter(t)
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	_ = mw.WriteField("outro", "coisa")
@@ -221,8 +221,8 @@ func TestUploadExigeArquivo(t *testing.T) {
 	}
 }
 
-func TestUploadExigeAutenticacao(t *testing.T) {
-	r, _ := routerDeTeste(t)
+func TestUploadRequiresAuth(t *testing.T) {
+	r, _ := testRouter(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/terminal/upload", strings.NewReader(""))
 	w := httptest.NewRecorder()
 	r.handleTerminalUpload(w, req) // sem auth.WithUser

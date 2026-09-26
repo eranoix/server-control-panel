@@ -264,53 +264,53 @@ func TestReloadIfChanged(t *testing.T) {
 	path := vaultPath(t)
 	const pp = "senha-de-teste"
 
-	painel, err := Open(path, pp)
+	panel, err := Open(path, pp)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := painel.Set("k", "v1"); err != nil {
+	if err := panel.Set("k", "v1"); err != nil {
 		t.Fatal(err)
 	}
 
 	// No external change: nothing to do, and NO re-read (scrypt is expensive).
-	if mudou, err := painel.ReloadIfChanged(); err != nil || mudou {
-		t.Fatalf("ReloadIfChanged with no change = (%v, %v), want (false, nil)", mudou, err)
+	if changed, err := panel.ReloadIfChanged(); err != nil || changed {
+		t.Fatalf("ReloadIfChanged with no change = (%v, %v), want (false, nil)", changed, err)
 	}
 
 	// Another process writes to the SAME file.
-	outro, err := Open(path, pp)
+	other, err := Open(path, pp)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := outro.Set("externo", "vindo-de-fora"); err != nil {
+	if err := other.Set("externo", "vindo-de-fora"); err != nil {
 		t.Fatal(err)
 	}
 
 	// The defect: without a reload, the panel cannot see it.
-	if _, ok := painel.Get("externo"); ok {
+	if _, ok := panel.Get("externo"); ok {
 		t.Fatal("the test does not reproduce the defect — the key showed up with no reload")
 	}
 
-	mudou, err := painel.ReloadIfChanged()
+	changed, err := panel.ReloadIfChanged()
 	if err != nil {
 		t.Fatalf("ReloadIfChanged: %v", err)
 	}
-	if !mudou {
+	if !changed {
 		t.Fatal("an external change was not detected")
 	}
-	if v, ok := painel.Get("externo"); !ok || v != "vindo-de-fora" {
+	if v, ok := panel.Get("externo"); !ok || v != "vindo-de-fora" {
 		t.Fatalf("after the reload: (%q, %v), want the external key", v, ok)
 	}
 	// And what was already there is not lost.
-	if v, ok := painel.Get("k"); !ok || v != "v1" {
+	if v, ok := panel.Get("k"); !ok || v != "v1" {
 		t.Fatalf("the reload lost the local key: (%q, %v)", v, ok)
 	}
 }
 
-// TestReloadIfChangedNaoRelePorEscritaPropria: our own write changes the
+// TestReloadIfChangedSkipsOwnWrite: our own write changes the
 // mtime; if that counted as an external change, every Set would pay a scrypt on the
 // next tick, for no gain at all.
-func TestReloadIfChangedNaoRelePorEscritaPropria(t *testing.T) {
+func TestReloadIfChangedSkipsOwnWrite(t *testing.T) {
 	path := vaultPath(t)
 	s, err := Open(path, "p")
 	if err != nil {
@@ -320,8 +320,8 @@ func TestReloadIfChangedNaoRelePorEscritaPropria(t *testing.T) {
 		if err := s.Set("k", "v"); err != nil {
 			t.Fatal(err)
 		}
-		if mudou, err := s.ReloadIfChanged(); err != nil || mudou {
-			t.Fatalf("its own write turned into a reload (%v, %v)", mudou, err)
+		if changed, err := s.ReloadIfChanged(); err != nil || changed {
+			t.Fatalf("its own write turned into a reload (%v, %v)", changed, err)
 		}
 	}
 }

@@ -32,11 +32,11 @@ import (
 // What is checked for those three is that the destination exists, not that they
 // answer a URL of their own — because they never did.
 var os27Case = []struct {
-	linha    int
-	recurso  string
-	acao     string
+	line     int
+	resource string
+	action   string
 	endpoint bool // false = became a value, or is a family header
-	nota     string
+	note     string
 }{
 	{72, "action", "", true, ""},
 	{84, "action", "", false, "start|stop|restart viraram valores de Verbo"},
@@ -49,7 +49,7 @@ var os27Case = []struct {
 	{179, "rawconfig", "", true, "estreitado pelo contrato"},
 	// Line 209 covers trainer.status, trainer.apply and trainer.desired: one
 	// triage line, three operations. The sub-actions are exercised in
-	// subAcoesDaLinha209, outside the count, so the table stays a faithful
+	// subActionsOfLine209, outside the count, so the table stays a faithful
 	// transcription of the triage — 27 lines, not one more.
 	{209, "trainer", "", true, "cobre status, apply e desired"},
 	{254, "runtime", "", true, ""},
@@ -71,11 +71,11 @@ var os27Case = []struct {
 	{568, "logs", "", true, ""},
 }
 
-// subAcoesDaLinha209 are the actions of the `trainer` resource, which the triage
+// subActionsOfLine209 are the actions of the `trainer` resource, which the triage
 // handled on a single line.
-var subAcoesDaLinha209 = []string{"apply", "desired"}
+var subActionsOfLine209 = []string{"apply", "desired"}
 
-func routerDeJogos(t *testing.T) (*Router, string) {
+func gamesRouter(t *testing.T) (*Router, string) {
 	t.Helper()
 	dir := t.TempDir()
 	inv := `[{"id":"jogo-b","name":"Enshrouded","game":"enshrouded","container":"jogo-b","root":"` + dir + `","node":""}]`
@@ -87,14 +87,14 @@ func routerDeJogos(t *testing.T) (*Router, string) {
 	return r, dir
 }
 
-// TestCadaCaseTemDestino: no case was lost in the rewrite.
+// TestEveryCaseHasDestination: no case was lost in the rewrite.
 //
 // The criterion is "the route exists": a business error counts as existing, a
 // route 404 does not. With no node registered they all answer 400 with the
 // registration message — which is the correct behaviour and proves the case got
 // all the way to resolution.
-func TestCadaCaseTemDestino(t *testing.T) {
-	r, _ := routerDeJogos(t)
+func TestEveryCaseHasDestination(t *testing.T) {
+	r, _ := gamesRouter(t)
 
 	// The table has to carry the 27 lines of the triage. The count is asserted
 	// here, and only here, because it is a HISTORICAL count (how many cases
@@ -103,18 +103,18 @@ func TestCadaCaseTemDestino(t *testing.T) {
 	if len(os27Case) != 27 {
 		t.Fatalf("the 08-03 triage has 27 lines; the table transcribed %d", len(os27Case))
 	}
-	naoEndpoint := 0
+	nonEndpoint := 0
 	for _, c := range os27Case {
 		if !c.endpoint {
-			naoEndpoint++
-			if c.nota == "" {
-				t.Errorf("line %d marked as non-endpoint with no written justification", c.linha)
+			nonEndpoint++
+			if c.note == "" {
+				t.Errorf("line %d marked as non-endpoint with no written justification", c.line)
 			}
 		}
 	}
-	t.Logf("27 triage lines: %d endpoints, %d non-endpoints declared", 27-naoEndpoint, naoEndpoint)
+	t.Logf("27 triage lines: %d endpoints, %d non-endpoints declared", 27-nonEndpoint, nonEndpoint)
 
-	for _, c := range subAcoesDaLinha209 {
+	for _, c := range subActionsOfLine209 {
 		req := httptest.NewRequest(http.MethodPost, "/api/gameservers/jogo-b/trainer/"+c, nil)
 		w := httptest.NewRecorder()
 		r.handleGameServerSub(w, req)
@@ -127,32 +127,32 @@ func TestCadaCaseTemDestino(t *testing.T) {
 		if !c.endpoint {
 			continue
 		}
-		nome := c.recurso
-		if c.acao != "" {
-			nome += "/" + c.acao
+		nome := c.resource
+		if c.action != "" {
+			nome += "/" + c.action
 		}
 		t.Run(nome, func(t *testing.T) {
-			caminho := "/api/gameservers/jogo-b/" + c.recurso
-			if c.acao != "" {
-				caminho += "/" + c.acao
+			path := "/api/gameservers/jogo-b/" + c.resource
+			if c.action != "" {
+				path += "/" + c.action
 			}
-			req := httptest.NewRequest(http.MethodGet, caminho, nil)
+			req := httptest.NewRequest(http.MethodGet, path, nil)
 			w := httptest.NewRecorder()
 			r.handleGameServerSub(w, req)
 
 			if w.Code == http.StatusNotFound {
-				corpo := w.Body.String()
-				if strings.Contains(corpo, "desconhecid") {
-					t.Errorf("CASE LOST IN THE REWRITE: %s → route 404 (%s)", nome, strings.TrimSpace(corpo))
+				body := w.Body.String()
+				if strings.Contains(body, "desconhecid") {
+					t.Errorf("CASE LOST IN THE REWRITE: %s → route 404 (%s)", nome, strings.TrimSpace(body))
 				}
 			}
 		})
 	}
 }
 
-// TestServidorSemNoRecusaNaSuperficie: a regra dura chega ao HTTP.
-func TestServidorSemNoRecusaNaSuperficie(t *testing.T) {
-	r, _ := routerDeJogos(t)
+// TestServerWithoutNodeRejectedAtSurface: a regra dura chega ao HTTP.
+func TestServerWithoutNodeRejectedAtSurface(t *testing.T) {
+	r, _ := gamesRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/gameservers/jogo-b/worlds", nil)
 	w := httptest.NewRecorder()
 	r.handleGameServerSub(w, req)
@@ -165,9 +165,9 @@ func TestServidorSemNoRecusaNaSuperficie(t *testing.T) {
 	}
 }
 
-// TestListaNaoQuebraComNoAusente: the whole page must not disappear.
-func TestListaNaoQuebraComNoAusente(t *testing.T) {
-	r, _ := routerDeJogos(t)
+// TestListSurvivesMissingNode: the whole page must not disappear.
+func TestListSurvivesMissingNode(t *testing.T) {
+	r, _ := gamesRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/gameservers", nil)
 	w := httptest.NewRecorder()
 	r.handleGameServers(w, req)
@@ -175,36 +175,36 @@ func TestListaNaoQuebraComNoAusente(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("the list should respond 200 even with the node missing, gave %d", w.Code)
 	}
-	var corpo struct {
+	var body struct {
 		Servers []map[string]any `json:"servers"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &corpo); err != nil {
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if len(corpo.Servers) != 1 {
-		t.Fatalf("expected 1 server listed, saw %d", len(corpo.Servers))
+	if len(body.Servers) != 1 {
+		t.Fatalf("expected 1 server listed, saw %d", len(body.Servers))
 	}
-	if corpo.Servers[0]["err"] == nil {
+	if body.Servers[0]["err"] == nil {
 		t.Error("the item should carry that server's error, not hide it")
 	}
-	if corpo.Servers[0]["id"] != "jogo-b" {
-		t.Errorf("the item lost its identity: %v", corpo.Servers[0])
+	if body.Servers[0]["id"] != "jogo-b" {
+		t.Errorf("the item lost its identity: %v", body.Servers[0])
 	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A node error must not leak the credential
 
-func TestErroDoAgenteNaoVazaToken(t *testing.T) {
+func TestAgentErrorNeverLeaksToken(t *testing.T) {
 	const token = "TOKEN-SUPER-SECRETO-DO-NO-123456"
-	err := &gameservers.ErroAutorizacao{
+	err := &gameservers.AuthorizationError{
 		// A deliberate worst case: an error that ALREADY carries the token. If the
 		// translation passed any part of it through, this test would catch it.
 		Msg: "401 ao chamar http://10.0.0.5:8710/v1/op/server.status com Bearer " + token,
 	}
-	codigo, msg := traduzErroDeNo(err, "games")
-	if codigo != http.StatusBadGateway {
-		t.Errorf("authorization error should give 502, gave %d", codigo)
+	code, msg := translateNodeError(err, "games")
+	if code != http.StatusBadGateway {
+		t.Errorf("authorization error should give 502, gave %d", code)
 	}
 	if strings.Contains(msg, token) {
 		t.Fatalf("TOKEN LEAKED INTO THE RESPONSE TO THE BROWSER: %s", msg)
@@ -219,13 +219,13 @@ func TestErroDoAgenteNaoVazaToken(t *testing.T) {
 	}
 }
 
-func TestErroDeNegocioPassaAdiante(t *testing.T) {
+func TestBusinessErrorPassesThrough(t *testing.T) {
 	// The class that MUST get through: a message produced by our own agent,
 	// telling the operator what happened. Translating this one too would leave
 	// every failure wearing the same useless sentence.
-	codigo, msg := traduzErroDeNo(&gameservers.ErroOperacao{Msg: "mundo 'alfa' nao existe"}, "games")
-	if codigo != http.StatusBadRequest {
-		t.Errorf("business error should give 400, gave %d", codigo)
+	code, msg := translateNodeError(&gameservers.OperationError{Msg: "mundo 'alfa' nao existe"}, "games")
+	if code != http.StatusBadRequest {
+		t.Errorf("business error should give 400, gave %d", code)
 	}
 	if msg != "mundo 'alfa' nao existe" {
 		t.Errorf("the business message was lost: %s", msg)
@@ -235,61 +235,61 @@ func TestErroDeNegocioPassaAdiante(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 // RBAC E AUDITORIA
 
-// TestRBACPreservado: every mutation still requires the primary account.
+// TestRBACPreserved: every mutation still requires the primary account.
 //
 // The test is about FORM, not execution: it walks the AST and demands that every
-// `executaOp(..., true)` — the writes — exists, and that the gate lives inside
+// `execOp(..., true)` — the writes — exists, and that the gate lives inside
 // it. That way a new write inherits the RBAC by construction, instead of relying
 // on somebody remembering to copy the line.
-func TestRBACPreservado(t *testing.T) {
-	fonte, err := os.ReadFile("gamebackend.go")
+func TestRBACPreserved(t *testing.T) {
+	source, err := os.ReadFile("gamebackend.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(fonte), "mustPrimary") {
-		t.Fatal("the primary-account gate disappeared from executaOp — EVERY write is now without RBAC")
+	if !strings.Contains(string(source), "mustPrimary") {
+		t.Fatal("the primary-account gate disappeared from execOp — EVERY write is now without RBAC")
 	}
 
-	// And no write may have been left outside executaOp: the two exceptions
+	// And no write may have been left outside execOp: the two exceptions
 	// (import, which uploads first) call mustPrimary explicitly.
 	h, err := os.ReadFile("handlers_gameservers.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	escritas := strings.Count(string(h), ", true)")
-	if escritas < 15 {
-		t.Errorf("expected the writes to go through executaOp with escrita=true; counted %d", escritas)
+	writes := strings.Count(string(h), ", true)")
+	if writes < 15 {
+		t.Errorf("expected the writes to go through execOp with isWrite=true; counted %d", writes)
 	}
 	if !strings.Contains(string(h), "mustPrimary") {
-		t.Error("the import case uploads BEFORE executaOp and needs its own gate")
+		t.Error("the import case uploads BEFORE execOp and needs its own gate")
 	}
 }
 
-// TestOperacaoDeEscritaEhAuditada: a write audits, a read does not.
-func TestOperacaoDeEscritaEhAuditada(t *testing.T) {
-	fonte, err := os.ReadFile("gamebackend.go")
+// TestWriteOperationIsAudited: a write audits, a read does not.
+func TestWriteOperationIsAudited(t *testing.T) {
+	source, err := os.ReadFile("gamebackend.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	txt := string(fonte)
+	txt := string(source)
 
-	// The audit lives inside the `if escrita` — that is what guarantees both
+	// The audit lives inside the `if isWrite` — that is what guarantees both
 	// halves of the rule in a single line.
-	i := strings.Index(txt, "auditaJogo(req")
+	i := strings.Index(txt, "auditGame(req")
 	if i < 0 {
 		t.Fatal("no audit call in the execution path")
 	}
 	antes := txt[:i]
-	ultimoIf := strings.LastIndex(antes, "if escrita {")
-	ultimoRes := strings.LastIndex(antes, "back.Executar")
-	if ultimoIf < 0 || ultimoIf < ultimoRes-200 {
-		t.Error("the audit is not guarded by `if escrita` — a read would also generate an event")
+	lastIf := strings.LastIndex(antes, "if isWrite {")
+	lastRes := strings.LastIndex(antes, "back.Execute")
+	if lastIf < 0 || lastIf < lastRes-200 {
+		t.Error("the audit is not guarded by `if isWrite` — a read would also generate an event")
 	}
 
 	// The event has to carry the four things an incident asks about.
-	for _, campo := range []string{"node=", "server=", "result=", "gameserver."} {
-		if !strings.Contains(txt, campo) {
-			t.Errorf("the audit event does not carry %q", campo)
+	for _, field := range []string{"node=", "server=", "result=", "gameserver."} {
+		if !strings.Contains(txt, field) {
+			t.Errorf("the audit event does not carry %q", field)
 		}
 	}
 }
@@ -297,8 +297,8 @@ func TestOperacaoDeEscritaEhAuditada(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 // NOME DE DOWNLOAD
 
-func TestNomeSeguroParaDownload(t *testing.T) {
-	casos := map[string]string{
+func TestSafeDownloadName(t *testing.T) {
+	cases := map[string]string{
 		"mundo-alfa":                  "mundo-alfa",
 		"../../etc/passwd":            "etcpasswd",
 		"a\r\nX-Injetado: sim":        "aX-Injetado:sim",
@@ -307,25 +307,25 @@ func TestNomeSeguroParaDownload(t *testing.T) {
 		"...":                         "padrao",
 		"backup-2026-08-24_10-00.zip": "backup-2026-08-24_10-00.zip",
 	}
-	chaves := make([]string, 0, len(casos))
-	for k := range casos {
-		chaves = append(chaves, k)
+	keys := make([]string, 0, len(cases))
+	for k := range cases {
+		keys = append(keys, k)
 	}
-	sort.Strings(chaves)
-	for _, entrada := range chaves {
-		got := nomeSeguroParaDownload(entrada, "padrao")
+	sort.Strings(keys)
+	for _, entry := range keys {
+		got := safeDownloadName(entry, "padrao")
 		// The property that matters is not the exact text but this: nothing that
 		// could break the header survives.
-		for _, ruim := range []string{"\r", "\n", `"`, "/", "\\"} {
-			if strings.Contains(got, ruim) {
-				t.Errorf("name %q produced %q, which still contains %q — header injection", entrada, got, ruim)
+		for _, bad := range []string{"\r", "\n", `"`, "/", "\\"} {
+			if strings.Contains(got, bad) {
+				t.Errorf("name %q produced %q, which still contains %q — header injection", entry, got, bad)
 			}
 		}
 		if got == "" {
-			t.Errorf("name %q produced empty, without falling back to the default", entrada)
+			t.Errorf("name %q produced empty, without falling back to the default", entry)
 		}
 	}
-	if nomeSeguroParaDownload("", "padrao") != "padrao" {
+	if safeDownloadName("", "padrao") != "padrao" {
 		t.Error("empty name should fall back to the default")
 	}
 }

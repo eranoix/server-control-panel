@@ -107,7 +107,7 @@ type Adapter interface {
 	// Server options (outside gameSettings) + world rename
 	ServerSettings(s Server) (map[string]interface{}, error)
 	SaveServerSettings(s Server, srv, grp map[string]interface{}) error
-	RenameWorld(s Server, old, novo string) error
+	RenameWorld(s Server, old, fresh string) error
 
 	// Privilege groups and bans
 	Groups(s Server) ([]Group, error)
@@ -339,8 +339,8 @@ func (m *Manager) ServerSettings(s Server) (map[string]interface{}, error) {
 func (m *Manager) SaveServerSettings(s Server, srv, grp map[string]interface{}) error {
 	return m.adapter(s).SaveServerSettings(s, srv, grp)
 }
-func (m *Manager) RenameWorld(s Server, old, novo string) error {
-	return m.adapter(s).RenameWorld(s, old, novo)
+func (m *Manager) RenameWorld(s Server, old, fresh string) error {
+	return m.adapter(s).RenameWorld(s, old, fresh)
 }
 
 func (m *Manager) Groups(s Server) ([]Group, error) { return m.adapter(s).Groups(s) }
@@ -478,20 +478,20 @@ func readJSONFile(path string) (map[string]interface{}, error) {
 // ─────────────────────────────────────────────────────────────────────────────
 // BACK-END FACTORY — the choice by the node's transport
 //
-// No new concept: `Transport` and `TransportAgente` are the selector already
+// No new concept: `Transport` and `TransportAgent` are the selector already
 // delivered in internal/inventory. All that happens here is honoring what the
-// model already declared — the comment on `TransportAgente` itself says the
+// model already declared — the comment on `TransportAgent` itself says the
 // value "is accepted by the model and refused by whoever dials". This is where
 // it stops being refused.
 
-// DestinoNo is the minimum the factory needs to know about a node.
+// NodeTarget is the minimum the factory needs to know about a node.
 //
 // A small struct instead of `inventory.Node`, on purpose: having `gameservers`
 // import `inventory` would couple the package the lab-agent LINKS to the package
 // that talks to the Proxmox API — the agent would carry the whole hypervisor
 // inventory just to open a zip. The panel builds this struct from its own Node;
 // the agent never needs it.
-type DestinoNo struct {
+type NodeTarget struct {
 	Nome      string // readable name of the node ("games", "apps")
 	Transport string // value of inventory.Transport
 	Base      string // HTTP root of the lab-agent, when the transport is the agent
@@ -499,38 +499,38 @@ type DestinoNo struct {
 }
 
 // The three transports, as strings. Duplicated here rather than imported, for
-// the DestinoNo reason above; TestSelecaoPorTransport checks that they stay
+// the NodeTarget reason above; TestSelectionByTransport checks that they stay
 // equal to inventory's, so the duplication does not turn into silent
 // divergence.
 const (
-	TransporteAgente = "agente"
-	TransportePVEAPI = "pve-api"
-	TransporteSSH    = "ssh"
+	TransportAgent  = "agente"
+	TransportPVEAPI = "pve-api"
+	TransportSSH    = "ssh"
 )
 
-// NovoBackend chooses the transport.
+// NewBackend chooses the transport.
 //
 // A transport that is not the agent's falls to LOCAL, and that is deliberate: it
 // is what keeps the VPS panel working throughout, which is the central argument
 // of the extraction and the safety net until the cutover. An EMPTY transport,
 // however, is an error — a node with no declared transport is an inventory
 // defect, and guessing "local" there would hide the defect behind a working path.
-func NovoBackend(d DestinoNo, m *Manager) (Backend, error) {
+func NewBackend(d NodeTarget, m *Manager) (Backend, error) {
 	switch d.Transport {
 	case "":
 		return nil, fmt.Errorf("node %q with no declared transport: incomplete inventory, there is no safe default to assume", d.Nome)
 
-	case TransporteAgente:
-		return NovoBackendHTTP(d.Base, d.Token, d.Nome)
+	case TransportAgent:
+		return NewBackendHTTP(d.Base, d.Token, d.Nome)
 
-	case TransportePVEAPI, TransporteSSH:
+	case TransportPVEAPI, TransportSSH:
 		// A node with no agent keeps being served by today's code, in the panel's
 		// own process. This is what keeps the VPS panel working throughout the
 		// transition.
 		if m == nil {
 			return nil, fmt.Errorf("local back-end of node %q requires Manager", d.Nome)
 		}
-		return NovoBackendLocal(m, d.Nome), nil
+		return NewBackendLocal(m, d.Nome), nil
 
 	default:
 		// A value outside the closed set NAMES the value. Falling back to local here

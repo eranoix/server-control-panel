@@ -40,8 +40,8 @@ func TestSinkAppendAcrossHandles(t *testing.T) {
 	defer b.Close()
 
 	tm, _ := time.Parse("2006-01-02", "2026-08-06")
-	relogio := func() time.Time { return tm }
-	a.now, b.now = relogio, relogio
+	clock := func() time.Time { return tm }
+	a.now, b.now = clock, clock
 
 	for i := 0; i < n; i++ {
 		recA, _ := json.Marshal(map[string]any{"h": "a", "i": i})
@@ -54,11 +54,11 @@ func TestSinkAppendAcrossHandles(t *testing.T) {
 		}
 	}
 
-	ls, _ := linhas(t, filepath.Join(dir, "2026-08-06.jsonl"))
+	ls, _ := lines(t, filepath.Join(dir, "2026-08-06.jsonl"))
 	if len(ls) != 2*n {
 		t.Fatalf("O_APPEND is not holding independent descriptors: expected=%d observed=%d lines", 2*n, len(ls))
 	}
-	contaA, contaB := 0, 0
+	countA, countB := 0, 0
 	for j, l := range ls {
 		var m map[string]any
 		if err := json.Unmarshal([]byte(l), &m); err != nil {
@@ -66,15 +66,15 @@ func TestSinkAppendAcrossHandles(t *testing.T) {
 		}
 		switch m["h"] {
 		case "a":
-			contaA++
+			countA++
 		case "b":
-			contaB++
+			countB++
 		default:
 			t.Fatalf("line %d with no recognizable handle: %q", j+1, l)
 		}
 	}
-	if contaA != n || contaB != n {
-		t.Fatalf("events lost: handle a=%d handle b=%d (expected %d each)", contaA, contaB, n)
+	if countA != n || countB != n {
+		t.Fatalf("events lost: handle a=%d handle b=%d (expected %d each)", countA, countB, n)
 	}
 }
 
@@ -84,7 +84,7 @@ func TestSinkAppendAcrossHandlesConcurrent(t *testing.T) {
 	dir := t.TempDir()
 	const n = 100
 	tm, _ := time.Parse("2006-01-02", "2026-08-06")
-	relogio := func() time.Time { return tm }
+	clock := func() time.Time { return tm }
 
 	sinks := make([]*Sink, 2)
 	for i := range sinks {
@@ -92,7 +92,7 @@ func TestSinkAppendAcrossHandlesConcurrent(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		s.now = relogio
+		s.now = clock
 		defer s.Close()
 		sinks[i] = s
 	}

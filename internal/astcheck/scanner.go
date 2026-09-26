@@ -21,7 +21,7 @@
 //
 // THREE MANDATORY DIFFERENCES FROM THE PRECEDENT
 //
-//	(a) WrappersVigiados — a DECLARED list of in-house functions that execute a
+//	(a) WatchedWrappers — a DECLARED list of in-house functions that execute a
 //	    process (the gap the precedent left open). It closes the hole around
 //	    `trainerRun(ctx, stdin, args ...string)` in gameservers/trainer.go.
 //	    A function NOT on the list whose body calls exec.Command with an
@@ -29,7 +29,7 @@
 //	    the list becomes an allowlist that ages in silence, a defect this project
 //	    has already paid for.
 //
-//	(b) ExigirArgvLiteral — the stance is INVERTED. In the precedent the
+//	(b) RequireLiteralArgv — the stance is INVERTED. In the precedent the
 //	    unresolvable argument was ignored (the pin only asked "is this a forbidden
 //	    binary?"). Here the unresolvable IS the danger: it is exactly the way free
 //	    execution comes back under another name.
@@ -59,17 +59,17 @@ import (
 	"strings"
 )
 
-// caminhoExec is the import path that grants access to process execution.
-const caminhoExec = "os/exec"
+// execPath is the import path that grants access to process execution.
+const execPath = "os/exec"
 
-// dirsIgnorados never enter the production sweep.
+// ignoredDirs never enter the production sweep.
 //
 // `testdata` is the most important entry: Go ignores that directory when building
 // packages, which is exactly what lets us keep synthetic violations there — and
 // also what would make the real tree fail because of the fixtures themselves if
 // the sweep did not skip it. The proof that this exclusion is not vacuous is
-// TestScanNaoVarreProprioTestdata: pointed straight at testdata, the scanner FINDS.
-var dirsIgnorados = map[string]bool{
+// TestScanSkipsOwnTestdata: pointed straight at testdata, the scanner FINDS.
+var ignoredDirs = map[string]bool{
 	"testdata":     true,
 	"vendor":       true,
 	"node_modules": true,
@@ -80,42 +80,42 @@ var dirsIgnorados = map[string]bool{
 // Config describes a sweep.
 type Config struct {
 	// Raiz is the directory where the sweep starts.
-	Raiz string
+	Root string
 
 	// Incluir, when non-empty, restricts the sweep to these subdirectories of
 	// Raiz (e.g. {"internal", "cmd"}). Empty sweeps all of Raiz.
-	Incluir []string
+	Include []string
 
-	// BinsProibidos are binary names that must not be executed from this
+	// ForbiddenBins are binary names that must not be executed from this
 	// code (e.g. the hypervisor commands, which belong to the PVE API).
-	BinsProibidos []string
+	ForbiddenBins []string
 
-	// WrappersVigiados are IN-HOUSE functions that execute a process without
+	// WatchedWrappers are IN-HOUSE functions that execute a process without
 	// going through exec.Command at the call site.
-	WrappersVigiados []string
+	WatchedWrappers []string
 
-	// ExigirArgvLiteral inverts the precedent's stance: a command argument
+	// RequireLiteralArgv inverts the precedent's stance: a command argument
 	// that does not resolve to a string literal now FAILS.
-	ExigirArgvLiteral bool
+	RequireLiteralArgv bool
 }
 
 // Achado is a located violation, with a usable message.
 //
 // Motivo and Trecho are not decoration: a pin that fails without saying what and
 // where is a pin someone switches off instead of fixing.
-type Achado struct {
-	Arquivo string
-	Linha   int
-	Motivo  string
-	Trecho  string
+type Finding struct {
+	File    string
+	Line    int
+	Reason  string
+	Snippet string
 }
 
 // Resultado carries the findings AND how many files were actually parsed.
-type Resultado struct {
-	Achados []Achado
+type Result struct {
+	Findings []Finding
 
 	// Varridos is the anti-vacuity guard. Zero is an error, never approval.
-	Varridos int
+	Scanned int
 }
 
 // Scan sweeps the tree described by cfg and returns the findings.
@@ -123,43 +123,43 @@ type Resultado struct {
 // It returns an error when it parsed no Go file at all: an empty sweep is a
 // configuration defect, and returning "0 findings" in that case would produce a
 // green by ABSENCE — the costliest defect this repository has ever paid for.
-func Scan(cfg Config) (Resultado, error) {
-	var res Resultado
+func Scan(cfg Config) (Result, error) {
+	var res Result
 
-	proibidos := make(map[string]bool, len(cfg.BinsProibidos))
-	for _, b := range cfg.BinsProibidos {
-		proibidos[b] = true
+	forbiddenBins := make(map[string]bool, len(cfg.ForbiddenBins))
+	for _, b := range cfg.ForbiddenBins {
+		forbiddenBins[b] = true
 	}
-	vigiados := make(map[string]bool, len(cfg.WrappersVigiados))
-	for _, w := range cfg.WrappersVigiados {
-		vigiados[w] = true
+	watched := make(map[string]bool, len(cfg.WatchedWrappers))
+	for _, w := range cfg.WatchedWrappers {
+		watched[w] = true
 	}
 
-	raizes := make([]string, 0, len(cfg.Incluir))
-	if len(cfg.Incluir) == 0 {
-		raizes = append(raizes, cfg.Raiz)
+	roots := make([]string, 0, len(cfg.Include))
+	if len(cfg.Include) == 0 {
+		roots = append(roots, cfg.Root)
 	} else {
-		for _, sub := range cfg.Incluir {
-			raizes = append(raizes, filepath.Join(cfg.Raiz, sub))
+		for _, sub := range cfg.Include {
+			roots = append(roots, filepath.Join(cfg.Root, sub))
 		}
 	}
 
 	fset := token.NewFileSet()
 	// Collect first, analyze later: see the comment on the second pass.
-	porDiretorio := map[string][]arquivoParseado{}
-	var ordemDeDir []string
-	for _, raiz := range raizes {
-		if _, err := os.Stat(raiz); err != nil {
+	byDir := map[string][]parsedFile{}
+	var dirOrder []string
+	for _, root := range roots {
+		if _, err := os.Stat(root); err != nil {
 			// A subdirectory of Incluir that does not exist is a configuration
 			// error, not "nothing to sweep".
-			return res, fmt.Errorf("astcheck: root %q unreachable: %w", raiz, err)
+			return res, fmt.Errorf("astcheck: root %q unreachable: %w", root, err)
 		}
-		err := filepath.WalkDir(raiz, func(caminho string, d fs.DirEntry, err error) error {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
 			if d.IsDir() {
-				if dirsIgnorados[d.Name()] {
+				if ignoredDirs[d.Name()] {
 					return filepath.SkipDir
 				}
 				return nil
@@ -167,14 +167,14 @@ func Scan(cfg Config) (Resultado, error) {
 			if !strings.HasSuffix(d.Name(), ".go") {
 				return nil
 			}
-			arquivo, err := parser.ParseFile(fset, caminho, nil, parser.SkipObjectResolution)
+			file, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
 			if err != nil {
-				return fmt.Errorf("astcheck: parse of %s: %w", caminho, err)
+				return fmt.Errorf("astcheck: parse of %s: %w", path, err)
 			}
-			dir := filepath.Dir(caminho)
-			porDiretorio[dir] = append(porDiretorio[dir], arquivoParseado{caminho: caminho, ast: arquivo})
-			ordemDeDir = append(ordemDeDir, dir)
-			res.Varridos++
+			dir := filepath.Dir(path)
+			byDir[dir] = append(byDir[dir], parsedFile{path: path, ast: file})
+			dirOrder = append(dirOrder, dir)
+			res.Scanned++
 			return nil
 		})
 		if err != nil {
@@ -193,64 +193,64 @@ func Scan(cfg Config) (Resultado, error) {
 	// Resolving a package constant does NOT weaken the rule: `const` is a
 	// compile-time literal, immutable at runtime. The danger the pin is after
 	// is an argument that VARIES — and that one still fails.
-	vistos := map[string]bool{}
-	for _, dir := range ordemDeDir {
-		if vistos[dir] {
+	seen := map[string]bool{}
+	for _, dir := range dirOrder {
+		if seen[dir] {
 			continue
 		}
-		vistos[dir] = true
-		arquivos := porDiretorio[dir]
-		consts := constantesDePacote(arquivos)
-		assinaturas := assinaturasDeWrappers(arquivos, vigiados)
-		for _, a := range arquivos {
-			res.Achados = append(res.Achados, varreArquivo(fset, a.ast, a.caminho, proibidos, vigiados, cfg.ExigirArgvLiteral, consts, assinaturas)...)
+		seen[dir] = true
+		files := byDir[dir]
+		consts := packageConsts(files)
+		signatures := wrapperSignatures(files, watched)
+		for _, a := range files {
+			res.Findings = append(res.Findings, scanFile(fset, a.ast, a.path, forbiddenBins, watched, cfg.RequireLiteralArgv, consts, signatures)...)
 		}
 	}
 
-	if res.Varridos == 0 {
-		return res, fmt.Errorf("astcheck: empty scan at %q — no .go file parsed; scanning nothing is never a pass", cfg.Raiz)
+	if res.Scanned == 0 {
+		return res, fmt.Errorf("astcheck: empty scan at %q — no .go file parsed; scanning nothing is never a pass", cfg.Root)
 	}
 	return res, nil
 }
 
-// varreArquivo applies the two rules to an already-parsed file.
-func varreArquivo(fset *token.FileSet, arquivo *ast.File, caminho string, proibidos, vigiados map[string]bool, exigirLiteral bool, constsDoPacote map[string]*simbolo, assinaturas map[string]assinaturaWrapper) []Achado {
-	nomeExec := nomeLocalDeOsExec(arquivo)
+// scanFile applies the two rules to an already-parsed file.
+func scanFile(fset *token.FileSet, file *ast.File, path string, forbiddenBins, watched map[string]bool, requireLiteral bool, pkgConsts map[string]*symbol, signatures map[string]wrapperSig) []Finding {
+	nomeExec := localOsExecName(file)
 
-	var achados []Achado
-	for _, decl := range arquivo.Decls {
+	var findings []Finding
+	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok || fn.Body == nil {
 			continue
 		}
-		simbolos := tabelaDeSimbolos(fn)
+		symbols := symbolTable(fn)
 		// A package constant comes in as the FLOOR: the local symbol always wins, so
 		// that a parameter shadowing the constant's name is not resolved to the
 		// constant's value — shadowing is precisely how a varying value would
 		// disguise itself as a constant.
-		for nome, s := range constsDoPacote {
-			if _, local := simbolos[nome]; !local {
-				simbolos[nome] = s
+		for nome, s := range pkgConsts {
+			if _, local := symbols[nome]; !local {
+				symbols[nome] = s
 			}
 		}
 
 		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			chamada, ok := n.(*ast.CallExpr)
+			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
 
 			// Rule 1 — direct execution via os/exec (under an alias too).
 			if nomeExec != "" {
-				if idx, ehExec := indiceDoBinario(chamada, nomeExec); ehExec {
-					if idx < len(chamada.Args) {
-						valor, resolvido := resolve(chamada.Args[idx], simbolos)
+				if idx, isExec := binaryIndex(call, nomeExec); isExec {
+					if idx < len(call.Args) {
+						valor, resolved := resolve(call.Args[idx], symbols)
 						switch {
-						case resolvido && proibidos[valor]:
-							achados = append(achados, monta(fset, caminho, chamada,
+						case resolved && forbiddenBins[valor]:
+							findings = append(findings, newFinding(fset, path, call,
 								fmt.Sprintf("direct execution of forbidden binary %q — this operation belongs to the hypervisor API, not to the shell", valor)))
-						case !resolvido && exigirLiteral:
-							achados = append(achados, monta(fset, caminho, chamada,
+						case !resolved && requireLiteral:
+							findings = append(findings, newFinding(fset, path, call,
 								fmt.Sprintf("argv of %s does not resolve to a string literal — an unresolvable argument is free execution under another name", nomeExec)))
 						}
 					}
@@ -259,24 +259,24 @@ func varreArquivo(fset *token.FileSet, arquivo *ast.File, caminho string, proibi
 			}
 
 			// Rule 2 — a watched in-house wrapper.
-			if exigirLiteral {
-				if ident, ok := chamada.Fun.(*ast.Ident); ok && vigiados[ident.Name] {
-					as, temAssinatura := assinaturas[ident.Name]
-					for i, arg := range chamada.Args {
+			if requireLiteral {
+				if ident, ok := call.Fun.(*ast.Ident); ok && watched[ident.Name] {
+					as, hasSig := signatures[ident.Name]
+					for i, arg := range call.Args {
 						// With the declared signature in hand, the question is EXACT:
 						// "is the position this argument occupies declared string?".
 						// Without it (a wrapper from another package), it falls back
 						// to the identifier's type heuristic, which is the best
 						// possible without type analysis.
-						if temAssinatura {
-							if !as.posicaoEhComando(i) {
+						if hasSig {
+							if !as.isCommandPos(i) {
 								continue
 							}
-						} else if !ehArgumentoDeComando(arg, simbolos) {
+						} else if !isCommandArg(arg, symbols) {
 							continue
 						}
-						if _, resolvido := resolve(arg, simbolos); !resolvido {
-							achados = append(achados, monta(fset, caminho, chamada,
+						if _, resolved := resolve(arg, symbols); !resolved {
+							findings = append(findings, newFinding(fset, path, call,
 								fmt.Sprintf("watched wrapper %s takes a command argument that does not resolve to a literal — the catalogue stops being closed here", ident.Name)))
 							break
 						}
@@ -286,19 +286,19 @@ func varreArquivo(fset *token.FileSet, arquivo *ast.File, caminho string, proibi
 			return true
 		})
 	}
-	return achados
+	return findings
 }
 
-// nomeLocalDeOsExec returns the name by which "os/exec" is reachable in THIS
+// localOsExecName returns the name by which "os/exec" is reachable in THIS
 // file — which is not necessarily "exec".
 //
 // It is the hole no textual search closes: `import xc "os/exec"` turns the call
 // into `xc.Command(...)`, and a grep for "exec.Command" walks straight past it.
 // Returns "" when the file does not import os/exec.
-func nomeLocalDeOsExec(arquivo *ast.File) string {
-	for _, imp := range arquivo.Imports {
-		caminho, err := strconv.Unquote(imp.Path.Value)
-		if err != nil || caminho != caminhoExec {
+func localOsExecName(file *ast.File) string {
+	for _, imp := range file.Imports {
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil || path != execPath {
 			continue
 		}
 		if imp.Name != nil {
@@ -314,15 +314,15 @@ func nomeLocalDeOsExec(arquivo *ast.File) string {
 	return ""
 }
 
-// indiceDoBinario recognizes exec.Command / exec.CommandContext and says which
+// binaryIndex recognizes exec.Command / exec.CommandContext and says which
 // argument holds the binary name.
-func indiceDoBinario(chamada *ast.CallExpr, nomeExec string) (int, bool) {
-	sel, ok := chamada.Fun.(*ast.SelectorExpr)
+func binaryIndex(call *ast.CallExpr, nomeExec string) (int, bool) {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return 0, false
 	}
-	pacote, ok := sel.X.(*ast.Ident)
-	if !ok || pacote.Name != nomeExec {
+	pkg, ok := sel.X.(*ast.Ident)
+	if !ok || pkg.Name != nomeExec {
 		return 0, false
 	}
 	switch sel.Sel.Name {
@@ -336,49 +336,49 @@ func indiceDoBinario(chamada *ast.CallExpr, nomeExec string) (int, bool) {
 }
 
 // simbolo is what is known about a local identifier.
-type simbolo struct {
+type symbol struct {
 	// valor is the string literal when it is known and unique.
 	valor string
 	// literal indicates that valor is usable.
 	literal bool
-	// ehString indicates that the identifier is declared to be of type string.
+	// isString indicates that the identifier is declared to be of type string.
 	// Without type information, it is what allows telling a "command verb" apart
 	// from "context" and "[]byte" in a wrapper's argument list.
-	ehString bool
+	isString bool
 }
 
-// tabelaDeSimbolos collects, for one function, what each local identifier is worth.
+// symbolTable collects, for one function, what each local identifier is worth.
 //
 // The pass covers the WHOLE function before any call analysis, so that a later
 // reassignment knocks the resolution down: a name assigned twice with different
 // values becomes unresolvable, never "the first one that showed up".
-func tabelaDeSimbolos(fn *ast.FuncDecl) map[string]*simbolo {
-	tab := map[string]*simbolo{}
+func symbolTable(fn *ast.FuncDecl) map[string]*symbol {
+	tab := map[string]*symbol{}
 
-	marca := func(nome string, s simbolo) {
+	mark := func(nome string, s symbol) {
 		if nome == "" || nome == "_" {
 			return
 		}
-		antigo, existe := tab[nome]
-		if !existe {
-			copia := s
-			tab[nome] = &copia
+		old, exists := tab[nome]
+		if !exists {
+			dup := s
+			tab[nome] = &dup
 			return
 		}
-		antigo.ehString = antigo.ehString || s.ehString
-		if !s.literal || !antigo.literal || antigo.valor != s.valor {
+		old.isString = old.isString || s.isString
+		if !s.literal || !old.literal || old.valor != s.valor {
 			// A second, divergent write: the name stops being resolvable.
-			antigo.literal = false
-			antigo.valor = ""
+			old.literal = false
+			old.valor = ""
 		}
 	}
 
 	// Parameters: never resolve to a literal, but the declared type is visible.
 	if fn.Type != nil && fn.Type.Params != nil {
-		for _, campo := range fn.Type.Params.List {
-			ehStr := ehTipoString(campo.Type)
-			for _, nome := range campo.Names {
-				marca(nome.Name, simbolo{ehString: ehStr})
+		for _, field := range fn.Type.Params.List {
+			isStr := isStringType(field.Type)
+			for _, nome := range field.Names {
+				mark(nome.Name, symbol{isString: isStr})
 			}
 		}
 	}
@@ -391,10 +391,10 @@ func tabelaDeSimbolos(fn *ast.FuncDecl) map[string]*simbolo {
 				if !ok || i >= len(s.Rhs) {
 					continue
 				}
-				if valor, ok := literalDeString(s.Rhs[i]); ok {
-					marca(ident.Name, simbolo{valor: valor, literal: true, ehString: true})
+				if valor, ok := stringLiteral(s.Rhs[i]); ok {
+					mark(ident.Name, symbol{valor: valor, literal: true, isString: true})
 				} else {
-					marca(ident.Name, simbolo{})
+					mark(ident.Name, symbol{})
 				}
 			}
 		case *ast.GenDecl:
@@ -406,15 +406,15 @@ func tabelaDeSimbolos(fn *ast.FuncDecl) map[string]*simbolo {
 				if !ok {
 					continue
 				}
-				ehStr := vs.Type != nil && ehTipoString(vs.Type)
+				isStr := vs.Type != nil && isStringType(vs.Type)
 				for i, nome := range vs.Names {
 					if i < len(vs.Values) {
-						if valor, ok := literalDeString(vs.Values[i]); ok {
-							marca(nome.Name, simbolo{valor: valor, literal: true, ehString: true})
+						if valor, ok := stringLiteral(vs.Values[i]); ok {
+							mark(nome.Name, symbol{valor: valor, literal: true, isString: true})
 							continue
 						}
 					}
-					marca(nome.Name, simbolo{ehString: ehStr})
+					mark(nome.Name, symbol{isString: isStr})
 				}
 			}
 		}
@@ -423,14 +423,14 @@ func tabelaDeSimbolos(fn *ast.FuncDecl) map[string]*simbolo {
 	return tab
 }
 
-// ehTipoString recognizes the type `string` as written in the declaration.
-func ehTipoString(expr ast.Expr) bool {
+// isStringType recognizes the type `string` as written in the declaration.
+func isStringType(expr ast.Expr) bool {
 	ident, ok := expr.(*ast.Ident)
 	return ok && ident.Name == "string"
 }
 
-// literalDeString extracts the value of a string literal, if it is one.
-func literalDeString(expr ast.Expr) (string, bool) {
+// stringLiteral extracts the value of a string literal, if it is one.
+func stringLiteral(expr ast.Expr) (string, bool) {
 	lit, ok := expr.(*ast.BasicLit)
 	if !ok || lit.Kind != token.STRING {
 		return "", false
@@ -443,69 +443,69 @@ func literalDeString(expr ast.Expr) (string, bool) {
 }
 
 // resolve tries to obtain an argument's literal value.
-func resolve(expr ast.Expr, simbolos map[string]*simbolo) (string, bool) {
-	if valor, ok := literalDeString(expr); ok {
+func resolve(expr ast.Expr, symbols map[string]*symbol) (string, bool) {
+	if valor, ok := stringLiteral(expr); ok {
 		return valor, true
 	}
 	if ident, ok := expr.(*ast.Ident); ok {
-		if s, existe := simbolos[ident.Name]; existe && s.literal {
+		if s, exists := symbols[ident.Name]; exists && s.literal {
 			return s.valor, true
 		}
 	}
 	return "", false
 }
 
-// ehArgumentoDeComando decides whether it is worth demanding a literal here.
+// isCommandArg decides whether it is worth demanding a literal here.
 //
 // Without type information, the question syntax can answer is: is this argument a
 // string? `ctx` and `body` in a wrapper are not, and demanding a literal of them
 // would produce a false positive on every legitimate call. An argument of type
 // string that does not resolve is the case that matters.
-func ehArgumentoDeComando(arg ast.Expr, simbolos map[string]*simbolo) bool {
-	if _, ok := literalDeString(arg); ok {
+func isCommandArg(arg ast.Expr, symbols map[string]*symbol) bool {
+	if _, ok := stringLiteral(arg); ok {
 		return true
 	}
 	if ident, ok := arg.(*ast.Ident); ok {
-		if s, existe := simbolos[ident.Name]; existe {
-			return s.ehString
+		if s, exists := symbols[ident.Name]; exists {
+			return s.isString
 		}
 	}
 	return false
 }
 
 // monta produces the finding with file, line, reason and rendered snippet.
-func monta(fset *token.FileSet, caminho string, node ast.Node, motivo string) Achado {
+func newFinding(fset *token.FileSet, path string, node ast.Node, reason string) Finding {
 	pos := fset.Position(node.Pos())
-	return Achado{
-		Arquivo: caminho,
-		Linha:   pos.Line,
-		Motivo:  motivo,
-		Trecho:  renderiza(fset, node),
+	return Finding{
+		File:    path,
+		Line:    pos.Line,
+		Reason:  reason,
+		Snippet: render(fset, node),
 	}
 }
 
 // renderiza returns the node's source code, so the pin's message shows the
 // offending line instead of sending the reader off to look for it.
-func renderiza(fset *token.FileSet, node ast.Node) string {
+func render(fset *token.FileSet, node ast.Node) string {
 	var buf bytes.Buffer
 	if err := printer.Fprint(&buf, fset, node); err != nil {
 		return "<snippet unavailable>"
 	}
-	trecho := strings.Join(strings.Fields(buf.String()), " ")
-	const teto = 160
-	if len(trecho) > teto {
-		trecho = trecho[:teto] + "…"
+	snippet := strings.Join(strings.Fields(buf.String()), " ")
+	const maxLen = 160
+	if len(snippet) > maxLen {
+		snippet = snippet[:maxLen] + "…"
 	}
-	return trecho
+	return snippet
 }
 
-// arquivoParseado holds the path/AST pair between the two passes.
-type arquivoParseado struct {
-	caminho string
-	ast     *ast.File
+// parsedFile holds the path/AST pair between the two passes.
+type parsedFile struct {
+	path string
+	ast  *ast.File
 }
 
-// constantesDePacote collects the string constants declared at PACKAGE LEVEL,
+// packageConsts collects the string constants declared at PACKAGE LEVEL,
 // across every file in the directory.
 //
 // Only `const`, never `var`: a package `var` can be reassigned at runtime (by
@@ -514,9 +514,9 @@ type arquivoParseado struct {
 //
 // A name declared twice with different values becomes UNRESOLVABLE, never "the
 // first one that showed up".
-func constantesDePacote(arquivos []arquivoParseado) map[string]*simbolo {
-	tab := map[string]*simbolo{}
-	for _, a := range arquivos {
+func packageConsts(files []parsedFile) map[string]*symbol {
+	tab := map[string]*symbol{}
+	for _, a := range files {
 		for _, decl := range a.ast.Decls {
 			gd, ok := decl.(*ast.GenDecl)
 			if !ok || gd.Tok != token.CONST {
@@ -531,18 +531,18 @@ func constantesDePacote(arquivos []arquivoParseado) map[string]*simbolo {
 					if nome.Name == "_" || i >= len(vs.Values) {
 						continue
 					}
-					valor, ok := literalDeString(vs.Values[i])
+					valor, ok := stringLiteral(vs.Values[i])
 					if !ok {
 						continue
 					}
-					if antigo, existe := tab[nome.Name]; existe {
-						if antigo.valor != valor {
-							antigo.literal = false
-							antigo.valor = ""
+					if old, exists := tab[nome.Name]; exists {
+						if old.valor != valor {
+							old.literal = false
+							old.valor = ""
 						}
 						continue
 					}
-					tab[nome.Name] = &simbolo{valor: valor, literal: true, ehString: true}
+					tab[nome.Name] = &symbol{valor: valor, literal: true, isString: true}
 				}
 			}
 		}
@@ -552,16 +552,16 @@ func constantesDePacote(arquivos []arquivoParseado) map[string]*simbolo {
 
 // indicesDeString describes, for a watched wrapper, which argument positions
 // are of type string in the DECLARATION.
-type assinaturaWrapper struct {
+type wrapperSig struct {
 	// fixos are the non-variadic string parameter indices.
-	fixos map[int]bool
+	fixed map[int]bool
 	// variadicoString says the variadic tail is `...string`.
 	variadicoString bool
-	// inicioVariadico is the index where the tail starts (-1 if there is none).
-	inicioVariadico int
+	// variadicStart is the index where the tail starts (-1 if there is none).
+	variadicStart int
 }
 
-// assinaturasDeWrappers finds, in the package, the declaration of each watched wrapper.
+// wrapperSignatures finds, in the package, the declaration of each watched wrapper.
 //
 // WHY THIS EXISTS, and why the earlier heuristic was not enough: without the
 // signature, the scanner had to GUESS which arguments were the command, by
@@ -571,30 +571,30 @@ type assinaturaWrapper struct {
 // in hand, the question stops being "does this argument look like a string?" and
 // becomes "is the position this argument occupies declared string?", which is
 // exact.
-func assinaturasDeWrappers(arquivos []arquivoParseado, vigiados map[string]bool) map[string]assinaturaWrapper {
-	out := map[string]assinaturaWrapper{}
-	for _, a := range arquivos {
+func wrapperSignatures(files []parsedFile, watched map[string]bool) map[string]wrapperSig {
+	out := map[string]wrapperSig{}
+	for _, a := range files {
 		for _, decl := range a.ast.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Recv != nil || !vigiados[fn.Name.Name] || fn.Type.Params == nil {
+			if !ok || fn.Recv != nil || !watched[fn.Name.Name] || fn.Type.Params == nil {
 				continue
 			}
-			as := assinaturaWrapper{fixos: map[int]bool{}, inicioVariadico: -1}
+			as := wrapperSig{fixed: map[int]bool{}, variadicStart: -1}
 			idx := 0
-			for _, campo := range fn.Type.Params.List {
-				n := len(campo.Names)
+			for _, field := range fn.Type.Params.List {
+				n := len(field.Names)
 				if n == 0 {
 					n = 1
 				}
-				if el, ehVariadico := campo.Type.(*ast.Ellipsis); ehVariadico {
-					as.inicioVariadico = idx
-					as.variadicoString = ehTipoString(el.Elt)
+				if el, isVariadic := field.Type.(*ast.Ellipsis); isVariadic {
+					as.variadicStart = idx
+					as.variadicoString = isStringType(el.Elt)
 					idx += n
 					continue
 				}
-				if ehTipoString(campo.Type) {
+				if isStringType(field.Type) {
 					for i := 0; i < n; i++ {
-						as.fixos[idx+i] = true
+						as.fixed[idx+i] = true
 					}
 				}
 				idx += n
@@ -605,10 +605,10 @@ func assinaturasDeWrappers(arquivos []arquivoParseado, vigiados map[string]bool)
 	return out
 }
 
-// posicaoEhComando says whether the argument at position i is declared string.
-func (a assinaturaWrapper) posicaoEhComando(i int) bool {
-	if a.fixos[i] {
+// isCommandPos says whether the argument at position i is declared string.
+func (a wrapperSig) isCommandPos(i int) bool {
+	if a.fixed[i] {
 		return true
 	}
-	return a.variadicoString && a.inicioVariadico >= 0 && i >= a.inicioVariadico
+	return a.variadicoString && a.variadicStart >= 0 && i >= a.variadicStart
 }

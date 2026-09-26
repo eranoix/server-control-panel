@@ -125,15 +125,15 @@ func RegisterMisc(deps MiscDeps) {
 	// machine (Automação), while AI and Jira are OUTSIDE services the panel
 	// talks to (Integrações).
 	//
-	// jira.issues is sempreVisivel despite looking sensitive: its visibility
+	// jira.issues is alwaysVisible despite looking sensitive: its visibility
 	// axis is not role, it is per-user CREDENTIAL
 	// (MiscDeps.JiraStatus(v.Username)) — buildJiraIssuesScreen does not even
 	// consult IsAdmin. A non-admin opens the screen and sees the "connect"
 	// state, which is legitimate content, not a leak.
-	sdui.RegisterCatalog(miscQueueJobsScreenID, sdui.GroupAutomacao, "Job queue", sempreVisivel)
-	sdui.RegisterCatalog(miscDeployAppsScreenID, sdui.GroupAutomacao, "App deploys", somenteAdmin)
-	sdui.RegisterCatalog(miscAISettingsScreenID, sdui.GroupIntegracoes, "AI models", somenteAdmin)
-	sdui.RegisterCatalog(miscJiraIssuesScreenID, sdui.GroupIntegracoes, "Jira", sempreVisivel)
+	sdui.RegisterCatalog(miscQueueJobsScreenID, sdui.GroupAutomation, "Job queue", alwaysVisible)
+	sdui.RegisterCatalog(miscDeployAppsScreenID, sdui.GroupAutomation, "App deploys", adminOnly)
+	sdui.RegisterCatalog(miscAISettingsScreenID, sdui.GroupIntegrations, "AI models", adminOnly)
+	sdui.RegisterCatalog(miscJiraIssuesScreenID, sdui.GroupIntegrations, "Jira", alwaysVisible)
 
 	registerMiscActions(deps)
 

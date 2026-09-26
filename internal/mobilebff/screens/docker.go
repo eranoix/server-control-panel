@@ -79,16 +79,16 @@ func RegisterDocker(deps DockerDeps) {
 	// Catalog entries (the app's section picker). The labels qualify the
 	// generic noun — "Images", "Volumes" and "Networks" on their own do not say
 	// Docker, and the label has to make sense read outside the group (in a
-	// search, in a recent item). Only docker.prune is somenteAdmin: it is the
+	// search, in a recent item). Only docker.prune is adminOnly: it is the
 	// only one of the six whose builder (buildDockerPruneScreenForViewer)
 	// refuses a non-admin with ErrScreenNotFound; the other five assemble for
 	// any viewer and merely omit destructive actions from inside the Envelope.
-	sdui.RegisterCatalog(dockerContainersScreenID, sdui.GroupDocker, "Containers", sempreVisivel)
-	sdui.RegisterCatalog(dockerImagesScreenID, sdui.GroupDocker, "Docker images", sempreVisivel)
-	sdui.RegisterCatalog(dockerVolumesScreenID, sdui.GroupDocker, "Docker volumes", sempreVisivel)
-	sdui.RegisterCatalog(dockerNetworksScreenID, sdui.GroupDocker, "Docker networks", sempreVisivel)
-	sdui.RegisterCatalog(dockerComposeScreenID, sdui.GroupDocker, "Compose", sempreVisivel)
-	sdui.RegisterCatalog(dockerPruneScreenID, sdui.GroupDocker, "Docker cleanup", somenteAdmin)
+	sdui.RegisterCatalog(dockerContainersScreenID, sdui.GroupDocker, "Containers", alwaysVisible)
+	sdui.RegisterCatalog(dockerImagesScreenID, sdui.GroupDocker, "Docker images", alwaysVisible)
+	sdui.RegisterCatalog(dockerVolumesScreenID, sdui.GroupDocker, "Docker volumes", alwaysVisible)
+	sdui.RegisterCatalog(dockerNetworksScreenID, sdui.GroupDocker, "Docker networks", alwaysVisible)
+	sdui.RegisterCatalog(dockerComposeScreenID, sdui.GroupDocker, "Compose", alwaysVisible)
+	sdui.RegisterCatalog(dockerPruneScreenID, sdui.GroupDocker, "Docker cleanup", adminOnly)
 
 	registerDockerActions(deps)
 

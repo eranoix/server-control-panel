@@ -13,53 +13,53 @@ import (
 	"server-control-panel/internal/pve"
 )
 
-// routerDeManutencao builds the router with a fake vault and a fake hypervisor.
+// maintenanceRouter builds the router with a fake vault and a fake hypervisor.
 // NO test in this file clones or backs up for real: the fake COUNTS the calls,
 // so we can assert "nothing was fired" without ever firing anything.
-func routerDeManutencao(t *testing.T, nos []inventory.Node, comPainel bool) (*Router, *[]string) {
+func maintenanceRouter(t *testing.T, nos []inventory.Node, withPanel bool) (*Router, *[]string) {
 	t.Helper()
 	var seen []string
-	r, _ := novoRouterDeNos(t, nos)
+	r, _ := newNodesRouter(t, nos)
 	dados := map[string]string{
 		"pve_token_audit":     "lab@pve!audit=a",
 		"pve_token_node_apps": "lab@pve!node-apps=s",
 		"pve_token_node_lab":  "lab@pve!node-lab=s",
 	}
-	if comPainel {
+	if withPanel {
 		dados["pve_token_painel"] = "lab@pve!painel=p"
 	}
-	r.nodeVaultFn = func() (nodeVault, error) { return &cofreFalso{seen: &seen, dados: dados}, nil }
+	r.nodeVaultFn = func() (nodeVault, error) { return &fakeVault{seen: &seen, dados: dados}, nil }
 	r.pveDial = func(valor string) (hypervisorOps, error) {
-		return &pveFalso{seen: &seen, tokenUsado: valor}, nil
+		return &fakePVE{seen: &seen, usedToken: valor}, nil
 	}
 	return r, &seen
 }
 
-func guestDeTeste() []inventory.Node {
-	n := noDeTeste("lxc/207", "apps", 207, agoraDeTeste)
+func testGuest() []inventory.Node {
+	n := testNode("lxc/207", "apps", 207, testNow)
 	n.Status.Value = "running"
 	return []inventory.Node{n}
 }
 
-// 🔴 TestCloneUsaOTokenDoPainelNaoODoNo — the wrong credential here gives no
+// 🔴 TestCloneUsesPanelTokenNotNodeToken — the wrong credential here gives no
 // pretty error: it gives a 403 from the hypervisor, which reaches the operator
 // as "it failed" without saying the problem is privilege. The node token does
 // NOT have VM.Allocate on /vms/<newid> nor Datastore.AllocateSpace, and that was
 // MEASURED on /access/permissions before this code was written.
-func TestCloneUsaOTokenDoPainelNaoODoNo(t *testing.T) {
-	r, seen := routerDeManutencao(t, guestDeTeste(), true)
-	w, out := chama(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"apps-copia","snapshot":"base"}`)
+func TestCloneUsesPanelTokenNotNodeToken(t *testing.T) {
+	r, seen := maintenanceRouter(t, testGuest(), true)
+	w, out := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"apps-copia","snapshot":"base"}`)
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
-	usados := strings.Join(*seen, " ")
-	if !strings.Contains(usados, "token=lab@pve!painel") {
+	used := strings.Join(*seen, " ")
+	if !strings.Contains(used, "token=lab@pve!painel") {
 		t.Errorf("the clone did not use the panel's credential — calls: %v", *seen)
 	}
-	if strings.Contains(usados, "token=lab@pve!node-apps") {
+	if strings.Contains(used, "token=lab@pve!node-apps") {
 		t.Errorf("the clone used the NODE's token, which has no VM.Allocate — calls: %v", *seen)
 	}
-	if !strings.Contains(usados, "pve.clone:lxc/207->991:apps-copia:snap=base") {
+	if !strings.Contains(used, "pve.clone:lxc/207->991:apps-copia:snap=base") {
 		t.Errorf("the clone did not reach the hypervisor with source, destination and name: %v", *seen)
 	}
 	// 🔴 "aceita", NEVER "ok": the clone was not waited for, and saying "ok" would
@@ -72,12 +72,12 @@ func TestCloneUsaOTokenDoPainelNaoODoNo(t *testing.T) {
 	}
 }
 
-// TestCloneSemCredencialDoPainelExplicaOMotivo — a button that fails without
+// TestCloneWithoutPanelCredentialExplainsWhy — a button that fails without
 // saying why is the difference between fixing it in a minute and believing the
 // panel is broken.
-func TestCloneSemCredencialDoPainelExplicaOMotivo(t *testing.T) {
-	r, seen := routerDeManutencao(t, guestDeTeste(), false)
-	w, _ := chama(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"snapshot":"base"}`)
+func TestCloneWithoutPanelCredentialExplainsWhy(t *testing.T) {
+	r, seen := maintenanceRouter(t, testGuest(), false)
+	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"snapshot":"base"}`)
 	if w.Code != 409 {
 		t.Fatalf("status = %d, want 409", w.Code)
 	}
@@ -91,11 +91,11 @@ func TestCloneSemCredencialDoPainelExplicaOMotivo(t *testing.T) {
 	}
 }
 
-// TestCloneGETNaoDisparaNada — the GET exists to ASK for the next free id. If it
+// TestCloneGETFiresNothing — the GET exists to ASK for the next free id. If it
 // cloned, merely loading the screen would create guests.
-func TestCloneGETNaoDisparaNada(t *testing.T) {
-	r, seen := routerDeManutencao(t, guestDeTeste(), true)
-	w, out := chama(t, r, http.MethodGet, "/api/nodes/lxc/207/clone", "")
+func TestCloneGETFiresNothing(t *testing.T) {
+	r, seen := maintenanceRouter(t, testGuest(), true)
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/clone", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
@@ -115,7 +115,7 @@ func TestCloneGETNaoDisparaNada(t *testing.T) {
 	}
 }
 
-// 🔴 TestCloneDeContainerLigadoExigeSnapshot — the rule only the LIVE PROOF
+// 🔴 TestCloneOfRunningContainerRequiresSnapshot — the rule only the LIVE PROOF
 // revealed. The hypervisor refuses a full clone of a RUNNING container without
 // `snapname`, with "Full clone of a running container is only possible from a
 // snapshot", and that sentence turns up in no grep of the PVE source on this
@@ -123,9 +123,9 @@ func TestCloneGETNaoDisparaNada(t *testing.T) {
 //
 // The refusal happens HERE, and not on the hypervisor, for a reason: the message
 // from here says what to DO (take a snapshot in this tab, or shut the guest down).
-func TestCloneDeContainerLigadoExigeSnapshot(t *testing.T) {
-	r, seen := routerDeManutencao(t, guestDeTeste(), true)
-	w, _ := chama(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"x"}`)
+func TestCloneOfRunningContainerRequiresSnapshot(t *testing.T) {
+	r, seen := maintenanceRouter(t, testGuest(), true)
+	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"x"}`)
 	if w.Code != 409 {
 		t.Fatalf("status = %d, want 409", w.Code)
 	}
@@ -139,8 +139,8 @@ func TestCloneDeContainerLigadoExigeSnapshot(t *testing.T) {
 	}
 
 	// With a snapshot it goes through — and the snapname REACHES the hypervisor.
-	r2, seen2 := routerDeManutencao(t, guestDeTeste(), true)
-	w2, _ := chama(t, r2, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"x","snapshot":"antes-do-upgrade"}`)
+	r2, seen2 := maintenanceRouter(t, testGuest(), true)
+	w2, _ := callAPI(t, r2, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"x","snapshot":"antes-do-upgrade"}`)
 	if w2.Code != 200 {
 		t.Fatalf("with snapshot: status = %d: %s", w2.Code, w2.Body)
 	}
@@ -149,14 +149,14 @@ func TestCloneDeContainerLigadoExigeSnapshot(t *testing.T) {
 	}
 }
 
-// TestCloneDeGuestDESLIGADONaoPedeSnapshot — the mirror image: the requirement
+// TestCloneOfStoppedGuestNeedsNoSnapshot — the mirror image: the requirement
 // belongs to the RUNNING container. Demanding a snapshot of a stopped guest
 // would be inventing a restriction the hypervisor does not have.
-func TestCloneDeGuestDESLIGADONaoPedeSnapshot(t *testing.T) {
-	n := noDeTeste("lxc/207", "apps", 207, agoraDeTeste)
+func TestCloneOfStoppedGuestNeedsNoSnapshot(t *testing.T) {
+	n := testNode("lxc/207", "apps", 207, testNow)
 	n.Status.Value = "stopped"
-	r, seen := routerDeManutencao(t, []inventory.Node{n}, true)
-	w, _ := chama(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"x"}`)
+	r, seen := maintenanceRouter(t, []inventory.Node{n}, true)
+	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"x"}`)
 	if w.Code != 200 {
 		t.Fatalf("guest stopped: status = %d: %s", w.Code, w.Body)
 	}
@@ -165,11 +165,11 @@ func TestCloneDeGuestDESLIGADONaoPedeSnapshot(t *testing.T) {
 	}
 }
 
-// TestCloneGETAvisaQuePrecisaDeSnapshot — the screen has to know BEFORE the
+// TestCloneGETWarnsSnapshotNeeded — the screen has to know BEFORE the
 // click, otherwise the operator fills in the form only to be handed an error.
-func TestCloneGETAvisaQuePrecisaDeSnapshot(t *testing.T) {
-	r, _ := routerDeManutencao(t, guestDeTeste(), true)
-	_, out := chama(t, r, http.MethodGet, "/api/nodes/lxc/207/clone", "")
+func TestCloneGETWarnsSnapshotNeeded(t *testing.T) {
+	r, _ := maintenanceRouter(t, testGuest(), true)
+	_, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/clone", "")
 	if out["precisa_snapshot"] != true {
 		t.Errorf("precisa_snapshot = %v for a running CT, want true", out["precisa_snapshot"])
 	}
@@ -178,12 +178,12 @@ func TestCloneGETAvisaQuePrecisaDeSnapshot(t *testing.T) {
 	}
 }
 
-// TestCloneRecusaSemDestino — with no novo_id, nothing is fired. The id comes
+// TestCloneRejectsWithoutDestination — with no novo_id, nothing is fired. The id comes
 // from the hypervisor through the GET; accepting its absence would be an
 // invitation to make a number up.
-func TestCloneRecusaSemDestino(t *testing.T) {
-	r, seen := routerDeManutencao(t, guestDeTeste(), true)
-	w, _ := chama(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"nome":"x"}`)
+func TestCloneRejectsWithoutDestination(t *testing.T) {
+	r, seen := maintenanceRouter(t, testGuest(), true)
+	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"nome":"x"}`)
 	if w.Code != 400 {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
@@ -194,18 +194,18 @@ func TestCloneRecusaSemDestino(t *testing.T) {
 	}
 }
 
-// TestBackupPassaModoECompressaoEUsaOPainel
-func TestBackupPassaModoECompressaoEUsaOPainel(t *testing.T) {
-	r, seen := routerDeManutencao(t, guestDeTeste(), true)
-	w, out := chama(t, r, http.MethodPost, "/api/nodes/lxc/207/backup", `{"storage":"pbs","modo":"snapshot","compress":"zstd"}`)
+// TestBackupPassesModeAndCompressionAndUsesPanel
+func TestBackupPassesModeAndCompressionAndUsesPanel(t *testing.T) {
+	r, seen := maintenanceRouter(t, testGuest(), true)
+	w, out := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/backup", `{"storage":"pbs","modo":"snapshot","compress":"zstd"}`)
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
-	usados := strings.Join(*seen, " ")
-	if !strings.Contains(usados, "pve.vzdump:207:pbs:snapshot:zstd") {
+	used := strings.Join(*seen, " ")
+	if !strings.Contains(used, "pve.vzdump:207:pbs:snapshot:zstd") {
 		t.Errorf("vzdump did not receive the parameters: %v", *seen)
 	}
-	if !strings.Contains(usados, "token=lab@pve!painel") {
+	if !strings.Contains(used, "token=lab@pve!painel") {
 		t.Errorf("backup did not use the panel's credential: %v", *seen)
 	}
 	if out["status"] != "aceita" {
@@ -213,13 +213,13 @@ func TestBackupPassaModoECompressaoEUsaOPainel(t *testing.T) {
 	}
 }
 
-// TestBackupTemPadraoQueNaoSurpreende — with no mode and no compression, the
+// TestBackupDefaultsAreUnsurprising — with no mode and no compression, the
 // default is `snapshot`+`zstd`: it does not stop the guest and it is the format
 // this lab already used. A `stop` default would power off the machine of someone
 // who only wanted a copy.
-func TestBackupTemPadraoQueNaoSurpreende(t *testing.T) {
-	r, seen := routerDeManutencao(t, guestDeTeste(), true)
-	if w, _ := chama(t, r, http.MethodPost, "/api/nodes/lxc/207/backup", `{"storage":"pbs"}`); w.Code != 200 {
+func TestBackupDefaultsAreUnsurprising(t *testing.T) {
+	r, seen := maintenanceRouter(t, testGuest(), true)
+	if w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/backup", `{"storage":"pbs"}`); w.Code != 200 {
 		t.Fatalf("status = %d", w.Code)
 	}
 	if !strings.Contains(strings.Join(*seen, " "), "pve.vzdump:207:pbs:snapshot:zstd") {
@@ -227,10 +227,10 @@ func TestBackupTemPadraoQueNaoSurpreende(t *testing.T) {
 	}
 }
 
-// TestBackupRecusaSemStorage — WHERE the copy goes cannot be guessed.
-func TestBackupRecusaSemStorage(t *testing.T) {
-	r, seen := routerDeManutencao(t, guestDeTeste(), true)
-	w, _ := chama(t, r, http.MethodPost, "/api/nodes/lxc/207/backup", `{}`)
+// TestBackupRejectsWithoutStorage — WHERE the copy goes cannot be guessed.
+func TestBackupRejectsWithoutStorage(t *testing.T) {
+	r, seen := maintenanceRouter(t, testGuest(), true)
+	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/backup", `{}`)
 	if w.Code != 400 {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
@@ -241,21 +241,21 @@ func TestBackupRecusaSemStorage(t *testing.T) {
 	}
 }
 
-// 🔴 TestManutencaoRecusaHostEExplicaDiferente — host and external node give the
+// 🔴 TestMaintenanceRejectsHostWithDistinctReason — host and external node give the
 // SAME refusal today if nobody takes care, and the operator's next action
 // differs: one is not clonable by nature, the other is not even on this
 // hypervisor.
-func TestManutencaoRecusaHostEExplicaDiferente(t *testing.T) {
-	host := noDeTeste("node/pve", "pve", 0, agoraDeTeste)
+func TestMaintenanceRejectsHostWithDistinctReason(t *testing.T) {
+	host := testNode("node/pve", "pve", 0, testNow)
 	host.Kind = inventory.NodeKindHost
-	r, seen := routerDeManutencao(t, []inventory.Node{host}, true)
-	for _, rota := range []string{"/api/nodes/node/pve/clone", "/api/nodes/node/pve/backup"} {
-		w, _ := chama(t, r, http.MethodPost, rota, `{"storage":"pbs","novo_id":991}`)
+	r, seen := maintenanceRouter(t, []inventory.Node{host}, true)
+	for _, route := range []string{"/api/nodes/node/pve/clone", "/api/nodes/node/pve/backup"} {
+		w, _ := callAPI(t, r, http.MethodPost, route, `{"storage":"pbs","novo_id":991}`)
 		if w.Code != 400 {
-			t.Errorf("%s: status = %d, want 400", rota, w.Code)
+			t.Errorf("%s: status = %d, want 400", route, w.Code)
 		}
 		if !strings.Contains(w.Body.String(), "hypervisor is not a guest") {
-			t.Errorf("%s: reason too generic: %s", rota, w.Body)
+			t.Errorf("%s: reason too generic: %s", route, w.Body)
 		}
 	}
 	for _, c := range *seen {
@@ -265,24 +265,24 @@ func TestManutencaoRecusaHostEExplicaDiferente(t *testing.T) {
 	}
 }
 
-// TestRebootPassaPeloWaitTask — reboot is the ONLY one of the three that waits
+// TestRebootGoesThroughWaitTask — reboot is the ONLY one of the three that waits
 // for the task, and it has to keep waiting: a guest that ignores the request
 // from the inside stays up, and only the task knows that.
-func TestRebootPassaPeloWaitTask(t *testing.T) {
-	r, seen := routerDeManutencao(t, guestDeTeste(), true)
-	w, out := chama(t, r, http.MethodPost, "/api/nodes/lxc/207/power", `{"action":"reboot"}`)
+func TestRebootGoesThroughWaitTask(t *testing.T) {
+	r, seen := maintenanceRouter(t, testGuest(), true)
+	w, out := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/power", `{"action":"reboot"}`)
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
-	usados := strings.Join(*seen, " ")
-	if !strings.Contains(usados, "pve.reboot:lxc/207") {
+	used := strings.Join(*seen, " ")
+	if !strings.Contains(used, "pve.reboot:lxc/207") {
 		t.Errorf("reboot did not reach the hypervisor: %v", *seen)
 	}
-	if !strings.Contains(usados, "pve.wait") {
+	if !strings.Contains(used, "pve.wait") {
 		t.Errorf("reboot did NOT wait for the task — a guest that ignores ACPI would be reported as rebooted: %v", *seen)
 	}
 	// Reboot uses the NODE's token, not the panel's: it is the node acting on itself.
-	if !strings.Contains(usados, "token=lab@pve!node-apps") {
+	if !strings.Contains(used, "token=lab@pve!node-apps") {
 		t.Errorf("reboot did not use the node's token: %v", *seen)
 	}
 	if out["action"] != "reboot" || out["status"] != "ok" {
@@ -290,7 +290,7 @@ func TestRebootPassaPeloWaitTask(t *testing.T) {
 	}
 }
 
-// 🔴 TestRebootForaDaAllowlistNaoDiscara — whatever is NOT one of the four
+// 🔴 TestRebootOutsideAllowlistNeverDials — whatever is NOT one of the four
 // actions never reaches the hypervisor.
 //
 // Normalisation (trim + lowercase) happens BEFORE the allowlist, and that is
@@ -299,31 +299,31 @@ func TestRebootPassaPeloWaitTask(t *testing.T) {
 // becomes nothing at all and dies. The pin asserts both halves, otherwise
 // somebody "hardens" it by removing the TrimSpace and breaks the screen without
 // gaining any security.
-func TestRebootForaDaAllowlistNaoDiscara(t *testing.T) {
+func TestRebootOutsideAllowlistNeverDials(t *testing.T) {
 	t.Run("normalization accepted, and that is on purpose", func(t *testing.T) {
-		for _, acao := range []string{"reboot", " reboot ", "REBOOT", "Reboot", "reboot\n", "\treboot"} {
-			r, seen := routerDeManutencao(t, guestDeTeste(), true)
-			corpo, _ := json.Marshal(map[string]string{"action": acao})
-			w, _ := chama(t, r, http.MethodPost, "/api/nodes/lxc/207/power", string(corpo))
+		for _, action := range []string{"reboot", " reboot ", "REBOOT", "Reboot", "reboot\n", "\treboot"} {
+			r, seen := maintenanceRouter(t, testGuest(), true)
+			body, _ := json.Marshal(map[string]string{"action": action})
+			w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/power", string(body))
 			if w.Code != 200 {
-				t.Errorf("action %q: status = %d, want 200 — normalization exists for this", acao, w.Code)
+				t.Errorf("action %q: status = %d, want 200 — normalization exists for this", action, w.Code)
 			}
 			if !strings.Contains(strings.Join(*seen, " "), "pve.reboot") {
-				t.Errorf("action %q: did not restart", acao)
+				t.Errorf("action %q: did not restart", action)
 			}
 		}
 	})
 	t.Run("the rest dies BEFORE dialing", func(t *testing.T) {
-		for _, acao := range []string{"reboot;stop", "restart", "../../status/stop", "reboot stop", ""} {
-			r, seen := routerDeManutencao(t, guestDeTeste(), true)
-			corpo, _ := json.Marshal(map[string]string{"action": acao})
-			w, _ := chama(t, r, http.MethodPost, "/api/nodes/lxc/207/power", string(corpo))
+		for _, action := range []string{"reboot;stop", "restart", "../../status/stop", "reboot stop", ""} {
+			r, seen := maintenanceRouter(t, testGuest(), true)
+			body, _ := json.Marshal(map[string]string{"action": action})
+			w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/power", string(body))
 			if w.Code != 400 {
-				t.Errorf("action %q: status = %d, want 400", acao, w.Code)
+				t.Errorf("action %q: status = %d, want 400", action, w.Code)
 			}
 			for _, c := range *seen {
 				if strings.HasPrefix(c, "pve.") {
-					t.Errorf("action %q reached the hypervisor: %v", acao, *seen)
+					t.Errorf("action %q reached the hypervisor: %v", action, *seen)
 				}
 			}
 		}
@@ -332,33 +332,33 @@ func TestRebootForaDaAllowlistNaoDiscara(t *testing.T) {
 
 // ── a NOTA: o que a caixa faz ───────────────────────────────────────────────
 
-func routerDeNota(t *testing.T, nos []inventory.Node, texto string) (*Router, *[]string) {
+func noteRouter(t *testing.T, nos []inventory.Node, text string) (*Router, *[]string) {
 	t.Helper()
 	var seen []string
-	r, _ := novoRouterDeNos(t, nos)
+	r, _ := newNodesRouter(t, nos)
 	r.nodeVaultFn = func() (nodeVault, error) {
-		return &cofreFalso{seen: &seen, dados: map[string]string{
+		return &fakeVault{seen: &seen, dados: map[string]string{
 			"pve_token_painel": "lab@pve!painel=p",
 			"pve_token_audit":  "lab@pve!audit=a",
 		}}, nil
 	}
 	r.pveDial = func(valor string) (hypervisorOps, error) {
-		return &pveFalso{seen: &seen, tokenUsado: valor, descricao: texto}, nil
+		return &fakePVE{seen: &seen, usedToken: valor, description: text}, nil
 	}
 	return r, &seen
 }
 
-// TestNotaDoGuestVemDoPVE — the note is READ from the hypervisor, never invented
+// TestGuestNoteComesFromPVE — the note is READ from the hypervisor, never invented
 // here. A second description written by the panel would become a second truth,
 // and the two would diverge on the first day somebody edited the one in Proxmox.
-func TestNotaDoGuestVemDoPVE(t *testing.T) {
-	const texto = "## apps — as aplicações\n\n**O que faz:** hoje, nada."
-	r, seen := routerDeNota(t, guestDeTeste(), texto)
-	w, out := chama(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
+func TestGuestNoteComesFromPVE(t *testing.T) {
+	const text = "## apps — as aplicações\n\n**O que faz:** hoje, nada."
+	r, seen := noteRouter(t, testGuest(), text)
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
-	if out["markdown"] != texto {
+	if out["markdown"] != text {
 		t.Errorf("markdown = %q", out["markdown"])
 	}
 	if out["origem"] != "pve-notes" {
@@ -369,11 +369,11 @@ func TestNotaDoGuestVemDoPVE(t *testing.T) {
 	}
 }
 
-// 🔴 TestNotaDoHOSTLeAConfigDoNO — the hypervisor has a note of its OWN, at
+// 🔴 TestHOSTNoteReadsNODEConfig — the hypervisor has a note of its OWN, at
 // /nodes/<node>/config. If the handler sent the host's vmid (which is 0 in the
 // inventory, but the path is a different one), it would read the config of a
 // non-existent guest and the hypervisor's screen would stay mute forever.
-func TestNotaDoHOSTLeAConfigDoNO(t *testing.T) {
+func TestHOSTNoteReadsNODEConfig(t *testing.T) {
 	// 🔴 The host is born with VMID 999 ON PURPOSE, not 0.
 	//
 	// The first version of this pin used 0 — which is what the real inventory
@@ -384,10 +384,10 @@ func TestNotaDoHOSTLeAConfigDoNO(t *testing.T) {
 	//
 	// With 999, the pin asserts what the handler really does: for the HOST it
 	// ignores the inventory's vmid and asks for the NODE's config.
-	host := noDeTeste("node/pve", "pve", 999, agoraDeTeste)
+	host := testNode("node/pve", "pve", 999, testNow)
 	host.Kind = inventory.NodeKindHost
-	r, seen := routerDeNota(t, []inventory.Node{host}, "# pve — o servidor de casa")
-	w, out := chama(t, r, http.MethodGet, "/api/nodes/node/pve/nota", "")
+	r, seen := noteRouter(t, []inventory.Node{host}, "# pve — o servidor de casa")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/node/pve/nota", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
@@ -397,23 +397,23 @@ func TestNotaDoHOSTLeAConfigDoNO(t *testing.T) {
 	// What matters is the ZERO VMID: it is what tells the client to read
 	// /nodes/<node>/config instead of /nodes/<node>/<tipo>/<vmid>/config. The
 	// type prefix is irrelevant here and pinning it would be a brittle pin.
-	usados := strings.Join(*seen, " ")
-	if !strings.Contains(usados, "/0 ") && !strings.HasSuffix(usados, "/0") {
+	used := strings.Join(*seen, " ")
+	if !strings.Contains(used, "/0 ") && !strings.HasSuffix(used, "/0") {
 		t.Errorf("did not ask for the NODE's config (vmid 0): %v", *seen)
 	}
-	if strings.Contains(usados, "/999") {
+	if strings.Contains(used, "/999") {
 		t.Errorf("🔴 asked for the config of GUEST 999 — the hypervisor is not a guest, and its note"+
 			"mora em /nodes/<node>/config: %v", *seen)
 	}
 }
 
-// 🔴 TestNotaVaziaNaoEErro — a guest with no note is a guest nobody described.
+// 🔴 TestEmptyNoteIsNotError — a guest with no note is a guest nobody described.
 // The screen needs to say where to write one, and to do that it needs to tell
 // "empty" apart from "could not be read". They are opposite problems: one asks
 // somebody to write, the other asks somebody to fix access.
-func TestNotaVaziaNaoEErro(t *testing.T) {
-	r, _ := routerDeNota(t, guestDeTeste(), "   \n  ")
-	w, out := chama(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
+func TestEmptyNoteIsNotError(t *testing.T) {
+	r, _ := noteRouter(t, testGuest(), "   \n  ")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
 	if w.Code != 200 {
 		t.Fatalf("empty note turned into an error: status = %d", w.Code)
 	}
@@ -422,15 +422,15 @@ func TestNotaVaziaNaoEErro(t *testing.T) {
 	}
 }
 
-// TestNotaDeNoEXTERNONaoProcuraNoPVE — `canario` is no hypervisor's guest.
+// TestNoteOfEXTERNALNodeSkipsPVE — `canario` is no hypervisor's guest.
 // Looking its config up on the PVE would give a 500, and the screen would show a
 // failure where what there is is an absent source.
-func TestNotaDeNoEXTERNONaoProcuraNoPVE(t *testing.T) {
-	ext := noDeTeste("canario", "canario", 0, agoraDeTeste)
+func TestNoteOfEXTERNALNodeSkipsPVE(t *testing.T) {
+	ext := testNode("canario", "canario", 0, testNow)
 	ext.Kind = "externo"
 	ext.Transport = "agente"
-	r, seen := routerDeNota(t, []inventory.Node{ext}, "nao deveria ser lida")
-	w, out := chama(t, r, http.MethodGet, "/api/nodes/canario/nota", "")
+	r, seen := noteRouter(t, []inventory.Node{ext}, "nao deveria ser lida")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/canario/nota", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
@@ -447,49 +447,49 @@ func TestNotaDeNoEXTERNONaoProcuraNoPVE(t *testing.T) {
 	}
 }
 
-// TestNotaDeNoQueSumiuDoHipervisor — the inventory lists the node for one more
+// TestNoteOfNodeGoneFromHypervisor — the inventory lists the node for one more
 // cycle after it is deleted. Passing the PVE's 500 straight through hands the
 // operator a Perl message about a file path; what they need to know is that the
 // box does not exist any more. Found by the live proof, with the clone from the
 // previous proof.
-func TestNotaDeNoQueSumiuDoHipervisor(t *testing.T) {
-	r, _ := routerDeNota(t, guestDeTeste(), "")
+func TestNoteOfNodeGoneFromHypervisor(t *testing.T) {
+	r, _ := noteRouter(t, testGuest(), "")
 	r.pveDial = func(valor string) (hypervisorOps, error) {
-		return &pveFalso{erroVerbo: errors.New(
+		return &fakePVE{verbErr: errors.New(
 			"pve /api2/json/nodes/pve/lxc/207/config: erro_hipervisor (500) " +
 				`{"data":null,"message":"Configuration file 'nodes/pve/lxc/207.conf' does not exist\n"}`)}, nil
 	}
-	w, out := chama(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
 	if out["origem"] != "inexistente" {
 		t.Errorf("origem = %v, want \"inexistente\"", out["origem"])
 	}
-	motivo, _ := out["motivo"].(string)
-	if !strings.Contains(motivo, "no longer exists") {
-		t.Errorf("motivo = %q — does not say what happened", motivo)
+	reason, _ := out["motivo"].(string)
+	if !strings.Contains(reason, "no longer exists") {
+		t.Errorf("motivo = %q — does not say what happened", reason)
 	}
-	if strings.Contains(motivo, "Configuration file") || strings.Contains(motivo, ".conf") {
-		t.Errorf("🔴 the Perl message leaked to the screen: %q", motivo)
+	if strings.Contains(reason, "Configuration file") || strings.Contains(reason, ".conf") {
+		t.Errorf("🔴 the Perl message leaked to the screen: %q", reason)
 	}
 }
 
 // 🔴 THE NEGATIVE CONTROL: a hypervisor that is down must NOT turn into "it is
 // gone". They are opposite problems — one asks somebody to take the node off the
 // list, the other asks for help. Confusing them is worse than saying nothing.
-func TestNotaComHipervisorForaDoArContinuaSendoErro(t *testing.T) {
-	r, _ := routerDeNota(t, guestDeTeste(), "")
+func TestNoteWithHypervisorDownIsStillError(t *testing.T) {
+	r, _ := noteRouter(t, testGuest(), "")
 	r.pveDial = func(valor string) (hypervisorOps, error) {
-		return &pveFalso{erroVerbo: errors.New("pve: dial tcp 198.51.100.20:8006: i/o timeout")}, nil
+		return &fakePVE{verbErr: errors.New("pve: dial tcp 198.51.100.20:8006: i/o timeout")}, nil
 	}
-	w, out := chama(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
 	if w.Code == 200 {
 		t.Fatalf("unreachable hypervisor responded 200 with origem=%v — failure turned into 'vanished'", out["origem"])
 	}
 }
 
-// 🔴 TestGravarNotaUsaACredencialDeESCRITA — reading and writing the note use
+// 🔴 TestWriteNoteUsesWRITECredential — reading and writing the note use
 // DIFFERENT credentials, and the pin exists so nobody "simplifies" that away.
 //
 // Reading is auditing and goes through the read credential. Writing changes the
@@ -497,19 +497,19 @@ func TestNotaComHipervisorForaDoArContinuaSendoErro(t *testing.T) {
 // the write credential to read would give the screen's most common path a
 // privilege it does not need — and an unnecessary privilege is a privilege used
 // by mistake one day.
-func TestGravarNotaUsaACredencialDeESCRITA(t *testing.T) {
-	const texto = "## apps\n\n**O que faz:** serve as aplicações."
-	r, seen := routerDeNota(t, guestDeTeste(), "")
-	corpo, _ := json.Marshal(map[string]string{"markdown": texto})
-	w, out := chama(t, r, http.MethodPut, "/api/nodes/lxc/207/nota", string(corpo))
+func TestWriteNoteUsesWRITECredential(t *testing.T) {
+	const text = "## apps\n\n**O que faz:** serve as aplicações."
+	r, seen := noteRouter(t, testGuest(), "")
+	body, _ := json.Marshal(map[string]string{"markdown": text})
+	w, out := callAPI(t, r, http.MethodPut, "/api/nodes/lxc/207/nota", string(body))
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
-	usados := strings.Join(*seen, " ")
-	if !strings.Contains(usados, "pve.set-descricao:lxc/207") {
+	used := strings.Join(*seen, " ")
+	if !strings.Contains(used, "pve.set-descricao:lxc/207") {
 		t.Errorf("did not write: %v", *seen)
 	}
-	if !strings.Contains(usados, "token=lab@pve!painel") {
+	if !strings.Contains(used, "token=lab@pve!painel") {
 		t.Errorf("wrote with the wrong credential: %v", *seen)
 	}
 	if out["origem"] != "pve-notes" {
@@ -520,7 +520,7 @@ func TestGravarNotaUsaACredencialDeESCRITA(t *testing.T) {
 	// PANEL TOKEN.
 	//
 	// The first version of this pin claimed that READING never uses the panel's
-	// credential — and it failed, rightly: `segredoDeLeituraDoHipervisor()`
+	// credential — and it failed, rightly: `hypervisorReadSecret()`
 	// PREFERS the panel token when it exists in the vault. In this house, today,
 	// reading and writing use the same token, and claiming otherwise was
 	// describing a design that does not exist.
@@ -530,17 +530,17 @@ func TestGravarNotaUsaACredencialDeESCRITA(t *testing.T) {
 	// the audit one) and WRITING refuses, saying which key is missing. A screen
 	// that loses the node's explanation along with permission to edit would be
 	// worse than one that loses only the editing.
-	r2, seen2 := routerDeNota(t, guestDeTeste(), texto)
+	r2, seen2 := noteRouter(t, testGuest(), text)
 	r2.nodeVaultFn = func() (nodeVault, error) {
-		return &cofreFalso{seen: seen2, dados: map[string]string{"pve_token_audit": "lab@pve!audit=a"}}, nil
+		return &fakeVault{seen: seen2, dados: map[string]string{"pve_token_audit": "lab@pve!audit=a"}}, nil
 	}
-	if w, out := chama(t, r2, http.MethodGet, "/api/nodes/lxc/207/nota", ""); w.Code != 200 || out["markdown"] != texto {
+	if w, out := callAPI(t, r2, http.MethodGet, "/api/nodes/lxc/207/nota", ""); w.Code != 200 || out["markdown"] != text {
 		t.Errorf("without the panel token, READING stopped working: %d %s", w.Code, w.Body)
 	}
 	if !strings.Contains(strings.Join(*seen2, " "), "token=lab@pve!audit") {
 		t.Errorf("READING did not fall back to the audit credential: %v", *seen2)
 	}
-	w2, _ := chama(t, r2, http.MethodPut, "/api/nodes/lxc/207/nota", string(corpo))
+	w2, _ := callAPI(t, r2, http.MethodPut, "/api/nodes/lxc/207/nota", string(body))
 	if w2.Code != 409 {
 		t.Errorf("without the panel token, WRITING returned %d — want 409", w2.Code)
 	}
@@ -549,13 +549,13 @@ func TestGravarNotaUsaACredencialDeESCRITA(t *testing.T) {
 	}
 }
 
-// TestGravarNotaRecusaTextoGigante — a note is for READING. The cap refuses
+// TestWriteNoteRejectsHugeText — a note is for READING. The cap refuses
 // HERE, in the operator's own language, instead of shipping the text to the
 // hypervisor and translating its refusal afterwards.
-func TestGravarNotaRecusaTextoGigante(t *testing.T) {
-	r, seen := routerDeNota(t, guestDeTeste(), "")
-	corpo, _ := json.Marshal(map[string]string{"markdown": strings.Repeat("a", pve.TamanhoMaximoDaNota+1)})
-	w, _ := chama(t, r, http.MethodPut, "/api/nodes/lxc/207/nota", string(corpo))
+func TestWriteNoteRejectsHugeText(t *testing.T) {
+	r, seen := noteRouter(t, testGuest(), "")
+	body, _ := json.Marshal(map[string]string{"markdown": strings.Repeat("a", pve.MaxNoteSize+1)})
+	w, _ := callAPI(t, r, http.MethodPut, "/api/nodes/lxc/207/nota", string(body))
 	if w.Code != 400 {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
@@ -566,31 +566,31 @@ func TestGravarNotaRecusaTextoGigante(t *testing.T) {
 	}
 }
 
-// 🔴 TestTrilhaDaNotaNaoGuardaOCONTEUDO — the note describes the house:
+// 🔴 TestNoteTrailOmitsCONTENT — the note describes the house:
 // addresses, what each box holds, what happens if it falls over. The audit trail
 // is read by more people and kept for longer than the note itself. It records
 // the SIZE and the TARGET; the content stays where it lives.
-func TestTrilhaDaNotaNaoGuardaOCONTEUDO(t *testing.T) {
-	const segredo = "o cofre fica atras do quadro na sala"
-	r, _ := routerDeNota(t, guestDeTeste(), "")
+func TestNoteTrailOmitsCONTENT(t *testing.T) {
+	const secret = "o cofre fica atras do quadro na sala"
+	r, _ := noteRouter(t, testGuest(), "")
 	al, err := auth.NewAuditLog(filepath.Join(t.TempDir(), "audit.log"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	r.audit = al
-	corpo, _ := json.Marshal(map[string]string{"markdown": "## x\n\n" + segredo})
-	if w, _ := chama(t, r, http.MethodPut, "/api/nodes/lxc/207/nota", string(corpo)); w.Code != 200 {
+	body, _ := json.Marshal(map[string]string{"markdown": "## x\n\n" + secret})
+	if w, _ := callAPI(t, r, http.MethodPut, "/api/nodes/lxc/207/nota", string(body)); w.Code != 200 {
 		t.Fatalf("status = %d", w.Code)
 	}
-	var linhas []string
+	var lines []string
 	for _, e := range al.Tail(50) {
-		linhas = append(linhas, e.Action+" "+e.Target)
+		lines = append(lines, e.Action+" "+e.Target)
 	}
-	junto := strings.Join(linhas, " | ")
-	if strings.Contains(junto, segredo) {
-		t.Errorf("🔴 the note's content leaked into the trail: %s", junto)
+	joined := strings.Join(lines, " | ")
+	if strings.Contains(joined, secret) {
+		t.Errorf("🔴 the note's content leaked into the trail: %s", joined)
 	}
-	if !strings.Contains(junto, "pve.nota") || !strings.Contains(junto, "bytes=") {
-		t.Errorf("the trail did not record the write: %s", junto)
+	if !strings.Contains(joined, "pve.nota") || !strings.Contains(joined, "bytes=") {
+		t.Errorf("the trail did not record the write: %s", joined)
 	}
 }

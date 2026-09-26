@@ -54,11 +54,11 @@ type CatalogEntry struct {
 // RegisterCatalog panics on a group outside this list, which turns a typo
 // into a boot failure instead of an orphan group with one screen inside it.
 const (
-	GroupDocker      = "Docker"
-	GroupSistema     = "System"
-	GroupSeguranca   = "Security"
-	GroupAutomacao   = "Automation"
-	GroupIntegracoes = "Integrations"
+	GroupDocker       = "Docker"
+	GroupSystem       = "System"
+	GroupSecurity     = "Security"
+	GroupAutomation   = "Automation"
+	GroupIntegrations = "Integrations"
 )
 
 // catalogGroupOrder is the ORDER in which the groups appear in the picker,
@@ -68,10 +68,10 @@ const (
 // rarely.
 var catalogGroupOrder = []string{
 	GroupDocker,
-	GroupSistema,
-	GroupSeguranca,
-	GroupAutomacao,
-	GroupIntegracoes,
+	GroupSystem,
+	GroupSecurity,
+	GroupAutomation,
+	GroupIntegrations,
 }
 
 // catalogRegistration is an entry plus the predicate that decides whether it

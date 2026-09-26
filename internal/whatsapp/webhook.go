@@ -42,14 +42,14 @@ func (s *Service) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.hmacAtual() != "" {
+	if s.currentHMAC() != "" {
 		got := r.Header.Get("X-Webhook-Hmac")
 		if got == "" {
 			s.markHookErr("missing X-Webhook-Hmac")
 			http.Error(w, "missing hmac", http.StatusUnauthorized)
 			return
 		}
-		if !s.hmacConfere(body, got) {
+		if !s.hmacMatches(body, got) {
 			s.markHookErr("hmac mismatch")
 			http.Error(w, "bad hmac", http.StatusUnauthorized)
 			return
@@ -511,7 +511,7 @@ func AckLabel(a int) string {
 	}
 }
 
-// hmacConfere validates the signature against the in-memory secret and, if
+// hmacMatches validates the signature against the in-memory secret and, if
 // that fails, RE-READS the secret from the source (the vault) and tries again
 // before refusing.
 //
@@ -525,39 +525,39 @@ func AckLabel(a int) string {
 // closes on both sides.
 //
 // Zero cost on the happy path: the reload only runs when the comparison fails.
-func (s *Service) hmacConfere(body []byte, got string) bool {
-	atual := s.hmacAtual()
-	if hmacBate(atual, body, got) {
+func (s *Service) hmacMatches(body []byte, got string) bool {
+	current := s.currentHMAC()
+	if hmacBate(current, body, got) {
 		return true
 	}
 	if s.HMACRefresh == nil {
 		return false
 	}
-	novo := s.HMACRefresh()
-	if novo == "" || novo == atual {
+	fresh := s.HMACRefresh()
+	if fresh == "" || fresh == current {
 		return false
 	}
-	if !hmacBate(novo, body, got) {
+	if !hmacBate(fresh, body, got) {
 		return false
 	}
 	log.Printf("whatsapp webhook: secret reloaded from the vault (the cached one was stale) — event accepted instead of dropped")
-	s.hmacTroca(novo)
+	s.hmacRotate(fresh)
 	return true
 }
 
-// hmacAtual returns the secret in use, under a read lock. It is the ONLY way
+// currentHMAC returns the secret in use, under a read lock. It is the ONLY way
 // to read the field — see the comment on Service.hmacSecret.
-func (s *Service) hmacAtual() string {
+func (s *Service) currentHMAC() string {
 	s.hmacMu.RLock()
 	defer s.hmacMu.RUnlock()
 	return s.hmacSecret
 }
 
-// hmacTroca adopts the secret reloaded from the vault, under a write lock.
-func (s *Service) hmacTroca(novo string) {
+// hmacRotate adopts the secret reloaded from the vault, under a write lock.
+func (s *Service) hmacRotate(fresh string) {
 	s.hmacMu.Lock()
 	defer s.hmacMu.Unlock()
-	s.hmacSecret = novo
+	s.hmacSecret = fresh
 }
 
 func hmacBate(secret string, body []byte, got string) bool {

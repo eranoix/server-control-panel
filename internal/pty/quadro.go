@@ -45,10 +45,10 @@ import (
 	"server-control-panel/internal/pty/vt10x"
 )
 
-// quadroDoCliente holds what this client already has on screen and composes what
+// clientFrame holds what this client already has on screen and composes what
 // is missing. It is not thread-safe: each connection has its own, and only the
 // goroutine serving that connection touches it.
-type quadroDoCliente struct {
+type clientFrame struct {
 	cols, rows int
 	// desloc: which SESSION column the crop starts at. It exists so a person can
 	// reach what is to the right in a window narrower than the session; without
@@ -56,59 +56,59 @@ type quadroDoCliente struct {
 	desloc int
 	// ancora: the first SESSION line visible in this window. It persists between
 	// frames — see the block in [atualiza].
-	ancora int
+	anchor int
 	// base: the lines the client already has, serialised and cropped. nil means
 	// "I do not know what it has" — and then the line is sent.
 	base [][]byte
 	// primeiro: nothing has been sent yet, so the whole frame goes out.
-	primeiro bool
+	first bool
 }
 
-func novoQuadroDoCliente(cols, rows int) *quadroDoCliente {
-	return &quadroDoCliente{cols: cols, rows: rows, primeiro: true}
+func newClientFrame(cols, rows int) *clientFrame {
+	return &clientFrame{cols: cols, rows: rows, first: true}
 }
 
 // redimensiona adjusts the client's window. It discards what we knew: the
 // coordinates have changed, and sending a diff against a base of another size
 // would write a line in the wrong place.
-func (q *quadroDoCliente) redimensiona(cols, rows int) {
+func (q *clientFrame) resize(cols, rows int) {
 	if cols == q.cols && rows == q.rows {
 		return
 	}
 	q.cols, q.rows = cols, rows
 	q.base = nil
-	q.primeiro = true
+	q.first = true
 }
 
 // desloca pans the crop horizontally, clamped to the session's bounds.
-func (q *quadroDoCliente) desloca(para, colsDaSessao int) {
-	if para < 0 {
-		para = 0
+func (q *clientFrame) shift(stop, sessionCols int) {
+	if stop < 0 {
+		stop = 0
 	}
-	if max := colsDaSessao - q.cols; para > max {
+	if max := sessionCols - q.cols; stop > max {
 		if max < 0 {
 			max = 0
 		}
-		para = max
+		stop = max
 	}
-	if para == q.desloc {
+	if stop == q.desloc {
 		return
 	}
-	q.desloc = para
+	q.desloc = stop
 	q.base = nil
-	q.primeiro = true
+	q.first = true
 }
 
 // rolou composes a scroll of k lines: it tells the client's terminal to scroll
 // (its content goes into ITS own scrollback) and shifts the base by as much.
-func (q *quadroDoCliente) rolou(k int) []byte {
-	if k <= 0 || q.primeiro {
+func (q *clientFrame) scrolled(k int) []byte {
+	if k <= 0 || q.first {
 		return nil // on the first frame there is nothing to scroll: it comes whole
 	}
 	if k >= q.rows {
 		// It scrolled further than the screen: nothing it had still holds.
 		q.base = nil
-		q.primeiro = true
+		q.first = true
 		return nil
 	}
 	var buf bytes.Buffer
@@ -135,18 +135,18 @@ func (q *quadroDoCliente) rolou(k int) []byte {
 
 // atualiza composes the difference between the session's screen and what the
 // client has. Returns nil when there is nothing to send.
-func (q *quadroDoCliente) atualiza(tela [][]vt10x.Glyph, cur vt10x.Cursor, cursorVisivel bool) []byte {
+func (q *clientFrame) update(screen [][]vt10x.Glyph, cur vt10x.Cursor, cursorVisible bool) []byte {
 	if q.cols < 2 || q.rows < 1 {
 		return nil
 	}
 	var buf bytes.Buffer
-	if q.primeiro {
+	if q.first {
 		// The whole frame: clear and paint. It is the only moment when erasing the
 		// client's screen is correct — it has just entered frame mode and whatever
 		// was there corresponds to nothing.
 		buf.WriteString("\x1b[H\x1b[2J")
 		q.base = make([][]byte, q.rows)
-		q.primeiro = false
+		q.first = false
 	}
 	// ── THE VERTICAL CROP FOLLOWS THE CURSOR ─────────────────────────────
 	//
@@ -163,41 +163,41 @@ func (q *quadroDoCliente) atualiza(tela [][]vt10x.Glyph, cur vt10x.Cursor, curso
 	// working, by definition. The anchor only moves when the cursor would leave the
 	// visible band — keeping it still is what avoids repainting the whole screen
 	// on every new line.
-	if cur.Y < q.ancora {
-		q.ancora = cur.Y
+	if cur.Y < q.anchor {
+		q.anchor = cur.Y
 	}
-	if cur.Y >= q.ancora+q.rows {
-		q.ancora = cur.Y - q.rows + 1
+	if cur.Y >= q.anchor+q.rows {
+		q.anchor = cur.Y - q.rows + 1
 	}
-	if limite := len(tela) - q.rows; q.ancora > limite {
-		q.ancora = limite
+	if limit := len(screen) - q.rows; q.anchor > limit {
+		q.anchor = limit
 	}
-	if q.ancora < 0 {
-		q.ancora = 0
+	if q.anchor < 0 {
+		q.anchor = 0
 	}
-	topo := q.ancora
+	top := q.anchor
 	for y := 0; y < q.rows; y++ {
-		var linha []byte
-		if origem := topo + y; origem < len(tela) {
-			linha = vt10x.EmBytesRecorte(tela[origem], q.desloc, q.cols)
+		var line []byte
+		if origin := top + y; origin < len(screen) {
+			line = vt10x.CropToBytes(screen[origin], q.desloc, q.cols)
 		}
-		if y < len(q.base) && q.base[y] != nil && bytes.Equal(q.base[y], linha) {
+		if y < len(q.base) && q.base[y] != nil && bytes.Equal(q.base[y], line) {
 			continue // the client already has this line
 		}
 		buf.WriteString("\x1b[")
 		buf.WriteString(strconv.Itoa(y + 1))
 		buf.WriteString(";1H")
-		buf.Write(linha)
+		buf.Write(line)
 		buf.WriteString("\x1b[K") // erases the tail of the old line
 		if y < len(q.base) {
-			q.base[y] = append([]byte(nil), linha...)
+			q.base[y] = append([]byte(nil), line...)
 		}
 	}
 	if buf.Len() == 0 {
 		return nil
 	}
 	// The cursor last, otherwise it stays where the final line ended.
-	l := cur.Y - topo + 1
+	l := cur.Y - top + 1
 	c := cur.X - q.desloc + 1
 	if l > q.rows {
 		l = q.rows
@@ -213,7 +213,7 @@ func (q *quadroDoCliente) atualiza(tela [][]vt10x.Glyph, cur vt10x.Cursor, curso
 	buf.WriteString(";")
 	buf.WriteString(strconv.Itoa(c))
 	buf.WriteString("H")
-	if cursorVisivel {
+	if cursorVisible {
 		buf.WriteString("\x1b[?25h")
 	} else {
 		buf.WriteString("\x1b[?25l")

@@ -12,13 +12,13 @@ import (
 // the absolute ceiling comes from. If `ini` were reset on every renewal, the ceiling
 // would cease to exist with nothing visibly breaking — which is why the guarantee is
 // asserted here.
-func servico(t *testing.T) *Service {
+func service(t *testing.T) *Service {
 	t.Helper()
 	return New("segredo-de-teste-com-tamanho-suficiente-1234", nil)
 }
 
-func TestRenovarPreservaOInstanteDoLogin(t *testing.T) {
-	s := servico(t)
+func TestRenewPreservesLoginInstant(t *testing.T) {
+	s := service(t)
 	login := time.Now().Add(-3 * time.Hour)
 
 	tok, err := s.IssueRecoveryTokenFrom("sam", 30*time.Minute, login)
@@ -27,32 +27,32 @@ func TestRenovarPreservaOInstanteDoLogin(t *testing.T) {
 	}
 	// Renew twice, as would happen over a long working session.
 	for i := 0; i < 2; i++ {
-		inicio, err := s.RecoveryTokenStart(tok)
+		start, err := s.RecoveryTokenStart(tok)
 		if err != nil {
 			t.Fatalf("read start: %v", err)
 		}
-		tok, err = s.IssueRecoveryTokenFrom("sam", 30*time.Minute, inicio)
+		tok, err = s.IssueRecoveryTokenFrom("sam", 30*time.Minute, start)
 		if err != nil {
 			t.Fatalf("renovar: %v", err)
 		}
 	}
 
-	inicio, err := s.RecoveryTokenStart(tok)
+	start, err := s.RecoveryTokenStart(tok)
 	if err != nil {
 		t.Fatalf("read start after renewals: %v", err)
 	}
-	if delta := inicio.Sub(login); delta > time.Second || delta < -time.Second {
+	if delta := start.Sub(login); delta > time.Second || delta < -time.Second {
 		t.Errorf("the login instant moved %v across renewals — the absolute ceiling would cease to exist", delta)
 	}
-	if time.Since(inicio) < 3*time.Hour {
-		t.Errorf("the session appears to be %v old; it should keep the 3h since login", time.Since(inicio))
+	if time.Since(start) < 3*time.Hour {
+		t.Errorf("the session appears to be %v old; it should keep the 3h since login", time.Since(start))
 	}
 }
 
 // A renewed token is still a recovery token and still belongs to the same user —
 // no escalating the kind or changing owner along the way.
-func TestTokenRenovadoContinuaSendoDeRecuperacao(t *testing.T) {
-	s := servico(t)
+func TestRenewedTokenStaysRecovery(t *testing.T) {
+	s := service(t)
 	tok, err := s.IssueRecoveryTokenFrom("sam", 30*time.Minute, time.Now())
 	if err != nil {
 		t.Fatalf("emitir: %v", err)
@@ -72,25 +72,25 @@ func TestTokenRenovadoContinuaSendoDeRecuperacao(t *testing.T) {
 // stay renewable, using `iat` (which, for them, is the same instant) —
 // otherwise a deploy would disconnect everyone who was in the middle of a
 // repair, which is exactly what this work is meant to avoid.
-func TestTokenAntigoSemInicioAindaFunciona(t *testing.T) {
-	s := servico(t)
+func TestOldTokenWithoutStartStillWorks(t *testing.T) {
+	s := service(t)
 	tok, err := s.IssueRecoveryToken("sam", 30*time.Minute)
 	if err != nil {
 		t.Fatalf("emitir: %v", err)
 	}
-	inicio, err := s.RecoveryTokenStart(tok)
+	start, err := s.RecoveryTokenStart(tok)
 	if err != nil {
 		t.Fatalf("token without `ini` should fall back to `iat`: %v", err)
 	}
-	if time.Since(inicio) > time.Minute {
-		t.Errorf("start read wrong: %v ago", time.Since(inicio))
+	if time.Since(start) > time.Minute {
+		t.Errorf("start read wrong: %v ago", time.Since(start))
 	}
 }
 
 // An expired token does not renew: renewal extends what is ALIVE, it does not
 // resurrect what already died.
-func TestTokenExpiradoNaoServeParaRenovar(t *testing.T) {
-	s := servico(t)
+func TestExpiredTokenCannotRenew(t *testing.T) {
+	s := service(t)
 	tok, err := s.IssueRecoveryTokenFrom("sam", -time.Minute, time.Now().Add(-time.Hour))
 	if err != nil {
 		t.Fatalf("emitir: %v", err)

@@ -44,14 +44,14 @@ import (
 // route needs it.
 // ────────────────────────────────────────────────────────────────────────────
 
-const cloneOrigemLive = "lxc/203" // `edge`: the smallest CT, ~430 MB used
+const cloneSourceLive = "lxc/203" // `edge`: the smallest CT, ~430 MB used
 
-func TestLiveManutencao(t *testing.T) {
+func TestLiveMaintenance(t *testing.T) {
 	if os.Getenv("LAB_MNT_LIVE") != "1" {
 		t.Skip("🔴 live maintenance proof disabled — run with LAB_MNT_LIVE=1 (it CLONES and DELETES a real guest)")
 	}
 	t0 := time.Now().UTC()
-	r, cancel := routerVivo(t)
+	r, cancel := liveRouter(t)
 	defer cancel()
 
 	// ── 1. the hypervisor DECLARES the reboot verb ───────────────────────
@@ -60,9 +60,9 @@ func TestLiveManutencao(t *testing.T) {
 	// nobody authorized. What can be proved without that — and it is what differs
 	// between "reboot" and "stop" — is that the route EXISTS on the hypervisor. The
 	// rest (the dashboard route, the allowlist and WaitTask) has a unit pin.
-	valor, estado := r.tokenDoCofre(pveSecretPainel)
-	if estado != vaultOK {
-		t.Fatalf("panel token: %s — without it nothing in this batch works", estado)
+	valor, state := r.vaultToken(pveSecretPanel)
+	if state != vaultOK {
+		t.Fatalf("panel token: %s — without it nothing in this batch works", state)
 	}
 	cfg := *r.pveConfig
 	cfg.TokenID = valor
@@ -73,16 +73,16 @@ func TestLiveManutencao(t *testing.T) {
 	ctx := context.Background()
 
 	// ── 2. GET /clone: the id comes from the hypervisor ──────────────────
-	w, out := chama(t, r, http.MethodGet, "/api/nodes/"+cloneOrigemLive+"/clone", "")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/"+cloneSourceLive+"/clone", "")
 	if w.Code != 200 {
 		t.Fatalf("GET clone = %d: %s", w.Code, w.Body)
 	}
-	novoID := int(out["next_id"].(float64))
-	if novoID <= 0 {
+	newID := int(out["next_id"].(float64))
+	if newID <= 0 {
 		t.Fatalf("next_id = %v — the hypervisor did not say which id is free", out["next_id"])
 	}
 	sug, _ := out["sugestao"].(string)
-	t.Logf("hypervisor says %d is free; suggested name %q", novoID, sug)
+	t.Logf("hypervisor says %d is free; suggested name %q", newID, sug)
 
 	// Guard: the id has to be NEW. Cloning over an existing guest is this route's
 	// nightmare, and the check is cheap.
@@ -91,27 +91,27 @@ func TestLiveManutencao(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, n := range inv.Nodes {
-		if n.VMID == novoID {
-			t.Fatalf("🔴 /cluster/nextid returned %d, which is ALREADY node %s — aborting before cloning", novoID, n.ID)
+		if n.VMID == newID {
+			t.Fatalf("🔴 /cluster/nextid returned %d, which is ALREADY node %s — aborting before cloning", newID, n.ID)
 		}
 	}
 
 	// ── 3. POST /clone: the real clone ───────────────────────────────────
-	defer destroiGuestDeTeste(t, cfg, novoID)
+	defer destroyTestGuest(t, cfg, newID)
 
 	// 🔴 A RUNNING CONTAINER ONLY CLONES FROM A SNAPSHOT — and it was THIS test
 	// that discovered it, on its very first run, with the hypervisor refusing the
 	// clone. No grep of this machine's PVE source shows the rule.
-	precisaSnap, _ := out["precisa_snapshot"].(bool)
-	snapDaProva := ""
-	if precisaSnap {
-		snapDaProva = "prova-clone-base"
-		corpoSnap, _ := json.Marshal(map[string]any{"nome": snapDaProva})
-		ws, _ := chama(t, r, http.MethodPost, "/api/nodes/"+cloneOrigemLive+"/snapshot", string(corpoSnap))
+	needsSnap, _ := out["precisa_snapshot"].(bool)
+	probeSnap := ""
+	if needsSnap {
+		probeSnap = "prova-clone-base"
+		snapBody, _ := json.Marshal(map[string]any{"nome": probeSnap})
+		ws, _ := callAPI(t, r, http.MethodPost, "/api/nodes/"+cloneSourceLive+"/snapshot", string(snapBody))
 		if ws.Code != 200 {
 			// No snapshot route around here, so create it through the client
 			// directly: what this test measures is the CLONE, and the snapshot is only the step up to it.
-			upidSnap, err := cli.SnapshotCreate(ctx, "pve", 203, "lxc", snapDaProva, "prova viva de clone")
+			upidSnap, err := cli.SnapshotCreate(ctx, "pve", 203, "lxc", probeSnap, "prova viva de clone")
 			if err != nil {
 				t.Fatalf("could not create the source snapshot: %v", err)
 			}
@@ -120,20 +120,20 @@ func TestLiveManutencao(t *testing.T) {
 			}
 		}
 		defer func() {
-			upid, err := cli.SnapshotDelete(context.Background(), "pve", 203, "lxc", snapDaProva)
+			upid, err := cli.SnapshotDelete(context.Background(), "pve", 203, "lxc", probeSnap)
 			if err != nil {
-				t.Errorf("🔴 CLEANUP: snapshot %q was left on the source guest: %v", snapDaProva, err)
+				t.Errorf("🔴 CLEANUP: snapshot %q was left on the source guest: %v", probeSnap, err)
 				return
 			}
 			_ = cli.WaitTask(context.Background(), "pve", upid)
-			t.Logf("cleanup: snapshot %q deleted from the source", snapDaProva)
+			t.Logf("cleanup: snapshot %q deleted from the source", probeSnap)
 		}()
-		t.Logf("container powered on — cloning from snapshot %q", snapDaProva)
+		t.Logf("container powered on — cloning from snapshot %q", probeSnap)
 	}
 
 	nome := "prova-clone"
-	corpo, _ := json.Marshal(map[string]any{"novo_id": novoID, "nome": nome, "snapshot": snapDaProva})
-	w, out = chama(t, r, http.MethodPost, "/api/nodes/"+cloneOrigemLive+"/clone", string(corpo))
+	body, _ := json.Marshal(map[string]any{"novo_id": newID, "nome": nome, "snapshot": probeSnap})
+	w, out = callAPI(t, r, http.MethodPost, "/api/nodes/"+cloneSourceLive+"/clone", string(body))
 	if w.Code != 200 {
 		t.Fatalf("POST clone = %d: %s", w.Code, w.Body)
 	}
@@ -144,7 +144,7 @@ func TestLiveManutencao(t *testing.T) {
 	if upid == "" {
 		t.Fatal("clone without UPID — without it the operator cannot track anything")
 	}
-	t.Logf("clone %d requested, task %s", novoID, upid)
+	t.Logf("clone %d requested, task %s", newID, upid)
 
 	// The route does not wait — the TEST waits, because it needs the result.
 	ctxClone, cancelClone := context.WithTimeout(ctx, 10*time.Minute)
@@ -153,8 +153,8 @@ func TestLiveManutencao(t *testing.T) {
 		// `WARNINGS: n` is success with a message — it was THIS test that forced
 		// the distinction to exist (the clone ended in WARNINGS: 1 with the warning
 		// "Systemd 257 detected. You may need to enable nesting.").
-		av, temAviso := pve.TarefaComAvisos(err)
-		if !temAviso {
+		av, hasWarning := pve.AsTaskWarning(err)
+		if !hasWarning {
 			t.Fatalf("the clone task did not finish cleanly: %v", err)
 		}
 		t.Logf("clone completed WITH warnings from the hypervisor: %s", av.Exit)
@@ -164,9 +164,9 @@ func TestLiveManutencao(t *testing.T) {
 	//
 	// 🔴 This is the step that catches the silent `hostname` vs `name` defect:
 	// sending the wrong parameter raises no error, the clone is just born nameless.
-	rec, err := recursoDoPVE(cfg, novoID)
+	rec, err := pveResourceOf(cfg, newID)
 	if err != nil {
-		t.Fatalf("clone %d did not appear on the hypervisor: %v", novoID, err)
+		t.Fatalf("clone %d did not appear on the hypervisor: %v", newID, err)
 	}
 	if rec.Name != nome {
 		t.Errorf("🔴 clone was born with name %q, I asked for %q — this is the swapped-by-type parameter bug", rec.Name, nome)
@@ -174,29 +174,29 @@ func TestLiveManutencao(t *testing.T) {
 	if rec.Status == "running" {
 		t.Errorf("🔴 the clone was born POWERED ON — it has the source's fixed IP and would bring down its network")
 	}
-	t.Logf("live clone: id=%d name=%q status=%s", novoID, rec.Name, rec.Status)
+	t.Logf("live clone: id=%d name=%q status=%s", newID, rec.Name, rec.Status)
 
 	// ── 5. back up NOW, for real ─────────────────────────────────────────
 	//
 	// Done on the CLONE, not on the source: the production guest does not need to
 	// take part in the test, and the result is the same — what is being proved is
 	// VM.Backup + Datastore.AllocateSpace + the route.
-	destino := ""
-	for _, p := range storagesQueAceitamBackup(t, cfg) {
-		destino = p
+	dest := ""
+	for _, p := range backupStorages(t, cfg) {
+		dest = p
 		break
 	}
-	if destino == "" {
+	if dest == "" {
 		t.Fatal("no storage accepts backup — the proof has nowhere to send it")
 	}
-	corpo, _ = json.Marshal(map[string]any{"storage": destino, "modo": "stop"})
-	w, out = chama(t, r, http.MethodPost, "/api/nodes/lxc/"+strconv.Itoa(novoID)+"/backup", string(corpo))
+	body, _ = json.Marshal(map[string]any{"storage": dest, "modo": "stop"})
+	w, out = callAPI(t, r, http.MethodPost, "/api/nodes/lxc/"+strconv.Itoa(newID)+"/backup", string(body))
 	if w.Code == 404 {
 		// The inventory only learns about the clone on the next cycle. That is not a
 		// defect in the route: it is the poller not having seen the new guest yet.
 		t.Logf("the inventory has not seen the clone yet (expected right after creation) — backup proven against the source")
-		corpo, _ = json.Marshal(map[string]any{"storage": destino, "modo": "snapshot"})
-		w, out = chama(t, r, http.MethodPost, "/api/nodes/"+cloneOrigemLive+"/backup", string(corpo))
+		body, _ = json.Marshal(map[string]any{"storage": dest, "modo": "snapshot"})
+		w, out = callAPI(t, r, http.MethodPost, "/api/nodes/"+cloneSourceLive+"/backup", string(body))
 	}
 	if w.Code != 200 {
 		t.Fatalf("POST backup = %d: %s", w.Code, w.Body)
@@ -208,17 +208,17 @@ func TestLiveManutencao(t *testing.T) {
 	if upidBkp == "" {
 		t.Fatal("backup without UPID")
 	}
-	t.Logf("copy requested at %s, task %s", destino, upidBkp)
+	t.Logf("copy requested at %s, task %s", dest, upidBkp)
 	ctxBkp, cancelBkp := context.WithTimeout(ctx, 20*time.Minute)
 	defer cancelBkp()
 	if err := cli.WaitTask(ctxBkp, "pve", upidBkp); err != nil {
-		av, temAviso := pve.TarefaComAvisos(err)
-		if !temAviso {
+		av, hasWarning := pve.AsTaskWarning(err)
+		if !hasWarning {
 			t.Fatalf("the backup task did not finish cleanly: %v", err)
 		}
 		t.Logf("copy completed WITH warnings: %s", av.Exit)
 	}
-	t.Logf("copy successfully stored at %s", destino)
+	t.Logf("copy successfully stored at %s", dest)
 
 	t.Logf("[t0=%s t1=%s] live maintenance proof window",
 		t0.Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339))
@@ -232,19 +232,19 @@ func TestLiveManutencao(t *testing.T) {
 // dashboard route needs — and a destructive primitive that exists is a
 // destructive primitive somebody calls one day.
 
-type recursoPVE struct {
+type pveResource struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	VMID   int    `json:"vmid"`
 }
 
-var errNaoAchou = errors.New("não achei o recurso no hipervisor")
+var errNotFound = errors.New("não achei o recurso no hipervisor")
 
-// httpDoPVE talks to the hypervisor with the SAME address override as the
+// pveHTTP talks to the hypervisor with the SAME address override as the
 // production client (dial cfg.Resolve, verify the certificate against
 // cfg.ServerName with the pinned CA). Repeating the policy here is conscious debt
 // limited to the test: the client does not expose its transport.
-func httpDoPVE(cfg pve.Config, metodo, caminho string, destino any) error {
+func pveHTTP(cfg pve.Config, method, path string, dest any) error {
 	pool := x509.NewCertPool()
 	if cfg.CAFile != "" {
 		pem, err := os.ReadFile(cfg.CAFile)
@@ -261,52 +261,52 @@ func httpDoPVE(cfg pve.Config, metodo, caminho string, destino any) error {
 		if err != nil {
 			return err
 		}
-		porta := u.Port()
-		if porta == "" {
-			porta = "8006"
+		port := u.Port()
+		if port == "" {
+			port = "8006"
 		}
-		alvo := net.JoinHostPort(cfg.Resolve, porta)
-		tr.DialContext = func(ctx context.Context, rede, _ string) (net.Conn, error) {
-			return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, rede, alvo)
+		target := net.JoinHostPort(cfg.Resolve, port)
+		tr.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, target)
 		}
 	}
-	cliente := &http.Client{Transport: tr, Timeout: 60 * time.Second}
-	req, err := http.NewRequest(metodo, strings.TrimRight(cfg.BaseURL, "/")+caminho, nil)
+	client := &http.Client{Transport: tr, Timeout: 60 * time.Second}
+	req, err := http.NewRequest(method, strings.TrimRight(cfg.BaseURL, "/")+path, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "PVEAPIToken="+cfg.TokenID)
-	resp, err := cliente.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	corpo, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s %s = %d: %s", metodo, caminho, resp.StatusCode, strings.TrimSpace(string(corpo)))
+		return fmt.Errorf("%s %s = %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	if destino != nil {
-		return json.Unmarshal(corpo, destino)
+	if dest != nil {
+		return json.Unmarshal(body, dest)
 	}
 	return nil
 }
 
-func recursoDoPVE(cfg pve.Config, vmid int) (recursoPVE, error) {
+func pveResourceOf(cfg pve.Config, vmid int) (pveResource, error) {
 	var out struct {
-		Data []recursoPVE `json:"data"`
+		Data []pveResource `json:"data"`
 	}
-	if err := httpDoPVE(cfg, http.MethodGet, "/api2/json/cluster/resources?type=vm", &out); err != nil {
-		return recursoPVE{}, err
+	if err := pveHTTP(cfg, http.MethodGet, "/api2/json/cluster/resources?type=vm", &out); err != nil {
+		return pveResource{}, err
 	}
 	for _, r := range out.Data {
 		if r.VMID == vmid {
 			return r, nil
 		}
 	}
-	return recursoPVE{}, errNaoAchou
+	return pveResource{}, errNotFound
 }
 
-func storagesQueAceitamBackup(t *testing.T, cfg pve.Config) []string {
+func backupStorages(t *testing.T, cfg pve.Config) []string {
 	t.Helper()
 	var out struct {
 		Data []struct {
@@ -314,7 +314,7 @@ func storagesQueAceitamBackup(t *testing.T, cfg pve.Config) []string {
 			Content string `json:"content"`
 		} `json:"data"`
 	}
-	if err := httpDoPVE(cfg, http.MethodGet, "/api2/json/nodes/pve/storage", &out); err != nil {
+	if err := pveHTTP(cfg, http.MethodGet, "/api2/json/nodes/pve/storage", &out); err != nil {
 		t.Fatalf("lendo storages: %v", err)
 	}
 	var r []string
@@ -326,37 +326,37 @@ func storagesQueAceitamBackup(t *testing.T, cfg pve.Config) []string {
 	return r
 }
 
-// destroiGuestDeTeste deletes the clone. It runs in the defer, so it cleans up
+// destroyTestGuest deletes the clone. It runs in the defer, so it cleans up
 // even when the test fails halfway — one orphan guest per run would be worse than
 // having no proof at all.
-func destroiGuestDeTeste(t *testing.T, cfg pve.Config, vmid int) {
+func destroyTestGuest(t *testing.T, cfg pve.Config, vmid int) {
 	t.Helper()
 	if vmid <= 0 {
 		return
 	}
-	if _, err := recursoDoPVE(cfg, vmid); err != nil {
+	if _, err := pveResourceOf(cfg, vmid); err != nil {
 		t.Logf("cleanup: %d does not exist on the hypervisor (nothing to delete)", vmid)
 		return
 	}
-	caminho := "/api2/json/nodes/pve/lxc/" + strconv.Itoa(vmid) + "?purge=1&destroy-unreferenced-disks=1"
-	if err := httpDoPVE(cfg, http.MethodDelete, caminho, nil); err != nil {
+	path := "/api2/json/nodes/pve/lxc/" + strconv.Itoa(vmid) + "?purge=1&destroy-unreferenced-disks=1"
+	if err := pveHTTP(cfg, http.MethodDelete, path, nil); err != nil {
 		t.Errorf("🔴 CLEANUP FAILED: clone %d was left on the hypervisor — delete it by hand (pct destroy %d): %v", vmid, vmid, err)
 		return
 	}
 	t.Logf("cleanup: clone %d deleted", vmid)
 }
 
-// 🔴 TestLiveNotaDeTodoNo — the note is the BODY of the summary, so it has to
+// 🔴 TestLiveNoteOfEveryNode — the note is the BODY of the summary, so it has to
 // arrive for EVERY node, not just for the one somebody happened to test.
 //
 // The proof is live because what is being claimed is about the hypervisor: that
 // the `description` field exists, is filled in and is reachable with the
 // READ-ONLY credential (not the full-access one). A fake would say "I called".
-func TestLiveNotaDeTodoNo(t *testing.T) {
+func TestLiveNoteOfEveryNode(t *testing.T) {
 	if os.Getenv("LAB_MNT_LIVE") != "1" {
 		t.Skip("live proof disabled — run with LAB_MNT_LIVE=1")
 	}
-	r, cancel := routerVivo(t)
+	r, cancel := liveRouter(t)
 	defer cancel()
 	inv, err := r.inventoryStore.Snapshot()
 	if err != nil {
@@ -366,20 +366,20 @@ func TestLiveNotaDeTodoNo(t *testing.T) {
 		t.Fatalf("inventory with %d nodes — the scan would pass vacuously", len(inv.Nodes))
 	}
 
-	var semNota []string
+	var withoutNote []string
 	for _, n := range inv.Nodes {
-		w, out := chama(t, r, http.MethodGet, "/api/nodes/"+n.ID+"/nota", "")
+		w, out := callAPI(t, r, http.MethodGet, "/api/nodes/"+n.ID+"/nota", "")
 		if w.Code != 200 {
 			t.Errorf("%s: nota = %d: %s", n.ID, w.Code, w.Body)
 			continue
 		}
-		origem, _ := out["origem"].(string)
+		origin, _ := out["origem"].(string)
 		md, _ := out["markdown"].(string)
 
 		// A node the inventory still lists but the hypervisor no longer has (a
 		// guest deleted on the previous cycle) is not a failure of this test — it
 		// is the state it helped discover. What is required is that the answer EXPLAINS.
-		if origem == "inexistente" {
+		if origin == "inexistente" {
 			if out["motivo"] == "" {
 				t.Errorf("%s: disappeared from the hypervisor and the response does not say so", n.ID)
 			}
@@ -390,13 +390,13 @@ func TestLiveNotaDeTodoNo(t *testing.T) {
 		if n.Transport != "pve-api" {
 			// An external node has no config in PVE: an absence of SOURCE, and
 			// the answer has to say so instead of returning a mute blank.
-			if origem != "fora-do-pve" || out["motivo"] == "" {
-				t.Errorf("%s: external node returned origin=%q reason=%v", n.ID, origem, out["motivo"])
+			if origin != "fora-do-pve" || out["motivo"] == "" {
+				t.Errorf("%s: external node returned origin=%q reason=%v", n.ID, origin, out["motivo"])
 			}
 			continue
 		}
-		if origem == "vazia" || strings.TrimSpace(md) == "" {
-			semNota = append(semNota, n.ID)
+		if origin == "vazia" || strings.TrimSpace(md) == "" {
+			withoutNote = append(withoutNote, n.ID)
 			continue
 		}
 		// The note is there to be READ: a single line explains nothing. The floor
@@ -405,15 +405,15 @@ func TestLiveNotaDeTodoNo(t *testing.T) {
 		if len(md) < 120 {
 			t.Errorf("%s: note with %d characters — too short to explain what the box does", n.ID, len(md))
 		}
-		t.Logf("%-10s %5d caracteres · %s", n.ID, len(md), primeiraLinha(md))
+		t.Logf("%-10s %5d caracteres · %s", n.ID, len(md), firstLine(md))
 	}
-	if len(semNota) > 0 {
+	if len(withoutNote) > 0 {
 		t.Errorf("🔴 %d node(s) without a note in PVE: %s — whoever clicks on them won't find out what they do",
-			len(semNota), strings.Join(semNota, ", "))
+			len(withoutNote), strings.Join(withoutNote, ", "))
 	}
 }
 
-func primeiraLinha(s string) string {
+func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		s = s[:i]
 	}
@@ -427,22 +427,22 @@ func primeiraLinha(s string) string {
 	return s
 }
 
-// 🔴 TestLiveEditaNota — the full round trip: read the REAL note, write, check on
+// 🔴 TestLiveEditNote — the full round trip: read the REAL note, write, check on
 // the hypervisor, and restore the original.
 //
 // It writes into a real description. The original is restored in the defer, so
 // the cleanup happens even when the test fails halfway — and the restoration is
 // of the EXACT text that was there, not of a reconstruction.
-func TestLiveEditaNota(t *testing.T) {
+func TestLiveEditNote(t *testing.T) {
 	if os.Getenv("LAB_MNT_LIVE") != "1" {
 		t.Skip("live proof disabled — run with LAB_MNT_LIVE=1 (it WRITES to a real note)")
 	}
-	const alvo = cloneOrigemLive // lxc/203, the smallest CT
-	r, cancel := routerVivo(t)
+	const target = cloneSourceLive // lxc/203, the smallest CT
+	r, cancel := liveRouter(t)
 	defer cancel()
 
 	// 1. read the original
-	w, out := chama(t, r, http.MethodGet, "/api/nodes/"+alvo+"/nota", "")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/"+target+"/nota", "")
 	if w.Code != 200 {
 		t.Fatalf("GET nota = %d: %s", w.Code, w.Body)
 	}
@@ -453,39 +453,39 @@ func TestLiveEditaNota(t *testing.T) {
 
 	// 2. ALWAYS restore, with the exact text
 	defer func() {
-		corpo, _ := json.Marshal(map[string]string{"markdown": original})
-		w, _ := chama(t, r, http.MethodPut, "/api/nodes/"+alvo+"/nota", string(corpo))
+		body, _ := json.Marshal(map[string]string{"markdown": original})
+		w, _ := callAPI(t, r, http.MethodPut, "/api/nodes/"+target+"/nota", string(body))
 		if w.Code != 200 {
-			t.Errorf("🔴 CLEANUP FAILED: %s's note was left altered — restore it by hand: %s", alvo, w.Body)
+			t.Errorf("🔴 CLEANUP FAILED: %s's note was left altered — restore it by hand: %s", target, w.Body)
 			return
 		}
-		w, out := chama(t, r, http.MethodGet, "/api/nodes/"+alvo+"/nota", "")
+		w, out := callAPI(t, r, http.MethodGet, "/api/nodes/"+target+"/nota", "")
 		if got, _ := out["markdown"].(string); w.Code != 200 || got != original {
 			t.Errorf("🔴 CLEANUP INCOMPLETE: the note did not come back byte for byte")
 			return
 		}
-		t.Logf("cleanup: %s's note restored (%d bytes)", alvo, len(original))
+		t.Logf("cleanup: %s's note restored (%d bytes)", target, len(original))
 	}()
 
 	// 3. write the original + a marker
-	marca := "\n\n<!-- prova viva de edicao: esta linha e apagada no fim -->"
-	corpo, _ := json.Marshal(map[string]string{"markdown": original + marca})
-	w, _ = chama(t, r, http.MethodPut, "/api/nodes/"+alvo+"/nota", string(corpo))
+	mark := "\n\n<!-- prova viva de edicao: esta linha e apagada no fim -->"
+	body, _ := json.Marshal(map[string]string{"markdown": original + mark})
+	w, _ = callAPI(t, r, http.MethodPut, "/api/nodes/"+target+"/nota", string(body))
 	if w.Code != 200 {
 		t.Fatalf("PUT nota = %d: %s", w.Code, w.Body)
 	}
 
 	// 4. the hypervisor really does have the new text — read back, not assumed
-	w, out = chama(t, r, http.MethodGet, "/api/nodes/"+alvo+"/nota", "")
+	w, out = callAPI(t, r, http.MethodGet, "/api/nodes/"+target+"/nota", "")
 	if w.Code != 200 {
 		t.Fatalf("GET after the PUT = %d", w.Code)
 	}
-	agora, _ := out["markdown"].(string)
-	if !strings.Contains(agora, "prova viva de edicao") {
+	now, _ := out["markdown"].(string)
+	if !strings.Contains(now, "prova viva de edicao") {
 		t.Errorf("the marker did not reach the hypervisor")
 	}
-	if !strings.HasPrefix(agora, strings.TrimSpace(original)[:60]) {
+	if !strings.HasPrefix(now, strings.TrimSpace(original)[:60]) {
 		t.Errorf("🔴 the start of the note changed — the write did not preserve the original text")
 	}
-	t.Logf("%s's note: %d bytes -> %d bytes, read back from the hypervisor", alvo, len(original), len(agora))
+	t.Logf("%s's note: %d bytes -> %d bytes, read back from the hypervisor", target, len(original), len(now))
 }

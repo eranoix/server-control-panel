@@ -16,7 +16,7 @@ import (
 
 // handlers_proxmox_test.go — the pins for the /api/proxmox/* routes.
 //
-// The central piece of scaffolding is cofreEspiao: it RECORDS every key read.
+// The central piece of scaffolding is spyVault: it RECORDS every key read.
 // Without it, the mutation this file exists to prevent would slip by unnoticed —
 // swapping `pve_token_audit` for `pve_token_node_*` on the tasks route
 // produces no error at all, it produces an EMPTY LIST. Measured:
@@ -26,31 +26,31 @@ import (
 
 // --------------------------------------------------------------- doubles ----
 
-// cofreEspiao is cofreFalso with a memory: it keeps the ORDER and the SET of the
+// spyVault is fakeVault with a memory: it keeps the ORDER and the SET of the
 // keys read, which is what makes the token choice verifiable by NAME.
-type cofreEspiao struct {
+type spyVault struct {
 	dados        map[string]string
-	lidas        []string
+	reads        []string
 	inalcancavel bool
 }
 
-func (c *cofreEspiao) Get(k string) (string, bool) {
-	c.lidas = append(c.lidas, k)
+func (c *spyVault) Get(k string) (string, bool) {
+	c.reads = append(c.reads, k)
 	v, ok := c.dados[k]
 	return v, ok
 }
-func (c *cofreEspiao) Delete(k string) error { delete(c.dados, k); return nil }
+func (c *spyVault) Delete(k string) error { delete(c.dados, k); return nil }
 
-func (c *cofreEspiao) leu(chave string) bool {
-	for _, k := range c.lidas {
-		if k == chave {
+func (c *spyVault) leu(key string) bool {
+	for _, k := range c.reads {
+		if k == key {
 			return true
 		}
 	}
 	return false
 }
-func (c *cofreEspiao) leuAlgumaComPrefixo(pref string) string {
-	for _, k := range c.lidas {
+func (c *spyVault) readAnyWithPrefix(pref string) string {
+	for _, k := range c.reads {
 		if strings.HasPrefix(k, pref) {
 			return k
 		}
@@ -60,37 +60,37 @@ func (c *cofreEspiao) leuAlgumaComPrefixo(pref string) string {
 
 // ---------------------------------------------------------- scaffolding ----
 
-func hipervisorDeTeste(agora int64) inventory.Hypervisor {
+func testHypervisor(now int64) inventory.Hypervisor {
 	return inventory.Hypervisor{
 		Node:      "pve",
-		Version:   inventory.Observe("pve-manager/9.2.2/abcdef", agora),
-		Uptime:    inventory.Observe(int64(123456), agora),
-		Load:      inventory.Observe([3]float64{1.14, 1.55, 1.70}, agora),
-		MemTotal:  inventory.Observe(int64(67200000000), agora),
-		MemUsed:   inventory.Observe(int64(40100000000), agora),
-		RootTotal: inventory.Observe(int64(100000000000), agora),
-		RootUsed:  inventory.Observe(int64(20000000000), agora),
-		KSMShared: inventory.Observe(int64(4096), agora),
+		Version:   inventory.Observe("pve-manager/9.2.2/abcdef", now),
+		Uptime:    inventory.Observe(int64(123456), now),
+		Load:      inventory.Observe([3]float64{1.14, 1.55, 1.70}, now),
+		MemTotal:  inventory.Observe(int64(67200000000), now),
+		MemUsed:   inventory.Observe(int64(40100000000), now),
+		RootTotal: inventory.Observe(int64(100000000000), now),
+		RootUsed:  inventory.Observe(int64(20000000000), now),
+		KSMShared: inventory.Observe(int64(4096), now),
 	}
 }
 
-// novoRouterProxmox assembles the router with inventory, hypervisor and spying vault.
-func novoRouterProxmox(t *testing.T, cofre *cofreEspiao, fake *pveFalso) (*Router, *inventory.Store) {
+// newProxmoxRouter assembles the router with inventory, hypervisor and spying vault.
+func newProxmoxRouter(t *testing.T, vault *spyVault, fake *fakePVE) (*Router, *inventory.Store) {
 	t.Helper()
-	r, st := novoRouterDeNos(t, []inventory.Node{
-		noDeTeste("lxc/207", "apps", 207, agoraDeTeste-10),
-		noDeTeste("lxc/204", "lab", 204, agoraDeTeste-10),
+	r, st := newNodesRouter(t, []inventory.Node{
+		testNode("lxc/207", "apps", 207, testNow-10),
+		testNode("lxc/204", "lab", 204, testNow-10),
 	})
 	if err := st.Replace(func(iv *inventory.Inventory) {
-		iv.Hypervisor = hipervisorDeTeste(agoraDeTeste - 30)
+		iv.Hypervisor = testHypervisor(testNow - 30)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	r.nodeVaultFn = func() (nodeVault, error) {
-		if cofre == nil || cofre.inalcancavel {
+		if vault == nil || vault.inalcancavel {
 			return nil, fmt.Errorf("cofre fora do ar")
 		}
-		return cofre, nil
+		return vault, nil
 	}
 	if fake != nil {
 		r.pveDial = func(tokenValor string) (hypervisorOps, error) { return fake, nil }
@@ -98,8 +98,8 @@ func novoRouterProxmox(t *testing.T, cofre *cofreEspiao, fake *pveFalso) (*Route
 	return r, st
 }
 
-func cofrePadrao() *cofreEspiao {
-	return &cofreEspiao{dados: map[string]string{
+func defaultVault() *spyVault {
+	return &spyVault{dados: map[string]string{
 		"pve_token_audit":     "lab@pve!audit=s3cr3t",
 		"pve_token_admin":     "lab@pve!admin=s3cr3t",
 		"pve_token_node_apps": "lab@pve!node-apps=s3cr3t",
@@ -107,10 +107,10 @@ func cofrePadrao() *cofreEspiao {
 	}}
 }
 
-func chamaPVX(t *testing.T, r *Router, metodo, caminho, corpo string) (*httptest.ResponseRecorder, map[string]any) {
+func callPVX(t *testing.T, r *Router, method, path, body string) (*httptest.ResponseRecorder, map[string]any) {
 	t.Helper()
 	w := httptest.NewRecorder()
-	r.handleProxmox(w, req(t, metodo, caminho, corpo))
+	r.handleProxmox(w, req(t, method, path, body))
 	var out map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &out)
 	return w, out
@@ -118,19 +118,19 @@ func chamaPVX(t *testing.T, r *Router, metodo, caminho, corpo string) (*httptest
 
 // ------------------------------------------------------------- the tests ----
 
-// 🔴 TestSaudeVemDoStoreSemChamarOHipervisor: health is a HEARTBEAT, and what
+// 🔴 TestHealthComesFromStoreWithoutCallingHypervisor: health is a HEARTBEAT, and what
 // collects it is the poller. If the route called the hypervisor, every screen
 // load (and every 30 s refresh) would become a live request — and, worse, the age
 // on display would stop being the stamp's and always read "0 s", hiding
 // precisely the hypervisor that has gone mute.
-func TestSaudeVemDoStoreSemChamarOHipervisor(t *testing.T) {
-	r, _ := novoRouterProxmox(t, cofrePadrao(), nil)
+func TestHealthComesFromStoreWithoutCallingHypervisor(t *testing.T) {
+	r, _ := newProxmoxRouter(t, defaultVault(), nil)
 	r.pveDial = func(tokenValor string) (hypervisorOps, error) {
 		t.Fatal("GET /api/proxmox dialed the hypervisor — health must come from the STORE")
 		return nil, nil
 	}
 
-	w, out := chamaPVX(t, r, http.MethodGet, "/api/proxmox", "")
+	w, out := callPVX(t, r, http.MethodGet, "/api/proxmox", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 	}
@@ -138,12 +138,12 @@ func TestSaudeVemDoStoreSemChamarOHipervisor(t *testing.T) {
 	if h == nil {
 		t.Fatalf("response without hypervisor: %s", w.Body)
 	}
-	idade, temIdade := h["age_seconds"]
-	if !temIdade {
+	age, hasAge := h["age_seconds"]
+	if !hasAge {
 		t.Fatal("hypervisor without age_seconds — the browser would go back to subtracting clocks")
 	}
-	if idade.(float64) != 30 {
-		t.Errorf("age_seconds = %v, want 30 (stamp of agoraDeTeste-30)", idade)
+	if age.(float64) != 30 {
+		t.Errorf("age_seconds = %v, want 30 (stamp of testNow-30)", age)
 	}
 	if _, ok := h["stale"]; !ok {
 		t.Error("hypervisor without stale")
@@ -156,89 +156,89 @@ func TestSaudeVemDoStoreSemChamarOHipervisor(t *testing.T) {
 	}
 }
 
-// 🔴 TestTarefasUsamOTokenAudit is this file's central pin. It asserts by the KEY
+// 🔴 TestTasksUseAuditToken is this file's central pin. It asserts by the KEY
 // THAT WAS READ, not by the result: with the node token the answer would be 200
 // with an empty list, and no assertion about the body would tell that apart from
 // "there are no tasks".
-func TestTarefasUsamOTokenAudit(t *testing.T) {
-	rotas := []string{
+func TestTasksUseAuditToken(t *testing.T) {
+	routes := []string{
 		"/api/proxmox/tasks?errors=1&limit=10",
 		"/api/proxmox/tasks/log?upid=UPID:pve:1:2:3:vzsnapshot:204:lab@pve!node-lab:",
 		"/api/proxmox/disks",
 		"/api/proxmox/permissions",
 	}
-	for _, rota := range rotas {
-		t.Run(rota, func(t *testing.T) {
-			cofre := cofrePadrao()
-			fake := &pveFalso{
-				tarefas:   []pve.Task{{UPID: "UPID:x", Type: "push_file", Status: "failed"}},
-				linhasLog: []string{"linha"},
-				discos:    []pve.Disk{{Model: "Lexar NQ790 1TB", Health: "PASSED"}},
-				perms:     map[string]map[string]int{"/vms/204": {"VM.Audit": 1}},
+	for _, route := range routes {
+		t.Run(route, func(t *testing.T) {
+			vault := defaultVault()
+			fake := &fakePVE{
+				tasks:    []pve.Task{{UPID: "UPID:x", Type: "push_file", Status: "failed"}},
+				logLines: []string{"linha"},
+				discos:   []pve.Disk{{Model: "Lexar NQ790 1TB", Health: "PASSED"}},
+				perms:    map[string]map[string]int{"/vms/204": {"VM.Audit": 1}},
 			}
-			r, _ := novoRouterProxmox(t, cofre, fake)
+			r, _ := newProxmoxRouter(t, vault, fake)
 
-			w, _ := chamaPVX(t, r, http.MethodGet, rota, "")
+			w, _ := callPVX(t, r, http.MethodGet, route, "")
 			if w.Code != 200 {
 				t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 			}
-			if !cofre.leu(pveSecretAudit) {
-				t.Errorf("keys read = %v, want it to contain %q", cofre.lidas, pveSecretAudit)
+			if !vault.leu(pveSecretAudit) {
+				t.Errorf("keys read = %v, want it to contain %q", vault.reads, pveSecretAudit)
 			}
-			if k := cofre.leuAlgumaComPrefixo(pveSecretNodePrefix); k != "" {
+			if k := vault.readAnyWithPrefix(pveSecretNodePrefix); k != "" {
 				t.Errorf("the route read %q — the node token returns 200 with len=0 on this route (Sys.Audit on /nodes), i.e. an empty screen LYING", k)
 			}
 		})
 	}
 }
 
-// 🔴 TestSnapshotUsaOTokenDoNo is the other half: a guest mutation uses the
+// 🔴 TestSnapshotUsesNodeToken is the other half: a guest mutation uses the
 // NODE's credential (the token rule, proved live with the UPID carrying
 // lab@pve!node-lab). Using audit here would give a 403 — noisy, but wrong all the
 // same: what acts is not what audits.
-func TestSnapshotUsaOTokenDoNo(t *testing.T) {
-	casos := []struct{ metodo, caminho string }{
+func TestSnapshotUsesNodeToken(t *testing.T) {
+	cases := []struct{ method, path string }{
 		{http.MethodGet, "/api/proxmox/snapshots?node=lxc/207"},
 		{http.MethodPost, "/api/proxmox/snapshots?node=lxc/207&name=pvx-teste"},
 		{http.MethodDelete, "/api/proxmox/snapshots?node=lxc/207&name=pvx-teste"},
 	}
-	for _, tc := range casos {
-		t.Run(tc.metodo, func(t *testing.T) {
-			cofre := cofrePadrao()
-			fake := &pveFalso{upid: "UPID:pve:1:2:3:vzsnapshot:207:lab@pve!node-apps:"}
-			r, _ := novoRouterProxmox(t, cofre, fake)
+	for _, tc := range cases {
+		t.Run(tc.method, func(t *testing.T) {
+			vault := defaultVault()
+			fake := &fakePVE{upid: "UPID:pve:1:2:3:vzsnapshot:207:lab@pve!node-apps:"}
+			r, _ := newProxmoxRouter(t, vault, fake)
 
-			w, _ := chamaPVX(t, r, tc.metodo, tc.caminho, "")
+			w, _ := callPVX(t, r, tc.method, tc.path, "")
 			if w.Code != 200 {
 				t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 			}
-			if !cofre.leu("pve_token_node_apps") {
-				t.Errorf("keys read = %v, want to contain pve_token_node_apps (whoever acts is the node)", cofre.lidas)
+			if !vault.leu("pve_token_node_apps") {
+				t.Errorf("keys read = %v, want to contain pve_token_node_apps (whoever acts is the node)", vault.reads)
 			}
-			if cofre.leu(pveSecretAudit) {
-				t.Errorf("keys read = %v — snapshot does NOT use the audit token", cofre.lidas)
+			if vault.leu(pveSecretAudit) {
+				t.Errorf("keys read = %v — snapshot does NOT use the audit token", vault.reads)
 			}
 		})
 	}
 }
 
-// 🔴 TestSnapshotSoRespondeDepoisDoWaitTask is that PVE pitfall on this route:
+// 🔴 TestSnapshotRespondsOnlyAfterWaitTask is that PVE pitfall on this route:
 // PVE's POST returns 200 with the UPID as soon as the TASK IS CREATED. Passing
 // that 200 along would be the screen saying "snapshot ready" for a snapshot that
 // may not even have started.
-func TestSnapshotSoRespondeDepoisDoWaitTask(t *testing.T) {
+func TestSnapshotRespondsOnlyAfterWaitTask(t *testing.T) {
 	t.Run("ordem", func(t *testing.T) {
 		var seen []string
-		fake := &pveFalso{upid: "UPID:abc", seen: &seen}
-		r, _ := novoRouterProxmox(t, cofrePadrao(), fake)
+		fake := &fakePVE{upid: "UPID:abc", seen: &seen}
+		r, _ := newProxmoxRouter(t, defaultVault(), fake)
 
-		w, out := chamaPVX(t, r, http.MethodPost, "/api/proxmox/snapshots?node=lxc/204&name=pvx-drill", "")
+		w, out := callPVX(t, r, http.MethodPost, "/api/proxmox/snapshots?node=lxc/204&name=pvx-drill", "")
 		if w.Code != 200 {
 			t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 		}
-		quer := []string{"pve.snapcreate:pvx-drill", "pve.wait:UPID:abc"}
-		if fmt.Sprint(seen) != fmt.Sprint(quer) {
-			t.Fatalf("sequence = %v, want %v — the 200 came out before proof of completion", seen, quer)
+		want := []string{"pve.snapcreate:pvx-drill", "pve.wait:UPID:abc"}
+		if fmt.Sprint(seen) != fmt.Sprint(want) {
+			t.Fatalf("sequence = %v, want %v — the 200 came out before proof of completion", seen, want)
 		}
 		if out["upid"] != "UPID:abc" {
 			t.Errorf("response without the UPID: %s", w.Body)
@@ -246,14 +246,14 @@ func TestSnapshotSoRespondeDepoisDoWaitTask(t *testing.T) {
 	})
 
 	t.Run("wait failure becomes 502 with the exitstatus", func(t *testing.T) {
-		fake := &pveFalso{
+		fake := &fakePVE{
 			upid: "UPID:abc",
-			erroWait: &pve.Error{Kind: pve.KindHypervisor, Path: "/tasks",
+			waitErr: &pve.Error{Kind: pve.KindHypervisor, Path: "/tasks",
 				Body: "snapshot feature is not available"},
 		}
-		r, _ := novoRouterProxmox(t, cofrePadrao(), fake)
+		r, _ := newProxmoxRouter(t, defaultVault(), fake)
 
-		w, _ := chamaPVX(t, r, http.MethodPost, "/api/proxmox/snapshots?node=lxc/204&name=pvx-drill", "")
+		w, _ := callPVX(t, r, http.MethodPost, "/api/proxmox/snapshots?node=lxc/204&name=pvx-drill", "")
 		if w.Code != 502 {
 			t.Fatalf("status = %d, want 502", w.Code)
 		}
@@ -263,17 +263,17 @@ func TestSnapshotSoRespondeDepoisDoWaitTask(t *testing.T) {
 	})
 }
 
-// TestNomeInvalidoNaoChegaAoHipervisor: the name comes from the SCREEN, and it is
+// TestInvalidNameNeverReachesHypervisor: the name comes from the SCREEN, and it is
 // what builds the resource path on the hypervisor. The refusal happens before any
 // call — and the test proves that by the absence of a mark on the double, not by the status.
-func TestNomeInvalidoNaoChegaAoHipervisor(t *testing.T) {
+func TestInvalidNameNeverReachesHypervisor(t *testing.T) {
 	for _, nome := range []string{"1abc", "com espaço", "com/barra", ""} {
 		t.Run(fmt.Sprintf("%q", nome), func(t *testing.T) {
 			var seen []string
-			fake := &pveFalso{upid: "UPID:abc", seen: &seen}
-			r, _ := novoRouterProxmox(t, cofrePadrao(), fake)
+			fake := &fakePVE{upid: "UPID:abc", seen: &seen}
+			r, _ := newProxmoxRouter(t, defaultVault(), fake)
 
-			w, _ := chamaPVX(t, r, http.MethodPost,
+			w, _ := callPVX(t, r, http.MethodPost,
 				"/api/proxmox/snapshots?node=lxc/204&name="+url.QueryEscape(nome), "")
 			if w.Code != 400 {
 				t.Errorf("status = %d, want 400 (body=%s)", w.Code, w.Body)
@@ -285,15 +285,15 @@ func TestNomeInvalidoNaoChegaAoHipervisor(t *testing.T) {
 	}
 }
 
-// 🔴 TestCofreInalcancavelNaoViraListaVazia: a vault that is down and a credential
+// 🔴 TestUnreachableVaultIsNotEmptyList: a vault that is down and a credential
 // that does not exist call for OPPOSITE actions from the operator. Collapsing the
 // two into one empty answer is the collapse of handlers_ai.go:186, which already produced a defect.
-func TestCofreInalcancavelNaoViraListaVazia(t *testing.T) {
+func TestUnreachableVaultIsNotEmptyList(t *testing.T) {
 	t.Run("inalcancavel = 503", func(t *testing.T) {
-		cofre := cofrePadrao()
-		cofre.inalcancavel = true
-		r, _ := novoRouterProxmox(t, cofre, &pveFalso{})
-		w, _ := chamaPVX(t, r, http.MethodGet, "/api/proxmox/tasks", "")
+		vault := defaultVault()
+		vault.inalcancavel = true
+		r, _ := newProxmoxRouter(t, vault, &fakePVE{})
+		w, _ := callPVX(t, r, http.MethodGet, "/api/proxmox/tasks", "")
 		if w.Code != 503 {
 			t.Fatalf("status = %d, want 503 (body=%s)", w.Code, w.Body)
 		}
@@ -302,24 +302,24 @@ func TestCofreInalcancavelNaoViraListaVazia(t *testing.T) {
 		}
 	})
 	t.Run("ausente = 409", func(t *testing.T) {
-		cofre := &cofreEspiao{dados: map[string]string{}}
-		r, _ := novoRouterProxmox(t, cofre, &pveFalso{})
-		w, _ := chamaPVX(t, r, http.MethodGet, "/api/proxmox/tasks", "")
+		vault := &spyVault{dados: map[string]string{}}
+		r, _ := newProxmoxRouter(t, vault, &fakePVE{})
+		w, _ := callPVX(t, r, http.MethodGet, "/api/proxmox/tasks", "")
 		if w.Code != 409 {
 			t.Fatalf("status = %d, want 409 (body=%s)", w.Code, w.Body)
 		}
 	})
 }
 
-// TestLimiteDeTarefasEDoServidor: the client's `limit` is a suggestion. What
+// TestTaskLimitIsServerSide: the client's `limit` is a suggestion. What
 // reaches the hypervisor goes through internal/pve's clamp; here it is proved that
 // the handler does not invent a parallel path.
-func TestLimiteDeTarefasEDoServidor(t *testing.T) {
+func TestTaskLimitIsServerSide(t *testing.T) {
 	var seen []string
-	fake := &pveFalso{seen: &seen}
-	r, _ := novoRouterProxmox(t, cofrePadrao(), fake)
+	fake := &fakePVE{seen: &seen}
+	r, _ := newProxmoxRouter(t, defaultVault(), fake)
 
-	if w, _ := chamaPVX(t, r, http.MethodGet, "/api/proxmox/tasks?limit=99999&errors=1", ""); w.Code != 200 {
+	if w, _ := callPVX(t, r, http.MethodGet, "/api/proxmox/tasks?limit=99999&errors=1", ""); w.Code != 200 {
 		t.Fatalf("status = %d", w.Code)
 	}
 	if len(seen) == 0 || !strings.Contains(seen[0], "errors=true") {
@@ -333,13 +333,13 @@ func TestLimiteDeTarefasEDoServidor(t *testing.T) {
 	}
 }
 
-// TestMetodoErradoDaCod405, and an unknown route gives 404: together the two stop
+// TestWrongMethodGives405, and an unknown route gives 404: together the two stop
 // a new verb appearing by accident on a route that touches the hypervisor.
-func TestMetodoErradoDaCod405(t *testing.T) {
-	r, _ := novoRouterProxmox(t, cofrePadrao(), &pveFalso{})
-	casos := []struct {
-		metodo, caminho string
-		quer            int
+func TestWrongMethodGives405(t *testing.T) {
+	r, _ := newProxmoxRouter(t, defaultVault(), &fakePVE{})
+	cases := []struct {
+		method, path string
+		want         int
 	}{
 		{http.MethodPost, "/api/proxmox", 405},
 		{http.MethodDelete, "/api/proxmox/tasks", 405},
@@ -347,26 +347,26 @@ func TestMetodoErradoDaCod405(t *testing.T) {
 		{http.MethodGet, "/api/proxmox/nao-existe", 404},
 		{http.MethodGet, "/api/proxmox/snapshots?node=lxc/999", 404},
 	}
-	for _, tc := range casos {
-		t.Run(tc.metodo+" "+tc.caminho, func(t *testing.T) {
-			w, _ := chamaPVX(t, r, tc.metodo, tc.caminho, "")
-			if w.Code != tc.quer {
-				t.Errorf("status = %d, want %d (body=%s)", w.Code, tc.quer, w.Body)
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			w, _ := callPVX(t, r, tc.method, tc.path, "")
+			if w.Code != tc.want {
+				t.Errorf("status = %d, want %d (body=%s)", w.Code, tc.want, w.Body)
 			}
 		})
 	}
 }
 
-// TestPermissoesExplicamAOnda2: the permissions field exists so the screen can
+// TestPermissionsExplainWave2: the permissions field exists so the screen can
 // say, by MEASUREMENT, why storage capacity / backup evidence / zpool are
 // missing. Without it the block would be decoration.
-func TestPermissoesExplicamAOnda2(t *testing.T) {
-	fake := &pveFalso{perms: map[string]map[string]int{
+func TestPermissionsExplainWave2(t *testing.T) {
+	fake := &fakePVE{perms: map[string]map[string]int{
 		"/vms/204": {"VM.Audit": 1, "VM.Snapshot": 1},
 		"/nodes":   {"Sys.Audit": 1},
 	}}
-	r, _ := novoRouterProxmox(t, cofrePadrao(), fake)
-	w, out := chamaPVX(t, r, http.MethodGet, "/api/proxmox/permissions", "")
+	r, _ := newProxmoxRouter(t, defaultVault(), fake)
+	w, out := callPVX(t, r, http.MethodGet, "/api/proxmox/permissions", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d", w.Code)
 	}
@@ -378,14 +378,14 @@ func TestPermissoesExplicamAOnda2(t *testing.T) {
 	}
 }
 
-// TestSaudeNuncaObservadaDizIsso: dashboard just up, poller with no tick yet.
+// TestHealthNeverObservedSaysSo: dashboard just up, poller with no tick yet.
 // The screen has to say "never observed" (-1), never "0 s ago".
-func TestSaudeNuncaObservadaDizIsso(t *testing.T) {
-	r, _ := novoRouterDeNos(t, nil)
-	r.nodeVaultFn = func() (nodeVault, error) { return cofrePadrao(), nil }
-	r.inventoryNow = func() time.Time { return time.Unix(agoraDeTeste, 0) }
+func TestHealthNeverObservedSaysSo(t *testing.T) {
+	r, _ := newNodesRouter(t, nil)
+	r.nodeVaultFn = func() (nodeVault, error) { return defaultVault(), nil }
+	r.inventoryNow = func() time.Time { return time.Unix(testNow, 0) }
 
-	w, out := chamaPVX(t, r, http.MethodGet, "/api/proxmox", "")
+	w, out := callPVX(t, r, http.MethodGet, "/api/proxmox", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d", w.Code)
 	}
@@ -413,7 +413,7 @@ func TestSaudeNuncaObservadaDizIsso(t *testing.T) {
 // hidden stays reachable by whoever holds the token, and with no record at all.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// 🔴 TestRollbackSoRespondeDepoisDoWaitTask is that PVE pitfall MEASURED on the
+// 🔴 TestRollbackRespondsOnlyAfterWaitTask is that PVE pitfall MEASURED on the
 // most destructive route of the dashboard. Against the home hypervisor, a
 // rollback to a snapshot that DOES NOT EXIST returned:
 //
@@ -426,20 +426,20 @@ func TestSaudeNuncaObservadaDizIsso(t *testing.T) {
 // Passing that 200 along would be the screen saying "restored" for a rollback that
 // never happened — and, worse, on a guest the operator would then believe to be
 // in an earlier state.
-func TestRollbackSoRespondeDepoisDoWaitTask(t *testing.T) {
+func TestRollbackRespondsOnlyAfterWaitTask(t *testing.T) {
 	t.Run("ordem", func(t *testing.T) {
 		var seen []string
-		fake := &pveFalso{upid: "UPID:roll", seen: &seen}
-		r, _ := novoRouterProxmox(t, cofrePadrao(), fake)
+		fake := &fakePVE{upid: "UPID:roll", seen: &seen}
+		r, _ := newProxmoxRouter(t, defaultVault(), fake)
 
-		w, out := chamaPVX(t, r, http.MethodPost,
+		w, out := callPVX(t, r, http.MethodPost,
 			"/api/proxmox/snapshots/rollback?node=lxc/204&name=antes-do-cutover", "")
 		if w.Code != 200 {
 			t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 		}
-		quer := []string{"pve.snaprollback:antes-do-cutover", "pve.wait:UPID:roll"}
-		if fmt.Sprint(seen) != fmt.Sprint(quer) {
-			t.Fatalf("sequence = %v, want %v — the 200 came out before proof of completion", seen, quer)
+		want := []string{"pve.snaprollback:antes-do-cutover", "pve.wait:UPID:roll"}
+		if fmt.Sprint(seen) != fmt.Sprint(want) {
+			t.Fatalf("sequence = %v, want %v — the 200 came out before proof of completion", seen, want)
 		}
 		if out["action"] != "rollback" || out["upid"] != "UPID:roll" {
 			t.Errorf("response = %s", w.Body)
@@ -447,11 +447,11 @@ func TestRollbackSoRespondeDepoisDoWaitTask(t *testing.T) {
 	})
 
 	t.Run("wait failure becomes 502 with the exitstatus", func(t *testing.T) {
-		fake := &pveFalso{upid: "UPID:roll", erroWait: &pve.Error{Kind: pve.KindHypervisor, Path: "/tasks",
+		fake := &fakePVE{upid: "UPID:roll", waitErr: &pve.Error{Kind: pve.KindHypervisor, Path: "/tasks",
 			Body: "snapshot 'antes-do-cutover' does not exist"}}
-		r, _ := novoRouterProxmox(t, cofrePadrao(), fake)
+		r, _ := newProxmoxRouter(t, defaultVault(), fake)
 
-		w, _ := chamaPVX(t, r, http.MethodPost,
+		w, _ := callPVX(t, r, http.MethodPost,
 			"/api/proxmox/snapshots/rollback?node=lxc/204&name=antes-do-cutover", "")
 		if w.Code != 502 {
 			t.Fatalf("status = %d, want 502", w.Code)
@@ -462,33 +462,33 @@ func TestRollbackSoRespondeDepoisDoWaitTask(t *testing.T) {
 	})
 }
 
-// TestRollbackUsaOTokenDoNo — the token rule again: what acts on a guest is THAT
+// TestRollbackUsesNodeToken — the token rule again: what acts on a guest is THAT
 // node's credential. The audit token got a 403 in the measurement.
-func TestRollbackUsaOTokenDoNo(t *testing.T) {
-	cofre := cofrePadrao()
-	r, _ := novoRouterProxmox(t, cofre, &pveFalso{upid: "UPID:roll"})
+func TestRollbackUsesNodeToken(t *testing.T) {
+	vault := defaultVault()
+	r, _ := newProxmoxRouter(t, vault, &fakePVE{upid: "UPID:roll"})
 
-	w, _ := chamaPVX(t, r, http.MethodPost,
+	w, _ := callPVX(t, r, http.MethodPost,
 		"/api/proxmox/snapshots/rollback?node=lxc/207&name=antes-do-cutover", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 	}
-	if !cofre.leu("pve_token_node_apps") {
-		t.Errorf("keys read = %v, want to contain pve_token_node_apps", cofre.lidas)
+	if !vault.leu("pve_token_node_apps") {
+		t.Errorf("keys read = %v, want to contain pve_token_node_apps", vault.reads)
 	}
-	if cofre.leu(pveSecretAudit) {
-		t.Errorf("keys read = %v — rollback does NOT use the audit token (403 measured)", cofre.lidas)
+	if vault.leu(pveSecretAudit) {
+		t.Errorf("keys read = %v — rollback does NOT use the audit token (403 measured)", vault.reads)
 	}
 }
 
-// 🔴 TestRollbackSoAceitaPOST: a rollback triggerable by GET would be triggerable
+// 🔴 TestRollbackOnlyAcceptsPOST: a rollback triggerable by GET would be triggerable
 // by browser prefetch, by a crawler and by a link pasted into a chat.
-func TestRollbackSoAceitaPOST(t *testing.T) {
+func TestRollbackOnlyAcceptsPOST(t *testing.T) {
 	for _, m := range []string{http.MethodGet, http.MethodDelete, http.MethodPut} {
 		var seen []string
-		fake := &pveFalso{upid: "UPID:roll", seen: &seen}
-		r, _ := novoRouterProxmox(t, cofrePadrao(), fake)
-		w, _ := chamaPVX(t, r, m, "/api/proxmox/snapshots/rollback?node=lxc/204&name=antes-do-cutover", "")
+		fake := &fakePVE{upid: "UPID:roll", seen: &seen}
+		r, _ := newProxmoxRouter(t, defaultVault(), fake)
+		w, _ := callPVX(t, r, m, "/api/proxmox/snapshots/rollback?node=lxc/204&name=antes-do-cutover", "")
 		if w.Code != 405 {
 			t.Errorf("%s: status = %d, want 405", m, w.Code)
 		}
@@ -498,15 +498,15 @@ func TestRollbackSoAceitaPOST(t *testing.T) {
 	}
 }
 
-// TestRollbackNomeInvalidoNaoChegaAoHipervisor: the name comes from the screen and
+// TestRollbackInvalidNameNeverReachesHypervisor: the name comes from the screen and
 // chooses WHICH state the guest will take on. Refused before dialling, proved by
 // the absence of a mark on the double.
-func TestRollbackNomeInvalidoNaoChegaAoHipervisor(t *testing.T) {
+func TestRollbackInvalidNameNeverReachesHypervisor(t *testing.T) {
 	for _, nome := range []string{"", "1abc", "com espaço", "com/barra", "../lxc/207"} {
 		var seen []string
-		fake := &pveFalso{upid: "UPID:roll", seen: &seen}
-		r, _ := novoRouterProxmox(t, cofrePadrao(), fake)
-		w, _ := chamaPVX(t, r, http.MethodPost,
+		fake := &fakePVE{upid: "UPID:roll", seen: &seen}
+		r, _ := newProxmoxRouter(t, defaultVault(), fake)
+		w, _ := callPVX(t, r, http.MethodPost,
 			"/api/proxmox/snapshots/rollback?node=lxc/204&name="+url.QueryEscape(nome), "")
 		if w.Code != 400 {
 			t.Errorf("%q: status = %d, want 400 (body=%s)", nome, w.Code, w.Body)
@@ -517,26 +517,26 @@ func TestRollbackNomeInvalidoNaoChegaAoHipervisor(t *testing.T) {
 	}
 }
 
-// 🔴 TestNenhumaRotaOfereceSuspend. Measured on this host:
+// 🔴 TestNoRouteOffersSuspend. Measured on this host:
 // `vzsuspend 204` ended in `lxc-checkpoint -n 204 -s -D /var/lib/vz/dump
 // failed: exit code 1` (CRIU) and the CT stayed `running`. A button that always
 // errors trains the operator to ignore errors — and the next error, the real one,
 // goes unnoticed. Suspend stays OUT until CRIU works on this host, and this test
 // is what stops it coming back by absent-mindedness.
-func TestNenhumaRotaOfereceSuspend(t *testing.T) {
-	for _, caminho := range []string{
+func TestNoRouteOffersSuspend(t *testing.T) {
+	for _, path := range []string{
 		"/api/proxmox/snapshots/suspend?node=lxc/204",
 		"/api/proxmox/suspend?node=lxc/204",
 	} {
 		var seen []string
-		fake := &pveFalso{upid: "UPID:x", seen: &seen}
-		r, _ := novoRouterProxmox(t, cofrePadrao(), fake)
-		w, _ := chamaPVX(t, r, http.MethodPost, caminho, "")
+		fake := &fakePVE{upid: "UPID:x", seen: &seen}
+		r, _ := newProxmoxRouter(t, defaultVault(), fake)
+		w, _ := callPVX(t, r, http.MethodPost, path, "")
 		if w.Code != 404 {
-			t.Errorf("%s: status = %d, want 404 — suspend is broken on this host (CRIU)", caminho, w.Code)
+			t.Errorf("%s: status = %d, want 404 — suspend is broken on this host (CRIU)", path, w.Code)
 		}
 		if len(seen) != 0 {
-			t.Errorf("%s: it called the hypervisor (%v)", caminho, seen)
+			t.Errorf("%s: it called the hypervisor (%v)", path, seen)
 		}
 	}
 }

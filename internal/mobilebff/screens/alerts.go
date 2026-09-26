@@ -54,11 +54,11 @@ func RegisterAlerts(deps AlertsDeps) {
 	sdui.Register(alertsRulesScreenID, func(_ context.Context, v sdui.Viewer) (*sdui.Envelope, error) {
 		return buildAlertsRulesScreenForViewer(deps, v)
 	})
-	// Catalog entry: somenteAdmin, mirroring the gate in
+	// Catalog entry: adminOnly, mirroring the gate in
 	// buildAlertsRulesScreenForViewer. "Alert rules" and not just
 	// "Alerts" — the screen edits the RULES, it does not list fired alerts,
 	// and the label has to say so for whoever reads it outside the group.
-	sdui.RegisterCatalog(alertsRulesScreenID, sdui.GroupAutomacao, "Alert rules", somenteAdmin)
+	sdui.RegisterCatalog(alertsRulesScreenID, sdui.GroupAutomation, "Alert rules", adminOnly)
 	registerAlertsActions(deps)
 	mobilebff.Register("alerts.rules.rows", func(api huma.API, mbDeps mobilebff.Deps) {
 		registerAlertsRulesRows(api, deps, mbDeps)

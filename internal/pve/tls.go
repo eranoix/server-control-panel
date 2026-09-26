@@ -49,7 +49,7 @@ const (
 func newTransport(caFile, serverName, resolve string) (*http.Transport, error) {
 	caFile = strings.TrimSpace(caFile)
 	if caFile == "" {
-		return nil, ErrCAAusente
+		return nil, ErrCAMissing
 	}
 	pem, err := os.ReadFile(caFile)
 	if err != nil {

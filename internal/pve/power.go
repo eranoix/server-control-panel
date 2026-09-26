@@ -43,13 +43,13 @@ func (c *Client) Shutdown(ctx context.Context, node string, vmid int, typ string
 	return c.statusVerb(ctx, node, vmid, typ, "shutdown")
 }
 
-func (c *Client) statusVerb(ctx context.Context, node string, vmid int, typ, verbo string) (string, error) {
+func (c *Client) statusVerb(ctx context.Context, node string, vmid int, typ, verb string) (string, error) {
 	base, err := guestPath(node, vmid, typ)
 	if err != nil {
 		return "", err
 	}
 	var upid string
-	if err := c.do(ctx, http.MethodPost, base+"/status/"+verbo, &upid); err != nil {
+	if err := c.do(ctx, http.MethodPost, base+"/status/"+verb, &upid); err != nil {
 		return "", err
 	}
 	return upid, nil
@@ -74,17 +74,17 @@ func (c *Client) SnapshotList(ctx context.Context, node string, vmid int, typ st
 // the query string: the hypervisor accepts POST parameters both in the body and
 // in the URL, and the query keeps do() as the single request builder (no route
 // in this package assembles a body of its own).
-func (c *Client) SnapshotCreate(ctx context.Context, node string, vmid int, typ, nome, descricao string) (string, error) {
+func (c *Client) SnapshotCreate(ctx context.Context, node string, vmid int, typ, nome, description string) (string, error) {
 	base, err := guestPath(node, vmid, typ)
 	if err != nil {
 		return "", err
 	}
-	if err := NomeDeSnapshotValido(nome); err != nil {
+	if err := ValidSnapshotName(nome); err != nil {
 		return "", err
 	}
 	q := url.Values{"snapname": {nome}}
-	if descricao != "" {
-		q.Set("description", descricao)
+	if description != "" {
+		q.Set("description", description)
 	}
 	var upid string
 	if err := c.do(ctx, http.MethodPost, base+"/snapshot?"+q.Encode(), &upid); err != nil {
@@ -99,7 +99,7 @@ func (c *Client) SnapshotDelete(ctx context.Context, node string, vmid int, typ,
 	if err != nil {
 		return "", err
 	}
-	if err := NomeDeSnapshotValido(nome); err != nil {
+	if err := ValidSnapshotName(nome); err != nil {
 		return "", err
 	}
 	var upid string
@@ -138,7 +138,7 @@ func (c *Client) SnapshotRollback(ctx context.Context, node string, vmid int, ty
 	// The name is refused BEFORE dialling out. The same reason applies to create
 	// and delete; here it counts for more: a name that escapes its own resource
 	// chooses which state the guest is going to take on.
-	if err := NomeDeSnapshotValido(nome); err != nil {
+	if err := ValidSnapshotName(nome); err != nil {
 		return "", err
 	}
 	var upid string
@@ -148,7 +148,7 @@ func (c *Client) SnapshotRollback(ctx context.Context, node string, vmid int, ty
 	return upid, nil
 }
 
-// NomeDeSnapshotValido blocks whatever would build another path on the
+// ValidSnapshotName blocks whatever would build another path on the
 // hypervisor. The hypervisor already requires [A-Za-z0-9_-] starting with a
 // letter; what matters here is that no name coming from the screen can escape
 // its own resource.
@@ -158,7 +158,7 @@ func (c *Client) SnapshotRollback(ctx context.Context, node string, vmid int, ty
 // the hypervisor just to find out the screen sent garbage — and a second copy
 // of the rule in internal/api would be two truths about what a valid name is,
 // which is how validation rules diverge in silence.
-func NomeDeSnapshotValido(nome string) error {
+func ValidSnapshotName(nome string) error {
 	if nome == "" || len(nome) > 64 {
 		return fmt.Errorf("pve: invalid snapshot name (%q)", nome)
 	}
@@ -172,23 +172,23 @@ func NomeDeSnapshotValido(nome string) error {
 	return nil
 }
 
-// AvisoDeTarefa is the task that FINISHED DOING what was asked, with warnings
+// TaskWarning is the task that FINISHED DOING what was asked, with warnings
 // attached by the hypervisor. It is an error for whoever does not handle it
 // (nothing changes in silence) and a success for whoever does — as long as the
 // warning IS SHOWN.
-type AvisoDeTarefa struct {
+type TaskWarning struct {
 	UPID string
 	Exit string // o exitstatus cru do PVE, ex.: "WARNINGS: 1"
 }
 
-func (a *AvisoDeTarefa) Error() string {
+func (a *TaskWarning) Error() string {
 	return fmt.Sprintf("task %s finished with warnings (%s)", a.UPID, a.Exit)
 }
 
-// TarefaComAvisos separates "finished with a warning" from "failed". The caller
+// AsTaskWarning separates "finished with a warning" from "failed". The caller
 // decides what to do, but cannot confuse the two by accident.
-func TarefaComAvisos(err error) (*AvisoDeTarefa, bool) {
-	var a *AvisoDeTarefa
+func AsTaskWarning(err error) (*TaskWarning, bool) {
+	var a *TaskWarning
 	if errors.As(err, &a) {
 		return a, true
 	}
@@ -277,7 +277,7 @@ func (c *Client) WaitTask(ctx context.Context, node, upid string) error {
 			// different axes, and mixing them would break the disjunction that
 			// TestErrorClassification proves.
 			if strings.HasPrefix(exit, "WARNINGS:") {
-				return &AvisoDeTarefa{UPID: upid, Exit: exit}
+				return &TaskWarning{UPID: upid, Exit: exit}
 			}
 			if exit == "" {
 				exit = "task stopped with no exitstatus"

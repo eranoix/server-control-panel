@@ -10,11 +10,11 @@ import (
 	"server-control-panel/internal/httpmw"
 )
 
-// TestIsPanelSendFileUpload_CasaSoAVarianteMultipart proves that the matcher
+// TestIsPanelSendFileUpload_MatchesOnlyMultipartVariant proves that the matcher
 // registered in init() matches exactly POST /api/whatsapp/chats/<jid>/messages
 // with a multipart Content-Type, and does not match the text variant
 // (application/json) nor other whatsapp routes sharing the same prefix.
-func TestIsPanelSendFileUpload_CasaSoAVarianteMultipart(t *testing.T) {
+func TestIsPanelSendFileUpload_MatchesOnlyMultipartVariant(t *testing.T) {
 	cases := []struct {
 		name   string
 		method string
@@ -37,13 +37,13 @@ func TestIsPanelSendFileUpload_CasaSoAVarianteMultipart(t *testing.T) {
 	}
 }
 
-// TestPanelSendFileUpload_BodyOver25MiB_NaoECapadoPeloMaxBodyGlobal proves,
+// TestPanelSendFileUpload_BodyOver25MiB_NotCappedByGlobalMaxBody proves,
 // with a real 30 MiB body (above the 25 MiB global ceiling and below the
 // route's own 100 MiB ceiling), that the init()+httpmw.MaxBody combination
 // really does let the handler read the entire body — the original bug was
 // the opposite: MaxBytesReader had already truncated at 25 MiB before
 // ParseMultipartForm(100<<20) got to run.
-func TestPanelSendFileUpload_BodyOver25MiB_NaoECapadoPeloMaxBodyGlobal(t *testing.T) {
+func TestPanelSendFileUpload_BodyOver25MiB_NotCappedByGlobalMaxBody(t *testing.T) {
 	body := bytes.Repeat([]byte("m"), 30<<20) // 30 MiB
 	var gotN int64
 	var gotErr error

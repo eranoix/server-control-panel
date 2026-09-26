@@ -31,7 +31,7 @@ import (
 // Novo returns a screen emulator ready to receive pty bytes. It does what the
 // original package's `newTerminal` did, without dragging along the pty-attached
 // terminal that came with it.
-func Novo(cols, rows int) *State {
+func New(cols, rows int) *State {
 	t := newState(io.Discard)
 	t.numlock = true
 	t.state = t.parse
@@ -42,16 +42,16 @@ func Novo(cols, rows int) *State {
 	return t
 }
 
-// AoRolarParaFora registers who receives the lines that leave through the top of
+// OnScrollOut registers who receives the lines that leave through the top of
 // the screen — the session's history. It receives them in the order they left.
 //
 // The callback is invoked with the emulator's lock HELD: whoever receives it
 // must copy what it needs and get out. Serialising in there is cheap (it is
 // text); doing network I/O would not be.
-func (t *State) AoRolarParaFora(fn func(linhas [][]Glyph)) {
+func (t *State) OnScrollOut(fn func(lines [][]Glyph)) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.aoRolarParaFora = fn
+	t.onScrollOut = fn
 }
 
 // Write feeds the emulator. The original package exposed this through the
@@ -63,7 +63,7 @@ func (t *State) AoRolarParaFora(fn func(linhas [][]Glyph)) {
 // boundary all the time. The caller has to carry the remainder into the next
 // chunk, otherwise every boundary becomes a wrong character in the history.
 func (t *State) Write(p []byte) (int, error) {
-	var escritos int
+	var written int
 	r := bytes.NewReader(p)
 	t.lock()
 	defer t.unlock()
@@ -73,56 +73,56 @@ func (t *State) Write(p []byte) (int, error) {
 			if err == io.EOF {
 				break
 			}
-			return escritos, err
+			return written, err
 		}
-		escritos += sz
+		written += sz
 		if c == unicode.ReplacementChar && sz == 1 {
 			if r.Len() == 0 {
 				// Not enough bytes for the whole rune: return without consuming it.
-				return escritos - 1, nil
+				return written - 1, nil
 			}
 			continue // a genuinely invalid sequence: skip it
 		}
 		t.put(c)
 	}
-	return escritos, nil
+	return written, nil
 }
 
 // Redimensiona fits the emulator's grid to the session's effective size.
-func (t *State) Redimensiona(cols, rows int) {
+func (t *State) Resize(cols, rows int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.resize(cols, rows)
 }
 
-// TelaAtual returns a copy of the VISIBLE lines of the screen.
+// CurrentScreen returns a copy of the VISIBLE lines of the screen.
 //
-// The history (`AoRolarParaFora`) covers what has already LEFT; this covers what
+// The history (`OnScrollOut`) covers what has already LEFT; this covers what
 // is still in view. An ordinary shell redraws nothing when a new client attaches
 // — `bash` only repaints the prompt line — so without this snapshot the last
 // full screen would have no way of reaching whoever has just opened the session.
-func (t *State) TelaAtual() [][]Glyph {
+func (t *State) CurrentScreen() [][]Glyph {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	out := make([][]Glyph, 0, t.rows)
 	for y := 0; y < t.rows && y < len(t.lines); y++ {
-		linha := make([]Glyph, len(t.lines[y]))
-		copy(linha, t.lines[y])
-		out = append(out, linha)
+		line := make([]Glyph, len(t.lines[y]))
+		copy(line, t.lines[y])
+		out = append(out, line)
 	}
 	return out
 }
 
-// CursorAtual and CursorVisivel: the frame compositor needs to put the cursor in
+// LockedCursor and LockedCursorVisible: the frame compositor needs to put the cursor in
 // the right place of the client's window, and the original package only exposes
 // that without a lock (its `Cursor()` reads `t.cur` directly).
-func (t *State) CursorAtual() Cursor {
+func (t *State) LockedCursor() Cursor {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.cur
 }
 
-func (t *State) CursorVisivel() bool {
+func (t *State) LockedCursorVisible() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.mode&ModeHide == 0
@@ -130,7 +130,7 @@ func (t *State) CursorVisivel() bool {
 
 // Tamanho returns the screen's grid — the SESSION's grid, which is what each
 // client's crop is computed against.
-func (t *State) Tamanho() (cols, rows int) {
+func (t *State) LockedSize() (cols, rows int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.cols, t.rows

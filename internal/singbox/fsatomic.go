@@ -11,7 +11,7 @@ import (
 func nowUnix() int64 { return time.Now().Unix() }
 
 // writeAtomic replaces path preserving owner+mode, mirroring
-// internal/gameservers.escreveAtomico: unique temp in the same dir → chmod/chown
+// internal/gameservers.writeAtomic: unique temp in the same dir → chmod/chown
 // by descriptor → fsync → rename → dir fsync. The container reading
 // /opt/singbox/config.json runs as root; owner preservation keeps a future
 // non-root setup from silently breaking on the next restart. ref supplies

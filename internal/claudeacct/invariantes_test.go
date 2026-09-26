@@ -20,53 +20,53 @@ import (
 // The test covers only the per-account metric invariants, which are the ones
 // this package delivers; the rest belong to other tickets and touching them
 // here would mean changing someone else's guard without the context.
-func TestInvariantesDeMetricaNaoCasamEmComentario(t *testing.T) {
+func TestMetricInvariantsDoNotMatchInComments(t *testing.T) {
 	inv := filepath.Join("..", "..", ".claude", "coord", "invariants.txt")
 	data, err := os.ReadFile(inv)
 	if err != nil {
 		t.Skipf("invariants.txt unavailable (%v) — this guard lives next to the coordination board", err)
 	}
-	nossos := map[string]bool{
+	ours := map[string]bool{
 		"internal/claudeacct/usage.go":      true,
 		"internal/claudeacct/claudeacct.go": true,
 		"internal/claudeacct/attrib.go":     true,
 	}
-	verificados := 0
-	for _, linha := range strings.Split(string(data), "\n") {
-		p := strings.Split(strings.TrimSpace(linha), "|")
-		if len(p) < 2 || strings.HasPrefix(linha, "#") || !nossos[p[0]] {
+	checked := 0
+	for _, line := range strings.Split(string(data), "\n") {
+		p := strings.Split(strings.TrimSpace(line), "|")
+		if len(p) < 2 || strings.HasPrefix(line, "#") || !ours[p[0]] {
 			continue
 		}
-		arq, padrao := p[0], p[1]
+		arq, fallback := p[0], p[1]
 		src, err := os.ReadFile(filepath.Join("..", "..", arq))
 		if err != nil {
 			t.Errorf("invariant points at a missing file: %s", arq)
 			continue
 		}
-		var total, emComentario int
+		var total, inComment int
 		for _, l := range strings.Split(string(src), "\n") {
-			if !strings.Contains(l, padrao) {
+			if !strings.Contains(l, fallback) {
 				continue
 			}
 			total++
 			if strings.HasPrefix(strings.TrimSpace(l), "//") {
-				emComentario++
+				inComment++
 			}
 		}
-		verificados++
+		checked++
 		if total == 0 {
-			t.Errorf("%s: invariant %q matches nowhere — an empty guard", arq, padrao)
+			t.Errorf("%s: invariant %q matches nowhere — an empty guard", arq, fallback)
 		}
-		if emComentario > 0 {
+		if inComment > 0 {
 			t.Errorf("%s: invariante %q aparece em %d comentário(s). Apagar o código deixaria o "+
 				"comentário satisfazendo o grep, e o deploy passaria. Ancore em algo que só "+
-				"exista como código, ou tire o literal do comentário.", arq, padrao, emComentario)
+				"exista como código, ou tire o literal do comentário.", arq, fallback, inComment)
 		}
 	}
 	// Anti-vacuity: if the invariants get renamed and this loop stops matching
 	// anything, the test would go green without having verified a thing.
-	if verificados < 4 {
+	if checked < 4 {
 		t.Errorf("só %d invariantes de métrica verificados; esperava ao menos 4 "+
-			"(EvalSymlinks, IdentityMismatch, RecordAttrib, Unattributed)", verificados)
+			"(EvalSymlinks, IdentityMismatch, RecordAttrib, Unattributed)", checked)
 	}
 }

@@ -19,8 +19,8 @@ import (
 // why.
 func TestListTokens(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if quer := "/api2/json/access/users/lab@pve/token"; r.URL.Path != quer {
-			t.Errorf("path = %q, want %q", r.URL.Path, quer)
+		if want := "/api2/json/access/users/lab@pve/token"; r.URL.Path != want {
+			t.Errorf("path = %q, want %q", r.URL.Path, want)
 		}
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
@@ -57,8 +57,8 @@ func TestListTokens(t *testing.T) {
 // to patch around it.
 func TestTokenInfo(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if quer := "/api2/json/access/users/lab@pve/token/node-apps"; r.URL.Path != quer {
-			t.Errorf("path = %q, want %q", r.URL.Path, quer)
+		if want := "/api2/json/access/users/lab@pve/token/node-apps"; r.URL.Path != want {
+			t.Errorf("path = %q, want %q", r.URL.Path, want)
 		}
 		_, _ = w.Write([]byte(`{"data":{"privsep":1,"expire":1802000000,"comment":"no apps"}}`))
 	})
@@ -74,32 +74,32 @@ func TestTokenInfo(t *testing.T) {
 	}
 }
 
-// TestExpiraEm proves the calculation the screen shows ("expires in N days")
+// TestExpiresIn proves the calculation the screen shows ("expires in N days")
 // with an INJECTED clock — a criterion that is met by waiting is forbidden.
-func TestExpiraEm(t *testing.T) {
-	const agora = 1800000000
-	casos := []struct {
-		nome   string
-		expire int64
-		dias   int
-		vence  bool
+func TestExpiresIn(t *testing.T) {
+	const now = 1800000000
+	cases := []struct {
+		nome    string
+		expire  int64
+		days    int
+		expires bool
 	}{
 		{"nunca vence", 0, 0, false},
-		{"vence em 30 dias", agora + 30*86400, 30, true},
-		{"ja venceu (1 dia cravado)", agora - 86400, -1, true},
+		{"vence em 30 dias", now + 30*86400, 30, true},
+		{"ja venceu (1 dia cravado)", now - 86400, -1, true},
 		// 🔴 Expired ONE HOUR ago. Integer division in Go truncates towards zero:
 		// -3600/86400 == 0, and the screen would say "expires today" for a credential
 		// that is ALREADY returning 401. Only a remainder that is not a multiple of
 		// 86400 separates truncating from rounding down.
-		{"venceu ha uma hora", agora - 3600, -1, true},
-		{"vence em 12 horas", agora + 43200, 0, true},
+		{"venceu ha uma hora", now - 3600, -1, true},
+		{"vence em 12 horas", now + 43200, 0, true},
 	}
-	for _, tc := range casos {
+	for _, tc := range cases {
 		t.Run(tc.nome, func(t *testing.T) {
 			info := TokenInfo{Expire: tc.expire}
-			dias, vence := info.ExpiraEmDias(agora)
-			if vence != tc.vence || (tc.vence && dias != tc.dias) {
-				t.Fatalf("ExpiraEmDias = (%d, %v), want (%d, %v)", dias, vence, tc.dias, tc.vence)
+			days, expires := info.ExpiresInDays(now)
+			if expires != tc.expires || (tc.expires && days != tc.days) {
+				t.Fatalf("ExpiresInDays = (%d, %v), want (%d, %v)", days, expires, tc.days, tc.expires)
 			}
 		})
 	}
@@ -111,51 +111,51 @@ func TestExpiraEm(t *testing.T) {
 // a live token on the hypervisor would be an orphan credential nobody can
 // revoke any more.
 func TestDeleteToken(t *testing.T) {
-	var visto string
+	var seen string
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		visto = r.Method + " " + r.URL.Path
+		seen = r.Method + " " + r.URL.Path
 		_, _ = w.Write([]byte(`{"data":null}`))
 	})
 	if err := c.DeleteToken(context.Background(), "lab@pve", "node-apps"); err != nil {
 		t.Fatalf("DeleteToken: %v", err)
 	}
-	if quer := "DELETE /api2/json/access/users/lab@pve/token/node-apps"; visto != quer {
-		t.Fatalf("call = %q, want %q", visto, quer)
+	if want := "DELETE /api2/json/access/users/lab@pve/token/node-apps"; seen != want {
+		t.Fatalf("call = %q, want %q", seen, want)
 	}
 }
 
-// TestDeleteTokenKindsSeparados: 401 and 403 must NOT collapse into the same
+// TestDeleteTokenSeparateKinds: 401 and 403 must NOT collapse into the same
 // error. "the token I use to revoke has itself been revoked" (401) and "that
 // token has no permission to revoke" (403) ask opposite actions of the
 // operator.
-func TestDeleteTokenKindsSeparados(t *testing.T) {
-	casos := []struct {
+func TestDeleteTokenSeparateKinds(t *testing.T) {
+	cases := []struct {
 		status int
-		quer   Kind
+		want   Kind
 	}{
 		{http.StatusUnauthorized, KindNoCredential},
 		{http.StatusForbidden, KindForbidden},
 		{http.StatusInternalServerError, KindHypervisor},
 	}
-	for _, tc := range casos {
-		t.Run(tc.quer.String(), func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.want.String(), func(t *testing.T) {
 			c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tc.status)
 				_, _ = w.Write([]byte("erro do pve"))
 			})
 			err := c.DeleteToken(context.Background(), "lab@pve", "x")
 			pe, ok := err.(*Error)
-			if !ok || pe.Kind != tc.quer {
-				t.Fatalf("status %d → %v (%T), want %v", tc.status, err, err, tc.quer)
+			if !ok || pe.Kind != tc.want {
+				t.Fatalf("status %d → %v (%T), want %v", tc.status, err, err, tc.want)
 			}
 		})
 	}
 }
 
-// TestTokenIDInvalido: an empty user, or a token containing "/", would build a
+// TestTokenIDInvalid: an empty user, or a token containing "/", would build a
 // different path on the hypervisor. A DELETE against the wrong path is the
 // worst class of bug there is here.
-func TestTokenIDInvalido(t *testing.T) {
+func TestTokenIDInvalid(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("called the hypervisor: %s %s", r.Method, r.URL.Path)
 	})
@@ -172,7 +172,7 @@ func TestTokenIDInvalido(t *testing.T) {
 	}
 }
 
-// 🔴 TestPveNaoImportaCofre pins the layer separation: internal/pve talks to
+// 🔴 TestPveDoesNotImportVault pins the layer separation: internal/pve talks to
 // the hypervisor and NEVER to the vault. What joins the two halves is the
 // handler above, which is also what ORDERS the revocation (hypervisor first,
 // vault afterwards). If this package started reading the vault on its own, the
@@ -183,8 +183,8 @@ func TestTokenIDInvalido(t *testing.T) {
 // the forbidden path appears in this very comment. A substring does not tell an
 // import from a mention — and a pin that bites its own text teaches people to
 // switch it off.
-func TestPveNaoImportaCofre(t *testing.T) {
-	proibidos := map[string]bool{
+func TestPveDoesNotImportVault(t *testing.T) {
+	forbiddenBins := map[string]bool{
 		"server-control-panel/internal/secrets": true,
 		"server-control-panel/internal/scope":   true,
 	}
@@ -193,22 +193,22 @@ func TestPveNaoImportaCofre(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parsing the package: %v", err)
 	}
-	visto := 0
+	seen := 0
 	for _, pkg := range pkgs {
 		for nome, arq := range pkg.Files {
-			visto++
+			seen++
 			for _, imp := range arq.Imports {
-				caminho, err := strconv.Unquote(imp.Path.Value)
+				path, err := strconv.Unquote(imp.Path.Value)
 				if err != nil {
 					t.Fatalf("%s: unreadable import %s", nome, imp.Path.Value)
 				}
-				if proibidos[caminho] {
-					t.Errorf("%s imports %s — internal/pve cannot reach the vault", nome, caminho)
+				if forbiddenBins[path] {
+					t.Errorf("%s imports %s — internal/pve cannot reach the vault", nome, path)
 				}
 			}
 		}
 	}
-	if visto == 0 {
+	if seen == 0 {
 		t.Fatal("no .go file scanned — the guard would be green by absence")
 	}
 }

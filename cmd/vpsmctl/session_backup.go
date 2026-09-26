@@ -23,7 +23,7 @@ import (
 // id = UnixNano (digits only); user = a safe identifier. Both end up inside
 // file paths — validating them cuts off path traversal (../).
 var sessionBackupIDRe = regexp.MustCompile(`^[0-9]{1,25}$`)
-var usuarioValidoRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+var validUserRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 func sessionBackupsDir(dataDir, user string) string {
 	return filepath.Join(dataDir, "users", user, "session-backups")
@@ -42,7 +42,7 @@ func cmdSessionBackup(args []string) error {
 	if len(rest) < 1 {
 		return fmt.Errorf("usage: vpsmctl session-backup <session> [--user U] [--no-scrollback]")
 	}
-	if !usuarioValidoRe.MatchString(*user) {
+	if !validUserRe.MatchString(*user) {
 		return fmt.Errorf("invalid user")
 	}
 	cfg, err := config.Load()
@@ -108,7 +108,7 @@ func cmdSessionRestore(args []string) error {
 	if !sessionBackupIDRe.MatchString(id) {
 		return fmt.Errorf("invalid backup id")
 	}
-	if !usuarioValidoRe.MatchString(*user) {
+	if !validUserRe.MatchString(*user) {
 		return fmt.Errorf("invalid user")
 	}
 	cfg, err := config.Load()

@@ -20,48 +20,48 @@ import (
 )
 
 // Processo is a running `claude` and the version it actually loaded.
-type Processo struct {
+type Process struct {
 	PID     int    `json:"pid"`
-	Versao  string `json:"versao"`
-	Sessao  string `json:"sessao,omitempty"` // owning session, when it can be known
-	Atual   bool   `json:"atual"`            // already on the installed version?
-	Diretor string `json:"cwd,omitempty"`    // helps tell which is which
+	Version string `json:"versao"`
+	Session string `json:"sessao,omitempty"` // owning session, when it can be known
+	Current bool   `json:"atual"`            // already on the installed version?
+	Cwd     string `json:"cwd,omitempty"`    // helps tell which is which
 	// Alvo says HOW to restart this process when it does not belong to a panel
 	// session. "" = an ordinary session (type into the pane); "recovery" = the
 	// Claude in the recovery container, which restarts through the container.
-	Alvo string `json:"alvo,omitempty"`
+	Target string `json:"alvo,omitempty"`
 	// Ref is the version installed IN ITS OWN ENVIRONMENT, when that environment
-	// is not the host's. Only filled for external processes — see LevantarExterno.
+	// is not the host's. Only filled for external processes — see DetectExternal.
 	Ref string `json:"ref,omitempty"`
 }
 
 // Estado is the complete answer: what is installed and who has not taken it yet.
-type Estado struct {
-	Instalada  string     `json:"instalada"`
-	Processos  []Processo `json:"processos"`
-	Defasados  int        `json:"defasados"`
-	Disponivel bool       `json:"disponivel"` // were we able to determine the installed version?
+type State struct {
+	Installed string    `json:"instalada"`
+	Processes []Process `json:"processos"`
+	Outdated  int       `json:"defasados"`
+	Available bool      `json:"disponivel"` // were we able to determine the installed version?
 }
 
-// raizProc is injectable for tests; in production it is /proc.
-var raizProc = "/proc"
+// procRoot is injectable for tests; in production it is /proc.
+var procRoot = "/proc"
 
-// caminhoCLI is the symlink that points at the installed version.
-var caminhoCLI = "/root/.local/bin/claude"
+// cliPath is the symlink that points at the installed version.
+var cliPath = "/root/.local/bin/claude"
 
-// VersaoInstalada reads where the CLI's symlink points. The target file's name IS
+// InstalledVersion reads where the CLI's symlink points. The target file's name IS
 // the version (…/claude/versions/2.1.240) — that is how the official installer
 // organizes it, and reading the link avoids running the binary just to ask.
-func VersaoInstalada() string {
-	alvo, err := filepath.EvalSymlinks(caminhoCLI)
+func InstalledVersion() string {
+	target, err := filepath.EvalSymlinks(cliPath)
 	if err != nil {
 		return ""
 	}
-	return versaoDoCaminho(alvo)
+	return versionFromPath(target)
 }
 
-// versaoDoCaminho extracts "2.1.240" from ".../claude/versions/2.1.240".
-func versaoDoCaminho(p string) string {
+// versionFromPath extracts "2.1.240" from ".../claude/versions/2.1.240".
+func versionFromPath(p string) string {
 	if p == "" || !strings.Contains(p, "/claude/versions/") {
 		return ""
 	}
@@ -79,11 +79,11 @@ func versaoDoCaminho(p string) string {
 // Levantar sweeps the processes and returns the state. It never fails: on a
 // screen that exists to inform, an error reading /proc counts as "don't know",
 // not as a visible error.
-func Levantar(donoDaSessao func(pid int) string) Estado {
-	e := Estado{Instalada: VersaoInstalada(), Processos: []Processo{}}
-	e.Disponivel = e.Instalada != ""
+func Detect(sessionOwner func(pid int) string) State {
+	e := State{Installed: InstalledVersion(), Processes: []Process{}}
+	e.Available = e.Installed != ""
 
-	ents, err := os.ReadDir(raizProc)
+	ents, err := os.ReadDir(procRoot)
 	if err != nil {
 		return e
 	}
@@ -92,12 +92,12 @@ func Levantar(donoDaSessao func(pid int) string) Estado {
 		if err != nil || pid <= 0 {
 			continue
 		}
-		alvo, err := os.Readlink(filepath.Join(raizProc, ent.Name(), "exe"))
+		target, err := os.Readlink(filepath.Join(procRoot, ent.Name(), "exe"))
 		if err != nil {
 			continue // a process of another user, or one already dead
 		}
-		versao := versaoDoCaminho(alvo)
-		if versao == "" {
+		version := versionFromPath(target)
+		if version == "" {
 			continue
 		}
 		// A process from ANOTHER container does not count: it has its own Claude
@@ -105,31 +105,31 @@ func Levantar(donoDaSessao func(pid int) string) Estado {
 		// container runs with --pid=host, so its processes show up here — and the
 		// first version of this code listed it as "behind" when it was in fact
 		// NEWER than the host.
-		if !mesmoMount(pid) {
+		if !sameMount(pid) {
 			continue
 		}
-		p := Processo{PID: pid, Versao: versao, Atual: !ehMaisVelha(versao, e.Instalada)}
-		if cwd, err := os.Readlink(filepath.Join(raizProc, ent.Name(), "cwd")); err == nil {
-			p.Diretor = cwd
+		p := Process{PID: pid, Version: version, Current: !isOlder(version, e.Installed)}
+		if cwd, err := os.Readlink(filepath.Join(procRoot, ent.Name(), "cwd")); err == nil {
+			p.Cwd = cwd
 		}
-		if donoDaSessao != nil {
-			p.Sessao = donoDaSessao(pid)
+		if sessionOwner != nil {
+			p.Session = sessionOwner(pid)
 		}
-		if !p.Atual {
-			e.Defasados++
+		if !p.Current {
+			e.Outdated++
 		}
-		e.Processos = append(e.Processos, p)
+		e.Processes = append(e.Processes, p)
 	}
 	return e
 }
 
-// ehMaisVelha compares two "a.b.c" versions and says whether `v` is BEHIND `ref`.
+// isOlder compares two "a.b.c" versions and says whether `v` is BEHIND `ref`.
 //
 // Comparing by equality (the first version of this) marked as behind anything
 // that was AHEAD — the recovery container, which has its own newer installation,
 // showed up on the "needs restart" list. Only what is behind actually needs a
 // restart.
-func ehMaisVelha(v, ref string) bool {
+func isOlder(v, ref string) bool {
 	if v == "" || ref == "" || v == ref {
 		return false
 	}
@@ -149,7 +149,7 @@ func ehMaisVelha(v, ref string) bool {
 	return false
 }
 
-// mesmoMount says whether the process shares this process's mount namespace, that
+// sameMount says whether the process shares this process's mount namespace, that
 // is, whether it sees the SAME filesystem — and therefore the same Claude
 // installation. Without this check, processes from containers that run with
 // --pid=host enter the tally carrying their own installation.
@@ -157,16 +157,16 @@ func ehMaisVelha(v, ref string) bool {
 // When it cannot read (permissions, a dying process), it assumes the host's: the
 // cost of listing one extra process is a line on screen; the cost of hiding a
 // genuinely outdated session is the operator believing everything is up to date.
-func mesmoMount(pid int) bool {
-	meu, err := os.Readlink(filepath.Join(raizProc, "self", "ns", "mnt"))
+func sameMount(pid int) bool {
+	meu, err := os.Readlink(filepath.Join(procRoot, "self", "ns", "mnt"))
 	if err != nil {
 		return true
 	}
-	dele, err := os.Readlink(filepath.Join(raizProc, strconv.Itoa(pid), "ns", "mnt"))
+	theirs, err := os.Readlink(filepath.Join(procRoot, strconv.Itoa(pid), "ns", "mnt"))
 	if err != nil {
 		return true
 	}
-	return meu == dele
+	return meu == theirs
 }
 
 // PaiDe reads the PPID from /proc/<pid>/stat.
@@ -175,7 +175,7 @@ func mesmoMount(pid int) bool {
 // PARENTHESES and may contain spaces — splitting the whole line on spaces gets it
 // wrong in those cases. Hence the cut is made after the last ')'.
 func PaiDe(pid int) int {
-	b, err := os.ReadFile(filepath.Join(raizProc, strconv.Itoa(pid), "stat"))
+	b, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(pid), "stat"))
 	if err != nil {
 		return 0
 	}
@@ -198,9 +198,9 @@ func PaiDe(pid int) int {
 // AncestralEm climbs the process tree from pid and returns the first ancestor
 // present in `alvos`, or 0. The hop ceiling avoids an infinite loop if /proc
 // returns something inconsistent (which has happened with a recycled PID).
-func AncestralEm(pid int, alvos map[int]bool) int {
-	for salto := 0; salto < 32 && pid > 1; salto++ {
-		if alvos[pid] {
+func AncestralEm(pid int, targets map[int]bool) int {
+	for hop := 0; hop < 32 && pid > 1; hop++ {
+		if targets[pid] {
 			return pid
 		}
 		pai := PaiDe(pid)
@@ -228,18 +228,18 @@ func AncestralEm(pid int, alvos map[int]bool) int {
 // long as it lives. It matches by plain substring: the socket path is specific
 // enough not to collide, and the hop ceiling inherits the same reason as
 // AncestralEm (a recycled PID has already produced a loop here).
-func AncestralPorArgv(pid int, marcas map[string]string) string {
-	if len(marcas) == 0 {
+func AncestralPorArgv(pid int, marks map[string]string) string {
+	if len(marks) == 0 {
 		return ""
 	}
-	for salto := 0; salto < 32 && pid > 1; salto++ {
-		b, err := os.ReadFile(filepath.Join(raizProc, strconv.Itoa(pid), "cmdline"))
+	for hop := 0; hop < 32 && pid > 1; hop++ {
+		b, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(pid), "cmdline"))
 		if err == nil && len(b) > 0 {
 			// cmdline is NUL-separated; it becomes spaces only so Contains does
 			// not fail on an argument glued to its neighbor.
-			linha := strings.ReplaceAll(string(b), "\x00", " ")
-			for marca, valor := range marcas {
-				if marca != "" && strings.Contains(linha, marca) {
+			line := strings.ReplaceAll(string(b), "\x00", " ")
+			for mark, valor := range marks {
+				if mark != "" && strings.Contains(line, mark) {
 					return valor
 				}
 			}
@@ -253,10 +253,10 @@ func AncestralPorArgv(pid int, marcas map[string]string) string {
 	return ""
 }
 
-// LevantarExterno sweeps the `claude` processes running in ANOTHER mount
-// namespace — in practice, containers — that carry `marcadorEnv` in their environ.
+// DetectExternal sweeps the `claude` processes running in ANOTHER mount
+// namespace — in practice, containers — that carry `markerEnv` in their environ.
 //
-// It exists because Levantar discards those processes on purpose (mesmoMount), and
+// It exists because Levantar discards those processes on purpose (sameMount), and
 // the reason for discarding them still holds: the container has its OWN CLI
 // installation, so comparing it against the host's version is apples to oranges —
 // that is exactly how the first version of that code called a Claude "behind" when
@@ -265,16 +265,16 @@ func AncestralPorArgv(pid int, marcas map[string]string) string {
 // /proc/<pid>/root without paying a `docker exec` every time the panel opens.
 //
 // `alvo` travels to the front end to say HOW to restart (see Processo.Alvo).
-func LevantarExterno(marcadorEnv, alvo string) []Processo {
-	fora := []Processo{}
-	if marcadorEnv == "" {
+func DetectExternal(markerEnv, target string) []Process {
+	fora := []Process{}
+	if markerEnv == "" {
 		return fora
 	}
-	ents, err := os.ReadDir(raizProc)
+	ents, err := os.ReadDir(procRoot)
 	if err != nil {
 		return fora
 	}
-	marca := []byte(marcadorEnv)
+	mark := []byte(markerEnv)
 	for _, ent := range ents {
 		pid, err := strconv.Atoi(ent.Name())
 		if err != nil || pid <= 0 {
@@ -282,38 +282,38 @@ func LevantarExterno(marcadorEnv, alvo string) []Processo {
 		}
 		// Deliberate order, cheapest to costliest: one readlink on `exe` knocks out
 		// almost every process on the machine before environ is ever touched.
-		exe, err := os.Readlink(filepath.Join(raizProc, ent.Name(), "exe"))
+		exe, err := os.Readlink(filepath.Join(procRoot, ent.Name(), "exe"))
 		if err != nil {
 			continue
 		}
-		versao := versaoDoCaminho(exe)
-		if versao == "" || mesmoMount(pid) {
+		version := versionFromPath(exe)
+		if version == "" || sameMount(pid) {
 			continue
 		}
-		env, err := os.ReadFile(filepath.Join(raizProc, ent.Name(), "environ"))
+		env, err := os.ReadFile(filepath.Join(procRoot, ent.Name(), "environ"))
 		if err != nil {
 			continue
 		}
-		achou := false
+		found := false
 		for _, kv := range bytesSplitNUL(env) {
-			if string(kv) == string(marca) {
-				achou = true
+			if string(kv) == string(mark) {
+				found = true
 				break
 			}
 		}
-		if !achou {
+		if !found {
 			continue
 		}
-		p := Processo{PID: pid, Versao: versao, Alvo: alvo, Atual: true}
+		p := Process{PID: pid, Version: version, Target: target, Current: true}
 		// The CLI's symlink INSIDE its own namespace, seen from the host.
-		if ref, err := os.Readlink(filepath.Join(raizProc, ent.Name(), "root", "root", ".local", "bin", "claude")); err == nil {
-			p.Ref = versaoDoCaminho(resolveRel(filepath.Join(raizProc, ent.Name(), "root"), ref))
+		if ref, err := os.Readlink(filepath.Join(procRoot, ent.Name(), "root", "root", ".local", "bin", "claude")); err == nil {
+			p.Ref = versionFromPath(resolveRel(filepath.Join(procRoot, ent.Name(), "root"), ref))
 		}
 		if p.Ref != "" {
-			p.Atual = !ehMaisVelha(versao, p.Ref)
+			p.Current = !isOlder(version, p.Ref)
 		}
-		if cwd, err := os.Readlink(filepath.Join(raizProc, ent.Name(), "cwd")); err == nil {
-			p.Diretor = cwd
+		if cwd, err := os.Readlink(filepath.Join(procRoot, ent.Name(), "cwd")); err == nil {
+			p.Cwd = cwd
 		}
 		fora = append(fora, p)
 	}
@@ -334,28 +334,28 @@ func LevantarExterno(marcadorEnv, alvo string) []Processo {
 //
 // 2.1.246 did not even exist inside the container. A full resolver here would make
 // the panel compare the container against itself using the host's version as the
-// reference — back to the very error mesmoMount was written to eliminate.
-func resolveRel(raiz, alvo string) string {
-	if strings.HasPrefix(alvo, "/") {
-		return filepath.Join(raiz, alvo)
+// reference — back to the very error sameMount was written to eliminate.
+func resolveRel(root, target string) string {
+	if strings.HasPrefix(target, "/") {
+		return filepath.Join(root, target)
 	}
-	return alvo
+	return target
 }
 
 // bytesSplitNUL slices the environ (KEY=VALUE pairs separated by NUL).
 func bytesSplitNUL(b []byte) [][]byte {
 	var out [][]byte
-	inicio := 0
+	start := 0
 	for i := 0; i < len(b); i++ {
 		if b[i] == 0 {
-			if i > inicio {
-				out = append(out, b[inicio:i])
+			if i > start {
+				out = append(out, b[start:i])
 			}
-			inicio = i + 1
+			start = i + 1
 		}
 	}
-	if inicio < len(b) {
-		out = append(out, b[inicio:])
+	if start < len(b) {
+		out = append(out, b[start:])
 	}
 	return out
 }

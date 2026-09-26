@@ -85,15 +85,15 @@ func TestAttachReplay(t *testing.T) {
 	}
 }
 
-// TestSemRelatorioDeMouse pins the filter that strips out of the replay the
+// TestStripMouseReports pins the filter that strips out of the replay the
 // mouse reports recorded in the log. Table-driven because the danger here is at
 // the edges: the 128 KiB cut can land in the middle of a sequence, and a scanner
 // that trusts it will find the terminator reads past the end of the buffer.
-func TestSemRelatorioDeMouse(t *testing.T) {
-	casos := []struct {
+func TestStripMouseReports(t *testing.T) {
+	cases := []struct {
 		nome  string
-		entra string
-		quer  string
+		input string
+		want  string
 	}{
 		{"texto puro passa intacto", "olá mundo\n", "olá mundo\n"},
 		{"SGR press e release somem", "a\x1b[<35;80;24Mb\x1b[<35;80;24mc", "abc"},
@@ -112,23 +112,23 @@ func TestSemRelatorioDeMouse(t *testing.T) {
 		{"CSI com letra no meio dos números fica", "a\x1b[<35;8x0M", "a\x1b[<35;8x0M"},
 		{"várias seguidas somem todas", "\x1b[<0;1;1M\x1b[<0;2;2M\x1b[<0;3;3mfim", "fim"},
 	}
-	for _, c := range casos {
+	for _, c := range cases {
 		t.Run(c.nome, func(t *testing.T) {
-			got := string(semRelatorioDeMouse([]byte(c.entra)))
-			if got != c.quer {
-				t.Errorf("semRelatorioDeMouse(%q) = %q, want %q", c.entra, got, c.quer)
+			got := string(stripMouseReports([]byte(c.input)))
+			if got != c.want {
+				t.Errorf("stripMouseReports(%q) = %q, want %q", c.input, got, c.want)
 			}
 		})
 	}
 }
 
-// TestSemRelatorioDeMouse_NaoAlocaQuandoNaoPrecisa: the common case is a log
+// TestStripMouseReports_NoAllocWhenNotNeeded: the common case is a log
 // with no mouse byte at all, and it must not pay for a 128 KiB copy on every
 // attach.
-func TestSemRelatorioDeMouse_NaoAlocaQuandoNaoPrecisa(t *testing.T) {
-	entrada := []byte("linha 1\nlinha 2\n\x1b[32mverde\x1b[0m\n")
-	saida := semRelatorioDeMouse(entrada)
-	if &entrada[0] != &saida[0] {
+func TestStripMouseReports_NoAllocWhenNotNeeded(t *testing.T) {
+	entry := []byte("linha 1\nlinha 2\n\x1b[32mverde\x1b[0m\n")
+	output := stripMouseReports(entry)
+	if &entry[0] != &output[0] {
 		t.Error("with no mouse report, the buffer has to come back as it arrived (same memory)")
 	}
 }

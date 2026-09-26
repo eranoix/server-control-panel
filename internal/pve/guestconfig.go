@@ -38,22 +38,22 @@ func (c *Client) GuestAddress(ctx context.Context, node string, vmid int, typ st
 		return "", err
 	}
 	if typ == "qemu" {
-		return ipDeConfigDeRede(cfg.IPConfig0), nil
+		return ipFromNetConfig(cfg.IPConfig0), nil
 	}
-	return ipDeConfigDeRede(cfg.Net0), nil
+	return ipFromNetConfig(cfg.Net0), nil
 }
 
-// ipDeConfigDeRede extracts the value of "ip=" from a hypervisor network config
+// ipFromNetConfig extracts the value of "ip=" from a hypervisor network config
 // line, which is a comma-separated list of pairs
 // ("name=eth0,bridge=vmbr0,ip=…/24"). It returns the address alone, without the
 // CIDR prefix.
 //
 // It returns "" — and not an error — for: an empty line, no ip= key, ip=dhcp,
 // ip=auto, or a value that is not an IP. All of that is "address not declared".
-func ipDeConfigDeRede(linha string) string {
-	for _, campo := range strings.Split(linha, ",") {
-		chave, valor, ok := strings.Cut(strings.TrimSpace(campo), "=")
-		if !ok || chave != "ip" {
+func ipFromNetConfig(line string) string {
+	for _, field := range strings.Split(line, ",") {
+		key, valor, ok := strings.Cut(strings.TrimSpace(field), "=")
+		if !ok || key != "ip" {
 			continue
 		}
 		// The hypervisor accepts "dhcp"/"auto" in place of the CIDR — those are

@@ -155,17 +155,17 @@ func assignTargetsHandler(
 		if !httpx.IsAdmin(cfg, user) {
 			return nil, huma.Error404NotFound("not found")
 		}
-		alvos := make([]string, 0, len(cfg.Users)+1)
+		targets := make([]string, 0, len(cfg.Users)+1)
 		for _, u := range cfg.Users {
-			alvos = append(alvos, u.Username)
+			targets = append(targets, u.Username)
 		}
-		sort.Strings(alvos)
+		sort.Strings(targets)
 		// "*" last and on its own: it is the target that changes the outcome most (the
 		// session starts showing up for EVERYONE) and it is not a user.
-		alvos = append(alvos, ptysvc.AudienceAll)
+		targets = append(targets, ptysvc.AudienceAll)
 
 		out := &assignTargetsOutput{}
-		out.Body.Targets = alvos
+		out.Body.Targets = targets
 		return out, nil
 	}
 }
@@ -202,11 +202,11 @@ func assignSessionHandler(
 	idem *Idempotencia,
 ) func(context.Context, *assignSessionInput) (*statusOutput, error) {
 	return func(ctx context.Context, in *assignSessionInput) (*statusOutput, error) {
-		return lembrarResultado(idem, chaveDoContexto(ctx, in.IdemKey), func() (*statusOutput, error) {
+		return rememberResult(idem, keyFromContext(ctx, in.IdemKey), func() (*statusOutput, error) {
 			user := auth.UserFromContext(ctx)
 			nome := strings.TrimSpace(in.Body.Name)
-			alvo := strings.TrimSpace(in.Body.Target)
-			if nome == "" || alvo == "" {
+			target := strings.TrimSpace(in.Body.Target)
+			if nome == "" || target == "" {
 				return nil, huma.Error400BadRequest("name and target are required")
 			}
 			// ONLY THE ADMIN REASSIGNS. Reassigning means giving ANOTHER account access
@@ -218,10 +218,10 @@ func assignSessionHandler(
 			if !ptysvc.OwnsSession(user, nome, true, own) {
 				return nil, huma.Error404NotFound("session not found")
 			}
-			if err := own.Assign(ptysvc.SafeSessionName(nome), alvo); err != nil {
+			if err := own.Assign(ptysvc.SafeSessionName(nome), target); err != nil {
 				return nil, huma.Error500InternalServerError(err.Error())
 			}
-			auditar(ctx, audit, user, "terminal.assign", nome+"→"+alvo)
+			auditar(ctx, audit, user, "terminal.assign", nome+"→"+target)
 
 			out := &statusOutput{}
 			out.Body.Status = "ok"
@@ -243,23 +243,23 @@ func previewSessionHandler(
 		if !ptysvc.OwnsSession(user, nome, httpx.IsAdmin(cfg, user), own) {
 			return nil, huma.Error404NotFound("session not found")
 		}
-		linhas := in.Lines
+		lines := in.Lines
 		// Clamped on both sides: 0 or negative would return empty and look like a
 		// session with no output; above the cap it becomes a log transfer disguised
 		// as a preview — and `/terminal/log-bruto` exists for that.
-		if linhas <= 0 {
-			linhas = 20
+		if lines <= 0 {
+			lines = 20
 		}
-		if linhas > 200 {
-			linhas = 200
+		if lines > 200 {
+			lines = 200
 		}
-		texto := ptysvc.SessionTail(nome, linhas)
+		text := ptysvc.SessionTail(nome, lines)
 
 		out := &sessionPreviewOutput{}
 		out.Body = SessionPreviewResponse{
 			Name:  nome,
-			Text:  texto,
-			Lines: linhas,
+			Text:  text,
+			Lines: lines,
 		}
 		return out, nil
 	}

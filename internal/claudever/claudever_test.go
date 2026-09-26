@@ -7,11 +7,11 @@ import "testing"
 // "needs restart" anything that was AHEAD — the recovery container, which has its
 // own newer installation, showed up on the list. An indicator that points at the
 // wrong target is worse than no indicator at all.
-func TestSoQuemEstaAtrasPrecisaReiniciar(t *testing.T) {
-	casos := []struct {
-		versao, instalada string
-		atras             bool
-		porque            string
+func TestOnlyOutdatedNeedRestart(t *testing.T) {
+	cases := []struct {
+		version, installed string
+		behind             bool
+		why                string
 	}{
 		{"2.1.238", "2.1.240", true, "patch atrás"},
 		{"2.1.240", "2.1.240", false, "mesma versão"},
@@ -23,9 +23,9 @@ func TestSoQuemEstaAtrasPrecisaReiniciar(t *testing.T) {
 		{"", "2.1.240", false, "sem versão: não dá para afirmar que está atrás"},
 		{"2.1.240", "", false, "sem referência: idem"},
 	}
-	for _, c := range casos {
-		if got := ehMaisVelha(c.versao, c.instalada); got != c.atras {
-			t.Errorf("ehMaisVelha(%q, %q) = %v, wanted %v — %s", c.versao, c.instalada, got, c.atras, c.porque)
+	for _, c := range cases {
+		if got := isOlder(c.version, c.installed); got != c.behind {
+			t.Errorf("isOlder(%q, %q) = %v, wanted %v — %s", c.version, c.installed, got, c.behind, c.why)
 		}
 	}
 }
@@ -33,8 +33,8 @@ func TestSoQuemEstaAtrasPrecisaReiniciar(t *testing.T) {
 // The version comes from the PATH of the binary the process has open. Anything
 // that is not a Claude version path has to return empty, otherwise the indicator
 // would invent versions out of processes that are not the CLI.
-func TestVersaoSaiDoCaminhoDoBinario(t *testing.T) {
-	casos := map[string]string{
+func TestVersionComesFromBinaryPath(t *testing.T) {
+	cases := map[string]string{
 		"/root/.local/share/claude/versions/2.1.240": "2.1.240",
 		"/opt/x/claude/versions/2.1.9":               "2.1.9",
 		"/usr/bin/bash":                              "",
@@ -42,9 +42,9 @@ func TestVersaoSaiDoCaminhoDoBinario(t *testing.T) {
 		"":                  "",
 		"/claude/versions/": "",
 	}
-	for caminho, esperado := range casos {
-		if got := versaoDoCaminho(caminho); got != esperado {
-			t.Errorf("versaoDoCaminho(%q) = %q, wanted %q", caminho, got, esperado)
+	for path, expected := range cases {
+		if got := versionFromPath(path); got != expected {
+			t.Errorf("versionFromPath(%q) = %q, wanted %q", path, got, expected)
 		}
 	}
 }
@@ -53,26 +53,26 @@ func TestVersaoSaiDoCaminhoDoBinario(t *testing.T) {
 // parentheses and may contain spaces and parentheses. Splitting the whole line on
 // spaces — the naive way — returns the wrong field precisely for processes with
 // an odd name.
-func TestPaiDeAguentaNomeDeProcessoComEspaco(t *testing.T) {
+func TestParentOfHandlesProcessNameWithSpace(t *testing.T) {
 	dir := t.TempDir()
-	raizAnterior := raizProc
-	raizProc = dir
-	defer func() { raizProc = raizAnterior }()
+	prevRoot := procRoot
+	procRoot = dir
+	defer func() { procRoot = prevRoot }()
 
-	escreve := func(pid, ppid int, nome string) {
+	writeOut := func(pid, ppid int, nome string) {
 		d := dir + "/" + itoa(pid)
 		if err := mkdirAll(d); err != nil {
 			t.Fatal(err)
 		}
-		linha := itoa(pid) + " (" + nome + ") S " + itoa(ppid) + " 1 1 0 -1 4194304 100 0 0 0"
-		if err := writeFile(d+"/stat", linha); err != nil {
+		line := itoa(pid) + " (" + nome + ") S " + itoa(ppid) + " 1 1 0 -1 4194304 100 0 0 0"
+		if err := writeFile(d+"/stat", line); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	escreve(100, 42, "claude")
-	escreve(101, 43, "meu app (v2)") // parentheses AND a space in the name
-	escreve(102, 44, "a b c")
+	writeOut(100, 42, "claude")
+	writeOut(101, 43, "meu app (v2)") // parentheses AND a space in the name
+	writeOut(102, 44, "a b c")
 
 	for _, c := range []struct{ pid, ppid int }{{100, 42}, {101, 43}, {102, 44}} {
 		if got := PaiDe(c.pid); got != c.ppid {
@@ -83,11 +83,11 @@ func TestPaiDeAguentaNomeDeProcessoComEspaco(t *testing.T) {
 
 // AncestralEm has to terminate even with an inconsistent /proc — a recycled PID
 // has already produced a cycle in production in this kind of sweep.
-func TestAncestralNaoEntraEmLaco(t *testing.T) {
+func TestAncestorDoesNotLoop(t *testing.T) {
 	dir := t.TempDir()
-	raizAnterior := raizProc
-	raizProc = dir
-	defer func() { raizProc = raizAnterior }()
+	prevRoot := procRoot
+	procRoot = dir
+	defer func() { procRoot = prevRoot }()
 
 	// 200 -> 201 -> 200 (cycle)
 	for _, c := range []struct{ pid, ppid int }{{200, 201}, {201, 200}} {
@@ -99,14 +99,14 @@ func TestAncestralNaoEntraEmLaco(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	feito := make(chan int, 1)
-	go func() { feito <- AncestralEm(200, map[int]bool{999: true}) }()
+	done := make(chan int, 1)
+	go func() { done <- AncestralEm(200, map[int]bool{999: true}) }()
 	select {
-	case got := <-feito:
+	case got := <-done:
 		if got != 0 {
 			t.Errorf("found ancestor %d where there was none", got)
 		}
-	case <-timeoutCurto():
+	case <-shortTimeout():
 		t.Fatal("AncestralEm did not terminate — an infinite loop with /proc in a cycle")
 	}
 }

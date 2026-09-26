@@ -60,10 +60,10 @@ const (
 
 var reSID = regexp.MustCompile(`^[a-f0-9]{8,32}$`)
 
-// tiposAceitos is the Content-Type allowlist. `text/plain` is what sendBeacon sends
+// acceptedTypes is the Content-Type allowlist. `text/plain` is what sendBeacon sends
 // with a string; `application/json` is what fetch and sendBeacon-with-typed-Blob send.
 // A body with no Content-Type also passes — sendBeacon with an untyped Blob sends none.
-var tiposAceitos = map[string]struct{}{
+var acceptedTypes = map[string]struct{}{
 	"text/plain":       {},
 	"application/json": {},
 }
@@ -114,7 +114,7 @@ func Handler(sink *Sink, fork string) http.HandlerFunc {
 				w.WriteHeader(http.StatusUnsupportedMediaType)
 				return
 			}
-			if _, ok := tiposAceitos[mt]; !ok {
+			if _, ok := acceptedTypes[mt]; !ok {
 				w.WriteHeader(http.StatusUnsupportedMediaType)
 				return
 			}

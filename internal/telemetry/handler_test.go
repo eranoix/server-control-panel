@@ -11,11 +11,11 @@ import (
 	"time"
 )
 
-const diaFixo = "2026-08-06"
+const fixedDay = "2026-08-06"
 
-// novoHandler returns a handler with its sink in a temp directory and a frozen
+// newHandler returns a handler with its sink in a temp directory and a frozen
 // clock, plus the path of the day's file.
-func novoHandler(t *testing.T) (http.HandlerFunc, string) {
+func newHandler(t *testing.T) (http.HandlerFunc, string) {
 	t.Helper()
 	dir := t.TempDir()
 	s, err := NewSink(dir)
@@ -23,12 +23,12 @@ func novoHandler(t *testing.T) (http.HandlerFunc, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	congelar(s, diaFixo)
-	return Handler(s, "vps-manager"), filepath.Join(dir, diaFixo+".jsonl")
+	freeze(s, fixedDay)
+	return Handler(s, "vps-manager"), filepath.Join(dir, fixedDay+".jsonl")
 }
 
 // conteudo returns the day's file, or "" if it never even came into existence.
-func conteudo(t *testing.T, path string) string {
+func content(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -40,7 +40,7 @@ func conteudo(t *testing.T, path string) string {
 	return string(b)
 }
 
-func contaLinhas(s string) int {
+func countLines(s string) int {
 	s = strings.TrimSuffix(s, "\n")
 	if s == "" {
 		return 0
@@ -62,29 +62,29 @@ func TestHandler(t *testing.T) {
 	// 1. Valid batch with 2 events → 204 and 2 lines, with the server's ts, the
 	//    build's fork and the sid from the body.
 	t.Run("valid-batch-2-events", func(t *testing.T) {
-		h, p := novoHandler(t)
+		h, p := newHandler(t)
 		antes := time.Now().Add(-time.Second)
 		rec := post(h, "application/json",
 			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.codigo","origin":"nav"},{"screen":"docker.containers.logs","origin":"default"}],"dropped":0}`)
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("expected=204 observed=%d", rec.Code)
 		}
-		c := conteudo(t, p)
-		if n := contaLinhas(c); n != 2 {
+		c := content(t, p)
+		if n := countLines(c); n != 2 {
 			t.Fatalf("expected=2 observed=%d lines; content=%q", n, c)
 		}
-		querSc := []string{"dev.codigo", "docker.containers.logs"}
-		querOr := []string{"nav", "default"}
+		wantSc := []string{"dev.codigo", "docker.containers.logs"}
+		wantOr := []string{"nav", "default"}
 		for i, l := range strings.Split(strings.TrimSuffix(c, "\n"), "\n") {
 			var m map[string]any
 			if err := json.Unmarshal([]byte(l), &m); err != nil {
 				t.Fatalf("line %d is not JSON: %q", i+1, l)
 			}
-			if m["screen"] != querSc[i] {
-				t.Errorf("line %d screen: expected=%q observed=%v", i+1, querSc[i], m["screen"])
+			if m["screen"] != wantSc[i] {
+				t.Errorf("line %d screen: expected=%q observed=%v", i+1, wantSc[i], m["screen"])
 			}
-			if m["origin"] != querOr[i] {
-				t.Errorf("line %d origin: expected=%q observed=%v", i+1, querOr[i], m["origin"])
+			if m["origin"] != wantOr[i] {
+				t.Errorf("line %d origin: expected=%q observed=%v", i+1, wantOr[i], m["origin"])
 			}
 			if m["sid"] != "9f3a1c72" {
 				t.Errorf("line %d sid: expected=9f3a1c72 observed=%v", i+1, m["sid"])
@@ -114,21 +114,21 @@ func TestHandler(t *testing.T) {
 
 	// 2. Body above 64 KiB → 400 and zero lines.
 	t.Run("body-over-64kib", func(t *testing.T) {
-		h, p := novoHandler(t)
-		gordo := strings.Repeat("a", 70000)
+		h, p := newHandler(t)
+		huge := strings.Repeat("a", 70000)
 		rec := post(h, "application/json",
-			`{"v":1,"s":"9f3a1c72","e":[{"screen":"`+gordo+`","origin":"nav"}]}`)
+			`{"v":1,"s":"9f3a1c72","e":[{"screen":"`+huge+`","origin":"nav"}]}`)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected=400 observed=%d", rec.Code)
 		}
-		if n := contaLinhas(conteudo(t, p)); n != 0 {
+		if n := countLines(content(t, p)); n != 0 {
 			t.Fatalf("a refused body wrote %d line(s)", n)
 		}
 	})
 
 	// 3. Batch with 201 events → 400 and zero lines.
 	t.Run("batch-201-events", func(t *testing.T) {
-		h, p := novoHandler(t)
+		h, p := newHandler(t)
 		evs := make([]string, 201)
 		for i := range evs {
 			evs[i] = `{"screen":"dev.codigo","origin":"nav"}`
@@ -138,14 +138,14 @@ func TestHandler(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected=400 observed=%d", rec.Code)
 		}
-		if n := contaLinhas(conteudo(t, p)); n != 0 {
+		if n := countLines(content(t, p)); n != 0 {
 			t.Fatalf("a refused batch wrote %d line(s)", n)
 		}
 	})
 
 	// 3b. The limit itself: 200 passes.
 	t.Run("batch-of-200-events-passes", func(t *testing.T) {
-		h, p := novoHandler(t)
+		h, p := newHandler(t)
 		evs := make([]string, 200)
 		for i := range evs {
 			evs[i] = `{"screen":"dev.codigo","origin":"nav"}`
@@ -155,7 +155,7 @@ func TestHandler(t *testing.T) {
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("expected=204 observed=%d", rec.Code)
 		}
-		if n := contaLinhas(conteudo(t, p)); n != 200 {
+		if n := countLines(content(t, p)); n != 200 {
 			t.Fatalf("expected=200 observed=%d lines", n)
 		}
 	})
@@ -163,7 +163,7 @@ func TestHandler(t *testing.T) {
 	// 4. origin outside {default,nav} → 400 and zero lines.
 	t.Run("invalid-origin", func(t *testing.T) {
 		for _, org := range []string{"NAV", "", "click", "nav\n", "default "} {
-			h, p := novoHandler(t)
+			h, p := newHandler(t)
 			b, _ := json.Marshal(map[string]any{
 				"v": 1, "s": "9f3a1c72",
 				"e": []map[string]string{{"screen": "dev.codigo", "origin": org}},
@@ -172,7 +172,7 @@ func TestHandler(t *testing.T) {
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("origin=%q: expected=400 observed=%d", org, rec.Code)
 			}
-			if n := contaLinhas(conteudo(t, p)); n != 0 {
+			if n := countLines(content(t, p)); n != 0 {
 				t.Errorf("origin=%q: wrote %d line(s)", org, n)
 			}
 		}
@@ -184,7 +184,7 @@ func TestHandler(t *testing.T) {
 			"", "1234567", "9F3A1C72", "9f3a1c7g", "../../etc/passwd",
 			strings.Repeat("a", 33), "9f3a1c72\n", " 9f3a1c72",
 		} {
-			h, p := novoHandler(t)
+			h, p := newHandler(t)
 			b, _ := json.Marshal(map[string]any{
 				"v": 1, "s": sid,
 				"e": []map[string]string{{"screen": "dev.codigo", "origin": "nav"}},
@@ -193,13 +193,13 @@ func TestHandler(t *testing.T) {
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("sid=%q: expected=400 observed=%d", sid, rec.Code)
 			}
-			if n := contaLinhas(conteudo(t, p)); n != 0 {
+			if n := countLines(content(t, p)); n != 0 {
 				t.Errorf("sid=%q: wrote %d line(s)", sid, n)
 			}
 		}
 		// And the valid format passes at both extremes.
 		for _, sid := range []string{"abcdef01", strings.Repeat("0f", 16)} {
-			h, _ := novoHandler(t)
+			h, _ := newHandler(t)
 			b, _ := json.Marshal(map[string]any{
 				"v": 1, "s": sid,
 				"e": []map[string]string{{"screen": "dev.codigo", "origin": "nav"}},
@@ -213,14 +213,14 @@ func TestHandler(t *testing.T) {
 	// 6. screen outside the allowlist → 204, 1 line holding "unknown", and the
 	//    raw id does NOT appear anywhere in the file.
 	t.Run("unknown-screen-becomes-unknown", func(t *testing.T) {
-		h, p := novoHandler(t)
+		h, p := newHandler(t)
 		rec := post(h, "application/json",
 			`{"v":1,"s":"9f3a1c72","e":[{"screen":"nao-existe-essa-tela","origin":"nav"}]}`)
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("expected=204 observed=%d", rec.Code)
 		}
-		c := conteudo(t, p)
-		if n := contaLinhas(c); n != 1 {
+		c := content(t, p)
+		if n := countLines(c); n != 1 {
 			t.Fatalf("expected=1 observed=%d lines", n)
 		}
 		if got := strings.Count(c, `"screen":"unknown"`); got != 1 {
@@ -239,7 +239,7 @@ func TestHandler(t *testing.T) {
 			`dev.codigo","injetado":"sim`,
 			`DOCKER.CONTAINERS`,
 		} {
-			h, p := novoHandler(t)
+			h, p := newHandler(t)
 			b, _ := json.Marshal(map[string]any{
 				"v": 1, "s": "9f3a1c72",
 				"e": []map[string]string{{"screen": sc, "origin": "nav"}},
@@ -248,12 +248,12 @@ func TestHandler(t *testing.T) {
 			if rec.Code != http.StatusNoContent {
 				t.Errorf("screen=%q: expected=204 observed=%d", sc, rec.Code)
 			}
-			c := conteudo(t, p)
+			c := content(t, p)
 			if strings.Contains(c, "script") || strings.Contains(c, "passwd") ||
 				strings.Contains(c, "injetado") || strings.Contains(c, "DOCKER") {
 				t.Errorf("screen=%q leaked into the file: %q", sc, c)
 			}
-			if n := contaLinhas(c); n != 1 {
+			if n := countLines(c); n != 1 {
 				t.Errorf("screen=%q: expected=1 observed=%d lines", sc, n)
 			}
 			// The record has to stay one line and valid JSON.
@@ -272,44 +272,44 @@ func TestHandler(t *testing.T) {
 	//    and the file is left with zero lines, which is even stronger than "the
 	//    value does not appear".
 	t.Run("extra-field-in-the-event", func(t *testing.T) {
-		h, p := novoHandler(t)
+		h, p := newHandler(t)
 		rec := post(h, "application/json",
 			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.codigo","origin":"nav","evil":"<script>"}]}`)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected=400 observed=%d", rec.Code)
 		}
-		c := conteudo(t, p)
+		c := content(t, p)
 		if strings.Contains(c, "evil") || strings.Contains(c, "<script>") {
 			t.Fatalf("a free-form field reached the JSONL: %q", c)
 		}
-		if n := contaLinhas(c); n != 0 {
+		if n := countLines(c); n != 0 {
 			t.Fatalf("expected=0 observed=%d lines", n)
 		}
 	})
 
 	// 7b. Extra field in the BATCH (not in the event) — same rule.
 	t.Run("extra-field-in-the-batch", func(t *testing.T) {
-		h, p := novoHandler(t)
+		h, p := newHandler(t)
 		rec := post(h, "application/json",
 			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.codigo","origin":"nav"}],"evil":"x"}`)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected=400 observed=%d", rec.Code)
 		}
-		if c := conteudo(t, p); strings.Contains(c, "evil") || contaLinhas(c) != 0 {
+		if c := content(t, p); strings.Contains(c, "evil") || countLines(c) != 0 {
 			t.Fatalf("a batch with a free-form field wrote: %q", c)
 		}
 	})
 
 	// 8. GET → 405.
 	t.Run("method-get-405", func(t *testing.T) {
-		h, p := novoHandler(t)
+		h, p := newHandler(t)
 		req := httptest.NewRequest(http.MethodGet, "/api/telemetry", nil)
 		rec := httptest.NewRecorder()
 		h(rec, req)
 		if rec.Code != http.StatusMethodNotAllowed {
 			t.Fatalf("expected=405 observed=%d", rec.Code)
 		}
-		if n := contaLinhas(conteudo(t, p)); n != 0 {
+		if n := countLines(content(t, p)); n != 0 {
 			t.Fatalf("GET wrote %d line(s)", n)
 		}
 		for _, m := range []string{http.MethodPut, http.MethodDelete, http.MethodPatch} {
@@ -326,12 +326,12 @@ func TestHandler(t *testing.T) {
 		for _, body := range []string{
 			"", "isso nao e json", "[]", "null", `{"v":1,"s":`, "\x00\x01\x02",
 		} {
-			h, p := novoHandler(t)
+			h, p := newHandler(t)
 			rec := post(h, "application/json", body)
 			if rec.Code != http.StatusBadRequest {
 				t.Errorf("body=%q: expected=400 observed=%d", body, rec.Code)
 			}
-			if n := contaLinhas(conteudo(t, p)); n != 0 {
+			if n := countLines(content(t, p)); n != 0 {
 				t.Errorf("body=%q: wrote %d line(s)", body, n)
 			}
 		}
@@ -339,7 +339,7 @@ func TestHandler(t *testing.T) {
 
 	// 10. A successful response has an empty body (zero bytes).
 	t.Run("success-response-empty-body", func(t *testing.T) {
-		h, _ := novoHandler(t)
+		h, _ := newHandler(t)
 		rec := post(h, "application/json",
 			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dashboard","origin":"default"}]}`)
 		if rec.Code != http.StatusNoContent {
@@ -363,13 +363,13 @@ func TestHandler(t *testing.T) {
 			"application/json; charset=utf-8",
 			"", // sendBeacon with an untyped Blob
 		} {
-			h, p := novoHandler(t)
+			h, p := newHandler(t)
 			rec := post(h, ct,
 				`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.codigo","origin":"nav"}]}`)
 			if rec.Code != http.StatusNoContent {
 				t.Errorf("Content-Type=%q: expected=204 observed=%d", ct, rec.Code)
 			}
-			if n := contaLinhas(conteudo(t, p)); n != 1 {
+			if n := countLines(content(t, p)); n != 1 {
 				t.Errorf("Content-Type=%q: expected=1 observed=%d lines", ct, n)
 			}
 		}
@@ -377,25 +377,25 @@ func TestHandler(t *testing.T) {
 
 	// 11b. Content-Type outside the set → 415, zero lines.
 	t.Run("unsupported-content-type", func(t *testing.T) {
-		h, p := novoHandler(t)
+		h, p := newHandler(t)
 		rec := post(h, "multipart/form-data; boundary=x",
 			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.codigo","origin":"nav"}]}`)
 		if rec.Code != http.StatusUnsupportedMediaType {
 			t.Fatalf("expected=415 observed=%d", rec.Code)
 		}
-		if n := contaLinhas(conteudo(t, p)); n != 0 {
+		if n := countLines(content(t, p)); n != 0 {
 			t.Fatalf("wrote %d line(s)", n)
 		}
 	})
 
 	// 12. Empty batch → 400 (there is nothing to measure and the cost is the same).
 	t.Run("empty-batch", func(t *testing.T) {
-		h, p := novoHandler(t)
+		h, p := newHandler(t)
 		rec := post(h, "application/json", `{"v":1,"s":"9f3a1c72","e":[]}`)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected=400 observed=%d", rec.Code)
 		}
-		if n := contaLinhas(conteudo(t, p)); n != 0 {
+		if n := countLines(content(t, p)); n != 0 {
 			t.Fatalf("wrote %d line(s)", n)
 		}
 	})
@@ -403,13 +403,13 @@ func TestHandler(t *testing.T) {
 	// 13. COMPLETE validation before writing: one invalid event at the end of the
 	//     batch must not leave the preceding ones written.
 	t.Run("partially-invalid-batch-writes-zero", func(t *testing.T) {
-		h, p := novoHandler(t)
+		h, p := newHandler(t)
 		rec := post(h, "application/json",
 			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.codigo","origin":"nav"},{"screen":"dashboard","origin":"nav"},{"screen":"dev.terminal","origin":"XXX"}]}`)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected=400 observed=%d", rec.Code)
 		}
-		if n := contaLinhas(conteudo(t, p)); n != 0 {
+		if n := countLines(content(t, p)); n != 0 {
 			t.Fatalf("wrote %d line(s) before refusing the batch", n)
 		}
 	})
@@ -418,13 +418,13 @@ func TestHandler(t *testing.T) {
 	//     from a closed struct. Proof by difference — the batch's `dropped` is
 	//     accepted on input and is NOT written.
 	t.Run("dropped-accepted-but-not-written", func(t *testing.T) {
-		h, p := novoHandler(t)
+		h, p := newHandler(t)
 		rec := post(h, "application/json",
 			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dashboard","origin":"default"}],"dropped":47}`)
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("expected=204 observed=%d", rec.Code)
 		}
-		c := conteudo(t, p)
+		c := content(t, p)
 		// Check by KEY, never by substring: the server's `ts` carries the time,
 		// and a `strings.Contains(c, "47")` matches 12:47:56. That test failed
 		// because of the clock, not because of a defect — a false alarm, which
@@ -436,27 +436,27 @@ func TestHandler(t *testing.T) {
 		if _, ok := m["dropped"]; ok {
 			t.Fatalf("`dropped` leaked into the record: %q", c)
 		}
-		esperadas := map[string]bool{"ts": true, "v": true, "fork": true, "sid": true, "screen": true, "origin": true}
-		if len(m) != len(esperadas) {
-			t.Fatalf("open schema: expected=%d fields observed=%d (%q)", len(esperadas), len(m), c)
+		wantKeys := map[string]bool{"ts": true, "v": true, "fork": true, "sid": true, "screen": true, "origin": true}
+		if len(m) != len(wantKeys) {
+			t.Fatalf("open schema: expected=%d fields observed=%d (%q)", len(wantKeys), len(m), c)
 		}
 		for k := range m {
-			if !esperadas[k] {
+			if !wantKeys[k] {
 				t.Errorf("unexpected field in the record: %q", k)
 			}
 		}
 	})
 }
 
-// TestHandlerNaoQuebraComSinkMorto: a sink error can never become a UI error
+// TestHandlerSurvivesDeadSink: a sink error can never become a UI error
 // nor a panic (accepted disposition).
-func TestHandlerNaoQuebraComSinkMorto(t *testing.T) {
+func TestHandlerSurvivesDeadSink(t *testing.T) {
 	dir := t.TempDir()
 	s, err := NewSink(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	congelar(s, diaFixo)
+	freeze(s, fixedDay)
 	// Directory removed out from under the sink: the OpenFile will fail.
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)

@@ -234,8 +234,8 @@ func TestSecurityDevicesScreen_Structure(t *testing.T) {
 	}
 }
 
-func TestSecurityEconomiaScreen_Structure(t *testing.T) {
-	env := buildSecurityEconomiaScreen()
+func TestSecurityDataSaverScreen_Structure(t *testing.T) {
+	env := buildSecurityDataSaverScreen()
 
 	if _, ok := findComponent(t, env, "usage-table").(sdui.TableComponent); !ok {
 		t.Fatalf("usage-table is not a TableComponent")
@@ -264,7 +264,7 @@ func TestSecurityScreens_NonAdminGetsErrScreenNotFound(t *testing.T) {
 		{"security.ufw", buildSecurityUFWScreenForViewer},
 		{"security.adguard", buildSecurityAdGuardScreenForViewer},
 		{"security.devices", buildSecurityDevicesScreenForViewer},
-		{"security.economia", buildSecurityEconomiaScreenForViewer},
+		{"security.economia", buildSecurityDataSaverScreenForViewer},
 	}
 	for _, c := range cases {
 		if _, err := c.builder(admin); err != nil {
@@ -418,7 +418,7 @@ func TestSecurityScreens_NoClientSideLogicKeys(t *testing.T) {
 		"ufw":      buildSecurityUFWScreen(),
 		"adguard":  buildSecurityAdGuardScreen(),
 		"devices":  buildSecurityDevicesScreen(),
-		"economia": buildSecurityEconomiaScreen(),
+		"economia": buildSecurityDataSaverScreen(),
 	}
 	forbidden := []string{"\"condition\"", "\"visible_when\"", "\"expression\""}
 	for name, env := range envs {

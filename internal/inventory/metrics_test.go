@@ -24,7 +24,7 @@ import (
 // leave the Node and become a document of its own, like the Hypervisor. That
 // is the rule.
 
-func recursosComContadores() []pve.Resource {
+func resourcesWithCounters() []pve.Resource {
 	return []pve.Resource{
 		// LXC reports real disk.
 		{
@@ -50,12 +50,12 @@ func recursosComContadores() []pve.Resource {
 	}
 }
 
-// TestMetricasDoGuestSaoCarimbadas — every counter reaches the Node WITH the
+// TestGuestMetricsAreStamped — every counter reaches the Node WITH the
 // tick's timestamp, and it is the same timestamp as Status/Uptime because it
 // is the same call.
-func TestMetricasDoGuestSaoCarimbadas(t *testing.T) {
-	f := &fakePVE{recursos: recursosComContadores()}
-	p, st, _ := novoPollerDeTeste(t, f, Sources{}, PollerConfig{})
+func TestGuestMetricsAreStamped(t *testing.T) {
+	f := &fakePVE{resources: resourcesWithCounters()}
+	p, st, _ := newTestPoller(t, f, Sources{}, PollerConfig{})
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestMetricasDoGuestSaoCarimbadas(t *testing.T) {
 	if !ok {
 		t.Fatal("lxc/207 was not discovered")
 	}
-	agora := int64(1800000000)
+	now := int64(1800000000)
 
 	if n.MemUsed.Value != 4284424192 || n.MemTotal.Value != 10737418240 {
 		t.Errorf("memory = %d/%d, want 4284424192/10737418240", n.MemUsed.Value, n.MemTotal.Value)
@@ -96,31 +96,31 @@ func TestMetricasDoGuestSaoCarimbadas(t *testing.T) {
 		{"disk_read", n.DiskRead.ObservedAt}, {"disk_write", n.DiskWrite.ObservedAt},
 		{"mem_host", n.MemHost.ObservedAt},
 	} {
-		if c.at != agora {
-			t.Errorf("%s.observed_at = %d, want %d (the same as status = %d)", c.nome, c.at, agora, n.Status.ObservedAt)
+		if c.at != now {
+			t.Errorf("%s.observed_at = %d, want %d (the same as status = %d)", c.nome, c.at, now, n.Status.ObservedAt)
 		}
 	}
 }
 
-// 🔴 TestDiscoNaoReportadoNuncaViraZero — the trap, turned into a test.
+// 🔴 TestUnreportedDiskNeverBecomesZero — the trap, turned into a test.
 //
 // `disk: 0` from a QEMU with no guest-agent is NOT "0% used": it is the
 // absence of a measurement. Publishing 0 would make the screen draw an empty
 // bar and the operator would conclude the VM has disk to spare — over a number
 // nobody measured. The marker is -1, the same idiom as AgeSeconds("never
 // observed").
-func TestDiscoNaoReportadoNuncaViraZero(t *testing.T) {
-	f := &fakePVE{recursos: recursosComContadores()}
-	p, st, _ := novoPollerDeTeste(t, f, Sources{}, PollerConfig{})
+func TestUnreportedDiskNeverBecomesZero(t *testing.T) {
+	f := &fakePVE{resources: resourcesWithCounters()}
+	p, st, _ := newTestPoller(t, f, Sources{}, PollerConfig{})
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}
 	nos := nosPorID(t, st)
 
 	qemu := nos["qemu/208"]
-	if qemu.DiskUsed.Value != NaoReportado {
-		t.Fatalf("qemu/208.disk_used = %d, want %d (NaoReportado) — 0 reads as 'empty disk'",
-			qemu.DiskUsed.Value, NaoReportado)
+	if qemu.DiskUsed.Value != NotReported {
+		t.Fatalf("qemu/208.disk_used = %d, want %d (NotReported) — 0 reads as 'empty disk'",
+			qemu.DiskUsed.Value, NotReported)
 	}
 	// The CAPACITY is still published: it is known even without an agent.
 	if qemu.DiskTotal.Value != 34359738368 {
@@ -139,39 +139,39 @@ func TestDiscoNaoReportadoNuncaViraZero(t *testing.T) {
 
 	// memhost is the sibling of the same problem: LXC returns 0 because the
 	// concept does not apply, not because the VM spends zero host RAM.
-	if lxc.MemHost.Value != NaoReportado {
-		t.Errorf("lxc/207.mem_host = %d, want %d — LXC does not report host RAM", lxc.MemHost.Value, NaoReportado)
+	if lxc.MemHost.Value != NotReported {
+		t.Errorf("lxc/207.mem_host = %d, want %d — LXC does not report host RAM", lxc.MemHost.Value, NotReported)
 	}
 	if qemu.MemHost.Value != 7820808192 {
 		t.Errorf("qemu/208.mem_host = %d, want 7820808192", qemu.MemHost.Value)
 	}
 }
 
-// 🔴 TestTaxaDeRedeNaoAtravessaBuraco — the gap rule, measured in three
+// 🔴 TestNetworkRateDoesNotSpanGap — the gap rule, measured in three
 // scenarios. An accumulating counter divided by an interval that did NOT
 // happen is interpolation on top of absence: a rate invented over minutes in
 // which the panel was blind.
-func TestTaxaDeRedeNaoAtravessaBuraco(t *testing.T) {
-	base := recursosComContadores()
+func TestNetworkRateDoesNotSpanGap(t *testing.T) {
+	base := resourcesWithCounters()
 	// 🔴 The starting value is COPIED: `f.recursos` and `base` are the same slice,
 	// and reading `base[0].NetIn` after the first mutation would read the value
 	// that has already changed.
 	netIn0 := base[0].NetIn
-	f := &fakePVE{recursos: base}
-	p, st, rel := novoPollerDeTeste(t, f, Sources{}, PollerConfig{Interval: 30 * time.Second})
+	f := &fakePVE{resources: base}
+	p, st, rel := newTestPoller(t, f, Sources{}, PollerConfig{Interval: 30 * time.Second})
 
 	// 1st tick: there is no previous one, so there is no rate.
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := nosPorID(t, st)["lxc/207"].NetInRate.Value; got != NaoReportado {
+	if got := nosPorID(t, st)["lxc/207"].NetInRate.Value; got != NotReported {
 		t.Fatalf("the first observation produced rate %d — there is nothing to derive it from", got)
 	}
 
 	// 2nd tick, 30 s later, +3,000,000 bytes ⇒ 100,000 B/s.
-	rel.avanca(30 * time.Second)
+	rel.advance(30 * time.Second)
 	f.mu.Lock()
-	f.recursos[0].NetIn = netIn0 + 3000000
+	f.resources[0].NetIn = netIn0 + 3000000
 	f.mu.Unlock()
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
@@ -181,56 +181,56 @@ func TestTaxaDeRedeNaoAtravessaBuraco(t *testing.T) {
 	}
 
 	// 3rd tick after a GAP of 10 min (> 30 s × 1.5): the rate disappears.
-	rel.avanca(10 * time.Minute)
+	rel.advance(10 * time.Minute)
 	f.mu.Lock()
-	f.recursos[0].NetIn = netIn0 + 9000000
+	f.resources[0].NetIn = netIn0 + 9000000
 	f.mu.Unlock()
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := nosPorID(t, st)["lxc/207"].NetInRate.Value; got != NaoReportado {
+	if got := nosPorID(t, st)["lxc/207"].NetInRate.Value; got != NotReported {
 		t.Fatalf("rate = %d after a 10-minute hole — want %d: an average over blind minutes is an invented rate",
-			got, NaoReportado)
+			got, NotReported)
 	}
 
 	// 4th normal tick, but the counter WENT BACKWARDS (the guest restarted).
-	rel.avanca(30 * time.Second)
+	rel.advance(30 * time.Second)
 	f.mu.Lock()
-	f.recursos[0].NetIn = 1000
+	f.resources[0].NetIn = 1000
 	f.mu.Unlock()
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := nosPorID(t, st)["lxc/207"].NetInRate.Value; got != NaoReportado {
+	if got := nosPorID(t, st)["lxc/207"].NetInRate.Value; got != NotReported {
 		t.Fatalf("a counter that reset to zero produced rate %d — a guest restart is not negative traffic", got)
 	}
 }
 
-// TestFalhaDeDescobertaNaoApagaContadores — invariant 2 of the poller applied
+// TestDiscoveryFailureKeepsCounters — invariant 2 of the poller applied
 // to the new fields: a failure keeps the old value AND the old timestamp, and
 // what denounces it is the age growing on the screen. Zeroing here would be
 // amnesia presented as "0% used".
-func TestFalhaDeDescobertaNaoApagaContadores(t *testing.T) {
-	f := &fakePVE{recursos: recursosComContadores()}
-	p, st, rel := novoPollerDeTeste(t, f, Sources{}, PollerConfig{})
+func TestDiscoveryFailureKeepsCounters(t *testing.T) {
+	f := &fakePVE{resources: resourcesWithCounters()}
+	p, st, rel := newTestPoller(t, f, Sources{}, PollerConfig{})
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	antes := nosPorID(t, st)["lxc/207"]
 
-	rel.avanca(5 * time.Minute)
+	rel.advance(5 * time.Minute)
 	f.mu.Lock()
-	f.erro = errors.New("hipervisor mudo")
+	f.failure = errors.New("hipervisor mudo")
 	f.mu.Unlock()
 	if err := p.tick(context.Background()); err == nil {
 		t.Fatal("the tick should have failed")
 	}
 
-	depois := nosPorID(t, st)["lxc/207"]
-	if depois.MemUsed.Value != antes.MemUsed.Value || depois.MemUsed.ObservedAt != antes.MemUsed.ObservedAt {
-		t.Fatalf("mem_used changed with the hypervisor mute: before=%+v after=%+v", antes.MemUsed, depois.MemUsed)
+	after := nosPorID(t, st)["lxc/207"]
+	if after.MemUsed.Value != antes.MemUsed.Value || after.MemUsed.ObservedAt != antes.MemUsed.ObservedAt {
+		t.Fatalf("mem_used changed with the hypervisor mute: before=%+v after=%+v", antes.MemUsed, after.MemUsed)
 	}
-	if depois.DiskUsed.Value != antes.DiskUsed.Value {
+	if after.DiskUsed.Value != antes.DiskUsed.Value {
 		t.Fatalf("disk_used changed with the hypervisor mute")
 	}
 }

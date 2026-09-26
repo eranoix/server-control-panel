@@ -119,8 +119,8 @@ func (m *Manager) SetRuntime(s Server, patch map[string]string) error {
 	// back. The .bak inherits owner and mode from the ORIGINAL (`ref` = path),
 	// otherwise it is born root:root beside a 4711 compose — the same class of
 	// defect, quieter, because nobody looks at a backup's owner until they need it.
-	_ = escreveAtomico(path+".bak", b, path)
-	if err := escreveAtomico(path, []byte(txt), path); err != nil {
+	_ = writeAtomic(path+".bak", b, path)
+	if err := writeAtomic(path, []byte(txt), path); err != nil {
 		return err
 	}
 

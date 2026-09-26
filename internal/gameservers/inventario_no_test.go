@@ -8,80 +8,80 @@ import (
 	"testing"
 )
 
-// fonteFalsa is a fake node inventory, with the bare minimum of the interface.
-type fonteFalsa map[string]DestinoNo
+// fakeSource is a fake node inventory, with the bare minimum of the interface.
+type fakeSource map[string]NodeTarget
 
-func (f fonteFalsa) NoPorID(id string) (DestinoNo, bool) {
+func (f fakeSource) NoPorID(id string) (NodeTarget, bool) {
 	d, ok := f[id]
 	return d, ok
 }
 
-func TestMigracaoInventarioIdempotente(t *testing.T) {
+func TestInventoryMigrationIdempotent(t *testing.T) {
 	dir := t.TempDir()
-	caminho := filepath.Join(dir, "gameservers.json")
+	path := filepath.Join(dir, "gameservers.json")
 	original := `[{"id":"jogo-b","name":"Enshrouded","game":"enshrouded","container":"jogo-b","root":"/opt/jogo-b","address":""}]`
-	if err := os.WriteFile(caminho, []byte(original), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	mudou, err := MigrarInventarioParaNo(caminho)
+	changed, err := MigrateInventoryToNode(path)
 	if err != nil {
 		t.Fatalf("first round: %v", err)
 	}
-	if !mudou {
+	if !changed {
 		t.Fatal("the first round should have migrated — the record had no such field")
 	}
-	depois1, err := os.ReadFile(caminho)
+	after1, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	mudou2, err := MigrarInventarioParaNo(caminho)
+	changed2, err := MigrateInventoryToNode(path)
 	if err != nil {
 		t.Fatalf("second round: %v", err)
 	}
-	if mudou2 {
+	if changed2 {
 		t.Error("the second round REWROTE a file that was already correct")
 	}
-	depois2, err := os.ReadFile(caminho)
+	after2, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Byte for byte, asserted — not "described as idempotent".
-	if string(depois1) != string(depois2) {
-		t.Errorf("MIGRATION IS NOT IDEMPOTENT:\n--- 1st ---\n%s\n--- 2nd ---\n%s", depois1, depois2)
+	if string(after1) != string(after2) {
+		t.Errorf("MIGRATION IS NOT IDEMPOTENT:\n--- 1st ---\n%s\n--- 2nd ---\n%s", after1, after2)
 	}
-	if !strings.Contains(string(depois1), `"node"`) {
-		t.Errorf("the node field was not added: %s", depois1)
+	if !strings.Contains(string(after1), `"node"`) {
+		t.Errorf("the node field was not added: %s", after1)
 	}
 }
 
-func TestMigracaoPreservaCamposDesconhecidos(t *testing.T) {
+func TestMigrationPreservesUnknownFields(t *testing.T) {
 	dir := t.TempDir()
-	caminho := filepath.Join(dir, "gameservers.json")
+	path := filepath.Join(dir, "gameservers.json")
 	// `campoDoFuturo` does not exist in the Server struct. Decoding into []Server
 	// and re-serializing would ERASE it — that is the defect this test watches.
 	original := `[{"id":"jogo-b","game":"enshrouded","campoDoFuturo":{"a":1,"b":[2,3]},"notes":"nao me apague"}]`
-	if err := os.WriteFile(caminho, []byte(original), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := MigrarInventarioParaNo(caminho); err != nil {
+	if _, err := MigrateInventoryToNode(path); err != nil {
 		t.Fatal(err)
 	}
-	depois, err := os.ReadFile(caminho)
+	after, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var registros []map[string]json.RawMessage
-	if err := json.Unmarshal(depois, &registros); err != nil {
-		t.Fatalf("the migration produced invalid JSON: %v\n%s", err, depois)
+	var records []map[string]json.RawMessage
+	if err := json.Unmarshal(after, &records); err != nil {
+		t.Fatalf("the migration produced invalid JSON: %v\n%s", err, after)
 	}
-	if len(registros) != 1 {
-		t.Fatalf("expected 1 record, saw %d", len(registros))
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, saw %d", len(records))
 	}
-	fut, tem := registros[0]["campoDoFuturo"]
-	if !tem {
-		t.Fatalf("UNKNOWN FIELD LOST IN THE MIGRATION — silent data loss: %s", depois)
+	fut, has := records[0]["campoDoFuturo"]
+	if !has {
+		t.Fatalf("UNKNOWN FIELD LOST IN THE MIGRATION — silent data loss: %s", after)
 	}
 	var v map[string]any
 	if err := json.Unmarshal(fut, &v); err != nil {
@@ -90,51 +90,51 @@ func TestMigracaoPreservaCamposDesconhecidos(t *testing.T) {
 	if _, ok := v["b"]; !ok {
 		t.Errorf("unknown field arrived incomplete: %s", fut)
 	}
-	if string(registros[0]["notes"]) != `"nao me apague"` {
-		t.Errorf("known field altered: %s", registros[0]["notes"])
+	if string(records[0]["notes"]) != `"nao me apague"` {
+		t.Errorf("known field altered: %s", records[0]["notes"])
 	}
 }
 
-func TestMigracaoGuardaCopiaEArquivoAusenteNaoEErro(t *testing.T) {
+func TestMigrationKeepsCopyAndMissingFileIsNotError(t *testing.T) {
 	dir := t.TempDir()
 
 	// Absent: a no-op, not an error. The Manager already comes up empty here.
-	if mudou, err := MigrarInventarioParaNo(filepath.Join(dir, "nao-existe.json")); err != nil || mudou {
-		t.Errorf("a missing file should be a silent no-op, got mudou=%v err=%v", mudou, err)
+	if changed, err := MigrateInventoryToNode(filepath.Join(dir, "nao-existe.json")); err != nil || changed {
+		t.Errorf("a missing file should be a silent no-op, got mudou=%v err=%v", changed, err)
 	}
 
-	caminho := filepath.Join(dir, "gameservers.json")
+	path := filepath.Join(dir, "gameservers.json")
 	original := `[{"id":"x","game":"enshrouded"}]`
-	if err := os.WriteFile(caminho, []byte(original), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := MigrarInventarioParaNo(caminho); err != nil {
+	if _, err := MigrateInventoryToNode(path); err != nil {
 		t.Fatal(err)
 	}
-	copia, err := os.ReadFile(caminho + sufixoCopiaPreNo)
+	dup, err := os.ReadFile(path + preNodeBackupSuffix)
 	if err != nil {
 		t.Fatalf("the copy of the previous file was not kept: %v", err)
 	}
-	if string(copia) != original {
-		t.Errorf("the copy is not the previous content:\n%s", copia)
+	if string(dup) != original {
+		t.Errorf("the copy is not the previous content:\n%s", dup)
 	}
 }
 
-func TestMigracaoNaoEscreveComJSONInvalido(t *testing.T) {
+func TestMigrationDoesNotWriteInvalidJSON(t *testing.T) {
 	dir := t.TempDir()
-	caminho := filepath.Join(dir, "gameservers.json")
-	quebrado := `[{"id":"x",`
-	if err := os.WriteFile(caminho, []byte(quebrado), 0o644); err != nil {
+	path := filepath.Join(dir, "gameservers.json")
+	broken := `[{"id":"x",`
+	if err := os.WriteFile(path, []byte(broken), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := MigrarInventarioParaNo(caminho); err == nil {
+	if _, err := MigrateInventoryToNode(path); err == nil {
 		t.Error("invalid JSON should abort the migration")
 	}
-	depois, _ := os.ReadFile(caminho)
-	if string(depois) != quebrado {
-		t.Errorf("the file was TOUCHED despite the abort: %s", depois)
+	after, _ := os.ReadFile(path)
+	if string(after) != broken {
+		t.Errorf("the file was TOUCHED despite the abort: %s", after)
 	}
-	if _, err := os.Stat(caminho + sufixoCopiaPreNo); err == nil {
+	if _, err := os.Stat(path + preNodeBackupSuffix); err == nil {
 		t.Error("a copy was created even with the migration aborted")
 	}
 }
@@ -142,11 +142,11 @@ func TestMigracaoNaoEscreveComJSONInvalido(t *testing.T) {
 // ─────────────────────────────────────────────────────────────────────────────
 // RESOLUTION
 
-func TestServidorSemNoRecusa(t *testing.T) {
-	fonte := fonteFalsa{"games": {Nome: "games", Transport: TransporteAgente, Base: "http://x:1", Token: "t"}}
+func TestServerWithoutNodeRejected(t *testing.T) {
+	source := fakeSource{"games": {Nome: "games", Transport: TransportAgent, Base: "http://x:1", Token: "t"}}
 	s := Server{ID: "jogo-b", Name: "Enshrouded"} // no No
 
-	_, err := ResolverDestino(s, fonte)
+	_, err := ResolveTarget(s, source)
 	if err == nil {
 		t.Fatal("SERVER WITH NO NODE WAS ACCEPTED — the operation would go to a node chosen by omission")
 	}
@@ -158,22 +158,22 @@ func TestServidorSemNoRecusa(t *testing.T) {
 	}
 }
 
-func TestResolucaoServidorParaNo(t *testing.T) {
-	fonte := fonteFalsa{
-		"games": {Nome: "games", Transport: TransporteAgente, Base: "http://x:1", Token: "t"},
-		"apps":  {Nome: "apps", Transport: TransportePVEAPI},
+func TestResolveServerToNode(t *testing.T) {
+	source := fakeSource{
+		"games": {Nome: "games", Transport: TransportAgent, Base: "http://x:1", Token: "t"},
+		"apps":  {Nome: "apps", Transport: TransportPVEAPI},
 	}
 	t.Run("existing node", func(t *testing.T) {
-		d, err := ResolverDestino(Server{ID: "jogo-b", No: "games"}, fonte)
+		d, err := ResolveTarget(Server{ID: "jogo-b", No: "games"}, source)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if d.Nome != "games" || d.Transport != TransporteAgente {
+		if d.Nome != "games" || d.Transport != TransportAgent {
 			t.Errorf("resolved to the wrong node: %+v", d)
 		}
 	})
 	t.Run("a nonexistent node names the id it looked for", func(t *testing.T) {
-		_, err := ResolverDestino(Server{ID: "jogo-b", No: "fantasma"}, fonte)
+		_, err := ResolveTarget(Server{ID: "jogo-b", No: "fantasma"}, source)
 		if err == nil {
 			t.Fatal("a nonexistent node should fail")
 		}
@@ -182,46 +182,46 @@ func TestResolucaoServidorParaNo(t *testing.T) {
 		}
 	})
 	t.Run("no source", func(t *testing.T) {
-		if _, err := ResolverDestino(Server{ID: "jogo-b", No: "games"}, nil); err == nil {
+		if _, err := ResolveTarget(Server{ID: "jogo-b", No: "games"}, nil); err == nil {
 			t.Error("a nil source should fail, not fall back to local")
 		}
 	})
 }
 
-func TestNoComTransportInvalido(t *testing.T) {
-	casos := map[string]string{
+func TestNodeWithInvalidTransport(t *testing.T) {
+	cases := map[string]string{
 		"valor torto": "banana",
 		"vazio":       "",
 	}
-	for nome, transporte := range casos {
+	for nome, transport := range cases {
 		t.Run(nome, func(t *testing.T) {
-			fonte := fonteFalsa{"games": {Nome: "games", Transport: transporte}}
-			_, err := ResolverDestino(Server{ID: "jogo-b", No: "games"}, fonte)
+			source := fakeSource{"games": {Nome: "games", Transport: transport}}
+			_, err := ResolveTarget(Server{ID: "jogo-b", No: "games"}, source)
 			if err == nil {
-				t.Fatalf("transport %q should fail instead of picking a back end", transporte)
+				t.Fatalf("transport %q should fail instead of picking a back end", transport)
 			}
-			if transporte != "" && !strings.Contains(err.Error(), transporte) {
+			if transport != "" && !strings.Contains(err.Error(), transport) {
 				t.Errorf("the error has to NAME the invalid value: %v", err)
 			}
 		})
 	}
 }
 
-// TestResolverNaoTemPadraoImplicito is the control that pins the hard rule: NO
+// TestResolverHasNoImplicitDefault is the control that pins the hard rule: NO
 // combination of missing fields may result in a usable destination.
-func TestResolverNaoTemPadraoImplicito(t *testing.T) {
-	vazios := []struct {
-		nome  string
-		s     Server
-		fonte FonteDeNos
+func TestResolverHasNoImplicitDefault(t *testing.T) {
+	empties := []struct {
+		nome   string
+		s      Server
+		source NodeSource
 	}{
-		{"tudo vazio", Server{}, fonteFalsa{}},
-		{"so id", Server{ID: "x"}, fonteFalsa{}},
-		{"no vazio com fonte cheia", Server{ID: "x"}, fonteFalsa{"games": {Nome: "games", Transport: TransporteAgente, Base: "http://x:1", Token: "t"}}},
+		{"tudo vazio", Server{}, fakeSource{}},
+		{"so id", Server{ID: "x"}, fakeSource{}},
+		{"no vazio com fonte cheia", Server{ID: "x"}, fakeSource{"games": {Nome: "games", Transport: TransportAgent, Base: "http://x:1", Token: "t"}}},
 	}
-	for _, c := range vazios {
+	for _, c := range empties {
 		t.Run(c.nome, func(t *testing.T) {
-			d, err := ResolverDestino(c.s, c.fonte)
+			d, err := ResolveTarget(c.s, c.source)
 			if err == nil {
 				t.Fatalf("IMPLICIT DEFAULT: resolved to %+v with no node declared", d)
 			}
@@ -229,7 +229,7 @@ func TestResolverNaoTemPadraoImplicito(t *testing.T) {
 	}
 }
 
-// TestSaveInventoryAceitaServidorEmOutroNo — a regression test.
+// TestSaveInventoryAcceptsServerOnOtherNode — a regression test.
 //
 // The unconditional `os.Stat(Root)` made it impossible to register a server that
 // lives on ANOTHER node: the path exists there, not here. The registration was
@@ -237,7 +237,7 @@ func TestResolverNaoTemPadraoImplicito(t *testing.T) {
 // that blocked the entire multi-node model. The pair below pins BOTH directions,
 // because only the positive one would let somebody "simplify" by removing the
 // check from the local case as well.
-func TestSaveInventoryAceitaServidorEmOutroNo(t *testing.T) {
+func TestSaveInventoryAcceptsServerOnOtherNode(t *testing.T) {
 	dir := t.TempDir()
 	// Pre-existing inventory: the atomic write uses the current file as the
 	// REFERENCE for owner and mode, so it presupposes the file exists. In a real
@@ -248,11 +248,11 @@ func TestSaveInventoryAceitaServidorEmOutroNo(t *testing.T) {
 	m := New(dir, nil)
 
 	// With a node: the root belongs to ANOTHER machine and cannot be checked here.
-	remoto := []Server{{
+	remote := []Server{{
 		ID: "remoto", Name: "Remoto", Game: "enshrouded",
 		Container: "c-remoto", Root: "/opt/nao-existe-neste-host", No: "games",
 	}}
-	if err := m.SaveInventory(remoto); err != nil {
+	if err := m.SaveInventory(remote); err != nil {
 		t.Fatalf("a server with a node should be accepted (the root lives on the node, not here): %v", err)
 	}
 

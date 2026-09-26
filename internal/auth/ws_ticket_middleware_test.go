@@ -27,50 +27,50 @@ import (
 	"server-control-panel/internal/sessions"
 )
 
-// identidadeVista captures what the handler sees downstream of the Middleware —
+// seenIdentity captures what the handler sees downstream of the Middleware —
 // exactly the keys UserFrom/JTIFrom read in production.
-type identidadeVista struct {
-	rodou bool
-	user  string
-	jti   string
+type seenIdentity struct {
+	ran  bool
+	user string
+	jti  string
 }
 
-func handlerEspiao(vis *identidadeVista) http.Handler {
+func spyHandler(vis *seenIdentity) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		vis.rodou = true
+		vis.ran = true
 		vis.user = UserFrom(r)
 		vis.jti = JTIFrom(r)
 		w.WriteHeader(http.StatusOK)
 	})
 }
 
-func servicoDeTeste(t *testing.T) *Service {
+func testService(t *testing.T) *Service {
 	t.Helper()
 	return New("segredo-de-teste-com-tamanho-suficiente", nil)
 }
 
 // requisita runs the Middleware over a request and returns the status plus what
 // the handler saw.
-func requisita(t *testing.T, s *Service, req *http.Request) (*httptest.ResponseRecorder, identidadeVista) {
+func doRequest(t *testing.T, s *Service, req *http.Request) (*httptest.ResponseRecorder, seenIdentity) {
 	t.Helper()
-	var vis identidadeVista
+	var vis seenIdentity
 	rec := httptest.NewRecorder()
-	s.Middleware(handlerEspiao(&vis)).ServeHTTP(rec, req)
+	s.Middleware(spyHandler(&vis)).ServeHTTP(rec, req)
 	return rec, vis
 }
 
-// TestMiddleware_BilheteValidoAbreWS is the test for the defect: before the fix
+// TestMiddleware_ValidTicketOpensWS is the test for the defect: before the fix
 // this request got a 401 from the Middleware and the /ws/shell handler never ran.
-func TestMiddleware_BilheteValidoAbreWS(t *testing.T) {
-	s := servicoDeTeste(t)
+func TestMiddleware_ValidTicketOpensWS(t *testing.T) {
+	s := testService(t)
 	ticket := IssueWSTicket("teste", "jti-do-app")
 
-	rec, vis := requisita(t, s, httptest.NewRequest("GET", "/ws/shell?name=main&ticket="+ticket, nil))
+	rec, vis := doRequest(t, s, httptest.NewRequest("GET", "/ws/shell?name=main&ticket="+ticket, nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, expected 200 (handler reached); a valid ticket must not get a 401", rec.Code)
 	}
-	if !vis.rodou {
+	if !vis.ran {
 		t.Fatal("the protected handler did not run")
 	}
 	if vis.user != "teste" {
@@ -81,28 +81,28 @@ func TestMiddleware_BilheteValidoAbreWS(t *testing.T) {
 	}
 }
 
-// TestMiddleware_BilheteReplayadoRecusado pins down single use: the same ticket
+// TestMiddleware_ReplayedTicketRejected pins down single use: the same ticket
 // is worth nothing on a second connection.
-func TestMiddleware_BilheteReplayadoRecusado(t *testing.T) {
-	s := servicoDeTeste(t)
+func TestMiddleware_ReplayedTicketRejected(t *testing.T) {
+	s := testService(t)
 	ticket := IssueWSTicket("teste", "jti-replay")
 
-	if rec, _ := requisita(t, s, httptest.NewRequest("GET", "/ws/shell?ticket="+ticket, nil)); rec.Code != http.StatusOK {
+	if rec, _ := doRequest(t, s, httptest.NewRequest("GET", "/ws/shell?ticket="+ticket, nil)); rec.Code != http.StatusOK {
 		t.Fatalf("first use: status = %d, expected 200", rec.Code)
 	}
-	rec, vis := requisita(t, s, httptest.NewRequest("GET", "/ws/shell?ticket="+ticket, nil))
+	rec, vis := doRequest(t, s, httptest.NewRequest("GET", "/ws/shell?ticket="+ticket, nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("replay: status = %d, expected 401 — the ticket is single-use", rec.Code)
 	}
-	if vis.rodou {
+	if vis.ran {
 		t.Fatal("replay: o handler rodou; o bilhete replayado autenticou")
 	}
 }
 
-// TestMiddleware_BilheteExpiradoRecusado pins down the short life (60s). It
+// TestMiddleware_ExpiredTicketRejected pins down the short life (60s). It
 // writes straight into the store so as not to depend on a test clock.
-func TestMiddleware_BilheteExpiradoRecusado(t *testing.T) {
-	s := servicoDeTeste(t)
+func TestMiddleware_ExpiredTicketRejected(t *testing.T) {
+	s := testService(t)
 	const ticket = "bilhete-vencido-de-teste"
 	globalTicketStore.mu.Lock()
 	globalTicketStore.tickets[ticket] = wsTicket{
@@ -112,41 +112,41 @@ func TestMiddleware_BilheteExpiradoRecusado(t *testing.T) {
 	}
 	globalTicketStore.mu.Unlock()
 
-	rec, vis := requisita(t, s, httptest.NewRequest("GET", "/ws/shell?ticket="+ticket, nil))
+	rec, vis := doRequest(t, s, httptest.NewRequest("GET", "/ws/shell?ticket="+ticket, nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, expected 401 — an expired ticket does not authenticate", rec.Code)
 	}
-	if vis.rodou {
+	if vis.ran {
 		t.Fatal("the handler ran with an expired ticket")
 	}
 }
 
-// TestMiddleware_BilheteNaoValeForaDeWS: the ticket is a handshake credential.
+// TestMiddleware_TicketInvalidOutsideWS: the ticket is a handshake credential.
 // On an /api/ route it neither authenticates NOR is consumed (it still works
 // for the /ws/ it was issued for — someone trying to spend it in the wrong
 // place does not become a denial of service for its owner).
-func TestMiddleware_BilheteNaoValeForaDeWS(t *testing.T) {
-	s := servicoDeTeste(t)
+func TestMiddleware_TicketInvalidOutsideWS(t *testing.T) {
+	s := testService(t)
 	ticket := IssueWSTicket("teste", "jti-fora-de-ws")
 
-	rec, vis := requisita(t, s, httptest.NewRequest("GET", "/api/users?ticket="+ticket, nil))
+	rec, vis := doRequest(t, s, httptest.NewRequest("GET", "/api/users?ticket="+ticket, nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("/api/ with a ticket: status = %d, expected 401", rec.Code)
 	}
-	if vis.rodou {
+	if vis.ran {
 		t.Fatal("/api/ with a ticket: the handler ran; a non-WS route accepted the ticket")
 	}
 
-	if rec, _ := requisita(t, s, httptest.NewRequest("GET", "/ws/shell?ticket="+ticket, nil)); rec.Code != http.StatusOK {
+	if rec, _ := doRequest(t, s, httptest.NewRequest("GET", "/ws/shell?ticket="+ticket, nil)); rec.Code != http.StatusOK {
 		t.Fatalf("the ticket was consumed by the attempt on /api/: status = %d on /ws/, expected 200", rec.Code)
 	}
 }
 
-// TestMiddleware_PainelNaoRegride: the two routes the web panel uses today
+// TestMiddleware_PanelDoesNotRegress: the two routes the web panel uses today
 // (HttpOnly cookie and ?token= on /ws/) keep working, and they deliver the SAME
 // identity the ticket delivers — same keys, same format.
-func TestMiddleware_PainelNaoRegride(t *testing.T) {
-	s := servicoDeTeste(t)
+func TestMiddleware_PanelDoesNotRegress(t *testing.T) {
+	s := testService(t)
 	tok, jti, err := s.Issue("teste", nil)
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
@@ -154,12 +154,12 @@ func TestMiddleware_PainelNaoRegride(t *testing.T) {
 
 	comCookie := httptest.NewRequest("GET", "/ws/shell?name=main", nil)
 	comCookie.AddCookie(&http.Cookie{Name: "vpsm_token", Value: tok})
-	recCookie, visCookie := requisita(t, s, comCookie)
+	recCookie, visCookie := doRequest(t, s, comCookie)
 	if recCookie.Code != http.StatusOK || visCookie.user != "teste" || visCookie.jti != jti {
 		t.Fatalf("cookie: status=%d user=%q jti=%q, expected 200/teste/%s", recCookie.Code, visCookie.user, visCookie.jti, jti)
 	}
 
-	recQuery, visQuery := requisita(t, s, httptest.NewRequest("GET", "/ws/shell?name=main&token="+tok, nil))
+	recQuery, visQuery := doRequest(t, s, httptest.NewRequest("GET", "/ws/shell?name=main&token="+tok, nil))
 	if recQuery.Code != http.StatusOK || visQuery.user != "teste" || visQuery.jti != jti {
 		t.Fatalf("?token=: status=%d user=%q jti=%q, expected 200/teste/%s", recQuery.Code, visQuery.user, visQuery.jti, jti)
 	}
@@ -167,25 +167,25 @@ func TestMiddleware_PainelNaoRegride(t *testing.T) {
 	// Context equivalence between the Middleware's two paths: what the ticket
 	// injects has to be indistinguishable from what the JWT injects, otherwise
 	// the downstream handler sees a different identity depending on the door.
-	recBilhete, visBilhete := requisita(t, s, httptest.NewRequest("GET", "/ws/shell?name=main&ticket="+IssueWSTicket("teste", jti), nil))
-	if recBilhete.Code != http.StatusOK {
-		t.Fatalf("ticket: status = %d, expected 200", recBilhete.Code)
+	ticketRec, ticketSeen := doRequest(t, s, httptest.NewRequest("GET", "/ws/shell?name=main&ticket="+IssueWSTicket("teste", jti), nil))
+	if ticketRec.Code != http.StatusOK {
+		t.Fatalf("ticket: status = %d, expected 200", ticketRec.Code)
 	}
-	if visBilhete.user != visCookie.user || visBilhete.jti != visCookie.jti {
-		t.Fatalf("identidade divergente: bilhete=(%q,%q) cookie=(%q,%q)", visBilhete.user, visBilhete.jti, visCookie.user, visCookie.jti)
+	if ticketSeen.user != visCookie.user || ticketSeen.jti != visCookie.jti {
+		t.Fatalf("identidade divergente: bilhete=(%q,%q) cookie=(%q,%q)", ticketSeen.user, ticketSeen.jti, visCookie.user, visCookie.jti)
 	}
 }
 
-// TestMiddleware_BilheteDeSessaoRevogadaRecusado: the ticket inherits the fate
+// TestMiddleware_RevokedSessionTicketRejected: the ticket inherits the fate
 // of the session that issued it. A logout/revoke inside those 60s kills the
 // ticket with it — otherwise it would be an orphan credential outliving the logout.
-func TestMiddleware_BilheteDeSessaoRevogadaRecusado(t *testing.T) {
+func TestMiddleware_RevokedSessionTicketRejected(t *testing.T) {
 	store, err := sessions.Open(filepath.Join(t.TempDir(), "sessions.json"))
 	if err != nil {
 		t.Fatalf("sessions.Open: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	s := servicoDeTeste(t).WithSessions(store)
+	s := testService(t).WithSessions(store)
 
 	_, jti, err := s.Issue("teste", nil)
 	if err != nil {
@@ -194,31 +194,31 @@ func TestMiddleware_BilheteDeSessaoRevogadaRecusado(t *testing.T) {
 	ticket := IssueWSTicket("teste", jti)
 	store.Revoke(jti)
 
-	rec, vis := requisita(t, s, httptest.NewRequest("GET", "/ws/shell?ticket="+ticket, nil))
+	rec, vis := doRequest(t, s, httptest.NewRequest("GET", "/ws/shell?ticket="+ticket, nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, expected 401 — origin session revoked", rec.Code)
 	}
-	if vis.rodou {
+	if vis.ran {
 		t.Fatal("the handler ran with a ticket from a revoked session")
 	}
 }
 
-// TestMiddleware_BilheteDeSessaoViva: the counter-proof to the test above — with
+// TestMiddleware_LiveSessionTicket: the counter-proof to the test above — with
 // the sessions store wired up and the session alive, the ticket passes (the
 // revocation check must not have become a blanket denial).
-func TestMiddleware_BilheteDeSessaoViva(t *testing.T) {
+func TestMiddleware_LiveSessionTicket(t *testing.T) {
 	store, err := sessions.Open(filepath.Join(t.TempDir(), "sessions.json"))
 	if err != nil {
 		t.Fatalf("sessions.Open: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	s := servicoDeTeste(t).WithSessions(store)
+	s := testService(t).WithSessions(store)
 
 	_, jti, err := s.Issue("teste", nil)
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	rec, vis := requisita(t, s, httptest.NewRequest("GET", "/ws/shell?ticket="+IssueWSTicket("teste", jti), nil))
+	rec, vis := doRequest(t, s, httptest.NewRequest("GET", "/ws/shell?ticket="+IssueWSTicket("teste", jti), nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, expected 200", rec.Code)
 	}

@@ -29,99 +29,99 @@ type Agent struct {
 // Having ONE delegation function, instead of 23 look-alike bodies, is what
 // keeps a handler from picking up logic of its own by accident — there is
 // nowhere to put it.
-func (a *Agent) delega(ctx context.Context, op gameservers.OpName, corpo json.RawMessage) (any, error) {
+func (a *Agent) delegate(ctx context.Context, op gameservers.OpName, body json.RawMessage) (any, error) {
 	if a.Back == nil {
 		return nil, fmt.Errorf("agent with no back-end configured")
 	}
-	return a.Back.Executar(ctx, op, corpo)
+	return a.Back.Execute(ctx, op, body)
 }
 
 // ── server ───────────────────────────────────────────────────────────────────
 
 func (a *Agent) opServerList(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpServerList, c)
+	return a.delegate(ctx, gameservers.OpServerList, c)
 }
 func (a *Agent) opServerStatus(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpServerStatus, c)
+	return a.delegate(ctx, gameservers.OpServerStatus, c)
 }
 func (a *Agent) opServerAction(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpServerAction, c)
+	return a.delegate(ctx, gameservers.OpServerAction, c)
 }
 func (a *Agent) opServerLogs(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpServerLogs, c)
+	return a.delegate(ctx, gameservers.OpServerLogs, c)
 }
 
 // ── world ────────────────────────────────────────────────────────────────────
 
 func (a *Agent) opWorldList(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpWorldList, c)
+	return a.delegate(ctx, gameservers.OpWorldList, c)
 }
 func (a *Agent) opWorldSwitch(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpWorldSwitch, c)
+	return a.delegate(ctx, gameservers.OpWorldSwitch, c)
 }
 func (a *Agent) opWorldExport(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpWorldExport, c)
+	return a.delegate(ctx, gameservers.OpWorldExport, c)
 }
 func (a *Agent) opWorldImport(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpWorldImport, c)
+	return a.delegate(ctx, gameservers.OpWorldImport, c)
 }
 func (a *Agent) opWorldRename(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpWorldRename, c)
+	return a.delegate(ctx, gameservers.OpWorldRename, c)
 }
 func (a *Agent) opWorldDuplicate(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpWorldDuplicate, c)
+	return a.delegate(ctx, gameservers.OpWorldDuplicate, c)
 }
 func (a *Agent) opWorldDelete(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpWorldDelete, c)
+	return a.delegate(ctx, gameservers.OpWorldDelete, c)
 }
 
 // ── settings ─────────────────────────────────────────────────────────────────
 
 func (a *Agent) opSettingsGet(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpSettingsGet, c)
+	return a.delegate(ctx, gameservers.OpSettingsGet, c)
 }
 func (a *Agent) opSettingsPatch(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpSettingsPatch, c)
+	return a.delegate(ctx, gameservers.OpSettingsPatch, c)
 }
 
 // ── runtime ──────────────────────────────────────────────────────────────────
 
 func (a *Agent) opRuntimeGet(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpRuntimeGet, c)
+	return a.delegate(ctx, gameservers.OpRuntimeGet, c)
 }
 func (a *Agent) opRuntimePatch(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpRuntimePatch, c)
+	return a.delegate(ctx, gameservers.OpRuntimePatch, c)
 }
 
 // ── backup ───────────────────────────────────────────────────────────────────
 
 func (a *Agent) opBackupList(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpBackupList, c)
+	return a.delegate(ctx, gameservers.OpBackupList, c)
 }
 func (a *Agent) opBackupCreate(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpBackupCreate, c)
+	return a.delegate(ctx, gameservers.OpBackupCreate, c)
 }
 func (a *Agent) opBackupRestore(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpBackupRestore, c)
+	return a.delegate(ctx, gameservers.OpBackupRestore, c)
 }
 func (a *Agent) opBackupDownload(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpBackupDownload, c)
+	return a.delegate(ctx, gameservers.OpBackupDownload, c)
 }
 
 // ── trainer ──────────────────────────────────────────────────────────────────
 
 func (a *Agent) opTrainerStatus(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpTrainerStatus, c)
+	return a.delegate(ctx, gameservers.OpTrainerStatus, c)
 }
 func (a *Agent) opTrainerApply(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpTrainerApply, c)
+	return a.delegate(ctx, gameservers.OpTrainerApply, c)
 }
 func (a *Agent) opTrainerDesired(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpTrainerDesired, c)
+	return a.delegate(ctx, gameservers.OpTrainerDesired, c)
 }
 
 // ── history ──────────────────────────────────────────────────────────────────
 
 func (a *Agent) opHistoryList(ctx context.Context, c json.RawMessage) (any, error) {
-	return a.delega(ctx, gameservers.OpHistoryList, c)
+	return a.delegate(ctx, gameservers.OpHistoryList, c)
 }

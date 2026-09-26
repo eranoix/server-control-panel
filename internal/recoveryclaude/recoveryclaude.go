@@ -51,44 +51,44 @@ const Container = "vpsm-recovery-claude"
 // fix, which is exactly the kind of surprise you do not want in an emergency
 // tool.
 func Materializa(dataDir string) (string, error) {
-	destino := filepath.Join(dataDir, "recovery-claude")
-	if err := os.MkdirAll(destino, 0o755); err != nil {
-		return "", fmt.Errorf("create %s: %w", destino, err)
+	dest := filepath.Join(dataDir, "recovery-claude")
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return "", fmt.Errorf("create %s: %w", dest, err)
 	}
-	entradas, err := fs.ReadDir(assets, "assets")
+	entries, err := fs.ReadDir(assets, "assets")
 	if err != nil {
 		return "", fmt.Errorf("read embedded assets: %w", err)
 	}
-	for _, e := range entradas {
+	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		conteudo, err := assets.ReadFile("assets/" + e.Name())
+		content, err := assets.ReadFile("assets/" + e.Name())
 		if err != nil {
 			return "", fmt.Errorf("read %s: %w", e.Name(), err)
 		}
-		modo := os.FileMode(0o644)
+		mode := os.FileMode(0o644)
 		if strings.HasSuffix(e.Name(), ".sh") {
-			modo = 0o755
+			mode = 0o755
 		}
-		alvo := filepath.Join(destino, e.Name())
+		target := filepath.Join(dest, e.Name())
 		// Atomic write: a deploy in the middle of a `docker build` must not
 		// leave a half-written Dockerfile.
-		tmp := alvo + ".tmp"
-		if err := os.WriteFile(tmp, conteudo, modo); err != nil {
-			return "", fmt.Errorf("write %s: %w", alvo, err)
+		tmp := target + ".tmp"
+		if err := os.WriteFile(tmp, content, mode); err != nil {
+			return "", fmt.Errorf("write %s: %w", target, err)
 		}
-		if err := os.Rename(tmp, alvo); err != nil {
-			return "", fmt.Errorf("move %s: %w", alvo, err)
+		if err := os.Rename(tmp, target); err != nil {
+			return "", fmt.Errorf("move %s: %w", target, err)
 		}
 	}
-	return filepath.Join(destino, "manage.sh"), nil
+	return filepath.Join(dest, "manage.sh"), nil
 }
 
 // Comando returns an *exec.Cmd of the already-materialized manager. Docker's
 // build context is the materialized directory itself — which is why the
 // Dockerfile and the scripts have to come out together.
-func Comando(dataDir string, args ...string) (*exec.Cmd, error) {
+func Command(dataDir string, args ...string) (*exec.Cmd, error) {
 	script, err := Materializa(dataDir)
 	if err != nil {
 		return nil, err
@@ -109,21 +109,21 @@ func Comando(dataDir string, args ...string) (*exec.Cmd, error) {
 // the operator: there is no `--continue` here. The container comes up with
 // `sleep infinity` and the session is born when someone opens /recovery, so
 // restarting DISCARDS the recovery conversation in progress, if there is one.
-func Reinicia(ctx context.Context, dataDir string) error {
-	cmd, err := Comando(dataDir, "restart")
+func Restart(ctx context.Context, dataDir string) error {
+	cmd, err := Command(dataDir, "restart")
 	if err != nil {
 		return err
 	}
 	if ctx != nil {
-		c2, err := Comando(dataDir, "restart")
+		c2, err := Command(dataDir, "restart")
 		if err != nil {
 			return err
 		}
 		cmd = exec.CommandContext(ctx, c2.Path, c2.Args[1:]...)
 	}
-	saida, err := cmd.CombinedOutput()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		msg := strings.TrimSpace(string(saida))
+		msg := strings.TrimSpace(string(output))
 		if msg == "" {
 			return err
 		}

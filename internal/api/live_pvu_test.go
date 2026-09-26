@@ -48,12 +48,12 @@ func pvuGETNodes(t *testing.T, r *Router) map[string]any {
 	return out
 }
 
-func TestLivePVUContadoresEDoisRelogios(t *testing.T) {
+func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 	if os.Getenv("LAB_PVU_LIVE") != "1" {
 		t.Skip("live proof disabled — run with LAB_PVU_LIVE=1")
 	}
 	t0 := time.Now().UTC()
-	r, cancel := routerVivo(t)
+	r, cancel := liveRouter(t)
 	defer cancel()
 
 	out := pvuGETNodes(t, r)
@@ -70,8 +70,8 @@ func TestLivePVUContadoresEDoisRelogios(t *testing.T) {
 	campos := []string{"cpu_frac", "cpu_cores", "mem_used", "mem_total", "mem_host",
 		"disk_used", "disk_total", "net_in", "net_out", "disk_read", "disk_write",
 		"net_in_rate", "net_out_rate"}
-	guests, comCarimbo := 0, 0
-	var linhas []string
+	guests, stamped := 0, 0
+	var lines []string
 	for _, raw := range nos {
 		n, _ := raw.(map[string]any)
 		if n["kind"] != "guest" {
@@ -88,7 +88,7 @@ func TestLivePVUContadoresEDoisRelogios(t *testing.T) {
 			}
 		}
 		if n["mem_used"].(map[string]any)["observed_at"].(float64) > 0 {
-			comCarimbo++
+			stamped++
 		}
 		mu := n["mem_used"].(map[string]any)["value"].(float64)
 		mt := n["mem_total"].(map[string]any)["value"].(float64)
@@ -102,20 +102,20 @@ func TestLivePVUContadoresEDoisRelogios(t *testing.T) {
 		if du >= 0 {
 			disco = fmt.Sprintf("%.1f GB", du/1e9)
 		}
-		linhas = append(linhas, fmt.Sprintf("%-10v cpu %5.2f%%  ram %5.1f%% (%.2f/%.2f GB)  disco %s",
+		lines = append(lines, fmt.Sprintf("%-10v cpu %5.2f%%  ram %5.1f%% (%.2f/%.2f GB)  disco %s",
 			n["id"], cpu*100, pctRAM, mu/1e9, mt/1e9, disco))
 	}
-	for _, l := range linhas {
+	for _, l := range lines {
 		t.Log(l)
 	}
-	if guests == 0 || comCarimbo != guests {
-		t.Fatalf("%d guests, %d with a memory stamp — all of them should have one", guests, comCarimbo)
+	if guests == 0 || stamped != guests {
+		t.Fatalf("%d guests, %d with a memory stamp — all of them should have one", guests, stamped)
 	}
 
 	// ── 2. 🔴 QEMU's disk shows up as ABSENCE, not as zero ──────────────────
 	//
 	// This is the assertion that matters most here: the hypervisor's `disk: 0` had
-	// to become -1 (NaoReportado) and not 0. If the guest agent is ever installed on
+	// to become -1 (NotReported) and not 0. If the guest agent is ever installed on
 	// the VMs this test fails — and that is what is wanted: the rule needs revising,
 	// not to go on lying quietly.
 	qemus, lxcs := 0, 0
@@ -130,7 +130,7 @@ func TestLivePVUContadoresEDoisRelogios(t *testing.T) {
 		switch {
 		case strings.HasPrefix(id, "qemu/"):
 			qemus++
-			if du != float64(inventory.NaoReportado) {
+			if du != float64(inventory.NotReported) {
 				t.Errorf("%s: disk_used = %.0f — QEMU has started reporting disk; the rule needs to be REVISED", id, du)
 			}
 			if dt <= 0 {
@@ -153,19 +153,19 @@ func TestLivePVUContadoresEDoisRelogios(t *testing.T) {
 	if !ok {
 		t.Fatal("payload without `poll` — the screen is left with only one clock")
 	}
-	idadeTentativa := poll["age_seconds"].(float64)
-	if idadeTentativa < 0 {
-		t.Fatalf("poll.age_seconds = %v — the poller just ran in this test", idadeTentativa)
+	attemptAge := poll["age_seconds"].(float64)
+	if attemptAge < 0 {
+		t.Fatalf("poll.age_seconds = %v — the poller just ran in this test", attemptAge)
 	}
 	if e, _ := poll["error"].(string); e != "" {
 		t.Logf("⚠️ the poller's last attempt logged an error: %q", e)
 	}
-	var idadesDeNo []float64
+	var nodeAges []float64
 	for _, raw := range nos {
 		n, _ := raw.(map[string]any)
-		idadesDeNo = append(idadesDeNo, n["age_seconds"].(float64))
+		nodeAges = append(nodeAges, n["age_seconds"].(float64))
 	}
-	t.Logf("two clocks: poller attempt = %.0fs · node ages = %v", idadeTentativa, idadesDeNo)
+	t.Logf("two clocks: poller attempt = %.0fs · node ages = %v", attemptAge, nodeAges)
 
 	// ── 4. NEGATIVE control for the second clock ────────────────────────────
 	//
@@ -181,30 +181,30 @@ func TestLivePVUContadoresEDoisRelogios(t *testing.T) {
 	}
 	out2 := pvuGETNodes(t, r)
 	poll2 := out2["poll"].(map[string]any)
-	if poll2["age_seconds"].(float64) < idadeTentativa+3500 {
+	if poll2["age_seconds"].(float64) < attemptAge+3500 {
 		t.Fatalf("the attempt's clock did not age: %v → %v",
-			idadeTentativa, poll2["age_seconds"])
+			attemptAge, poll2["age_seconds"])
 	}
 	nos2, _ := out2["nodes"].([]any)
 	for i, raw := range nos2 {
 		n, _ := raw.(map[string]any)
-		if got := n["age_seconds"].(float64); got > idadesDeNo[i]+5 {
+		if got := n["age_seconds"].(float64); got > nodeAges[i]+5 {
 			t.Fatalf("%v aged along with the attempt (%v → %v) — the clocks are glued together",
-				n["id"], idadesDeNo[i], got)
+				n["id"], nodeAges[i], got)
 		}
 	}
 	if poll2["error"].(string) == "" {
 		t.Fatal("the reason did not survive into the payload")
 	}
 	t.Logf("negative control: attempt %.0fs → %.0fs, and no node aged along with it",
-		idadeTentativa, poll2["age_seconds"].(float64))
+		attemptAge, poll2["age_seconds"].(float64))
 
 	// ── 5. network rate: either derivable, or a declared absence ────────────
 	//
 	// On the first tick of a fresh store there IS no earlier observation, so -1 is
 	// the right answer. What this block forbids is 0: a zero rate reads as "no
 	// traffic", which is a claim about minutes nobody looked at.
-	semBase, comTaxa := 0, 0
+	noBaseline, withRate := 0, 0
 	for _, raw := range nos {
 		n, _ := raw.(map[string]any)
 		if n["kind"] != "guest" {
@@ -212,20 +212,20 @@ func TestLivePVUContadoresEDoisRelogios(t *testing.T) {
 		}
 		v := n["net_in_rate"].(map[string]any)["value"].(float64)
 		if v < 0 {
-			semBase++
+			noBaseline++
 		} else {
-			comTaxa++
+			withRate++
 		}
 		if n["net_in"].(map[string]any)["value"].(float64) <= 0 {
 			t.Errorf("%v: accumulated net_in = 0 — the counter is not arriving", n["id"])
 		}
 	}
-	t.Logf("network rate: %d with a baseline, %d without one (store's first observation)", comTaxa, semBase)
+	t.Logf("network rate: %d with a baseline, %d without one (store's first observation)", withRate, noBaseline)
 
 	t.Logf("proof window: [t0=%s t1=%s]", t0.Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339))
 }
 
-// 🔴 TestLivePVUTaxaDerivaDeDUASObservacoesReais — the proof the first test
+// 🔴 TestLivePVURateDerivesFromTWORealObservations — the proof the first test
 // cannot give.
 //
 // With a freshly created store there is ONE observation, and the correct rate is
@@ -236,7 +236,7 @@ func TestLivePVUContadoresEDoisRelogios(t *testing.T) {
 // Here the poller really runs against the hypervisor on a short interval, and the
 // wait is ACTIVE on an EVENT (the second tick having stamped), with a deadline —
 // it is not a clock wait, and the test dies in 25 s instead of hanging.
-func TestLivePVUTaxaDerivaDeDUASObservacoesReais(t *testing.T) {
+func TestLivePVURateDerivesFromTWORealObservations(t *testing.T) {
 	if os.Getenv("LAB_PVU_LIVE") != "1" {
 		t.Skip("live proof disabled — run with LAB_PVU_LIVE=1")
 	}
@@ -244,7 +244,7 @@ func TestLivePVUTaxaDerivaDeDUASObservacoesReais(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cofre, err := secrets.Open(filepath.Join(cfg.DataDir, "secrets.vault"), cfg.JWTSecret)
+	vault, err := secrets.Open(filepath.Join(cfg.DataDir, "secrets.vault"), cfg.JWTSecret)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestLivePVUTaxaDerivaDeDUASObservacoesReais(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	valor, ok := scope.NewUserVault(cofre, scope.User(cfg.Primary)).Get(pveSecretAudit)
+	valor, ok := scope.NewUserVault(vault, scope.User(cfg.Primary)).Get(pveSecretAudit)
 	if !ok {
 		t.Fatal("no audit token in the vault")
 	}
@@ -275,12 +275,12 @@ func TestLivePVUTaxaDerivaDeDUASObservacoesReais(t *testing.T) {
 	})
 	go p.Run(ctx)
 
-	prazo := time.Now().Add(25 * time.Second)
-	var comBase, semBase []string
+	deadline := time.Now().Add(25 * time.Second)
+	var comBase, noBaseline []string
 	for {
 		inv, err := st.Snapshot()
 		if err == nil {
-			comBase, semBase = nil, nil
+			comBase, noBaseline = nil, nil
 			for _, n := range inv.Nodes {
 				if n.Kind != inventory.NodeKindGuest {
 					continue
@@ -288,39 +288,39 @@ func TestLivePVUTaxaDerivaDeDUASObservacoesReais(t *testing.T) {
 				if n.NetInRate.Value >= 0 {
 					comBase = append(comBase, fmt.Sprintf("%s ↓%dB/s ↑%dB/s", n.ID, n.NetInRate.Value, n.NetOutRate.Value))
 				} else {
-					semBase = append(semBase, n.ID)
+					noBaseline = append(noBaseline, n.ID)
 				}
 			}
 		}
 		if len(comBase) > 0 {
 			break
 		}
-		if time.Now().After(prazo) {
-			t.Fatalf("no rate derived in 25 s — without a baseline: %v", semBase)
+		if time.Now().After(deadline) {
+			t.Fatalf("no rate derived in 25 s — without a baseline: %v", noBaseline)
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
 	for _, l := range comBase {
 		t.Log("rate derived from two real observations:" + l)
 	}
-	t.Logf("%d guests with a rate, %d still without a baseline", len(comBase), len(semBase))
+	t.Logf("%d guests with a rate, %d still without a baseline", len(comBase), len(noBaseline))
 
 	// And the NEGATIVE control for the same rule, with no waiting: an artificial
 	// hole in the previous stamp has to erase the rate on the next tick.
 	inv, _ := st.Snapshot()
-	alvo := ""
+	target := ""
 	for _, n := range inv.Nodes {
 		if n.Kind == inventory.NodeKindGuest && n.NetInRate.Value >= 0 {
-			alvo = n.ID
+			target = n.ID
 			break
 		}
 	}
-	if alvo == "" {
+	if target == "" {
 		t.Fatal("no target for the negative control")
 	}
 	if err := st.Replace(func(iv *inventory.Inventory) {
 		for i := range iv.Nodes {
-			if iv.Nodes[i].ID == alvo {
+			if iv.Nodes[i].ID == target {
 				// The previous counter's stamp moves back an hour: the next tick
 				// sees a 3600 s "hole" with a 2 s interval configured.
 				iv.Nodes[i].NetIn.ObservedAt -= 3600
@@ -329,21 +329,21 @@ func TestLivePVUTaxaDerivaDeDUASObservacoesReais(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	prazo = time.Now().Add(15 * time.Second)
+	deadline = time.Now().Add(15 * time.Second)
 	for {
 		inv, _ := st.Snapshot()
 		for _, n := range inv.Nodes {
-			if n.ID != alvo {
+			if n.ID != target {
 				continue
 			}
-			if n.NetIn.ObservedAt > 0 && n.NetInRate.Value == inventory.NaoReportado {
+			if n.NetIn.ObservedAt > 0 && n.NetInRate.Value == inventory.NotReported {
 				t.Logf("negative control: a 1h hole in %s erased the rate (value = %d, and not 0)",
-					alvo, n.NetInRate.Value)
+					target, n.NetInRate.Value)
 				return
 			}
 		}
-		if time.Now().After(prazo) {
-			t.Fatalf("the hole did NOT erase %s's rate — an average over blind minutes would keep being published", alvo)
+		if time.Now().After(deadline) {
+			t.Fatalf("the hole did NOT erase %s's rate — an average over blind minutes would keep being published", target)
 		}
 		time.Sleep(300 * time.Millisecond)
 	}

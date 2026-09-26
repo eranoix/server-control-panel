@@ -17,7 +17,7 @@ import (
 // Without the notice, the process dies and the hijacked connection vanishes with
 // no close frame — the browser reports 1006 (abnormal closure), identical to a
 // network drop.
-func TestNotifyRestartEntregaCodigo1012(t *testing.T) {
+func TestNotifyRestartDeliversCode1012(t *testing.T) {
 	pronto := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		up := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
@@ -46,8 +46,8 @@ func TestNotifyRestartEntregaCodigo1012(t *testing.T) {
 		t.Fatalf("LiveCount = %d, wanted 1 (connection was not registered)", n)
 	}
 
-	visto := make(chan int, 1)
-	cli.SetCloseHandler(func(code int, text string) error { visto <- code; return nil })
+	seen := make(chan int, 1)
+	cli.SetCloseHandler(func(code int, text string) error { seen <- code; return nil })
 
 	if n := NotifyRestart(); n != 1 {
 		t.Fatalf("NotifyRestart notified %d connections, wanted 1", n)
@@ -57,7 +57,7 @@ func TestNotifyRestartEntregaCodigo1012(t *testing.T) {
 	_, _, _ = cli.ReadMessage()
 
 	select {
-	case code := <-visto:
+	case code := <-seen:
 		if code != websocket.CloseServiceRestart {
 			t.Fatalf("the client got close %d, want 1012 (Service Restart)", code)
 		}
@@ -87,7 +87,7 @@ func TestRegisterLiveDesregistra(t *testing.T) {
 }
 
 // nil must not take down the shutdown path — the deploy has to happen.
-func TestRegisterLiveNilNaoQuebra(t *testing.T) {
+func TestRegisterLiveNilDoesNotBreak(t *testing.T) {
 	antes := LiveCount()
 	fim := registerLive(nil)
 	fim()
@@ -97,7 +97,7 @@ func TestRegisterLiveNilNaoQuebra(t *testing.T) {
 }
 
 // With nobody connected, the notice is a silent no-op.
-func TestNotifyRestartSemConexoes(t *testing.T) {
+func TestNotifyRestartNoConnections(t *testing.T) {
 	liveMu.Lock()
 	liveConns = map[*websocket.Conn]struct{}{}
 	liveMu.Unlock()

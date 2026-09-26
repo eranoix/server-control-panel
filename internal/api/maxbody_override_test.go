@@ -19,7 +19,7 @@ import (
 	"server-control-panel/internal/httpmw"
 )
 
-func TestIsGameWorldImportUpload_CasaSoARotaDeImportar(t *testing.T) {
+func TestIsGameWorldImportUpload_MatchesOnlyImportRoute(t *testing.T) {
 	cases := []struct {
 		name   string
 		method string
@@ -40,7 +40,7 @@ func TestIsGameWorldImportUpload_CasaSoARotaDeImportar(t *testing.T) {
 	}
 }
 
-func TestGameWorldImportUpload_BodyOver25MiB_NaoECapadoPeloMaxBodyGlobal(t *testing.T) {
+func TestGameWorldImportUpload_BodyOver25MiB_NotCappedByGlobalMaxBody(t *testing.T) {
 	body := bytes.Repeat([]byte("w"), 40<<20) // 40 MiB — acima de 25 MiB, bem abaixo de 600 MiB
 	var gotN int64
 	var gotErr error
@@ -61,7 +61,7 @@ func TestGameWorldImportUpload_BodyOver25MiB_NaoECapadoPeloMaxBodyGlobal(t *test
 	}
 }
 
-func TestIsJiraAttachmentUpload_CasaSoARotaDeAnexo(t *testing.T) {
+func TestIsJiraAttachmentUpload_MatchesOnlyAttachmentRoute(t *testing.T) {
 	cases := []struct {
 		name   string
 		method string
@@ -81,7 +81,7 @@ func TestIsJiraAttachmentUpload_CasaSoARotaDeAnexo(t *testing.T) {
 	}
 }
 
-func TestJiraAttachmentUpload_BodyOver25MiB_NaoECapadoPeloMaxBodyGlobal(t *testing.T) {
+func TestJiraAttachmentUpload_BodyOver25MiB_NotCappedByGlobalMaxBody(t *testing.T) {
 	body := bytes.Repeat([]byte("j"), 30<<20) // 30 MiB — acima de 25 MiB, abaixo do teto de 32 MiB
 	var gotN int64
 	var gotErr error

@@ -22,7 +22,7 @@ package pve
 // --propagate 1` (applied by the operator), both return real data: 4 storages
 // and 2 zpools. But the TRAP did not leave with the ACL — it comes back the day
 // the privilege is withdrawn, and it comes back silent. That is why
-// PodeAuditarDatastore is still here, and why it measures PRIVILEGE.
+// CanAuditDatastore is still here, and why it measures PRIVILEGE.
 // ─────────────────────────────────────────────────────────────────────────────
 //
 // Scope: capacity and health, never content. Listing a datastore's volumes
@@ -62,14 +62,14 @@ type Storage struct {
 	Shared       int     `json:"shared"`
 }
 
-func (s Storage) Ativo() bool         { return s.Active == 1 }
-func (s Storage) Habilitado() bool    { return s.Enabled == 1 }
-func (s Storage) Compartilhado() bool { return s.Shared == 1 }
+func (s Storage) IsActive() bool  { return s.Active == 1 }
+func (s Storage) IsEnabled() bool { return s.Enabled == 1 }
+func (s Storage) IsShared() bool  { return s.Shared == 1 }
 
 // Conteudos splits the `content` field into the list the screen consumes, in a
 // stable order. Doing this here and not in the browser is the same rule as
 // loadavg in inventory/hypervisor.go: the screen FORMATS, it does not interpret.
-func (s Storage) Conteudos() []string {
+func (s Storage) ContentList() []string {
 	out := []string{}
 	for _, c := range strings.Split(s.Content, ",") {
 		if c = strings.TrimSpace(c); c != "" {
@@ -83,7 +83,7 @@ func (s Storage) Conteudos() []string {
 // StorageList returns the capacity of each of the node's storages. Measured: 168 ms.
 //
 // ⚠️ Reading a 200 with an empty list here does NOT mean "there is no storage".
-// It means "there is no storage THIS TOKEN CAN SEE". PodeAuditarDatastore breaks the tie.
+// It means "there is no storage THIS TOKEN CAN SEE". CanAuditDatastore breaks the tie.
 func (c *Client) StorageList(ctx context.Context, node string) ([]Storage, error) {
 	if node == "" {
 		return nil, fmt.Errorf("pve: empty node in StorageList")
@@ -94,7 +94,7 @@ func (c *Client) StorageList(ctx context.Context, node string) ([]Storage, error
 		return nil, err
 	}
 	// The hypervisor promises no ordering. A document that changes order on every
-	// tick becomes noise in the diff of the persisted inventory — the same reason as ordenaPorID().
+	// tick becomes noise in the diff of the persisted inventory — the same reason as sortByID().
 	sort.SliceStable(ss, func(i, j int) bool { return ss[i].Storage < ss[j].Storage })
 	return ss, nil
 }
@@ -137,22 +137,22 @@ func (c *Client) ZFSList(ctx context.Context, node string) ([]ZPool, error) {
 	return ps, nil
 }
 
-// privsDeDatastore are the privileges that make /nodes/{n}/storage answer with
+// datastorePrivs are the privileges that make /nodes/{n}/storage answer with
 // content. Datastore.Audit is the read one; the allocation privileges imply it
 // (whoever can write to the datastore can read it), and listing them keeps a
 // token more powerful than audit from being read as blind.
-var privsDeDatastore = []string{
+var datastorePrivs = []string{
 	"Datastore.Audit",
 	"Datastore.Allocate",
 	"Datastore.AllocateSpace",
 	"Datastore.AllocateTemplate",
 }
 
-// PodeAuditarDatastore says whether a map from /access/permissions authorises
+// CanAuditDatastore says whether a map from /access/permissions authorises
 // READING storage capacity. It is the ONLY source of that verdict in the panel
 // — the /permissions handler and the poller call this function, never a copy of
 // the rule. Two truths about the same question have already produced a measured
-// defect in this codebase (see chaveDeCredencial in internal/api/handlers_nodes.go).
+// defect in this codebase (see credentialKey in internal/api/handlers_nodes.go).
 //
 // 🔴 The verdict is by PRIVILEGE, not by the presence of a path. The first
 // version answered `strings.HasPrefix(caminho, "/storage")`, and that only says
@@ -164,12 +164,12 @@ var privsDeDatastore = []string{
 // The paths that count are the ones that COVER storage: the root (which
 // propagates), /storage itself, and each named storage. `/storagefoo` is none of
 // the three.
-func PodeAuditarDatastore(perms map[string]map[string]int) bool {
-	for caminho, privs := range perms {
-		if !cobreStorage(caminho) {
+func CanAuditDatastore(perms map[string]map[string]int) bool {
+	for path, privs := range perms {
+		if !coversStorage(path) {
 			continue
 		}
-		for _, p := range privsDeDatastore {
+		for _, p := range datastorePrivs {
 			if privs[p] == 1 {
 				return true
 			}
@@ -178,11 +178,11 @@ func PodeAuditarDatastore(perms map[string]map[string]int) bool {
 	return false
 }
 
-// cobreStorage says whether an ACL path reaches the datastores. Cutting at
+// coversStorage says whether an ACL path reaches the datastores. Cutting at
 // "/storage/" (with the slash) is what stops a neighbouring path from getting in
 // by prefix — the classic defect of whoever uses a raw HasPrefix.
-func cobreStorage(caminho string) bool {
-	return caminho == "/" || caminho == "/storage" || strings.HasPrefix(caminho, "/storage/")
+func coversStorage(path string) bool {
+	return path == "/" || path == "/storage" || strings.HasPrefix(path, "/storage/")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -205,36 +205,36 @@ func cobreStorage(caminho string) bool {
 //     that asserts "no redundancy" by hardcode lies on the day somebody adds a
 //     mirror.
 
-// ZDispositivo is a leaf of the vdev tree: a real physical device.
-type ZDispositivo struct {
-	Caminho string `json:"caminho"` // /dev/disk/by-id/nvme-eui.…-part3
-	Estado  string `json:"estado"`  // ONLINE | DEGRADED | FAULTED | UNAVAIL | REMOVED
-	Read    int64  `json:"read"`
-	Write   int64  `json:"write"`
-	Cksum   int64  `json:"cksum"`
+// ZDevice is a leaf of the vdev tree: a real physical device.
+type ZDevice struct {
+	Path  string `json:"caminho"` // /dev/disk/by-id/nvme-eui.…-part3
+	State string `json:"estado"`  // ONLINE | DEGRADED | FAULTED | UNAVAIL | REMOVED
+	Read  int64  `json:"read"`
+	Write int64  `json:"write"`
+	Cksum int64  `json:"cksum"`
 }
 
 // ZVdev is a group of devices: `mirror-0`, `raidz1-0`, or the pool itself when
 // the disks hang off the root with no group at all.
 type ZVdev struct {
-	Nome         string         `json:"nome"`
-	Tipo         string         `json:"tipo"` // mirror | raidz1 | raidz2 | raidz3 | listra | especial
-	Redundante   bool           `json:"redundante"`
-	Dispositivos []ZDispositivo `json:"dispositivos"`
+	Nome      string    `json:"nome"`
+	Type      string    `json:"tipo"` // mirror | raidz1 | raidz2 | raidz3 | listra | especial
+	Redundant bool      `json:"redundante"`
+	Devices   []ZDevice `json:"dispositivos"`
 }
 
-// ZPoolTopologia is the complete verdict about a pool.
-type ZPoolTopologia struct {
-	Nome       string  `json:"nome"`
-	Estado     string  `json:"estado"`
-	Erros      string  `json:"erros"` // "No known data errors" | a description
-	Vdevs      []ZVdev `json:"vdevs"`
-	Redundante bool    `json:"redundante"`
-	NDisp      int     `json:"n_dispositivos"`
-	// ErrosContados sums read+write+cksum across ALL devices. In a pool with no
+// ZPoolTopology is the complete verdict about a pool.
+type ZPoolTopology struct {
+	Nome      string  `json:"nome"`
+	State     string  `json:"estado"`
+	Errors    string  `json:"erros"` // "No known data errors" | a description
+	Vdevs     []ZVdev `json:"vdevs"`
+	Redundant bool    `json:"redundante"`
+	NDisp     int     `json:"n_dispositivos"`
+	// ErrorCount sums read+write+cksum across ALL devices. In a pool with no
 	// mirror, any one of them different from zero is lost data — there is no second
 	// copy to rebuild from.
-	ErrosContados int64 `json:"erros_contados"`
+	ErrorCount int64 `json:"erros_contados"`
 }
 
 // zfsNo is the raw shape of a tree node as the hypervisor returns it.
@@ -249,20 +249,20 @@ type zfsNo struct {
 	Children []zfsNo `json:"children"`
 }
 
-type zfsDetalheCru struct {
+type zfsRawDetail struct {
 	Name     string  `json:"name"`
 	State    string  `json:"state"`
 	Errors   string  `json:"errors"`
 	Children []zfsNo `json:"children"`
 }
 
-// tipoDeVdev classifies a group by its name, the way `zpool status` writes it.
+// vdevType classifies a group by its name, the way `zpool status` writes it.
 //
 // Only mirror and raidz survive the loss of one device. `listra` (the pool
 // hanging disks straight off the root) and anything unknown do NOT count as
 // redundancy: when in doubt the verdict is "does not protect", because the error
 // in the other direction makes the operator trust a mirror that does not exist.
-func tipoDeVdev(nome string) (string, bool) {
+func vdevType(nome string) (string, bool) {
 	switch {
 	case strings.HasPrefix(nome, "mirror"):
 		return "mirror", true
@@ -280,18 +280,18 @@ func tipoDeVdev(nome string) (string, bool) {
 	}
 }
 
-// ZFSTopologia reads a pool's vdev tree and emits the verdict.
-func (c *Client) ZFSTopologia(ctx context.Context, node, pool string) (ZPoolTopologia, error) {
-	var out ZPoolTopologia
+// ZFSTopology reads a pool's vdev tree and emits the verdict.
+func (c *Client) ZFSTopology(ctx context.Context, node, pool string) (ZPoolTopology, error) {
+	var out ZPoolTopology
 	if node == "" || pool == "" {
 		return out, fmt.Errorf("pve: empty node or pool in ZFSTopologia")
 	}
-	var cru zfsDetalheCru
+	var cru zfsRawDetail
 	p := "/api2/json/nodes/" + url.PathEscape(node) + "/disks/zfs/" + url.PathEscape(pool)
 	if err := c.do(ctx, http.MethodGet, p, &cru); err != nil {
 		return out, err
 	}
-	out.Nome, out.Estado, out.Erros = cru.Name, cru.State, cru.Errors
+	out.Nome, out.State, out.Errors = cru.Name, cru.State, cru.Errors
 	if out.Nome == "" {
 		out.Nome = pool
 	}
@@ -299,50 +299,50 @@ func (c *Client) ZFSTopologia(ctx context.Context, node, pool string) (ZPoolTopo
 	// The root the hypervisor returns is a node named after the pool; the real
 	// vdevs are its children. Going down one level is what separates "the pool"
 	// from "the pool's disk groups".
-	raiz := cru.Children
-	if len(raiz) == 1 && raiz[0].Leaf == 0 && raiz[0].Name == out.Nome {
-		raiz = raiz[0].Children
+	root := cru.Children
+	if len(root) == 1 && root[0].Leaf == 0 && root[0].Name == out.Nome {
+		root = root[0].Children
 	}
 
-	for _, n := range raiz {
+	for _, n := range root {
 		if n.Leaf == 1 {
 			// A disk hanging straight off the root: it is a stripe, with no protection.
 			out.Vdevs = append(out.Vdevs, ZVdev{
-				Nome: n.Name, Tipo: "listra", Redundante: false,
-				Dispositivos: []ZDispositivo{{Caminho: n.Name, Estado: n.State,
+				Nome: n.Name, Type: "listra", Redundant: false,
+				Devices: []ZDevice{{Path: n.Name, State: n.State,
 					Read: n.Read, Write: n.Write, Cksum: n.Cksum}},
 			})
 			continue
 		}
-		tipo, red := tipoDeVdev(n.Name)
-		v := ZVdev{Nome: n.Name, Tipo: tipo, Redundante: red}
+		kind, red := vdevType(n.Name)
+		v := ZVdev{Nome: n.Name, Type: kind, Redundant: red}
 		for _, f := range n.Children {
 			if f.Leaf != 1 {
 				continue
 			}
-			v.Dispositivos = append(v.Dispositivos, ZDispositivo{
-				Caminho: f.Name, Estado: f.State, Read: f.Read, Write: f.Write, Cksum: f.Cksum,
+			v.Devices = append(v.Devices, ZDevice{
+				Path: f.Name, State: f.State, Read: f.Read, Write: f.Write, Cksum: f.Cksum,
 			})
 		}
 		out.Vdevs = append(out.Vdevs, v)
 	}
 
 	for _, v := range out.Vdevs {
-		if v.Tipo == "especial" {
+		if v.Type == "especial" {
 			continue // log/cache/spare do not hold the pool's data
 		}
-		if v.Redundante {
-			out.Redundante = true
+		if v.Redundant {
+			out.Redundant = true
 		}
-		out.NDisp += len(v.Dispositivos)
-		for _, d := range v.Dispositivos {
-			out.ErrosContados += d.Read + d.Write + d.Cksum
+		out.NDisp += len(v.Devices)
+		for _, d := range v.Devices {
+			out.ErrorCount += d.Read + d.Write + d.Cksum
 		}
 	}
 	return out, nil
 }
 
-// SerialDoCaminho extracts the serial from a `/dev/disk/by-id/...` path, which
+// SerialFromPath extracts the serial from a `/dev/disk/by-id/...` path, which
 // is what allows a pool device to be matched to a `DiskList` row.
 //
 // The two formats measured in this laboratory:
@@ -354,8 +354,8 @@ func (c *Client) ZFSTopologia(ctx context.Context, node, pool string) (ZPoolTopo
 // the right answer — matching by serial simply does not happen for it, and the
 // screen falls back to matching by type. Inventing a serial would make the
 // screen tie the pool to the WRONG disk, which is worse than not tying it.
-func SerialDoCaminho(caminho string) string {
-	base := caminho
+func SerialFromPath(path string) string {
+	base := path
 	if i := strings.LastIndex(base, "/"); i >= 0 {
 		base = base[i+1:]
 	}
@@ -397,16 +397,16 @@ type BackupItem struct {
 	Notes  string `json:"notes"`
 }
 
-// FrescorDeBackup is the per-datastore verdict.
-type FrescorDeBackup struct {
+// BackupFreshness is the per-datastore verdict.
+type BackupFreshness struct {
 	Storage string `json:"storage"`
 	Total   int    `json:"total"`
-	// UltimoCTime is 0 when THERE IS NO BACKUP AT ALL — and zero here is absence,
+	// LastCTime is 0 when THERE IS NO BACKUP AT ALL — and zero here is absence,
 	// not "1970". Whoever consumes it has to tell the two apart: an empty datastore
 	// and a datastore with an ancient backup call for opposite actions.
-	UltimoCTime int64  `json:"ultimo_ctime"`
-	Guests      []int  `json:"guests"`
-	Erro        string `json:"erro,omitempty"`
+	LastCTime int64  `json:"ultimo_ctime"`
+	Guests    []int  `json:"guests"`
+	Error     string `json:"erro,omitempty"`
 
 	// 🔴 Agendado separates "deliberately disarmed" from "failed", and that
 	// distinction is the difference between a panel you can trust and a permanent
@@ -427,36 +427,36 @@ type FrescorDeBackup struct {
 	//
 	// "No job in the hypervisor" means "this panel does not know who schedules it",
 	// and saying that is more honest than asserting either of the other two.
-	Agendamento string `json:"agendamento"`
-	Schedule    string `json:"schedule,omitempty"`
+	Scheduler string `json:"agendamento"`
+	Schedule  string `json:"schedule,omitempty"`
 
-	// MesmoDiscoQue names the other layers that share the physical disk. Two layers
+	// SameDiskAs names the other layers that share the physical disk. Two layers
 	// on the same disk are ONE layer with two names: the disk failing takes both
 	// together, and that is what the operator needs to see before trusting a count
 	// of "two copies".
-	MesmoDiscoQue []string `json:"mesmo_disco_que,omitempty"`
+	SameDiskAs []string `json:"mesmo_disco_que,omitempty"`
 }
 
-// BackupsDoDatastore lists a datastore's copies and summarises freshness.
-func (c *Client) BackupsDoDatastore(ctx context.Context, node, storage string) (FrescorDeBackup, error) {
-	out := FrescorDeBackup{Storage: storage}
+// DatastoreBackups lists a datastore's copies and summarises freshness.
+func (c *Client) DatastoreBackups(ctx context.Context, node, storage string) (BackupFreshness, error) {
+	out := BackupFreshness{Storage: storage}
 	if node == "" || storage == "" {
-		return out, fmt.Errorf("pve: empty node or storage in BackupsDoDatastore")
+		return out, fmt.Errorf("pve: empty node or storage in DatastoreBackups")
 	}
-	var itens []BackupItem
+	var items []BackupItem
 	p := "/api2/json/nodes/" + url.PathEscape(node) + "/storage/" + url.PathEscape(storage) +
 		"/content?content=backup"
-	if err := c.do(ctx, http.MethodGet, p, &itens); err != nil {
+	if err := c.do(ctx, http.MethodGet, p, &items); err != nil {
 		return out, err
 	}
-	out.Total = len(itens)
-	vistos := map[int]bool{}
-	for _, it := range itens {
-		if it.CTime > out.UltimoCTime {
-			out.UltimoCTime = it.CTime
+	out.Total = len(items)
+	seen := map[int]bool{}
+	for _, it := range items {
+		if it.CTime > out.LastCTime {
+			out.LastCTime = it.CTime
 		}
-		if it.VMID > 0 && !vistos[it.VMID] {
-			vistos[it.VMID] = true
+		if it.VMID > 0 && !seen[it.VMID] {
+			seen[it.VMID] = true
 			out.Guests = append(out.Guests, it.VMID)
 		}
 	}
@@ -480,8 +480,8 @@ func (c *Client) BackupsDoDatastore(ctx context.Context, node, storage string) (
 //
 // A screen that paints this red is wrong about the fact, not about the colour.
 
-// JobDeBackup is one entry of /cluster/backup.
-type JobDeBackup struct {
+// BackupJob is one entry of /cluster/backup.
+type BackupJob struct {
 	ID      string `json:"id"`
 	Storage string `json:"storage"`
 	// 🔴 A POINTER, not an int. `enabled` is OPTIONAL with `default => 1`: absent
@@ -498,16 +498,16 @@ type JobDeBackup struct {
 // hypervisor means ON — the field only shows up when somebody turns it off — so
 // the read has to distinguish "explicit 0" from "field absent". Treating absence
 // as off would make the screen call a layer that runs every day disarmed.
-func (j JobDeBackup) Agendado() bool {
+func (j BackupJob) IsScheduled() bool {
 	if j.Schedule == "" {
 		return false // with no schedule it does not fire, enabled or not
 	}
 	return j.Enabled == nil || *j.Enabled != 0
 }
 
-// JobsDeBackup lists the cluster's vzdump jobs.
-func (c *Client) JobsDeBackup(ctx context.Context) ([]JobDeBackup, error) {
-	var js []JobDeBackup
+// BackupJobs lists the cluster's vzdump jobs.
+func (c *Client) BackupJobs(ctx context.Context) ([]BackupJob, error) {
+	var js []BackupJob
 	if err := c.do(ctx, http.MethodGet, "/api2/json/cluster/backup", &js); err != nil {
 		return nil, err
 	}

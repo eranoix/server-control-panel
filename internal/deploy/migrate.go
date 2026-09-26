@@ -82,10 +82,10 @@ type Deployment struct {
 type Shape string
 
 const (
-	ShapeAusente      Shape = "ausente"      // file does not exist — fresh install
-	ShapeV1Array      Shape = "v1-array"     // array cru de App (formato antigo)
-	ShapeV2           Shape = "v2"           // envelope {schema_version: 2, …}
-	ShapeDesconhecida Shape = "desconhecida" // anything else: a future version, garbage, or truncated
+	ShapeMissing Shape = "ausente"      // file does not exist — fresh install
+	ShapeV1Array Shape = "v1-array"     // array cru de App (formato antigo)
+	ShapeV2      Shape = "v2"           // envelope {schema_version: 2, …}
+	ShapeUnknown Shape = "desconhecida" // anything else: a future version, garbage, or truncated
 )
 
 // ErrConcurrentAppsMigration is returned when the apps.json lock is already
@@ -116,9 +116,9 @@ func DetectShape(dataDir string) (Shape, int, error) {
 	raw, err := os.ReadFile(appsPath(dataDir))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return ShapeAusente, 0, nil
+			return ShapeMissing, 0, nil
 		}
-		return ShapeDesconhecida, 0, err
+		return ShapeUnknown, 0, err
 	}
 	sh, ver := detectShapeBytes(raw)
 	return sh, ver, nil
@@ -132,13 +132,13 @@ func DetectShape(dataDir string) (Shape, int, error) {
 func detectShapeBytes(raw []byte) (Shape, int) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
-		return ShapeDesconhecida, 0
+		return ShapeUnknown, 0
 	}
 	switch trimmed[0] {
 	case '[':
 		var apps []App
 		if json.Unmarshal(trimmed, &apps) != nil {
-			return ShapeDesconhecida, 0
+			return ShapeUnknown, 0
 		}
 		return ShapeV1Array, 0
 	case '{':
@@ -146,19 +146,19 @@ func detectShapeBytes(raw []byte) (Shape, int) {
 			SchemaVersion int `json:"schema_version"`
 		}
 		if json.Unmarshal(trimmed, &envelope) != nil {
-			return ShapeDesconhecida, 0
+			return ShapeUnknown, 0
 		}
 		if envelope.SchemaVersion != AppsSchemaVersion {
-			return ShapeDesconhecida, envelope.SchemaVersion
+			return ShapeUnknown, envelope.SchemaVersion
 		}
 		var f File
 		if json.Unmarshal(trimmed, &f) != nil {
 			// Claims to be v2 but does not decode as v2: garbage with the right label.
-			return ShapeDesconhecida, envelope.SchemaVersion
+			return ShapeUnknown, envelope.SchemaVersion
 		}
 		return ShapeV2, envelope.SchemaVersion
 	default:
-		return ShapeDesconhecida, 0
+		return ShapeUnknown, 0
 	}
 }
 
@@ -185,7 +185,7 @@ func GuardCLI(dataDir string) error {
 		return fmt.Errorf("%s: read %s: %w", cliBinaryName, appsPath(dataDir), err)
 	}
 	switch shape {
-	case ShapeAusente, ShapeV2:
+	case ShapeMissing, ShapeV2:
 		return nil
 	case ShapeV1Array:
 		return fmt.Errorf(
@@ -246,7 +246,7 @@ func MigrateApps(d AppsMigration) error {
 
 	// Step 1: the cheap no-op. Without it, every boot would create the lock file
 	// and contend for the flock with the hook for nothing.
-	if sh, _, err := DetectShape(d.DataDir); err == nil && (sh == ShapeV2 || sh == ShapeAusente) {
+	if sh, _, err := DetectShape(d.DataDir); err == nil && (sh == ShapeV2 || sh == ShapeMissing) {
 		return nil
 	}
 

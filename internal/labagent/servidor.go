@@ -14,31 +14,31 @@ import (
 )
 
 const (
-	// corpoMax caps the incoming document. A named operation receives a small
+	// maxBody caps the incoming document. A named operation receives a small
 	// envelope; a large body is a symptom, not a use.
-	corpoMax = 1 << 20 // 1 MiB
+	maxBody = 1 << 20 // 1 MiB
 
-	// tempoLeituraCabecalho fecha o slowloris trivial.
-	tempoLeituraCabecalho = 10 * time.Second
+	// headerReadTimeout fecha o slowloris trivial.
+	headerReadTimeout = 10 * time.Second
 )
 
 // Servidor is the agent, ready to listen.
-type Servidor struct {
+type ServerID struct {
 	Ag      *Agent
-	Seg     Segredo
-	Met     *Metricas
+	Seg     Secret
+	Met     *Metrics
 	handler http.Handler
 }
 
-// NovoServidor assembles the routing.
+// NewServer assembles the routing.
 //
 // ONE route serves the whole catalogue: `POST /v1/op/{op}`. There is no route
 // per operation, and that is deliberate — with a single route, the agent's list
 // of capabilities is exactly the `registry` map, in one place, walkable by a
 // test. With N routes, the list becomes "whatever happens to be in the
 // ServeMux", which nobody can assert from the outside.
-func NovoServidor(ag *Agent, seg Segredo, met *Metricas) *Servidor {
-	s := &Servidor{Ag: ag, Seg: seg, Met: met}
+func NewServer(ag *Agent, seg Secret, met *Metrics) *ServerID {
+	s := &ServerID{Ag: ag, Seg: seg, Met: met}
 
 	mux := http.NewServeMux()
 	// Method-and-path patterns (Go 1.22+). No external router: there are three
@@ -46,7 +46,7 @@ func NovoServidor(ag *Agent, seg Segredo, met *Metricas) *Servidor {
 	// middleware chain justifies it.
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /metrics", s.metrics)
-	mux.Handle("POST /v1/op/{op}", ExigeBearer(seg, http.HandlerFunc(s.executarOp)))
+	mux.Handle("POST /v1/op/{op}", RequireBearer(seg, http.HandlerFunc(s.runOp)))
 	// ARTEFACT route. New surface, added on purpose and registered in the
 	// allowlist of exec_test.go as well — which is the mechanism working, not
 	// being worked around: adding a route has to be a deliberate act, visible in
@@ -62,18 +62,18 @@ func NovoServidor(ag *Agent, seg Segredo, met *Metricas) *Servidor {
 	// random, it is not a path; whoever did not receive one from an earlier
 	// operation has nothing to send here. A real path sent in place of the
 	// handle is simply not in the vault.
-	mux.Handle("GET /v1/artefato/{handle}", ExigeBearer(seg, http.HandlerFunc(s.abrirArtefato)))
+	mux.Handle("GET /v1/artefato/{handle}", RequireBearer(seg, http.HandlerFunc(s.openArtifact)))
 	// The INBOUND side of the artefact, closing the gap the read side declared:
 	// without it, importing a world would require the dashboard to know the
 	// node's disk. The body is the file; no name and no path cross over.
-	mux.Handle("POST /v1/artefato", ExigeBearer(seg, http.HandlerFunc(s.receberArtefato)))
+	mux.Handle("POST /v1/artefato", RequireBearer(seg, http.HandlerFunc(s.receiveArtifact)))
 
 	s.handler = mux
 	return s
 }
 
 // Handler exposes the assembled routing (used in tests with httptest).
-func (s *Servidor) Handler() http.Handler { return s.handler }
+func (s *ServerID) Handler() http.Handler { return s.handler }
 
 // healthz is a PROCESS probe, not a data surface.
 //
@@ -82,77 +82,77 @@ func (s *Servidor) Handler() http.Handler { return s.handler }
 // NOTHING beyond liveness: no server name, no path, no version, no hint of
 // whether a secret is provisioned. Whoever is on the outside learns only that
 // the process answered.
-func (s *Servidor) healthz(w http.ResponseWriter, _ *http.Request) {
+func (s *ServerID) healthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
-func (s *Servidor) metrics(w http.ResponseWriter, _ *http.Request) {
+func (s *ServerID) metrics(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	_, _ = io.WriteString(w, s.Met.Render())
 }
 
-// executarOp resolves the name against the registry and delegates.
-func (s *Servidor) executarOp(w http.ResponseWriter, r *http.Request) {
+// runOp resolves the name against the registry and delegates.
+func (s *ServerID) runOp(w http.ResponseWriter, r *http.Request) {
 	nome := gameservers.OpName(r.PathValue("op"))
 
-	op, existe := Registro(nome)
-	if !existe {
+	op, exists := Lookup(nome)
+	if !exists {
 		// 404, never 400 or 500: "does not exist" and "failed" must never get
 		// confused in a diagnosis — it is the difference between hunting a bug in
 		// the agent and hunting a typo in the client.
-		s.Met.Conta(string(nome), "desconhecida")
-		responde(w, http.StatusNotFound, map[string]any{"erro": "unknown operation", "op": string(nome)})
+		s.Met.Count(string(nome), "desconhecida")
+		respond(w, http.StatusNotFound, map[string]any{"erro": "unknown operation", "op": string(nome)})
 		return
 	}
 
-	corpo, err := io.ReadAll(io.LimitReader(r.Body, corpoMax+1))
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
 	if err != nil {
-		s.Met.Conta(string(nome), "erro")
-		responde(w, http.StatusBadRequest, map[string]any{"erro": "unreadable body"})
+		s.Met.Count(string(nome), "erro")
+		respond(w, http.StatusBadRequest, map[string]any{"erro": "unreadable body"})
 		return
 	}
-	if len(corpo) > corpoMax {
+	if len(body) > maxBody {
 		// 413 BEFORE calling the handler: the limit is worth nothing if the work
 		// has already happened.
-		s.Met.Conta(string(nome), "grande")
-		responde(w, http.StatusRequestEntityTooLarge, map[string]any{"erro": "body above the limit"})
+		s.Met.Count(string(nome), "grande")
+		respond(w, http.StatusRequestEntityTooLarge, map[string]any{"erro": "body above the limit"})
 		return
 	}
-	if len(corpo) == 0 {
-		corpo = []byte("{}")
+	if len(body) == 0 {
+		body = []byte("{}")
 	}
 
-	res, err := op.Handler(s.Ag, r.Context(), json.RawMessage(corpo))
+	res, err := op.Handler(s.Ag, r.Context(), json.RawMessage(body))
 	if err != nil {
-		s.Met.Conta(string(nome), "erro")
-		responde(w, http.StatusInternalServerError, map[string]any{"erro": err.Error()})
+		s.Met.Count(string(nome), "erro")
+		respond(w, http.StatusInternalServerError, map[string]any{"erro": err.Error()})
 		return
 	}
-	s.Met.Conta(string(nome), "ok")
-	responde(w, http.StatusOK, res)
+	s.Met.Count(string(nome), "ok")
+	respond(w, http.StatusOK, res)
 }
 
-// abrirArtefato hands over the bytes a Handle refers to.
+// openArtifact hands over the bytes a Handle refers to.
 //
 // There is no `Content-Disposition` carrying a client-supplied name, and no
 // file name in the response: the name is the dashboard's business, and it
 // already received it alongside the handle. Echoing back here a name the client
 // sent is how header injection gets in.
-func (s *Servidor) abrirArtefato(w http.ResponseWriter, r *http.Request) {
+func (s *ServerID) openArtifact(w http.ResponseWriter, r *http.Request) {
 	h := gameservers.Handle(r.PathValue("handle"))
 	if s.Ag == nil || s.Ag.Back == nil {
-		s.Met.Conta("artefato", "erro")
-		responde(w, http.StatusInternalServerError, map[string]any{"erro": "agent has no back end configured"})
+		s.Met.Count("artefato", "erro")
+		respond(w, http.StatusInternalServerError, map[string]any{"erro": "agent has no back end configured"})
 		return
 	}
-	rc, err := s.Ag.Back.Abrir(r.Context(), h)
+	rc, err := s.Ag.Back.Open(r.Context(), h)
 	if err != nil {
 		// 404 for a handle that does not resolve: the same "does not exist"
 		// silence the vault already gives, forged and expired alike.
-		s.Met.Conta("artefato", "desconhecida")
-		responde(w, http.StatusNotFound, map[string]any{"erro": err.Error()})
+		s.Met.Count("artefato", "desconhecida")
+		respond(w, http.StatusNotFound, map[string]any{"erro": err.Error()})
 		return
 	}
 	defer rc.Close()
@@ -162,36 +162,36 @@ func (s *Servidor) abrirArtefato(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(w, rc); err != nil {
 		// The header has already gone out. Only the counter records it — writing
 		// an error body here would produce a corrupt file that LOOKS complete.
-		s.Met.Conta("artefato", "erro")
+		s.Met.Count("artefato", "erro")
 		return
 	}
-	s.Met.Conta("artefato", "ok")
+	s.Met.Count("artefato", "ok")
 }
 
-// receberArtefato accepts bytes and returns the Handle that refers to them.
+// receiveArtifact accepts bytes and returns the Handle that refers to them.
 //
-// The real limit belongs to the back-end (recebidoMax); all that is guaranteed
+// The real limit belongs to the back-end (maxReceived); all that is guaranteed
 // here is that the body is not read without a ceiling before it gets there.
-func (s *Servidor) receberArtefato(w http.ResponseWriter, r *http.Request) {
+func (s *ServerID) receiveArtifact(w http.ResponseWriter, r *http.Request) {
 	if s.Ag == nil || s.Ag.Back == nil {
-		s.Met.Conta("artefato-in", "erro")
-		responde(w, http.StatusInternalServerError, map[string]any{"erro": "agent has no back end configured"})
+		s.Met.Count("artefato-in", "erro")
+		respond(w, http.StatusInternalServerError, map[string]any{"erro": "agent has no back end configured"})
 		return
 	}
-	h, err := s.Ag.Back.Receber(r.Context(), r.Body)
+	h, err := s.Ag.Back.Receive(r.Context(), r.Body)
 	if err != nil {
-		s.Met.Conta("artefato-in", "erro")
-		responde(w, http.StatusBadRequest, map[string]any{"erro": err.Error()})
+		s.Met.Count("artefato-in", "erro")
+		respond(w, http.StatusBadRequest, map[string]any{"erro": err.Error()})
 		return
 	}
-	s.Met.Conta("artefato-in", "ok")
-	responde(w, http.StatusOK, map[string]any{"handle": string(h)})
+	s.Met.Count("artefato-in", "ok")
+	respond(w, http.StatusOK, map[string]any{"handle": string(h)})
 }
 
-func responde(w http.ResponseWriter, codigo int, corpo any) {
+func respond(w http.ResponseWriter, code int, body any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(codigo)
-	_ = json.NewEncoder(w).Encode(corpo)
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -229,10 +229,10 @@ func responde(w http.ResponseWriter, codigo int, corpo any) {
 // rests ENTIRELY on the bearer, and that is why the mitigations are mandatory.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// enderecosDeEscuta validates and returns the two addresses.
-func enderecosDeEscuta(bridgeIP string, porta int) ([]string, error) {
-	if porta <= 0 || porta > 65535 {
-		return nil, fmt.Errorf("invalid port: %d", porta)
+// listenAddrs validates and returns the two addresses.
+func listenAddrs(bridgeIP string, port int) ([]string, error) {
+	if port <= 0 || port > 65535 {
+		return nil, fmt.Errorf("invalid port: %d", port)
 	}
 	if bridgeIP == "" {
 		return nil, errors.New("empty bridgeIP: the agent requires an explicit internal bridge address — binding to a wildcard would leave the port open to any interface")
@@ -244,8 +244,8 @@ func enderecosDeEscuta(bridgeIP string, porta int) ([]string, error) {
 		return nil, fmt.Errorf("bridgeIP is not an IP address: %q", bridgeIP)
 	}
 	return []string{
-		net.JoinHostPort("127.0.0.1", fmt.Sprint(porta)),
-		net.JoinHostPort(bridgeIP, fmt.Sprint(porta)),
+		net.JoinHostPort("127.0.0.1", fmt.Sprint(port)),
+		net.JoinHostPort(bridgeIP, fmt.Sprint(port)),
 	}, nil
 }
 
@@ -255,49 +255,49 @@ func enderecosDeEscuta(bridgeIP string, porta int) ([]string, error) {
 // up than to come up listening on less than was asked for (the node is
 // unreachable and somebody notices) or on more than was asked for (nobody
 // notices, which is the dangerous case).
-func (s *Servidor) Escuta(ctx context.Context, bridgeIP string, porta int) error {
-	enderecos, err := enderecosDeEscuta(bridgeIP, porta)
+func (s *ServerID) Listen(ctx context.Context, bridgeIP string, port int) error {
+	addrs, err := listenAddrs(bridgeIP, port)
 	if err != nil {
 		return err
 	}
 
 	var listeners []net.Listener
-	fecharTudo := func() {
+	closeAll := func() {
 		for _, l := range listeners {
 			_ = l.Close()
 		}
 	}
 
-	l0, err := net.Listen("tcp", enderecos[0])
+	l0, err := net.Listen("tcp", addrs[0])
 	if err != nil {
-		return fmt.Errorf("listening on %s: %w", enderecos[0], err)
+		return fmt.Errorf("listening on %s: %w", addrs[0], err)
 	}
 	listeners = append(listeners, l0)
 
-	l1, err := net.Listen("tcp", enderecos[1])
+	l1, err := net.Listen("tcp", addrs[1])
 	if err != nil {
-		fecharTudo()
-		return fmt.Errorf("listening on %s: %w", enderecos[1], err)
+		closeAll()
+		return fmt.Errorf("listening on %s: %w", addrs[1], err)
 	}
 	listeners = append(listeners, l1)
 
 	srv := &http.Server{
 		Handler:           s.handler,
-		ReadHeaderTimeout: tempoLeituraCabecalho,
+		ReadHeaderTimeout: headerReadTimeout,
 	}
 
-	erros := make(chan error, len(listeners))
+	errs := make(chan error, len(listeners))
 	for _, l := range listeners {
-		go func(l net.Listener) { erros <- srv.Serve(l) }(l)
+		go func(l net.Listener) { errs <- srv.Serve(l) }(l)
 	}
 
 	select {
 	case <-ctx.Done():
-		desliga, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return srv.Shutdown(desliga)
-	case err := <-erros:
-		fecharTudo()
+		return srv.Shutdown(shutdownCtx)
+	case err := <-errs:
+		closeAll()
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}

@@ -111,7 +111,7 @@ if grep -qE '"/opt/panel/scripts/|/usr/local/bin/vpsm-recovery-claude' "$HANDLER
 else
   ok "handler não depende de script em caminho fixo (nem repo, nem /usr/local/bin)"
 fi
-if grep -q 'recoveryclaude.Comando' "$HANDLER"; then
+if grep -q 'recoveryclaude.Command' "$HANDLER"; then
   ok "handler materializa o gerenciador EMBUTIDO no binário (viaja com o deploy)"
 else
   no "handler não usa o gerenciador embutido — volta a depender do disco"

@@ -113,7 +113,7 @@ func (s *Store) RateLimits(acct Account) RateLimitStatus {
 			AccountID: acct.ID,
 			Label:     acct.Label,
 			LoggedIn:  false,
-			Error:     "waiting for login" + comoOutraConta(ls.Email),
+			Error:     "waiting for login" + asOtherAccount(ls.Email),
 			Windows:   []RateWindow{},
 			FetchedAt: time.Now().Unix(),
 		}

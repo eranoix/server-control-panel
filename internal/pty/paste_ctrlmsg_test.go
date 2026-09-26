@@ -117,7 +117,7 @@ func dialProxy(t *testing.T, rwc *fakeRWC) *websocket.Conn {
 // as the bytes ESC[200~<data>ESC[201~ in a SINGLE Write — not two, not the raw
 // data without the envelope, and not silently nothing (the original bug: there
 // was no "case paste" at all and the frame was dropped in the empty fallthrough).
-func TestPasteCtrlMsgEscreveBracketedEmUmaUnicaWrite(t *testing.T) {
+func TestPasteCtrlMsgWritesBracketedInSingleWrite(t *testing.T) {
 	rwc := newFakeRWC()
 	cli := dialProxy(t, rwc)
 
@@ -145,7 +145,7 @@ func TestPasteCtrlMsgEscreveBracketedEmUmaUnicaWrite(t *testing.T) {
 // "a\nb". The round trip through encoding/json (marshal on the client,
 // unmarshal into the server's ctrlMsg) has to preserve the literal content
 // inside the envelope, without escaping/unescaping it wrongly.
-func TestPasteCtrlMsgConteudoComAspasEBarras(t *testing.T) {
+func TestPasteCtrlMsgContentWithQuotesAndSlashes(t *testing.T) {
 	rwc := newFakeRWC()
 	cli := dialProxy(t, rwc)
 
@@ -170,7 +170,7 @@ func TestPasteCtrlMsgConteudoComAspasEBarras(t *testing.T) {
 // known type or not, NEVER falls through to the raw Write) has to keep holding
 // after "paste" joins the switch — otherwise adding the new case would
 // accidentally widen the fallthrough to ANY unknown type.
-func TestPasteCtrlMsgTipoDesconhecidoNaoEscreve(t *testing.T) {
+func TestPasteCtrlMsgUnknownTypeDoesNotWrite(t *testing.T) {
 	rwc := newFakeRWC()
 	cli := dialProxy(t, rwc)
 

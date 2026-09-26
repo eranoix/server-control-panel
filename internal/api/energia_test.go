@@ -17,10 +17,10 @@ import (
 	"server-control-panel/internal/inventory"
 )
 
-func routerDeEnergia(t *testing.T, vistos *[]string) *Router {
+func powerRouter(t *testing.T, seen *[]string) *Router {
 	t.Helper()
-	fake := &pveFalso{seen: vistos}
-	r, st := novoRouterProxmox(t, cofrePadrao(), fake)
+	fake := &fakePVE{seen: seen}
+	r, st := newProxmoxRouter(t, defaultVault(), fake)
 	if err := st.Replace(func(iv *inventory.Inventory) {
 		iv.Hypervisor.Node = "pve"
 		// The list is TAKEN OVER, not appended to: the constructor already puts
@@ -29,9 +29,9 @@ func routerDeEnergia(t *testing.T, vistos *[]string) *Router {
 		iv.Nodes = []inventory.Node{
 			{ID: "node/pve", Name: "pve", Kind: inventory.NodeKindHost, Transport: inventory.TransportPVEAPI},
 			{ID: "lxc/201", Name: "games", VMID: 201, Kind: inventory.NodeKindGuest,
-				Transport: inventory.TransportPVEAPI, Status: inventory.Observe("running", agoraDeTeste)},
+				Transport: inventory.TransportPVEAPI, Status: inventory.Observe("running", testNow)},
 			{ID: "lxc/204", Name: "lab", VMID: 204, Kind: inventory.NodeKindGuest,
-				Transport: inventory.TransportPVEAPI, Status: inventory.Observe("stopped", agoraDeTeste)},
+				Transport: inventory.TransportPVEAPI, Status: inventory.Observe("stopped", testNow)},
 		}
 	}); err != nil {
 		t.Fatal(err)
@@ -39,8 +39,8 @@ func routerDeEnergia(t *testing.T, vistos *[]string) *Router {
 	return r
 }
 
-func chamouPower(vistos []string) bool {
-	for _, m := range vistos {
+func calledPower(seen []string) bool {
+	for _, m := range seen {
 		if strings.HasPrefix(m, "pve.node-power:") {
 			return true
 		}
@@ -48,31 +48,31 @@ func chamouPower(vistos []string) bool {
 	return false
 }
 
-// TestEnergiaNaoDisparaPorGET: a shutdown a GET could fire would be firable by a
+// TestPowerNeverFiresOnGET: a shutdown a GET could fire would be firable by a
 // link, by browser prefetch and by anything that follows a URL. This is the
 // panel's only command whose mistake has no remote undo.
-func TestEnergiaNaoDisparaPorGET(t *testing.T) {
-	for _, metodo := range []string{http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodHead} {
-		var vistos []string
-		r := routerDeEnergia(t, &vistos)
+func TestPowerNeverFiresOnGET(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodHead} {
+		var seen []string
+		r := powerRouter(t, &seen)
 		w := httptest.NewRecorder()
-		r.handleProxmox(w, req(t, metodo, "/api/proxmox/power?command=shutdown", ""))
+		r.handleProxmox(w, req(t, method, "/api/proxmox/power?command=shutdown", ""))
 		if w.Code != http.StatusMethodNotAllowed {
-			t.Errorf("%s = %d, expected 405", metodo, w.Code)
+			t.Errorf("%s = %d, expected 405", method, w.Code)
 		}
-		if chamouPower(vistos) {
-			t.Fatalf("%s REACHED the hypervisor — the route fired for a method it should not have", metodo)
+		if calledPower(seen) {
+			t.Fatalf("%s REACHED the hypervisor — the route fired for a method it should not have", method)
 		}
 	}
 }
 
-// TestEnergiaRecusaComandoForaDaAllowlist: the query goes into the hypervisor's
+// TestPowerRejectsCommandOutsideAllowlist: the query goes into the hypervisor's
 // POST. Nothing beyond reboot/shutdown may cross.
-func TestEnergiaRecusaComandoForaDaAllowlist(t *testing.T) {
+func TestPowerRejectsCommandOutsideAllowlist(t *testing.T) {
 	for _, cmd := range []string{"", "poweroff", "halt", "REBOOT", "reboot ", "stop",
 		"reboot;shutdown", "../../access/users"} {
-		var vistos []string
-		r := routerDeEnergia(t, &vistos)
+		var seen []string
+		r := powerRouter(t, &seen)
 		w := httptest.NewRecorder()
 		// Encoded the way the browser would: a raw space in the URL is not a test
 		// of the product, it is a test of httptest.
@@ -80,7 +80,7 @@ func TestEnergiaRecusaComandoForaDaAllowlist(t *testing.T) {
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("command=%q = %d, expected 400", cmd, w.Code)
 		}
-		if chamouPower(vistos) {
+		if calledPower(seen) {
 			t.Fatalf("command=%q REACHED the hypervisor", cmd)
 		}
 	}
@@ -90,28 +90,28 @@ func TestEnergiaRecusaComandoForaDaAllowlist(t *testing.T) {
 // successful shutdown would take the record with it — and nobody would know who
 // pressed the button, because the machine that would hold the answer is the one
 // that powered off.
-func TestEnergiaAuditaAntesEDevolveOsAfetados(t *testing.T) {
-	var vistos []string
-	r := routerDeEnergia(t, &vistos)
+func TestPowerAuditsFirstAndReturnsAffected(t *testing.T) {
+	var seen []string
+	r := powerRouter(t, &seen)
 	w := httptest.NewRecorder()
 	r.handleProxmox(w, req(t, http.MethodPost, "/api/proxmox/power?command=reboot", ""))
 	if w.Code != http.StatusOK {
 		t.Fatalf("= %d: %s", w.Code, w.Body.String())
 	}
-	if !chamouPower(vistos) {
+	if !calledPower(seen) {
 		t.Fatal("the command did NOT reach the hypervisor")
 	}
-	corpo := w.Body.String()
+	body := w.Body.String()
 	// Only the RUNNING guest goes into the list: saying that a stopped guest "is
 	// going down" would be noise, and noise on a confirmation screen is what
 	// trains people to ignore it.
-	if !strings.Contains(corpo, "lxc/201") {
+	if !strings.Contains(body, "lxc/201") {
 		t.Error("the guest that is ON did not appear among the affected ones")
 	}
-	if strings.Contains(corpo, "lxc/204") {
+	if strings.Contains(body, "lxc/204") {
 		t.Error("a STOPPED guest appeared among the affected ones — it is already off")
 	}
-	if !strings.Contains(corpo, "loses contact") {
+	if !strings.Contains(body, "loses contact") {
 		t.Error("the response does not warn that the panel loses the hypervisor")
 	}
 }

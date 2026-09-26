@@ -68,7 +68,7 @@ func (s *Service) ensureExtraWebhook() {
 	if err != nil || sess == nil {
 		return
 	}
-	if err := s.Client.EnsureExtraWebhook(s.ExtraWebhookURL, s.hmacAtual(), s.ExtraWebhookEvents); err != nil {
+	if err := s.Client.EnsureExtraWebhook(s.ExtraWebhookURL, s.currentHMAC(), s.ExtraWebhookEvents); err != nil {
 		log.Printf("whatsapp: ensure extra webhook %s: %v", s.ExtraWebhookURL, err)
 	}
 }

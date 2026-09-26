@@ -40,42 +40,42 @@ import (
 //   - A `Handle` does not survive an agent restart, and that is a feature: a
 //     download token that is valid forever is a token that leaks forever.
 
-// vidaPadraoHandle is the lifetime of a freshly minted handle.
+// defaultHandleTTL is the lifetime of a freshly minted handle.
 //
 // Short on purpose: the handle exists to cross ONE interaction (the screen asks
 // for the export, the browser downloads right after). Half an hour covers a
 // slow download of a big world with room to spare and does not leave a
 // file-reading credential dangling for the life of the process.
-const vidaPadraoHandle = 30 * time.Minute
+const defaultHandleTTL = 30 * time.Minute
 
 // artefato is what a Handle references. It stays on the node side, always.
-type artefato struct {
-	caminho  string
-	servidor string // scope: the handle only resolves for THIS server
-	expira   time.Time
-	efemero  bool // true = the file is a temp of ours; delete it after serving
+type artifact struct {
+	path      string
+	server    string // scope: the handle only resolves for THIS server
+	expires   time.Time
+	ephemeral bool // true = the file is a temp of ours; delete it after serving
 }
 
-// cofreHandles holds the token→artifact bindings.
+// handleVault holds the token→artifact bindings.
 //
 // No package-level `var`: each local back-end has its own. A global vault would
 // be state shared between nodes inside a single process — exactly what the "no
 // new global state" rule forbids.
-type cofreHandles struct {
+type handleVault struct {
 	mu    sync.Mutex
-	itens map[Handle]artefato
-	vida  time.Duration
+	items map[Handle]artifact
+	ttl   time.Duration
 
 	// agora is injectable so the expiry test does not have to wait on a clock
 	// (a criterion you satisfy by waiting is a defect in the criterion).
-	agora func() time.Time
+	now func() time.Time
 }
 
-func novoCofre(vida time.Duration) *cofreHandles {
-	if vida <= 0 {
-		vida = vidaPadraoHandle
+func newHandleVault(ttl time.Duration) *handleVault {
+	if ttl <= 0 {
+		ttl = defaultHandleTTL
 	}
-	return &cofreHandles{itens: map[Handle]artefato{}, vida: vida, agora: time.Now}
+	return &handleVault{items: map[Handle]artifact{}, ttl: ttl, now: time.Now}
 }
 
 // Cunhar registers an artifact and returns the opaque token.
@@ -83,8 +83,8 @@ func novoCofre(vida time.Duration) *cofreHandles {
 // The token comes from crypto/rand, never from math/rand and never from the
 // path: 32 hexadecimal bytes. It is not guessable and carries no information at
 // all about what it references.
-func (c *cofreHandles) Cunhar(servidorID, caminho string, efemero bool) (Handle, error) {
-	if servidorID == "" || caminho == "" {
+func (c *handleVault) Mint(serverID, path string, ephemeral bool) (Handle, error) {
+	if serverID == "" || path == "" {
 		return "", fmt.Errorf("handle requires server and path")
 	}
 	b := make([]byte, 32)
@@ -97,25 +97,25 @@ func (c *cofreHandles) Cunhar(servidorID, caminho string, efemero bool) (Handle,
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.expiraVencidos()
-	c.itens[h] = artefato{
-		caminho:  caminho,
-		servidor: servidorID,
-		expira:   c.agora().Add(c.vida),
-		efemero:  efemero,
+	c.expireStale()
+	c.items[h] = artifact{
+		path:      path,
+		server:    serverID,
+		expires:   c.now().Add(c.ttl),
+		ephemeral: ephemeral,
 	}
 	return h, nil
 }
 
-// expiraVencidos cleans up the map. Called with the mutex already held.
-func (c *cofreHandles) expiraVencidos() {
-	agora := c.agora()
-	for h, a := range c.itens {
-		if agora.After(a.expira) {
-			if a.efemero {
-				_ = os.Remove(a.caminho)
+// expireStale cleans up the map. Called with the mutex already held.
+func (c *handleVault) expireStale() {
+	now := c.now()
+	for h, a := range c.items {
+		if now.After(a.expires) {
+			if a.ephemeral {
+				_ = os.Remove(a.path)
 			}
-			delete(c.itens, h)
+			delete(c.items, h)
 		}
 	}
 }
@@ -125,58 +125,58 @@ func (c *cofreHandles) expiraVencidos() {
 // The error message is the SAME for "does not exist", "expired" and "belongs to
 // another server" — on purpose. Telling the three apart would hand a forger an
 // oracle for discovering which tokens once existed.
-func (c *cofreHandles) resolver(h Handle, servidorID string) (artefato, error) {
+func (c *handleVault) resolver(h Handle, serverID string) (artifact, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.expiraVencidos()
+	c.expireStale()
 
-	a, ok := c.itens[h]
-	if !ok || (servidorID != "" && a.servidor != servidorID) {
-		return artefato{}, ErroHandleInvalido
+	a, ok := c.items[h]
+	if !ok || (serverID != "" && a.server != serverID) {
+		return artifact{}, ErrHandleInvalid
 	}
 	return a, nil
 }
 
 // Abrir resolves the handle and returns the content.
 //
-// It takes no servidorID: the caller here is Backend.Abrir, which is already the
+// It takes no serverID: the caller here is Backend.Abrir, which is already the
 // boundary. The per-server scope is checked in `resolver`, where the caller does
 // know which server it is talking about.
-func (c *cofreHandles) Abrir(h Handle) (io.ReadCloser, error) {
+func (c *handleVault) Open(h Handle) (io.ReadCloser, error) {
 	a, err := c.resolver(h, "")
 	if err != nil {
 		return nil, err
 	}
-	f, err := os.Open(a.caminho)
+	f, err := os.Open(a.path)
 	if err != nil {
 		// The artifact vanished from disk (temp cleaned, backup deleted). Not the
 		// same error as an invalid handle: here the token was good.
 		return nil, fmt.Errorf("artifact unavailable: %w", err)
 	}
-	if !a.efemero {
+	if !a.ephemeral {
 		return f, nil
 	}
-	return &apagaAoFechar{File: f, caminho: a.caminho, cofre: c, h: h}, nil
+	return &deleteOnClose{File: f, path: a.path, vault: c, h: h}, nil
 }
 
-// apagaAoFechar removes the temporary file once whoever read it is done.
+// deleteOnClose removes the temporary file once whoever read it is done.
 //
 // `ExportWorld` creates a zip in /tmp that the old handler deleted with `defer
 // os.Remove`. With the Handle in between, the handler's `defer` no longer works
 // — the one who knows it is over is whoever closed the stream. Without this,
 // every export leaks a zip.
-type apagaAoFechar struct {
+type deleteOnClose struct {
 	*os.File
-	caminho string
-	cofre   *cofreHandles
-	h       Handle
+	path  string
+	vault *handleVault
+	h     Handle
 }
 
-func (a *apagaAoFechar) Close() error {
+func (a *deleteOnClose) Close() error {
 	err := a.File.Close()
-	_ = os.Remove(a.caminho)
-	a.cofre.mu.Lock()
-	delete(a.cofre.itens, a.h)
-	a.cofre.mu.Unlock()
+	_ = os.Remove(a.path)
+	a.vault.mu.Lock()
+	delete(a.vault.items, a.h)
+	a.vault.mu.Unlock()
 	return err
 }

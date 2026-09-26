@@ -20,9 +20,9 @@ import (
 	"testing"
 )
 
-func pedeDownload(t *testing.T, caminho string, header map[string]string) *httptest.ResponseRecorder {
+func requestDownload(t *testing.T, path string, header map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/download?path="+url.QueryEscape(caminho), nil)
+	req := httptest.NewRequest(http.MethodGet, "/download?path="+url.QueryEscape(path), nil)
 	for k, v := range header {
 		req.Header.Set(k, v)
 	}
@@ -31,63 +31,63 @@ func pedeDownload(t *testing.T, caminho string, header map[string]string) *httpt
 	return rec
 }
 
-func arquivoDeTeste(t *testing.T) (string, []byte) {
+func testFile(t *testing.T) (string, []byte) {
 	t.Helper()
-	conteudo := bytes.Repeat([]byte("0123456789"), 100) // 1000 bytes
-	caminho := filepath.Join(t.TempDir(), "grande.bin")
-	if err := os.WriteFile(caminho, conteudo, 0o644); err != nil {
+	content := bytes.Repeat([]byte("0123456789"), 100) // 1000 bytes
+	path := filepath.Join(t.TempDir(), "grande.bin")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return caminho, conteudo
+	return path, content
 }
 
 func TestDownload_Range_206(t *testing.T) {
-	caminho, conteudo := arquivoDeTeste(t)
-	rec := pedeDownload(t, caminho, map[string]string{"Range": "bytes=100-199"})
+	path, content := testFile(t)
+	rec := requestDownload(t, path, map[string]string{"Range": "bytes=100-199"})
 
 	if rec.Code != http.StatusPartialContent {
 		t.Fatalf("status = %d, want 206 — the handler ignored the Range; body=%s", rec.Code, rec.Body.String())
 	}
-	want := fmt.Sprintf("bytes 100-199/%d", len(conteudo))
+	want := fmt.Sprintf("bytes 100-199/%d", len(content))
 	if got := rec.Header().Get("Content-Range"); got != want {
 		t.Fatalf("Content-Range = %q, want %q", got, want)
 	}
 	if got := rec.Header().Get("Accept-Ranges"); got != "bytes" {
 		t.Fatalf("Accept-Ranges = %q, want bytes", got)
 	}
-	if !bytes.Equal(rec.Body.Bytes(), conteudo[100:200]) {
+	if !bytes.Equal(rec.Body.Bytes(), content[100:200]) {
 		t.Fatalf("a body of %d bytes is not the requested chunk", rec.Body.Len())
 	}
 }
 
-// TestDownload_RetomadaDoMeio is the real shape of resuming: "I already have N bytes".
-func TestDownload_RetomadaDoMeio(t *testing.T) {
-	caminho, conteudo := arquivoDeTeste(t)
-	rec := pedeDownload(t, caminho, map[string]string{"Range": "bytes=600-"})
+// TestDownload_ResumeFromMiddle is the real shape of resuming: "I already have N bytes".
+func TestDownload_ResumeFromMiddle(t *testing.T) {
+	path, content := testFile(t)
+	rec := requestDownload(t, path, map[string]string{"Range": "bytes=600-"})
 	if rec.Code != http.StatusPartialContent {
 		t.Fatalf("status = %d, want 206", rec.Code)
 	}
-	if !bytes.Equal(rec.Body.Bytes(), conteudo[600:]) {
+	if !bytes.Equal(rec.Body.Bytes(), content[600:]) {
 		t.Fatalf("body = %d bytes; expected the 400-byte tail", rec.Body.Len())
 	}
 }
 
-// TestDownload_SemRange_200Completo — the regression that matters when
+// TestDownload_NoRange_200Full — the regression that matters when
 // swapping io.Copy for ServeContent: the common case has to stay identical,
 // including the Content-Disposition that makes the browser download instead
 // of render.
-func TestDownload_SemRange_200Completo(t *testing.T) {
-	caminho, conteudo := arquivoDeTeste(t)
-	rec := pedeDownload(t, caminho, nil)
+func TestDownload_NoRange_200Full(t *testing.T) {
+	path, content := testFile(t)
+	rec := requestDownload(t, path, nil)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if !bytes.Equal(rec.Body.Bytes(), conteudo) {
-		t.Fatalf("body = %d bytes, want %d", rec.Body.Len(), len(conteudo))
+	if !bytes.Equal(rec.Body.Bytes(), content) {
+		t.Fatalf("body = %d bytes, want %d", rec.Body.Len(), len(content))
 	}
-	if got := rec.Header().Get("Content-Length"); got != fmt.Sprint(len(conteudo)) {
-		t.Fatalf("Content-Length = %q, want %d", got, len(conteudo))
+	if got := rec.Header().Get("Content-Length"); got != fmt.Sprint(len(content)) {
+		t.Fatalf("Content-Length = %q, want %d", got, len(content))
 	}
 	if got := rec.Header().Get("Content-Type"); got != "application/octet-stream" {
 		t.Fatalf("Content-Type = %q — it has to force a download, not let the browser guess", got)
@@ -97,21 +97,21 @@ func TestDownload_SemRange_200Completo(t *testing.T) {
 	}
 }
 
-func TestDownload_RangeImpossivel_416(t *testing.T) {
-	caminho, _ := arquivoDeTeste(t)
-	rec := pedeDownload(t, caminho, map[string]string{"Range": "bytes=99999-199999"})
+func TestDownload_UnsatisfiableRange_416(t *testing.T) {
+	path, _ := testFile(t)
+	rec := requestDownload(t, path, map[string]string{"Range": "bytes=99999-199999"})
 	if rec.Code != http.StatusRequestedRangeNotSatisfiable {
 		t.Fatalf("status = %d, want 416", rec.Code)
 	}
 }
 
-// TestDownload_ErrosPreservados — ServeContent must not have swallowed the
+// TestDownload_ErrorsPreserved — ServeContent must not have swallowed the
 // gates that come before it (invalid path, directory, nonexistent).
-func TestDownload_ErrosPreservados(t *testing.T) {
+func TestDownload_ErrorsPreserved(t *testing.T) {
 	dir := t.TempDir()
-	casos := map[string]struct {
-		caminho string
-		status  int
+	cases := map[string]struct {
+		path   string
+		status int
 	}{
 		"relativo": {"nao/absoluto", http.StatusBadRequest},
 		// The denylist (not a confined root) is this handler's gate: the file
@@ -122,9 +122,9 @@ func TestDownload_ErrosPreservados(t *testing.T) {
 		"diretorio":   {dir, http.StatusBadRequest},
 		"inexistente": {filepath.Join(dir, "nao-existe.bin"), http.StatusNotFound},
 	}
-	for nome, c := range casos {
+	for nome, c := range cases {
 		t.Run(nome, func(t *testing.T) {
-			if rec := pedeDownload(t, c.caminho, nil); rec.Code != c.status {
+			if rec := requestDownload(t, c.path, nil); rec.Code != c.status {
 				t.Fatalf("status = %d, want %d; body=%s", rec.Code, c.status, rec.Body.String())
 			}
 		})

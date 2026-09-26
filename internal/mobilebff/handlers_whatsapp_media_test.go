@@ -24,12 +24,12 @@ func newWhatsappMediaTestAPI(svc *fakeWhatsappSvc) (huma.API, *http.ServeMux) {
 	return api, mux
 }
 
-// TestWhatsAppMedia_Get_ChamaDownloadEDelegaParaServeMediaRel proves the
+// TestWhatsAppMedia_Get_CallsDownloadAndDelegatesToServeMediaRel proves the
 // required order: DownloadMediaForMessage resolves the cache hit/miss BEFORE the
 // handler returns the StreamResponse, and the rel it returns is exactly what
 // reaches ServeMediaRel — without that, a cache miss would serve a file that does
 // not exist yet.
-func TestWhatsAppMedia_Get_ChamaDownloadEDelegaParaServeMediaRel(t *testing.T) {
+func TestWhatsAppMedia_Get_CallsDownloadAndDelegatesToServeMediaRel(t *testing.T) {
 	svc := &fakeWhatsappSvc{
 		downloadRel:  "chats/jid/msg123.jpg",
 		downloadMime: "image/jpeg",
@@ -57,12 +57,12 @@ func TestWhatsAppMedia_Get_ChamaDownloadEDelegaParaServeMediaRel(t *testing.T) {
 	}
 }
 
-// TestWhatsAppMedia_Get_ErroDeDownloadViraStatusCorreto proves that
+// TestWhatsAppMedia_Get_DownloadErrorBecomesRightStatus proves that
 // *whatsapp.DownloadMediaError, returned directly by the handler, is mapped
 // by huma to the right HTTP status through the StatusError interface — without
 // rewriting the status mapping in the BFF (one single source of
 // truth for the status).
-func TestWhatsAppMedia_Get_ErroDeDownloadViraStatusCorreto(t *testing.T) {
+func TestWhatsAppMedia_Get_DownloadErrorBecomesRightStatus(t *testing.T) {
 	svc := &fakeWhatsappSvc{
 		downloadErr: &whatsapp.DownloadMediaError{Status: http.StatusNotFound, Msg: "mensagem nao encontrada"},
 	}
@@ -120,10 +120,10 @@ func buildMultipart(t *testing.T, filename string, fileContent []byte, fields ma
 	return buf, w.FormDataContentType()
 }
 
-// TestWhatsAppMedia_Upload_DelegaParaSendFileDedup proves that the multipart's
+// TestWhatsAppMedia_Upload_DelegatesToSendFileDedup proves that the multipart's
 // bytes and fields reach SendFileDedup intact, and that the response returns the
 // id the fake "sent".
-func TestWhatsAppMedia_Upload_DelegaParaSendFileDedup(t *testing.T) {
+func TestWhatsAppMedia_Upload_DelegatesToSendFileDedup(t *testing.T) {
 	svc := &fakeWhatsappSvc{sendFileID: "wamid-upload-1"}
 	_, mux := newWhatsappMediaTestAPI(svc)
 
@@ -163,11 +163,11 @@ func TestWhatsAppMedia_Upload_DelegaParaSendFileDedup(t *testing.T) {
 	}
 }
 
-// TestWhatsAppMedia_Upload_SemArquivoDevolve422 ensures that "file" is
+// TestWhatsAppMedia_Upload_NoFileReturns422 ensures that "file" is
 // required: without it, huma stops the request at multipart validation
 // (422 — the same status as any other missing required field in the BFF)
 // before any call to the service.
-func TestWhatsAppMedia_Upload_SemArquivoDevolve422(t *testing.T) {
+func TestWhatsAppMedia_Upload_NoFileReturns422(t *testing.T) {
 	svc := &fakeWhatsappSvc{sendFileID: "nao-deveria-ser-usado"}
 	_, mux := newWhatsappMediaTestAPI(svc)
 
@@ -196,10 +196,10 @@ func TestWhatsAppMedia_Upload_SemArquivoDevolve422(t *testing.T) {
 	}
 }
 
-// TestIsWhatsAppMediaUpload_CasaSoARotaDeUpload proves the matcher used by
+// TestIsWhatsAppMediaUpload_MatchesOnlyUploadRoute proves the matcher used by
 // RegisterLargeBody: it matches the exact upload route, but not the download one
 // (same prefix, different method) nor any other route.
-func TestIsWhatsAppMediaUpload_CasaSoARotaDeUpload(t *testing.T) {
+func TestIsWhatsAppMediaUpload_MatchesOnlyUploadRoute(t *testing.T) {
 	cases := []struct {
 		method string
 		path   string

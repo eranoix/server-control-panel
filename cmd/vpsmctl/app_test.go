@@ -65,8 +65,8 @@ func TestVpsmctlRefusesUnknownEnvelope(t *testing.T) {
 	if !strings.Contains(err.Error(), "schema_version") {
 		t.Fatalf("error does not mention schema_version: %v", err)
 	}
-	if depois := shaDo(t, appsFile); depois != antes {
-		t.Fatalf("the refusal MODIFIED apps.json (sha %s → %s)", antes, depois)
+	if after := shaDo(t, appsFile); after != antes {
+		t.Fatalf("the refusal MODIFIED apps.json (sha %s → %s)", antes, after)
 	}
 }
 
@@ -89,14 +89,14 @@ func TestVpsmctlRefusesV1AndNamesMigrator(t *testing.T) {
 			t.Fatalf("message does not say WHO migrates: %v", err)
 		}
 	}
-	if depois := shaDo(t, appsFile); depois != antes {
+	if after := shaDo(t, appsFile); after != antes {
 		t.Fatalf("the refusal MODIFIED apps.json")
 	}
 }
 
-// TestVpsmctlAceitaV2ECriacaoNova: the guard must not turn into a closed gate —
+// TestVpsmctlAcceptsV2AndFreshInstall: the guard must not turn into a closed gate —
 // the current envelope and a fresh installation still open.
-func TestVpsmctlAceitaV2ECriacaoNova(t *testing.T) {
+func TestVpsmctlAcceptsV2AndFreshInstall(t *testing.T) {
 	dataDirCom(t, `{"schema_version":2,"projects":[],"deployments":[]}`)
 	if _, err := openDeployStore(); err != nil {
 		t.Fatalf("the current envelope was refused: %v", err)

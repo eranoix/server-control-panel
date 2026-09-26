@@ -101,9 +101,9 @@ func (m *Manager) SaveRawConfig(s Server, text string) error {
 	// root:root .bak beside a 4711 config is the same class of defect, only
 	// quieter — nobody looks at a backup's owner until they need it.
 	if old, err := os.ReadFile(p); err == nil {
-		_ = escreveAtomico(p+".bak", old, p)
+		_ = writeAtomic(p+".bak", old, p)
 	}
-	return escreveAtomico(p, []byte(text), p)
+	return writeAtomic(p, []byte(text), p)
 }
 
 // ExportWorld zips a world's folder into a temporary file.
@@ -206,7 +206,7 @@ func (m *Manager) ImportWorld(s Server, name, zipPath string) error {
 			return cerr
 		}
 	}
-	if err := escreveAtomico(filepath.Join(dst, ".saveid"), []byte(saveID+"\n"), s.Root); err != nil {
+	if err := writeAtomic(filepath.Join(dst, ".saveid"), []byte(saveID+"\n"), s.Root); err != nil {
 		return err
 	}
 	// The owner comes from OBSERVING the disk, never from a constant. The value
@@ -279,7 +279,7 @@ func (m *Manager) SaveInventory(list []Server) error {
 	// This one belongs to the PANEL, not the container — the owner matters less.
 	// What matters here is DURABILITY: without fsync, a power cut inside the ZFS
 	// txg window costs the whole inventory. `ref` is the file itself.
-	if err := escreveAtomico(m.path, b, m.path); err != nil {
+	if err := writeAtomic(m.path, b, m.path); err != nil {
 		return err
 	}
 	return m.Reload()

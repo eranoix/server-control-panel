@@ -353,13 +353,13 @@ func diffJSONValues(path string, a, b interface{}) []string {
 			return []string{fmt.Sprintf("%s: era objeto no original, é %T na saída regenerada", path, b)}
 		}
 		var diffs []string
-		for k, aval := range av {
+		for k, avVal := range av {
 			bval, present := bv[k]
 			if !present {
 				diffs = append(diffs, fmt.Sprintf("%s.%s: presente na fixture original, AUSENTE na saída real do marshaller", path, k))
 				continue
 			}
-			diffs = append(diffs, diffJSONValues(path+"."+k, aval, bval)...)
+			diffs = append(diffs, diffJSONValues(path+"."+k, avVal, bval)...)
 		}
 		for k := range bv {
 			if _, present := av[k]; !present {

@@ -102,15 +102,15 @@ func TestDeviceLifecycle(t *testing.T) {
 	}
 
 	// SetExit → casa
-	if err := m.SetExit(ctx, d.UUID, ExitCasa); err != nil {
+	if err := m.SetExit(ctx, d.UUID, ExitHome); err != nil {
 		t.Fatalf("SetExit casa: %v", err)
 	}
 	devs, _ = m.List()
-	if devs[0].Exit != ExitCasa {
+	if devs[0].Exit != ExitHome {
 		t.Fatalf("exit did not become casa: %+v", devs[0])
 	}
 	// and the auth_user carries the name
-	if !casaMembersHas(t, cfg, "pc-sam") {
+	if !homeMembersHas(t, cfg, "pc-sam") {
 		t.Fatalf("auth_user casa does not contain pc-sam")
 	}
 
@@ -118,7 +118,7 @@ func TestDeviceLifecycle(t *testing.T) {
 	if err := m.SetExit(ctx, d.UUID, ExitVPS); err != nil {
 		t.Fatalf("SetExit vps: %v", err)
 	}
-	if casaMembersHas(t, cfg, "pc-sam") {
+	if homeMembersHas(t, cfg, "pc-sam") {
 		t.Fatalf("auth_user casa still contains pc-sam after going back to vps")
 	}
 
@@ -171,12 +171,12 @@ func contains(s, sub string) bool {
 	return false
 }
 
-func casaMembersHas(t *testing.T, cfg, name string) bool {
+func homeMembersHas(t *testing.T, cfg, name string) bool {
 	t.Helper()
 	raw, _ := os.ReadFile(cfg)
 	var doc map[string]any
 	_ = json.Unmarshal(raw, &doc)
-	return casaMembers(doc)[name]
+	return homeMembers(doc)[name]
 }
 
 // rulesOf returns the route.rules as maps for assertions.
@@ -226,7 +226,7 @@ func TestDatasaverMatrix(t *testing.T) {
 	cel, _ := m.Add(ctx, "cel")
 
 	// cel → casa exit; pc stays vps
-	if err := m.SetExit(ctx, cel.UUID, ExitCasa); err != nil {
+	if err := m.SetExit(ctx, cel.UUID, ExitHome); err != nil {
 		t.Fatal(err)
 	}
 	// both datasaver ON
@@ -246,7 +246,7 @@ func TestDatasaverMatrix(t *testing.T) {
 	if !byName["pc"].Datasaver || byName["pc"].Exit != ExitVPS {
 		t.Fatalf("pc expected ds+vps: %+v", byName["pc"])
 	}
-	if !byName["cel"].Datasaver || byName["cel"].Exit != ExitCasa {
+	if !byName["cel"].Datasaver || byName["cel"].Exit != ExitHome {
 		t.Fatalf("cel expected ds+casa: %+v", byName["cel"])
 	}
 
@@ -300,12 +300,12 @@ func TestProxyEndpoint(t *testing.T) {
 	if ep, err := m.ProxyEndpoint(ExitVPS); err != nil || ep != "172.18.0.40:8080" {
 		t.Fatalf("ProxyEndpoint(vps) = %q, %v; want 172.18.0.40:8080", ep, err)
 	}
-	if ep, err := m.ProxyEndpoint(ExitCasa); err != nil || ep != "172.18.0.41:8080" {
+	if ep, err := m.ProxyEndpoint(ExitHome); err != nil || ep != "172.18.0.41:8080" {
 		t.Fatalf("ProxyEndpoint(casa) = %q, %v; want 172.18.0.41:8080", ep, err)
 	}
 	// missing outbound → a clear error, not a panic
 	os.WriteFile(cfg, []byte(`{"inbounds":[{"type":"vless","tag":"vless-ws-in","users":[{"uuid":"x","name":"d"}]}],"outbounds":[{"type":"direct","tag":"direct"}],"route":{"rules":[],"final":"direct"}}`), 0o644)
-	if _, err := m.ProxyEndpoint(ExitCasa); err == nil {
+	if _, err := m.ProxyEndpoint(ExitHome); err == nil {
 		t.Fatal("ProxyEndpoint should fail when the outbound proxy does not exist")
 	}
 }

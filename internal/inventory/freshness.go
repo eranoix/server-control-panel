@@ -50,34 +50,34 @@ func AgeSeconds(observedAt int64, now time.Time) int64 {
 	if observedAt <= 0 {
 		return -1
 	}
-	idade := now.Unix() - observedAt
-	if idade < 0 {
+	age := now.Unix() - observedAt
+	if age < 0 {
 		// The timestamp and `now` come out of the SAME clock (this server), so a
 		// negative age only happens if somebody moves the machine's clock. Zero is the
 		// floor; raising the alarm for that case belongs elsewhere, not to this
 		// calculation.
 		return 0
 	}
-	return idade
+	return age
 }
 
-// observedAtDoNo is the node's MOST RECENT timestamp: if any field was updated,
+// nodeObservedAt is the node's MOST RECENT timestamp: if any field was updated,
 // the panel heard the node at that instant. Zero = never heard.
-func observedAtDoNo(n Node) int64 {
-	maisNovo := n.Status.ObservedAt
-	if n.Uptime.ObservedAt > maisNovo {
-		maisNovo = n.Uptime.ObservedAt
+func nodeObservedAt(n Node) int64 {
+	newest := n.Status.ObservedAt
+	if n.Uptime.ObservedAt > newest {
+		newest = n.Uptime.ObservedAt
 	}
-	return maisNovo
+	return newest
 }
 
 // Stale reports whether a timestamp has gone past the TTL. Never observed is stale.
 func Stale(observedAt int64, ttl time.Duration, now time.Time) bool {
-	idade := AgeSeconds(observedAt, now)
-	if idade < 0 {
+	age := AgeSeconds(observedAt, now)
+	if age < 0 {
 		return true
 	}
-	return idade > int64(ttl.Seconds())
+	return age > int64(ttl.Seconds())
 }
 
 // credentialState resolves a node's credential state. A PURE function: only
@@ -97,14 +97,14 @@ func Stale(observedAt int64, ttl time.Duration, now time.Time) bool {
 // Whoever reads the vault answers for that distinction before filling in
 // Credential.
 func credentialState(c Credential, now time.Time) string {
-	if c.State == CredRevogada {
-		return CredRevogada
+	if c.State == CredRevoked {
+		return CredRevoked
 	}
 	if c.TokenID == "" {
-		return CredAusente
+		return CredMissing
 	}
 	if c.Expire > 0 && c.Expire < now.Unix() {
-		return CredExpirada
+		return CredExpired
 	}
 	return CredOK
 }
@@ -117,12 +117,12 @@ func credentialState(c Credential, now time.Time) string {
 func View(inv Inventory, ttl time.Duration, now time.Time) []NodeView {
 	vistas := make([]NodeView, 0, len(inv.Nodes))
 	for _, n := range inv.Nodes {
-		carimbo := observedAtDoNo(n)
+		stamp := nodeObservedAt(n)
 		n.Credential.State = credentialState(n.Credential, now)
 		vistas = append(vistas, NodeView{
 			Node:       n,
-			AgeSeconds: AgeSeconds(carimbo, now),
-			Stale:      Stale(carimbo, ttl, now),
+			AgeSeconds: AgeSeconds(stamp, now),
+			Stale:      Stale(stamp, ttl, now),
 		})
 	}
 	return vistas

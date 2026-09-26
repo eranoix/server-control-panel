@@ -50,24 +50,24 @@ const (
 // Configuration errors — the caller takes a different path because of them, so
 // they are sentinels, not text.
 var (
-	// ErrTokenInvalido marks a vault value that is NOT in the
+	// ErrInvalidToken marks a vault value that is NOT in the
 	// "USER@REALM!NOME=SEGREDO" format. The secret was once stored bare and every
 	// offline pin stayed green until the first live call took a 401.
-	ErrTokenInvalido = errors.New("pve: token must be USER@REALM!NAME=SECRET")
+	ErrInvalidToken = errors.New("pve: token must be USER@REALM!NAME=SECRET")
 	// ErrBaseURL marks a base_url that is missing or impossible to interpret.
 	ErrBaseURL = errors.New("pve: invalid base_url")
-	// ErrCAAusente marks https without a pinned CA. Falling back to the system
+	// ErrCAMissing marks https without a pinned CA. Falling back to the system
 	// pool would be silent, and the hypervisor certificate is not public — see
 	// tls.go.
-	ErrCAAusente = errors.New("pve: https requires ca_file (pinned PVE CA)")
-	// ErrEsquemaInseguro marks http:// for a host that is not loopback — it would
+	ErrCAMissing = errors.New("pve: https requires ca_file (pinned PVE CA)")
+	// ErrInsecureScheme marks http:// for a host that is not loopback — it would
 	// send the hypervisor token over the network in the clear.
-	ErrEsquemaInseguro = errors.New("pve: http is only accepted on loopback (use https with a pinned CA)")
-	// ErrRespostaGrande marks a body above maxBodyBytes. Without it the TRUNCATED
+	ErrInsecureScheme = errors.New("pve: http is only accepted on loopback (use https with a pinned CA)")
+	// ErrResponseTooLarge marks a body above maxBodyBytes. Without it the TRUNCATED
 	// JSON reached json.Unmarshal and the error said "unexpected end of JSON
 	// input" — a message that sends you looking for a defect in the parser when
 	// the problem is the size of the response. The ceiling has to announce itself.
-	ErrRespostaGrande = errors.New("pve: response above the 1 MiB cap — truncated, not parseable")
+	ErrResponseTooLarge = errors.New("pve: response above the 1 MiB cap — truncated, not parseable")
 )
 
 // Kind is the state a call to the hypervisor ended in. The five are disjoint by
@@ -104,7 +104,7 @@ func (k Kind) String() string {
 
 // Error is the typed error of every call. Body is the SERVER's body,
 // truncated — the authentication header never goes in here
-// (TestErrorNaoVazaSegredo pins that).
+// (TestErrorDoesNotLeakSecret pins that).
 type Error struct {
 	Kind   Kind
 	Status int
@@ -119,10 +119,10 @@ func (e *Error) Error() string {
 		if e.Err != nil {
 			// 🔴 Without this, Err disappears from the text whenever there was an HTTP
 			// response — and that is exactly where it carries the cause the body does
-			// not state: "response above the 1 MiB ceiling" (ErrRespostaGrande) showed
+			// not state: "response above the 1 MiB ceiling" (ErrResponseTooLarge) showed
 			// up as a chunk of JSON with no explanation, sending the operator looking
 			// for a defect in the parser. It is the sibling of the defect that
-			// detalheDoErroPVE fixes on the other side (Body vanishing when Status is
+			// pveErrorDetail fixes on the other side (Body vanishing when Status is
 			// 0).
 			msg += ": " + e.Err.Error()
 		}
@@ -176,11 +176,11 @@ func SplitTokenValue(v string) (tokenID, secret string, err error) {
 	v = strings.TrimSpace(v)
 	i := strings.Index(v, "=")
 	if i <= 0 || i == len(v)-1 {
-		return "", "", fmt.Errorf("%w (no '=' separating id and secret)", ErrTokenInvalido)
+		return "", "", fmt.Errorf("%w (no '=' separating id and secret)", ErrInvalidToken)
 	}
 	tokenID, secret = v[:i], v[i+1:]
 	if !validTokenID(tokenID) {
-		return "", "", fmt.Errorf("%w (id %q has no USER@REALM!NAME)", ErrTokenInvalido, tokenID)
+		return "", "", fmt.Errorf("%w (id %q has no USER@REALM!NAME)", ErrInvalidToken, tokenID)
 	}
 	return tokenID, secret, nil
 }
@@ -211,7 +211,7 @@ func New(cfg Config) (*Client, error) {
 			return nil, err
 		}
 	} else if !validTokenID(tokenID) {
-		return nil, fmt.Errorf("%w (id %q)", ErrTokenInvalido, tokenID)
+		return nil, fmt.Errorf("%w (id %q)", ErrInvalidToken, tokenID)
 	}
 
 	timeout := cfg.Timeout
@@ -223,7 +223,7 @@ func New(cfg Config) (*Client, error) {
 	switch u.Scheme {
 	case "https":
 		if strings.TrimSpace(cfg.CAFile) == "" {
-			return nil, ErrCAAusente
+			return nil, ErrCAMissing
 		}
 		serverName := strings.TrimSpace(cfg.ServerName)
 		if serverName == "" {
@@ -236,7 +236,7 @@ func New(cfg Config) (*Client, error) {
 		// http only exists for the fake server in the test, on loopback. For a real
 		// host it would be the hypervisor token travelling in the clear.
 		if !loopback(u.Hostname()) {
-			return nil, fmt.Errorf("%w: %s", ErrEsquemaInseguro, u.Host)
+			return nil, fmt.Errorf("%w: %s", ErrInsecureScheme, u.Host)
 		}
 		tr = plainTransport(cfg.Resolve)
 	}
@@ -246,7 +246,7 @@ func New(cfg Config) (*Client, error) {
 		tokenID: tokenID,
 		secret:  secret,
 		httpc:   &http.Client{Timeout: timeout, Transport: tr},
-		tlsCfg:  tlsConfigDoCliente(tr),
+		tlsCfg:  clientTLSConfig(tr),
 		resolve: strings.TrimSpace(cfg.Resolve),
 	}, nil
 }
@@ -300,7 +300,7 @@ func (c *Client) do(ctx context.Context, method, path string, out any) error {
 		// The Body is CUT at 512 bytes: this error becomes text on screen, and 1 MiB
 		// of JSON in the message is noise, not a clue.
 		return &Error{Kind: KindHypervisor, Status: resp.StatusCode, Path: path,
-			Body: string(raw[:512]), Err: ErrRespostaGrande}
+			Body: string(raw[:512]), Err: ErrResponseTooLarge}
 	}
 
 	// 401 and 403 stay in SEPARATE cases on purpose. internal/jira/client.go:145

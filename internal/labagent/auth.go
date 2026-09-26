@@ -27,42 +27,42 @@ import (
 // read of `r.URL.Query()` in this file, and the acceptance criterion verifies
 // that by grep — not even by accident.
 
-// tamanhoMaxHeader caps the Authorization header before any work happens.
-const tamanhoMaxHeader = 4096
+// maxHeaderSize caps the Authorization header before any work happens.
+const maxHeaderSize = 4096
 
 // Segredo holds the hash of the bearer expected for this node.
 //
 // It is the HASH that is kept, not the token: the process does not need the
 // plaintext in memory after boot, and a memory dump then gives up less.
-type Segredo struct {
-	hash     [sha256.Size]byte
-	presente bool
+type Secret struct {
+	hash    [sha256.Size]byte
+	present bool
 }
 
-// SegredoDeArquivo reads the bearer from a file (the same one systemd
+// SecretFromFile reads the bearer from a file (the same one systemd
 // provisions with mode 0600). A missing or empty file yields an ABSENT Segredo
 // — and an agent with no secret is INERT, never open.
-func SegredoDeArquivo(caminho string) (Segredo, error) {
-	b, err := os.ReadFile(caminho)
+func SecretFromFile(path string) (Secret, error) {
+	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return Segredo{}, nil
+			return Secret{}, nil
 		}
-		return Segredo{}, fmt.Errorf("reading the bearer from %s: %w", caminho, err)
+		return Secret{}, fmt.Errorf("reading the bearer from %s: %w", path, err)
 	}
-	return SegredoDeTexto(strings.TrimSpace(string(b))), nil
+	return SecretFromText(strings.TrimSpace(string(b))), nil
 }
 
-// SegredoDeTexto builds the Segredo from the token in plaintext.
-func SegredoDeTexto(token string) Segredo {
+// SecretFromText builds the Segredo from the token in plaintext.
+func SecretFromText(token string) Secret {
 	if token == "" {
-		return Segredo{}
+		return Secret{}
 	}
-	return Segredo{hash: sha256.Sum256([]byte(token)), presente: true}
+	return Secret{hash: sha256.Sum256([]byte(token)), present: true}
 }
 
 // Presente reports whether a secret has been provisioned.
-func (s Segredo) Presente() bool { return s.presente }
+func (s Secret) Present() bool { return s.present }
 
 // confere compares in constant time.
 //
@@ -74,48 +74,48 @@ func (s Segredo) Presente() bool { return s.presente }
 // Honest severity: LOW on a home-LAN bridge with a single operator. But it is
 // one line, and the agent is precisely the piece this work exists to make
 // auditable — paying a line here is cheaper than explaining it later.
-func (s Segredo) confere(apresentado string) bool {
-	if !s.presente {
+func (s Secret) matches(presented string) bool {
+	if !s.present {
 		return false
 	}
-	dele := sha256.Sum256([]byte(apresentado))
-	return subtle.ConstantTimeCompare(s.hash[:], dele[:]) == 1
+	theirs := sha256.Sum256([]byte(presented))
+	return subtle.ConstantTimeCompare(s.hash[:], theirs[:]) == 1
 }
 
-// ExigeBearer is the authentication middleware.
+// RequireBearer is the authentication middleware.
 //
 // With no secret provisioned, EVERY protected route returns 401 — including one
 // carrying a syntactically correct Authorization (which would be another node's
 // bearer). An agent with no secret is inert, and "inert" means there is no
 // request it accepts, not that it accepts any request at all.
-func ExigeBearer(s Segredo, prox http.Handler) http.Handler {
+func RequireBearer(s Secret, prox http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.presente {
-			naoAutorizado(w, "agent has no provisioned secret")
+		if !s.present {
+			unauthorized(w, "agent has no provisioned secret")
 			return
 		}
 		cab := r.Header.Get("Authorization")
-		if len(cab) > tamanhoMaxHeader {
-			naoAutorizado(w, "malformed credential")
+		if len(cab) > maxHeaderSize {
+			unauthorized(w, "malformed credential")
 			return
 		}
-		const prefixo = "Bearer "
-		if !strings.HasPrefix(cab, prefixo) {
-			naoAutorizado(w, "credential missing")
+		const prefix = "Bearer "
+		if !strings.HasPrefix(cab, prefix) {
+			unauthorized(w, "credential missing")
 			return
 		}
-		if !s.confere(strings.TrimSpace(cab[len(prefixo):])) {
-			naoAutorizado(w, "invalid credential")
+		if !s.matches(strings.TrimSpace(cab[len(prefix):])) {
+			unauthorized(w, "invalid credential")
 			return
 		}
 		prox.ServeHTTP(w, r)
 	})
 }
 
-// naoAutorizado answers 401 without distinguishing "missing" from "wrong" for
+// unauthorized answers 401 without distinguishing "missing" from "wrong" for
 // whoever is on the outside — the distinction stays in the internal reason,
 // which is not returned in enough detail to serve as an oracle.
-func naoAutorizado(w http.ResponseWriter, _ string) {
+func unauthorized(w http.ResponseWriter, _ string) {
 	w.Header().Set("WWW-Authenticate", `Bearer realm="lab-agent"`)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
