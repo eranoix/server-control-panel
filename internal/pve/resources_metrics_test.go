@@ -40,13 +40,13 @@ func TestClusterResourcesBringsPerGuestCounters(t *testing.T) {
 		t.Fatalf("ClusterResources: %v", err)
 	}
 
-	porID := map[string]Resource{}
+	byID := map[string]Resource{}
 	for _, r := range rs {
-		porID[r.ID] = r
+		byID[r.ID] = r
 	}
 
 	// What the fixture (measured live) says about the lxc/201 `games`.
-	g, ok := porID["lxc/201"]
+	g, ok := byID["lxc/201"]
 	if !ok {
 		t.Fatal("lxc/201 disappeared from the fixture")
 	}

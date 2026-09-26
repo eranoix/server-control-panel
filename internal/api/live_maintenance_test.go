@@ -60,12 +60,12 @@ func TestLiveMaintenance(t *testing.T) {
 	// nobody authorized. What can be proved without that — and it is what differs
 	// between "reboot" and "stop" — is that the route EXISTS on the hypervisor. The
 	// rest (the dashboard route, the allowlist and WaitTask) has a unit pin.
-	valor, state := r.vaultToken(pveSecretPanel)
+	value, state := r.vaultToken(pveSecretPanel)
 	if state != vaultOK {
 		t.Fatalf("panel token: %s — without it nothing in this batch works", state)
 	}
 	cfg := *r.pveConfig
-	cfg.TokenID = valor
+	cfg.TokenID = value
 	cli, err := pve.New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -81,8 +81,8 @@ func TestLiveMaintenance(t *testing.T) {
 	if newID <= 0 {
 		t.Fatalf("next_id = %v — the hypervisor did not say which id is free", out["next_id"])
 	}
-	sug, _ := out["sugestao"].(string)
-	t.Logf("hypervisor says %d is free; suggested name %q", newID, sug)
+	suggested, _ := out["sugestao"].(string)
+	t.Logf("hypervisor says %d is free; suggested name %q", newID, suggested)
 
 	// Guard: the id has to be NEW. Cloning over an existing guest is this route's
 	// nightmare, and the check is cheap.
@@ -131,8 +131,8 @@ func TestLiveMaintenance(t *testing.T) {
 		t.Logf("container powered on — cloning from snapshot %q", probeSnap)
 	}
 
-	nome := "prova-clone"
-	body, _ := json.Marshal(map[string]any{"novo_id": newID, "nome": nome, "snapshot": probeSnap})
+	name := "prova-clone"
+	body, _ := json.Marshal(map[string]any{"novo_id": newID, "nome": name, "snapshot": probeSnap})
 	w, out = callAPI(t, r, http.MethodPost, "/api/nodes/"+cloneSourceLive+"/clone", string(body))
 	if w.Code != 200 {
 		t.Fatalf("POST clone = %d: %s", w.Code, w.Body)
@@ -168,8 +168,8 @@ func TestLiveMaintenance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clone %d did not appear on the hypervisor: %v", newID, err)
 	}
-	if rec.Name != nome {
-		t.Errorf("🔴 clone was born with name %q, I asked for %q — this is the swapped-by-type parameter bug", rec.Name, nome)
+	if rec.Name != name {
+		t.Errorf("🔴 clone was born with name %q, I asked for %q — this is the swapped-by-type parameter bug", rec.Name, name)
 	}
 	if rec.Status == "running" {
 		t.Errorf("🔴 the clone was born POWERED ON — it has the source's fixed IP and would bring down its network")

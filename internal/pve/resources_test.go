@@ -113,7 +113,7 @@ func TestClusterResourcesPropagatesKind(t *testing.T) {
 // broken.
 func TestGuestAddress(t *testing.T) {
 	cases := []struct {
-		nome     string
+		name     string
 		typ      string
 		vmid     int
 		body     string
@@ -121,37 +121,37 @@ func TestGuestAddress(t *testing.T) {
 		want     string
 	}{
 		{
-			nome: "lxc estatico", typ: "lxc", vmid: 207,
+			name: "lxc estatico", typ: "lxc", vmid: 207,
 			body:     `{"data":{"hostname":"apps","onboot":1,"ostype":"debian","net0":"name=eth0,bridge=vmbr0,gw=192.168.1.1,hwaddr=BC:24:11:82:78:82,ip=192.168.100.47/24,type=veth"}}`,
 			wantPath: "/api2/json/nodes/pve/lxc/207/config",
 			want:     "192.168.100.47",
 		},
 		{
-			nome: "qemu cloud-init", typ: "qemu", vmid: 208,
+			name: "qemu cloud-init", typ: "qemu", vmid: 208,
 			body:     `{"data":{"name":"dev","agent":"1","net0":"virtio=BC:24:11:51:B0:58,bridge=vmbr0","ipconfig0":"ip=192.168.100.48/24,gw=192.168.1.1"}}`,
 			wantPath: "/api2/json/nodes/pve/qemu/208/config",
 			want:     "192.168.100.48",
 		},
 		{
-			nome: "lxc dhcp sem ip", typ: "lxc", vmid: 201,
+			name: "lxc dhcp sem ip", typ: "lxc", vmid: 201,
 			body:     `{"data":{"hostname":"games","net0":"name=eth0,bridge=vmbr0,hwaddr=BC:24:11:00:00:01,type=veth"}}`,
 			wantPath: "/api2/json/nodes/pve/lxc/201/config",
 			want:     "",
 		},
 		{
-			nome: "qemu sem ipconfig0", typ: "qemu", vmid: 100,
+			name: "qemu sem ipconfig0", typ: "qemu", vmid: 100,
 			body:     `{"data":{"name":"painel","net0":"virtio=BC:24:11:00:00:02,bridge=vmbr0"}}`,
 			wantPath: "/api2/json/nodes/pve/qemu/100/config",
 			want:     "",
 		},
 		{
-			nome: "lxc ip=dhcp literal", typ: "lxc", vmid: 203,
+			name: "lxc ip=dhcp literal", typ: "lxc", vmid: 203,
 			body:     `{"data":{"hostname":"edge","net0":"name=eth0,bridge=vmbr0,ip=dhcp,type=veth"}}`,
 			wantPath: "/api2/json/nodes/pve/lxc/203/config",
 			want:     "",
 		},
 		{
-			nome: "lxc sem net0", typ: "lxc", vmid: 204,
+			name: "lxc sem net0", typ: "lxc", vmid: 204,
 			body:     `{"data":{"hostname":"lab","onboot":1}}`,
 			wantPath: "/api2/json/nodes/pve/lxc/204/config",
 			want:     "",
@@ -159,7 +159,7 @@ func TestGuestAddress(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.nome, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != tc.wantPath {
 					t.Errorf("path = %q, want %q", r.URL.Path, tc.wantPath)

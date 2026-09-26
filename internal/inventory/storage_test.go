@@ -146,15 +146,15 @@ func TestNeverObservedSaysSoInNewBlocks(t *testing.T) {
 func TestEmptyWithPrivilegeDiffersFromEmptyWithoutPrivilege(t *testing.T) {
 	now := time.Unix(1800000000, 0)
 
-	var comPriv Inventory
-	applyStorage(&comPriv, nil, 1800000000)
-	applyDatastoreAudit(&comPriv, true, 1800000000)
+	var withPriv Inventory
+	applyStorage(&withPriv, nil, 1800000000)
+	applyDatastoreAudit(&withPriv, true, 1800000000)
 
 	var noPriv Inventory
 	applyStorage(&noPriv, nil, 1800000000)
 	applyDatastoreAudit(&noPriv, false, 1800000000)
 
-	a := ViewStorage(comPriv.Hypervisor, 90*time.Second, now)
+	a := ViewStorage(withPriv.Hypervisor, 90*time.Second, now)
 	b := ViewStorage(noPriv.Hypervisor, 90*time.Second, now)
 	if len(a.Pools) != 0 || len(b.Pools) != 0 {
 		t.Fatal("both lists have to be empty — that is the premise")
@@ -247,7 +247,7 @@ func TestZPoolsArriveWithLiteralHealth(t *testing.T) {
 	if p.Health != "DEGRADED" {
 		t.Errorf("Health = %q", p.Health)
 	}
-	if p.Saudavel {
+	if p.Healthy {
 		t.Error("Saudavel = true for DEGRADED — on a single-disk pool that is the most expensive news in the lab")
 	}
 	if p.FragPct != 3 {

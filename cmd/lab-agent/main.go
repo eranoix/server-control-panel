@@ -114,30 +114,30 @@ var stamp = "sem-carimbo"
 
 func main() {
 	var (
-		no       = flag.String("no", envOr("LAB_AGENT_NO", "desconhecido"), "node name (label in /metrics)")
-		tokenArq = flag.String("token-file", envOr("LAB_AGENT_TOKEN_FILE", "/etc/lab-agent/token"), "0600 file holding this node's bearer token")
-		bridge   = flag.String("bridge-ip", envOr("LAB_AGENT_BRIDGE_IP", ""), "internal bridge IP to listen on (required; a wildcard is refused)")
-		port     = flag.Int("porta", envInt("LAB_AGENT_PORTA", 8710), "port for both listeners")
-		dataDir  = flag.String("data-dir", envOr("LAB_AGENT_DATA_DIR", ""), "node data directory (game inventory and history)")
+		no        = flag.String("no", envOr("LAB_AGENT_NO", "desconhecido"), "node name (label in /metrics)")
+		tokenFile = flag.String("token-file", envOr("LAB_AGENT_TOKEN_FILE", "/etc/lab-agent/token"), "0600 file holding this node's bearer token")
+		bridge    = flag.String("bridge-ip", envOr("LAB_AGENT_BRIDGE_IP", ""), "internal bridge IP to listen on (required; a wildcard is refused)")
+		port      = flag.Int("porta", envInt("LAB_AGENT_PORTA", 8710), "port for both listeners")
+		dataDir   = flag.String("data-dir", envOr("LAB_AGENT_DATA_DIR", ""), "node data directory (game inventory and history)")
 	)
 	flag.Parse()
 
-	seg, err := labagent.SecretFromFile(*tokenArq)
+	secret, err := labagent.SecretFromFile(*tokenFile)
 	if err != nil {
 		log.Fatalf("lab-agent: %v", err)
 	}
-	if !seg.Present() {
+	if !secret.Present() {
 		// It comes up ANYWAY, and inert. Two reasons: the deploy's health gate needs
 		// /healthz answering before the token is provisioned, and an agent that refused
 		// to start without a token would be indistinguishable from a broken one. Inert
 		// and up is diagnosable; dead is not.
-		log.Printf("lab-agent: WARNING — no secret at %s: the agent comes up INERT (401 on every operation). /healthz keeps answering.", *tokenArq)
+		log.Printf("lab-agent: WARNING — no secret at %s: the agent comes up INERT (401 on every operation). /healthz keeps answering.", *tokenFile)
 	}
 
 	back := buildBackend(*no, *dataDir)
 	log.Printf("lab-agent: back-end = %s", back.Describe())
 	ag := &labagent.Agent{No: *no, Back: back}
-	srv := labagent.NewServer(ag, seg, labagent.NewMetrics(*no))
+	srv := labagent.NewServer(ag, secret, labagent.NewMetrics(*no))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

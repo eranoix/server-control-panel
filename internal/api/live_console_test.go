@@ -45,7 +45,7 @@ import (
 // reason: it has NO token, and the test demands that the refusal be explained.
 var consoleGuests = []struct {
 	id       string
-	nome     string
+	name     string
 	hasToken bool
 }{
 	{"lxc/204", "lab", true},
@@ -88,7 +88,7 @@ func TestLiveGuestConsole(t *testing.T) {
 	opened := 0
 	for _, g := range consoleGuests {
 		g := g
-		t.Run(g.nome, func(t *testing.T) {
+		t.Run(g.name, func(t *testing.T) {
 			conn, resp, err := websocket.DefaultDialer.Dial(base+"?node="+g.id, nil)
 			if !g.hasToken {
 				// 🔴 CT 202 has no node token. The refusal has to NAME the key
@@ -106,35 +106,35 @@ func TestLiveGuestConsole(t *testing.T) {
 				if !strings.Contains(string(body[:n]), "pve_token_node_pbs") {
 					t.Errorf("%s: body = %s, want it to name the missing key", g.id, body[:n])
 				}
-				t.Logf("%-9s %-7s → 409 naming the missing key (no node token, and the screen SAYS so)", g.id, g.nome)
+				t.Logf("%-9s %-7s → 409 naming the missing key (no node token, and the screen SAYS so)", g.id, g.name)
 				return
 			}
 			if err != nil {
-				t.Fatalf("%s (%s): dial: %v (resp=%v)", g.id, g.nome, err, resp)
+				t.Fatalf("%s (%s): dial: %v (resp=%v)", g.id, g.name, err, resp)
 			}
 			defer conn.Close()
 
 			// The first text frame is the control one. `ready` proves the THREE
 			// steps went through on the hypervisor; `error` carries the real reason.
 			_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
-			var pronto map[string]any
-			for pronto == nil {
-				mt, dados, err := conn.ReadMessage()
+			var ready map[string]any
+			for ready == nil {
+				mt, data, err := conn.ReadMessage()
 				if err != nil {
 					t.Fatalf("%s: no control frame: %v", g.id, err)
 				}
 				if mt != websocket.TextMessage {
 					continue
 				}
-				if err := json.Unmarshal(dados, &pronto); err != nil {
-					t.Fatalf("%s: control is not JSON: %s", g.id, dados)
+				if err := json.Unmarshal(data, &ready); err != nil {
+					t.Fatalf("%s: control is not JSON: %s", g.id, data)
 				}
 			}
-			if pronto["type"] != "ready" {
-				t.Fatalf("%s (%s): o hipervisor recusou o console: %v", g.id, g.nome, pronto["message"])
+			if ready["type"] != "ready" {
+				t.Fatalf("%s (%s): o hipervisor recusou o console: %v", g.id, g.name, ready["message"])
 			}
 
-			mark := "PVC-" + g.nome
+			mark := "PVC-" + g.name
 			if err := conn.WriteJSON(map[string]any{"type": "resize", "cols": 100, "rows": 30}); err != nil {
 				t.Fatal(err)
 			}
@@ -151,15 +151,15 @@ func TestLiveGuestConsole(t *testing.T) {
 			readErr := make(chan error, 1)
 			go func() {
 				for {
-					mt, dados, err := conn.ReadMessage()
+					mt, data, err := conn.ReadMessage()
 					if err != nil {
 						readErr <- err
 						close(ttyBytes)
 						return
 					}
 					if mt == websocket.BinaryMessage {
-						cp := make([]byte, len(dados))
-						copy(cp, dados)
+						cp := make([]byte, len(data))
+						copy(cp, data)
 						ttyBytes <- cp
 					}
 				}
@@ -182,7 +182,7 @@ func TestLiveGuestConsole(t *testing.T) {
 			// exactly what made the first version of this fix need TWO rounds to
 			// converge. Ctrl-U erases the half-typed line; Enter forces a fresh
 			// prompt; and if nobody answers, send it again.
-			var antes strings.Builder
+			var before strings.Builder
 			limit := time.Now().Add(60 * time.Second)
 			synced := false
 		sync:
@@ -193,13 +193,13 @@ func TestLiveGuestConsole(t *testing.T) {
 				timeout := time.After(5 * time.Second)
 				for {
 					select {
-					case dados, ok := <-ttyBytes:
+					case data, ok := <-ttyBytes:
 						if !ok {
 							t.Fatalf("%s (%s): console closed during synchronization (received %q): %v",
-								g.id, g.nome, antes.String(), <-readErr)
+								g.id, g.name, before.String(), <-readErr)
 						}
-						antes.Write(dados)
-						if ttyEchoes(antes.String()) {
+						before.Write(data)
+						if ttyEchoes(before.String()) {
 							synced = true
 							break sync
 						}
@@ -211,7 +211,7 @@ func TestLiveGuestConsole(t *testing.T) {
 			}
 			if !synced {
 				t.Fatalf("%s (%s): the tty did not reach a prompt that echoes after 60 s of retrying (received %q)",
-					g.id, g.nome, antes.String())
+					g.id, g.name, before.String())
 			}
 
 			// Type and wait for the answer to COME BACK. It is the whole loop:
@@ -226,15 +226,15 @@ func TestLiveGuestConsole(t *testing.T) {
 			echoDeadline := time.After(15 * time.Second)
 			for !strings.Contains(output.String(), mark) {
 				select {
-				case dados, ok := <-ttyBytes:
+				case data, ok := <-ttyBytes:
 					if !ok {
 						t.Fatalf("%s (%s): console closed before the echo (received %q): %v",
-							g.id, g.nome, output.String(), <-readErr)
+							g.id, g.name, output.String(), <-readErr)
 					}
-					output.Write(dados)
+					output.Write(data)
 				case <-echoDeadline:
 					t.Fatalf("%s (%s): nothing came back from the terminal in 15 s (received %q)",
-						g.id, g.nome, output.String())
+						g.id, g.name, output.String())
 				}
 			}
 
@@ -249,7 +249,7 @@ func TestLiveGuestConsole(t *testing.T) {
 			if len(clean) > 90 {
 				clean = clean[len(clean)-90:]
 			}
-			t.Logf("%-9s %-7s → live console, %d bytes back … %q", g.id, g.nome, output.Len(), clean)
+			t.Logf("%-9s %-7s → live console, %d bytes back … %q", g.id, g.name, output.Len(), clean)
 		})
 	}
 	if opened < 2 {

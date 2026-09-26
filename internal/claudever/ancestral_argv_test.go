@@ -37,7 +37,7 @@ type ent = struct {
 }
 
 // The regression: with the dtach backend the record does NOT keep a PID, so
-// resolution by PID (AncestralEm) returns zero for everything and the panel's
+// resolution by PID (AncestorIn) returns zero for everything and the panel's
 // "Restart" button is born disabled on every row. The anchor that works is the
 // socket path in the master's argv. Tree identical to production's:
 //
@@ -52,8 +52,8 @@ func TestAncestorByArgvFindsSessionViaMasterSocket(t *testing.T) {
 		"/opt/panel/data/session-sox/Servidor.sock": "Servidor",
 		"/opt/panel/data/session-sox/Css.sock":      "Css",
 	}
-	if got := AncestralPorArgv(300, marks); got != "Servidor" {
-		t.Fatalf("AncestralPorArgv = %q, want \"Servidor\"", got)
+	if got := AncestorByArgv(300, marks); got != "Servidor" {
+		t.Fatalf("AncestorByArgv = %q, want \"Servidor\"", got)
 	}
 }
 
@@ -66,15 +66,15 @@ func TestAncestorByArgvDoesNotInventOwner(t *testing.T) {
 		ent{401, 1, "outro-mux new-session -d -s claude-rc claude --continue"},
 	)
 	marks := map[string]string{"/opt/panel/data/session-sox/Servidor.sock": "Servidor"}
-	if got := AncestralPorArgv(400, marks); got != "" {
-		t.Fatalf("AncestralPorArgv = %q, wanted empty", got)
+	if got := AncestorByArgv(400, marks); got != "" {
+		t.Fatalf("AncestorByArgv = %q, wanted empty", got)
 	}
 }
 
 func TestAncestorByArgvNoMarks(t *testing.T) {
 	buildProc(t, ent{500, 1, "claude"})
-	if got := AncestralPorArgv(500, nil); got != "" {
-		t.Fatalf("AncestralPorArgv(nil) = %q, wanted empty", got)
+	if got := AncestorByArgv(500, nil); got != "" {
+		t.Fatalf("AncestorByArgv(nil) = %q, wanted empty", got)
 	}
 }
 
@@ -82,8 +82,8 @@ func TestAncestorByArgvNoMarks(t *testing.T) {
 func TestAncestorByArgvMatchesOwnPid(t *testing.T) {
 	buildProc(t, ent{600, 1, "/usr/bin/dtach -n /opt/panel/data/session-sox/Vpsm.sock -E -z claude"})
 	marks := map[string]string{"/opt/panel/data/session-sox/Vpsm.sock": "Vpsm"}
-	if got := AncestralPorArgv(600, marks); got != "Vpsm" {
-		t.Fatalf("AncestralPorArgv = %q, want \"Vpsm\"", got)
+	if got := AncestorByArgv(600, marks); got != "Vpsm" {
+		t.Fatalf("AncestorByArgv = %q, want \"Vpsm\"", got)
 	}
 }
 
@@ -95,13 +95,13 @@ func TestAncestorByArgvDoesNotLoop(t *testing.T) {
 		ent{701, 700, "bash"},
 	)
 	done := make(chan string, 1)
-	go func() { done <- AncestralPorArgv(700, map[string]string{"/nao/casa.sock": "x"}) }()
+	go func() { done <- AncestorByArgv(700, map[string]string{"/nao/casa.sock": "x"}) }()
 	select {
 	case got := <-done:
 		if got != "" {
-			t.Fatalf("AncestralPorArgv = %q, wanted empty", got)
+			t.Fatalf("AncestorByArgv = %q, wanted empty", got)
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatal("AncestralPorArgv went into a loop")
+		t.Fatal("AncestorByArgv went into a loop")
 	}
 }

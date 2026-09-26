@@ -99,8 +99,8 @@ func TestLoad_RejectsUnsafeOrInconsistentManifest(t *testing.T) {
 		"patch com base invalida":     func(m *Manifest) { m.Patches[0].FromSHA256 = "xyz" },
 		"patch com kind errado":       func(m *Manifest) { m.Patches[0].Kind = "full" },
 	}
-	for nome, mutate := range cases {
-		t.Run(nome, func(t *testing.T) {
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
 			m := validManifest()
 			mutate(&m)
 			if _, err := Load(writeManifest(t, m)); err == nil {
@@ -136,9 +136,9 @@ func TestArtifactByFile_OnlyWhatIsInManifest(t *testing.T) {
 	if m.ArtifactByFile(m.Patches[0].File) == nil {
 		t.Fatal("the manifest's own patch was not found")
 	}
-	for _, nome := range []string{"", "full/outro.hdiff", "../secrets.vault", "/etc/passwd", "FULL/" + shaNew + ".hdiff"} {
-		if m.ArtifactByFile(nome) != nil {
-			t.Fatalf("ArtifactByFile(%q) returned an artifact", nome)
+	for _, name := range []string{"", "full/outro.hdiff", "../secrets.vault", "/etc/passwd", "FULL/" + shaNew + ".hdiff"} {
+		if m.ArtifactByFile(name) != nil {
+			t.Fatalf("ArtifactByFile(%q) returned an artifact", name)
 		}
 	}
 }
@@ -151,11 +151,11 @@ func TestOpenArtifact_RejectsWhatIsNotInManifest(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dataDir, "secrets.vault"), []byte("SEGREDO"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, nome := range []string{"../secrets.vault", "/etc/passwd", "full/inexistente.hdiff"} {
-		f, _, _, err := OpenArtifact(dataDir, nome)
+	for _, name := range []string{"../secrets.vault", "/etc/passwd", "full/inexistente.hdiff"} {
+		f, _, _, err := OpenArtifact(dataDir, name)
 		if err == nil {
 			f.Close()
-			t.Fatalf("OpenArtifact(%q) opened something", nome)
+			t.Fatalf("OpenArtifact(%q) opened something", name)
 		}
 	}
 }

@@ -88,7 +88,7 @@ func (s Secret) matches(presented string) bool {
 // carrying a syntactically correct Authorization (which would be another node's
 // bearer). An agent with no secret is inert, and "inert" means there is no
 // request it accepts, not that it accepts any request at all.
-func RequireBearer(s Secret, prox http.Handler) http.Handler {
+func RequireBearer(s Secret, nextID http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.present {
 			unauthorized(w, "agent has no provisioned secret")
@@ -108,7 +108,7 @@ func RequireBearer(s Secret, prox http.Handler) http.Handler {
 			unauthorized(w, "invalid credential")
 			return
 		}
-		prox.ServeHTTP(w, r)
+		nextID.ServeHTTP(w, r)
 	})
 }
 

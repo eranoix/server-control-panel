@@ -10,7 +10,7 @@ import (
 )
 
 // writeTranscript writes a minimal transcript with one assistant line.
-func writeTranscript(t *testing.T, dir, nome string, tokens int64) {
+func writeTranscript(t *testing.T, dir, name string, tokens int64) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -18,7 +18,7 @@ func writeTranscript(t *testing.T, dir, nome string, tokens int64) {
 	line := `{"type":"assistant","timestamp":"` + time.Now().UTC().Format(time.RFC3339) +
 		`","message":{"model":"claude-opus-5","usage":{"input_tokens":` +
 		strconv.FormatInt(tokens, 10) + `,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}` + "\n"
-	if err := os.WriteFile(filepath.Join(dir, nome), []byte(line), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

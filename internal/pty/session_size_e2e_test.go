@@ -82,7 +82,7 @@ func (c *testClient) receivedNotices() []sizeNotice {
 }
 
 // testSession brings up a real HostShell and returns how to dial into it.
-func testSession(t *testing.T, nome string) func() *testClient {
+func testSession(t *testing.T, name string) func() *testClient {
 	t.Helper()
 	if _, err := exec.LookPath("dtach"); err != nil {
 		t.Skip("no dtach on this machine")
@@ -101,10 +101,10 @@ func testSession(t *testing.T, nome string) func() *testClient {
 	}))
 	t.Cleanup(func() {
 		srv.Close()
-		_ = exec.Command("pkill", "-f", socketPathFor(dir, nome)).Run()
+		_ = exec.Command("pkill", "-f", socketPathFor(dir, name)).Run()
 	})
 	return func() *testClient {
-		u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/?size=1&name=" + nome
+		u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/?size=1&name=" + name
 		conn, _, err := websocket.DefaultDialer.Dial(u, nil)
 		if err != nil {
 			t.Fatalf("dial: %v", err)
@@ -198,14 +198,14 @@ func TestE2E_NewcomerIsSizedWithoutWobble(t *testing.T) {
 	first.resize(90, 28)
 	time.Sleep(1500 * time.Millisecond)
 
-	segundo := dial()
-	segundo.resize(90, 28) // same size: the session does NOT change
+	second := dial()
+	second.resize(90, 28) // same size: the session does NOT change
 	time.Sleep(1500 * time.Millisecond)
-	if r, c := segundo.programSize(); r != "28" || c != "90" {
+	if r, c := second.programSize(); r != "28" || c != "90" {
 		t.Errorf("the second client sees %sx%s; wanted 28x90", r, c)
 	}
 
-	if len(segundo.receivedNotices()) == 0 {
+	if len(second.receivedNotices()) == 0 {
 		t.Error("whoever joins must receive the session grid before the first byte")
 	}
 }

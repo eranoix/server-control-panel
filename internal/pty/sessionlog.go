@@ -288,17 +288,17 @@ func isRepaintStream(data []byte) bool {
 			continue
 		}
 		j := i + 2
-		valor, digits := 0, 0
+		value, digits := 0, 0
 		for j < len(data) && data[j] >= '0' && data[j] <= '9' {
-			if valor < 1000 { // saturates: an absurd parameter does not become an overflow
-				valor = valor*10 + int(data[j]-'0')
+			if value < 1000 { // saturates: an absurd parameter does not become an overflow
+				value = value*10 + int(data[j]-'0')
 			}
 			digits++
 			j++
 		}
 		if j < len(data) && data[j] == 'A' {
-			lines := valor
-			if digits == 0 || valor == 0 {
+			lines := value
+			if digits == 0 || value == 0 {
 				lines = 1
 			}
 			if lines >= 2 {
@@ -513,8 +513,8 @@ func readTail(path string, maxBytes int) ([]byte, int) {
 		}
 		return fi.Size()
 	}
-	tamAnterior, curSize := tam(path+".1"), tam(path)
-	total := int(tamAnterior + curSize)
+	prevSize, curSize := tam(path+".1"), tam(path)
+	total := int(prevSize + curSize)
 	if total == 0 {
 		return nil, 0
 	}
@@ -542,11 +542,11 @@ func readTail(path string, maxBytes int) ([]byte, int) {
 		_ = err // short or EOF: return what we got, it is best-effort like the rest
 	}
 
-	if start < tamAnterior {
-		leDe(path+".1", start, tamAnterior-start)
+	if start < prevSize {
+		leDe(path+".1", start, prevSize-start)
 		leDe(path, 0, curSize)
 	} else {
-		leDe(path, start-tamAnterior, curSize-(start-tamAnterior))
+		leDe(path, start-prevSize, curSize-(start-prevSize))
 	}
 	return buf, total
 }
@@ -585,7 +585,7 @@ func readTail(path string, maxBytes int) ([]byte, int) {
 // session's file once ended with two clears and one goodbye, in that order.
 func trimTrailingDtachNoise(b []byte) []byte {
 	for {
-		antes := len(b)
+		before := len(b)
 
 		// The goodbye only counts if it is REALLY at the end: an old `[detached]`,
 		// followed by real output, is legitimate history and stays.
@@ -598,7 +598,7 @@ func trimTrailingDtachNoise(b []byte) []byte {
 		}
 		b = bytes.TrimSuffix(b, dtachAttachClear)
 
-		if len(b) == antes {
+		if len(b) == before {
 			return b
 		}
 	}

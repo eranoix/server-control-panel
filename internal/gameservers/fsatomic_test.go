@@ -43,7 +43,7 @@ type mark struct {
 
 func (m mark) String() string { return fmt.Sprintf("uid=%d gid=%d modo=%04o", m.uid, m.gid, m.mode) }
 
-func statCru(p string) (mark, error) {
+func statRaw(p string) (mark, error) {
 	fi, err := os.Stat(p)
 	if err != nil {
 		return mark{}, err
@@ -57,7 +57,7 @@ func statCru(p string) (mark, error) {
 
 func requireMark(t *testing.T, p string, want mark) {
 	t.Helper()
-	got, err := statCru(p)
+	got, err := statRaw(p)
 	if err != nil {
 		t.Fatalf("stat %s: %v", p, err)
 	}
@@ -90,8 +90,8 @@ func (c *collector) has(sub string) bool {
 // checkPreservation creates a file with a known owner and mode, calls the
 // writer and compares `stat` before/after. It returns both marks so the caller
 // can record them (that is the evidence that goes into the write-up).
-func checkPreservation(r reporter, dir, nome string, writer func(path string, content []byte) error) (antes, after mark) {
-	path := filepath.Join(dir, nome)
+func checkPreservation(r reporter, dir, name string, writer func(path string, content []byte) error) (before, after mark) {
+	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(`{"v":1}`), 0o600); err != nil {
 		r.Errorf("setup: %v", err)
 		return
@@ -104,7 +104,7 @@ func checkPreservation(r reporter, dir, nome string, writer func(path string, co
 		r.Errorf("preparo chown: %v", err)
 		return
 	}
-	antes, err := statCru(path)
+	before, err := statRaw(path)
 	if err != nil {
 		r.Errorf("stat before: %v", err)
 		return
@@ -114,16 +114,16 @@ func checkPreservation(r reporter, dir, nome string, writer func(path string, co
 		r.Errorf("escritor falhou: %v", err)
 		return
 	}
-	after, err = statCru(path)
+	after, err = statRaw(path)
 	if err != nil {
 		r.Errorf("stat depois: %v", err)
 		return
 	}
-	if after.uid != antes.uid || after.gid != antes.gid {
-		r.Errorf("dono NÃO preservado: antes %d:%d, depois %d:%d", antes.uid, antes.gid, after.uid, after.gid)
+	if after.uid != before.uid || after.gid != before.gid {
+		r.Errorf("dono NÃO preservado: antes %d:%d, depois %d:%d", before.uid, before.gid, after.uid, after.gid)
 	}
-	if after.mode != antes.mode {
-		r.Errorf("modo NÃO preservado: antes %04o, depois %04o", antes.mode, after.mode)
+	if after.mode != before.mode {
+		r.Errorf("modo NÃO preservado: antes %04o, depois %04o", before.mode, after.mode)
 	}
 	if b, err := os.ReadFile(path); err != nil || string(b) != string(fresh) {
 		r.Errorf("conteúdo não é o novo: %q (err=%v)", string(b), err)
@@ -149,10 +149,10 @@ func TestWriteAtomicPreservesOwnerAndMode(t *testing.T) {
 	requireRoot(t)
 
 	t.Run("preserves", func(t *testing.T) {
-		antes, after := checkPreservation(t, t.TempDir(), "alvo.json", func(p string, c []byte) error {
+		before, after := checkPreservation(t, t.TempDir(), "alvo.json", func(p string, c []byte) error {
 			return writeAtomic(p, c, "")
 		})
-		t.Logf("stat BEFORE: %s", antes)
+		t.Logf("stat BEFORE: %s", before)
 		t.Logf("stat AFTER:  %s", after)
 	})
 
@@ -345,15 +345,15 @@ func TestChownAsRefDerivesFromDisk(t *testing.T) {
 	if err := os.Chown(root, gameUID, gameGID); err != nil {
 		t.Fatal(err)
 	}
-	if m, _ := statCru(inner); m.uid != 0 {
+	if m, _ := statRaw(inner); m.uid != 0 {
 		t.Fatalf("invalid setup: the inner file should be root, it is %s", m)
 	}
 
-	if err := chownComoRef(tree, root, true); err != nil {
-		t.Fatalf("chownComoRef: %v", err)
+	if err := chownLikeRef(tree, root, true); err != nil {
+		t.Fatalf("chownLikeRef: %v", err)
 	}
 	for _, p := range []string{tree, inner} {
-		m, err := statCru(p)
+		m, err := statRaw(p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -381,21 +381,21 @@ func TestNoHardcodedUID(t *testing.T) {
 	}
 	var findings []string
 	for _, pkg := range packages {
-		for nome, arq := range pkg.Files {
-			ast.Inspect(arq, func(n ast.Node) bool {
+		for name, file := range pkg.Files {
+			ast.Inspect(file, func(n ast.Node) bool {
 				lit, ok := n.(*ast.BasicLit)
 				if !ok || lit.Kind != token.INT {
 					return true
 				}
 				if v := strings.TrimPrefix(strings.TrimPrefix(lit.Value, "0o"), "0x"); v == "4711" {
-					findings = append(findings, fmt.Sprintf("%s:%d", nome, fset.Position(lit.Pos()).Line))
+					findings = append(findings, fmt.Sprintf("%s:%d", name, fset.Position(lit.Pos()).Line))
 				}
 				return true
 			})
 		}
 	}
 	if len(findings) > 0 {
-		t.Errorf("hard-coded game uid at: %s — the owner has to come from the disk, via chownComoRef", strings.Join(findings, ", "))
+		t.Errorf("hard-coded game uid at: %s — the owner has to come from the disk, via chownLikeRef", strings.Join(findings, ", "))
 	}
 }
 
@@ -454,7 +454,7 @@ func enshroudedTree(t *testing.T) Server {
 
 func requireGameOwner(t *testing.T, path, what string) {
 	t.Helper()
-	m, err := statCru(path)
+	m, err := statRaw(path)
 	if err != nil {
 		t.Fatalf("%s: stat %s: %v", what, path, err)
 	}
@@ -471,32 +471,32 @@ func TestSitesPreserveOwnerAndMode(t *testing.T) {
 	t.Run("1_gameSettings", func(t *testing.T) {
 		s := enshroudedTree(t)
 		p := enshConfigPath(s)
-		antes, _ := statCru(p)
+		before, _ := statRaw(p)
 		if err := a.SaveSettings(s, map[string]interface{}{"playerHealthFactor": 2.0}); err != nil {
 			t.Fatalf("SaveSettings: %v", err)
 		}
-		requireMark(t, p, antes)
+		requireMark(t, p, before)
 	})
 
 	t.Run("2_groups", func(t *testing.T) {
 		s := enshroudedTree(t)
 		p := enshConfigPath(s)
-		antes, _ := statCru(p)
+		before, _ := statRaw(p)
 		gs := []Group{{Name: "Admin", Password: "senha-admin"}, {Name: "Guest", Password: "senha-guest"}}
 		if err := a.SaveGroups(s, gs); err != nil {
 			t.Fatalf("SaveGroups: %v", err)
 		}
-		requireMark(t, p, antes)
+		requireMark(t, p, before)
 	})
 
 	t.Run("3_bans_and_serverSettings", func(t *testing.T) {
 		s := enshroudedTree(t)
 		p := enshConfigPath(s)
-		antes, _ := statCru(p)
+		before, _ := statRaw(p)
 		if err := a.SaveBans(s, []string{"76561198000000000"}); err != nil {
 			t.Fatalf("SaveBans: %v", err)
 		}
-		requireMark(t, p, antes)
+		requireMark(t, p, before)
 	})
 }
 
@@ -535,7 +535,7 @@ func TestActiveDoesNotBecomeRoot(t *testing.T) {
 		if err := os.WriteFile(old, []byte("mundo2\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		m, err := statCru(old)
+		m, err := statRaw(old)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -549,7 +549,7 @@ func TestActiveDoesNotBecomeRoot(t *testing.T) {
 		s := enshroudedTree(t)
 		a := enshrouded{}
 		active := filepath.Join(s.Root, ".active")
-		antes, err := statCru(active)
+		before, err := statRaw(active)
 		if err != nil {
 			t.Fatalf("stat before: %v", err)
 		}
@@ -559,7 +559,7 @@ func TestActiveDoesNotBecomeRoot(t *testing.T) {
 		if got := a.ActiveWorld(s); got != "mundo2" {
 			t.Fatalf("the active world pointer did not follow: %q", got)
 		}
-		requireMark(t, active, antes)
+		requireMark(t, active, before)
 	})
 }
 
@@ -577,11 +577,11 @@ func TestBakInheritsOriginalOwner(t *testing.T) {
 	if err := os.Chown(orig, otherUID, otherGID); err != nil {
 		t.Fatal(err)
 	}
-	antes, _ := statCru(orig)
+	before, _ := statRaw(orig)
 	if err := writeAtomic(orig+".bak", []byte("services:\n"), orig); err != nil {
 		t.Fatalf("writeAtomic of the .bak: %v", err)
 	}
-	requireMark(t, orig+".bak", antes)
+	requireMark(t, orig+".bak", before)
 }
 
 // TestInventorySurvivesHelper covers the PANEL's site (SaveInventory). Here
@@ -599,11 +599,11 @@ func TestInventorySurvivesHelper(t *testing.T) {
 	if err := os.Chown(target, otherUID, otherGID); err != nil {
 		t.Fatal(err)
 	}
-	antes, _ := statCru(target)
+	before, _ := statRaw(target)
 	if err := writeAtomic(target, []byte(`[{"id":"x"}]`), target); err != nil {
 		t.Fatalf("writeAtomic: %v", err)
 	}
-	requireMark(t, target, antes)
+	requireMark(t, target, before)
 	if b, _ := os.ReadFile(target); string(b) != `[{"id":"x"}]` {
 		t.Errorf("content not written: %q", string(b))
 	}
@@ -628,11 +628,11 @@ func TestChownTreeUsesServerOwner(t *testing.T) {
 	if err := os.WriteFile(inside, []byte("abc\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if m, _ := statCru(inside); m.uid != 0 {
+	if m, _ := statRaw(inside); m.uid != 0 {
 		t.Fatalf("invalid setup: the file had to be born root for the test to measure anything (got %s)", m)
 	}
-	if err := chownComoRef(fresh, s.Root, true); err != nil {
-		t.Fatalf("chownComoRef: %v", err)
+	if err := chownLikeRef(fresh, s.Root, true); err != nil {
+		t.Fatalf("chownLikeRef: %v", err)
 	}
 	requireGameOwner(t, fresh, "imported directory")
 	requireGameOwner(t, inside, ".saveid inside the imported one")
@@ -646,9 +646,9 @@ func TestChownAsRefFailsClearlyWithoutRef(t *testing.T) {
 	requireRoot(t)
 	target := t.TempDir()
 	nonexistent := filepath.Join(target, "raiz-que-nao-existe")
-	err := chownComoRef(target, nonexistent, true)
+	err := chownLikeRef(target, nonexistent, true)
 	if err == nil {
-		t.Fatal("chownComoRef accepted a nonexistent reference — it would silently fall back to an invented default")
+		t.Fatal("chownLikeRef accepted a nonexistent reference — it would silently fall back to an invented default")
 	}
 	if !strings.Contains(err.Error(), target) && !strings.Contains(err.Error(), nonexistent) {
 		t.Errorf("the error names no path at all: %v", err)

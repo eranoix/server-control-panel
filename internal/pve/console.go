@@ -143,7 +143,7 @@ func (c *Client) ConsoleAttach(ctx context.Context, node string, vmid int, typ s
 	if err != nil {
 		return nil, "", err
 	}
-	return c.consoleEm(ctx, base)
+	return c.consoleAt(ctx, base)
 }
 
 // ConsoleAttachNode opens the shell of the HYPERVISOR ITSELF — the "Shell"
@@ -162,13 +162,13 @@ func (c *Client) ConsoleAttachNode(ctx context.Context, node string) (ConsoleCon
 	if node == "" {
 		return nil, "", fmt.Errorf("pve: empty node in ConsoleAttachNode")
 	}
-	return c.consoleEm(ctx, "/api2/json/nodes/"+url.PathEscape(node))
+	return c.consoleAt(ctx, "/api2/json/nodes/"+url.PathEscape(node))
 }
 
-// consoleEm runs the three steps from a path base. Guest and node share the
+// consoleAt runs the three steps from a path base. Guest and node share the
 // whole protocol; duplicating it would be two truths about the same handshake,
 // and the second would age in silence.
-func (c *Client) consoleEm(ctx context.Context, base string) (ConsoleConn, string, error) {
+func (c *Client) consoleAt(ctx context.Context, base string) (ConsoleConn, string, error) {
 	// ── step 1: termproxy ─────────────────────────────────────────────────
 	//
 	// A 403 here is the end of the road, and on purpose: trying the upgrade
@@ -297,12 +297,12 @@ func kindFromStatus(status int, err error) Kind {
 // `data.length` in JavaScript counts UTF-16 units, so "ç", "é" and emoji typed
 // in the browser would arrive cut. The browser sends text; the one who counts
 // bytes is Go.
-func InputFrame(dados []byte) []byte {
-	out := make([]byte, 0, len(dados)+8)
+func InputFrame(data []byte) []byte {
+	out := make([]byte, 0, len(data)+8)
 	out = append(out, "0:"...)
-	out = strconv.AppendInt(out, int64(len(dados)), 10)
+	out = strconv.AppendInt(out, int64(len(data)), 10)
 	out = append(out, ':')
-	return append(out, dados...)
+	return append(out, data...)
 }
 
 // ResizeFrame builds the resize frame. It returns nil — and not a crooked

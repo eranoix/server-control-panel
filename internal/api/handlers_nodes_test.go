@@ -27,7 +27,7 @@ const testNow = 1800000000
 // fakeVault records every call in `seen`, which is what makes the ORDER of
 // revocation verifiable. Modelled on privateaiapi_test.go.
 type fakeVault struct {
-	dados        map[string]string
+	data         map[string]string
 	seen         *[]string
 	deleteErr    error
 	resurrect    bool // simulates the concurrent write that resurrects a deleted vault key
@@ -38,7 +38,7 @@ func (c *fakeVault) Get(k string) (string, bool) {
 	if c.deleteCalled && c.resurrect {
 		return "ressuscitado", true
 	}
-	v, ok := c.dados[k]
+	v, ok := c.data[k]
 	return v, ok
 }
 
@@ -50,7 +50,7 @@ func (c *fakeVault) Delete(k string) error {
 	if c.deleteErr != nil {
 		return c.deleteErr
 	}
-	delete(c.dados, k)
+	delete(c.data, k)
 	return nil
 }
 
@@ -66,9 +66,9 @@ type fakePVE struct {
 	certs       []pve.Certificate
 	packages    []pve.PackageInfo
 	syslog      []pve.SyslogLine
-	frescor     map[string]pve.BackupFreshness
+	freshness   map[string]pve.BackupFreshness
 	zpools      []pve.ZPool
-	topologias  map[string]pve.ZPoolTopology
+	topologies  map[string]pve.ZPoolTopology
 	role        string
 	seen        *[]string
 	upid        string
@@ -94,7 +94,7 @@ type fakePVE struct {
 	statusErr error
 	tasks     []pve.Task
 	logLines  []string
-	discos    []pve.Disk
+	disks     []pve.Disk
 	perms     map[string]map[string]int
 	snaps     []pve.Snapshot
 
@@ -153,8 +153,8 @@ func (p *fakePVE) NextID(ctx context.Context) (int, error) {
 	return 991, nil
 }
 
-func (p *fakePVE) Clone(ctx context.Context, node string, vmid int, typ string, newID int, nome, snapname string) (string, error) {
-	p.mark(fmt.Sprintf("pve.clone:%s/%d->%d:%s:snap=%s", typ, vmid, newID, nome, snapname))
+func (p *fakePVE) Clone(ctx context.Context, node string, vmid int, typ string, newID int, name, snapname string) (string, error) {
+	p.mark(fmt.Sprintf("pve.clone:%s/%d->%d:%s:snap=%s", typ, vmid, newID, name, snapname))
 	if p.verbErr != nil {
 		return "", p.verbErr
 	}
@@ -187,8 +187,8 @@ func (p *fakePVE) ConsoleAttach(ctx context.Context, node string, vmid int, typ 
 	return p.console, p.upid, nil
 }
 
-func (p *fakePVE) SnapshotRollback(ctx context.Context, node string, vmid int, typ, nome string) (string, error) {
-	p.mark("pve.snaprollback:" + nome)
+func (p *fakePVE) SnapshotRollback(ctx context.Context, node string, vmid int, typ, name string) (string, error) {
+	p.mark("pve.snaprollback:" + name)
 	return p.upid, p.verbErr
 }
 
@@ -206,7 +206,7 @@ func (p *fakePVE) TaskLog(ctx context.Context, node, upid string) ([]string, err
 }
 func (p *fakePVE) DisksList(ctx context.Context, node string) ([]pve.Disk, error) {
 	p.mark("pve.disks:" + node)
-	return p.discos, p.verbErr
+	return p.disks, p.verbErr
 }
 func (p *fakePVE) ZFSList(ctx context.Context, node string) ([]pve.ZPool, error) {
 	p.mark("pve.zfslist:" + node)
@@ -254,14 +254,14 @@ func (p *fakePVE) DatastoreBackups(ctx context.Context, node, storage string) (p
 	if p.verbErr != nil {
 		return pve.BackupFreshness{}, p.verbErr
 	}
-	return p.frescor[storage], nil
+	return p.freshness[storage], nil
 }
 func (p *fakePVE) ZFSTopology(ctx context.Context, node, pool string) (pve.ZPoolTopology, error) {
 	p.mark("pve.zfstopologia:" + pool)
 	if p.verbErr != nil {
 		return pve.ZPoolTopology{}, p.verbErr
 	}
-	return p.topologias[pool], nil
+	return p.topologies[pool], nil
 }
 func (p *fakePVE) Permissions(ctx context.Context) (map[string]map[string]int, error) {
 	p.mark("pve.permissions")
@@ -271,12 +271,12 @@ func (p *fakePVE) SnapshotList(ctx context.Context, node string, vmid int, typ s
 	p.mark(fmt.Sprintf("pve.snaplist:%s/%d", typ, vmid))
 	return p.snaps, p.verbErr
 }
-func (p *fakePVE) SnapshotCreate(ctx context.Context, node string, vmid int, typ, nome, description string) (string, error) {
-	p.mark("pve.snapcreate:" + nome)
+func (p *fakePVE) SnapshotCreate(ctx context.Context, node string, vmid int, typ, name, description string) (string, error) {
+	p.mark("pve.snapcreate:" + name)
 	return p.upid, p.verbErr
 }
-func (p *fakePVE) SnapshotDelete(ctx context.Context, node string, vmid int, typ, nome string) (string, error) {
-	p.mark("pve.snapdelete:" + nome)
+func (p *fakePVE) SnapshotDelete(ctx context.Context, node string, vmid int, typ, name string) (string, error) {
+	p.mark("pve.snapdelete:" + name)
 	return p.upid, p.verbErr
 }
 
@@ -340,15 +340,15 @@ func (p *fakePVE) ClusterResources(ctx context.Context) ([]pve.Resource, error) 
 
 // ------------------------------------------------------------- andaimes ----
 
-func newNodesRouter(t *testing.T, nos []inventory.Node) (*Router, *inventory.Store) {
+func newNodesRouter(t *testing.T, nodes []inventory.Node) (*Router, *inventory.Store) {
 	t.Helper()
 	dir := t.TempDir()
 	st, err := inventory.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(nos) > 0 {
-		if err := st.Replace(func(iv *inventory.Inventory) { iv.Nodes = nos }); err != nil {
+	if len(nodes) > 0 {
+		if err := st.Replace(func(iv *inventory.Inventory) { iv.Nodes = nodes }); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -373,14 +373,14 @@ func callAPI(t *testing.T, r *Router, method, path, body string) (*httptest.Resp
 	return w, out
 }
 
-func testNode(id, nome string, vmid int, observedAt int64) inventory.Node {
+func testNode(id, name string, vmid int, observedAt int64) inventory.Node {
 	return inventory.Node{
-		ID: id, Name: nome, VMID: vmid, Kind: inventory.NodeKindGuest,
+		ID: id, Name: name, VMID: vmid, Kind: inventory.NodeKindGuest,
 		Transport: inventory.TransportPVEAPI,
 		Status:    inventory.Observe("running", observedAt),
 		Uptime:    inventory.Observe(int64(100), observedAt),
 		Credential: inventory.Credential{
-			TokenID: "lab@pve!node-" + nome, Expire: testNow + 30*86400, State: inventory.CredOK,
+			TokenID: "lab@pve!node-" + name, Expire: testNow + 30*86400, State: inventory.CredOK,
 		},
 	}
 }
@@ -397,7 +397,7 @@ func TestNodesList(t *testing.T) {
 		testNode("qemu/208", "dev", 208, testNow-600), // velho
 	})
 	r.nodeVaultFn = func() (nodeVault, error) {
-		return &fakeVault{dados: map[string]string{
+		return &fakeVault{data: map[string]string{
 			"pve_token_node_apps": "lab@pve!node-apps=s",
 			"pve_token_node_dev":  "lab@pve!node-dev=s",
 		}}, nil
@@ -425,21 +425,21 @@ func TestNodesList(t *testing.T) {
 			t.Errorf("entry %d missing status.observed_at: %v", i, n)
 		}
 	}
-	porID := map[string]map[string]any{}
+	byID := map[string]map[string]any{}
 	for _, raw := range nodes {
 		n := raw.(map[string]any)
-		porID[n["id"].(string)] = n
+		byID[n["id"].(string)] = n
 	}
-	if got := porID["lxc/207"]["age_seconds"].(float64); got != 10 {
+	if got := byID["lxc/207"]["age_seconds"].(float64); got != 10 {
 		t.Errorf("age of the fresh one = %v, want 10", got)
 	}
-	if porID["lxc/207"]["stale"].(bool) {
+	if byID["lxc/207"]["stale"].(bool) {
 		t.Error("the 10s node showed up as expired")
 	}
-	if got := porID["qemu/208"]["age_seconds"].(float64); got != 600 {
+	if got := byID["qemu/208"]["age_seconds"].(float64); got != 600 {
 		t.Errorf("age of the old one = %v, want 600", got)
 	}
-	if !porID["qemu/208"]["stale"].(bool) {
+	if !byID["qemu/208"]["stale"].(bool) {
 		t.Error("the 600s node did NOT show up as expired (TTL 90s)")
 	}
 	if out["vault"] != vaultOK {
@@ -459,8 +459,8 @@ func TestNodesVaultStates(t *testing.T) {
 		if w.Code != 200 {
 			t.Fatalf("dead vault wiped the inventory: status %d", w.Code)
 		}
-		if out["vault"] != vaultInalcancavel {
-			t.Fatalf("vault = %v, want %q", out["vault"], vaultInalcancavel)
+		if out["vault"] != vaultUnreachable {
+			t.Fatalf("vault = %v, want %q", out["vault"], vaultUnreachable)
 		}
 		// And we do NOT invent "ausente" just because we could not look.
 		n := out["nodes"].([]any)[0].(map[string]any)
@@ -472,7 +472,7 @@ func TestNodesVaultStates(t *testing.T) {
 
 	t.Run("key missing: credential missing, vault ok", func(t *testing.T) {
 		r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow-10)})
-		r.nodeVaultFn = func() (nodeVault, error) { return &fakeVault{dados: map[string]string{}}, nil }
+		r.nodeVaultFn = func() (nodeVault, error) { return &fakeVault{data: map[string]string{}}, nil }
 
 		w, out := callAPI(t, r, http.MethodGet, "/api/nodes", "")
 		if w.Code != 200 {
@@ -497,7 +497,7 @@ func TestNodesVaultStates(t *testing.T) {
 			t.Errorf("vault unreachable → %d, want 503 (body %s)", w.Code, w.Body)
 		}
 
-		r.nodeVaultFn = func() (nodeVault, error) { return &fakeVault{dados: map[string]string{}}, nil }
+		r.nodeVaultFn = func() (nodeVault, error) { return &fakeVault{data: map[string]string{}}, nil }
 		w, _ = callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/power", `{"action":"start"}`)
 		if w.Code != 409 {
 			t.Errorf("key missing → %d, want 409 (body %s)", w.Code, w.Body)
@@ -522,7 +522,7 @@ func TestPowerWaitsUPID(t *testing.T) {
 		var seen []string
 		r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
 		r.nodeVaultFn = func() (nodeVault, error) {
-			return &fakeVault{dados: map[string]string{"pve_token_node_apps": "lab@pve!node-apps=s"}}, nil
+			return &fakeVault{data: map[string]string{"pve_token_node_apps": "lab@pve!node-apps=s"}}, nil
 		}
 		r.pveDial = func(string) (hypervisorOps, error) {
 			return &fakePVE{seen: &seen, upid: "UPID:pve:1:start"}, nil
@@ -543,7 +543,7 @@ func TestPowerWaitsUPID(t *testing.T) {
 	t.Run("a task that ends in error does NOT become 200", func(t *testing.T) {
 		r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
 		r.nodeVaultFn = func() (nodeVault, error) {
-			return &fakeVault{dados: map[string]string{"pve_token_node_apps": "lab@pve!node-apps=s"}}, nil
+			return &fakeVault{data: map[string]string{"pve_token_node_apps": "lab@pve!node-apps=s"}}, nil
 		}
 		r.pveDial = func(string) (hypervisorOps, error) {
 			return &fakePVE{upid: "UPID:x", waitErr: &pve.Error{
@@ -569,14 +569,14 @@ func TestPowerWaitsUPID(t *testing.T) {
 func TestRevokeOrder(t *testing.T) {
 	var seen []string
 	r, st := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
-	vault := &fakeVault{seen: &seen, dados: map[string]string{
+	vault := &fakeVault{seen: &seen, data: map[string]string{
 		"pve_token_admin":     "lab@pve!admin=a",
 		"pve_token_node_apps": "lab@pve!node-apps=s",
 	}}
 	r.nodeVaultFn = func() (nodeVault, error) { return vault, nil }
-	r.pveDial = func(valor string) (hypervisorOps, error) {
+	r.pveDial = func(value string) (hypervisorOps, error) {
 		role := "operacional"
-		if strings.HasPrefix(valor, "lab@pve!admin") {
+		if strings.HasPrefix(value, "lab@pve!admin") {
 			role = "admin"
 		}
 		return &fakePVE{role: role, seen: &seen}, nil
@@ -593,7 +593,7 @@ func TestRevokeOrder(t *testing.T) {
 	if fmt.Sprint(seen) != fmt.Sprint(want) {
 		t.Fatalf("SEQUENCE = %v, want EXACTLY %v", seen, want)
 	}
-	if _, still := vault.dados["pve_token_node_apps"]; still {
+	if _, still := vault.data["pve_token_node_apps"]; still {
 		t.Error("the key is still in the vault")
 	}
 	if fmt.Sprint(out["passos"]) != fmt.Sprint([]any{"pve.delete", "pve.confirm401", "vault.delete", "vault.recheck"}) {
@@ -612,13 +612,13 @@ func TestRevokeOrder(t *testing.T) {
 func TestRevokeRequiresProof401(t *testing.T) {
 	var seen []string
 	r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
-	vault := &fakeVault{seen: &seen, dados: map[string]string{
+	vault := &fakeVault{seen: &seen, data: map[string]string{
 		"pve_token_admin":     "lab@pve!admin=a",
 		"pve_token_node_apps": "lab@pve!node-apps=s",
 	}}
 	r.nodeVaultFn = func() (nodeVault, error) { return vault, nil }
-	r.pveDial = func(valor string) (hypervisorOps, error) {
-		return &fakePVE{seen: &seen, stillAlive: !strings.HasPrefix(valor, "lab@pve!admin")}, nil
+	r.pveDial = func(value string) (hypervisorOps, error) {
+		return &fakePVE{seen: &seen, stillAlive: !strings.HasPrefix(value, "lab@pve!admin")}, nil
 	}
 
 	w, _ := callAPI(t, r, http.MethodDelete, "/api/nodes/lxc/207/credential", "")
@@ -628,7 +628,7 @@ func TestRevokeRequiresProof401(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "pve.confirm401") {
 		t.Errorf("the body does not name the step that failed: %s", w.Body)
 	}
-	if _, gone := vault.dados["pve_token_node_apps"]; !gone {
+	if _, gone := vault.data["pve_token_node_apps"]; !gone {
 		t.Error("the vault was touched without proof of the 401")
 	}
 }
@@ -638,7 +638,7 @@ func TestRevokeRequiresProof401(t *testing.T) {
 // bring the key back after the Delete. The recheck exists for that.
 func TestRevokeResurrection(t *testing.T) {
 	r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
-	vault := &fakeVault{resurrect: true, dados: map[string]string{
+	vault := &fakeVault{resurrect: true, data: map[string]string{
 		"pve_token_admin":     "lab@pve!admin=a",
 		"pve_token_node_apps": "lab@pve!node-apps=s",
 	}}
@@ -658,7 +658,7 @@ func TestRevokeResurrection(t *testing.T) {
 // vault is NOT touched — and the response says which step failed.
 func TestRevokePVEFailureKeepsVault(t *testing.T) {
 	r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
-	vault := &fakeVault{dados: map[string]string{
+	vault := &fakeVault{data: map[string]string{
 		"pve_token_admin":     "lab@pve!admin=a",
 		"pve_token_node_apps": "lab@pve!node-apps=s",
 	}}
@@ -674,7 +674,7 @@ func TestRevokePVEFailureKeepsVault(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "pve.delete") {
 		t.Errorf("the body does not name the step: %s", w.Body)
 	}
-	if _, still := vault.dados["pve_token_node_apps"]; !still {
+	if _, still := vault.data["pve_token_node_apps"]; !still {
 		t.Error("the vault was touched despite the failure on the hypervisor")
 	}
 }
@@ -687,7 +687,7 @@ func TestRevokeIsolation(t *testing.T) {
 		testNode("lxc/207", "apps", 207, testNow),
 		testNode("qemu/208", "dev", 208, testNow),
 	})
-	vault := &fakeVault{dados: map[string]string{
+	vault := &fakeVault{data: map[string]string{
 		"pve_token_admin":     "lab@pve!admin=a",
 		"pve_token_node_apps": "lab@pve!node-apps=s",
 		"pve_token_node_dev":  "lab@pve!node-dev=s",
@@ -711,7 +711,7 @@ func TestRevokeIsolation(t *testing.T) {
 	if states["qemu/208"] != inventory.CredOK {
 		t.Errorf("B: state = %q, want ok — A's revocation leaked", states["qemu/208"])
 	}
-	if _, still := vault.dados["pve_token_node_dev"]; !still {
+	if _, still := vault.data["pve_token_node_dev"]; !still {
 		t.Error("node B's key disappeared from the vault")
 	}
 }
@@ -723,7 +723,7 @@ func TestNodeDetail(t *testing.T) {
 		testNode("qemu/208", "dev", 208, testNow-10),
 	})
 	r.nodeVaultFn = func() (nodeVault, error) {
-		return &fakeVault{dados: map[string]string{
+		return &fakeVault{data: map[string]string{
 			"pve_token_node_apps": "x", "pve_token_node_dev": "y",
 		}}, nil
 	}
@@ -754,7 +754,7 @@ func TestNodeDetail(t *testing.T) {
 // TestNodesMethods: the wrong verb on the right route is 405, not a silent 200.
 func TestNodesMethods(t *testing.T) {
 	r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
-	r.nodeVaultFn = func() (nodeVault, error) { return &fakeVault{dados: map[string]string{}}, nil }
+	r.nodeVaultFn = func() (nodeVault, error) { return &fakeVault{data: map[string]string{}}, nil }
 	for _, tc := range []struct{ m, p string }{
 		{http.MethodPost, "/api/nodes"},
 		{http.MethodGet, "/api/nodes/lxc/207/power"},
@@ -799,8 +799,8 @@ func TestPanelStartsWithoutHypervisor(t *testing.T) {
 	if len(out["nodes"].([]any)) != 1 {
 		t.Fatalf("nodes = %v, want the seed node", out["nodes"])
 	}
-	if out["vault"] != vaultInalcancavel {
-		t.Errorf("vault = %v, want %q", out["vault"], vaultInalcancavel)
+	if out["vault"] != vaultUnreachable {
+		t.Errorf("vault = %v, want %q", out["vault"], vaultUnreachable)
 	}
 }
 
@@ -834,7 +834,7 @@ func TestMalformedDescriptorDoesNotStart(t *testing.T) {
 func TestCredentialSourceFillsNode(t *testing.T) {
 	r, _ := newNodesRouter(t, nil)
 	r.nodeVaultFn = func() (nodeVault, error) {
-		return &fakeVault{dados: map[string]string{
+		return &fakeVault{data: map[string]string{
 			"pve_token_admin":     "lab@pve!admin=a",
 			"pve_token_audit":     "lab@pve!audit=a",
 			"pve_token_node_lab":  "lab@pve!node-lab=s",
@@ -850,14 +850,14 @@ func TestCredentialSourceFillsNode(t *testing.T) {
 	}
 
 	// RAW nodes, the way the poller assembles them: Credential zeroed.
-	nos := []inventory.Node{
+	nodes := []inventory.Node{
 		{ID: "lxc/204", Name: "lab", VMID: 204, Kind: inventory.NodeKindGuest, Transport: inventory.TransportPVEAPI},
 		{ID: "lxc/207", Name: "apps", VMID: 207, Kind: inventory.NodeKindGuest, Transport: inventory.TransportPVEAPI},
 		{ID: "node/pve", Name: "pve", Kind: inventory.NodeKindHost, Transport: inventory.TransportPVEAPI},
 		{ID: "canario", Name: "canario", Kind: inventory.NodeKindExternal, Transport: inventory.TransportAgent},
 	}
 
-	creds, err := r.credentialSource()(nos)
+	creds, err := r.credentialSource()(nodes)
 	if err != nil {
 		t.Fatalf("credential source: %v", err)
 	}
@@ -884,20 +884,20 @@ func TestCredentialSourceFillsNode(t *testing.T) {
 
 	// 🔴 And the loop closes: with the source filled in, the VIEW has to say "ok".
 	// This is the assertion that would fail against today's production.
-	for i := range nos {
-		if c, ok := creds[nos[i].ID]; ok {
-			nos[i].Credential = c
+	for i := range nodes {
+		if c, ok := creds[nodes[i].ID]; ok {
+			nodes[i].Credential = c
 		}
 	}
-	vistas := inventory.View(inventory.Inventory{Nodes: nos}, time.Minute, time.Unix(testNow, 0))
-	porID := map[string]inventory.NodeView{}
-	for _, v := range vistas {
-		porID[v.ID] = v
+	seen := inventory.View(inventory.Inventory{Nodes: nodes}, time.Minute, time.Unix(testNow, 0))
+	byID := map[string]inventory.NodeView{}
+	for _, v := range seen {
+		byID[v.ID] = v
 	}
-	if got := porID["lxc/204"].Credential.State; got != inventory.CredOK {
+	if got := byID["lxc/204"].Credential.State; got != inventory.CredOK {
 		t.Fatalf("state of the node with a live token = %q, want %q", got, inventory.CredOK)
 	}
-	if got := porID["canario"].Credential.State; got != inventory.CredMissing {
+	if got := byID["canario"].Credential.State; got != inventory.CredMissing {
 		t.Errorf("canary = %q, want missing", got)
 	}
 }
@@ -923,7 +923,7 @@ func TestCredentialSourceDeadVaultDoesNotLie(t *testing.T) {
 func TestCredentialSourceWithoutExpireStillReportsToken(t *testing.T) {
 	r, _ := newNodesRouter(t, nil)
 	r.nodeVaultFn = func() (nodeVault, error) {
-		return &fakeVault{dados: map[string]string{"pve_token_node_lab": "lab@pve!node-lab=s"}}, nil
+		return &fakeVault{data: map[string]string{"pve_token_node_lab": "lab@pve!node-lab=s"}}, nil
 	}
 	r.pveDial = func(string) (hypervisorOps, error) { return nil, errors.New("sem descritor") }
 
@@ -958,7 +958,7 @@ func TestHostDoesNotContradictItself(t *testing.T) {
 	r, _ := newNodesRouter(t, []inventory.Node{host})
 	r.nodeVaultFn = func() (nodeVault, error) {
 		// The vault holds the AUDIT key — and no "pve_token_node_pve" at all.
-		return &fakeVault{dados: map[string]string{"pve_token_audit": "lab@pve!audit=s"}}, nil
+		return &fakeVault{data: map[string]string{"pve_token_audit": "lab@pve!audit=s"}}, nil
 	}
 
 	_, out := callAPI(t, r, http.MethodGet, "/api/nodes", "")

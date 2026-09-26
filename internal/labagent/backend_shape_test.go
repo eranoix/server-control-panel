@@ -60,18 +60,18 @@ func scanBackendInterface(t *testing.T, file string) (violations []string, metho
 		return ""
 	}
 
-	matches := func(campos *ast.FieldList, where, method string) {
-		if campos == nil {
+	matches := func(fields *ast.FieldList, where, method string) {
+		if fields == nil {
 			return
 		}
-		for _, field := range campos.List {
+		for _, field := range fields.List {
 			kind := typeText(field.Type)
 			if suspicious(kind) {
 				violations = append(violations, method+": "+where+" de tipo "+kind)
 			}
-			for _, nome := range field.Names {
-				if suspicious(nome.Name) {
-					violations = append(violations, method+": "+where+" chamado "+nome.Name)
+			for _, name := range field.Names {
+				if suspicious(name.Name) {
+					violations = append(violations, method+": "+where+" chamado "+name.Name)
 				}
 			}
 		}

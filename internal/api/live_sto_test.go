@@ -34,22 +34,22 @@ func TestLivePoolTopology(t *testing.T) {
 	}
 	for _, p := range pools {
 		m, _ := p.(map[string]any)
-		nome, _ := m["nome"].(string)
+		name, _ := m["nome"].(string)
 		state, _ := m["estado"].(string)
 		red, _ := m["redundante"].(bool)
 		nDisp, _ := m["n_dispositivos"].(float64)
 		errs, _ := m["erros_contados"].(float64)
 
 		if nDisp == 0 {
-			t.Errorf("pool %s: no device read — the tree was not decoded", nome)
+			t.Errorf("pool %s: no device read — the tree was not decoded", name)
 		}
 		// 🔴 Negative control: a single-disk pool must NOT come out redundant.
 		// It is the assertion that stops the screen promising protection that does not exist.
 		if nDisp == 1 && red {
-			t.Errorf("pool %s has 1 device and came out as redundant", nome)
+			t.Errorf("pool %s has 1 device and came out as redundant", name)
 		}
 		t.Logf("%-8s %-9s redundant=%-5v %.0f avail · errors=%.0f · %v",
-			nome, state, red, nDisp, errs, m["erros"])
+			name, state, red, nDisp, errs, m["erros"])
 
 		vdevs, _ := m["vdevs"].([]any)
 		for _, v := range vdevs {
@@ -127,9 +127,9 @@ func TestLiveParityWithProxmox(t *testing.T) {
 		if len(pts) < 10 {
 			t.Fatalf("only %d points — without coverage, the graph proves nothing", len(pts))
 		}
-		ult, _ := pts[len(pts)-1].(map[string]any)
+		last, _ := pts[len(pts)-1].(map[string]any)
 		t.Logf("%d points · last: cpu=%v iowait=%v load=%v arc=%v",
-			len(pts), ult["cpu"], ult["iowait"], ult["loadavg"], ult["arcsize"])
+			len(pts), last["cpu"], last["iowait"], last["loadavg"], last["arcsize"])
 	})
 
 	t.Run("invalid window falls back to the default, does not become a path", func(t *testing.T) {
@@ -207,11 +207,11 @@ func TestLiveHypervisorShell(t *testing.T) {
 	r, cancel := liveRouter(t)
 	defer cancel()
 
-	valor, state := r.vaultToken(r.hypervisorReadSecret())
+	value, state := r.vaultToken(r.hypervisorReadSecret())
 	if state != vaultOK {
 		t.Fatalf("hypervisor read token: %s", state)
 	}
-	cli, err := r.dial(valor)
+	cli, err := r.dial(value)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -248,16 +248,16 @@ func TestLiveDisarmedIsNotFailure(t *testing.T) {
 	if len(ds) == 0 {
 		t.Fatal("no datastore — without coverage")
 	}
-	var comAgenda int
+	var withSchedule int
 	for _, d := range ds {
 		m, _ := d.(map[string]any)
 		st, _ := m["storage"].(string)
 		ag, _ := m["agendamento"].(string)
 		sch, _ := m["schedule"].(string)
 		if ag == "ativo" {
-			comAgenda++
+			withSchedule++
 		}
 		t.Logf("%-12s agendamento=%-12s schedule=%q", st, ag, sch)
 	}
-	t.Logf("%d of %d datastores have a live schedule", comAgenda, len(ds))
+	t.Logf("%d of %d datastores have a live schedule", withSchedule, len(ds))
 }

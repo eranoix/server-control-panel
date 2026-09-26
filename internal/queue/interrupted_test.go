@@ -133,7 +133,7 @@ func TestRerunInterrupted(t *testing.T) {
 	q.Register(&fakeRunner{kind: "shell", mode: "ok", steps: 1})
 	defer q.Shutdown(context.Background())
 
-	antes := time.Now().Unix()
+	before := time.Now().Unix()
 	cp, err := q.Rerun("j_int")
 	if err != nil {
 		t.Fatalf("Rerun(interrupted) err = %v; want nil", err)
@@ -157,8 +157,8 @@ func TestRerunInterrupted(t *testing.T) {
 	if cp.Status == StatusInterrupted {
 		t.Fatalf("reran job status = %q; the job did not leave the terminal state", cp.Status)
 	}
-	if cp.Queued < antes {
-		t.Fatalf("Queued = %d, earlier than %d — the job was not re-queued", cp.Queued, antes)
+	if cp.Queued < before {
+		t.Fatalf("Queued = %d, earlier than %d — the job was not re-queued", cp.Queued, before)
 	}
 }
 

@@ -63,7 +63,7 @@ func idempotencyKey(user, header string) string {
 //     internal (nobody outside this function reads the file), and storing the
 //     entire output struct keeps marshal and unmarshal symmetric, without a
 //     second shape to keep up to date.
-func rememberResult[T any](idem *Idempotencia, key string, fn func() (*T, error)) (*T, error) {
+func rememberResult[T any](idem *Idempotency, key string, fn func() (*T, error)) (*T, error) {
 	if idem == nil || key == "" {
 		return fn()
 	}

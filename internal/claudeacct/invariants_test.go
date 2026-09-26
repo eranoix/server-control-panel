@@ -37,10 +37,10 @@ func TestMetricInvariantsDoNotMatchInComments(t *testing.T) {
 		if len(p) < 2 || strings.HasPrefix(line, "#") || !ours[p[0]] {
 			continue
 		}
-		arq, fallback := p[0], p[1]
-		src, err := os.ReadFile(filepath.Join("..", "..", arq))
+		file, fallback := p[0], p[1]
+		src, err := os.ReadFile(filepath.Join("..", "..", file))
 		if err != nil {
-			t.Errorf("invariant points at a missing file: %s", arq)
+			t.Errorf("invariant points at a missing file: %s", file)
 			continue
 		}
 		var total, inComment int
@@ -55,12 +55,12 @@ func TestMetricInvariantsDoNotMatchInComments(t *testing.T) {
 		}
 		checked++
 		if total == 0 {
-			t.Errorf("%s: invariant %q matches nowhere — an empty guard", arq, fallback)
+			t.Errorf("%s: invariant %q matches nowhere — an empty guard", file, fallback)
 		}
 		if inComment > 0 {
 			t.Errorf("%s: invariante %q aparece em %d comentário(s). Apagar o código deixaria o "+
 				"comentário satisfazendo o grep, e o deploy passaria. Ancore em algo que só "+
-				"exista como código, ou tire o literal do comentário.", arq, fallback, inComment)
+				"exista como código, ou tire o literal do comentário.", file, fallback, inComment)
 		}
 	}
 	// Anti-vacuity: if the invariants get renamed and this loop stops matching

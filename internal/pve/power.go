@@ -74,15 +74,15 @@ func (c *Client) SnapshotList(ctx context.Context, node string, vmid int, typ st
 // the query string: the hypervisor accepts POST parameters both in the body and
 // in the URL, and the query keeps do() as the single request builder (no route
 // in this package assembles a body of its own).
-func (c *Client) SnapshotCreate(ctx context.Context, node string, vmid int, typ, nome, description string) (string, error) {
+func (c *Client) SnapshotCreate(ctx context.Context, node string, vmid int, typ, name, description string) (string, error) {
 	base, err := guestPath(node, vmid, typ)
 	if err != nil {
 		return "", err
 	}
-	if err := ValidSnapshotName(nome); err != nil {
+	if err := ValidSnapshotName(name); err != nil {
 		return "", err
 	}
-	q := url.Values{"snapname": {nome}}
+	q := url.Values{"snapname": {name}}
 	if description != "" {
 		q.Set("description", description)
 	}
@@ -94,16 +94,16 @@ func (c *Client) SnapshotCreate(ctx context.Context, node string, vmid int, typ,
 }
 
 // SnapshotDelete deletes a snapshot and returns the UPID.
-func (c *Client) SnapshotDelete(ctx context.Context, node string, vmid int, typ, nome string) (string, error) {
+func (c *Client) SnapshotDelete(ctx context.Context, node string, vmid int, typ, name string) (string, error) {
 	base, err := guestPath(node, vmid, typ)
 	if err != nil {
 		return "", err
 	}
-	if err := ValidSnapshotName(nome); err != nil {
+	if err := ValidSnapshotName(name); err != nil {
 		return "", err
 	}
 	var upid string
-	if err := c.do(ctx, http.MethodDelete, base+"/snapshot/"+url.PathEscape(nome), &upid); err != nil {
+	if err := c.do(ctx, http.MethodDelete, base+"/snapshot/"+url.PathEscape(name), &upid); err != nil {
 		return "", err
 	}
 	return upid, nil
@@ -130,7 +130,7 @@ func (c *Client) SnapshotDelete(ctx context.Context, node string, vmid int, typ,
 // to take back what was lost from. That is why the handler demands typed
 // confirmation and records an audit trail, and why success is only proven by
 // WaitTask — the hypervisor's POST returns 200 as soon as THE TASK IS CREATED.
-func (c *Client) SnapshotRollback(ctx context.Context, node string, vmid int, typ, nome string) (string, error) {
+func (c *Client) SnapshotRollback(ctx context.Context, node string, vmid int, typ, name string) (string, error) {
 	base, err := guestPath(node, vmid, typ)
 	if err != nil {
 		return "", err
@@ -138,11 +138,11 @@ func (c *Client) SnapshotRollback(ctx context.Context, node string, vmid int, ty
 	// The name is refused BEFORE dialling out. The same reason applies to create
 	// and delete; here it counts for more: a name that escapes its own resource
 	// chooses which state the guest is going to take on.
-	if err := ValidSnapshotName(nome); err != nil {
+	if err := ValidSnapshotName(name); err != nil {
 		return "", err
 	}
 	var upid string
-	if err := c.do(ctx, http.MethodPost, base+"/snapshot/"+url.PathEscape(nome)+"/rollback", &upid); err != nil {
+	if err := c.do(ctx, http.MethodPost, base+"/snapshot/"+url.PathEscape(name)+"/rollback", &upid); err != nil {
 		return "", err
 	}
 	return upid, nil
@@ -158,15 +158,15 @@ func (c *Client) SnapshotRollback(ctx context.Context, node string, vmid int, ty
 // the hypervisor just to find out the screen sent garbage — and a second copy
 // of the rule in internal/api would be two truths about what a valid name is,
 // which is how validation rules diverge in silence.
-func ValidSnapshotName(nome string) error {
-	if nome == "" || len(nome) > 64 {
-		return fmt.Errorf("pve: invalid snapshot name (%q)", nome)
+func ValidSnapshotName(name string) error {
+	if name == "" || len(name) > 64 {
+		return fmt.Errorf("pve: invalid snapshot name (%q)", name)
 	}
-	for i, r := range nome {
+	for i, r := range name {
 		ok := r == '_' || r == '-' ||
 			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
 		if !ok || (i == 0 && r >= '0' && r <= '9') {
-			return fmt.Errorf("pve: invalid snapshot name (%q)", nome)
+			return fmt.Errorf("pve: invalid snapshot name (%q)", name)
 		}
 	}
 	return nil

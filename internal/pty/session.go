@@ -198,5 +198,5 @@ func SessionSockets() map[string]string {
 // to no session of the active backend. It walks up the process tree until it
 // finds the master (see SessionSockets).
 func SessionOf(pid int) string {
-	return claudever.AncestralPorArgv(pid, SessionSockets())
+	return claudever.AncestorByArgv(pid, SessionSockets())
 }

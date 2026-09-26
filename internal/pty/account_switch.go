@@ -48,7 +48,7 @@ func SessionClaudePID(session string) int {
 		if strings.TrimSpace(string(comm)) != "claude" {
 			continue
 		}
-		if claudever.AncestralPorArgv(pid, socks) == session {
+		if claudever.AncestorByArgv(pid, socks) == session {
 			return pid
 		}
 	}

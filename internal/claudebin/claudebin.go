@@ -113,8 +113,8 @@ func PathEnv() string {
 	if cur == "" {
 		return dir
 	}
-	for _, seg := range filepath.SplitList(cur) {
-		if seg == dir {
+	for _, secret := range filepath.SplitList(cur) {
+		if secret == dir {
 			return ""
 		}
 	}

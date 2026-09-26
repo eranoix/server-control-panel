@@ -41,9 +41,9 @@ import (
 // work" with no reason is the difference between the operator fixing it in a
 // minute and raising a ticket with themselves.
 func (r *Router) maintenanceClient(w http.ResponseWriter) (hypervisorOps, bool) {
-	valor, state := r.vaultToken(pveSecretPanel)
+	value, state := r.vaultToken(pveSecretPanel)
 	switch state {
-	case vaultInalcancavel:
+	case vaultUnreachable:
 		writeErr(w, 503, "vault unreachable — the panel credential could not be read")
 		return nil, false
 	case vaultMissing:
@@ -51,7 +51,7 @@ func (r *Router) maintenanceClient(w http.ResponseWriter) (hypervisorOps, bool) 
 			"), which is not in the vault — the node token will not do because it has neither VM.Allocate nor Datastore.AllocateSpace")
 		return nil, false
 	}
-	cli, err := r.dial(valor)
+	cli, err := r.dial(value)
 	if err != nil {
 		writeErr(w, 503, "hypervisor not configured: "+err.Error())
 		return nil, false
@@ -103,7 +103,7 @@ func (r *Router) nodeClone(w http.ResponseWriter, req *http.Request, st *invento
 	ctx := req.Context()
 
 	if req.Method == http.MethodGet {
-		prox, err := cli.NextID(ctx)
+		nextID, err := cli.NextID(ctx)
 		if err != nil {
 			writeErr(w, pveErrorCode(err), "could not ask for the next free id: "+err.Error())
 			return
@@ -138,7 +138,7 @@ func (r *Router) nodeClone(w http.ResponseWriter, req *http.Request, st *invento
 			"origem":           id,
 			"origem_nome":      no.Name,
 			"tipo":             kind,
-			"next_id":          prox,
+			"next_id":          nextID,
 			"sugestao":         suggestName(no.Name),
 			// The warning travels with the data because it depends on the guest's
 			// STATE, and the screen must not recompute a consistency rule on its own.
@@ -149,7 +149,7 @@ func (r *Router) nodeClone(w http.ResponseWriter, req *http.Request, st *invento
 
 	var body struct {
 		NewID    int    `json:"novo_id"`
-		Nome     string `json:"nome"`
+		Name     string `json:"nome"`
 		Snapshot string `json:"snapshot"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -165,7 +165,7 @@ func (r *Router) nodeClone(w http.ResponseWriter, req *http.Request, st *invento
 	// reach the operator (tab closed, network dropping). The record of what was
 	// ASKED FOR must not depend on what was ANSWERED.
 	r.auditEvent(req, auth.UserFrom(req), "pve.clone",
-		fmt.Sprintf("origem=%s destino=%d nome=%s snap=%s status=pedido", id, body.NewID, body.Nome, body.Snapshot))
+		fmt.Sprintf("origem=%s destino=%d nome=%s snap=%s status=pedido", id, body.NewID, body.Name, body.Snapshot))
 
 	// Refuse HERE, with the message that resolves it, instead of letting the
 	// hypervisor return its own. The difference is that this one says what to DO.
@@ -174,7 +174,7 @@ func (r *Router) nodeClone(w http.ResponseWriter, req *http.Request, st *invento
 			"Take a snapshot in this same tab and pick it, or shut the guest down first.")
 		return
 	}
-	upid, err := cli.Clone(ctx, node, no.VMID, kind, body.NewID, strings.TrimSpace(body.Nome), strings.TrimSpace(body.Snapshot))
+	upid, err := cli.Clone(ctx, node, no.VMID, kind, body.NewID, strings.TrimSpace(body.Name), strings.TrimSpace(body.Snapshot))
 	if err != nil {
 		r.auditEvent(req, auth.UserFrom(req), "pve.clone",
 			fmt.Sprintf("origem=%s destino=%d status=recusado erro=%s", id, body.NewID, err.Error()))
@@ -319,13 +319,13 @@ func (r *Router) nodeNote(w http.ResponseWriter, req *http.Request, st *inventor
 			return
 		}
 	} else {
-		valor, state := r.vaultToken(r.hypervisorReadSecret())
+		value, state := r.vaultToken(r.hypervisorReadSecret())
 		if state != vaultOK {
 			writeErr(w, 503, "hypervisor read credential: "+state)
 			return
 		}
 		var err error
-		cli, err = r.dial(valor)
+		cli, err = r.dial(value)
 		if err != nil {
 			writeErr(w, 503, "hypervisor not configured: "+err.Error())
 			return

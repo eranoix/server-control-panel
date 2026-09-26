@@ -19,7 +19,7 @@ import (
 // dark screen with the content one scroll above.
 func TestDtachChatterDoesNotLeakAtBlockBoundary(t *testing.T) {
 	cases := []struct {
-		nome   string
+		name   string
 		blocks []string
 	}{
 		{"despedida num bloco só", []string{"\x1b[999H\r\n[detached]\r\n\x1b[?25h"}},
@@ -37,7 +37,7 @@ func TestDtachChatterDoesNotLeakAtBlockBoundary(t *testing.T) {
 		{"limpeza de attach byte a byte", []string{"\x1b", "[", "H", "\x1b", "[", "J", "conteúdo real\r\n"}},
 	}
 	for _, tc := range cases {
-		t.Run(tc.nome, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			w, _, _, release := acquireSessionLog(dir, "u", "s")
 			for _, b := range tc.blocks {
@@ -48,13 +48,13 @@ func TestDtachChatterDoesNotLeakAtBlockBoundary(t *testing.T) {
 			release()
 			d, _ := os.ReadFile(sessionLogPath(dir, "u", "s"))
 			got := string(d)
-			for _, junk := range []struct{ nome, seq string }{
+			for _, junk := range []struct{ name, seq string }{
 				{"[detached]", "[detached]"},
 				{"ESC[999H (rola a tela inteira)", "\x1b[999H"},
 				{"ESC[H ESC[J (apaga a tela)", "\x1b[H\x1b[J"},
 			} {
 				if strings.Contains(got, junk.seq) {
-					t.Errorf("leaked %s into the log", junk.nome)
+					t.Errorf("leaked %s into the log", junk.name)
 				}
 			}
 		})

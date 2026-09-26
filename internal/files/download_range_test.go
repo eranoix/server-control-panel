@@ -122,8 +122,8 @@ func TestDownload_ErrorsPreserved(t *testing.T) {
 		"diretorio":   {dir, http.StatusBadRequest},
 		"inexistente": {filepath.Join(dir, "nao-existe.bin"), http.StatusNotFound},
 	}
-	for nome, c := range cases {
-		t.Run(nome, func(t *testing.T) {
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
 			if rec := requestDownload(t, c.path, nil); rec.Code != c.status {
 				t.Fatalf("status = %d, want %d; body=%s", rec.Code, c.status, rec.Body.String())
 			}

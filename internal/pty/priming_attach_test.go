@@ -44,39 +44,39 @@ import "testing"
 // of `wobble`.
 func TestHistoryAndRepaintAnswerDifferentQuestions(t *testing.T) {
 	cases := []struct {
-		nome                   string
+		name                   string
 		attach, replay         string
 		wantHistory, wantPaint bool
 	}{
 		{
 			// The app: it primes the past on its own, but it needs the program to
 			// draw the now.
-			nome:   "app, fresh attach",
+			name:   "app, fresh attach",
 			attach: "", replay: "0",
 			wantHistory: false, wantPaint: true,
 		},
 		{
 			// The web panel: it rebuilds nothing on its own. Both.
-			nome:   "web panel, fresh attach",
+			name:   "web panel, fresh attach",
 			attach: "", replay: "",
 			wantHistory: true, wantPaint: true,
 		},
 		{
 			// Reconnect: the in-memory grid is intact on both sides.
 			// Repainting would duplicate; replaying history would duplicate.
-			nome:   "reconnect",
+			name:   "reconnect",
 			attach: "1", replay: "",
 			wantHistory: false, wantPaint: false,
 		},
 		{
-			nome:   "app reconnect",
+			name:   "app reconnect",
 			attach: "1", replay: "0",
 			wantHistory: false, wantPaint: false,
 		},
 	}
 
 	for _, c := range cases {
-		t.Run(c.nome, func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			history, repaint := serverPriming(c.attach, c.replay)
 			if history != c.wantHistory {
 				t.Errorf("sendHistory = %v, want %v", history, c.wantHistory)

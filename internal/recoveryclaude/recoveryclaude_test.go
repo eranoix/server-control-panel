@@ -14,7 +14,7 @@ import (
 // test exercises the real path instead of asserting about the text of the code.
 func TestMaterializeDeliversExecutableManager(t *testing.T) {
 	dir := t.TempDir()
-	script, err := Materializa(dir)
+	script, err := Materialize(dir)
 	if err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
@@ -30,9 +30,9 @@ func TestMaterializeDeliversExecutableManager(t *testing.T) {
 	// Docker's build context is the materialized directory, so the Dockerfile
 	// and the scripts it copies have to come out TOGETHER. With one missing, the
 	// `build` would break only when it mattered.
-	for _, nome := range []string{"Dockerfile", "entrypoint.sh", "bemvindo.sh", "manage.sh"} {
-		if _, err := os.Stat(filepath.Join(dir, "recovery-claude", nome)); err != nil {
-			t.Errorf("%s was not materialized: %v", nome, err)
+	for _, name := range []string{"Dockerfile", "entrypoint.sh", "bemvindo.sh", "manage.sh"} {
+		if _, err := os.Stat(filepath.Join(dir, "recovery-claude", name)); err != nil {
+			t.Errorf("%s was not materialized: %v", name, err)
 		}
 	}
 }
@@ -43,7 +43,7 @@ func TestMaterializeDeliversExecutableManager(t *testing.T) {
 // from what was actually embedded.
 func TestEmbeddedPayloadDoesNotPointToRouter(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Materializa(dir); err != nil {
+	if _, err := Materialize(dir); err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
 	// Only DEFINING/INJECTING the variable breaks the independence. Mentioning
@@ -57,10 +57,10 @@ func TestEmbeddedPayloadDoesNotPointToRouter(t *testing.T) {
 		`"ANTHROPIC_BASE_URL"`,      // generated settings.json
 		`ANTHROPIC_BASE_URL=http`,   // direct assignment
 	}
-	for _, nome := range []string{"Dockerfile", "entrypoint.sh", "manage.sh"} {
-		b, err := os.ReadFile(filepath.Join(dir, "recovery-claude", nome))
+	for _, name := range []string{"Dockerfile", "entrypoint.sh", "manage.sh"} {
+		b, err := os.ReadFile(filepath.Join(dir, "recovery-claude", name))
 		if err != nil {
-			t.Fatalf("reading %s: %v", nome, err)
+			t.Fatalf("reading %s: %v", name, err)
 		}
 		for _, line := range strings.Split(string(b), "\n") {
 			cut := strings.TrimSpace(line)
@@ -69,7 +69,7 @@ func TestEmbeddedPayloadDoesNotPointToRouter(t *testing.T) {
 			}
 			for _, fallback := range injected {
 				if strings.Contains(cut, fallback) {
-					t.Errorf("embedded %s points Claude at the router (%s): %q", nome, fallback, cut)
+					t.Errorf("embedded %s points Claude at the router (%s): %q", name, fallback, cut)
 				}
 			}
 		}
@@ -80,14 +80,14 @@ func TestEmbeddedPayloadDoesNotPointToRouter(t *testing.T) {
 // an old deploy's version from surviving on disk after a fix.
 func TestMaterializeOverwritesOldVersion(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Materializa(dir); err != nil {
+	if _, err := Materialize(dir); err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
 	target := filepath.Join(dir, "recovery-claude", "manage.sh")
 	if err := os.WriteFile(target, []byte("#!/bin/sh\necho versao velha\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Materializa(dir); err != nil {
+	if _, err := Materialize(dir); err != nil {
 		t.Fatalf("materialize again: %v", err)
 	}
 	b, _ := os.ReadFile(target)

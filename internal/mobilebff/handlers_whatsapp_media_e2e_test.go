@@ -180,9 +180,9 @@ func TestE2E_WhatsAppMedia_RangeRequest_Returns206WithContentRange(t *testing.T)
 	}
 }
 
-// TestE2E_WhatsAppMedia_RangeInsatisfazivel_Devolve416 proves the 416 end to
+// TestE2E_WhatsAppMedia_UnsatisfiableRange_Returns416 proves the 416 end to
 // end when the requested range does not exist in the file.
-func TestE2E_WhatsAppMedia_RangeInsatisfazivel_Devolve416(t *testing.T) {
+func TestE2E_WhatsAppMedia_UnsatisfiableRange_Returns416(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/arquivo.bin"
 	content := []byte("0123456789") // 10 bytes

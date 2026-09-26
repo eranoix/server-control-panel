@@ -33,13 +33,13 @@ import (
 // code appears to say.
 func captureURL(t *testing.T, body string) (*Client, *string) {
 	t.Helper()
-	var vista string
+	var seenURL string
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		vista = r.URL.String()
+		seenURL = r.URL.String()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(body))
 	})
-	return c, &vista
+	return c, &seenURL
 }
 
 // ------------------------------------------------------------- NodeStatus ---
@@ -61,14 +61,14 @@ func TestNodeStatusReadsRealFields(t *testing.T) {
 	  "cpuinfo": {"cpus": 12, "model": "irrelevante para o recorte"},
 	  "wait": 0.001, "idle": 0
 	}}`
-	c, vista := captureURL(t, body)
+	c, seenURL := captureURL(t, body)
 
 	st, err := c.NodeStatus(context.Background(), "pve")
 	if err != nil {
 		t.Fatalf("NodeStatus: %v", err)
 	}
-	if *vista != "/api2/json/nodes/pve/status" {
-		t.Errorf("URL = %q, want /api2/json/nodes/pve/status", *vista)
+	if *seenURL != "/api2/json/nodes/pve/status" {
+		t.Errorf("URL = %q, want /api2/json/nodes/pve/status", *seenURL)
 	}
 	if st.Uptime != 123456 {
 		t.Errorf("Uptime = %d, want 123456", st.Uptime)
@@ -104,15 +104,15 @@ func TestNodeStatusReadsRealFields(t *testing.T) {
 // error at all — the perfect false green, and the reason this test asserts the
 // URL and not the result.
 func TestTaskListUsesNodeRouteNeverCluster(t *testing.T) {
-	c, vista := captureURL(t, `{"data":[]}`)
+	c, seenURL := captureURL(t, `{"data":[]}`)
 	if _, err := c.TaskList(context.Background(), "pve", TaskListOptions{}); err != nil {
 		t.Fatalf("TaskList: %v", err)
 	}
-	if strings.Contains(*vista, "/cluster/") {
-		t.Fatalf("URL = %q — /cluster/tasks returns [] with a 200 on this host (A-1)", *vista)
+	if strings.Contains(*seenURL, "/cluster/") {
+		t.Fatalf("URL = %q — /cluster/tasks returns [] with a 200 on this host (A-1)", *seenURL)
 	}
-	if !strings.HasPrefix(*vista, "/api2/json/nodes/pve/tasks") {
-		t.Fatalf("URL = %q, want /api2/json/nodes/pve/tasks…", *vista)
+	if !strings.HasPrefix(*seenURL, "/api2/json/nodes/pve/tasks") {
+		t.Fatalf("URL = %q, want /api2/json/nodes/pve/tasks…", *seenURL)
 	}
 }
 
@@ -121,7 +121,7 @@ func TestTaskListUsesNodeRouteNeverCluster(t *testing.T) {
 // request for 1 MiB of JSON disguised as a screen parameter.
 func TestTaskListClampsLimitServerSide(t *testing.T) {
 	cases := []struct {
-		nome    string
+		name    string
 		opt     TaskListOptions
 		want    []string
 		mustNot []string
@@ -135,19 +135,19 @@ func TestTaskListClampsLimitServerSide(t *testing.T) {
 			[]string{"typefilter=vzdump", "vmid=204"}, nil},
 	}
 	for _, tc := range cases {
-		t.Run(tc.nome, func(t *testing.T) {
-			c, vista := captureURL(t, `{"data":[]}`)
+		t.Run(tc.name, func(t *testing.T) {
+			c, seenURL := captureURL(t, `{"data":[]}`)
 			if _, err := c.TaskList(context.Background(), "pve", tc.opt); err != nil {
 				t.Fatalf("TaskList: %v", err)
 			}
 			for _, q := range tc.want {
-				if !strings.Contains(*vista, q) {
-					t.Errorf("URL = %q, want it to contain %q", *vista, q)
+				if !strings.Contains(*seenURL, q) {
+					t.Errorf("URL = %q, want it to contain %q", *seenURL, q)
 				}
 			}
 			for _, q := range tc.mustNot {
-				if strings.Contains(*vista, q) {
-					t.Errorf("URL = %q, it canNOT contain %q", *vista, q)
+				if strings.Contains(*seenURL, q) {
+					t.Errorf("URL = %q, it canNOT contain %q", *seenURL, q)
 				}
 			}
 		})
@@ -200,17 +200,17 @@ func TestTaskLogIgnoresCallerLimit(t *testing.T) {
 		t.Fatalf("TaskLog has %d parameters (counting the receiver), want 4 — a caller-set limit is forbidden (A-3)", got)
 	}
 
-	c, vista := captureURL(t, `{"data":[{"n":2,"t":"segunda"},{"n":1,"t":"primeira"},{"n":3,"t":"terceira"}]}`)
+	c, seenURL := captureURL(t, `{"data":[{"n":2,"t":"segunda"},{"n":1,"t":"primeira"},{"n":3,"t":"terceira"}]}`)
 	upid := "UPID:pve:0000AAAA:00BBBB:68A00000:vzsnapshot:204:lab@pve!node-lab:"
 	lines, err := c.TaskLog(context.Background(), "pve", upid)
 	if err != nil {
 		t.Fatalf("TaskLog: %v", err)
 	}
-	if !strings.Contains(*vista, "limit=200") {
-		t.Errorf("URL = %q, want limit=200 pinned on the server", *vista)
+	if !strings.Contains(*seenURL, "limit=200") {
+		t.Errorf("URL = %q, want limit=200 pinned on the server", *seenURL)
 	}
-	if !strings.Contains(*vista, "/tasks/") || !strings.Contains(*vista, "/log") {
-		t.Errorf("URL = %q, want /nodes/pve/tasks/{upid}/log", *vista)
+	if !strings.Contains(*seenURL, "/tasks/") || !strings.Contains(*seenURL, "/log") {
+		t.Errorf("URL = %q, want /nodes/pve/tasks/{upid}/log", *seenURL)
 	}
 	if fmt.Sprint(lines) != "[primeira segunda terceira]" {
 		t.Errorf("lines = %v, want them in n order", lines)
@@ -230,13 +230,13 @@ func TestDisksListNormalizesWearout(t *testing.T) {
 	  {"devpath":"/dev/sda","model":"Generic USB","serial":"X","type":"hdd",
 	   "health":"UNKNOWN","size":500107862016,"wearout":"N/A"}
 	]}`
-	c, vista := captureURL(t, body)
+	c, seenURL := captureURL(t, body)
 	ds, err := c.DisksList(context.Background(), "pve")
 	if err != nil {
 		t.Fatalf("DisksList: %v", err)
 	}
-	if *vista != "/api2/json/nodes/pve/disks/list" {
-		t.Errorf("URL = %q", *vista)
+	if *seenURL != "/api2/json/nodes/pve/disks/list" {
+		t.Errorf("URL = %q", *seenURL)
 	}
 	if len(ds) != 2 {
 		t.Fatalf("len = %d, want 2 (one numeric wearout canNOT take the other down)", len(ds))
@@ -263,13 +263,13 @@ func TestDisksListNormalizesWearout(t *testing.T) {
 // /storage", as the first pass wrote — see Permissions in node.go.
 func TestPermissionsMap(t *testing.T) {
 	const body = `{"data":{"/vms/204":{"VM.Audit":1,"VM.PowerMgmt":1,"VM.Snapshot":1},"/nodes":{"Sys.Audit":1}}}`
-	c, vista := captureURL(t, body)
+	c, seenURL := captureURL(t, body)
 	m, err := c.Permissions(context.Background())
 	if err != nil {
 		t.Fatalf("Permissions: %v", err)
 	}
-	if *vista != "/api2/json/access/permissions" {
-		t.Errorf("URL = %q", *vista)
+	if *seenURL != "/api2/json/access/permissions" {
+		t.Errorf("URL = %q", *seenURL)
 	}
 	if m["/vms/204"]["VM.Snapshot"] != 1 {
 		t.Errorf("permissions = %v", m)

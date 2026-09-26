@@ -188,11 +188,11 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 	// come from different goroutines, and gorilla/websocket does not accept two
 	// writers.
 	var writeMu sync.Mutex
-	send := func(frameType int, dados []byte) error {
+	send := func(frameType int, data []byte) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
 		_ = clientConn.SetWriteDeadline(time.Now().Add(consoleWriteWait))
-		return clientConn.WriteMessage(frameType, dados)
+		return clientConn.WriteMessage(frameType, data)
 	}
 	sendControl := func(v any) {
 		b, err := json.Marshal(v)
@@ -237,9 +237,9 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 
 	sendControl(map[string]any{"type": "ready", "node": id, "vmid": no.VMID, "guest": no.Name})
 
-	pronto := make(chan struct{})
+	ready := make(chan struct{})
 	var closeOnce sync.Once
-	shutdown := func() { closeOnce.Do(func() { close(pronto) }) }
+	shutdown := func() { closeOnce.Do(func() { close(ready) }) }
 
 	var wg sync.WaitGroup
 
@@ -249,14 +249,14 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 		defer wg.Done()
 		defer shutdown()
 		for {
-			_, dados, err := upConn.ReadMessage()
+			_, data, err := upConn.ReadMessage()
 			if err != nil {
 				return
 			}
 			// BINARY, always. Going through a string here would break ANSI
 			// sequences and UTF-8 split across two frames — and the terminal would
 			// draw junk.
-			if err := send(websocket.BinaryMessage, dados); err != nil {
+			if err := send(websocket.BinaryMessage, data); err != nil {
 				return
 			}
 		}
@@ -268,12 +268,12 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 		defer wg.Done()
 		defer shutdown()
 		for {
-			_, cru, err := clientConn.ReadMessage()
+			_, rawValue, err := clientConn.ReadMessage()
 			if err != nil {
 				return
 			}
 			var m browserMessage
-			if err := json.Unmarshal(cru, &m); err != nil {
+			if err := json.Unmarshal(rawValue, &m); err != nil {
 				continue
 			}
 			var frame []byte
@@ -312,7 +312,7 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 		defer t.Stop()
 		for {
 			select {
-			case <-pronto:
+			case <-ready:
 				return
 			case <-t.C:
 				if err := send(websocket.PingMessage, nil); err != nil {
@@ -328,7 +328,7 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 		}
 	}()
 
-	<-pronto
+	<-ready
 	// Closing both sides unblocks the two blocked reads; without this the handler
 	// would hang on a goroutine waiting for a frame that never comes.
 	_ = upConn.Close()

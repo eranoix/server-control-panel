@@ -35,11 +35,11 @@ func repoRoot(t *testing.T) string {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			return dir
 		}
-		pai := filepath.Dir(dir)
-		if pai == dir {
+		parent := filepath.Dir(dir)
+		if parent == dir {
 			break
 		}
-		dir = pai
+		dir = parent
 	}
 	t.Fatal("go.mod not found")
 	return ""
@@ -102,7 +102,7 @@ func TestClosedCatalogDeclaredConstantsMatchAllOps(t *testing.T) {
 			if currentType != "OpName" {
 				continue
 			}
-			for i, nome := range vs.Names {
+			for i, name := range vs.Names {
 				if i >= len(vs.Values) {
 					continue
 				}
@@ -110,14 +110,14 @@ func TestClosedCatalogDeclaredConstantsMatchAllOps(t *testing.T) {
 				if !ok || lit.Kind != token.STRING {
 					continue
 				}
-				valor, err := strconv.Unquote(lit.Value)
+				value, err := strconv.Unquote(lit.Value)
 				if err != nil {
 					continue
 				}
 				declared++
-				if !inList[valor] {
+				if !inList[value] {
 					t.Errorf("ORPHAN constant: %s = %q is declared in opnames.go but is NOT in AllOps — invisible to the other two tests, and servable the moment someone puts it in the registry (line %d)",
-						nome.Name, valor, fset.Position(nome.Pos()).Line)
+						name.Name, value, fset.Position(name.Pos()).Line)
 				}
 			}
 		}

@@ -29,19 +29,19 @@ import (
 // spyVault is fakeVault with a memory: it keeps the ORDER and the SET of the
 // keys read, which is what makes the token choice verifiable by NAME.
 type spyVault struct {
-	dados        map[string]string
-	reads        []string
-	inalcancavel bool
+	data        map[string]string
+	reads       []string
+	unreachable bool
 }
 
 func (c *spyVault) Get(k string) (string, bool) {
 	c.reads = append(c.reads, k)
-	v, ok := c.dados[k]
+	v, ok := c.data[k]
 	return v, ok
 }
-func (c *spyVault) Delete(k string) error { delete(c.dados, k); return nil }
+func (c *spyVault) Delete(k string) error { delete(c.data, k); return nil }
 
-func (c *spyVault) leu(key string) bool {
+func (c *spyVault) wasRead(key string) bool {
 	for _, k := range c.reads {
 		if k == key {
 			return true
@@ -87,19 +87,19 @@ func newProxmoxRouter(t *testing.T, vault *spyVault, fake *fakePVE) (*Router, *i
 		t.Fatal(err)
 	}
 	r.nodeVaultFn = func() (nodeVault, error) {
-		if vault == nil || vault.inalcancavel {
+		if vault == nil || vault.unreachable {
 			return nil, fmt.Errorf("cofre fora do ar")
 		}
 		return vault, nil
 	}
 	if fake != nil {
-		r.pveDial = func(tokenValor string) (hypervisorOps, error) { return fake, nil }
+		r.pveDial = func(tokenValue string) (hypervisorOps, error) { return fake, nil }
 	}
 	return r, st
 }
 
 func defaultVault() *spyVault {
-	return &spyVault{dados: map[string]string{
+	return &spyVault{data: map[string]string{
 		"pve_token_audit":     "lab@pve!audit=s3cr3t",
 		"pve_token_admin":     "lab@pve!admin=s3cr3t",
 		"pve_token_node_apps": "lab@pve!node-apps=s3cr3t",
@@ -125,7 +125,7 @@ func callPVX(t *testing.T, r *Router, method, path, body string) (*httptest.Resp
 // precisely the hypervisor that has gone mute.
 func TestHealthComesFromStoreWithoutCallingHypervisor(t *testing.T) {
 	r, _ := newProxmoxRouter(t, defaultVault(), nil)
-	r.pveDial = func(tokenValor string) (hypervisorOps, error) {
+	r.pveDial = func(tokenValue string) (hypervisorOps, error) {
 		t.Fatal("GET /api/proxmox dialed the hypervisor — health must come from the STORE")
 		return nil, nil
 	}
@@ -173,7 +173,7 @@ func TestTasksUseAuditToken(t *testing.T) {
 			fake := &fakePVE{
 				tasks:    []pve.Task{{UPID: "UPID:x", Type: "push_file", Status: "failed"}},
 				logLines: []string{"linha"},
-				discos:   []pve.Disk{{Model: "Lexar NQ790 1TB", Health: "PASSED"}},
+				disks:    []pve.Disk{{Model: "Lexar NQ790 1TB", Health: "PASSED"}},
 				perms:    map[string]map[string]int{"/vms/204": {"VM.Audit": 1}},
 			}
 			r, _ := newProxmoxRouter(t, vault, fake)
@@ -182,7 +182,7 @@ func TestTasksUseAuditToken(t *testing.T) {
 			if w.Code != 200 {
 				t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 			}
-			if !vault.leu(pveSecretAudit) {
+			if !vault.wasRead(pveSecretAudit) {
 				t.Errorf("keys read = %v, want it to contain %q", vault.reads, pveSecretAudit)
 			}
 			if k := vault.readAnyWithPrefix(pveSecretNodePrefix); k != "" {
@@ -212,10 +212,10 @@ func TestSnapshotUsesNodeToken(t *testing.T) {
 			if w.Code != 200 {
 				t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 			}
-			if !vault.leu("pve_token_node_apps") {
+			if !vault.wasRead("pve_token_node_apps") {
 				t.Errorf("keys read = %v, want to contain pve_token_node_apps (whoever acts is the node)", vault.reads)
 			}
-			if vault.leu(pveSecretAudit) {
+			if vault.wasRead(pveSecretAudit) {
 				t.Errorf("keys read = %v — snapshot does NOT use the audit token", vault.reads)
 			}
 		})
@@ -267,14 +267,14 @@ func TestSnapshotRespondsOnlyAfterWaitTask(t *testing.T) {
 // what builds the resource path on the hypervisor. The refusal happens before any
 // call — and the test proves that by the absence of a mark on the double, not by the status.
 func TestInvalidNameNeverReachesHypervisor(t *testing.T) {
-	for _, nome := range []string{"1abc", "com espaço", "com/barra", ""} {
-		t.Run(fmt.Sprintf("%q", nome), func(t *testing.T) {
+	for _, name := range []string{"1abc", "com espaço", "com/barra", ""} {
+		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
 			var seen []string
 			fake := &fakePVE{upid: "UPID:abc", seen: &seen}
 			r, _ := newProxmoxRouter(t, defaultVault(), fake)
 
 			w, _ := callPVX(t, r, http.MethodPost,
-				"/api/proxmox/snapshots?node=lxc/204&name="+url.QueryEscape(nome), "")
+				"/api/proxmox/snapshots?node=lxc/204&name="+url.QueryEscape(name), "")
 			if w.Code != 400 {
 				t.Errorf("status = %d, want 400 (body=%s)", w.Code, w.Body)
 			}
@@ -291,7 +291,7 @@ func TestInvalidNameNeverReachesHypervisor(t *testing.T) {
 func TestUnreachableVaultIsNotEmptyList(t *testing.T) {
 	t.Run("inalcancavel = 503", func(t *testing.T) {
 		vault := defaultVault()
-		vault.inalcancavel = true
+		vault.unreachable = true
 		r, _ := newProxmoxRouter(t, vault, &fakePVE{})
 		w, _ := callPVX(t, r, http.MethodGet, "/api/proxmox/tasks", "")
 		if w.Code != 503 {
@@ -302,7 +302,7 @@ func TestUnreachableVaultIsNotEmptyList(t *testing.T) {
 		}
 	})
 	t.Run("ausente = 409", func(t *testing.T) {
-		vault := &spyVault{dados: map[string]string{}}
+		vault := &spyVault{data: map[string]string{}}
 		r, _ := newProxmoxRouter(t, vault, &fakePVE{})
 		w, _ := callPVX(t, r, http.MethodGet, "/api/proxmox/tasks", "")
 		if w.Code != 409 {
@@ -473,10 +473,10 @@ func TestRollbackUsesNodeToken(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 	}
-	if !vault.leu("pve_token_node_apps") {
+	if !vault.wasRead("pve_token_node_apps") {
 		t.Errorf("keys read = %v, want to contain pve_token_node_apps", vault.reads)
 	}
-	if vault.leu(pveSecretAudit) {
+	if vault.wasRead(pveSecretAudit) {
 		t.Errorf("keys read = %v — rollback does NOT use the audit token (403 measured)", vault.reads)
 	}
 }
@@ -502,17 +502,17 @@ func TestRollbackOnlyAcceptsPOST(t *testing.T) {
 // chooses WHICH state the guest will take on. Refused before dialling, proved by
 // the absence of a mark on the double.
 func TestRollbackInvalidNameNeverReachesHypervisor(t *testing.T) {
-	for _, nome := range []string{"", "1abc", "com espaço", "com/barra", "../lxc/207"} {
+	for _, name := range []string{"", "1abc", "com espaço", "com/barra", "../lxc/207"} {
 		var seen []string
 		fake := &fakePVE{upid: "UPID:roll", seen: &seen}
 		r, _ := newProxmoxRouter(t, defaultVault(), fake)
 		w, _ := callPVX(t, r, http.MethodPost,
-			"/api/proxmox/snapshots/rollback?node=lxc/204&name="+url.QueryEscape(nome), "")
+			"/api/proxmox/snapshots/rollback?node=lxc/204&name="+url.QueryEscape(name), "")
 		if w.Code != 400 {
-			t.Errorf("%q: status = %d, want 400 (body=%s)", nome, w.Code, w.Body)
+			t.Errorf("%q: status = %d, want 400 (body=%s)", name, w.Code, w.Body)
 		}
 		if len(seen) != 0 {
-			t.Errorf("%q: the hypervisor was called (%v) with a rejected name", nome, seen)
+			t.Errorf("%q: the hypervisor was called (%v) with a rejected name", name, seen)
 		}
 	}
 }

@@ -208,7 +208,7 @@ func (e enshrouded) RestoreBackup(s Server, file, stamp string) error {
 	// have just been created by the panel, already root:root. The server's root is
 	// the only point of the tree whose owner is reliably the game's. An inspectable
 	// root is a precondition — without it, an error naming the path, never an invented default.
-	return chownComoRef(save, s.Root, true)
+	return chownLikeRef(save, s.Root, true)
 }
 
 // ConnectionInfo exposes what a player needs in order to join (the password

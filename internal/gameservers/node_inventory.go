@@ -31,9 +31,9 @@ import (
 // would drag the Proxmox API client into the agent. The panel implements this
 // interface over its own Store; the agent never needs to.
 type NodeSource interface {
-	// NoPorID returns the destination of an inventory node. The second return is
+	// NodeByID returns the destination of an inventory node. The second return is
 	// false when the ID does not exist — distinct from "exists and is incomplete".
-	NoPorID(id string) (NodeTarget, bool)
+	NodeByID(id string) (NodeTarget, bool)
 }
 
 // ResolveTarget says WHERE an operation on this server must go.
@@ -52,7 +52,7 @@ func ResolveTarget(s Server, source NodeSource) (NodeTarget, error) {
 	if source == nil {
 		return NodeTarget{}, fmt.Errorf("server %q: node inventory unavailable", s.ID)
 	}
-	d, ok := source.NoPorID(s.No)
+	d, ok := source.NodeByID(s.No)
 	if !ok {
 		return NodeTarget{}, fmt.Errorf(
 			"server %q points to node %q, which does not exist in the inventory", s.ID, s.No)
@@ -166,11 +166,11 @@ func serializeRecords(records []map[string]json.RawMessage) ([]byte, error) {
 			if j > 0 {
 				buf = append(buf, ',')
 			}
-			nome, err := json.Marshal(k)
+			name, err := json.Marshal(k)
 			if err != nil {
 				return nil, err
 			}
-			buf = append(buf, nome...)
+			buf = append(buf, name...)
 			buf = append(buf, ':')
 			buf = append(buf, r[k]...)
 		}

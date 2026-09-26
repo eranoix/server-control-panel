@@ -29,24 +29,24 @@ func TestFreshness(t *testing.T) {
 		Status: Observe("running", t0.Add(-30*time.Second).Unix()),
 		Uptime: Observe(int64(3600), t0.Add(-30*time.Second).Unix()),
 	}
-	vistas := c.View(Inventory{Nodes: []Node{stale, fresh}}, ttl)
-	if len(vistas) != 2 {
-		t.Fatalf("View returned %d entries, want 2", len(vistas))
+	seen := c.View(Inventory{Nodes: []Node{stale, fresh}}, ttl)
+	if len(seen) != 2 {
+		t.Fatalf("View returned %d entries, want 2", len(seen))
 	}
 
-	if vistas[0].AgeSeconds != 300 {
-		t.Fatalf("age of the old node = %d s, want 300", vistas[0].AgeSeconds)
+	if seen[0].AgeSeconds != 300 {
+		t.Fatalf("age of the old node = %d s, want 300", seen[0].AgeSeconds)
 	}
-	if !vistas[0].Stale {
+	if !seen[0].Stale {
 		t.Fatalf("a node seen 300 s ago with a 90 s TTL had to be expired")
 	}
 	// A negative pair is mandatory: without it the test would pass with `Stale =
 	// true` nailed down, and "everything stale" is just as much of a lie as
 	// "everything fresh".
-	if vistas[1].AgeSeconds != 30 {
-		t.Fatalf("age of the new node = %d s, want 30", vistas[1].AgeSeconds)
+	if seen[1].AgeSeconds != 30 {
+		t.Fatalf("age of the new node = %d s, want 30", seen[1].AgeSeconds)
 	}
-	if vistas[1].Stale {
+	if seen[1].Stale {
 		t.Fatal("a node seen 30 s ago with a 90 s TTL canNOT be expired")
 	}
 
@@ -90,7 +90,7 @@ func TestFreshness(t *testing.T) {
 // the `expire` stored locally, and it is what feeds the expiry warning.
 func TestCredentialStates(t *testing.T) {
 	cases := []struct {
-		nome string
+		name string
 		cred Credential
 		want string
 	}{
@@ -103,7 +103,7 @@ func TestCredentialStates(t *testing.T) {
 			Expire: t0.Add(-time.Hour).Unix()}, "revogada"},
 	}
 	for _, c := range cases {
-		t.Run(c.nome, func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			if got := credentialState(c.cred, t0); got != c.want {
 				t.Fatalf("state = %q, want %q", got, c.want)
 			}

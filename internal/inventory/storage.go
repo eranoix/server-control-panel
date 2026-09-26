@@ -60,14 +60,14 @@ type StoragePool struct {
 // ZPool is a ZFS pool of the hypervisor. Saudavel is derived ONCE, here, so that
 // no screen needs to know the list of ZFS states by heart.
 type ZPool struct {
-	Name     string  `json:"name"`
-	Health   string  `json:"health"` // literal do ZFS: ONLINE | DEGRADED | FAULTED | …
-	Saudavel bool    `json:"saudavel"`
-	Size     int64   `json:"size"`
-	Alloc    int64   `json:"alloc"`
-	Free     int64   `json:"free"`
-	FragPct  int     `json:"frag_pct"`
-	Dedup    float64 `json:"dedup"`
+	Name    string  `json:"name"`
+	Health  string  `json:"health"` // literal do ZFS: ONLINE | DEGRADED | FAULTED | …
+	Healthy bool    `json:"saudavel"`
+	Size    int64   `json:"size"`
+	Alloc   int64   `json:"alloc"`
+	Free    int64   `json:"free"`
+	FragPct int     `json:"frag_pct"`
+	Dedup   float64 `json:"dedup"`
 }
 
 // StorageView is the capacity block as the API delivers it: pools, privilege
@@ -153,14 +153,14 @@ func applyZPools(inv *Inventory, ps []pve.ZPool, now int64) {
 	out := make([]ZPool, 0, len(ps))
 	for _, p := range ps {
 		out = append(out, ZPool{
-			Name:     p.Name,
-			Health:   p.Health,
-			Saudavel: p.Saudavel(),
-			Size:     p.Size,
-			Alloc:    p.Alloc,
-			Free:     p.Free,
-			FragPct:  p.Frag,
-			Dedup:    p.Dedup,
+			Name:    p.Name,
+			Health:  p.Health,
+			Healthy: p.Healthy(),
+			Size:    p.Size,
+			Alloc:   p.Alloc,
+			Free:    p.Free,
+			FragPct: p.Frag,
+			Dedup:   p.Dedup,
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })

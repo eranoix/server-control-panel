@@ -17,7 +17,7 @@ import (
 // chain for no gain at all. The project's own rules list client_golang as an
 // option; this is the measured justification for not exercising it here.
 
-type opKey struct{ nome, result string }
+type opKey struct{ name, result string }
 
 // Metricas accumulates what the agent publishes.
 type Metrics struct {
@@ -34,12 +34,12 @@ func NewMetrics(no string) *Metrics {
 
 // Conta records one execution by operation name and outcome
 // (ok / erro / desconhecida / grande).
-func (m *Metrics) Count(nome, result string) {
+func (m *Metrics) Count(name, result string) {
 	if m == nil {
 		return
 	}
 	m.mu.Lock()
-	m.ops[opKey{nome, result}]++
+	m.ops[opKey{name, result}]++
 	m.mu.Unlock()
 }
 
@@ -72,13 +72,13 @@ func (m *Metrics) Render() string {
 	// Stable ordering: metric output whose order changes on every scrape is
 	// noise in a diff and gets in the way of any manual comparison.
 	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].nome != keys[j].nome {
-			return keys[i].nome < keys[j].nome
+		if keys[i].name != keys[j].name {
+			return keys[i].name < keys[j].name
 		}
 		return keys[i].result < keys[j].result
 	})
 	for _, k := range keys {
-		fmt.Fprintf(&b, "lab_agent_ops_total{no=%q,op=%q,resultado=%q} %d\n", m.No, k.nome, k.result, m.ops[k])
+		fmt.Fprintf(&b, "lab_agent_ops_total{no=%q,op=%q,resultado=%q} %d\n", m.No, k.name, k.result, m.ops[k])
 	}
 	m.mu.Unlock()
 

@@ -16,17 +16,17 @@ import (
 
 type testOutput struct {
 	Body struct {
-		Valor int `json:"valor"`
+		Value int `json:"valor"`
 	}
 }
 
 func TestRememberResult_RunsOncePerKey(t *testing.T) {
-	idem := NovaIdempotencia(t.TempDir())
+	idem := NewIdempotency(t.TempDir())
 	runs := 0
 	run := func() (*testOutput, error) {
 		runs++
 		out := &testOutput{}
-		out.Body.Valor = runs
+		out.Body.Value = runs
 		return out, nil
 	}
 
@@ -42,9 +42,9 @@ func TestRememberResult_RunsOncePerKey(t *testing.T) {
 	if runs != 1 {
 		t.Errorf("executed %d times, wanted 1 — the retry must not re-execute", runs)
 	}
-	if first.Body.Valor != second.Body.Valor {
+	if first.Body.Value != second.Body.Value {
 		t.Errorf("retry returned %d, the first returned %d — it has to be the SAME result",
-			second.Body.Valor, first.Body.Valor)
+			second.Body.Value, first.Body.Value)
 	}
 }
 
@@ -52,14 +52,14 @@ func TestRememberResult_ErrorIsNotRemembered(t *testing.T) {
 	// An action that failed has to be able to succeed on the retry: it was a
 	// failure that put it in the queue. Remembering the error would make the
 	// queue repeat the same defeat for 24 h.
-	idem := NovaIdempotencia(t.TempDir())
+	idem := NewIdempotency(t.TempDir())
 	fail := true
 	run := func() (*testOutput, error) {
 		if fail {
 			return nil, errors.New("caiu a rede do outro lado")
 		}
 		out := &testOutput{}
-		out.Body.Valor = 7
+		out.Body.Value = 7
 		return out, nil
 	}
 
@@ -71,15 +71,15 @@ func TestRememberResult_ErrorIsNotRemembered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the retry after an error has to be able to succeed: %v", err)
 	}
-	if out.Body.Valor != 7 {
-		t.Errorf("value = %d, wanted 7", out.Body.Valor)
+	if out.Body.Value != 7 {
+		t.Errorf("value = %d, wanted 7", out.Body.Value)
 	}
 }
 
 func TestRememberResult_NoKeyAlwaysRuns(t *testing.T) {
 	// Whoever does not send the header (the web panel, a curl) gets no special
 	// path at all.
-	idem := NovaIdempotencia(t.TempDir())
+	idem := NewIdempotency(t.TempDir())
 	runs := 0
 	run := func() (*testOutput, error) {
 		runs++
@@ -120,7 +120,7 @@ func TestIdempotencyKey_DoesNotLeakAcrossAccounts(t *testing.T) {
 func TestDeleteBackup_RetryReturnsFirst200(t *testing.T) {
 	dataDir := t.TempDir()
 	store := sessionbackup.New(dataDir)
-	idem := NovaIdempotencia(dataDir)
+	idem := NewIdempotency(dataDir)
 
 	mux := http.NewServeMux()
 	Mount(mux, Deps{
@@ -186,7 +186,7 @@ func TestDeleteBackup_RetryReturnsFirst200(t *testing.T) {
 // — an empty path would write into the process's working directory.
 func TestIdempotency_FileInDataDir(t *testing.T) {
 	dir := t.TempDir()
-	idem := NovaIdempotencia(dir)
+	idem := NewIdempotency(dir)
 	idem.Remember("sam:k1", `{"Body":{"valor":1}}`, http.StatusOK)
 	if _, err := os.Stat(filepath.Join(dir, "mobile-idempotencia.json")); err != nil {
 		t.Fatalf("table was not written to dataDir: %v", err)

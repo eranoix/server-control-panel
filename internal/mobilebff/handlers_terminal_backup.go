@@ -40,10 +40,10 @@ func init() { Register("terminal-backup", registerTerminalBackup) }
 // "who restored a backup" without "from where" is half an audit record.
 type clientIPKey struct{}
 
-// comAuditoria is requireAuth plus capturing the IP. Same shape as
+// withAudit is requireAuth plus capturing the IP. Same shape as
 // captureJTI in handlers_terminal.go, for the same reason: the information exists
 // in the raw request and the typed handler does not see it.
-func comAuditoria(ctx huma.Context, next func(huma.Context)) {
+func withAudit(ctx huma.Context, next func(huma.Context)) {
 	req, w := humago.Unwrap(ctx)
 	if auth.UserFrom(req) == "" {
 		httpx.WriteErr(w, http.StatusUnauthorized, "unauthorized")
@@ -52,8 +52,8 @@ func comAuditoria(ctx huma.Context, next func(huma.Context)) {
 	next(huma.WithValue(ctx, clientIPKey{}, auth.ClientIP(req)))
 }
 
-// auditar records an event with the IP captured by [comAuditoria].
-func auditar(ctx context.Context, log *auth.AuditLog, user, action, target string) {
+// auditar records an event with the IP captured by [withAudit].
+func recordAudit(ctx context.Context, log *auth.AuditLog, user, action, target string) {
 	if log == nil {
 		return
 	}
@@ -180,8 +180,8 @@ type statusOutput struct {
 // web panel exposes the button by inheritance from an older engine; repeating that
 // in the app would mean shipping a button that does nothing.
 
-// dataDirDe tolerates a nil cfg (see registerTerminalBackup).
-func dataDirDe(cfg *config.Config) string {
+// dataDirOf tolerates a nil cfg (see registerTerminalBackup).
+func dataDirOf(cfg *config.Config) string {
 	if cfg == nil {
 		return ""
 	}
@@ -195,7 +195,7 @@ func registerTerminalBackup(api huma.API, deps Deps) {
 	// `cfg` is nil when the OpenAPI generator assembles the registry only to extract
 	// the contract (cmd/mobile-openapi-gen). Registering a route must not dereference
 	// any dependency — the registry describes, it does not execute.
-	store := sessionbackup.New(dataDirDe(cfg))
+	store := sessionbackup.New(dataDirOf(cfg))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "listTerminalBackups",
@@ -213,7 +213,7 @@ func registerTerminalBackup(api huma.API, deps Deps) {
 		Path:        "/terminal/backups",
 		Summary:     "Salva o estado atual de uma sessão (ou de todas)",
 		Tags:        []string{"mobile", "terminal"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusBadRequest},
 	}, createBackupHandler(cfg, own, audit, store, deps.Idem))
 
@@ -223,7 +223,7 @@ func registerTerminalBackup(api huma.API, deps Deps) {
 		Path:        "/terminal/backups/restore",
 		Summary:     "Recria as sessões de um backup (pula as que já existem)",
 		Tags:        []string{"mobile", "terminal"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusBadRequest},
 	}, restoreBackupHandler(own, audit, store, deps.Idem))
 
@@ -233,7 +233,7 @@ func registerTerminalBackup(api huma.API, deps Deps) {
 		Path:        "/terminal/backups/{id}",
 		Summary:     "Exclui um backup, ou só uma sessão de dentro dele",
 		Tags:        []string{"mobile", "terminal"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusBadRequest},
 	}, deleteBackupHandler(audit, store, deps.Idem))
 
@@ -243,7 +243,7 @@ func registerTerminalBackup(api huma.API, deps Deps) {
 		Path:        "/terminal/sessions/rename",
 		Summary:     "Renomeia uma sessão, levando a posse junto",
 		Tags:        []string{"mobile", "terminal"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusBadRequest},
 	}, renameSessionHandler(cfg, own, audit, deps.Idem))
 
@@ -257,7 +257,7 @@ func listBackupsHandler(store *sessionbackup.Store) func(context.Context, *struc
 		for _, m := range metadata {
 			sessions := make([]BackupSessionSummary, 0, len(m.Sessions))
 			for _, s := range m.Sessions {
-				sessions = append(sessions, BackupSessionSummary{Name: s.Nome, Summary: s.Summary, Lines: s.Lines})
+				sessions = append(sessions, BackupSessionSummary{Name: s.Name, Summary: s.Summary, Lines: s.Lines})
 			}
 			out = append(out, BackupSummary{
 				ID: m.ID, Created: m.Created, Source: m.Source, Bytes: m.Bytes, Sessions: sessions,
@@ -272,7 +272,7 @@ func createBackupHandler(
 	own *ptysvc.Ownership,
 	audit *auth.AuditLog,
 	store *sessionbackup.Store,
-	idem *Idempotencia,
+	idem *Idempotency,
 ) func(context.Context, *createBackupInput) (*createBackupOutput, error) {
 	return func(ctx context.Context, in *createBackupInput) (*createBackupOutput, error) {
 		return rememberResult(idem, keyFromContext(ctx, in.IdemKey), func() (*createBackupOutput, error) {
@@ -280,13 +280,13 @@ func createBackupHandler(
 			primary := httpx.IsAdmin(cfg, user)
 
 			var names []string
-			if nome := strings.TrimSpace(in.Body.Name); nome != "" {
+			if name := strings.TrimSpace(in.Body.Name); name != "" {
 				// 404 and not 403: to someone who is not the owner, the session does not exist. A
 				// 403 would confirm the name exists in another account.
-				if !ptysvc.OwnsSession(user, nome, primary, own) {
+				if !ptysvc.OwnsSession(user, name, primary, own) {
 					return nil, huma.Error404NotFound("session not found")
 				}
-				names = []string{nome}
+				names = []string{name}
 			} else {
 				sessions, err := ptysvc.SessionListForUser(user, primary, own)
 				if err != nil {
@@ -320,7 +320,7 @@ func createBackupHandler(
 			if err := store.Write(user, bk); err != nil {
 				return nil, huma.Error500InternalServerError(err.Error())
 			}
-			auditar(ctx, audit, user, "terminal.backup", bk.ID)
+			recordAudit(ctx, audit, user, "terminal.backup", bk.ID)
 
 			out := &createBackupOutput{}
 			out.Body = CreateBackupResponse{ID: bk.ID, Created: bk.Created, Count: len(bk.Sessions)}
@@ -333,7 +333,7 @@ func restoreBackupHandler(
 	own *ptysvc.Ownership,
 	audit *auth.AuditLog,
 	store *sessionbackup.Store,
-	idem *Idempotencia,
+	idem *Idempotency,
 ) func(context.Context, *restoreBackupInput) (*restoreBackupOutput, error) {
 	return func(ctx context.Context, in *restoreBackupInput) (*restoreBackupOutput, error) {
 		return rememberResult(idem, keyFromContext(ctx, in.IdemKey), func() (*restoreBackupOutput, error) {
@@ -373,7 +373,7 @@ func restoreBackupHandler(
 				_ = own.Claim(ptysvc.SafeSessionName(s.Name), user)
 				restored++
 			}
-			auditar(ctx, audit, user, "terminal.restore", in.Body.ID)
+			recordAudit(ctx, audit, user, "terminal.restore", in.Body.ID)
 
 			out := &restoreBackupOutput{}
 			out.Body = RestoreBackupResponse{Restored: restored, Skipped: skipped}
@@ -385,7 +385,7 @@ func restoreBackupHandler(
 func deleteBackupHandler(
 	audit *auth.AuditLog,
 	store *sessionbackup.Store,
-	idem *Idempotencia,
+	idem *Idempotency,
 ) func(context.Context, *deleteBackupInput) (*deleteBackupOutput, error) {
 	return func(ctx context.Context, in *deleteBackupInput) (*deleteBackupOutput, error) {
 		return rememberResult(idem, keyFromContext(ctx, in.IdemKey), func() (*deleteBackupOutput, error) {
@@ -403,7 +403,7 @@ func deleteBackupHandler(
 			if in.Name != "" {
 				target += "#" + ptysvc.SafeSessionName(in.Name)
 			}
-			auditar(ctx, audit, user, "terminal.backup_delete", target)
+			recordAudit(ctx, audit, user, "terminal.backup_delete", target)
 
 			out := &deleteBackupOutput{}
 			out.Body.Status = "ok"
@@ -416,7 +416,7 @@ func renameSessionHandler(
 	cfg *config.Config,
 	own *ptysvc.Ownership,
 	audit *auth.AuditLog,
-	idem *Idempotencia,
+	idem *Idempotency,
 ) func(context.Context, *renameSessionInput) (*statusOutput, error) {
 	return func(ctx context.Context, in *renameSessionInput) (*statusOutput, error) {
 		return rememberResult(idem, keyFromContext(ctx, in.IdemKey), func() (*statusOutput, error) {
@@ -435,7 +435,7 @@ func renameSessionHandler(
 			// Ownership follows the name. Without this the renamed session disappears from
 			// its own owner's list — the registry would keep pointing at the old name.
 			_ = own.Rename(ptysvc.SafeSessionName(de), stop)
-			auditar(ctx, audit, user, "terminal.rename", de+"→"+stop)
+			recordAudit(ctx, audit, user, "terminal.rename", de+"→"+stop)
 
 			out := &statusOutput{}
 			out.Body.Status = "ok"

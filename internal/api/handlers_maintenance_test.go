@@ -16,21 +16,21 @@ import (
 // maintenanceRouter builds the router with a fake vault and a fake hypervisor.
 // NO test in this file clones or backs up for real: the fake COUNTS the calls,
 // so we can assert "nothing was fired" without ever firing anything.
-func maintenanceRouter(t *testing.T, nos []inventory.Node, withPanel bool) (*Router, *[]string) {
+func maintenanceRouter(t *testing.T, nodes []inventory.Node, withPanel bool) (*Router, *[]string) {
 	t.Helper()
 	var seen []string
-	r, _ := newNodesRouter(t, nos)
-	dados := map[string]string{
+	r, _ := newNodesRouter(t, nodes)
+	data := map[string]string{
 		"pve_token_audit":     "lab@pve!audit=a",
 		"pve_token_node_apps": "lab@pve!node-apps=s",
 		"pve_token_node_lab":  "lab@pve!node-lab=s",
 	}
 	if withPanel {
-		dados["pve_token_painel"] = "lab@pve!painel=p"
+		data["pve_token_painel"] = "lab@pve!painel=p"
 	}
-	r.nodeVaultFn = func() (nodeVault, error) { return &fakeVault{seen: &seen, dados: dados}, nil }
-	r.pveDial = func(valor string) (hypervisorOps, error) {
-		return &fakePVE{seen: &seen, usedToken: valor}, nil
+	r.nodeVaultFn = func() (nodeVault, error) { return &fakeVault{seen: &seen, data: data}, nil }
+	r.pveDial = func(value string) (hypervisorOps, error) {
+		return &fakePVE{seen: &seen, usedToken: value}, nil
 	}
 	return r, &seen
 }
@@ -332,18 +332,18 @@ func TestRebootOutsideAllowlistNeverDials(t *testing.T) {
 
 // ── a NOTA: o que a caixa faz ───────────────────────────────────────────────
 
-func noteRouter(t *testing.T, nos []inventory.Node, text string) (*Router, *[]string) {
+func noteRouter(t *testing.T, nodes []inventory.Node, text string) (*Router, *[]string) {
 	t.Helper()
 	var seen []string
-	r, _ := newNodesRouter(t, nos)
+	r, _ := newNodesRouter(t, nodes)
 	r.nodeVaultFn = func() (nodeVault, error) {
-		return &fakeVault{seen: &seen, dados: map[string]string{
+		return &fakeVault{seen: &seen, data: map[string]string{
 			"pve_token_painel": "lab@pve!painel=p",
 			"pve_token_audit":  "lab@pve!audit=a",
 		}}, nil
 	}
-	r.pveDial = func(valor string) (hypervisorOps, error) {
-		return &fakePVE{seen: &seen, usedToken: valor, description: text}, nil
+	r.pveDial = func(value string) (hypervisorOps, error) {
+		return &fakePVE{seen: &seen, usedToken: value, description: text}, nil
 	}
 	return r, &seen
 }
@@ -454,7 +454,7 @@ func TestNoteOfEXTERNALNodeSkipsPVE(t *testing.T) {
 // previous proof.
 func TestNoteOfNodeGoneFromHypervisor(t *testing.T) {
 	r, _ := noteRouter(t, testGuest(), "")
-	r.pveDial = func(valor string) (hypervisorOps, error) {
+	r.pveDial = func(value string) (hypervisorOps, error) {
 		return &fakePVE{verbErr: errors.New(
 			"pve /api2/json/nodes/pve/lxc/207/config: erro_hipervisor (500) " +
 				`{"data":null,"message":"Configuration file 'nodes/pve/lxc/207.conf' does not exist\n"}`)}, nil
@@ -480,7 +480,7 @@ func TestNoteOfNodeGoneFromHypervisor(t *testing.T) {
 // list, the other asks for help. Confusing them is worse than saying nothing.
 func TestNoteWithHypervisorDownIsStillError(t *testing.T) {
 	r, _ := noteRouter(t, testGuest(), "")
-	r.pveDial = func(valor string) (hypervisorOps, error) {
+	r.pveDial = func(value string) (hypervisorOps, error) {
 		return &fakePVE{verbErr: errors.New("pve: dial tcp 198.51.100.20:8006: i/o timeout")}, nil
 	}
 	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
@@ -532,7 +532,7 @@ func TestWriteNoteUsesWRITECredential(t *testing.T) {
 	// worse than one that loses only the editing.
 	r2, seen2 := noteRouter(t, testGuest(), text)
 	r2.nodeVaultFn = func() (nodeVault, error) {
-		return &fakeVault{seen: seen2, dados: map[string]string{"pve_token_audit": "lab@pve!audit=a"}}, nil
+		return &fakeVault{seen: seen2, data: map[string]string{"pve_token_audit": "lab@pve!audit=a"}}, nil
 	}
 	if w, out := callAPI(t, r2, http.MethodGet, "/api/nodes/lxc/207/nota", ""); w.Code != 200 || out["markdown"] != text {
 		t.Errorf("without the panel token, READING stopped working: %d %s", w.Code, w.Body)

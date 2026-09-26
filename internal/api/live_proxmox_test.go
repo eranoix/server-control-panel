@@ -131,12 +131,12 @@ func TestLiveProxmoxWave1(t *testing.T) {
 	t.Logf("health: node=%v version=%v age=%vs mem_used=%.0f",
 		h["node"], h["version"].(map[string]any)["value"], age, panelMemUsed)
 
-	valor, state := r.vaultToken(pveSecretAudit)
+	value, state := r.vaultToken(pveSecretAudit)
 	if state != vaultOK {
 		t.Fatalf("audit token: %s", state)
 	}
 	directCfg := *r.pveConfig
-	directCfg.TokenID = valor
+	directCfg.TokenID = value
 	cli, err := pve.New(directCfg)
 	if err != nil {
 		t.Fatalf("direct client: %v", err)
@@ -146,11 +146,11 @@ func TestLiveProxmoxWave1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("independent read of /status: %v", err)
 	}
-	dif := panelMemUsed - float64(directStatus.Memory.Used)
-	if dif < 0 {
-		dif = -dif
+	diff := panelMemUsed - float64(directStatus.Memory.Used)
+	if diff < 0 {
+		diff = -diff
 	}
-	if pct := dif / float64(directStatus.Memory.Total) * 100; pct > 5 {
+	if pct := diff / float64(directStatus.Memory.Total) * 100; pct > 5 {
 		t.Errorf("dashboard says %.0f and the hypervisor says %d of RAM used (%.2f%% difference) — the two channels disagree",
 			panelMemUsed, directStatus.Memory.Used, pct)
 	}
@@ -207,12 +207,12 @@ func TestLiveProxmoxWave1(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("GET /disks = %d: %s", w.Code, w.Body)
 	}
-	txtDiscos := w.Body.String()
-	if !strings.Contains(txtDiscos, "Lexar") {
-		t.Errorf("the disks do not bring the measured Lexar: %s", txtDiscos)
+	disksText := w.Body.String()
+	if !strings.Contains(disksText, "Lexar") {
+		t.Errorf("the disks do not bring the measured Lexar: %s", disksText)
 	}
-	if !strings.Contains(txtDiscos, "PASSED") {
-		t.Errorf("no disk reports PASSED: %s", txtDiscos)
+	if !strings.Contains(disksText, "PASSED") {
+		t.Errorf("no disk reports PASSED: %s", disksText)
 	}
 	if d, _ := disksBody["disks"].([]any); len(d) > 0 {
 		t.Logf("discos: %d", len(d))
@@ -235,7 +235,7 @@ func TestLiveProxmoxWave1(t *testing.T) {
 	}
 	t.Logf("target of the live mutation: %s (%s), vmid=%d", target, targetNode.Name, targetNode.VMID)
 
-	nome := fmt.Sprintf("pvx-drill-%d", t0.Unix())
+	name := fmt.Sprintf("pvx-drill-%d", t0.Unix())
 	deleted := false
 	defer func() {
 		if deleted {
@@ -245,19 +245,19 @@ func TestLiveProxmoxWave1(t *testing.T) {
 		// exactly the kind of leftover nobody ever finds.
 		w := httptest.NewRecorder()
 		r.handleProxmox(w, req(t, http.MethodDelete,
-			"/api/proxmox/snapshots?node="+target+"&name="+nome, ""))
-		t.Logf("cleanup of snapshot %s: %d", nome, w.Code)
+			"/api/proxmox/snapshots?node="+target+"&name="+name, ""))
+		t.Logf("cleanup of snapshot %s: %d", name, w.Code)
 	}()
 
 	w = httptest.NewRecorder()
-	r.handleProxmox(w, req(t, http.MethodPost, "/api/proxmox/snapshots?node="+target+"&name="+nome+"&desc=drill+pvx", ""))
+	r.handleProxmox(w, req(t, http.MethodPost, "/api/proxmox/snapshots?node="+target+"&name="+name+"&desc=drill+pvx", ""))
 	if w.Code != 200 {
 		t.Fatalf("POST snapshot = %d: %s", w.Code, w.Body)
 	}
 	var created map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 	createUPID, _ := created["upid"].(string)
-	t.Logf("snapshot criado: %s · upid=%s", nome, createUPID)
+	t.Logf("snapshot criado: %s · upid=%s", name, createUPID)
 	// 🔴 The token rule, live: what acted was the NODE's credential, and the UPID
 	// carries its name. If `audit` shows up here, the token choice has collapsed.
 	if !strings.Contains(createUPID, "lab@pve!node-"+targetGuest) {
@@ -265,12 +265,12 @@ func TestLiveProxmoxWave1(t *testing.T) {
 	}
 
 	w, out = pvxGET(t, r, "/api/proxmox/snapshots?node="+target)
-	if !strings.Contains(w.Body.String(), nome) {
-		t.Fatalf("snapshot %s did NOT show up in the listing: %s", nome, w.Body)
+	if !strings.Contains(w.Body.String(), name) {
+		t.Fatalf("snapshot %s did NOT show up in the listing: %s", name, w.Body)
 	}
 
 	w = httptest.NewRecorder()
-	r.handleProxmox(w, req(t, http.MethodDelete, "/api/proxmox/snapshots?node="+target+"&name="+nome, ""))
+	r.handleProxmox(w, req(t, http.MethodDelete, "/api/proxmox/snapshots?node="+target+"&name="+name, ""))
 	if w.Code != 200 {
 		t.Fatalf("DELETE snapshot = %d: %s", w.Code, w.Body)
 	}
@@ -278,14 +278,14 @@ func TestLiveProxmoxWave1(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &removed)
 	deleteUPID, _ := removed["upid"].(string)
 	deleted = true
-	t.Logf("snapshot deleted: %s · upid=%s", nome, deleteUPID)
+	t.Logf("snapshot deleted: %s · upid=%s", name, deleteUPID)
 	if !strings.Contains(deleteUPID, "lab@pve!node-"+targetGuest) {
 		t.Errorf("delete's UPID = %q — want it to carry lab@pve!node-%s", deleteUPID, targetGuest)
 	}
 
 	w, _ = pvxGET(t, r, "/api/proxmox/snapshots?node="+target)
-	if strings.Contains(w.Body.String(), nome) {
-		t.Errorf("snapshot %s is still in the listing after DELETE: %s", nome, w.Body)
+	if strings.Contains(w.Body.String(), name) {
+		t.Errorf("snapshot %s is still in the listing after DELETE: %s", name, w.Body)
 	}
 
 	// Negative control for the mutation: an invalid name is refused BY THE
@@ -352,12 +352,12 @@ func TestLiveProxmoxWave2(t *testing.T) {
 	// A channel INDEPENDENT of the dashboard, opened once and used by every section.
 	// Comparing the dashboard's answer against itself proves nothing; the value of a
 	// live proof is asking the hypervisor by another route.
-	valor, state := r.vaultToken(pveSecretAudit)
+	value, state := r.vaultToken(pveSecretAudit)
 	if state != vaultOK {
 		t.Fatalf("audit token: %s", state)
 	}
 	directCfg := *r.pveConfig
-	directCfg.TokenID = valor
+	directCfg.TokenID = value
 	cli, err := pve.New(directCfg)
 	if err != nil {
 		t.Fatalf("direct client: %v", err)
@@ -411,25 +411,25 @@ func TestLiveProxmoxWave2(t *testing.T) {
 	if err != nil {
 		t.Fatalf("independent read of /storage: %v", err)
 	}
-	noHipervisor := map[string]bool{}
+	onHypervisor := map[string]bool{}
 	for _, s := range directStorage {
-		noHipervisor[s.Storage] = true
+		onHypervisor[s.Storage] = true
 	}
-	if len(noHipervisor) == 0 {
+	if len(onHypervisor) == 0 {
 		t.Fatalf("the hypervisor declared no storage at all — empty independent read")
 	}
-	for id := range noHipervisor {
+	for id := range onHypervisor {
 		if seen[id] == nil {
 			t.Errorf("storage %q exists on the hypervisor and does NOT show up on the dashboard", id)
 		}
 	}
 	for id := range seen {
-		if !noHipervisor[id] {
+		if !onHypervisor[id] {
 			t.Errorf("storage %q shows up on the dashboard and does NOT exist on the hypervisor", id)
 		}
 	}
 	t.Logf("storage inventory: %d on the dashboard, %d on the hypervisor, identical sets",
-		len(seen), len(noHipervisor))
+		len(seen), len(onHypervisor))
 	// 🔴 No percentage may come back at zero for a storage that is in use: that
 	// would be usagePct's degradation not having happened, and the bar would stay
 	// green over a disk that may be full.
@@ -467,21 +467,21 @@ func TestLiveProxmoxWave2(t *testing.T) {
 		t.Errorf("datastore_audit without a timestamp (%v) — a verdict with no age is a verdict that lies", da["observed_at"])
 	}
 
-	permsVivas, err := cli.Permissions(ctx)
+	livePerms, err := cli.Permissions(ctx)
 	if err != nil {
 		t.Fatalf("independent read of /access/permissions: %v", err)
 	}
-	if !pve.CanAuditDatastore(permsVivas) {
+	if !pve.CanAuditDatastore(livePerms) {
 		t.Error("the LIVE map does not authorize datastore — the dashboard and the hypervisor disagree")
 	}
-	for path, privs := range permsVivas {
+	for path, privs := range livePerms {
 		if path == "/" || path == "/storage" || strings.HasPrefix(path, "/storage/") {
 			for _, p := range []string{"Datastore.Audit", "Datastore.Allocate", "Datastore.AllocateSpace", "Datastore.AllocateTemplate"} {
 				delete(privs, p)
 			}
 		}
 	}
-	if pve.CanAuditDatastore(permsVivas) {
+	if pve.CanAuditDatastore(livePerms) {
 		t.Error("🔴 with no Datastore.* on any path, the verdict stayed TRUE — the guard no longer fails it")
 	}
 	t.Log("guard proven in both directions over the LIVE map: with privilege → true, without privilege → false")
@@ -498,17 +498,17 @@ func TestLiveProxmoxWave2(t *testing.T) {
 	names := map[string]bool{}
 	for _, raw := range zp {
 		p := raw.(map[string]any)
-		nome, _ := p["name"].(string)
-		names[nome] = true
+		name, _ := p["name"].(string)
+		names[name] = true
 		t.Logf("zpool %-8s %-9s frag=%v alloc=%s free=%s saudavel=%v",
-			nome, p["health"], p["frag_pct"], human(p["alloc"]), human(p["free"]), p["saudavel"])
+			name, p["health"], p["frag_pct"], human(p["alloc"]), human(p["free"]), p["saudavel"])
 		// 🔴 A pool out of ONLINE is the most expensive news in this house (a single
 		// disk, no redundancy). Failing here is the test doing its job.
 		if p["health"] != "ONLINE" {
-			t.Errorf("🔴 pool %q is %v — SINGLE DISK, no redundancy", nome, p["health"])
+			t.Errorf("🔴 pool %q is %v — SINGLE DISK, no redundancy", name, p["health"])
 		}
 		if p["saudavel"] != (p["health"] == "ONLINE") {
-			t.Errorf("pool %q: saudavel=%v does not match health=%v", nome, p["saudavel"], p["health"])
+			t.Errorf("pool %q: saudavel=%v does not match health=%v", name, p["saudavel"], p["health"])
 		}
 	}
 	for _, n := range []string{"backup", "rpool"} {
@@ -530,12 +530,12 @@ func TestLiveProxmoxWave2(t *testing.T) {
 	healthAge, _ := h["age_seconds"].(float64)
 	_, capOut := pvxGET(t, r, "/api/proxmox/storage")
 	idCap, _ := capOut["age_seconds"].(float64)
-	idZfs, _ := out["age_seconds"].(float64)
-	if healthAge < 0 || idCap < 0 || idZfs < 0 {
+	zfsAge, _ := out["age_seconds"].(float64)
+	if healthAge < 0 || idCap < 0 || zfsAge < 0 {
 		t.Errorf("ages = health %v, capacity %v, zpool %v — none may be -1 after a tick",
-			healthAge, idCap, idZfs)
+			healthAge, idCap, zfsAge)
 	}
-	t.Logf("three independent ages: health %vs · capacity %vs · zpool %vs", healthAge, idCap, idZfs)
+	t.Logf("three independent ages: health %vs · capacity %vs · zpool %vs", healthAge, idCap, zfsAge)
 
 	// ── 5. what stays OUT of scope, measured and not assumed ────────────────
 	w, _ = pvxGET(t, r, "/api/proxmox/apt")

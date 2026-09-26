@@ -167,15 +167,15 @@ func TestConsoleAttachDoesThreeSteps(t *testing.T) {
 
 	// 🔴 The FIRST message the caller reads is the TERMINAL, never the "OK".
 	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-	_, dados, err := conn.ReadMessage()
+	_, data, err := conn.ReadMessage()
 	if err != nil {
 		t.Fatalf("first read: %v", err)
 	}
-	if string(dados) == "OK" {
+	if string(data) == "OK" {
 		t.Fatal("the handshake's \"OK\" leaked to the caller — it would write a phantom OK on the console's 1st line")
 	}
-	if string(dados) != "lab login: " {
-		t.Errorf("first read = %q, want the terminal output", dados)
+	if string(data) != "lab login: " {
+		t.Errorf("first read = %q, want the terminal output", data)
 	}
 }
 
@@ -257,7 +257,7 @@ func TestConsoleErrorLeaksNoTicketOrSecret(t *testing.T) {
 // counts UTF-16 units, so a "ç" typed in the browser would arrive cut in half.
 func TestInputFrameCountsBYTES(t *testing.T) {
 	cases := []struct {
-		nome string
+		name string
 		text string
 		want string
 	}{
@@ -267,7 +267,7 @@ func TestInputFrameCountsBYTES(t *testing.T) {
 		{"vazio", "", "0:0:"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.nome, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			if got := string(InputFrame([]byte(tc.text))); got != tc.want {
 				t.Errorf("InputFrame(%q) = %q, want %q", tc.text, got, tc.want)
 			}

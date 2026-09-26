@@ -122,16 +122,16 @@ func TestFrameCropsAndShifts(t *testing.T) {
 func TestFrameShiftStaysWithinBounds(t *testing.T) {
 	q := newClientFrame(10, 1)
 	q.shift(-5, 40)
-	if q.desloc != 0 {
-		t.Errorf("a negative pan became %d; want 0", q.desloc)
+	if q.offset != 0 {
+		t.Errorf("a negative pan became %d; want 0", q.offset)
 	}
 	q.shift(999, 40)
-	if q.desloc != 30 {
-		t.Errorf("pan past the end became %d; wanted 30 (40-10)", q.desloc)
+	if q.offset != 30 {
+		t.Errorf("pan past the end became %d; wanted 30 (40-10)", q.offset)
 	}
 	q.shift(999, 5) // session smaller than the window
-	if q.desloc != 0 {
-		t.Errorf("with a session smaller than the window the pan has to be 0; became %d", q.desloc)
+	if q.offset != 0 {
+		t.Errorf("with a session smaller than the window the pan has to be 0; became %d", q.offset)
 	}
 }
 

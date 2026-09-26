@@ -21,7 +21,7 @@ import (
 // outside the tenant's directory.
 func TestSafeUploadName(t *testing.T) {
 	cases := []struct {
-		nome string
+		name string
 		in   string
 		want string
 	}{
@@ -42,7 +42,7 @@ func TestSafeUploadName(t *testing.T) {
 		{"underscores colapsam", "a    b     c.txt", "a_b_c.txt"},
 	}
 	for _, c := range cases {
-		t.Run(c.nome, func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			if got := safeUploadName(c.in); got != c.want {
 				t.Fatalf("safeUploadName(%q) = %q, want %q", c.in, got, c.want)
 			}
@@ -93,11 +93,11 @@ func TestSafeUploadNameNeverHasSeparator(t *testing.T) {
 // real multipart, writes the file in the right place. It is the proof that the
 // image/* lock came out without opening a hole in the write path.
 
-func postFile(t *testing.T, r *Router, field, nome string, body []byte) *httptest.ResponseRecorder {
+func postFile(t *testing.T, r *Router, field, name string, body []byte) *httptest.ResponseRecorder {
 	t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
-	fw, err := mw.CreateFormFile(field, nome)
+	fw, err := mw.CreateFormFile(field, name)
 	if err != nil {
 		t.Fatalf("CreateFormFile: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestUploadAcceptsNonImage(t *testing.T) {
 
 func TestUploadVariousTypes(t *testing.T) {
 	r, _ := testRouter(t)
-	cases := []struct{ nome, content string }{
+	cases := []struct{ name, content string }{
 		{"planilha.csv", "a,b,c\n1,2,3\n"},
 		{"log do servidor.log", "2026-08-18 erro\n"},
 		{"notas.md", "# titulo\n"},
@@ -164,10 +164,10 @@ func TestUploadVariousTypes(t *testing.T) {
 		{"sem-extensao", "conteúdo qualquer"},
 	}
 	for _, c := range cases {
-		t.Run(c.nome, func(t *testing.T) {
-			w := postFile(t, r, "file", c.nome, []byte(c.content))
+		t.Run(c.name, func(t *testing.T) {
+			w := postFile(t, r, "file", c.name, []byte(c.content))
 			if w.Code != 200 {
-				t.Fatalf("%s rejected with %d: %s", c.nome, w.Code, w.Body.String())
+				t.Fatalf("%s rejected with %d: %s", c.name, w.Code, w.Body.String())
 			}
 		})
 	}

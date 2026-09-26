@@ -158,7 +158,7 @@ func isOlder(v, ref string) bool {
 // cost of listing one extra process is a line on screen; the cost of hiding a
 // genuinely outdated session is the operator believing everything is up to date.
 func sameMount(pid int) bool {
-	meu, err := os.Readlink(filepath.Join(procRoot, "self", "ns", "mnt"))
+	mine, err := os.Readlink(filepath.Join(procRoot, "self", "ns", "mnt"))
 	if err != nil {
 		return true
 	}
@@ -166,15 +166,15 @@ func sameMount(pid int) bool {
 	if err != nil {
 		return true
 	}
-	return meu == theirs
+	return mine == theirs
 }
 
-// PaiDe reads the PPID from /proc/<pid>/stat.
+// ParentOf reads the PPID from /proc/<pid>/stat.
 //
 // Field 4 of stat is the PPID, but field 2 is the executable's name IN
 // PARENTHESES and may contain spaces — splitting the whole line on spaces gets it
 // wrong in those cases. Hence the cut is made after the last ')'.
-func PaiDe(pid int) int {
+func ParentOf(pid int) int {
 	b, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(pid), "stat"))
 	if err != nil {
 		return 0
@@ -184,39 +184,39 @@ func PaiDe(pid int) int {
 	if i < 0 || i+2 >= len(s) {
 		return 0
 	}
-	campos := strings.Fields(s[i+2:]) // [0]=state, [1]=ppid
-	if len(campos) < 2 {
+	fields := strings.Fields(s[i+2:]) // [0]=state, [1]=ppid
+	if len(fields) < 2 {
 		return 0
 	}
-	ppid, err := strconv.Atoi(campos[1])
+	ppid, err := strconv.Atoi(fields[1])
 	if err != nil {
 		return 0
 	}
 	return ppid
 }
 
-// AncestralEm climbs the process tree from pid and returns the first ancestor
+// AncestorIn climbs the process tree from pid and returns the first ancestor
 // present in `alvos`, or 0. The hop ceiling avoids an infinite loop if /proc
 // returns something inconsistent (which has happened with a recycled PID).
-func AncestralEm(pid int, targets map[int]bool) int {
+func AncestorIn(pid int, targets map[int]bool) int {
 	for hop := 0; hop < 32 && pid > 1; hop++ {
 		if targets[pid] {
 			return pid
 		}
-		pai := PaiDe(pid)
-		if pai == pid || pai <= 0 {
+		parent := ParentOf(pid)
+		if parent == pid || parent <= 0 {
 			return 0
 		}
-		pid = pai
+		pid = parent
 	}
 	return 0
 }
 
-// AncestralPorArgv climbs the tree from pid and returns the value in `marcas`
+// AncestorByArgv climbs the tree from pid and returns the value in `marcas`
 // whose KEY appears in the /proc/<pid>/cmdline of some ancestor (or of pid
 // itself). "" when none matches.
 //
-// It exists because AncestralEm depends on knowing the session's PID, and the
+// It exists because AncestorIn depends on knowing the session's PID, and the
 // dtach backend NEVER records a PID — the master is forked by `dtach -n` under
 // `systemd-run --scope`, so the PID the server sees when spawning dies right
 // afterwards and is useless as an anchor. Result: with dtach active, EVERY process
@@ -227,8 +227,8 @@ func AncestralEm(pid int, targets map[int]bool) int {
 // (`dtach -n /…/session-sox/<name>.sock …`) — unique per session and stable for as
 // long as it lives. It matches by plain substring: the socket path is specific
 // enough not to collide, and the hop ceiling inherits the same reason as
-// AncestralEm (a recycled PID has already produced a loop here).
-func AncestralPorArgv(pid int, marks map[string]string) string {
+// AncestorIn (a recycled PID has already produced a loop here).
+func AncestorByArgv(pid int, marks map[string]string) string {
 	if len(marks) == 0 {
 		return ""
 	}
@@ -238,17 +238,17 @@ func AncestralPorArgv(pid int, marks map[string]string) string {
 			// cmdline is NUL-separated; it becomes spaces only so Contains does
 			// not fail on an argument glued to its neighbor.
 			line := strings.ReplaceAll(string(b), "\x00", " ")
-			for mark, valor := range marks {
+			for mark, value := range marks {
 				if mark != "" && strings.Contains(line, mark) {
-					return valor
+					return value
 				}
 			}
 		}
-		pai := PaiDe(pid)
-		if pai == pid || pai <= 0 {
+		parent := ParentOf(pid)
+		if parent == pid || parent <= 0 {
 			return ""
 		}
-		pid = pai
+		pid = parent
 	}
 	return ""
 }
@@ -266,13 +266,13 @@ func AncestralPorArgv(pid int, marks map[string]string) string {
 //
 // `alvo` travels to the front end to say HOW to restart (see Processo.Alvo).
 func DetectExternal(markerEnv, target string) []Process {
-	fora := []Process{}
+	outside := []Process{}
 	if markerEnv == "" {
-		return fora
+		return outside
 	}
 	ents, err := os.ReadDir(procRoot)
 	if err != nil {
-		return fora
+		return outside
 	}
 	mark := []byte(markerEnv)
 	for _, ent := range ents {
@@ -315,9 +315,9 @@ func DetectExternal(markerEnv, target string) []Process {
 		if cwd, err := os.Readlink(filepath.Join(procRoot, ent.Name(), "cwd")); err == nil {
 			p.Cwd = cwd
 		}
-		fora = append(fora, p)
+		outside = append(outside, p)
 	}
-	return fora
+	return outside
 }
 
 // resolveRel re-anchors, at the process's root, the destination of a symlink read

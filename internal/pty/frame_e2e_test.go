@@ -21,7 +21,7 @@ import (
 // not been updated yet.
 func TestSessionSizeIsLargestAmongFrameClients(t *testing.T) {
 	cases := []struct {
-		nome     string
+		name     string
 		clients  []clientSize
 		wantCols uint16
 		wantRows uint16
@@ -53,7 +53,7 @@ func TestSessionSizeIsLargestAmongFrameClients(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		t.Run(tc.nome, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			s := &sharedLog{}
 			var cols, rows uint16
 			for i, c := range tc.clients {
@@ -124,7 +124,7 @@ func TestE2EFrame_PhoneNoLongerShrinksDesktop(t *testing.T) {
 		t.Skip("no dtach on this machine")
 	}
 	dir := t.TempDir()
-	nome := "quadro-e2e"
+	name := "quadro-e2e"
 	own, err := LoadOwnership(dir + "/own.json")
 	if err != nil {
 		t.Fatal(err)
@@ -139,12 +139,12 @@ func TestE2EFrame_PhoneNoLongerShrinksDesktop(t *testing.T) {
 	}))
 	t.Cleanup(func() {
 		srv.Close()
-		StopRecorder(dir, "u", nome)
-		_ = exec.Command("pkill", "-f", socketPathFor(dir, nome)).Run()
+		StopRecorder(dir, "u", name)
+		_ = exec.Command("pkill", "-f", socketPathFor(dir, name)).Run()
 	})
 
 	dial := func(extra string) *frameClient {
-		u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/?size=1&name=" + nome + extra
+		u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/?size=1&name=" + name + extra
 		conn, _, err := websocket.DefaultDialer.Dial(u, nil)
 		if err != nil {
 			t.Fatalf("dial: %v", err)

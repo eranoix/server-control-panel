@@ -71,13 +71,13 @@ func TestMidSessionSwapSplitsTokens(t *testing.T) {
 	s, repo := setupTwoAccounts(t)
 
 	now := time.Now()
-	antes := now.Add(-40 * time.Minute)
+	before := now.Add(-40 * time.Minute)
 	after := now.Add(-10 * time.Minute)
-	writeMessages(t, repo, "sess-swap", []time.Time{antes, after}, 1_000_000)
+	writeMessages(t, repo, "sess-swap", []time.Time{before, after}, 1_000_000)
 
 	// Started on jordan; 20 min later switched to sam.
 	if err := s.RecordAttrib(AttribEntry{
-		Ts: antes.Add(-time.Minute).Unix(), SessionID: "sess-swap", AccountID: "jordan", Source: "startup",
+		Ts: before.Add(-time.Minute).Unix(), SessionID: "sess-swap", AccountID: "jordan", Source: "startup",
 	}); err != nil {
 		t.Fatal(err)
 	}

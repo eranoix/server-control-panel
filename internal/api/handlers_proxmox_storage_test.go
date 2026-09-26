@@ -48,8 +48,8 @@ func livePools() []inventory.StoragePool {
 
 func liveZPools() []inventory.ZPool {
 	return []inventory.ZPool{
-		{Name: "backup", Health: "ONLINE", Saudavel: true, Size: 996432412672, Alloc: 95457288192, Free: 900975124480, FragPct: 0},
-		{Name: "rpool", Health: "ONLINE", Saudavel: true, Size: 1013612281856, Alloc: 70999646208, Free: 942612635648, FragPct: 17},
+		{Name: "backup", Health: "ONLINE", Healthy: true, Size: 996432412672, Alloc: 95457288192, Free: 900975124480, FragPct: 0},
+		{Name: "rpool", Health: "ONLINE", Healthy: true, Size: 1013612281856, Alloc: 70999646208, Free: 942612635648, FragPct: 17},
 	}
 }
 
@@ -62,7 +62,7 @@ func TestCapacityComesFromStoreWithoutCallingHypervisor(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			r, st := newProxmoxRouter(t, defaultVault(), nil)
 			stampCapacity(t, st, livePools(), liveZPools(), true, testNow-45)
-			r.pveDial = func(tokenValor string) (hypervisorOps, error) {
+			r.pveDial = func(tokenValue string) (hypervisorOps, error) {
 				t.Fatalf("GET %s dialed the hypervisor — capacity is a heartbeat and comes out of the STORE", path)
 				return nil, nil
 			}
@@ -156,7 +156,7 @@ func TestZfsDeliversHealthFragAndAllocation(t *testing.T) {
 // the screen never has to guess why the block is empty.
 func TestEmptyWithAndWithoutPrivilegeAreDIFFERENTResponses(t *testing.T) {
 	cases := []struct {
-		nome string
+		name string
 		can  bool
 	}{
 		{"com privilégio: vazio é vazio de verdade", true},
@@ -164,7 +164,7 @@ func TestEmptyWithAndWithoutPrivilegeAreDIFFERENTResponses(t *testing.T) {
 	}
 	seen := map[bool]any{}
 	for _, cs := range cases {
-		t.Run(cs.nome, func(t *testing.T) {
+		t.Run(cs.name, func(t *testing.T) {
 			r, st := newProxmoxRouter(t, defaultVault(), nil)
 			stampCapacity(t, st, nil, nil, cs.can, testNow-5)
 
@@ -203,7 +203,7 @@ func TestEmptyWithAndWithoutPrivilegeAreDIFFERENTResponses(t *testing.T) {
 // to FAIL, which is the mutation the earlier pass could not catch.
 func TestPermissionsUseSameDatastoreVerdict(t *testing.T) {
 	cases := []struct {
-		nome  string
+		name  string
 		perms map[string]map[string]int
 		want  bool
 	}{
@@ -228,7 +228,7 @@ func TestPermissionsUseSameDatastoreVerdict(t *testing.T) {
 		},
 	}
 	for _, cs := range cases {
-		t.Run(cs.nome, func(t *testing.T) {
+		t.Run(cs.name, func(t *testing.T) {
 			fake := &fakePVE{perms: cs.perms}
 			r, _ := newProxmoxRouter(t, defaultVault(), fake)
 

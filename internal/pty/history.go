@@ -67,7 +67,7 @@ type sessionScreen struct {
 	file *sessionLogWriter
 	rest []byte // bytes of a rune split at the block boundary
 	dead bool   // a panic switched this screen off
-	nome string
+	name string
 
 	// Whoever wants to know the screen changed — the connections in frame mode
 	// (`frame.go`). `rolou` is how many lines left during the chunk: scrolling is
@@ -145,7 +145,7 @@ func newSessionScreen(dataDir, user, name string) *sessionScreen {
 	t := &sessionScreen{
 		vt:   vt10x.New(defaultCols, defaultRows),
 		file: openWriter(sessionHistPath(dataDir, user, name)),
-		nome: name,
+		name: name,
 	}
 	t.vt.OnScrollOut(func(lines [][]vt10x.Glyph) {
 		// Called with the emulator's lock held: serialising is cheap (it is text)
@@ -176,21 +176,21 @@ func (t *sessionScreen) feed(p []byte) {
 	defer func() {
 		if r := recover(); r != nil {
 			t.dead = true
-			log.Printf("[pty] history of session %q turned off by a panic in the emulator: %v", t.nome, r)
+			log.Printf("[pty] history of session %q turned off by a panic in the emulator: %v", t.name, r)
 		}
 	}()
-	dados := p
+	data := p
 	if len(t.rest) > 0 {
-		dados = append(append(make([]byte, 0, len(t.rest)+len(p)), t.rest...), p...)
+		data = append(append(make([]byte, 0, len(t.rest)+len(p)), t.rest...), p...)
 		t.rest = nil
 	}
 	t.scrolledInBlock = 0
-	n, err := t.vt.Write(dados)
+	n, err := t.vt.Write(data)
 	scrolled := t.scrolledInBlock
-	if err == nil && n < len(dados) {
+	if err == nil && n < len(data) {
 		// A rune split at the end: keep it for the next chunk. The ceiling stops a
 		// binary stream (which never completes a rune) growing this without limit.
-		if leftover := dados[n:]; len(leftover) <= 8 {
+		if leftover := data[n:]; len(leftover) <= 8 {
 			t.rest = append([]byte(nil), leftover...)
 		}
 	}
@@ -234,7 +234,7 @@ func (t *sessionScreen) resize(cols, rows uint16) {
 	defer func() {
 		if r := recover(); r != nil {
 			t.dead = true
-			log.Printf("[pty] history of session %q turned off by a panic in the resize: %v", t.nome, r)
+			log.Printf("[pty] history of session %q turned off by a panic in the resize: %v", t.name, r)
 		}
 	}()
 	t.vt.Resize(int(cols), int(rows))
@@ -268,12 +268,12 @@ func (t *sessionScreen) snapshot() []byte {
 		return nil
 	}
 	lines := t.vt.CurrentScreen()
-	fim := len(lines)
-	for fim > 0 && len(bytes.TrimSpace(stripANSIBytes(vt10x.EmBytes(lines[fim-1])))) == 0 {
-		fim--
+	done := len(lines)
+	for done > 0 && len(bytes.TrimSpace(stripANSIBytes(vt10x.EmBytes(lines[done-1])))) == 0 {
+		done--
 	}
 	var buf bytes.Buffer
-	for _, l := range lines[:fim] {
+	for _, l := range lines[:done] {
 		buf.Write(vt10x.EmBytes(l))
 	}
 	return buf.Bytes()

@@ -53,7 +53,7 @@ type clientFrame struct {
 	// desloc: which SESSION column the crop starts at. It exists so a person can
 	// reach what is to the right in a window narrower than the session; without
 	// it, the right half would be unreachable.
-	desloc int
+	offset int
 	// ancora: the first SESSION line visible in this window. It persists between
 	// frames — see the block in [atualiza].
 	anchor int
@@ -91,10 +91,10 @@ func (q *clientFrame) shift(stop, sessionCols int) {
 		}
 		stop = max
 	}
-	if stop == q.desloc {
+	if stop == q.offset {
 		return
 	}
-	q.desloc = stop
+	q.offset = stop
 	q.base = nil
 	q.first = true
 }
@@ -179,7 +179,7 @@ func (q *clientFrame) update(screen [][]vt10x.Glyph, cur vt10x.Cursor, cursorVis
 	for y := 0; y < q.rows; y++ {
 		var line []byte
 		if origin := top + y; origin < len(screen) {
-			line = vt10x.CropToBytes(screen[origin], q.desloc, q.cols)
+			line = vt10x.CropToBytes(screen[origin], q.offset, q.cols)
 		}
 		if y < len(q.base) && q.base[y] != nil && bytes.Equal(q.base[y], line) {
 			continue // the client already has this line
@@ -198,7 +198,7 @@ func (q *clientFrame) update(screen [][]vt10x.Glyph, cur vt10x.Cursor, cursorVis
 	}
 	// The cursor last, otherwise it stays where the final line ended.
 	l := cur.Y - top + 1
-	c := cur.X - q.desloc + 1
+	c := cur.X - q.offset + 1
 	if l > q.rows {
 		l = q.rows
 	}

@@ -39,7 +39,7 @@ import (
 // crosses restarts easily. A table living only in memory would lose exactly
 // the keys that matter most — those of whoever was offline when the server
 // came back up.
-type Idempotencia struct {
+type Idempotency struct {
 	mu      sync.Mutex
 	file    string
 	entries map[string]idempotentEntry
@@ -66,9 +66,9 @@ const (
 	idempotencyCap = 10_000
 )
 
-// NovaIdempotencia loads (or creates) the table in dataDir.
-func NovaIdempotencia(dataDir string) *Idempotencia {
-	i := &Idempotencia{
+// NewIdempotency loads (or creates) the table in dataDir.
+func NewIdempotency(dataDir string) *Idempotency {
+	i := &Idempotency{
 		file:    filepath.Join(dataDir, "mobile-idempotencia.json"),
 		entries: map[string]idempotentEntry{},
 		now:     time.Now,
@@ -82,7 +82,7 @@ func NovaIdempotencia(dataDir string) *Idempotencia {
 // The key MUST include the user: two accounts can generate the same client-side
 // identifier, and a result leaking between them would be worse than having no
 // idempotency at all.
-func (i *Idempotencia) Recall(key string) (body string, status int, ok bool) {
+func (i *Idempotency) Recall(key string) (body string, status int, ok bool) {
 	if i == nil || key == "" {
 		return "", 0, false
 	}
@@ -100,7 +100,7 @@ func (i *Idempotencia) Recall(key string) (body string, status int, ok bool) {
 }
 
 // Lembrar stores the result of this run.
-func (i *Idempotencia) Remember(key, body string, status int) {
+func (i *Idempotency) Remember(key, body string, status int) {
 	if i == nil || key == "" {
 		return
 	}
@@ -117,7 +117,7 @@ func (i *Idempotencia) Remember(key, body string, status int) {
 
 // podar removes what expired and, if still over the cap, the oldest.
 // Called with the lock held.
-func (i *Idempotencia) prune() {
+func (i *Idempotency) prune() {
 	limit := i.now().UnixMilli() - idempotencyTTL.Milliseconds()
 	for k, e := range i.entries {
 		if e.At < limit {
@@ -138,7 +138,7 @@ func (i *Idempotencia) prune() {
 	}
 }
 
-func (i *Idempotencia) load() {
+func (i *Idempotency) load() {
 	b, err := os.ReadFile(i.file)
 	if err != nil {
 		return
@@ -154,7 +154,7 @@ func (i *Idempotencia) load() {
 }
 
 // gravar persists. Called with the lock held.
-func (i *Idempotencia) save() {
+func (i *Idempotency) save() {
 	b, err := json.Marshal(i.entries)
 	if err != nil {
 		return

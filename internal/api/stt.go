@@ -495,8 +495,8 @@ func (r *Router) handleSTTTranscribe(w http.ResponseWriter, req *http.Request) {
 			var pending []pendingMsg
 			segMu.Lock()
 			seenStarts := make(map[string]bool, len(upd.Segments))
-			for _, seg := range upd.Segments {
-				txt := strings.TrimSpace(seg.Text)
+			for _, secret := range upd.Segments {
+				txt := strings.TrimSpace(secret.Text)
 				if txt == "" {
 					continue
 				}
@@ -506,19 +506,19 @@ func (r *Router) handleSTTTranscribe(w http.ResponseWriter, req *http.Request) {
 				// Applied to BOTH partial and final — do not pollute the UI with junk.
 				if hall, reason := isHallucination(txt); hall {
 					_ = reason
-					seenStarts[seg.Start] = true // mark as seen so the promote logic does not fire
+					seenStarts[secret.Start] = true // mark as seen so the promote logic does not fire
 					continue
 				}
-				k := seg.Start
+				k := secret.Start
 				seenStarts[k] = true
 				existing, ok := segments[k]
-				startMs := secStrToMs(seg.Start)
-				endMs := secStrToMs(seg.End)
+				startMs := secStrToMs(secret.Start)
+				endMs := secStrToMs(secret.End)
 				if !ok {
 					st := &segState{startMs: startMs, endMs: endMs, text: txt}
 					segments[k] = st
 					segOrder = append(segOrder, k)
-					if seg.Completed {
+					if secret.Completed {
 						queueFinal(&pending, st)
 					} else {
 						queuePartial(&pending, txt)
@@ -536,7 +536,7 @@ func (r *Router) handleSTTTranscribe(w http.ResponseWriter, req *http.Request) {
 				// Promote to final if WhisperLive marked it completed, even when
 				// the text has not changed (the partial→final transition can arrive
 				// with no textual change).
-				if seg.Completed {
+				if secret.Completed {
 					queueFinal(&pending, existing)
 				} else if textChanged {
 					queuePartial(&pending, txt)

@@ -30,11 +30,11 @@ type fakePVE struct {
 	calls     int32
 
 	// The health of the hypervisor. statusErr injects the failure that invariant 2
-	// requires handling without erasing anything; nodeStatusNome records WITH WHICH
+	// requires handling without erasing anything; nodeStatusName records WITH WHICH
 	// NAME the poller asked — it is the pin for invariant 3.
 	status         pve.NodeStatus
 	statusErr      error
-	nodeStatusNome string
+	nodeStatusName string
 	statusCalls    int32
 }
 
@@ -42,7 +42,7 @@ func (f *fakePVE) NodeStatus(ctx context.Context, node string) (pve.NodeStatus, 
 	atomic.AddInt32(&f.statusCalls, 1)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.nodeStatusNome = node
+	f.nodeStatusName = node
 	if f.statusErr != nil {
 		return pve.NodeStatus{}, f.statusErr
 	}
@@ -129,7 +129,7 @@ func newTestPoller(t *testing.T, f *fakePVE, deps Sources, cfg PollerConfig) (*P
 	return NewPoller(st, f, deps, cfg), st, rel
 }
 
-func nosPorID(t *testing.T, st *Store) map[string]Node {
+func nodesByID(t *testing.T, st *Store) map[string]Node {
 	t.Helper()
 	inv, err := st.Snapshot()
 	if err != nil {
@@ -153,16 +153,16 @@ func TestPollerStampsOnServer(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}
-	nos := requireSet(t, st, pveSet()...)
+	nodes := requireSet(t, st, pveSet()...)
 	want := rel.now().Unix()
 	// The host comes in through the SAME door: it answered the API at this instant.
-	if nos["node/pve"].Kind != NodeKindHost || nos["node/pve"].Status.ObservedAt != want {
-		t.Errorf("host = %+v, want kind=host timestamped at %d", nos["node/pve"], want)
+	if nodes["node/pve"].Kind != NodeKindHost || nodes["node/pve"].Status.ObservedAt != want {
+		t.Errorf("host = %+v, want kind=host timestamped at %d", nodes["node/pve"], want)
 	}
 	for _, id := range []string{"lxc/207", "qemu/208"} {
-		n, ok := nos[id]
+		n, ok := nodes[id]
 		if !ok {
-			t.Fatalf("node %s missing from the inventory (%v)", id, nos)
+			t.Fatalf("node %s missing from the inventory (%v)", id, nodes)
 		}
 		if n.Status.ObservedAt != want {
 			t.Errorf("%s: observed_at = %d, want %d (the SERVER's clock)", id, n.Status.ObservedAt, want)
@@ -171,11 +171,11 @@ func TestPollerStampsOnServer(t *testing.T) {
 			t.Errorf("%s: empty status", id)
 		}
 	}
-	if got := nos["lxc/207"].Address; got != "192.168.100.47" {
+	if got := nodes["lxc/207"].Address; got != "192.168.100.47" {
 		t.Errorf("address = %q, want 192.168.100.47", got)
 	}
 	// DHCP: no declared address is NOT an error, nor a broken node.
-	if got := nos["qemu/208"].Address; got != "" {
+	if got := nodes["qemu/208"].Address; got != "" {
 		t.Errorf("address of the guest with no ip = %q, want empty", got)
 	}
 
@@ -184,7 +184,7 @@ func TestPollerStampsOnServer(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("tick 2: %v", err)
 	}
-	if got := nosPorID(t, st)["lxc/207"].Status.ObservedAt; got != rel.now().Unix() {
+	if got := nodesByID(t, st)["lxc/207"].Status.ObservedAt; got != rel.now().Unix() {
 		t.Fatalf("observed_at did not advance on the 2nd tick: %d, want %d", got, rel.now().Unix())
 	}
 }
@@ -231,7 +231,7 @@ func TestPollerTotalFailurePreservesNodes(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	oldStamp := nosPorID(t, st)["lxc/207"].Status.ObservedAt
+	oldStamp := nodesByID(t, st)["lxc/207"].Status.ObservedAt
 
 	f.mu.Lock()
 	f.failure = errors.New("hipervisor inalcançável")
@@ -241,8 +241,8 @@ func TestPollerTotalFailurePreservesNodes(t *testing.T) {
 		t.Fatal("a total PVE failure returned success")
 	}
 
-	nos := requireSet(t, st, pveSet()...)
-	if got := nos["lxc/207"].Status.ObservedAt; got != oldStamp {
+	nodes := requireSet(t, st, pveSet()...)
+	if got := nodes["lxc/207"].Status.ObservedAt; got != oldStamp {
 		t.Fatalf("observed_at = %d, want the OLD %d (a timestamp cannot advance without an observation)", got, oldStamp)
 	}
 }
@@ -260,21 +260,21 @@ func TestPollerPartialFailure(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("a partial failure took down the whole tick: %v", err)
 	}
-	nos := requireSet(t, st, pveSet()...)
+	nodes := requireSet(t, st, pveSet()...)
 	// The healthy guest has an address and the timestamp of the tick.
-	if nos["qemu/208"].Address != "192.168.100.48" {
-		t.Errorf("a healthy guest was left with no address: %+v", nos["qemu/208"])
+	if nodes["qemu/208"].Address != "192.168.100.48" {
+		t.Errorf("a healthy guest was left with no address: %+v", nodes["qemu/208"])
 	}
-	if nos["qemu/208"].Status.ObservedAt != rel.now().Unix() {
+	if nodes["qemu/208"].Status.ObservedAt != rel.now().Unix() {
 		t.Errorf("a healthy guest was not timestamped")
 	}
 	// The guest with an unreadable address is STILL observed — what failed was the
 	// address, not its existence.
-	if nos["lxc/207"].Status.ObservedAt != rel.now().Unix() {
+	if nodes["lxc/207"].Status.ObservedAt != rel.now().Unix() {
 		t.Errorf("a guest with an unreadable address lost its status timestamp")
 	}
-	if nos["lxc/207"].Address != "" {
-		t.Errorf("address = %q, want empty", nos["lxc/207"].Address)
+	if nodes["lxc/207"].Address != "" {
+		t.Errorf("address = %q, want empty", nodes["lxc/207"].Address)
 	}
 }
 
@@ -285,8 +285,8 @@ func TestPollerRunRespectsCtx(t *testing.T) {
 	p, st, _ := newTestPoller(t, f, Sources{}, PollerConfig{Interval: 5 * time.Millisecond})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	fim := make(chan struct{})
-	go func() { p.Run(ctx); close(fim) }()
+	done := make(chan struct{})
+	go func() { p.Run(ctx); close(done) }()
 
 	// Wait for the first tick to happen, without sleeping a fixed amount.
 	deadline := time.Now().Add(3 * time.Second)
@@ -298,11 +298,11 @@ func TestPollerRunRespectsCtx(t *testing.T) {
 	}
 	cancel()
 	select {
-	case <-fim:
+	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("Run did not stop with the ctx cancelled")
 	}
-	if len(nosPorID(t, st)) == 0 {
+	if len(nodesByID(t, st)) == 0 {
 		t.Fatal("Run ran but wrote nothing")
 	}
 }
@@ -331,9 +331,9 @@ func TestPollerPanicDoesNotKillLoop(t *testing.T) {
 }
 
 // ordenados is the helper for SET assertions — never counting.
-func sortedIDs(nos map[string]Node) []string {
+func sortedIDs(nodes map[string]Node) []string {
 	var ids []string
-	for id := range nos {
+	for id := range nodes {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
@@ -347,12 +347,12 @@ func fmtIDs(ids []string) string { return fmt.Sprint(ids) }
 // into a wrong pass; the set says exactly WHO came in or went out.
 func requireSet(t *testing.T, st *Store, want ...string) map[string]Node {
 	t.Helper()
-	nos := nosPorID(t, st)
+	nodes := nodesByID(t, st)
 	sort.Strings(want)
-	if got := fmtIDs(sortedIDs(nos)); got != fmtIDs(want) {
+	if got := fmtIDs(sortedIDs(nodes)); got != fmtIDs(want) {
 		t.Fatalf("set of nodes = %s, want %s", got, fmtIDs(want))
 	}
-	return nos
+	return nodes
 }
 
 // pveSet is what a successful tick over testResources() produces: the two
@@ -390,9 +390,9 @@ func TestDiscoveryAddsUnknownGuest(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	nos := requireSet(t, st, append(pveSet(), "lxc/299")...)
+	nodes := requireSet(t, st, append(pveSet(), "lxc/299")...)
 
-	fresh := nos["lxc/299"]
+	fresh := nodes["lxc/299"]
 	if fresh.Name != "surpresa" || fresh.Kind != NodeKindGuest || fresh.VMID != 299 {
 		t.Fatalf("malformed new guest: %+v", fresh)
 	}
@@ -414,7 +414,7 @@ func TestDiscoveryRemovalKeepsHistory(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	oldStamp := nosPorID(t, st)["lxc/207"].Status.ObservedAt
+	oldStamp := nodesByID(t, st)["lxc/207"].Status.ObservedAt
 
 	// The guest vanished from the hypervisor (powered off, migrated or ACL removed).
 	f.mu.Lock()
@@ -425,18 +425,18 @@ func TestDiscoveryRemovalKeepsHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nos := requireSet(t, st, pveSet()...)
-	gone := nos["lxc/207"]
+	nodes := requireSet(t, st, pveSet()...)
+	gone := nodes["lxc/207"]
 	if gone.Status.ObservedAt != oldStamp {
 		t.Fatalf("timestamp of the vanished one = %d, want the OLD %d", gone.Status.ObservedAt, oldStamp)
 	}
 	// And freshness has to see it as stale, without anyone waiting 5 min.
-	vistas := View(Inventory{Nodes: []Node{gone}}, 90*time.Second, rel.now())
-	if !vistas[0].Stale || vistas[0].AgeSeconds != 300 {
-		t.Fatalf("view of the vanished one = %+v, want stale with 300s", vistas[0])
+	seen := View(Inventory{Nodes: []Node{gone}}, 90*time.Second, rel.now())
+	if !seen[0].Stale || seen[0].AgeSeconds != 300 {
+		t.Fatalf("view of the vanished one = %+v, want stale with 300s", seen[0])
 	}
 	// What still shows up advanced normally.
-	if nos["qemu/208"].Status.ObservedAt != rel.now().Unix() {
+	if nodes["qemu/208"].Status.ObservedAt != rel.now().Unix() {
 		t.Fatal("the guest that is present did not advance its timestamp")
 	}
 }
@@ -455,14 +455,14 @@ func TestNodeTransport(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	nos := requireSet(t, st, append(pveSet(), "canario")...)
+	nodes := requireSet(t, st, append(pveSet(), "canario")...)
 	for _, id := range pveSet() {
-		if nos[id].Transport != TransportPVEAPI {
-			t.Errorf("%s: transport = %q, want pve-api", id, nos[id].Transport)
+		if nodes[id].Transport != TransportPVEAPI {
+			t.Errorf("%s: transport = %q, want pve-api", id, nodes[id].Transport)
 		}
 	}
-	if nos["canario"].Transport != TransportAgent {
-		t.Errorf("the seed lost the transport: %+v", nos["canario"])
+	if nodes["canario"].Transport != TransportAgent {
+		t.Errorf("the seed lost the transport: %+v", nodes["canario"])
 	}
 	// The enum is closed: anyone inventing a fourth value is refused at validation.
 	if err := (Node{ID: "x", Transport: "telnet", Kind: NodeKindExternal}).Validate(); err == nil {
@@ -542,17 +542,17 @@ func TestRevokedCredentialOnlyForUnexpired(t *testing.T) {
 		t.Fatal("401 returned success")
 	}
 
-	nos := nosPorID(t, st)
-	if got := nos["qemu/208"].Credential.State; got != CredRevoked {
+	nodes := nodesByID(t, st)
+	if got := nodes["qemu/208"].Credential.State; got != CredRevoked {
 		t.Errorf("a valid token that took a 401: state = %q, want %q", got, CredRevoked)
 	}
-	if got := nos["lxc/207"].Credential.State; got == CredRevoked {
+	if got := nodes["lxc/207"].Credential.State; got == CredRevoked {
 		t.Errorf("an ALREADY EXPIRED token was marked revogada — the clue that this is a calendar matter disappears")
 	}
 	// And the final read for the screen, which is what resolves the state:
-	vistas := View(Inventory{Nodes: []Node{nos["lxc/207"]}}, time.Minute, rel.now())
-	if vistas[0].Credential.State != CredExpired {
-		t.Errorf("view of the expired one = %q, want %q", vistas[0].Credential.State, CredExpired)
+	seen := View(Inventory{Nodes: []Node{nodes["lxc/207"]}}, time.Minute, rel.now())
+	if seen[0].Credential.State != CredExpired {
+		t.Errorf("view of the expired one = %q, want %q", seen[0].Credential.State, CredExpired)
 	}
 }
 
@@ -572,7 +572,7 @@ func TestNoCredentialErrorMarksNothing(t *testing.T) {
 	if err := p.tick(context.Background()); err == nil {
 		t.Fatal("a transport error returned success")
 	}
-	for id, n := range nosPorID(t, st) {
+	for id, n := range nodesByID(t, st) {
 		if n.Credential.State == CredRevoked {
 			t.Errorf("%s marked revogada because of a TRANSPORT error", id)
 		}
@@ -595,7 +595,7 @@ func TestRedeclaredSeedUpdates(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := nosPorID(t, st)["vps"].Transport; got != TransportSSH {
+	if got := nodesByID(t, st)["vps"].Transport; got != TransportSSH {
 		t.Fatalf("initial transport = %q, want ssh", got)
 	}
 
@@ -608,7 +608,7 @@ func TestRedeclaredSeedUpdates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	n := nosPorID(t, st)["vps"]
+	n := nodesByID(t, st)["vps"]
 	if n.Transport != TransportAgent {
 		t.Errorf("transport = %q, want agente (the seed was rewritten)", n.Transport)
 	}
@@ -657,7 +657,7 @@ func TestSeedsLoad(t *testing.T) {
 // already in the inventory by the time anyone noticed.
 func TestSeedsInvalid(t *testing.T) {
 	cases := []struct {
-		nome   string
+		name   string
 		json   string
 		inText string
 	}{
@@ -669,7 +669,7 @@ func TestSeedsInvalid(t *testing.T) {
 		{"json malformado", `{isto nao e json}`, "malformado"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.nome, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			writeSeeds(t, dir, tc.json)
 			_, err := LoadSeeds(dir)
@@ -706,20 +706,20 @@ func TestAgentPollDeadNode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nos := requireSet(t, st, append(pveSet(), "canario")...)
-	if got := nos["canario"].Status.ObservedAt; got != 0 {
+	nodes := requireSet(t, st, append(pveSet(), "canario")...)
+	if got := nodes["canario"].Status.ObservedAt; got != 0 {
 		t.Fatalf("the canary was timestamped (%d) — port 9 answered nothing", got)
 	}
-	if got := nos["lxc/207"].Status.ObservedAt; got != rel.now().Unix() {
+	if got := nodes["lxc/207"].Status.ObservedAt; got != rel.now().Unix() {
 		t.Fatalf("the PVE node did not advance on the same tick (%d) — the canary failure contaminated it", got)
 	}
 	// And the read for the screen: the canary is stale, the guest is not.
-	vistas := View(Inventory{Nodes: []Node{nos["canario"], nos["lxc/207"]}}, 90*time.Second, rel.now())
-	if !vistas[0].Stale || vistas[0].AgeSeconds != -1 {
-		t.Errorf("canary = %+v, want stale with age -1 (never observed)", vistas[0])
+	seen := View(Inventory{Nodes: []Node{nodes["canario"], nodes["lxc/207"]}}, 90*time.Second, rel.now())
+	if !seen[0].Stale || seen[0].AgeSeconds != -1 {
+		t.Errorf("canary = %+v, want stale with age -1 (never observed)", seen[0])
 	}
-	if vistas[1].Stale {
-		t.Errorf("a live guest showed up expired: %+v", vistas[1])
+	if seen[1].Stale {
+		t.Errorf("a live guest showed up expired: %+v", seen[1])
 	}
 }
 
@@ -743,7 +743,7 @@ func TestAgentPollAliveStamps(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := nosPorID(t, st)["vivo"].Status.ObservedAt; got != rel.now().Unix() {
+	if got := nodesByID(t, st)["vivo"].Status.ObservedAt; got != rel.now().Unix() {
 		t.Fatalf("a LIVE agent node was not timestamped (%d) — the canary guard would be vacuous", got)
 	}
 }
@@ -768,7 +768,7 @@ func TestSSHSeedHasNoActivePoll(t *testing.T) {
 	if pinged {
 		t.Error("an ssh node got an agent poll — there is no ssh client in this phase")
 	}
-	if got := nosPorID(t, st)["vps"].Status.ObservedAt; got != 0 {
+	if got := nodesByID(t, st)["vps"].Status.ObservedAt; got != 0 {
 		t.Errorf("an ssh node was timestamped (%d) with nobody observing it", got)
 	}
 }
@@ -778,9 +778,9 @@ func TestSSHSeedHasNoActivePoll(t *testing.T) {
 // "ausente" for every node — 11 nodes saying "no credential" with a full vault.
 func TestPollerAppliesCredentials(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
-	deps := Sources{Credentials: func(nos []Node) (map[string]Credential, error) {
+	deps := Sources{Credentials: func(nodes []Node) (map[string]Credential, error) {
 		out := map[string]Credential{}
-		for _, n := range nos {
+		for _, n := range nodes {
 			if n.Transport == TransportPVEAPI && n.VMID > 0 {
 				out[n.ID] = Credential{TokenID: "lab@pve!node-" + n.Name, Expire: 1802645875}
 			}
@@ -791,21 +791,21 @@ func TestPollerAppliesCredentials(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	nos := nosPorID(t, st)
-	if got := nos["lxc/207"].Credential.TokenID; got != "lab@pve!node-apps" {
+	nodes := nodesByID(t, st)
+	if got := nodes["lxc/207"].Credential.TokenID; got != "lab@pve!node-apps" {
 		t.Fatalf("token_id = %q — the node was left with no credential while the vault is full", got)
 	}
-	if got := nos["lxc/207"].Credential.Expire; got != 1802645875 {
+	if got := nodes["lxc/207"].Credential.Expire; got != 1802645875 {
 		t.Fatalf("expire = %d — without it the Trap 10 warning never fires", got)
 	}
 	// The state is left EMPTY on disk on purpose: the view is what resolves it,
 	// with the clock of whoever serializes. And the view has to say "ok".
-	if nos["lxc/207"].Credential.State != "" {
-		t.Errorf("state written to disk = %q, want empty (the verdict belongs to the view)", nos["lxc/207"].Credential.State)
+	if nodes["lxc/207"].Credential.State != "" {
+		t.Errorf("state written to disk = %q, want empty (the verdict belongs to the view)", nodes["lxc/207"].Credential.State)
 	}
-	vistas := View(Inventory{Nodes: []Node{nos["lxc/207"]}}, time.Minute, rel.now())
-	if vistas[0].Credential.State != CredOK {
-		t.Fatalf("view = %q, want ok", vistas[0].Credential.State)
+	seen := View(Inventory{Nodes: []Node{nodes["lxc/207"]}}, time.Minute, rel.now())
+	if seen[0].Credential.State != CredOK {
+		t.Fatalf("view = %q, want ok", seen[0].Credential.State)
 	}
 }
 
@@ -816,10 +816,10 @@ func TestPollerAppliesCredentials(t *testing.T) {
 func TestPollerRevokedBeatsMissing(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	var withKey bool
-	deps := Sources{Credentials: func(nos []Node) (map[string]Credential, error) {
+	deps := Sources{Credentials: func(nodes []Node) (map[string]Credential, error) {
 		out := map[string]Credential{}
 		if withKey {
-			for _, n := range nos {
+			for _, n := range nodes {
 				if n.VMID > 0 {
 					out[n.ID] = Credential{TokenID: "lab@pve!node-" + n.Name}
 				}
@@ -848,13 +848,13 @@ func TestPollerRevokedBeatsMissing(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	nos := nosPorID(t, st)
-	if got := nos["lxc/207"].Credential.State; got != CredRevoked {
+	nodes := nodesByID(t, st)
+	if got := nodes["lxc/207"].Credential.State; got != CredRevoked {
 		t.Fatalf("state = %q, want revogada — the tick erased the record of the revocation", got)
 	}
 	// And the neighbour, which also lost its entry but was NEVER revoked, goes back
 	// to "ausente" — which is the truth for it.
-	if got := nos["qemu/208"].Credential.State; got != "" {
+	if got := nodes["qemu/208"].Credential.State; got != "" {
 		t.Errorf("neighbour = %q, want empty (the view will say ausente)", got)
 	}
 }
@@ -865,12 +865,12 @@ func TestPollerRevokedBeatsMissing(t *testing.T) {
 func TestPollerBrokenCredentialSourceDeletesNothing(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	var broken bool
-	deps := Sources{Credentials: func(nos []Node) (map[string]Credential, error) {
+	deps := Sources{Credentials: func(nodes []Node) (map[string]Credential, error) {
 		if broken {
 			return nil, errors.New("cofre fora do ar")
 		}
 		out := map[string]Credential{}
-		for _, n := range nos {
+		for _, n := range nodes {
 			if n.VMID > 0 {
 				out[n.ID] = Credential{TokenID: "lab@pve!node-" + n.Name, Expire: 99}
 			}
@@ -885,7 +885,7 @@ func TestPollerBrokenCredentialSourceDeletesNothing(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := nosPorID(t, st)["lxc/207"].Credential.TokenID; got != "lab@pve!node-apps" {
+	if got := nodesByID(t, st)["lxc/207"].Credential.TokenID; got != "lab@pve!node-apps" {
 		t.Fatalf("token_id = %q — the broken source erased the credential", got)
 	}
 }
@@ -920,14 +920,14 @@ func TestGoneNodeMarkedMissingNotDeleted(t *testing.T) {
 	if len(inv.Nodes) != 3 {
 		t.Fatalf("🔴 someone was DELETED: %v — the rule forbids it", idsDe(inv))
 	}
-	porID := map[string]Node{}
+	byID := map[string]Node{}
 	for _, n := range inv.Nodes {
-		porID[n.ID] = n
+		byID[n.ID] = n
 	}
-	if porID["lxc/101"].MissingSince != 1800000000 {
-		t.Errorf("lxc/101 with no absence timestamp: %d", porID["lxc/101"].MissingSince)
+	if byID["lxc/101"].MissingSince != 1800000000 {
+		t.Errorf("lxc/101 with no absence timestamp: %d", byID["lxc/101"].MissingSince)
 	}
-	if porID["lxc/207"].MissingSince != 0 || porID["node/pve"].MissingSince != 0 {
+	if byID["lxc/207"].MissingSince != 0 || byID["node/pve"].MissingSince != 0 {
 		t.Errorf("a node that is present was marked ausente")
 	}
 }
@@ -1018,13 +1018,13 @@ func TestDiscoveryFailureDoesNotMarkAbsence(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("first tick: %v", err)
 	}
-	invAntes, err := st.Snapshot()
+	invBefore, err := st.Snapshot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	antes := idsDe(invAntes)
-	if len(antes) < 2 {
-		t.Fatalf("the first tick did not populate the inventory: %v", antes)
+	before := idsDe(invBefore)
+	if len(before) < 2 {
+		t.Fatalf("the first tick did not populate the inventory: %v", before)
 	}
 
 	f.failure = errors.New("hipervisor inalcançável")
@@ -1035,8 +1035,8 @@ func TestDiscoveryFailureDoesNotMarkAbsence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after := idsDe(invAfter); len(after) != len(antes) {
-		t.Errorf("🔴 failed discovery deleted nodes: before %v, after %v", antes, after)
+	if after := idsDe(invAfter); len(after) != len(before) {
+		t.Errorf("🔴 failed discovery deleted nodes: before %v, after %v", before, after)
 	}
 	for _, n := range invAfter.Nodes {
 		if n.MissingSince != 0 {

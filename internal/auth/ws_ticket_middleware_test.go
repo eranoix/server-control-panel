@@ -152,9 +152,9 @@ func TestMiddleware_PanelDoesNotRegress(t *testing.T) {
 		t.Fatalf("Issue: %v", err)
 	}
 
-	comCookie := httptest.NewRequest("GET", "/ws/shell?name=main", nil)
-	comCookie.AddCookie(&http.Cookie{Name: "vpsm_token", Value: tok})
-	recCookie, visCookie := doRequest(t, s, comCookie)
+	withCookie := httptest.NewRequest("GET", "/ws/shell?name=main", nil)
+	withCookie.AddCookie(&http.Cookie{Name: "vpsm_token", Value: tok})
+	recCookie, visCookie := doRequest(t, s, withCookie)
 	if recCookie.Code != http.StatusOK || visCookie.user != "teste" || visCookie.jti != jti {
 		t.Fatalf("cookie: status=%d user=%q jti=%q, expected 200/teste/%s", recCookie.Code, visCookie.user, visCookie.jti, jti)
 	}

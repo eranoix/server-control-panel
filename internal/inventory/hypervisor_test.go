@@ -121,8 +121,8 @@ func TestStatusFailureKeepsHypervisor(t *testing.T) {
 	if h.MemUsed.ObservedAt != 1800000000 {
 		t.Errorf("timestamp = %d, want the OLD one (1800000000) — a fresh timestamp over a stale value is exactly the lie criterion 4 forbids", h.MemUsed.ObservedAt)
 	}
-	if nos := nosPorID(t, st); nos["lxc/207"].Status.ObservedAt != rel.now().Unix() {
-		t.Errorf("the node did not advance (%d) — the hypervisor failure froze discovery", nos["lxc/207"].Status.ObservedAt)
+	if nodes := nodesByID(t, st); nodes["lxc/207"].Status.ObservedAt != rel.now().Unix() {
+		t.Errorf("the node did not advance (%d) — the hypervisor failure froze discovery", nodes["lxc/207"].Status.ObservedAt)
 	}
 }
 
@@ -145,7 +145,7 @@ func TestHypervisorNameComesFromDiscovery(t *testing.T) {
 		t.Errorf("Hypervisor.Node = %q, want 'hipervisor-renomeado' (name hard-coded in the code)", inv.Hypervisor.Node)
 	}
 	f.mu.Lock()
-	seen := f.nodeStatusNome
+	seen := f.nodeStatusName
 	f.mu.Unlock()
 	if seen != "hipervisor-renomeado" {
 		t.Errorf("NodeStatus was called with %q — the node queried is not the one discovery pointed at", seen)

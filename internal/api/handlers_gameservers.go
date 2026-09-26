@@ -101,14 +101,14 @@ func (r *Router) handleGameServers(w http.ResponseWriter, req *http.Request) {
 		env, _ := json.Marshal(map[string]string{"servidor": s.ID})
 		doc, err := back.Execute(req.Context(), gameservers.OpServerStatus, env)
 		if err != nil {
-			_, msg := translateNodeError(err, dest.Nome)
+			_, msg := translateNodeError(err, dest.Name)
 			item["err"] = msg
 			output = append(output, item)
 			continue
 		}
 		var full map[string]interface{}
 		if err := json.Unmarshal(doc, &full); err != nil {
-			item["err"] = "unreadable response from node '" + dest.Nome + "'"
+			item["err"] = "unreadable response from node '" + dest.Name + "'"
 			output = append(output, item)
 			continue
 		}
@@ -508,13 +508,13 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 		// Here is the structural difference: the handler does NOT receive a path.
 		// It asks for the operation, gets an opaque Handle and tells the back-end
 		// to open it. The one holding the disk is the node, from start to finish.
-		nome := req.URL.Query().Get("world")
+		name := req.URL.Query().Get("world")
 		doc, back, dest, ok := r.execWithBackend(w, req, srv, gameservers.OpWorldExport,
-			map[string]interface{}{"servidor": srv.ID, "mundo": nome}, false)
+			map[string]interface{}{"servidor": srv.ID, "mundo": name}, false)
 		if !ok {
 			return
 		}
-		deliverArtifact(w, req, back, dest, doc, safeDownloadName(nome, "mundo")+".zip")
+		deliverArtifact(w, req, back, dest, doc, safeDownloadName(name, "mundo")+".zip")
 
 	case "import": // 27-case: `worlds/import`
 		if _, ok := r.mustPrimary(w, req); !ok {
@@ -544,7 +544,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 		// crossing the boundary again on the next call.
 		h, err := back.Receive(req.Context(), file)
 		if err != nil {
-			code, msg := translateNodeError(err, dest.Nome)
+			code, msg := translateNodeError(err, dest.Name)
 			httpx.WriteErr(w, code, msg)
 			return
 		}
@@ -554,9 +554,9 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 			"servidor": srv.ID, "nome": req.FormValue("name"), "handle": string(h),
 		})
 		doc, err := back.Execute(req.Context(), gameservers.OpWorldImport, env)
-		r.auditGame(req, dest.Nome, srv.ID, gameservers.OpWorldImport, err)
+		r.auditGame(req, dest.Name, srv.ID, gameservers.OpWorldImport, err)
 		if err != nil {
-			code, msg := translateNodeError(err, dest.Nome)
+			code, msg := translateNodeError(err, dest.Name)
 			httpx.WriteErr(w, code, msg)
 			return
 		}
@@ -683,7 +683,7 @@ func deliverArtifact(
 	}
 	rc, err := back.Open(req.Context(), gameservers.Handle(env.Handle))
 	if err != nil {
-		code, msg := translateNodeError(err, dest.Nome)
+		code, msg := translateNodeError(err, dest.Name)
 		httpx.WriteErr(w, code, msg)
 		return
 	}

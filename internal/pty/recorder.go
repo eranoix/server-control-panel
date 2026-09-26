@@ -123,7 +123,7 @@ func EnsureRecorder(dataDir, user, name string, reg *Registry) {
 
 func openRecorder(dataDir, user, name string, reg *Registry, key string) (*recorder, error) {
 	backend := NewSessionBackend(dataDir, reg)
-	if viva, err := backend.Has(name); err != nil || !viva {
+	if alive, err := backend.Has(name); err != nil || !alive {
 		return nil, os.ErrNotExist
 	}
 	cmd, err := backend.Attach(name, nil, nil, "")
@@ -245,11 +245,11 @@ func EnsureLiveSessionRecorders(dataDir string, reg *Registry, own *Ownership, p
 	}
 	attached := 0
 	for _, s := range sessions {
-		nome, _ := s["name"].(string)
-		if nome == "" {
+		name, _ := s["name"].(string)
+		if name == "" {
 			continue
 		}
-		owner := own.Owner(nome)
+		owner := own.Owner(name)
 		if owner == "" || owner == AudienceAll {
 			// With no registered owner the log would have no path — it is per user.
 			// The adoption rule already answers whose it is: the primary's.
@@ -258,7 +258,7 @@ func EnsureLiveSessionRecorders(dataDir string, reg *Registry, own *Ownership, p
 		if owner == "" {
 			continue
 		}
-		EnsureRecorder(dataDir, owner, nome, reg)
+		EnsureRecorder(dataDir, owner, name, reg)
 		attached++
 	}
 	if attached > 0 {

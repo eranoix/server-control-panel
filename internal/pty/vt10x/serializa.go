@@ -25,17 +25,17 @@ import (
 // Trailing spaces are dropped: the grid is rectangular, the history does not
 // have to be.
 func EmBytes(line []Glyph) []byte {
-	fim := len(line)
-	for fim > 0 {
-		g := line[fim-1]
+	done := len(line)
+	for done > 0 {
+		g := line[done-1]
 		if g.Char != ' ' && g.Char != 0 || g.BG != DefaultBG {
 			break
 		}
-		fim--
+		done--
 	}
 	var buf bytes.Buffer
 	curFG, curBG, curMode := DefaultFG, DefaultBG, int16(0)
-	for i := 0; i < fim; i++ {
+	for i := 0; i < done; i++ {
 		g := line[i]
 		if g.FG != curFG || g.BG != curBG || g.Mode != curMode {
 			buf.Write(sgr(g.FG, g.BG, g.Mode))

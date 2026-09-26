@@ -230,12 +230,12 @@ func (p *Poller) tick(ctx context.Context) (err error) {
 	// Failing here is news, not a fatality: the document keeps the OLD values and
 	// the OLD timestamp, and the screen shows the age growing — which is the
 	// behaviour the freshness criterion asks for (invariant 2).
-	nomeHV := hypervisorName(resources)
+	hvName := hypervisorName(resources)
 	var hvHealth pve.NodeStatus
 	hasHVHealth := false
-	if nomeHV != "" {
-		if st, err := p.pve.NodeStatus(tctx, nomeHV); err != nil {
-			log.Printf("inventory poller: health of hypervisor %q unavailable (%v) — keeping the previous stamp", nomeHV, err)
+	if hvName != "" {
+		if st, err := p.pve.NodeStatus(tctx, hvName); err != nil {
+			log.Printf("inventory poller: health of hypervisor %q unavailable (%v) — keeping the previous stamp", hvName, err)
 		} else {
 			hvHealth, hasHVHealth = st, true
 		}
@@ -243,7 +243,7 @@ func (p *Poller) tick(ctx context.Context) (err error) {
 
 	// Capacity, zpool and the privilege verdict — in the SAME tick, with the SAME
 	// timestamp, and each one failing on its own account. See coletaStorage.
-	cap := p.collectCapacity(tctx, nomeHV)
+	cap := p.collectCapacity(tctx, hvName)
 
 	observed := p.addressesInParallel(tctx, resources)
 	seeds := p.loadSeeds()
@@ -262,7 +262,7 @@ func (p *Poller) tick(ctx context.Context) (err error) {
 		// absent. Nobody is deleted — see markGone.
 		goneIDs = markGone(inv, resources, seeds, now)
 		if hasHVHealth {
-			applyHypervisor(inv, nomeHV, hvHealth, now)
+			applyHypervisor(inv, hvName, hvHealth, now)
 		}
 		// 🔴 Each aplica* is conditional ON ITS OWN. Merging the three into a single
 		// `if` would make a failure of /access/permissions erase the timestamp of the
@@ -343,18 +343,18 @@ type collectedCapacity struct {
 //
 // With no discovered hypervisor name, nothing is asked — a request with no
 // target is not observation, it is noise (invariant 3).
-func (p *Poller) collectCapacity(ctx context.Context, nomeHV string) collectedCapacity {
+func (p *Poller) collectCapacity(ctx context.Context, hvName string) collectedCapacity {
 	var out collectedCapacity
-	if nomeHV == "" {
+	if hvName == "" {
 		return out
 	}
-	if ss, err := p.pve.StorageList(ctx, nomeHV); err != nil {
-		log.Printf("inventory poller: storage capacity of %q unavailable (%v) — keeping the previous stamp", nomeHV, err)
+	if ss, err := p.pve.StorageList(ctx, hvName); err != nil {
+		log.Printf("inventory poller: storage capacity of %q unavailable (%v) — keeping the previous stamp", hvName, err)
 	} else {
 		out.pools, out.hasPools = ss, true
 	}
-	if ps, err := p.pve.ZFSList(ctx, nomeHV); err != nil {
-		log.Printf("inventory poller: zpools of %q unavailable (%v) — keeping the previous stamp", nomeHV, err)
+	if ps, err := p.pve.ZFSList(ctx, hvName); err != nil {
+		log.Printf("inventory poller: zpools of %q unavailable (%v) — keeping the previous stamp", hvName, err)
 	} else {
 		out.zpools, out.hasZPools = ps, true
 	}
@@ -417,7 +417,7 @@ func (p *Poller) addressesInParallel(ctx context.Context, resources []pve.Resour
 // The third never deletes. A guest that vanishes from the hypervisor becomes "not seen for X
 // min" on screen; erasing it would be amnesia presented as truth.
 func applyDiscovery(inv *Inventory, resources []pve.Resource, addrs map[string]string, now, maxGap int64) {
-	porID := indexByID(inv.Nodes)
+	byID := indexByID(inv.Nodes)
 
 	// The hypervisor itself: it does not appear in /cluster/resources?type=vm, but
 	// its name comes in every row. Deriving it from here keeps discovery driven by
@@ -428,20 +428,20 @@ func applyDiscovery(inv *Inventory, resources []pve.Resource, addrs map[string]s
 			hosts[r.Node] = true
 		}
 	}
-	for nome := range hosts {
-		id := "node/" + nome
-		n := porID[id]
-		n.ID, n.Name, n.Kind, n.Transport = id, nome, NodeKindHost, TransportPVEAPI
+	for name := range hosts {
+		id := "node/" + name
+		n := byID[id]
+		n.ID, n.Name, n.Kind, n.Transport = id, name, NodeKindHost, TransportPVEAPI
 		// It answered the API at this instant: that is observation, not assumption.
 		n.Status = Observe("online", now)
-		porID[id] = n
+		byID[id] = n
 	}
 
 	for _, r := range resources {
 		if !r.IsGuest() {
 			continue
 		}
-		anterior := porID[r.ID]
+		anterior := byID[r.ID]
 		n := anterior
 		n.ID, n.Name, n.Kind, n.Transport = r.ID, r.Name, NodeKindGuest, TransportPVEAPI
 		n.VMID = r.VMID
@@ -452,10 +452,10 @@ func applyDiscovery(inv *Inventory, resources []pve.Resource, addrs map[string]s
 		if addr, ok := addrs[r.ID]; ok {
 			n.Address = addr
 		}
-		porID[r.ID] = n
+		byID[r.ID] = n
 	}
 
-	inv.Nodes = sortByID(porID)
+	inv.Nodes = sortByID(byID)
 }
 
 // removeGone deletes from the inventory the nodes the hypervisor STOPPED
@@ -667,9 +667,9 @@ func rateBetweenObservations(anterior Observed[int64], current, now, maxGap int6
 	return (current - anterior.Value) / interval
 }
 
-func indexByID(nos []Node) map[string]Node {
-	m := make(map[string]Node, len(nos))
-	for _, n := range nos {
+func indexByID(nodes []Node) map[string]Node {
+	m := make(map[string]Node, len(nodes))
+	for _, n := range nodes {
 		m[n.ID] = n
 	}
 	return m
@@ -805,9 +805,9 @@ func applySeeds(inv *Inventory, seeds []Node, alive map[string]bool, now int64) 
 	if len(seeds) == 0 {
 		return
 	}
-	porID := indexByID(inv.Nodes)
+	byID := indexByID(inv.Nodes)
 	for _, s := range seeds {
-		n, existed := porID[s.ID]
+		n, existed := byID[s.ID]
 		if !existed {
 			n = s
 		} else {
@@ -817,9 +817,9 @@ func applySeeds(inv *Inventory, seeds []Node, alive map[string]bool, now int64) 
 		if alive[s.ID] {
 			n.Status = Observe("running", now)
 		}
-		porID[s.ID] = n
+		byID[s.ID] = n
 	}
-	inv.Nodes = sortByID(porID)
+	inv.Nodes = sortByID(byID)
 }
 
 func (p *Poller) loadProjects() ([]Project, []Deployment) {

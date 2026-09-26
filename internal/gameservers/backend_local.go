@@ -144,7 +144,7 @@ type reqRename struct {
 
 type reqImport struct {
 	ServerID string `json:"servidor"`
-	Nome     string `json:"nome"`
+	Name     string `json:"nome"`
 	// Handle of a zip that is ALREADY on the node (typically coming from
 	// world.export). Sending the zip from the panel to the node is an upload, it
 	// needs a route of its own with a limit and came later — it was declared as a
@@ -333,10 +333,10 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 				return nil, err
 			}
 		}
-		if err := b.m.ImportWorld(s, r.Nome, a.path); err != nil {
+		if err := b.m.ImportWorld(s, r.Name, a.path); err != nil {
 			return nil, err
 		}
-		return pack(map[string]interface{}{"ok": true, "nome": r.Nome})
+		return pack(map[string]interface{}{"ok": true, "nome": r.Name})
 
 	case OpWorldRename:
 		var r reqRename
@@ -386,7 +386,7 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		if err != nil {
 			return nil, err
 		}
-		return b.lerSettings(s)
+		return b.readSettings(s)
 
 	case OpSettingsPatch:
 		var r reqSettingsPatch
@@ -448,11 +448,11 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		// The stamp is generated ON THE NODE, as it already was in the handler.
 		// Letting the client send the stamp would hand it the file name — halfway
 		// to choosing where to write.
-		nome, err := b.m.CreateBackup(s, nowStamp())
+		name, err := b.m.CreateBackup(s, nowStamp())
 		if err != nil {
 			return nil, err
 		}
-		return pack(map[string]interface{}{"ok": true, "arquivo": nome})
+		return pack(map[string]interface{}{"ok": true, "arquivo": name})
 
 	case OpBackupRestore:
 		var r reqBackupFile
@@ -568,7 +568,7 @@ func (b *BackendLocal) server(body json.RawMessage) (Server, error) {
 	return s, nil
 }
 
-func (b *BackendLocal) lerSettings(s Server) (json.RawMessage, error) {
+func (b *BackendLocal) readSettings(s Server) (json.RawMessage, error) {
 	game, err := b.m.Settings(s)
 	if err != nil {
 		return nil, err

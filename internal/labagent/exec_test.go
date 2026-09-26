@@ -381,7 +381,7 @@ func sortedNames(m map[string]int) []string {
 // refactor. A finding with no line is a guess.
 // ─────────────────────────────────────────────────────────────────────────────
 
-func fixture(nome string) string { return filepath.Join("testdata", nome) }
+func fixture(name string) string { return filepath.Join("testdata", name) }
 
 // requireFindingOnLine asserts count AND position.
 func requireFindingOnLine(t *testing.T, findings []astcheck.Finding, line int) {
@@ -402,14 +402,14 @@ func TestPinBitesM1(t *testing.T) {
 	for _, r := range allowedRoutes {
 		allowed[r] = true
 	}
-	var fora []string
+	var outside []string
 	for route := range routes {
 		if !allowed[route] {
-			fora = append(fora, route)
+			outside = append(outside, route)
 		}
 	}
-	if len(fora) != 1 || fora[0] != "POST /exec" {
-		t.Fatalf("P1a did not catch the free-execution route: outside the allowlist = %v (routes seen: %v)", fora, sortedNames(routes))
+	if len(outside) != 1 || outside[0] != "POST /exec" {
+		t.Fatalf("P1a did not catch the free-execution route: outside the allowlist = %v (routes seen: %v)", outside, sortedNames(routes))
 	}
 	if line := routes["POST /exec"]; line != 10 {
 		t.Errorf("route reported on line %d, expected 10", line)
@@ -419,9 +419,9 @@ func TestPinBitesM1(t *testing.T) {
 // M2 — the route is NOT called /exec and argv comes in through the signature.
 // It is the proof that the AST pin is what protects: a textual grep would pass.
 func TestPinBitesM2(t *testing.T) {
-	arq := filepath.Join(fixture("m2-route-argv"), "case.go")
+	file := filepath.Join(fixture("m2-route-argv"), "case.go")
 
-	routes, _ := declaredRoutes(t, arq)
+	routes, _ := declaredRoutes(t, file)
 	if _, has := routes["POST /run"]; !has {
 		t.Fatalf("P1a did not see the new route: %v", sortedNames(routes))
 	}
@@ -435,7 +435,7 @@ func TestPinBitesM2(t *testing.T) {
 
 	// The textual half: a grep for "exec" would find NOTHING here. Asserting
 	// that is what turns "the AST pin is better" into a measured fact.
-	source, err := os.ReadFile(arq)
+	source, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,9 +464,9 @@ func TestPinBitesM3(t *testing.T) {
 
 // M4 — a loose literal key in the registry.
 func TestPinBitesM4(t *testing.T) {
-	arq := filepath.Join(fixture("m4-literal-key"), "case.go")
+	file := filepath.Join(fixture("m4-literal-key"), "case.go")
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, arq, nil, parser.SkipObjectResolution)
+	f, err := parser.ParseFile(fset, file, nil, parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -478,8 +478,8 @@ func TestPinBitesM4(t *testing.T) {
 		if !ok {
 			return true
 		}
-		for i, nome := range vs.Names {
-			if nome.Name != "registry" || i >= len(vs.Values) {
+		for i, name := range vs.Names {
+			if name.Name != "registry" || i >= len(vs.Values) {
 				continue
 			}
 			cl, ok := vs.Values[i].(*ast.CompositeLit)
@@ -522,8 +522,8 @@ func TestPinBitesM4(t *testing.T) {
 // by name would pass every other test — M1 and M2 would go on failing as they
 // should, and nobody would see the false positive until it failed a deploy.
 func TestPinSparesTypeConversion(t *testing.T) {
-	arq := filepath.Join(fixture("fp1-handle-conversion"), "case.go")
-	routes, hasMux := declaredRoutes(t, arq)
+	file := filepath.Join(fixture("fp1-handle-conversion"), "case.go")
+	routes, hasMux := declaredRoutes(t, file)
 	if !hasMux {
 		t.Fatalf("the fixture declares `mux *http.ServeMux`; the detector should recognize it")
 	}

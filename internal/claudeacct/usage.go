@@ -337,13 +337,13 @@ func (s *Store) UsageAll() UsageReport {
 
 				st := m.tokens
 				st.CostUSD = costOf(st, m.model)
-				dia := time.Unix(m.ts, 0).Local().Format("2006-01-02")
+				day := time.Unix(m.ts, 0).Local().Format("2006-01-02")
 
 				target.u.Total.add(st)
-				if dia >= sevenKey {
+				if day >= sevenKey {
 					target.u.Last7d.add(st)
 				}
-				if dia == todayKey {
+				if day == todayKey {
 					target.u.Today.add(st)
 				}
 				if wasInferred {

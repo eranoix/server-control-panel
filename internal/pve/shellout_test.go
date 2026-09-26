@@ -86,7 +86,7 @@ type hit struct {
 	File   string
 	Line   int
 	Binary string
-	Como   string // "literal" or "variável"
+	How    string // "literal" or "variável"
 }
 
 // scanHypervisorShellOut walks the tree starting at root and returns every call
@@ -118,19 +118,19 @@ func scanHypervisorShellOut(root string) (findings []hit, scanned int, err error
 			return nil
 		}
 
-		arq, perr := parser.ParseFile(fset, path, nil, 0)
+		file, perr := parser.ParseFile(fset, path, nil, 0)
 		if perr != nil {
 			return perr
 		}
 		scanned++
 
-		nomeExec := localOsExecName(arq)
-		if nomeExec == "" {
+		execName := localOsExecName(file)
+		if execName == "" {
 			return nil // the file does not even import os/exec
 		}
-		literals := stringLiterals(arq)
+		literals := stringLiterals(file)
 
-		ast.Inspect(arq, func(n ast.Node) bool {
+		ast.Inspect(file, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
@@ -140,19 +140,19 @@ func scanHypervisorShellOut(root string) (findings []hit, scanned int, err error
 				return true
 			}
 			pkg, ok := sel.X.(*ast.Ident)
-			if !ok || pkg.Name != nomeExec {
+			if !ok || pkg.Name != execName {
 				return true
 			}
 			if sel.Sel.Name != "Command" && sel.Sel.Name != "CommandContext" {
 				return true
 			}
 			for _, arg := range call.Args {
-				valor, como, ok := resolveString(arg, literals)
+				value, how, ok := resolveString(arg, literals)
 				if !ok {
 					continue
 				}
 				// Compare the BASENAME: "/usr/sbin/pct" is the same command.
-				base := filepath.Base(strings.TrimSpace(valor))
+				base := filepath.Base(strings.TrimSpace(value))
 				if _, forbidden := hypervisorBinaries[base]; !forbidden {
 					continue
 				}
@@ -160,7 +160,7 @@ func scanHypervisorShellOut(root string) (findings []hit, scanned int, err error
 					File:   filepath.ToSlash(rel),
 					Line:   fset.Position(arg.Pos()).Line,
 					Binary: base,
-					Como:   como,
+					How:    how,
 				})
 			}
 			return true
@@ -173,8 +173,8 @@ func scanHypervisorShellOut(root string) (findings []hit, scanned int, err error
 // localOsExecName returns the name under which "os/exec" was imported in this
 // file (normally "exec", but an alias would change that and the regex would not
 // even see it).
-func localOsExecName(arq *ast.File) string {
-	for _, imp := range arq.Imports {
+func localOsExecName(file *ast.File) string {
+	for _, imp := range file.Imports {
 		path, err := strconv.Unquote(imp.Path.Value)
 		if err != nil || path != "os/exec" {
 			continue
@@ -189,18 +189,18 @@ func localOsExecName(arq *ast.File) string {
 
 // stringLiterals maps identifier → string literal assigned to it in the same
 // file. It is what closes the `bin := "pct"` false negative.
-func stringLiterals(arq *ast.File) map[string]string {
+func stringLiterals(file *ast.File) map[string]string {
 	lits := map[string]string{}
-	record := func(nome ast.Expr, valor ast.Expr) {
-		id, ok := nome.(*ast.Ident)
+	record := func(name ast.Expr, value ast.Expr) {
+		id, ok := name.(*ast.Ident)
 		if !ok {
 			return
 		}
-		if s, ok := stringLiteral(valor); ok {
+		if s, ok := stringLiteral(value); ok {
 			lits[id.Name] = s
 		}
 	}
-	ast.Inspect(arq, func(n ast.Node) bool {
+	ast.Inspect(file, func(n ast.Node) bool {
 		switch v := n.(type) {
 		case *ast.AssignStmt:
 			for i, lhs := range v.Lhs {
@@ -209,9 +209,9 @@ func stringLiterals(arq *ast.File) map[string]string {
 				}
 			}
 		case *ast.ValueSpec:
-			for i, nome := range v.Names {
+			for i, name := range v.Names {
 				if i < len(v.Values) {
-					record(nome, v.Values[i])
+					record(name, v.Values[i])
 				}
 			}
 		}
@@ -232,7 +232,7 @@ func stringLiteral(e ast.Expr) (string, bool) {
 	return s, true
 }
 
-func resolveString(e ast.Expr, literals map[string]string) (valor, como string, ok bool) {
+func resolveString(e ast.Expr, literals map[string]string) (value, how string, ok bool) {
 	if s, ok := stringLiteral(e); ok {
 		return s, "literal", true
 	}
@@ -260,7 +260,7 @@ func TestNoHypervisorShellOut(t *testing.T) {
 		total += scanned
 		for _, a := range findings {
 			t.Errorf("%s/%s:%d invokes %q (%s) — %s",
-				dir, a.File, a.Line, a.Binary, a.Como, hypervisorBinaries[a.Binary])
+				dir, a.File, a.Line, a.Binary, a.How, hypervisorBinaries[a.Binary])
 		}
 	}
 	t.Logf("%d production .go files scanned, 0 hypervisor shell-outs", total)
@@ -275,46 +275,46 @@ func TestNoHypervisorShellOut(t *testing.T) {
 // hole in the regex detector, and the reason this pin is go/ast.
 func TestNoHypervisorShellOutBites(t *testing.T) {
 	cases := []struct {
-		nome   string
+		name   string
 		source string
 		finds  bool
 		binary string
-		como   string
+		how    string
 	}{
 		{
-			nome: "literal direto",
+			name: "literal direto",
 			source: `package x
 import "os/exec"
 func f() { _ = exec.Command("pct", "exec", "207", "--", "ls") }`,
-			finds: true, binary: "pct", como: "literal",
+			finds: true, binary: "pct", how: "literal",
 		},
 		{
-			nome: "comando vindo de VARIAVEL (o furo da regex)",
+			name: "comando vindo de VARIAVEL (o furo da regex)",
 			source: `package x
 import "os/exec"
 func f() { bin := "pct"; _ = exec.Command(bin, "start", "207") }`,
-			finds: true, binary: "pct", como: "variável bin",
+			finds: true, binary: "pct", how: "variável bin",
 		},
 		{
-			nome: "escondido atras de ssh (argumento do meio)",
+			name: "escondido atras de ssh (argumento do meio)",
 			source: `package x
 import "os/exec"
 func f() { _ = exec.Command("ssh", "hypervisor-01", "qm", "start", "208") }`,
-			finds: true, binary: "qm", como: "literal",
+			finds: true, binary: "qm", how: "literal",
 		},
 		{
-			nome: "caminho absoluto",
+			name: "caminho absoluto",
 			source: `package x
 import ctx "context"
 import xc "os/exec"
 func f() { _ = xc.CommandContext(ctx.TODO(), "/usr/sbin/pvesh", "get", "/cluster/resources") }`,
-			finds: true, binary: "pvesh", como: "literal",
+			finds: true, binary: "pvesh", how: "literal",
 		},
 		{
 			// Negative control 1: the false positive MEASURED in the real tree
 			// (internal/queue/runners_watchdog.go:45). If this case fails, the pin is
 			// of the kind somebody turns off.
-			nome: "identificador diskUsedPct nao e chamada",
+			name: "identificador diskUsedPct nao e chamada",
 			source: `package x
 // pct here is just a word in a comment: pct, qm, pvesh.
 func diskUsedPct(path string) (pct int, err error) { return 0, nil }`,
@@ -323,7 +323,7 @@ func diskUsedPct(path string) (pct int, err error) { return 0, nil }`,
 		{
 			// Negative control 2: a legitimate exec.Command stays allowed — the panel
 			// runs git, docker and systemctl all the time.
-			nome: "exec.Command legitimo passa",
+			name: "exec.Command legitimo passa",
 			source: `package x
 import "os/exec"
 func f() { _ = exec.Command("systemctl", "restart", "vps-manager") }`,
@@ -332,7 +332,7 @@ func f() { _ = exec.Command("systemctl", "restart", "vps-manager") }`,
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.nome, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			if err := os.WriteFile(filepath.Join(dir, "fixture.go"), []byte(tc.source), 0o644); err != nil {
 				t.Fatal(err)
@@ -354,8 +354,8 @@ func f() { _ = exec.Command("systemctl", "restart", "vps-manager") }`,
 				t.Fatalf("FALSE NEGATIVE: the detector did NOT find %q — the guard's green would be empty", tc.binary)
 			}
 			a := findings[0]
-			if a.Binary != tc.binary || a.Como != tc.como {
-				t.Fatalf("finding = %+v, want binary %q as %q", a, tc.binary, tc.como)
+			if a.Binary != tc.binary || a.How != tc.how {
+				t.Fatalf("finding = %+v, want binary %q as %q", a, tc.binary, tc.how)
 			}
 			if a.Line <= 0 || a.File != "fixture.go" {
 				t.Fatalf("finding with no usable file:line: %+v", a)
@@ -397,11 +397,11 @@ func repoRoot(t *testing.T) string {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			return dir
 		}
-		pai := filepath.Dir(dir)
-		if pai == dir {
+		parent := filepath.Dir(dir)
+		if parent == dir {
 			break
 		}
-		dir = pai
+		dir = parent
 	}
 	t.Fatal("go.mod not found walking up from the package")
 	return ""

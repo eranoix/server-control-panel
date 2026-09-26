@@ -120,7 +120,7 @@ type ZPool struct {
 // Saudavel is the only verdict this package emits about a pool: ONLINE, and
 // nothing else. DEGRADED, FAULTED, SUSPENDED, UNAVAIL and REMOVED are all "no" —
 // and none of them may be normalised to green anywhere along the path.
-func (p ZPool) Saudavel() bool { return p.Health == "ONLINE" }
+func (p ZPool) Healthy() bool { return p.Health == "ONLINE" }
 
 // ZFSList returns the node's ZFS pools. Measured: 96 ms — it fits inside the
 // poller tick, unlike /disks/list (597 ms), which was left on demand.
@@ -217,7 +217,7 @@ type ZDevice struct {
 // ZVdev is a group of devices: `mirror-0`, `raidz1-0`, or the pool itself when
 // the disks hang off the root with no group at all.
 type ZVdev struct {
-	Nome      string    `json:"nome"`
+	Name      string    `json:"nome"`
 	Type      string    `json:"tipo"` // mirror | raidz1 | raidz2 | raidz3 | listra | especial
 	Redundant bool      `json:"redundante"`
 	Devices   []ZDevice `json:"dispositivos"`
@@ -225,7 +225,7 @@ type ZVdev struct {
 
 // ZPoolTopology is the complete verdict about a pool.
 type ZPoolTopology struct {
-	Nome      string  `json:"nome"`
+	Name      string  `json:"nome"`
 	State     string  `json:"estado"`
 	Errors    string  `json:"erros"` // "No known data errors" | a description
 	Vdevs     []ZVdev `json:"vdevs"`
@@ -237,23 +237,23 @@ type ZPoolTopology struct {
 	ErrorCount int64 `json:"erros_contados"`
 }
 
-// zfsNo is the raw shape of a tree node as the hypervisor returns it.
-type zfsNo struct {
-	Name     string  `json:"name"`
-	State    string  `json:"state"`
-	Leaf     int     `json:"leaf"`
-	Read     int64   `json:"read"`
-	Write    int64   `json:"write"`
-	Cksum    int64   `json:"cksum"`
-	Msg      string  `json:"msg"`
-	Children []zfsNo `json:"children"`
+// zfsNode is the raw shape of a tree node as the hypervisor returns it.
+type zfsNode struct {
+	Name     string    `json:"name"`
+	State    string    `json:"state"`
+	Leaf     int       `json:"leaf"`
+	Read     int64     `json:"read"`
+	Write    int64     `json:"write"`
+	Cksum    int64     `json:"cksum"`
+	Msg      string    `json:"msg"`
+	Children []zfsNode `json:"children"`
 }
 
 type zfsRawDetail struct {
-	Name     string  `json:"name"`
-	State    string  `json:"state"`
-	Errors   string  `json:"errors"`
-	Children []zfsNo `json:"children"`
+	Name     string    `json:"name"`
+	State    string    `json:"state"`
+	Errors   string    `json:"errors"`
+	Children []zfsNode `json:"children"`
 }
 
 // vdevType classifies a group by its name, the way `zpool status` writes it.
@@ -262,18 +262,18 @@ type zfsRawDetail struct {
 // hanging disks straight off the root) and anything unknown do NOT count as
 // redundancy: when in doubt the verdict is "does not protect", because the error
 // in the other direction makes the operator trust a mirror that does not exist.
-func vdevType(nome string) (string, bool) {
+func vdevType(name string) (string, bool) {
 	switch {
-	case strings.HasPrefix(nome, "mirror"):
+	case strings.HasPrefix(name, "mirror"):
 		return "mirror", true
-	case strings.HasPrefix(nome, "raidz3"):
+	case strings.HasPrefix(name, "raidz3"):
 		return "raidz3", true
-	case strings.HasPrefix(nome, "raidz2"):
+	case strings.HasPrefix(name, "raidz2"):
 		return "raidz2", true
-	case strings.HasPrefix(nome, "raidz"):
+	case strings.HasPrefix(name, "raidz"):
 		return "raidz1", true
-	case strings.HasPrefix(nome, "log"), strings.HasPrefix(nome, "cache"),
-		strings.HasPrefix(nome, "spare"), strings.HasPrefix(nome, "special"):
+	case strings.HasPrefix(name, "log"), strings.HasPrefix(name, "cache"),
+		strings.HasPrefix(name, "spare"), strings.HasPrefix(name, "special"):
 		return "especial", false
 	default:
 		return "listra", false
@@ -286,21 +286,21 @@ func (c *Client) ZFSTopology(ctx context.Context, node, pool string) (ZPoolTopol
 	if node == "" || pool == "" {
 		return out, fmt.Errorf("pve: empty node or pool in ZFSTopologia")
 	}
-	var cru zfsRawDetail
+	var rawValue zfsRawDetail
 	p := "/api2/json/nodes/" + url.PathEscape(node) + "/disks/zfs/" + url.PathEscape(pool)
-	if err := c.do(ctx, http.MethodGet, p, &cru); err != nil {
+	if err := c.do(ctx, http.MethodGet, p, &rawValue); err != nil {
 		return out, err
 	}
-	out.Nome, out.State, out.Errors = cru.Name, cru.State, cru.Errors
-	if out.Nome == "" {
-		out.Nome = pool
+	out.Name, out.State, out.Errors = rawValue.Name, rawValue.State, rawValue.Errors
+	if out.Name == "" {
+		out.Name = pool
 	}
 
 	// The root the hypervisor returns is a node named after the pool; the real
 	// vdevs are its children. Going down one level is what separates "the pool"
 	// from "the pool's disk groups".
-	root := cru.Children
-	if len(root) == 1 && root[0].Leaf == 0 && root[0].Name == out.Nome {
+	root := rawValue.Children
+	if len(root) == 1 && root[0].Leaf == 0 && root[0].Name == out.Name {
 		root = root[0].Children
 	}
 
@@ -308,14 +308,14 @@ func (c *Client) ZFSTopology(ctx context.Context, node, pool string) (ZPoolTopol
 		if n.Leaf == 1 {
 			// A disk hanging straight off the root: it is a stripe, with no protection.
 			out.Vdevs = append(out.Vdevs, ZVdev{
-				Nome: n.Name, Type: "listra", Redundant: false,
+				Name: n.Name, Type: "listra", Redundant: false,
 				Devices: []ZDevice{{Path: n.Name, State: n.State,
 					Read: n.Read, Write: n.Write, Cksum: n.Cksum}},
 			})
 			continue
 		}
 		kind, red := vdevType(n.Name)
-		v := ZVdev{Nome: n.Name, Type: kind, Redundant: red}
+		v := ZVdev{Name: n.Name, Type: kind, Redundant: red}
 		for _, f := range n.Children {
 			if f.Leaf != 1 {
 				continue

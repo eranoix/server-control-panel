@@ -60,8 +60,8 @@ func TestAttemptStampedEvenWhenDiscoveryFails(t *testing.T) {
 
 	// And the nodes' data keeps the OLD timestamp: there are two clocks, and it is
 	// the DIVERGENCE between them that says whose fault it is.
-	nos := nosPorID(t, st)
-	if got := nos["lxc/207"].Status.ObservedAt; got != 1800000000 {
+	nodes := nodesByID(t, st)
+	if got := nodes["lxc/207"].Status.ObservedAt; got != 1800000000 {
 		t.Fatalf("the node was rejuvenated by the attempt that failed: %d", got)
 	}
 }
@@ -124,9 +124,9 @@ func TestTwoClocksAreIndependent(t *testing.T) {
 		t.Fatalf("attempt clock = %ds stale=%v — the poller has just run", poll.AgeSeconds, poll.Stale)
 	}
 
-	vistas := View(inv, 90*time.Second, time.Unix(1800000600, 0))
+	seen := View(inv, 90*time.Second, time.Unix(1800000600, 0))
 	var gone NodeView
-	for _, v := range vistas {
+	for _, v := range seen {
 		if v.ID == "qemu/208" {
 			gone = v
 		}

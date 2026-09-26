@@ -128,16 +128,16 @@ func (r *Router) keyForOp(op pvxOp, no inventory.Node) string {
 // a logged defect.
 func (r *Router) clientForOp(w http.ResponseWriter, op pvxOp, no inventory.Node) (hypervisorOps, bool) {
 	key := r.keyForOp(op, no)
-	valor, state := r.vaultToken(key)
+	value, state := r.vaultToken(key)
 	switch state {
-	case vaultInalcancavel:
+	case vaultUnreachable:
 		writeErr(w, 503, "vault unreachable — the credential ("+key+") could not be read")
 		return nil, false
 	case vaultMissing:
 		writeErr(w, 409, "missing credential in the vault: "+key)
 		return nil, false
 	}
-	cli, err := r.dial(valor)
+	cli, err := r.dial(value)
 	if err != nil {
 		writeErr(w, 503, "hypervisor not configured: "+err.Error())
 		return nil, false
@@ -286,15 +286,15 @@ func hypervisorNameInInventory(inv inventory.Inventory) string {
 
 // hypervisorNodeOr409 resolves the host name or explains why it cannot.
 func hypervisorNodeOr409(w http.ResponseWriter, inv inventory.Inventory) (string, bool) {
-	nome := hypervisorNameInInventory(inv)
-	if nome == "" {
+	name := hypervisorNameInInventory(inv)
+	if name == "" {
 		// Never "pve" by default: guessing a name would make the route return the
 		// hypervisor's error instead of the real state ("the poller has not
 		// discovered it yet").
 		writeErr(w, 409, "hypervisor not discovered yet — the poller has not completed a tick")
 		return "", false
 	}
-	return nome, true
+	return name, true
 }
 
 // hypervisorHealth answers from the STORE, without touching the hypervisor.
@@ -690,7 +690,7 @@ func (r *Router) zpoolTopology(w http.ResponseWriter, req *http.Request, inv inv
 			// An unreadable pool must not take the others down — nor turn into
 			// silence. It goes into the list saying it was not read, with the reason.
 			tops = append(tops, pve.ZPoolTopology{
-				Nome: p.Name, State: "DESCONHECIDO",
+				Name: p.Name, State: "DESCONHECIDO",
 				Errors: "could not read the topology: " + pveErrorDetail(err),
 			})
 			continue
@@ -778,11 +778,11 @@ func (r *Router) taskLog(w http.ResponseWriter, req *http.Request, inv inventory
 	writeJSON(w, map[string]any{"node": node, "upid": upid, "lines": lines})
 }
 
-// discoView adds the NORMALIZED wearout to the disk. PVE sends a number for an
+// diskView adds the NORMALIZED wearout to the disk. PVE sends a number for an
 // SSD that reports remaining life and the string "N/A" for a disk that reports
 // none; shipping the raw field to the browser would push the type check into
 // the screen, which is where it turns into a forgotten `typeof x === 'number'`.
-type discoView struct {
+type diskView struct {
 	pve.Disk
 	WearoutPct *float64 `json:"wearout_pct"`
 }
@@ -799,21 +799,21 @@ func (r *Router) hypervisorDisks(w http.ResponseWriter, req *http.Request, inv i
 	if !ok {
 		return
 	}
-	discos, err := cli.DisksList(req.Context(), node)
+	disks, err := cli.DisksList(req.Context(), node)
 	if err != nil {
 		writeErr(w, pveErrorCode(err), "hypervisor refused the disk list: "+pveErrorDetail(err))
 		return
 	}
-	vistas := make([]discoView, 0, len(discos))
-	for _, d := range discos {
-		v := discoView{Disk: d}
+	seen := make([]diskView, 0, len(disks))
+	for _, d := range disks {
+		v := diskView{Disk: d}
 		if pct, hasData := d.WearoutPct(); hasData {
 			p := pct
 			v.WearoutPct = &p
 		}
-		vistas = append(vistas, v)
+		seen = append(seen, v)
 	}
-	writeJSON(w, map[string]any{"node": node, "disks": vistas, "observed_at": r.now().Unix()})
+	writeJSON(w, map[string]any{"node": node, "disks": seen, "observed_at": r.now().Unix()})
 }
 
 // tokenPermissions answers "what can this token do" — LIVE, audit token.
@@ -865,14 +865,14 @@ func (r *Router) guestSnapshots(w http.ResponseWriter, req *http.Request, inv in
 	}
 	q := req.URL.Query()
 	id := strings.TrimSpace(q.Get("node"))
-	nome := strings.TrimSpace(q.Get("name"))
+	name := strings.TrimSpace(q.Get("name"))
 
 	// The name is rejected BEFORE anything else: it comes from the screen and it
 	// is what builds the resource path on the hypervisor. Validating after
 	// dialling out would spend a connection just to find out the screen sent
 	// garbage.
 	if req.Method != http.MethodGet {
-		if err := pve.ValidSnapshotName(nome); err != nil {
+		if err := pve.ValidSnapshotName(name); err != nil {
 			writeErr(w, 400, err.Error())
 			return
 		}
@@ -918,10 +918,10 @@ func (r *Router) guestSnapshots(w http.ResponseWriter, req *http.Request, inv in
 	var err error
 	action := "create"
 	if req.Method == http.MethodPost {
-		upid, err = cli.SnapshotCreate(ctx, host, no.VMID, kind, nome, strings.TrimSpace(q.Get("desc")))
+		upid, err = cli.SnapshotCreate(ctx, host, no.VMID, kind, name, strings.TrimSpace(q.Get("desc")))
 	} else {
 		action = "delete"
-		upid, err = cli.SnapshotDelete(ctx, host, no.VMID, kind, nome)
+		upid, err = cli.SnapshotDelete(ctx, host, no.VMID, kind, name)
 	}
 	if err != nil {
 		writeErr(w, pveErrorCode(err), "hypervisor refused snapshot "+action+": "+pveErrorDetail(err))
@@ -930,7 +930,7 @@ func (r *Router) guestSnapshots(w http.ResponseWriter, req *http.Request, inv in
 
 	if _, err := waitTask(ctx, cli, host, upid); err != nil {
 		r.auditEvent(req, auth.UserFrom(req), "pve.snapshot",
-			"node="+id+" acao="+action+" nome="+nome+" upid="+upid+" status=falhou")
+			"node="+id+" acao="+action+" nome="+name+" upid="+upid+" status=falhou")
 		// The exitstatus goes in EXPLICITLY: when Status is 0, the pve.Error
 		// formatter takes the Err branch and the Body — which carries the real
 		// reason — never shows up on its own.
@@ -941,8 +941,8 @@ func (r *Router) guestSnapshots(w http.ResponseWriter, req *http.Request, inv in
 	// A mutation on the hypervisor with NO trail is a mutation nobody can
 	// reconstruct afterwards.
 	r.auditEvent(req, auth.UserFrom(req), "pve.snapshot",
-		"node="+id+" acao="+action+" nome="+nome+" upid="+upid+" status=ok")
-	writeJSON(w, map[string]any{"node": id, "action": action, "name": nome, "upid": upid, "status": "ok"})
+		"node="+id+" acao="+action+" nome="+name+" upid="+upid+" status=ok")
+	writeJSON(w, map[string]any{"node": id, "action": action, "name": name, "upid": upid, "status": "ok"})
 }
 
 // guestRollback returns the guest to a snapshot's state — LIVE, NODE token.
@@ -977,12 +977,12 @@ func (r *Router) guestSnapshots(w http.ResponseWriter, req *http.Request, inv in
 func (r *Router) guestRollback(w http.ResponseWriter, req *http.Request, inv inventory.Inventory) {
 	q := req.URL.Query()
 	id := strings.TrimSpace(q.Get("node"))
-	nome := strings.TrimSpace(q.Get("name"))
+	name := strings.TrimSpace(q.Get("name"))
 
 	// The name is rejected BEFORE anything else: it comes from the screen and it
 	// chooses WHICH state the guest will take on. Validating after dialling out
 	// would spend a connection just to find out the screen sent garbage.
-	if err := pve.ValidSnapshotName(nome); err != nil {
+	if err := pve.ValidSnapshotName(name); err != nil {
 		writeErr(w, 400, err.Error())
 		return
 	}
@@ -1003,14 +1003,14 @@ func (r *Router) guestRollback(w http.ResponseWriter, req *http.Request, inv inv
 	kind, host := kindAndHost(no)
 	ctx := req.Context()
 
-	upid, err := cli.SnapshotRollback(ctx, host, no.VMID, kind, nome)
+	upid, err := cli.SnapshotRollback(ctx, host, no.VMID, kind, name)
 	if err != nil {
 		writeErr(w, pveErrorCode(err), "hypervisor refused the rollback: "+pveErrorDetail(err))
 		return
 	}
 	if _, err := waitTask(ctx, cli, host, upid); err != nil {
 		r.auditEvent(req, auth.UserFrom(req), "pve.snapshot",
-			"node="+id+" acao=rollback nome="+nome+" upid="+upid+" status=falhou")
+			"node="+id+" acao=rollback nome="+name+" upid="+upid+" status=falhou")
 		writeErr(w, 502, "task "+upid+" did not finish cleanly: "+pveErrorDetail(err))
 		return
 	}
@@ -1019,8 +1019,8 @@ func (r *Router) guestRollback(w http.ResponseWriter, req *http.Request, inv inv
 	// dashboard fires, and what it erases has no second copy — the pool is
 	// single-disk.
 	r.auditEvent(req, auth.UserFrom(req), "pve.snapshot",
-		"node="+id+" acao=rollback nome="+nome+" upid="+upid+" status=ok")
-	writeJSON(w, map[string]any{"node": id, "action": "rollback", "name": nome, "upid": upid, "status": "ok"})
+		"node="+id+" acao=rollback nome="+name+" upid="+upid+" status=ok")
+	writeJSON(w, map[string]any{"node": id, "action": "rollback", "name": name, "upid": upid, "status": "ok"})
 }
 
 // 🔴 SUSPEND DOES NOT EXIST IN THIS DASHBOARD, AND THAT IS DELIBERATE.

@@ -492,7 +492,7 @@ func readJSONFile(path string) (map[string]interface{}, error) {
 // inventory just to open a zip. The panel builds this struct from its own Node;
 // the agent never needs it.
 type NodeTarget struct {
-	Nome      string // readable name of the node ("games", "apps")
+	Name      string // readable name of the node ("games", "apps")
 	Transport string // value of inventory.Transport
 	Base      string // HTTP root of the lab-agent, when the transport is the agent
 	Token     string // that node's bearer — injected ON THE SERVER
@@ -518,24 +518,24 @@ const (
 func NewBackend(d NodeTarget, m *Manager) (Backend, error) {
 	switch d.Transport {
 	case "":
-		return nil, fmt.Errorf("node %q with no declared transport: incomplete inventory, there is no safe default to assume", d.Nome)
+		return nil, fmt.Errorf("node %q with no declared transport: incomplete inventory, there is no safe default to assume", d.Name)
 
 	case TransportAgent:
-		return NewBackendHTTP(d.Base, d.Token, d.Nome)
+		return NewBackendHTTP(d.Base, d.Token, d.Name)
 
 	case TransportPVEAPI, TransportSSH:
 		// A node with no agent keeps being served by today's code, in the panel's
 		// own process. This is what keeps the VPS panel working throughout the
 		// transition.
 		if m == nil {
-			return nil, fmt.Errorf("local back-end of node %q requires Manager", d.Nome)
+			return nil, fmt.Errorf("local back-end of node %q requires Manager", d.Name)
 		}
-		return NewBackendLocal(m, d.Nome), nil
+		return NewBackendLocal(m, d.Name), nil
 
 	default:
 		// A value outside the closed set NAMES the value. Falling back to local here
 		// would turn a typo in the inventory into "it worked, only on the wrong
 		// node" — the worst possible outcome.
-		return nil, fmt.Errorf("invalid transport on node %q: %q is not one of the three supported", d.Nome, d.Transport)
+		return nil, fmt.Errorf("invalid transport on node %q: %q is not one of the three supported", d.Name, d.Transport)
 	}
 }

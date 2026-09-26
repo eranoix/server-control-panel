@@ -194,7 +194,7 @@ type Router struct {
 	// repo uses no mocking framework.
 	inventoryNow func() time.Time
 	nodeVaultFn  func() (nodeVault, error)
-	pveDial      func(tokenValor string) (hypervisorOps, error)
+	pveDial      func(tokenValue string) (hypervisorOps, error)
 	// scheduler is the cron-driven launcher (F2) that enqueues into queue.
 	// nil only when init failed; handlers degrade to 503.
 	scheduler *scheduler.Scheduler
@@ -925,9 +925,9 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	// Without DataDir it is never created — building it with an empty path
 	// would write `mobile-idempotencia.json` into the process's working
 	// directory, and a nil here is a clean no-op across the whole table.
-	var mobileIdem *mobilebff.Idempotencia
+	var mobileIdem *mobilebff.Idempotency
 	if r.cfg != nil && strings.TrimSpace(r.cfg.DataDir) != "" {
-		mobileIdem = mobilebff.NovaIdempotencia(r.cfg.DataDir)
+		mobileIdem = mobilebff.NewIdempotency(r.cfg.DataDir)
 	}
 
 	mobileDeps := mobilebff.Deps{

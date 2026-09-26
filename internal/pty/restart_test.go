@@ -18,7 +18,7 @@ import (
 // no close frame — the browser reports 1006 (abnormal closure), identical to a
 // network drop.
 func TestNotifyRestartDeliversCode1012(t *testing.T) {
-	pronto := make(chan struct{})
+	ready := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		up := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 		c, err := up.Upgrade(w, r, nil)
@@ -26,9 +26,9 @@ func TestNotifyRestartDeliversCode1012(t *testing.T) {
 			return
 		}
 		defer c.Close()
-		desregistra := registerLive(c)
-		defer desregistra()
-		close(pronto)
+		unregister := registerLive(c)
+		defer unregister()
+		close(ready)
 		// Hold the connection open until the test has finished reading.
 		time.Sleep(2 * time.Second)
 	}))
@@ -40,7 +40,7 @@ func TestNotifyRestartDeliversCode1012(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer cli.Close()
-	<-pronto
+	<-ready
 
 	if n := LiveCount(); n != 1 {
 		t.Fatalf("LiveCount = %d, wanted 1 (connection was not registered)", n)
@@ -68,30 +68,30 @@ func TestNotifyRestartDeliversCode1012(t *testing.T) {
 
 // A leaked registration would hold the connection alive in memory and make the
 // notice write into a dead socket on every deploy after that.
-func TestRegisterLiveDesregistra(t *testing.T) {
-	antes := LiveCount()
+func TestRegisterLiveUnregisters(t *testing.T) {
+	before := LiveCount()
 	c := &websocket.Conn{}
-	fim := registerLive(c)
-	if LiveCount() != antes+1 {
+	done := registerLive(c)
+	if LiveCount() != before+1 {
 		t.Fatalf("registration was not counted")
 	}
-	fim()
-	if LiveCount() != antes {
-		t.Fatalf("LiveCount = %d after unregistering, wanted %d", LiveCount(), antes)
+	done()
+	if LiveCount() != before {
+		t.Fatalf("LiveCount = %d after unregistering, wanted %d", LiveCount(), before)
 	}
 	// Idempotent: a double defer must not break the count.
-	fim()
-	if LiveCount() != antes {
+	done()
+	if LiveCount() != before {
 		t.Fatalf("duplicate unregister messed up the count: %d", LiveCount())
 	}
 }
 
 // nil must not take down the shutdown path — the deploy has to happen.
 func TestRegisterLiveNilDoesNotBreak(t *testing.T) {
-	antes := LiveCount()
-	fim := registerLive(nil)
-	fim()
-	if LiveCount() != antes {
+	before := LiveCount()
+	done := registerLive(nil)
+	done()
+	if LiveCount() != before {
 		t.Fatalf("nil conn touched the count")
 	}
 }

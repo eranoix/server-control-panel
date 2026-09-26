@@ -63,7 +63,7 @@ func TestHandler(t *testing.T) {
 	//    build's fork and the sid from the body.
 	t.Run("valid-batch-2-events", func(t *testing.T) {
 		h, p := newHandler(t)
-		antes := time.Now().Add(-time.Second)
+		before := time.Now().Add(-time.Second)
 		rec := post(h, "application/json",
 			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.codigo","origin":"nav"},{"screen":"docker.containers.logs","origin":"default"}],"dropped":0}`)
 		if rec.Code != http.StatusNoContent {
@@ -102,7 +102,7 @@ func TestHandler(t *testing.T) {
 			pt, err := time.Parse(time.RFC3339Nano, ts)
 			if err != nil {
 				t.Errorf("line %d ts is not RFC3339: %q", i+1, ts)
-			} else if pt.Before(antes) || pt.After(time.Now().Add(time.Second)) {
+			} else if pt.Before(before) || pt.After(time.Now().Add(time.Second)) {
 				t.Errorf("line %d ts is not the server's (outside the window): %q", i+1, ts)
 			}
 			// The schema is closed at 6 fields: nothing else can leak out.

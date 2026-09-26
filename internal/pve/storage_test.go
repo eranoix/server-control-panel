@@ -57,25 +57,25 @@ func fixtureBody(t *testing.T, path string) string {
 // does not send JSON booleans) and `content` as a comma-separated list, not as
 // an array.
 func TestStorageListReadsRealShape(t *testing.T) {
-	c, vista := captureURL(t, fixtureBody(t, fixtureStorage))
+	c, seenURL := captureURL(t, fixtureBody(t, fixtureStorage))
 
 	ss, err := c.StorageList(context.Background(), "pve")
 	if err != nil {
 		t.Fatalf("StorageList: %v", err)
 	}
-	if *vista != "/api2/json/nodes/pve/storage" {
-		t.Errorf("URL = %q, want /api2/json/nodes/pve/storage", *vista)
+	if *seenURL != "/api2/json/nodes/pve/storage" {
+		t.Errorf("URL = %q, want /api2/json/nodes/pve/storage", *seenURL)
 	}
 	if len(ss) != 4 {
 		t.Fatalf("len = %d, want 4 storages (backupusb, local, local-zfs, pbs)", len(ss))
 	}
-	porID := map[string]Storage{}
+	byID := map[string]Storage{}
 	for _, s := range ss {
-		porID[s.Storage] = s
+		byID[s.Storage] = s
 	}
-	lz, ok := porID["local-zfs"]
+	lz, ok := byID["local-zfs"]
 	if !ok {
-		t.Fatalf("local-zfs missing: %+v", porID)
+		t.Fatalf("local-zfs missing: %+v", byID)
 	}
 	if lz.Type != "zfspool" {
 		t.Errorf("local-zfs.Type = %q, want zfspool", lz.Type)
@@ -94,14 +94,14 @@ func TestStorageListReadsRealShape(t *testing.T) {
 	if !lz.IsActive() || !lz.IsEnabled() {
 		t.Errorf("local-zfs ativo=%v habilitado=%v — the PVE sends 1, not true", lz.IsActive(), lz.IsEnabled())
 	}
-	pbs, ok := porID["pbs"]
+	pbs, ok := byID["pbs"]
 	if !ok {
 		t.Fatal("pbs missing")
 	}
 	if !pbs.IsShared() {
 		t.Error("pbs.Compartilhado() = false — the fixture carries shared=1")
 	}
-	if porID["local"].IsShared() {
+	if byID["local"].IsShared() {
 		t.Error("local.Compartilhado() = true — the fixture carries shared=0")
 	}
 }
@@ -136,14 +136,14 @@ func TestStorageListOrderIsStable(t *testing.T) {
 // TestZFSListReadsRealShape uses the LITERAL response of /nodes/pve/disks/zfs —
 // the route that returned 403 before the ACL and now brings back both pools.
 func TestZFSListReadsRealShape(t *testing.T) {
-	c, vista := captureURL(t, fixtureBody(t, fixtureZFS))
+	c, seenURL := captureURL(t, fixtureBody(t, fixtureZFS))
 
 	ps, err := c.ZFSList(context.Background(), "pve")
 	if err != nil {
 		t.Fatalf("ZFSList: %v", err)
 	}
-	if *vista != "/api2/json/nodes/pve/disks/zfs" {
-		t.Errorf("URL = %q, want /api2/json/nodes/pve/disks/zfs", *vista)
+	if *seenURL != "/api2/json/nodes/pve/disks/zfs" {
+		t.Errorf("URL = %q, want /api2/json/nodes/pve/disks/zfs", *seenURL)
 	}
 	if len(ps) != 2 {
 		t.Fatalf("len = %d, want 2 pools (backup, rpool)", len(ps))
@@ -181,7 +181,7 @@ func TestZFSListDegradedPoolIsNotOnline(t *testing.T) {
 	if len(ps) != 1 || ps[0].Health != "DEGRADED" {
 		t.Fatalf("pools = %+v, want health DEGRADED preserved literally", ps)
 	}
-	if ps[0].Saudavel() {
+	if ps[0].Healthy() {
 		t.Error("Saudavel() = true for DEGRADED — only ONLINE counts as healthy")
 	}
 }
@@ -202,7 +202,7 @@ func TestZFSListDegradedPoolIsNotOnline(t *testing.T) {
 // hunting for a defect in the panel.
 func TestEmptyIsNotErrorOnNewRoutes(t *testing.T) {
 	cases := []struct {
-		nome    string
+		name    string
 		body    string
 		wantErr bool
 	}{
@@ -211,7 +211,7 @@ func TestEmptyIsNotErrorOnNewRoutes(t *testing.T) {
 		{"sem envelope", `{"nao-e-data":[]}`, true},
 	}
 	for _, cs := range cases {
-		t.Run(cs.nome+"/storage", func(t *testing.T) {
+		t.Run(cs.name+"/storage", func(t *testing.T) {
 			c, _ := captureURL(t, cs.body)
 			ss, err := c.StorageList(context.Background(), "pve")
 			if (err != nil) != cs.wantErr {
@@ -221,7 +221,7 @@ func TestEmptyIsNotErrorOnNewRoutes(t *testing.T) {
 				t.Errorf("len = %d, want 0", len(ss))
 			}
 		})
-		t.Run(cs.nome+"/zfs", func(t *testing.T) {
+		t.Run(cs.name+"/zfs", func(t *testing.T) {
 			c, _ := captureURL(t, cs.body)
 			ps, err := c.ZFSList(context.Background(), "pve")
 			if (err != nil) != cs.wantErr {
@@ -280,7 +280,7 @@ func TestZFSListForbiddenStaysForbidden(t *testing.T) {
 // The correct verdict is the PRIVILEGE, on any path that covers the storage.
 func TestCanAuditDatastoreRequiresPrivilege(t *testing.T) {
 	cases := []struct {
-		nome  string
+		name  string
 		perms map[string]map[string]int
 		want  bool
 	}{
@@ -331,7 +331,7 @@ func TestCanAuditDatastoreRequiresPrivilege(t *testing.T) {
 		},
 	}
 	for _, cs := range cases {
-		t.Run(cs.nome, func(t *testing.T) {
+		t.Run(cs.name, func(t *testing.T) {
 			if got := CanAuditDatastore(cs.perms); got != cs.want {
 				t.Errorf("CanAuditDatastore = %v, want %v", got, cs.want)
 			}

@@ -14,7 +14,7 @@ import (
 )
 
 // serverWithRecorder brings up a real HostShell over a dataDir of its own.
-func serverWithRecorder(t *testing.T, nome string) (dir string, dial func(string) *websocket.Conn) {
+func serverWithRecorder(t *testing.T, name string) (dir string, dial func(string) *websocket.Conn) {
 	t.Helper()
 	if _, err := exec.LookPath("dtach"); err != nil {
 		t.Skip("no dtach on this machine")
@@ -32,12 +32,12 @@ func serverWithRecorder(t *testing.T, nome string) (dir string, dial func(string
 		HostShell(w, r, "u", true, own, "", dir, reg)
 	}))
 	t.Cleanup(func() {
-		StopRecorder(dir, "u", nome)
+		StopRecorder(dir, "u", name)
 		srv.Close()
-		_ = exec.Command("pkill", "-f", socketPathFor(dir, nome)).Run()
+		_ = exec.Command("pkill", "-f", socketPathFor(dir, name)).Run()
 	})
 	return dir, func(extra string) *websocket.Conn {
-		u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/?size=1&name=" + nome + extra
+		u := "ws" + strings.TrimPrefix(srv.URL, "http") + "/?size=1&name=" + name + extra
 		c, _, err := websocket.DefaultDialer.Dial(u, nil)
 		if err != nil {
 			t.Fatalf("dial: %v", err)
@@ -62,8 +62,8 @@ func serverWithRecorder(t *testing.T, nome string) (dir string, dial func(string
 // It is the interval in which a person closes the laptop and moves to another
 // computer, that is, exactly the stretch they come back wanting to read.
 func TestRecorderLeavesNoLogGapWithNobodyAttached(t *testing.T) {
-	nome := "gravador-buraco"
-	dir, dial := serverWithRecorder(t, nome)
+	name := "gravador-buraco"
+	dir, dial := serverWithRecorder(t, name)
 
 	c := dial("")
 	time.Sleep(1500 * time.Millisecond)
@@ -75,11 +75,11 @@ func TestRecorderLeavesNoLogGapWithNobodyAttached(t *testing.T) {
 
 	time.Sleep(14 * time.Second) // the markers come out with nobody attached
 
-	dados, _ := os.ReadFile(sessionLogPath(dir, "u", nome))
+	data, _ := os.ReadFile(sessionLogPath(dir, "u", name))
 	var missing []string
 	for i := 1; i <= 5; i++ {
 		m := fmt.Sprintf("MARCA_%d", i)
-		if !strings.Contains(string(dados), m) {
+		if !strings.Contains(string(data), m) {
 			missing = append(missing, m)
 		}
 	}
@@ -115,8 +115,8 @@ func TestSessionWithRecorderStillFollowsRealClient(t *testing.T) {
 // `forgetSize` whose return value nobody used) that let the original defect
 // slip through a green battery — see session_size_e2e_test.go.
 func TestHistoryFlowsFromLiveSessionToPanelFetch(t *testing.T) {
-	nome := "hist-cadeia"
-	dir, dial := serverWithRecorder(t, nome)
+	name := "hist-cadeia"
+	dir, dial := serverWithRecorder(t, name)
 
 	// SessionHistory reads from the package's ACTIVE dataDir.
 	reg, err := LoadRegistry(dir + "/reg-ativo.json")
@@ -135,11 +135,11 @@ func TestHistoryFlowsFromLiveSessionToPanelFetch(t *testing.T) {
 	_ = c.Close()
 	time.Sleep(1500 * time.Millisecond)
 
-	dados, total := SessionHistory("u", nome, 1<<20)
+	data, total := SessionHistory("u", name, 1<<20)
 	if total == 0 {
 		t.Fatal("the session history is empty — the recorder→emulator→file chain is cut")
 	}
-	text := stripANSI(string(dados))
+	text := stripANSI(string(data))
 	missing := 0
 	for i := 1; i <= 20; i++ { // the first ones have certainly scrolled out by now
 		if !strings.Contains(text, fmt.Sprintf("LINHA_DE_HISTORICO_%d", i)) {

@@ -115,15 +115,15 @@ func credentialState(c Credential, now time.Time) string {
 // The input order is preserved (the store already writes sorted by ID), so that
 // two reads in a row produce the same document.
 func View(inv Inventory, ttl time.Duration, now time.Time) []NodeView {
-	vistas := make([]NodeView, 0, len(inv.Nodes))
+	seen := make([]NodeView, 0, len(inv.Nodes))
 	for _, n := range inv.Nodes {
 		stamp := nodeObservedAt(n)
 		n.Credential.State = credentialState(n.Credential, now)
-		vistas = append(vistas, NodeView{
+		seen = append(seen, NodeView{
 			Node:       n,
 			AgeSeconds: AgeSeconds(stamp, now),
 			Stale:      Stale(stamp, ttl, now),
 		})
 	}
-	return vistas
+	return seen
 }

@@ -104,7 +104,7 @@ type ctrlMsg struct {
 //	replay=0  → "I rebuild the screen": no history, no repaint.
 //	none      → client that does not prime itself (the web panel): both.
 func serverPriming(attach, replay string) (sendHistory, forceRepaint bool) {
-	attachFresco := attach != "1"
+	freshAttach := attach != "1"
 	clientRebuildsScreen := replay == "0"
 	// HISTORY and REPAINT are DIFFERENT questions again, and this time the
 	// separation is the right answer, not the defect.
@@ -118,7 +118,7 @@ func serverPriming(attach, replay string) (sendHistory, forceRepaint bool) {
 	//
 	// On a reconnect (attach=1) neither runs: the client's in-memory grid is
 	// intact, and repainting over it would duplicate.
-	return attachFresco && !clientRebuildsScreen, attachFresco
+	return freshAttach && !clientRebuildsScreen, freshAttach
 }
 
 func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool, own *Ownership, claudeConfigDir string, dataDir string, reg *Registry) {

@@ -108,7 +108,7 @@ func (s *Store) Read(user, id string) (ptysvc.Backup, error) {
 
 // BackedUpSession is one session inside a backup, already summarized.
 type BackedUpSession struct {
-	Nome    string `json:"name"`
+	Name    string `json:"name"`
 	Summary string `json:"summary"`
 	Lines   int    `json:"lines"`
 }
@@ -148,7 +148,7 @@ func (s *Store) List(user string) []Meta {
 		sessions := make([]BackedUpSession, 0, len(bk.Sessions))
 		for _, sn := range bk.Sessions {
 			sessions = append(sessions, BackedUpSession{
-				Nome:    sn.Name,
+				Name:    sn.Name,
 				Summary: Summary(sn),
 				Lines:   countLines(sn),
 			})
@@ -235,7 +235,7 @@ func (s *Store) prune(user string, keep int, eligible func(ptysvc.Backup) bool) 
 	}
 	entries, _ := os.ReadDir(dir)
 	type file struct {
-		nome string
+		name string
 		ts   int64
 	}
 	candidates := make([]file, 0, len(entries))
@@ -249,14 +249,14 @@ func (s *Store) prune(user string, keep int, eligible func(ptysvc.Backup) bool) 
 			continue
 		}
 		ts, _ := strconv.ParseInt(id, 10, 64)
-		candidates = append(candidates, file{nome: e.Name(), ts: ts})
+		candidates = append(candidates, file{name: e.Name(), ts: ts})
 	}
 	if len(candidates) <= keep {
 		return
 	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].ts > candidates[j].ts })
 	for _, f := range candidates[keep:] {
-		_ = os.Remove(filepath.Join(dir, f.nome))
+		_ = os.Remove(filepath.Join(dir, f.name))
 	}
 }
 
@@ -292,8 +292,8 @@ func Summary(s ptysvc.SessionSnapshot) string {
 			}
 		}
 	}
-	manchete, body := PanelSummary(sb.String())
-	out := manchete
+	headline, body := PanelSummary(sb.String())
+	out := headline
 	if out == "" && body != "" {
 		lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
 		out = strings.TrimSpace(lines[len(lines)-1])
@@ -308,7 +308,7 @@ func Summary(s ptysvc.SessionSnapshot) string {
 // lines, separators and TUI borders, takes the last ~14 useful lines (the
 // bottom of the screen is the most recent) and extracts a headline from the
 // claude "recap:" line when there is one.
-func PanelSummary(raw string) (manchete, body string) {
+func PanelSummary(raw string) (headline, body string) {
 	lines := strings.Split(raw, "\n")
 	cleaned := make([]string, 0, len(lines))
 	for _, ln := range lines {
@@ -332,7 +332,7 @@ func PanelSummary(raw string) (manchete, body string) {
 			if len(h) > 240 {
 				h = h[:240] + "…"
 			}
-			manchete = h
+			headline = h
 		}
 		cleaned = append(cleaned, t)
 	}
@@ -343,7 +343,7 @@ func PanelSummary(raw string) (manchete, body string) {
 	if len(body) > 1600 {
 		body = body[len(body)-1600:]
 	}
-	return manchete, body
+	return headline, body
 }
 
 // emptyPrompt recognizes a line that is only the shell prompt, with no command
@@ -357,8 +357,8 @@ func emptyPrompt(line string) bool {
 	if line == "" {
 		return false
 	}
-	fim := line[len(line)-1]
-	if fim != '$' && fim != '#' {
+	done := line[len(line)-1]
+	if done != '$' && done != '#' {
 		return false
 	}
 	atIdx := strings.IndexByte(line, '@')

@@ -44,7 +44,7 @@ type resource struct {
 	Status string `json:"status"`
 }
 
-func lerFixture(t *testing.T, path string) []resource {
+func readFixture(t *testing.T, path string) []resource {
 	t.Helper()
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -81,7 +81,7 @@ func TestFixtureShape(t *testing.T) {
 
 	for _, path := range []string{fixtureRoot, fixtureToken} {
 		t.Run(path, func(t *testing.T) {
-			rs := lerFixture(t, path)
+			rs := readFixture(t, path)
 			got := guestVMIDs(rs)
 			if fmt.Sprint(got) != fmt.Sprint(expected) {
 				t.Errorf("set of VMIDs = %v, want %v (missing/extra say who)", got, expected)
@@ -108,8 +108,8 @@ func TestFixtureShape(t *testing.T) {
 // If the two ever become identical, one of them was re-recorded from the wrong
 // source — and the type-filter test would become decorative.
 func TestFixtureViewsDiffer(t *testing.T) {
-	root := lerFixture(t, fixtureRoot)
-	tok := lerFixture(t, fixtureToken)
+	root := readFixture(t, fixtureRoot)
+	tok := readFixture(t, fixtureToken)
 
 	kinds := func(rs []resource) map[string]int {
 		m := map[string]int{}

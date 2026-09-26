@@ -132,8 +132,8 @@ func BuildBoard(
 	now time.Time,
 ) []JiraBoardColumn {
 	columns := configuredColumns(rawColumns)
-	porNome := columns != nil
-	if !porNome {
+	byName := columns != nil
+	if !byName {
 		columns = defaultColumns()
 	}
 
@@ -158,7 +158,7 @@ func BuildBoard(
 
 	// The "Outros" column only exists when there is an orphan. A well-configured
 	// board does not earn a permanent empty column just to prove it is complete.
-	if porNome && len(orphans) > 0 {
+	if byName && len(orphans) > 0 {
 		leftover := JiraBoardColumn{Label: "Outros", Fallback: true}
 		for _, is := range orphans {
 			leftover.Cards = append(leftover.Cards, boardCard(is))
@@ -188,9 +188,9 @@ func issueInColumn(is jira.Issue, col JiraBoardColumn) bool {
 	if col.Category != "" {
 		return is.Status.StatusCategory.Key == col.Category
 	}
-	nome := strings.ToLower(strings.TrimSpace(is.Status.Name))
+	name := strings.ToLower(strings.TrimSpace(is.Status.Name))
 	for _, n := range col.StatusNames {
-		if strings.ToLower(n) == nome {
+		if strings.ToLower(n) == name {
 			return true
 		}
 	}
@@ -438,11 +438,11 @@ func FilterBySearch(issues []jira.Issue, search string) []jira.Issue {
 	}
 	out := make([]jira.Issue, 0, len(issues))
 	for _, is := range issues {
-		campos := []string{is.Key, is.Summary, is.Status.Name, strings.Join(is.Labels, " ")}
+		fields := []string{is.Key, is.Summary, is.Status.Name, strings.Join(is.Labels, " ")}
 		if is.Assignee != nil {
-			campos = append(campos, is.Assignee.DisplayName)
+			fields = append(fields, is.Assignee.DisplayName)
 		}
-		if strings.Contains(strings.ToLower(strings.Join(campos, " ")), search) {
+		if strings.Contains(strings.ToLower(strings.Join(fields, " ")), search) {
 			out = append(out, is)
 		}
 	}
@@ -511,9 +511,9 @@ func SplitJQL(jql string) (where, order string) {
 // to understand parentheses: JQL allows no subquery with an ORDER BY inside, so
 // the first occurrence is always the trailing one.
 func orderByIndex(jql string) int {
-	alto := strings.ToUpper(jql)
+	high := strings.ToUpper(jql)
 	for _, mark := range []string{"ORDER BY", "ORDER  BY"} {
-		if i := strings.Index(alto, mark); i >= 0 {
+		if i := strings.Index(high, mark); i >= 0 {
 			return i
 		}
 	}
@@ -554,11 +554,11 @@ func ColumnRestriction(col JiraBoardColumn, all []JiraBoardColumn) string {
 		return "status NOT IN (" + strings.Join(names, ", ") + ")"
 	}
 	if col.Category != "" {
-		nome := categoryJQL(col.Category)
-		if nome == "" {
+		name := categoryJQL(col.Category)
+		if name == "" {
 			return ""
 		}
-		return `statusCategory = ` + quoteJQL(nome)
+		return `statusCategory = ` + quoteJQL(name)
 	}
 	if len(col.StatusNames) == 0 {
 		return ""

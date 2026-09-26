@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-// dataDirCom assembles a DataDir holding the requested apps.json plus a
+// dataDirWith assembles a DataDir holding the requested apps.json plus a
 // config.json pointing at it, and makes openDeployStore's config.Load() see it
 // through VPSM_CONFIG. Returns the dataDir.
-func dataDirCom(t *testing.T, appsJSON string) string {
+func dataDirWith(t *testing.T, appsJSON string) string {
 	t.Helper()
 	dataDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dataDir, "deploy"), 0o700); err != nil {
@@ -32,7 +32,7 @@ func dataDirCom(t *testing.T, appsJSON string) string {
 	return dataDir
 }
 
-func shaDo(t *testing.T, path string) string {
+func shaOf(t *testing.T, path string) string {
 	t.Helper()
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -51,9 +51,9 @@ func shaDo(t *testing.T, path string) string {
 // post-receive hook runs a vpsmctl that may be OLDER than the server, and an
 // old vpsmctl that opened the store would rewrite the v2 envelope as a v1 array.
 func TestVpsmctlRefusesUnknownEnvelope(t *testing.T) {
-	dataDir := dataDirCom(t, `{"schema_version":3,"projects":[],"deployments":[]}`)
+	dataDir := dataDirWith(t, `{"schema_version":3,"projects":[],"deployments":[]}`)
 	appsFile := filepath.Join(dataDir, "deploy", "apps.json")
-	antes := shaDo(t, appsFile)
+	before := shaOf(t, appsFile)
 
 	st, err := openDeployStore()
 	if err == nil {
@@ -65,8 +65,8 @@ func TestVpsmctlRefusesUnknownEnvelope(t *testing.T) {
 	if !strings.Contains(err.Error(), "schema_version") {
 		t.Fatalf("error does not mention schema_version: %v", err)
 	}
-	if after := shaDo(t, appsFile); after != antes {
-		t.Fatalf("the refusal MODIFIED apps.json (sha %s → %s)", antes, after)
+	if after := shaOf(t, appsFile); after != before {
+		t.Fatalf("the refusal MODIFIED apps.json (sha %s → %s)", before, after)
 	}
 }
 
@@ -75,9 +75,9 @@ func TestVpsmctlRefusesUnknownEnvelope(t *testing.T) {
 // which binary fixes it, or the operator just sees `git push` rejected with no
 // idea what to do.
 func TestVpsmctlRefusesV1AndNamesMigrator(t *testing.T) {
-	dataDir := dataDirCom(t, `[{"name":"hello","branch":"main"}]`)
+	dataDir := dataDirWith(t, `[{"name":"hello","branch":"main"}]`)
 	appsFile := filepath.Join(dataDir, "deploy", "apps.json")
-	antes := shaDo(t, appsFile)
+	before := shaOf(t, appsFile)
 
 	if _, err := openDeployStore(); err == nil {
 		t.Fatalf("openDeployStore ACCEPTED a v1 array — vpsmctl must neither migrate it nor write over it")
@@ -89,7 +89,7 @@ func TestVpsmctlRefusesV1AndNamesMigrator(t *testing.T) {
 			t.Fatalf("message does not say WHO migrates: %v", err)
 		}
 	}
-	if after := shaDo(t, appsFile); after != antes {
+	if after := shaOf(t, appsFile); after != before {
 		t.Fatalf("the refusal MODIFIED apps.json")
 	}
 }
@@ -97,12 +97,12 @@ func TestVpsmctlRefusesV1AndNamesMigrator(t *testing.T) {
 // TestVpsmctlAcceptsV2AndFreshInstall: the guard must not turn into a closed gate —
 // the current envelope and a fresh installation still open.
 func TestVpsmctlAcceptsV2AndFreshInstall(t *testing.T) {
-	dataDirCom(t, `{"schema_version":2,"projects":[],"deployments":[]}`)
+	dataDirWith(t, `{"schema_version":2,"projects":[],"deployments":[]}`)
 	if _, err := openDeployStore(); err != nil {
 		t.Fatalf("the current envelope was refused: %v", err)
 	}
 
-	dataDirCom(t, "")
+	dataDirWith(t, "")
 	if _, err := openDeployStore(); err != nil {
 		t.Fatalf("fresh install (apps.json missing) was refused: %v", err)
 	}

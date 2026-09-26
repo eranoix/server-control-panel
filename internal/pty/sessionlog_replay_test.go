@@ -91,7 +91,7 @@ func TestAttachReplay(t *testing.T) {
 // that trusts it will find the terminator reads past the end of the buffer.
 func TestStripMouseReports(t *testing.T) {
 	cases := []struct {
-		nome  string
+		name  string
 		input string
 		want  string
 	}{
@@ -113,7 +113,7 @@ func TestStripMouseReports(t *testing.T) {
 		{"várias seguidas somem todas", "\x1b[<0;1;1M\x1b[<0;2;2M\x1b[<0;3;3mfim", "fim"},
 	}
 	for _, c := range cases {
-		t.Run(c.nome, func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			got := string(stripMouseReports([]byte(c.input)))
 			if got != c.want {
 				t.Errorf("stripMouseReports(%q) = %q, want %q", c.input, got, c.want)

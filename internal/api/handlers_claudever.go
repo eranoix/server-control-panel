@@ -53,10 +53,10 @@ func (r *Router) handleClaudeVersions(w http.ResponseWriter, req *http.Request) 
 	socks := ptysvc.SessionSockets()
 
 	state := claudever.Detect(func(pid int) string {
-		if root := claudever.AncestralEm(pid, targets); root != 0 {
+		if root := claudever.AncestorIn(pid, targets); root != 0 {
 			return owners[root]
 		}
-		return claudever.AncestralPorArgv(pid, socks)
+		return claudever.AncestorByArgv(pid, socks)
 	})
 
 	// The recovery container is brought up SEPARATELY, on purpose: Levantar

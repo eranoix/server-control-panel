@@ -39,7 +39,7 @@ type panelNodeSource struct {
 	token func(no string) string
 }
 
-func (f panelNodeSource) NoPorID(id string) (gameservers.NodeTarget, bool) {
+func (f panelNodeSource) NodeByID(id string) (gameservers.NodeTarget, bool) {
 	if f.st == nil {
 		return gameservers.NodeTarget{}, false
 	}
@@ -51,7 +51,7 @@ func (f panelNodeSource) NoPorID(id string) (gameservers.NodeTarget, bool) {
 		if n.ID != id && n.Name != id {
 			continue
 		}
-		d := gameservers.NodeTarget{Nome: n.Name, Transport: string(n.Transport)}
+		d := gameservers.NodeTarget{Name: n.Name, Transport: string(n.Transport)}
 		if n.Transport == inventory.TransportAgent {
 			if n.Address == "" {
 				// An agent node with no address is an incomplete inventory.
@@ -210,10 +210,10 @@ func (r *Router) execWithBackend(
 
 	res, err := back.Execute(req.Context(), op, env)
 	if isWrite {
-		r.auditGame(req, dest.Nome, srv.ID, op, err)
+		r.auditGame(req, dest.Name, srv.ID, op, err)
 	}
 	if err != nil {
-		code, msg := translateNodeError(err, dest.Nome)
+		code, msg := translateNodeError(err, dest.Name)
 		httpx.WriteErr(w, code, msg)
 		return nil, back, dest, false
 	}
@@ -251,9 +251,9 @@ func writeRaw(w http.ResponseWriter, doc json.RawMessage) {
 // text is header injection. No path manipulation is used here (the pin counts
 // zero path operations in this package): what is used is an allowlist of
 // characters.
-func safeDownloadName(nome, fallback string) string {
+func safeDownloadName(name, fallback string) string {
 	var b strings.Builder
-	for _, c := range nome {
+	for _, c := range name {
 		switch {
 		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
 			b.WriteRune(c)

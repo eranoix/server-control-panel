@@ -25,7 +25,7 @@ const (
 // Servidor is the agent, ready to listen.
 type ServerID struct {
 	Ag      *Agent
-	Seg     Secret
+	Secret  Secret
 	Met     *Metrics
 	handler http.Handler
 }
@@ -37,8 +37,8 @@ type ServerID struct {
 // of capabilities is exactly the `registry` map, in one place, walkable by a
 // test. With N routes, the list becomes "whatever happens to be in the
 // ServeMux", which nobody can assert from the outside.
-func NewServer(ag *Agent, seg Secret, met *Metrics) *ServerID {
-	s := &ServerID{Ag: ag, Seg: seg, Met: met}
+func NewServer(ag *Agent, secret Secret, met *Metrics) *ServerID {
+	s := &ServerID{Ag: ag, Secret: secret, Met: met}
 
 	mux := http.NewServeMux()
 	// Method-and-path patterns (Go 1.22+). No external router: there are three
@@ -46,7 +46,7 @@ func NewServer(ag *Agent, seg Secret, met *Metrics) *ServerID {
 	// middleware chain justifies it.
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /metrics", s.metrics)
-	mux.Handle("POST /v1/op/{op}", RequireBearer(seg, http.HandlerFunc(s.runOp)))
+	mux.Handle("POST /v1/op/{op}", RequireBearer(secret, http.HandlerFunc(s.runOp)))
 	// ARTEFACT route. New surface, added on purpose and registered in the
 	// allowlist of exec_test.go as well — which is the mechanism working, not
 	// being worked around: adding a route has to be a deliberate act, visible in
@@ -62,11 +62,11 @@ func NewServer(ag *Agent, seg Secret, met *Metrics) *ServerID {
 	// random, it is not a path; whoever did not receive one from an earlier
 	// operation has nothing to send here. A real path sent in place of the
 	// handle is simply not in the vault.
-	mux.Handle("GET /v1/artefato/{handle}", RequireBearer(seg, http.HandlerFunc(s.openArtifact)))
+	mux.Handle("GET /v1/artefato/{handle}", RequireBearer(secret, http.HandlerFunc(s.openArtifact)))
 	// The INBOUND side of the artefact, closing the gap the read side declared:
 	// without it, importing a world would require the dashboard to know the
 	// node's disk. The body is the file; no name and no path cross over.
-	mux.Handle("POST /v1/artefato", RequireBearer(seg, http.HandlerFunc(s.receiveArtifact)))
+	mux.Handle("POST /v1/artefato", RequireBearer(secret, http.HandlerFunc(s.receiveArtifact)))
 
 	s.handler = mux
 	return s
@@ -95,28 +95,28 @@ func (s *ServerID) metrics(w http.ResponseWriter, _ *http.Request) {
 
 // runOp resolves the name against the registry and delegates.
 func (s *ServerID) runOp(w http.ResponseWriter, r *http.Request) {
-	nome := gameservers.OpName(r.PathValue("op"))
+	name := gameservers.OpName(r.PathValue("op"))
 
-	op, exists := Lookup(nome)
+	op, exists := Lookup(name)
 	if !exists {
 		// 404, never 400 or 500: "does not exist" and "failed" must never get
 		// confused in a diagnosis — it is the difference between hunting a bug in
 		// the agent and hunting a typo in the client.
-		s.Met.Count(string(nome), "desconhecida")
-		respond(w, http.StatusNotFound, map[string]any{"erro": "unknown operation", "op": string(nome)})
+		s.Met.Count(string(name), "desconhecida")
+		respond(w, http.StatusNotFound, map[string]any{"erro": "unknown operation", "op": string(name)})
 		return
 	}
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
 	if err != nil {
-		s.Met.Count(string(nome), "erro")
+		s.Met.Count(string(name), "erro")
 		respond(w, http.StatusBadRequest, map[string]any{"erro": "unreadable body"})
 		return
 	}
 	if len(body) > maxBody {
 		// 413 BEFORE calling the handler: the limit is worth nothing if the work
 		// has already happened.
-		s.Met.Count(string(nome), "grande")
+		s.Met.Count(string(name), "grande")
 		respond(w, http.StatusRequestEntityTooLarge, map[string]any{"erro": "body above the limit"})
 		return
 	}
@@ -126,11 +126,11 @@ func (s *ServerID) runOp(w http.ResponseWriter, r *http.Request) {
 
 	res, err := op.Handler(s.Ag, r.Context(), json.RawMessage(body))
 	if err != nil {
-		s.Met.Count(string(nome), "erro")
+		s.Met.Count(string(name), "erro")
 		respond(w, http.StatusInternalServerError, map[string]any{"erro": err.Error()})
 		return
 	}
-	s.Met.Count(string(nome), "ok")
+	s.Met.Count(string(name), "ok")
 	respond(w, http.StatusOK, res)
 }
 

@@ -129,10 +129,10 @@ func ViewHypervisor(h Hypervisor, ttl time.Duration, now time.Time) HypervisorVi
 // applyHypervisor is the upsert of the health. It is only called when /status
 // ANSWERED: a failure keeps the whole document as it was, with the old
 // timestamp, so the screen shows the age growing instead of amnesia.
-func applyHypervisor(inv *Inventory, nome string, st pve.NodeStatus, now int64) {
+func applyHypervisor(inv *Inventory, name string, st pve.NodeStatus, now int64) {
 	h := inv.Hypervisor
-	if nome != "" {
-		h.Node = nome
+	if name != "" {
+		h.Node = name
 	}
 	h.Version = Observe(st.PVEVersion, now)
 	h.Uptime = Observe(st.Uptime, now)
@@ -177,14 +177,14 @@ func loadFromStrings(in []string) [3]float64 {
 // than one, the smallest by string order wins: the tick has to write the same
 // document twice in a row, otherwise the file diff turns into noise.
 func hypervisorName(resources []pve.Resource) string {
-	nome := ""
+	name := ""
 	for _, r := range resources {
 		if r.Node == "" {
 			continue
 		}
-		if nome == "" || r.Node < nome {
-			nome = r.Node
+		if name == "" || r.Node < name {
+			name = r.Node
 		}
 	}
-	return nome
+	return name
 }

@@ -79,7 +79,7 @@ func TestTokenInfo(t *testing.T) {
 func TestExpiresIn(t *testing.T) {
 	const now = 1800000000
 	cases := []struct {
-		nome    string
+		name    string
 		expire  int64
 		days    int
 		expires bool
@@ -95,7 +95,7 @@ func TestExpiresIn(t *testing.T) {
 		{"vence em 12 horas", now + 43200, 0, true},
 	}
 	for _, tc := range cases {
-		t.Run(tc.nome, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			info := TokenInfo{Expire: tc.expire}
 			days, expires := info.ExpiresInDays(now)
 			if expires != tc.expires || (tc.expires && days != tc.days) {
@@ -195,15 +195,15 @@ func TestPveDoesNotImportVault(t *testing.T) {
 	}
 	seen := 0
 	for _, pkg := range pkgs {
-		for nome, arq := range pkg.Files {
+		for name, file := range pkg.Files {
 			seen++
-			for _, imp := range arq.Imports {
+			for _, imp := range file.Imports {
 				path, err := strconv.Unquote(imp.Path.Value)
 				if err != nil {
-					t.Fatalf("%s: unreadable import %s", nome, imp.Path.Value)
+					t.Fatalf("%s: unreadable import %s", name, imp.Path.Value)
 				}
 				if forbiddenBins[path] {
-					t.Errorf("%s imports %s — internal/pve cannot reach the vault", nome, path)
+					t.Errorf("%s imports %s — internal/pve cannot reach the vault", name, path)
 				}
 			}
 		}

@@ -125,23 +125,23 @@ func backendPair(t *testing.T, m *Manager) (*BackendLocal, *BackendHTTP, *httpte
 	local := NewBackendLocal(m, "no-teste")
 	const token = "token-de-teste-nao-e-segredo"
 
-	var urlsVistas []string
+	var seenURLs []string
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/op/{op}", func(w http.ResponseWriter, r *http.Request) {
-		urlsVistas = append(urlsVistas, r.URL.String())
+		seenURLs = append(seenURLs, r.URL.String())
 		if r.Header.Get("Authorization") != "Bearer "+token {
 			w.WriteHeader(http.StatusUnauthorized)
 			_ = json.NewEncoder(w).Encode(map[string]any{"erro": "nao autorizado"})
 			return
 		}
-		nome := OpName(r.PathValue("op"))
-		if !knownOp(nome) {
+		name := OpName(r.PathValue("op"))
+		if !knownOp(name) {
 			w.WriteHeader(http.StatusNotFound)
 			_ = json.NewEncoder(w).Encode(map[string]any{"erro": "unknown operation"})
 			return
 		}
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-		res, err := local.Execute(r.Context(), nome, json.RawMessage(body))
+		res, err := local.Execute(r.Context(), name, json.RawMessage(body))
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			_ = json.NewEncoder(w).Encode(map[string]any{"erro": err.Error()})
@@ -151,7 +151,7 @@ func backendPair(t *testing.T, m *Manager) (*BackendLocal, *BackendHTTP, *httpte
 		_, _ = w.Write(res)
 	})
 	mux.HandleFunc("GET /v1/artefato/{handle}", func(w http.ResponseWriter, r *http.Request) {
-		urlsVistas = append(urlsVistas, r.URL.String())
+		seenURLs = append(seenURLs, r.URL.String())
 		if r.Header.Get("Authorization") != "Bearer "+token {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -173,7 +173,7 @@ func backendPair(t *testing.T, m *Manager) (*BackendLocal, *BackendHTTP, *httpte
 	if err != nil {
 		t.Fatalf("NewBackendHTTP: %v", err)
 	}
-	return local, remote, ts, &urlsVistas
+	return local, remote, ts, &seenURLs
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -232,19 +232,19 @@ func contractCases() []contractCase {
 }
 
 func TestContractCoversAllOps(t *testing.T) {
-	vistas := map[OpName]bool{}
+	seen := map[OpName]bool{}
 	for _, c := range contractCases() {
-		if vistas[c.op] {
+		if seen[c.op] {
 			t.Errorf("operation %q appears twice in the table", c.op)
 		}
-		vistas[c.op] = true
+		seen[c.op] = true
 	}
 	for _, op := range AllOps {
-		if !vistas[op] {
+		if !seen[op] {
 			t.Errorf("OPERATION WITH NO CONTRACT CASE: %q — the catalog grew and the battery did not", op)
 		}
 	}
-	for op := range vistas {
+	for op := range seen {
 		if !knownOp(op) {
 			t.Errorf("contract case for an operation outside the catalog: %q", op)
 		}
@@ -412,15 +412,15 @@ func TestHandleDoesNotRevealPath(t *testing.T) {
 	// would be a false positive — the pin would be flaky and somebody would switch
 	// it off. What matters is whether any RECOGNIZABLE PIECE of the real path shows up.
 	pieces := []string{filepath.Base(a.path), os.TempDir()}
-	for _, seg := range strings.Split(a.path, string(os.PathSeparator)) {
-		if len(seg) >= 4 {
-			pieces = append(pieces, seg)
+	for _, secret := range strings.Split(a.path, string(os.PathSeparator)) {
+		if len(secret) >= 4 {
+			pieces = append(pieces, secret)
 		}
 	}
 	for _, c := range candidates {
-		for _, ped := range pieces {
-			if ped != "" && strings.Contains(c, ped) {
-				t.Errorf("THE HANDLE REVEALS PART OF THE PATH (%q) in %q", ped, c)
+		for _, piece := range pieces {
+			if piece != "" && strings.Contains(c, piece) {
+				t.Errorf("THE HANDLE REVEALS PART OF THE PATH (%q) in %q", piece, c)
 			}
 		}
 	}
@@ -431,7 +431,7 @@ func TestForgedHandleIsRejected(t *testing.T) {
 	b := NewBackendLocal(m, "no-teste")
 
 	forged := []struct {
-		nome string
+		name string
 		h    Handle
 	}{
 		{"string arbitraria", "eu-inventei-este"},
@@ -442,7 +442,7 @@ func TestForgedHandleIsRejected(t *testing.T) {
 		{"hex com o tamanho certo", Handle(strings.Repeat("ab", 32))},
 	}
 	for _, f := range forged {
-		t.Run(f.nome, func(t *testing.T) {
+		t.Run(f.name, func(t *testing.T) {
 			rc, err := b.Open(context.Background(), f.h)
 			if err == nil {
 				rc.Close()
@@ -485,11 +485,11 @@ func TestHandleExpires(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	c.now = func() time.Time { return now }
 
-	arq := filepath.Join(t.TempDir(), "artefato.bin")
-	if err := os.WriteFile(arq, []byte("dados"), 0o600); err != nil {
+	file := filepath.Join(t.TempDir(), "artefato.bin")
+	if err := os.WriteFile(file, []byte("dados"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	h, err := c.Mint("jogo-teste", arq, false)
+	h, err := c.Mint("jogo-teste", file, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -701,20 +701,20 @@ func TestSelectionByTransport(t *testing.T) {
 	}
 
 	cases := []struct {
-		nome     string
+		name     string
 		d        NodeTarget
 		wantType string
 		wantErr  bool
 	}{
-		{"agente vira http", NodeTarget{Nome: "games", Transport: TransportAgent, Base: "http://127.0.0.1:9977", Token: "tok"}, "*gameservers.BackendHTTP", false},
-		{"pve-api vira local", NodeTarget{Nome: "apps", Transport: TransportPVEAPI}, "*gameservers.BackendLocal", false},
-		{"ssh vira local", NodeTarget{Nome: "dev", Transport: TransportSSH}, "*gameservers.BackendLocal", false},
-		{"vazio e erro", NodeTarget{Nome: "orfao"}, "", true},
-		{"invalido e erro", NodeTarget{Nome: "torto", Transport: "banana"}, "", true},
-		{"agente sem token e erro", NodeTarget{Nome: "games", Transport: TransportAgent, Base: "http://127.0.0.1:9977"}, "", true},
+		{"agente vira http", NodeTarget{Name: "games", Transport: TransportAgent, Base: "http://127.0.0.1:9977", Token: "tok"}, "*gameservers.BackendHTTP", false},
+		{"pve-api vira local", NodeTarget{Name: "apps", Transport: TransportPVEAPI}, "*gameservers.BackendLocal", false},
+		{"ssh vira local", NodeTarget{Name: "dev", Transport: TransportSSH}, "*gameservers.BackendLocal", false},
+		{"vazio e erro", NodeTarget{Name: "orfao"}, "", true},
+		{"invalido e erro", NodeTarget{Name: "torto", Transport: "banana"}, "", true},
+		{"agente sem token e erro", NodeTarget{Name: "games", Transport: TransportAgent, Base: "http://127.0.0.1:9977"}, "", true},
 	}
 	for _, c := range cases {
-		t.Run(c.nome, func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			b, err := NewBackend(c.d, m)
 			if c.wantErr {
 				if err == nil {

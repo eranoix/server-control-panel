@@ -144,7 +144,7 @@ func TestStorePreservesForeignNodeID(t *testing.T) {
 // the next Save wipe the whole registry).
 func TestStoreRejectsUnmigratedV1(t *testing.T) {
 	dataDir := setupLegacyAppsDir(t, App{Name: "hello", Branch: "main"})
-	antes := sha256Of(t, appsPath(dataDir))
+	before := sha256Of(t, appsPath(dataDir))
 
 	st := Open(dataDir)
 	apps, err := st.List()
@@ -154,7 +154,7 @@ func TestStoreRejectsUnmigratedV1(t *testing.T) {
 	if !strings.Contains(err.Error(), "vps-manager") || !strings.Contains(err.Error(), "schema_version") {
 		t.Fatalf("the error says neither which binary migrates nor mentions schema_version: %v", err)
 	}
-	if after := sha256Of(t, appsPath(dataDir)); after != antes {
+	if after := sha256Of(t, appsPath(dataDir)); after != before {
 		t.Fatalf("the store's refusal TOUCHED the file")
 	}
 }

@@ -33,15 +33,15 @@ type TokenInfo struct {
 // turn every token into privsep=false — the opposite of what has to be proven
 // here.
 func (t *TokenInfo) UnmarshalJSON(raw []byte) error {
-	type cru TokenInfo // alias with no methods, so as not to recurse
+	type rawValue TokenInfo // alias with no methods, so as not to recurse
 	var aux struct {
-		cru
+		rawValue
 		Privsep json.RawMessage `json:"privsep"`
 	}
 	if err := json.Unmarshal(raw, &aux); err != nil {
 		return err
 	}
-	*t = TokenInfo(aux.cru)
+	*t = TokenInfo(aux.rawValue)
 	t.Privsep = truthyNumberOrString(aux.Privsep)
 	return nil
 }

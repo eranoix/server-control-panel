@@ -159,12 +159,12 @@ func ownerOf(p string) (int, int, error) {
 	return int(st.Uid), int(st.Gid), nil
 }
 
-// chownComoRef applies to `alvo` the owner observed on `ref`.
+// chownLikeRef applies to `alvo` the owner observed on `ref`.
 //
 // It replaces the literal pair 4711, 4711: the right value is the one on disk. If
 // `ref` cannot be inspected, the error names the path — it never falls back to a
 // default, because a default is a new constant under another name.
-func chownComoRef(target, ref string, recursive bool) error {
+func chownLikeRef(target, ref string, recursive bool) error {
 	uid, gid, err := ownerOf(ref)
 	if err != nil {
 		return fmt.Errorf("reference owner unavailable to adjust %s: %w", target, err)

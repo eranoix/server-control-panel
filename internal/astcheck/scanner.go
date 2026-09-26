@@ -215,7 +215,7 @@ func Scan(cfg Config) (Result, error) {
 
 // scanFile applies the two rules to an already-parsed file.
 func scanFile(fset *token.FileSet, file *ast.File, path string, forbiddenBins, watched map[string]bool, requireLiteral bool, pkgConsts map[string]*symbol, signatures map[string]wrapperSig) []Finding {
-	nomeExec := localOsExecName(file)
+	execName := localOsExecName(file)
 
 	var findings []Finding
 	for _, decl := range file.Decls {
@@ -228,9 +228,9 @@ func scanFile(fset *token.FileSet, file *ast.File, path string, forbiddenBins, w
 		// that a parameter shadowing the constant's name is not resolved to the
 		// constant's value — shadowing is precisely how a varying value would
 		// disguise itself as a constant.
-		for nome, s := range pkgConsts {
-			if _, local := symbols[nome]; !local {
-				symbols[nome] = s
+		for name, s := range pkgConsts {
+			if _, local := symbols[name]; !local {
+				symbols[name] = s
 			}
 		}
 
@@ -241,17 +241,17 @@ func scanFile(fset *token.FileSet, file *ast.File, path string, forbiddenBins, w
 			}
 
 			// Rule 1 — direct execution via os/exec (under an alias too).
-			if nomeExec != "" {
-				if idx, isExec := binaryIndex(call, nomeExec); isExec {
+			if execName != "" {
+				if idx, isExec := binaryIndex(call, execName); isExec {
 					if idx < len(call.Args) {
-						valor, resolved := resolve(call.Args[idx], symbols)
+						value, resolved := resolve(call.Args[idx], symbols)
 						switch {
-						case resolved && forbiddenBins[valor]:
+						case resolved && forbiddenBins[value]:
 							findings = append(findings, newFinding(fset, path, call,
-								fmt.Sprintf("direct execution of forbidden binary %q — this operation belongs to the hypervisor API, not to the shell", valor)))
+								fmt.Sprintf("direct execution of forbidden binary %q — this operation belongs to the hypervisor API, not to the shell", value)))
 						case !resolved && requireLiteral:
 							findings = append(findings, newFinding(fset, path, call,
-								fmt.Sprintf("argv of %s does not resolve to a string literal — an unresolvable argument is free execution under another name", nomeExec)))
+								fmt.Sprintf("argv of %s does not resolve to a string literal — an unresolvable argument is free execution under another name", execName)))
 						}
 					}
 					return true
@@ -316,13 +316,13 @@ func localOsExecName(file *ast.File) string {
 
 // binaryIndex recognizes exec.Command / exec.CommandContext and says which
 // argument holds the binary name.
-func binaryIndex(call *ast.CallExpr, nomeExec string) (int, bool) {
+func binaryIndex(call *ast.CallExpr, execName string) (int, bool) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return 0, false
 	}
 	pkg, ok := sel.X.(*ast.Ident)
-	if !ok || pkg.Name != nomeExec {
+	if !ok || pkg.Name != execName {
 		return 0, false
 	}
 	switch sel.Sel.Name {
@@ -338,7 +338,7 @@ func binaryIndex(call *ast.CallExpr, nomeExec string) (int, bool) {
 // simbolo is what is known about a local identifier.
 type symbol struct {
 	// valor is the string literal when it is known and unique.
-	valor string
+	value string
 	// literal indicates that valor is usable.
 	literal bool
 	// isString indicates that the identifier is declared to be of type string.
@@ -355,21 +355,21 @@ type symbol struct {
 func symbolTable(fn *ast.FuncDecl) map[string]*symbol {
 	tab := map[string]*symbol{}
 
-	mark := func(nome string, s symbol) {
-		if nome == "" || nome == "_" {
+	mark := func(name string, s symbol) {
+		if name == "" || name == "_" {
 			return
 		}
-		old, exists := tab[nome]
+		old, exists := tab[name]
 		if !exists {
 			dup := s
-			tab[nome] = &dup
+			tab[name] = &dup
 			return
 		}
 		old.isString = old.isString || s.isString
-		if !s.literal || !old.literal || old.valor != s.valor {
+		if !s.literal || !old.literal || old.value != s.value {
 			// A second, divergent write: the name stops being resolvable.
 			old.literal = false
-			old.valor = ""
+			old.value = ""
 		}
 	}
 
@@ -377,8 +377,8 @@ func symbolTable(fn *ast.FuncDecl) map[string]*symbol {
 	if fn.Type != nil && fn.Type.Params != nil {
 		for _, field := range fn.Type.Params.List {
 			isStr := isStringType(field.Type)
-			for _, nome := range field.Names {
-				mark(nome.Name, symbol{isString: isStr})
+			for _, name := range field.Names {
+				mark(name.Name, symbol{isString: isStr})
 			}
 		}
 	}
@@ -391,8 +391,8 @@ func symbolTable(fn *ast.FuncDecl) map[string]*symbol {
 				if !ok || i >= len(s.Rhs) {
 					continue
 				}
-				if valor, ok := stringLiteral(s.Rhs[i]); ok {
-					mark(ident.Name, symbol{valor: valor, literal: true, isString: true})
+				if value, ok := stringLiteral(s.Rhs[i]); ok {
+					mark(ident.Name, symbol{value: value, literal: true, isString: true})
 				} else {
 					mark(ident.Name, symbol{})
 				}
@@ -407,14 +407,14 @@ func symbolTable(fn *ast.FuncDecl) map[string]*symbol {
 					continue
 				}
 				isStr := vs.Type != nil && isStringType(vs.Type)
-				for i, nome := range vs.Names {
+				for i, name := range vs.Names {
 					if i < len(vs.Values) {
-						if valor, ok := stringLiteral(vs.Values[i]); ok {
-							mark(nome.Name, symbol{valor: valor, literal: true, isString: true})
+						if value, ok := stringLiteral(vs.Values[i]); ok {
+							mark(name.Name, symbol{value: value, literal: true, isString: true})
 							continue
 						}
 					}
-					mark(nome.Name, symbol{isString: isStr})
+					mark(name.Name, symbol{isString: isStr})
 				}
 			}
 		}
@@ -435,21 +435,21 @@ func stringLiteral(expr ast.Expr) (string, bool) {
 	if !ok || lit.Kind != token.STRING {
 		return "", false
 	}
-	valor, err := strconv.Unquote(lit.Value)
+	value, err := strconv.Unquote(lit.Value)
 	if err != nil {
 		return "", false
 	}
-	return valor, true
+	return value, true
 }
 
 // resolve tries to obtain an argument's literal value.
 func resolve(expr ast.Expr, symbols map[string]*symbol) (string, bool) {
-	if valor, ok := stringLiteral(expr); ok {
-		return valor, true
+	if value, ok := stringLiteral(expr); ok {
+		return value, true
 	}
 	if ident, ok := expr.(*ast.Ident); ok {
 		if s, exists := symbols[ident.Name]; exists && s.literal {
-			return s.valor, true
+			return s.value, true
 		}
 	}
 	return "", false
@@ -527,22 +527,22 @@ func packageConsts(files []parsedFile) map[string]*symbol {
 				if !ok {
 					continue
 				}
-				for i, nome := range vs.Names {
-					if nome.Name == "_" || i >= len(vs.Values) {
+				for i, name := range vs.Names {
+					if name.Name == "_" || i >= len(vs.Values) {
 						continue
 					}
-					valor, ok := stringLiteral(vs.Values[i])
+					value, ok := stringLiteral(vs.Values[i])
 					if !ok {
 						continue
 					}
-					if old, exists := tab[nome.Name]; exists {
-						if old.valor != valor {
+					if old, exists := tab[name.Name]; exists {
+						if old.value != value {
 							old.literal = false
-							old.valor = ""
+							old.value = ""
 						}
 						continue
 					}
-					tab[nome.Name] = &symbol{valor: valor, literal: true, isString: true}
+					tab[name.Name] = &symbol{value: value, literal: true, isString: true}
 				}
 			}
 		}
@@ -555,8 +555,8 @@ func packageConsts(files []parsedFile) map[string]*symbol {
 type wrapperSig struct {
 	// fixos are the non-variadic string parameter indices.
 	fixed map[int]bool
-	// variadicoString says the variadic tail is `...string`.
-	variadicoString bool
+	// variadicString says the variadic tail is `...string`.
+	variadicString bool
 	// variadicStart is the index where the tail starts (-1 if there is none).
 	variadicStart int
 }
@@ -588,7 +588,7 @@ func wrapperSignatures(files []parsedFile, watched map[string]bool) map[string]w
 				}
 				if el, isVariadic := field.Type.(*ast.Ellipsis); isVariadic {
 					as.variadicStart = idx
-					as.variadicoString = isStringType(el.Elt)
+					as.variadicString = isStringType(el.Elt)
 					idx += n
 					continue
 				}
@@ -610,5 +610,5 @@ func (a wrapperSig) isCommandPos(i int) bool {
 	if a.fixed[i] {
 		return true
 	}
-	return a.variadicoString && a.variadicStart >= 0 && i >= a.variadicStart
+	return a.variadicString && a.variadicStart >= 0 && i >= a.variadicStart
 }

@@ -27,7 +27,7 @@ import (
 // precedent's pin, so the behavior is comparable.
 var hypervisorBins = []string{"pct", "qm", "pvesh", "pvesm", "pveum"}
 
-func fixture(nome string) string { return filepath.Join("testdata", nome) }
+func fixture(name string) string { return filepath.Join("testdata", name) }
 
 // requireOneFinding is the shared shape of the matrix's positive halves.
 func requireOneFinding(t *testing.T, cfg Config, wantFile string) Finding {
@@ -247,11 +247,11 @@ func repoRoot(t *testing.T) string {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			return dir
 		}
-		pai := filepath.Dir(dir)
-		if pai == dir {
+		parent := filepath.Dir(dir)
+		if parent == dir {
 			break
 		}
-		dir = pai
+		dir = parent
 	}
 	t.Fatal("go.mod not found walking up from the package")
 	return ""

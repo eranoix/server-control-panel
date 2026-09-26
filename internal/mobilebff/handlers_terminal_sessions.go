@@ -108,7 +108,7 @@ func registerTerminalSessions(api huma.API, deps Deps) {
 		Path:        "/terminal/sessions/kill",
 		Summary:     "Encerra uma sessão e os processos que rodam nela",
 		Tags:        []string{"mobile", "terminal"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusBadRequest},
 	}, killSessionHandler(cfg, own, audit))
 
@@ -118,7 +118,7 @@ func registerTerminalSessions(api huma.API, deps Deps) {
 		Path:        "/terminal/sessions/assign",
 		Summary:     "Define para quem a sessão aparece",
 		Tags:        []string{"mobile", "terminal"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusBadRequest},
 	}, assignSessionHandler(cfg, own, audit, deps.Idem))
 
@@ -177,17 +177,17 @@ func killSessionHandler(
 ) func(context.Context, *killSessionInput) (*statusOutput, error) {
 	return func(ctx context.Context, in *killSessionInput) (*statusOutput, error) {
 		user := auth.UserFromContext(ctx)
-		nome := strings.TrimSpace(in.Body.Name)
-		if nome == "" {
+		name := strings.TrimSpace(in.Body.Name)
+		if name == "" {
 			return nil, huma.Error400BadRequest("name is required")
 		}
-		if !ptysvc.OwnsSession(user, nome, httpx.IsAdmin(cfg, user), own) {
+		if !ptysvc.OwnsSession(user, name, httpx.IsAdmin(cfg, user), own) {
 			return nil, huma.Error404NotFound("session not found")
 		}
-		if err := ptysvc.SessionKill(nome); err != nil {
+		if err := ptysvc.SessionKill(name); err != nil {
 			return nil, huma.Error500InternalServerError(err.Error())
 		}
-		auditar(ctx, audit, user, "terminal.kill", nome)
+		recordAudit(ctx, audit, user, "terminal.kill", name)
 
 		out := &statusOutput{}
 		out.Body.Status = "ok"
@@ -199,14 +199,14 @@ func assignSessionHandler(
 	cfg *config.Config,
 	own *ptysvc.Ownership,
 	audit *auth.AuditLog,
-	idem *Idempotencia,
+	idem *Idempotency,
 ) func(context.Context, *assignSessionInput) (*statusOutput, error) {
 	return func(ctx context.Context, in *assignSessionInput) (*statusOutput, error) {
 		return rememberResult(idem, keyFromContext(ctx, in.IdemKey), func() (*statusOutput, error) {
 			user := auth.UserFromContext(ctx)
-			nome := strings.TrimSpace(in.Body.Name)
+			name := strings.TrimSpace(in.Body.Name)
 			target := strings.TrimSpace(in.Body.Target)
-			if nome == "" || target == "" {
+			if name == "" || target == "" {
 				return nil, huma.Error400BadRequest("name and target are required")
 			}
 			// ONLY THE ADMIN REASSIGNS. Reassigning means giving ANOTHER account access
@@ -215,13 +215,13 @@ func assignSessionHandler(
 			if !httpx.IsAdmin(cfg, user) {
 				return nil, huma.Error404NotFound("session not found")
 			}
-			if !ptysvc.OwnsSession(user, nome, true, own) {
+			if !ptysvc.OwnsSession(user, name, true, own) {
 				return nil, huma.Error404NotFound("session not found")
 			}
-			if err := own.Assign(ptysvc.SafeSessionName(nome), target); err != nil {
+			if err := own.Assign(ptysvc.SafeSessionName(name), target); err != nil {
 				return nil, huma.Error500InternalServerError(err.Error())
 			}
-			auditar(ctx, audit, user, "terminal.assign", nome+"→"+target)
+			recordAudit(ctx, audit, user, "terminal.assign", name+"→"+target)
 
 			out := &statusOutput{}
 			out.Body.Status = "ok"
@@ -236,11 +236,11 @@ func previewSessionHandler(
 ) func(context.Context, *sessionPreviewInput) (*sessionPreviewOutput, error) {
 	return func(ctx context.Context, in *sessionPreviewInput) (*sessionPreviewOutput, error) {
 		user := auth.UserFromContext(ctx)
-		nome := strings.TrimSpace(in.Name)
-		if nome == "" {
+		name := strings.TrimSpace(in.Name)
+		if name == "" {
 			return nil, huma.Error400BadRequest("name is required")
 		}
-		if !ptysvc.OwnsSession(user, nome, httpx.IsAdmin(cfg, user), own) {
+		if !ptysvc.OwnsSession(user, name, httpx.IsAdmin(cfg, user), own) {
 			return nil, huma.Error404NotFound("session not found")
 		}
 		lines := in.Lines
@@ -253,11 +253,11 @@ func previewSessionHandler(
 		if lines > 200 {
 			lines = 200
 		}
-		text := ptysvc.SessionTail(nome, lines)
+		text := ptysvc.SessionTail(name, lines)
 
 		out := &sessionPreviewOutput{}
 		out.Body = SessionPreviewResponse{
-			Name:  nome,
+			Name:  name,
 			Text:  text,
 			Lines: lines,
 		}

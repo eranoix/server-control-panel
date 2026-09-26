@@ -127,11 +127,11 @@ func TestEveryCaseHasDestination(t *testing.T) {
 		if !c.endpoint {
 			continue
 		}
-		nome := c.resource
+		name := c.resource
 		if c.action != "" {
-			nome += "/" + c.action
+			name += "/" + c.action
 		}
-		t.Run(nome, func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			path := "/api/gameservers/jogo-b/" + c.resource
 			if c.action != "" {
 				path += "/" + c.action
@@ -143,7 +143,7 @@ func TestEveryCaseHasDestination(t *testing.T) {
 			if w.Code == http.StatusNotFound {
 				body := w.Body.String()
 				if strings.Contains(body, "desconhecid") {
-					t.Errorf("CASE LOST IN THE REWRITE: %s → route 404 (%s)", nome, strings.TrimSpace(body))
+					t.Errorf("CASE LOST IN THE REWRITE: %s → route 404 (%s)", name, strings.TrimSpace(body))
 				}
 			}
 		})
@@ -279,9 +279,9 @@ func TestWriteOperationIsAudited(t *testing.T) {
 	if i < 0 {
 		t.Fatal("no audit call in the execution path")
 	}
-	antes := txt[:i]
-	lastIf := strings.LastIndex(antes, "if isWrite {")
-	lastRes := strings.LastIndex(antes, "back.Execute")
+	before := txt[:i]
+	lastIf := strings.LastIndex(before, "if isWrite {")
+	lastRes := strings.LastIndex(before, "back.Execute")
 	if lastIf < 0 || lastIf < lastRes-200 {
 		t.Error("the audit is not guarded by `if isWrite` — a read would also generate an event")
 	}

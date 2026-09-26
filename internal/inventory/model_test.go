@@ -60,14 +60,14 @@ func TestNodeTransportRoundTrip(t *testing.T) {
 		if !strings.Contains(string(b), `"transport":"`+literal+`"`) {
 			t.Fatalf("the transport literal changed: want %q in the JSON, got %s", literal, b)
 		}
-		var volta Node
-		if err := json.Unmarshal(b, &volta); err != nil {
+		var decoded Node
+		if err := json.Unmarshal(b, &decoded); err != nil {
 			t.Fatalf("unmarshal: %v", err)
 		}
-		if !reflect.DeepEqual(orig, volta) {
-			t.Fatalf("asymmetric round-trip:\n orig=%+v\n back=%+v", orig, volta)
+		if !reflect.DeepEqual(orig, decoded) {
+			t.Fatalf("asymmetric round-trip:\n orig=%+v\n back=%+v", orig, decoded)
 		}
-		if err := volta.Validate(); err != nil {
+		if err := decoded.Validate(); err != nil {
 			t.Fatalf("the node did not survive the round-trip: %v", err)
 		}
 	}
@@ -137,12 +137,12 @@ func TestSerializationPin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var volta Node
-	if err := json.Unmarshal(nb2, &volta); err != nil {
+	var decoded Node
+	if err := json.Unmarshal(nb2, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if !reflect.DeepEqual(n, volta) {
-		t.Fatalf("asymmetric round-trip:\n orig=%+v\n back=%+v", n, volta)
+	if !reflect.DeepEqual(n, decoded) {
+		t.Fatalf("asymmetric round-trip:\n orig=%+v\n back=%+v", n, decoded)
 	}
 
 	// Structural pin: no field of the model may pick up omitempty by carelessness
@@ -172,13 +172,13 @@ func TestJobRefIsReference(t *testing.T) {
 	if kind.NumField() != len(wanted) {
 		t.Fatalf("JobRef has %d fields, want exactly %d (%v)", kind.NumField(), len(wanted), wanted)
 	}
-	for i, nome := range wanted {
+	for i, name := range wanted {
 		f := kind.Field(i)
-		if f.Name != nome {
-			t.Fatalf("field %d is %q, want %q", i, f.Name, nome)
+		if f.Name != name {
+			t.Fatalf("field %d is %q, want %q", i, f.Name, name)
 		}
 		if f.Type.Kind() != reflect.String {
-			t.Fatalf("JobRef.%s is %s — a reference only carries a string", nome, f.Type.Kind())
+			t.Fatalf("JobRef.%s is %s — a reference only carries a string", name, f.Type.Kind())
 		}
 	}
 	if n := kind.NumMethod(); n != 0 {

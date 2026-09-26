@@ -70,20 +70,20 @@ func (c *Client) NextID(ctx context.Context) (int, error) {
 // not duplicating the hypervisor's validation: it is stopping a string with a
 // slash or a space from becoming another route or another parameter before it
 // leaves here.
-func ValidGuestName(nome string) error {
-	if nome == "" || len(nome) > 63 {
-		return fmt.Errorf("pve: invalid guest name (%q) — 1 to 63 characters", nome)
+func ValidGuestName(name string) error {
+	if name == "" || len(name) > 63 {
+		return fmt.Errorf("pve: invalid guest name (%q) — 1 to 63 characters", name)
 	}
-	for i, r := range nome {
+	for i, r := range name {
 		ok := r == '-' ||
 			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
 		if !ok {
-			return fmt.Errorf("pve: invalid guest name (%q) — only letters, digits and hyphen", nome)
+			return fmt.Errorf("pve: invalid guest name (%q) — only letters, digits and hyphen", name)
 		}
 		// A hyphen at either end is not a valid hostname, and the hypervisor uses
 		// this name as the hostname on LXC.
-		if r == '-' && (i == 0 || i == len(nome)-1) {
-			return fmt.Errorf("pve: invalid guest name (%q) — cannot start or end with a hyphen", nome)
+		if r == '-' && (i == 0 || i == len(name)-1) {
+			return fmt.Errorf("pve: invalid guest name (%q) — cannot start or end with a hyphen", name)
 		}
 	}
 	return nil
@@ -92,19 +92,19 @@ func ValidGuestName(nome string) error {
 // ValidStorageName refuses a storage name that is not an identifier. It goes
 // into the query of a POST; a slash or a dot-dot there is a path to something
 // else.
-func ValidStorageName(nome string) error {
-	if nome == "" || len(nome) > 64 {
-		return fmt.Errorf("pve: invalid storage (%q)", nome)
+func ValidStorageName(name string) error {
+	if name == "" || len(name) > 64 {
+		return fmt.Errorf("pve: invalid storage (%q)", name)
 	}
-	for _, r := range nome {
+	for _, r := range name {
 		ok := r == '-' || r == '_' || r == '.' ||
 			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
 		if !ok {
-			return fmt.Errorf("pve: invalid storage (%q)", nome)
+			return fmt.Errorf("pve: invalid storage (%q)", name)
 		}
 	}
-	if strings.Contains(nome, "..") {
-		return fmt.Errorf("pve: invalid storage (%q)", nome)
+	if strings.Contains(name, "..") {
+		return fmt.Errorf("pve: invalid storage (%q)", name)
 	}
 	return nil
 }
@@ -159,7 +159,7 @@ func ValidNodeName(node string) error {
 // For a VM (qemu) there is no equivalent restriction: the hypervisor clones a
 // running VM using drive-mirror, and the only thing it refuses is copying TPM
 // state.
-func (c *Client) Clone(ctx context.Context, node string, vmid int, typ string, newID int, nome, snapname string) (string, error) {
+func (c *Client) Clone(ctx context.Context, node string, vmid int, typ string, newID int, name, snapname string) (string, error) {
 	base, err := guestPath(node, vmid, typ)
 	if err != nil {
 		return "", err
@@ -183,14 +183,14 @@ func (c *Client) Clone(ctx context.Context, node string, vmid int, typ string, n
 		}
 		q.Set("snapname", snapname)
 	}
-	if nome != "" {
-		if err := ValidGuestName(nome); err != nil {
+	if name != "" {
+		if err := ValidGuestName(name); err != nil {
 			return "", err
 		}
 		if typ == "lxc" {
-			q.Set("hostname", nome)
+			q.Set("hostname", name)
 		} else {
-			q.Set("name", nome)
+			q.Set("name", name)
 		}
 	}
 	var upid string

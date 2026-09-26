@@ -50,10 +50,10 @@ const (
 	TypeHypervisorUnreachable = "hypervisor.unreachable"
 	TypeHypervisorRecovered   = "hypervisor.recovered"
 
-	// dedupHipervisor keeps both ends under the SAME dedup identity: a "went
+	// dedupHypervisor keeps both ends under the SAME dedup identity: a "went
 	// down" followed by a "came back" is a single story, and the router needs to
 	// be able to treat it as such.
-	dedupHipervisor = "hypervisor:alcance"
+	dedupHypervisor = "hypervisor:alcance"
 )
 
 type hypervisorSentinel struct {
@@ -153,7 +153,7 @@ func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
 		s.failures = 0
 		if s.down {
 			s.down = false
-			fora := time.Duration(now-s.sinceUnix) * time.Second
+			outside := time.Duration(now-s.sinceUnix) * time.Second
 			r.dispatchSentinel(notify.Event{
 				Type:     TypeHypervisorRecovered,
 				Severity: "info",
@@ -166,9 +166,9 @@ func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
 						"HOW LONG IT WAS DOWN: %s.\n"+
 						"WHAT TO CHECK NOW: whether any guest failed to come back up, and whether the "+
 						"overnight backup ran.",
-					r.hypervisorAddr(), humanDuration(fora)),
+					r.hypervisorAddr(), humanDuration(outside)),
 				TS:       now,
-				DedupKey: dedupHipervisor,
+				DedupKey: dedupHypervisor,
 				Labels:   map[string]string{"alvo": "hipervisor", "estado": "voltou"},
 			})
 		}
@@ -208,7 +208,7 @@ func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
 			humanDuration(time.Duration(now-s.sinceUnix)*time.Second),
 			firstErrorLine(inv.LastPollError)),
 		TS:       now,
-		DedupKey: dedupHipervisor,
+		DedupKey: dedupHypervisor,
 		Labels:   map[string]string{"alvo": "hipervisor", "estado": "inalcancavel"},
 	})
 }

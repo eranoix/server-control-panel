@@ -217,7 +217,7 @@ func (m *Manager) ImportWorld(s Server, name, zipPath string) error {
 	// The reference is s.Root, and not `dst`'s immediate parent: the parent may be
 	// a directory the panel itself just created, already root:root. The server's
 	// root is the only point of the tree whose owner is reliably the game's.
-	return chownComoRef(dst, s.Root, true)
+	return chownLikeRef(dst, s.Root, true)
 }
 
 // ── Server inventory ───────────────────────────────────────────────────────

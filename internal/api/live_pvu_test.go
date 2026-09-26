@@ -57,8 +57,8 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 	defer cancel()
 
 	out := pvuGETNodes(t, r)
-	nos, _ := out["nodes"].([]any)
-	if len(nos) == 0 {
+	nodes, _ := out["nodes"].([]any)
+	if len(nodes) == 0 {
 		t.Fatal("no nodes — the proof has nothing to talk about")
 	}
 
@@ -67,18 +67,18 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 	// The assertion is about the SET and the shape, never about an exact value: RAM
 	// changes between two ticks, and a nailed-down number would turn a healthy lab
 	// into a failure.
-	campos := []string{"cpu_frac", "cpu_cores", "mem_used", "mem_total", "mem_host",
+	fields := []string{"cpu_frac", "cpu_cores", "mem_used", "mem_total", "mem_host",
 		"disk_used", "disk_total", "net_in", "net_out", "disk_read", "disk_write",
 		"net_in_rate", "net_out_rate"}
 	guests, stamped := 0, 0
 	var lines []string
-	for _, raw := range nos {
+	for _, raw := range nodes {
 		n, _ := raw.(map[string]any)
 		if n["kind"] != "guest" {
 			continue
 		}
 		guests++
-		for _, c := range campos {
+		for _, c := range fields {
 			obs, ok := n[c].(map[string]any)
 			if !ok {
 				t.Fatalf("%v: field %q missing or without an Observed envelope: %v", n["id"], c, n[c])
@@ -98,12 +98,12 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 		if mt > 0 {
 			pctRAM = mu / mt * 100
 		}
-		disco := "não reportado"
+		disk := "não reportado"
 		if du >= 0 {
-			disco = fmt.Sprintf("%.1f GB", du/1e9)
+			disk = fmt.Sprintf("%.1f GB", du/1e9)
 		}
 		lines = append(lines, fmt.Sprintf("%-10v cpu %5.2f%%  ram %5.1f%% (%.2f/%.2f GB)  disco %s",
-			n["id"], cpu*100, pctRAM, mu/1e9, mt/1e9, disco))
+			n["id"], cpu*100, pctRAM, mu/1e9, mt/1e9, disk))
 	}
 	for _, l := range lines {
 		t.Log(l)
@@ -119,7 +119,7 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 	// the VMs this test fails — and that is what is wanted: the rule needs revising,
 	// not to go on lying quietly.
 	qemus, lxcs := 0, 0
-	for _, raw := range nos {
+	for _, raw := range nodes {
 		n, _ := raw.(map[string]any)
 		id, _ := n["id"].(string)
 		if n["kind"] != "guest" {
@@ -161,7 +161,7 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 		t.Logf("⚠️ the poller's last attempt logged an error: %q", e)
 	}
 	var nodeAges []float64
-	for _, raw := range nos {
+	for _, raw := range nodes {
 		n, _ := raw.(map[string]any)
 		nodeAges = append(nodeAges, n["age_seconds"].(float64))
 	}
@@ -185,8 +185,8 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 		t.Fatalf("the attempt's clock did not age: %v → %v",
 			attemptAge, poll2["age_seconds"])
 	}
-	nos2, _ := out2["nodes"].([]any)
-	for i, raw := range nos2 {
+	nodes2, _ := out2["nodes"].([]any)
+	for i, raw := range nodes2 {
 		n, _ := raw.(map[string]any)
 		if got := n["age_seconds"].(float64); got > nodeAges[i]+5 {
 			t.Fatalf("%v aged along with the attempt (%v → %v) — the clocks are glued together",
@@ -205,7 +205,7 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 	// the right answer. What this block forbids is 0: a zero rate reads as "no
 	// traffic", which is a claim about minutes nobody looked at.
 	noBaseline, withRate := 0, 0
-	for _, raw := range nos {
+	for _, raw := range nodes {
 		n, _ := raw.(map[string]any)
 		if n["kind"] != "guest" {
 			continue
@@ -252,12 +252,12 @@ func TestLivePVURateDerivesFromTWORealObservations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	valor, ok := scope.NewUserVault(vault, scope.User(cfg.Primary)).Get(pveSecretAudit)
+	value, ok := scope.NewUserVault(vault, scope.User(cfg.Primary)).Get(pveSecretAudit)
 	if !ok {
 		t.Fatal("no audit token in the vault")
 	}
 	pcfg := *pc
-	pcfg.TokenID = valor
+	pcfg.TokenID = value
 	cli, err := pve.New(pcfg)
 	if err != nil {
 		t.Fatal(err)
@@ -276,23 +276,23 @@ func TestLivePVURateDerivesFromTWORealObservations(t *testing.T) {
 	go p.Run(ctx)
 
 	deadline := time.Now().Add(25 * time.Second)
-	var comBase, noBaseline []string
+	var withBaseline, noBaseline []string
 	for {
 		inv, err := st.Snapshot()
 		if err == nil {
-			comBase, noBaseline = nil, nil
+			withBaseline, noBaseline = nil, nil
 			for _, n := range inv.Nodes {
 				if n.Kind != inventory.NodeKindGuest {
 					continue
 				}
 				if n.NetInRate.Value >= 0 {
-					comBase = append(comBase, fmt.Sprintf("%s ↓%dB/s ↑%dB/s", n.ID, n.NetInRate.Value, n.NetOutRate.Value))
+					withBaseline = append(withBaseline, fmt.Sprintf("%s ↓%dB/s ↑%dB/s", n.ID, n.NetInRate.Value, n.NetOutRate.Value))
 				} else {
 					noBaseline = append(noBaseline, n.ID)
 				}
 			}
 		}
-		if len(comBase) > 0 {
+		if len(withBaseline) > 0 {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -300,10 +300,10 @@ func TestLivePVURateDerivesFromTWORealObservations(t *testing.T) {
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	for _, l := range comBase {
+	for _, l := range withBaseline {
 		t.Log("rate derived from two real observations:" + l)
 	}
-	t.Logf("%d guests with a rate, %d still without a baseline", len(comBase), len(noBaseline))
+	t.Logf("%d guests with a rate, %d still without a baseline", len(withBaseline), len(noBaseline))
 
 	// And the NEGATIVE control for the same rule, with no waiting: an artificial
 	// hole in the previous stamp has to erase the rate on the next tick.

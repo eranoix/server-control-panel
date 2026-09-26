@@ -93,9 +93,9 @@ func buildLabUpdate(t *testing.T) labUpdate {
 	}
 }
 
-func writeOut(t *testing.T, path string, dados []byte) {
+func writeOut(t *testing.T, path string, data []byte) {
 	t.Helper()
-	if err := os.WriteFile(path, dados, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -347,7 +347,7 @@ func TestAppUpdateArtifact_NotInManifest_404(t *testing.T) {
 	// And a plausible secret outside the directory, the target of a traversal.
 	writeOut(t, filepath.Join(lab.dataDir, "secrets.vault"), []byte("SEGREDO"))
 
-	for _, nome := range []string{
+	for _, name := range []string{
 		"full/intruso.hdiff",
 		"../secrets.vault",
 		"../../etc/passwd",
@@ -355,12 +355,12 @@ func TestAppUpdateArtifact_NotInManifest_404(t *testing.T) {
 		"full/../../secrets.vault",
 		"",
 	} {
-		rec := requestArtifact(t, lab.dataDir, nome, nil)
+		rec := requestArtifact(t, lab.dataDir, name, nil)
 		if rec.Code == http.StatusOK {
-			t.Fatalf("file=%q returned 200 — the manifest allowlist did not hold", nome)
+			t.Fatalf("file=%q returned 200 — the manifest allowlist did not hold", name)
 		}
 		if bytes.Contains(rec.Body.Bytes(), []byte("SEGREDO")) {
-			t.Fatalf("file=%q leaked content from outside the updates directory", nome)
+			t.Fatalf("file=%q leaked content from outside the updates directory", name)
 		}
 	}
 }

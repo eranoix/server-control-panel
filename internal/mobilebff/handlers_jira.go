@@ -379,7 +379,7 @@ func registerJira(api huma.API, deps Deps) {
 			"servidor. Responde 409 quando o fluxo de trabalho do projeto não " +
 			"permite o salto — o cartão volta para a coluna de origem.",
 		Tags:        []string{"mobile", "jira"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusConflict, http.StatusServiceUnavailable},
 	}, jiraMoveHandler(deps))
 
@@ -398,7 +398,7 @@ func registerJira(api huma.API, deps Deps) {
 		Path:        "/jira/issue/comment",
 		Summary:     "Comenta numa issue",
 		Tags:        []string{"mobile", "jira"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
 	}, jiraCommentHandler(deps))
 
@@ -408,7 +408,7 @@ func registerJira(api huma.API, deps Deps) {
 		Path:        "/jira/issue/assign",
 		Summary:     "Troca o responsável por uma issue",
 		Tags:        []string{"mobile", "jira"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
 	}, jiraAssignHandler(deps))
 
@@ -438,7 +438,7 @@ func registerJira(api huma.API, deps Deps) {
 		Path:        "/jira/issue/create",
 		Summary:     "Cria uma issue",
 		Tags:        []string{"mobile", "jira"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
 	}, jiraCreateHandler(deps))
 
@@ -450,7 +450,7 @@ func registerJira(api huma.API, deps Deps) {
 		Description: "O resultado é por issue: o que foi e o que não foi, com o " +
 			"motivo. Lote não é atômico contra o Jira.",
 		Tags:        []string{"mobile", "jira"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
 	}, jiraBulkMoveHandler(deps))
 
@@ -460,7 +460,7 @@ func registerJira(api huma.API, deps Deps) {
 		Path:        "/jira/bulk/assign",
 		Summary:     "Atribui várias issues à mesma pessoa",
 		Tags:        []string{"mobile", "jira"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
 	}, jiraBulkAssignHandler(deps))
 
@@ -472,7 +472,7 @@ func registerJira(api huma.API, deps Deps) {
 		Description: "As credenciais vão para o cofre POR USUÁRIO, o mesmo que o " +
 			"painel web usa. O token nunca volta em nenhuma resposta.",
 		Tags:        []string{"mobile", "jira"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
 	}, jiraConnectHandler(deps))
 
@@ -482,7 +482,7 @@ func registerJira(api huma.API, deps Deps) {
 		Path:        "/jira/project",
 		Summary:     "Fixa o projeto padrão do quadro",
 		Tags:        []string{"mobile", "jira"},
-		Middlewares: huma.Middlewares{comAuditoria},
+		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
 	}, jiraSetProjectHandler(deps))
 }
@@ -644,7 +644,7 @@ func searchByColumn(
 	}
 	wg.Wait()
 
-	vistas := map[string]bool{}
+	seen := map[string]bool{}
 	union := make([]jira.Issue, 0, perColumn*len(queries))
 	firstErr := ""
 	for _, r := range res {
@@ -655,10 +655,10 @@ func searchByColumn(
 			continue
 		}
 		for _, is := range r.issues {
-			if vistas[is.Key] {
+			if seen[is.Key] {
 				continue
 			}
-			vistas[is.Key] = true
+			seen[is.Key] = true
 			union = append(union, is)
 		}
 	}
@@ -758,7 +758,7 @@ func jiraMoveHandler(deps Deps) func(context.Context, *jiraMoveInput) (*jiraMove
 			// its original column instead of showing "server error".
 			return nil, huma.Error409Conflict(err.Error())
 		}
-		auditar(ctx, deps.Audit, user, "jira.issue.transition", key+" → "+col.Label)
+		recordAudit(ctx, deps.Audit, user, "jira.issue.transition", key+" → "+col.Label)
 
 		out := &jiraMoveOutput{}
 		out.Body = JiraMoveResponse{Key: key, Status: status, Column: col.Label}
@@ -896,7 +896,7 @@ func jiraCommentHandler(deps Deps) func(context.Context, *jiraCommentInput) (*ji
 		if err != nil {
 			return nil, huma.Error502BadGateway(err.Error())
 		}
-		auditar(ctx, deps.Audit, user, "jira.issue.comment", key)
+		recordAudit(ctx, deps.Audit, user, "jira.issue.comment", key)
 
 		out := &jiraCommentOutput{}
 		out.Body = JiraCommentItem{ID: c.ID, Body: c.Body, Author: c.Author.DisplayName, Created: c.Created}
@@ -918,7 +918,7 @@ func jiraAssignHandler(deps Deps) func(context.Context, *jiraAssignInput) (*stat
 		if err := cli.UpdateIssue(ctx, key, jira.UpdateIssueRequest{AssigneeID: &id}); err != nil {
 			return nil, huma.Error502BadGateway(err.Error())
 		}
-		auditar(ctx, deps.Audit, user, "jira.issue.assign", key)
+		recordAudit(ctx, deps.Audit, user, "jira.issue.assign", key)
 
 		out := &statusOutput{}
 		out.Body.Status = "ok"
@@ -1008,7 +1008,7 @@ func jiraCreateHandler(deps Deps) func(context.Context, *jiraCreateInput) (*jira
 		if err != nil {
 			return nil, huma.Error502BadGateway(err.Error())
 		}
-		auditar(ctx, deps.Audit, user, "jira.issue.create", created.Key)
+		recordAudit(ctx, deps.Audit, user, "jira.issue.create", created.Key)
 
 		out := &jiraCreatedOutput{}
 		out.Body.Key = created.Key
@@ -1041,7 +1041,7 @@ func jiraBulkMoveHandler(deps Deps) func(context.Context, *jiraBulkMoveInput) (*
 				continue
 			}
 			out.Body.Done = append(out.Body.Done, key)
-			auditar(ctx, deps.Audit, user, "jira.issue.transition", key+" → "+col.Label)
+			recordAudit(ctx, deps.Audit, user, "jira.issue.transition", key+" → "+col.Label)
 		}
 		return out, nil
 	}
@@ -1069,7 +1069,7 @@ func jiraBulkAssignHandler(deps Deps) func(context.Context, *jiraBulkAssignInput
 				continue
 			}
 			out.Body.Done = append(out.Body.Done, key)
-			auditar(ctx, deps.Audit, user, "jira.issue.assign", key)
+			recordAudit(ctx, deps.Audit, user, "jira.issue.assign", key)
 		}
 		return out, nil
 	}
@@ -1093,7 +1093,7 @@ func jiraConnectHandler(deps Deps) func(context.Context, *jiraConnectInput) (*st
 		}
 		// What gets audited is the SITE, never the token: the audit records that
 		// the account was connected, not with what.
-		auditar(ctx, deps.Audit, user, "jira.connect", b.Site)
+		recordAudit(ctx, deps.Audit, user, "jira.connect", b.Site)
 
 		out := &statusOutput{}
 		out.Body.Status = "ok"
@@ -1117,7 +1117,7 @@ func jiraSetProjectHandler(deps Deps) func(context.Context, *jiraProjectInput) (
 		if err := deps.JiraSetProject(user, project); err != nil {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		auditar(ctx, deps.Audit, user, "jira.project", project)
+		recordAudit(ctx, deps.Audit, user, "jira.project", project)
 
 		out := &statusOutput{}
 		out.Body.Status = "ok"

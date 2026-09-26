@@ -6,7 +6,7 @@ import (
 )
 
 func TestIdempotencyRemembersAndReturnsSameResult(t *testing.T) {
-	i := NovaIdempotencia(t.TempDir())
+	i := NewIdempotency(t.TempDir())
 
 	if _, _, ok := i.Recall("sam:k1"); ok {
 		t.Fatal("a key never seen must not be remembered")
@@ -27,7 +27,7 @@ func TestIdempotencyDoesNotLeakAcrossUsers(t *testing.T) {
 	// The key includes the user on purpose: two devices can generate the same
 	// identifier, and a result leaking between accounts would be worse than
 	// having no idempotency at all.
-	i := NovaIdempotencia(t.TempDir())
+	i := NewIdempotency(t.TempDir())
 	i.Remember("sam:k1", `{"status":"ok"}`, 200)
 
 	if _, _, ok := i.Recall("jordan:k1"); ok {
@@ -37,7 +37,7 @@ func TestIdempotencyDoesNotLeakAcrossUsers(t *testing.T) {
 
 func TestIdempotencyExpiresAfterTTL(t *testing.T) {
 	clock := time.Now()
-	i := NovaIdempotencia(t.TempDir())
+	i := NewIdempotency(t.TempDir())
 	i.now = func() time.Time { return clock }
 
 	i.Remember("sam:k1", `{"status":"ok"}`, 200)
@@ -56,11 +56,11 @@ func TestIdempotencySurvivesProcessRestart(t *testing.T) {
 	// and the retry from whoever was offline arrives AFTERWARDS. A table living
 	// only in memory would lose exactly the keys that matter most.
 	dir := t.TempDir()
-	first := NovaIdempotencia(dir)
+	first := NewIdempotency(dir)
 	first.Remember("sam:k1", `{"id":"abc"}`, 200)
 
-	segundo := NovaIdempotencia(dir)
-	body, status, ok := segundo.Recall("sam:k1")
+	second := NewIdempotency(dir)
+	body, status, ok := second.Recall("sam:k1")
 	if !ok {
 		t.Fatal("the key must survive a restart")
 	}
@@ -71,14 +71,14 @@ func TestIdempotencySurvivesProcessRestart(t *testing.T) {
 
 func TestIdempotencyWithCorruptFileStartsEmptyInsteadOfBreaking(t *testing.T) {
 	dir := t.TempDir()
-	i := NovaIdempotencia(dir)
+	i := NewIdempotency(dir)
 	i.Remember("sam:k1", "{}", 200)
 
 	// Corrupt the file and load it again.
 	if err := persistFile(i.file, "isto nao e json"); err != nil {
 		t.Fatal(err)
 	}
-	other := NovaIdempotencia(dir)
+	other := NewIdempotency(dir)
 	if _, _, ok := other.Recall("sam:k1"); ok {
 		t.Fatal("a corrupted table must start empty")
 	}
@@ -92,7 +92,7 @@ func TestIdempotencyWithCorruptFileStartsEmptyInsteadOfBreaking(t *testing.T) {
 func TestIdempotencyNilIsNoOp(t *testing.T) {
 	// The BFF can run without a dataDir (the spec generator, for one). A nil
 	// that blows up at runtime would be worse than the feature being absent.
-	var i *Idempotencia
+	var i *Idempotency
 	i.Remember("sam:k1", "{}", 200)
 	if _, _, ok := i.Recall("sam:k1"); ok {
 		t.Fatal("nil remembers nothing")

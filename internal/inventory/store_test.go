@@ -127,8 +127,8 @@ func TestStoreCorruptFile(t *testing.T) {
 		"lixo":       "nao sou json",
 		"tipoerrado": `["isto e uma lista, nao o envelope"]`,
 	}
-	for nome, content := range cases {
-		t.Run(nome, func(t *testing.T) {
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			if err := os.MkdirAll(filepath.Join(dir, "inventory"), 0o700); err != nil {
 				t.Fatal(err)
@@ -139,7 +139,7 @@ func TestStoreCorruptFile(t *testing.T) {
 			}
 			_, err := Open(dir)
 			if err == nil {
-				t.Fatalf("Open ACCEPTED inventory %s — an empty inventory in place of an error erases data", nome)
+				t.Fatalf("Open ACCEPTED inventory %s — an empty inventory in place of an error erases data", name)
 			}
 			if !strings.Contains(err.Error(), target) {
 				t.Fatalf("the error does not name the path %q: %v", target, err)

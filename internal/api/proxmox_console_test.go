@@ -406,10 +406,10 @@ func TestConsoleUsesNodeToken(t *testing.T) {
 	}
 	c.Close()
 
-	if !vault.leu("pve_token_node_lab") {
+	if !vault.wasRead("pve_token_node_lab") {
 		t.Errorf("keys read = %v, want it to contain pve_token_node_lab", vault.reads)
 	}
-	if vault.leu(pveSecretAudit) {
+	if vault.wasRead(pveSecretAudit) {
 		t.Errorf("read the AUDIT token (%v) — it gets a 403 on VM.Console", vault.reads)
 	}
 }
@@ -426,17 +426,17 @@ func TestNoHandlerReturnsConsoleTicket(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
-		nome := e.Name()
-		if e.IsDir() || !strings.HasSuffix(nome, ".go") || strings.HasSuffix(nome, "_test.go") {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		raw, err := os.ReadFile(nome)
+		raw, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, p := range forbiddenBins {
 			if strings.Contains(string(raw), p) {
-				t.Errorf("%s mentions %q — the console's ticket and port must NOT cross the internal/pve boundary", nome, p)
+				t.Errorf("%s mentions %q — the console's ticket and port must NOT cross the internal/pve boundary", name, p)
 			}
 		}
 	}

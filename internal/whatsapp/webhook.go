@@ -527,7 +527,7 @@ func AckLabel(a int) string {
 // Zero cost on the happy path: the reload only runs when the comparison fails.
 func (s *Service) hmacMatches(body []byte, got string) bool {
 	current := s.currentHMAC()
-	if hmacBate(current, body, got) {
+	if hmacMatches(current, body, got) {
 		return true
 	}
 	if s.HMACRefresh == nil {
@@ -537,7 +537,7 @@ func (s *Service) hmacMatches(body []byte, got string) bool {
 	if fresh == "" || fresh == current {
 		return false
 	}
-	if !hmacBate(fresh, body, got) {
+	if !hmacMatches(fresh, body, got) {
 		return false
 	}
 	log.Printf("whatsapp webhook: secret reloaded from the vault (the cached one was stale) — event accepted instead of dropped")
@@ -560,7 +560,7 @@ func (s *Service) hmacRotate(fresh string) {
 	s.hmacSecret = fresh
 }
 
-func hmacBate(secret string, body []byte, got string) bool {
+func hmacMatches(secret string, body []byte, got string) bool {
 	if secret == "" {
 		return false
 	}

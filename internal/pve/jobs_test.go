@@ -9,7 +9,7 @@ import "testing"
 func TestJobScheduled(t *testing.T) {
 	um, zero := 1, 0
 	cases := []struct {
-		nome string
+		name string
 		j    BackupJob
 		want bool
 	}{
@@ -24,7 +24,7 @@ func TestJobScheduled(t *testing.T) {
 	}
 	for _, c := range cases {
 		if got := c.j.IsScheduled(); got != c.want {
-			t.Errorf("%s: Agendado() = %v, want %v", c.nome, got, c.want)
+			t.Errorf("%s: Agendado() = %v, want %v", c.name, got, c.want)
 		}
 	}
 }

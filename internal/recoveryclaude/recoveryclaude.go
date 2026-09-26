@@ -50,7 +50,7 @@ const Container = "vpsm-recovery-claude"
 // the file already exists — would leave an old deploy's version on disk after a
 // fix, which is exactly the kind of surprise you do not want in an emergency
 // tool.
-func Materializa(dataDir string) (string, error) {
+func Materialize(dataDir string) (string, error) {
 	dest := filepath.Join(dataDir, "recovery-claude")
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return "", fmt.Errorf("create %s: %w", dest, err)
@@ -89,7 +89,7 @@ func Materializa(dataDir string) (string, error) {
 // build context is the materialized directory itself — which is why the
 // Dockerfile and the scripts have to come out together.
 func Command(dataDir string, args ...string) (*exec.Cmd, error) {
-	script, err := Materializa(dataDir)
+	script, err := Materialize(dataDir)
 	if err != nil {
 		return nil, err
 	}

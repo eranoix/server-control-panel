@@ -28,8 +28,8 @@ func lines(t *testing.T, path string) ([]string, string) {
 	return strings.Split(strings.TrimSuffix(s, "\n"), "\n"), s
 }
 
-func freeze(s *Sink, dia string) {
-	tm, _ := time.Parse("2006-01-02", dia)
+func freeze(s *Sink, day string) {
+	tm, _ := time.Parse("2006-01-02", day)
 	s.now = func() time.Time { return tm }
 }
 

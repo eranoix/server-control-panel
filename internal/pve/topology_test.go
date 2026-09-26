@@ -18,7 +18,7 @@ func TestSerialFromPath(t *testing.T) {
 
 func TestVdevType(t *testing.T) {
 	cases := []struct {
-		nome, kind string
+		name, kind string
 		red        bool
 	}{
 		{"mirror-0", "mirror", true},
@@ -33,9 +33,9 @@ func TestVdevType(t *testing.T) {
 		{"/dev/sda", "listra", false},
 	}
 	for _, c := range cases {
-		kind, red := vdevType(c.nome)
+		kind, red := vdevType(c.name)
 		if kind != c.kind || red != c.red {
-			t.Errorf("vdevType(%q) = (%q,%v), want (%q,%v)", c.nome, kind, red, c.kind, c.red)
+			t.Errorf("vdevType(%q) = (%q,%v), want (%q,%v)", c.name, kind, red, c.kind, c.red)
 		}
 	}
 }

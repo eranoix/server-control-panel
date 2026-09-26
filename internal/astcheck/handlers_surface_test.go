@@ -125,11 +125,11 @@ func TestHandlersDoNotCallManagerDirectly(t *testing.T) {
 	}
 	scanned := 0
 	for _, e := range entries {
-		nome := e.Name()
-		if !strings.HasSuffix(nome, ".go") || strings.HasSuffix(nome, "_test.go") {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		f, err := parser.ParseFile(fset, filepath.Join(dirAPI, nome), nil, parser.SkipObjectResolution)
+		f, err := parser.ParseFile(fset, filepath.Join(dirAPI, name), nil, parser.SkipObjectResolution)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -152,7 +152,7 @@ func TestHandlersDoNotCallManagerDirectly(t *testing.T) {
 				return true
 			}
 			t.Errorf("DIRECT CALL TO THE MANAGER: %s.%s at %s:%d — this screen stayed on the old path and operates the PANEL's disk, not the node's",
-				"gameMgr", sel.Sel.Name, nome, fset.Position(call.Pos()).Line)
+				"gameMgr", sel.Sel.Name, name, fset.Position(call.Pos()).Line)
 			return true
 		})
 	}
@@ -165,15 +165,15 @@ func TestHandlersDoNotCallManagerDirectly(t *testing.T) {
 // TestManagerPinBites: does the pin above measure anything?
 func TestManagerPinBites(t *testing.T) {
 	dir := t.TempDir()
-	arq := filepath.Join(dir, "regressao.go")
+	file := filepath.Join(dir, "regressao.go")
 	source := `package api
 func (r *Router) telaEsquecida() { _ = r.gameMgr.Worlds(srv) }
 `
-	if err := os.WriteFile(arq, []byte(source), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, arq, nil, parser.SkipObjectResolution)
+	f, err := parser.ParseFile(fset, file, nil, parser.SkipObjectResolution)
 	if err != nil {
 		t.Fatal(err)
 	}

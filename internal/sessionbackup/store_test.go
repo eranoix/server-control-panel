@@ -28,9 +28,9 @@ func TestValidID(t *testing.T) {
 
 func backup(id string, created int64, origin string, sessions ...string) ptysvc.Backup {
 	bk := ptysvc.Backup{ID: id, Created: created, Source: origin}
-	for _, nome := range sessions {
+	for _, name := range sessions {
 		bk.Sessions = append(bk.Sessions, ptysvc.SessionSnapshot{
-			Name: nome,
+			Name: name,
 			Windows: []ptysvc.WindowSnapshot{{
 				Panes: []ptysvc.PaneSnapshot{{Scrollback: "linha um\nlinha dois\n"}},
 			}},

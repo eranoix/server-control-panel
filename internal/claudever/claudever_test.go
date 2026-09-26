@@ -49,7 +49,7 @@ func TestVersionComesFromBinaryPath(t *testing.T) {
 	}
 }
 
-// PaiDe cuts the stat AFTER the last ')': the executable's name comes in
+// ParentOf cuts the stat AFTER the last ')': the executable's name comes in
 // parentheses and may contain spaces and parentheses. Splitting the whole line on
 // spaces — the naive way — returns the wrong field precisely for processes with
 // an odd name.
@@ -59,12 +59,12 @@ func TestParentOfHandlesProcessNameWithSpace(t *testing.T) {
 	procRoot = dir
 	defer func() { procRoot = prevRoot }()
 
-	writeOut := func(pid, ppid int, nome string) {
+	writeOut := func(pid, ppid int, name string) {
 		d := dir + "/" + itoa(pid)
 		if err := mkdirAll(d); err != nil {
 			t.Fatal(err)
 		}
-		line := itoa(pid) + " (" + nome + ") S " + itoa(ppid) + " 1 1 0 -1 4194304 100 0 0 0"
+		line := itoa(pid) + " (" + name + ") S " + itoa(ppid) + " 1 1 0 -1 4194304 100 0 0 0"
 		if err := writeFile(d+"/stat", line); err != nil {
 			t.Fatal(err)
 		}
@@ -75,13 +75,13 @@ func TestParentOfHandlesProcessNameWithSpace(t *testing.T) {
 	writeOut(102, 44, "a b c")
 
 	for _, c := range []struct{ pid, ppid int }{{100, 42}, {101, 43}, {102, 44}} {
-		if got := PaiDe(c.pid); got != c.ppid {
-			t.Errorf("PaiDe(%d) = %d, wanted %d", c.pid, got, c.ppid)
+		if got := ParentOf(c.pid); got != c.ppid {
+			t.Errorf("ParentOf(%d) = %d, wanted %d", c.pid, got, c.ppid)
 		}
 	}
 }
 
-// AncestralEm has to terminate even with an inconsistent /proc — a recycled PID
+// AncestorIn has to terminate even with an inconsistent /proc — a recycled PID
 // has already produced a cycle in production in this kind of sweep.
 func TestAncestorDoesNotLoop(t *testing.T) {
 	dir := t.TempDir()
@@ -100,13 +100,13 @@ func TestAncestorDoesNotLoop(t *testing.T) {
 		}
 	}
 	done := make(chan int, 1)
-	go func() { done <- AncestralEm(200, map[int]bool{999: true}) }()
+	go func() { done <- AncestorIn(200, map[int]bool{999: true}) }()
 	select {
 	case got := <-done:
 		if got != 0 {
 			t.Errorf("found ancestor %d where there was none", got)
 		}
 	case <-shortTimeout():
-		t.Fatal("AncestralEm did not terminate — an infinite loop with /proc in a cycle")
+		t.Fatal("AncestorIn did not terminate — an infinite loop with /proc in a cycle")
 	}
 }

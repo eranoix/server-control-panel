@@ -147,7 +147,7 @@ type Deps struct {
 	// pointing at the same file would trample each other in gravar(). nil is
 	// legitimate and becomes a no-op in every method — it is the case of
 	// cmd/mobile-openapi-gen, which builds the registry without a dataDir.
-	Idem *Idempotencia
+	Idem *Idempotency
 }
 
 // Registrar registers one cohesive group of routes (one handlers_*.go file) on

@@ -65,11 +65,11 @@ func TestHistoryDoesNotDuplicateRepaintedOutput(t *testing.T) {
 
 	// A 6-line "frame", repainted three times in the same place — which is what
 	// Ink does on every keystroke.
-	for volta := 1; volta <= 3; volta++ {
+	for decoded := 1; decoded <= 3; decoded++ {
 		for i := 1; i <= 6; i++ {
-			screen.feed([]byte(fmt.Sprintf("quadro %d linha %d\r\n", volta, i)))
+			screen.feed([]byte(fmt.Sprintf("quadro %d linha %d\r\n", decoded, i)))
 		}
-		if volta < 3 {
+		if decoded < 3 {
 			screen.feed([]byte("\x1b[6A")) // sobe 6 linhas para repintar
 		}
 	}

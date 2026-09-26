@@ -165,13 +165,13 @@ func registerUpdate(api huma.API, deps Deps) {
 // the File field is "patches/<a>-<b>.hdiff", and a Content-Disposition with a
 // slash in it confuses clients.
 func filenameFor(a *androidupdate.Artifact) string {
-	nome := a.File
-	for i := len(nome) - 1; i >= 0; i-- {
-		if nome[i] == '/' {
-			return nome[i+1:]
+	name := a.File
+	for i := len(name) - 1; i >= 0; i-- {
+		if name[i] == '/' {
+			return name[i+1:]
 		}
 	}
-	return nome
+	return name
 }
 
 func artifactDTO(a androidupdate.Artifact) AppUpdateArtifact {

@@ -34,7 +34,7 @@ func newTestClient(t *testing.T, h http.HandlerFunc) (*Client, *httptest.Server)
 // screen when the problem is an ACL, and vice versa).
 func TestErrorClassification(t *testing.T) {
 	cases := []struct {
-		nome   string
+		name   string
 		status int
 		body   string
 		want   Kind
@@ -45,7 +45,7 @@ func TestErrorClassification(t *testing.T) {
 		{"400 hipervisor", http.StatusBadRequest, "parameter verification failed", KindHypervisor},
 	}
 	for _, tc := range cases {
-		t.Run(tc.nome, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tc.status)
 				_, _ = w.Write([]byte(tc.body))
@@ -158,7 +158,7 @@ func TestAuthHeader(t *testing.T) {
 // false green.
 func TestTimeoutFloor(t *testing.T) {
 	cases := []struct {
-		nome string
+		name string
 		in   time.Duration
 		want time.Duration
 	}{
@@ -167,7 +167,7 @@ func TestTimeoutFloor(t *testing.T) {
 		{"folgado é respeitado", 30 * time.Second, 30 * time.Second},
 	}
 	for _, tc := range cases {
-		t.Run(tc.nome, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			c, err := New(Config{BaseURL: "http://127.0.0.1:1", TokenID: testTokenID, Secret: testSecret, Timeout: tc.in})
 			if err != nil {
 				t.Fatalf("New: %v", err)
@@ -187,16 +187,16 @@ func TestTimeoutFloor(t *testing.T) {
 // call). A bare secret, with no "!" in the id, MUST become an error in New,
 // never a silently broken header.
 func TestTokenFromVault(t *testing.T) {
-	id, seg, err := SplitTokenValue("lab@pve!audit=1234-abcd")
+	id, secret, err := SplitTokenValue("lab@pve!audit=1234-abcd")
 	if err != nil {
 		t.Fatalf("a valid value from the vault was refused: %v", err)
 	}
-	if id != "lab@pve!audit" || seg != "1234-abcd" {
-		t.Fatalf("split = (%q,%q)", id, seg)
+	if id != "lab@pve!audit" || secret != "1234-abcd" {
+		t.Fatalf("split = (%q,%q)", id, secret)
 	}
 
-	ruins := []string{"", "1234-abcd", "lab@pve!audit", "lab@pve=1234", "=1234", "lab@pve!audit="}
-	for _, v := range ruins {
+	bad := []string{"", "1234-abcd", "lab@pve!audit", "lab@pve=1234", "=1234", "lab@pve!audit="}
+	for _, v := range bad {
 		if _, _, err := SplitTokenValue(v); err == nil {
 			t.Errorf("SplitTokenValue(%q) accepted an invalid value", v)
 		}

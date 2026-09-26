@@ -59,8 +59,8 @@ func TestGuestMetricsAreStamped(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}
-	nos := nosPorID(t, st)
-	n, ok := nos["lxc/207"]
+	nodes := nodesByID(t, st)
+	n, ok := nodes["lxc/207"]
 	if !ok {
 		t.Fatal("lxc/207 was not discovered")
 	}
@@ -86,7 +86,7 @@ func TestGuestMetricsAreStamped(t *testing.T) {
 	// ages on the same card out of a single call — the age-hitching trap in
 	// reverse.
 	for _, c := range []struct {
-		nome string
+		name string
 		at   int64
 	}{
 		{"cpu", n.CPUFrac.ObservedAt}, {"cpu_cores", n.CPUCores.ObservedAt},
@@ -97,7 +97,7 @@ func TestGuestMetricsAreStamped(t *testing.T) {
 		{"mem_host", n.MemHost.ObservedAt},
 	} {
 		if c.at != now {
-			t.Errorf("%s.observed_at = %d, want %d (the same as status = %d)", c.nome, c.at, now, n.Status.ObservedAt)
+			t.Errorf("%s.observed_at = %d, want %d (the same as status = %d)", c.name, c.at, now, n.Status.ObservedAt)
 		}
 	}
 }
@@ -115,9 +115,9 @@ func TestUnreportedDiskNeverBecomesZero(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}
-	nos := nosPorID(t, st)
+	nodes := nodesByID(t, st)
 
-	qemu := nos["qemu/208"]
+	qemu := nodes["qemu/208"]
 	if qemu.DiskUsed.Value != NotReported {
 		t.Fatalf("qemu/208.disk_used = %d, want %d (NotReported) — 0 reads as 'empty disk'",
 			qemu.DiskUsed.Value, NotReported)
@@ -132,7 +132,7 @@ func TestUnreportedDiskNeverBecomesZero(t *testing.T) {
 		t.Error("qemu/208.disk_used has no timestamp — 'not reported' is an observation, not the absence of one")
 	}
 
-	lxc := nos["lxc/207"]
+	lxc := nodes["lxc/207"]
 	if lxc.DiskUsed.Value != 12362973184 {
 		t.Errorf("lxc/207.disk_used = %d — the QEMU rule cannot contaminate LXC", lxc.DiskUsed.Value)
 	}
@@ -164,7 +164,7 @@ func TestNetworkRateDoesNotSpanGap(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := nosPorID(t, st)["lxc/207"].NetInRate.Value; got != NotReported {
+	if got := nodesByID(t, st)["lxc/207"].NetInRate.Value; got != NotReported {
 		t.Fatalf("the first observation produced rate %d — there is nothing to derive it from", got)
 	}
 
@@ -176,7 +176,7 @@ func TestNetworkRateDoesNotSpanGap(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := nosPorID(t, st)["lxc/207"].NetInRate.Value; got != 100000 {
+	if got := nodesByID(t, st)["lxc/207"].NetInRate.Value; got != 100000 {
 		t.Fatalf("rate = %d B/s, want 100000", got)
 	}
 
@@ -188,7 +188,7 @@ func TestNetworkRateDoesNotSpanGap(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := nosPorID(t, st)["lxc/207"].NetInRate.Value; got != NotReported {
+	if got := nodesByID(t, st)["lxc/207"].NetInRate.Value; got != NotReported {
 		t.Fatalf("rate = %d after a 10-minute hole — want %d: an average over blind minutes is an invented rate",
 			got, NotReported)
 	}
@@ -201,7 +201,7 @@ func TestNetworkRateDoesNotSpanGap(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := nosPorID(t, st)["lxc/207"].NetInRate.Value; got != NotReported {
+	if got := nodesByID(t, st)["lxc/207"].NetInRate.Value; got != NotReported {
 		t.Fatalf("a counter that reset to zero produced rate %d — a guest restart is not negative traffic", got)
 	}
 }
@@ -216,7 +216,7 @@ func TestDiscoveryFailureKeepsCounters(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	antes := nosPorID(t, st)["lxc/207"]
+	before := nodesByID(t, st)["lxc/207"]
 
 	rel.advance(5 * time.Minute)
 	f.mu.Lock()
@@ -226,11 +226,11 @@ func TestDiscoveryFailureKeepsCounters(t *testing.T) {
 		t.Fatal("the tick should have failed")
 	}
 
-	after := nosPorID(t, st)["lxc/207"]
-	if after.MemUsed.Value != antes.MemUsed.Value || after.MemUsed.ObservedAt != antes.MemUsed.ObservedAt {
-		t.Fatalf("mem_used changed with the hypervisor mute: before=%+v after=%+v", antes.MemUsed, after.MemUsed)
+	after := nodesByID(t, st)["lxc/207"]
+	if after.MemUsed.Value != before.MemUsed.Value || after.MemUsed.ObservedAt != before.MemUsed.ObservedAt {
+		t.Fatalf("mem_used changed with the hypervisor mute: before=%+v after=%+v", before.MemUsed, after.MemUsed)
 	}
-	if after.DiskUsed.Value != antes.DiskUsed.Value {
+	if after.DiskUsed.Value != before.DiskUsed.Value {
 		t.Fatalf("disk_used changed with the hypervisor mute")
 	}
 }

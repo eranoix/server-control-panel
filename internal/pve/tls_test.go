@@ -98,7 +98,7 @@ func TestTLSBadCA(t *testing.T) {
 // name hypervisor.local does not resolve in any DNS of this project.
 func TestResolveDial(t *testing.T) {
 	cases := []struct {
-		nome    string
+		name    string
 		resolve string
 		addr    string
 		want    string
@@ -109,7 +109,7 @@ func TestResolveDial(t *testing.T) {
 		{"endereço sem porta passa reto", "198.51.100.20", "hypervisor.local", "hypervisor.local"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.nome, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			if got := redirectAddr(tc.addr, tc.resolve); got != tc.want {
 				t.Errorf("redirectAddr(%q,%q) = %q, want %q", tc.addr, tc.resolve, got, tc.want)
 			}

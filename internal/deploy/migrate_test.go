@@ -176,14 +176,14 @@ func TestMigrateAppsIdempotent(t *testing.T) {
 func TestMigrateAppsDetectByShape(t *testing.T) {
 	t.Run("already-v2-is-a-no-op", func(t *testing.T) {
 		dataDir := writeRawApps(t, `{"schema_version":2,"projects":[{"id":"a","name":"a"}],"deployments":[]}`)
-		antes := sha256Of(t, appsPath(dataDir))
+		before := sha256Of(t, appsPath(dataDir))
 		if err := MigrateApps(AppsMigration{DataDir: dataDir}); err != nil {
 			t.Fatalf("migrate over v2: %v", err)
 		}
 		if n := bakCount(t, dataDir); n != 0 {
 			t.Fatalf("the no-op created %d backup(s)", n)
 		}
-		if after := sha256Of(t, appsPath(dataDir)); after != antes {
+		if after := sha256Of(t, appsPath(dataDir)); after != before {
 			t.Fatalf("the no-op rewrote the file")
 		}
 	})
@@ -196,7 +196,7 @@ func TestMigrateAppsDetectByShape(t *testing.T) {
 			`{`,
 		} {
 			dataDir := writeRawApps(t, body)
-			antes := sha256Of(t, appsPath(dataDir))
+			before := sha256Of(t, appsPath(dataDir))
 			err := MigrateApps(AppsMigration{DataDir: dataDir})
 			if err == nil {
 				t.Fatalf("shape %q was ACCEPTED by the migration", body)
@@ -211,7 +211,7 @@ func TestMigrateAppsDetectByShape(t *testing.T) {
 				!strings.Contains(err.Error(), "schema_version") {
 				t.Fatalf("the error does not classify the refused shape (shape %q): %v", body, err)
 			}
-			if after := sha256Of(t, appsPath(dataDir)); after != antes {
+			if after := sha256Of(t, appsPath(dataDir)); after != before {
 				t.Fatalf("the refusal TOUCHED the file (shape %q)", body)
 			}
 			if n := bakCount(t, dataDir); n != 0 {
@@ -238,7 +238,7 @@ func TestMigrateAppsDetectByShape(t *testing.T) {
 // After the failure apps.json has to still be the original v1, byte for byte.
 func TestMigrateAppsRollbackOnWriteFailure(t *testing.T) {
 	dataDir := setupLegacyAppsDir(t, App{Name: "hello", Branch: "main", Port: 8091})
-	antes := sha256Of(t, appsPath(dataDir))
+	before := sha256Of(t, appsPath(dataDir))
 
 	if err := os.MkdirAll(appsPath(dataDir)+".new", 0o700); err != nil {
 		t.Fatalf("arming the failure: %v", err)
@@ -251,8 +251,8 @@ func TestMigrateAppsRollbackOnWriteFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "rollback") {
 		t.Fatalf("the error does not mention the rollback that ran: %v", err)
 	}
-	if after := sha256Of(t, appsPath(dataDir)); after != antes {
-		t.Fatalf("the rollback did NOT restore the v1 apps.json (sha %s → %s)", antes, after)
+	if after := sha256Of(t, appsPath(dataDir)); after != before {
+		t.Fatalf("the rollback did NOT restore the v1 apps.json (sha %s → %s)", before, after)
 	}
 	// The restored v1 has to still read as v1 (not a half-written envelope).
 	sh, _, derr := DetectShape(dataDir)
@@ -272,7 +272,7 @@ func TestMigrateAppsRollbackOnWriteFailure(t *testing.T) {
 // the parent closes its stdin — no sleep, no waiting on a clock.
 func TestMigrateAppsConcurrentLock(t *testing.T) {
 	dataDir := setupLegacyAppsDir(t, App{Name: "hello", Branch: "main"})
-	antes := sha256Of(t, appsPath(dataDir))
+	before := sha256Of(t, appsPath(dataDir))
 
 	child := exec.Command(os.Args[0], "-test.run=TestHelperHoldsLock", "-test.v")
 	child.Env = append(os.Environ(), "DEPLOY_TRAVA_DATADIR="+dataDir)
@@ -309,7 +309,7 @@ func TestMigrateAppsConcurrentLock(t *testing.T) {
 	if !errors.Is(err, ErrConcurrentAppsMigration) {
 		t.Fatalf("a migration with the lock held by another process returned %v, want ErrConcurrentAppsMigration", err)
 	}
-	if after := sha256Of(t, appsPath(dataDir)); after != antes {
+	if after := sha256Of(t, appsPath(dataDir)); after != before {
 		t.Fatalf("the losing migration TOUCHED the file")
 	}
 	if n := bakCount(t, dataDir); n != 0 {
@@ -385,7 +385,7 @@ func TestMigrateAppsAuditAppended(t *testing.T) {
 // that NAMES the binary — never a rewrite.
 func TestGuardCLIRejectsShapes(t *testing.T) {
 	cases := []struct {
-		nome    string
+		name    string
 		body    string
 		accepts bool
 	}{
@@ -396,9 +396,9 @@ func TestGuardCLIRejectsShapes(t *testing.T) {
 		{"vazio", ``, false},
 	}
 	for _, c := range cases {
-		t.Run(c.nome, func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			dataDir := writeRawApps(t, c.body)
-			antes := sha256Of(t, appsPath(dataDir))
+			before := sha256Of(t, appsPath(dataDir))
 			err := GuardCLI(dataDir)
 			if c.accepts {
 				if err != nil {
@@ -415,7 +415,7 @@ func TestGuardCLIRejectsShapes(t *testing.T) {
 			if !strings.Contains(err.Error(), "schema_version") {
 				t.Fatalf("the refusal does not mention schema_version: %v", err)
 			}
-			if after := sha256Of(t, appsPath(dataDir)); after != antes {
+			if after := sha256Of(t, appsPath(dataDir)); after != before {
 				t.Fatalf("the refusal TOUCHED the file")
 			}
 		})
@@ -454,7 +454,7 @@ func TestMigrateAppsDryRunWithRealFile(t *testing.T) {
 	}
 
 	dataDir := writeRawApps(t, string(raw))
-	antes := sha256Of(t, appsPath(dataDir))
+	before := sha256Of(t, appsPath(dataDir))
 
 	if err := MigrateApps(AppsMigration{DataDir: dataDir}); err != nil {
 		t.Fatalf("migration of the real file: %v", err)
@@ -493,8 +493,8 @@ func TestMigrateAppsDryRunWithRealFile(t *testing.T) {
 	if err := os.Rename(bak, appsPath(dataDir)); err != nil {
 		t.Fatalf("restoring the backup: %v", err)
 	}
-	if after := sha256Of(t, appsPath(dataDir)); after != antes {
-		t.Fatalf("the rollback of the REAL file did not give the original back (sha %s → %s)", antes, after)
+	if after := sha256Of(t, appsPath(dataDir)); after != before {
+		t.Fatalf("the rollback of the REAL file did not give the original back (sha %s → %s)", before, after)
 	}
 	t.Logf("rehearsal ok: %d app(s) migrated and restored from the backup", len(v1))
 }

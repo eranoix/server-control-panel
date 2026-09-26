@@ -494,10 +494,10 @@ func (b *blockingDownloadBackend) DownloadFile(fileURL string, dst io.Writer) (i
 	return b.fakeExportBackend.DownloadFile(fileURL, dst)
 }
 
-// TestSendFileDedupColapsaPorClientMsgID locks down upload idempotency: two
+// TestSendFileDedupCollapsesByClientMsgID locks down upload idempotency: two
 // calls with the same client_msg_id call Client.SendFile ONCE and return the
 // same id — the very guarantee SendTextDedup already provides.
-func TestSendFileDedupColapsaPorClientMsgID(t *testing.T) {
+func TestSendFileDedupCollapsesByClientMsgID(t *testing.T) {
 	backend := &fakeExportBackend{sendFileID: "wamid-file-1"}
 	svc := newExportTestService(t, backend)
 	data := []byte("conteudo-do-arquivo")
@@ -569,10 +569,10 @@ func TestSendFileDedupInfersTypeWhenEmpty(t *testing.T) {
 	}
 }
 
-// TestServeMediaRelRangeRequestDevolve206 proves Range support: it reuses
+// TestServeMediaRelRangeRequestReturns206 proves Range support: it reuses
 // http.ServeContent (it does not reimplement Range parsing), so a
 // `Range: bytes=0-3` request returns 206 with the correct slice.
-func TestServeMediaRelRangeRequestDevolve206(t *testing.T) {
+func TestServeMediaRelRangeRequestReturns206(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
 	jid := "jid"
@@ -605,10 +605,10 @@ func TestServeMediaRelRangeRequestDevolve206(t *testing.T) {
 	}
 }
 
-// TestServeMediaRelRangeInsatisfazivelDevolve416 covers the other side of the
+// TestServeMediaRelUnsatisfiableRangeReturns416 covers the other side of the
 // Range contract: a range outside the file's bounds returns 416, the same
 // default behaviour http.ServeContent has.
-func TestServeMediaRelRangeInsatisfazivelDevolve416(t *testing.T) {
+func TestServeMediaRelUnsatisfiableRangeReturns416(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
 	jid := "jid"

@@ -18,7 +18,7 @@ const fakeUPID = "UPID:pve:00001F2A:03C4D5E6:68A3B1C0:vzstart:207:lab@pve!admin:
 // out whether it finished well.
 func TestPowerOps(t *testing.T) {
 	cases := []struct {
-		nome     string
+		name     string
 		call     func(*Client) (string, error)
 		wantPath string
 	}{
@@ -42,13 +42,13 @@ func TestPowerOps(t *testing.T) {
 		}, "/api2/json/nodes/pve/qemu/208/snapshot/antes-do-cutover"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.nome, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != tc.wantPath {
 					t.Errorf("path = %q, want %q", r.URL.Path, tc.wantPath)
 				}
 				wantMethod := http.MethodPost
-				if strings.HasPrefix(tc.nome, "snapshot delete") {
+				if strings.HasPrefix(tc.name, "snapshot delete") {
 					wantMethod = http.MethodDelete
 				}
 				if r.Method != wantMethod {
@@ -239,13 +239,13 @@ func TestSnapshotInvalidName(t *testing.T) {
 		"1comeca-com-digito",
 		strings.Repeat("x", 65),
 	}
-	for _, nome := range names {
-		t.Run(nome, func(t *testing.T) {
-			if _, err := c.SnapshotCreate(context.Background(), "pve", 207, "lxc", nome, ""); err == nil {
-				t.Errorf("SnapshotCreate(%q) was accepted", nome)
+	for _, name := range names {
+		t.Run(name, func(t *testing.T) {
+			if _, err := c.SnapshotCreate(context.Background(), "pve", 207, "lxc", name, ""); err == nil {
+				t.Errorf("SnapshotCreate(%q) was accepted", name)
 			}
-			if _, err := c.SnapshotDelete(context.Background(), "pve", 207, "lxc", nome); err == nil {
-				t.Errorf("SnapshotDelete(%q) was accepted", nome)
+			if _, err := c.SnapshotDelete(context.Background(), "pve", 207, "lxc", name); err == nil {
+				t.Errorf("SnapshotDelete(%q) was accepted", name)
 			}
 		})
 	}
@@ -286,7 +286,7 @@ func TestSnapshotInvalidName(t *testing.T) {
 // resource.
 func TestSnapshotRollbackPathAndVerb(t *testing.T) {
 	cases := []struct {
-		nome     string
+		name     string
 		call     func(*Client) (string, error)
 		wantPath string
 	}{
@@ -298,7 +298,7 @@ func TestSnapshotRollbackPathAndVerb(t *testing.T) {
 		}, "/api2/json/nodes/pve/qemu/208/snapshot/antes-do-cutover/rollback"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.nome, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			var seenPath, seenMethod string
 			c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				seenPath, seenMethod = r.URL.Path, r.Method
@@ -326,17 +326,17 @@ func TestSnapshotRollbackPathAndVerb(t *testing.T) {
 // create/delete, and here it counts for more: a name that escapes its resource
 // chooses which state the guest is going to take on.
 func TestSnapshotRollbackRejectsInvalidName(t *testing.T) {
-	for _, nome := range []string{"", "../../nodes/pve/qemu/100/status/stop", "com espaço", "acentuação", "9comeca-com-numero", strings.Repeat("a", 65)} {
+	for _, name := range []string{"", "../../nodes/pve/qemu/100/status/stop", "com espaço", "acentuação", "9comeca-com-numero", strings.Repeat("a", 65)} {
 		var dialed bool
 		c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 			dialed = true
 			_, _ = w.Write([]byte(`{"data":"` + fakeUPID + `"}`))
 		})
-		if _, err := c.SnapshotRollback(context.Background(), "pve", 204, "lxc", nome); err == nil {
-			t.Errorf("SnapshotRollback(%q) was accepted", nome)
+		if _, err := c.SnapshotRollback(context.Background(), "pve", 204, "lxc", name); err == nil {
+			t.Errorf("SnapshotRollback(%q) was accepted", name)
 		}
 		if dialed {
-			t.Errorf("SnapshotRollback(%q) actually dialed — the name has to be refused BEFORE that", nome)
+			t.Errorf("SnapshotRollback(%q) actually dialed — the name has to be refused BEFORE that", name)
 		}
 	}
 }

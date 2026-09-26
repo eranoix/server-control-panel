@@ -52,16 +52,16 @@ func (c *Client) GuestAddress(ctx context.Context, node string, vmid int, typ st
 // ip=auto, or a value that is not an IP. All of that is "address not declared".
 func ipFromNetConfig(line string) string {
 	for _, field := range strings.Split(line, ",") {
-		key, valor, ok := strings.Cut(strings.TrimSpace(field), "=")
+		key, value, ok := strings.Cut(strings.TrimSpace(field), "=")
 		if !ok || key != "ip" {
 			continue
 		}
 		// The hypervisor accepts "dhcp"/"auto" in place of the CIDR — those are
 		// declarations of absence, not addresses.
-		if addr, _, err := net.ParseCIDR(valor); err == nil {
+		if addr, _, err := net.ParseCIDR(value); err == nil {
 			return addr.String()
 		}
-		if ip := net.ParseIP(valor); ip != nil {
+		if ip := net.ParseIP(value); ip != nil {
 			return ip.String()
 		}
 		return ""

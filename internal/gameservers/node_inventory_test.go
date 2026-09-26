@@ -11,7 +11,7 @@ import (
 // fakeSource is a fake node inventory, with the bare minimum of the interface.
 type fakeSource map[string]NodeTarget
 
-func (f fakeSource) NoPorID(id string) (NodeTarget, bool) {
+func (f fakeSource) NodeByID(id string) (NodeTarget, bool) {
 	d, ok := f[id]
 	return d, ok
 }
@@ -143,7 +143,7 @@ func TestMigrationDoesNotWriteInvalidJSON(t *testing.T) {
 // RESOLUTION
 
 func TestServerWithoutNodeRejected(t *testing.T) {
-	source := fakeSource{"games": {Nome: "games", Transport: TransportAgent, Base: "http://x:1", Token: "t"}}
+	source := fakeSource{"games": {Name: "games", Transport: TransportAgent, Base: "http://x:1", Token: "t"}}
 	s := Server{ID: "jogo-b", Name: "Enshrouded"} // no No
 
 	_, err := ResolveTarget(s, source)
@@ -160,15 +160,15 @@ func TestServerWithoutNodeRejected(t *testing.T) {
 
 func TestResolveServerToNode(t *testing.T) {
 	source := fakeSource{
-		"games": {Nome: "games", Transport: TransportAgent, Base: "http://x:1", Token: "t"},
-		"apps":  {Nome: "apps", Transport: TransportPVEAPI},
+		"games": {Name: "games", Transport: TransportAgent, Base: "http://x:1", Token: "t"},
+		"apps":  {Name: "apps", Transport: TransportPVEAPI},
 	}
 	t.Run("existing node", func(t *testing.T) {
 		d, err := ResolveTarget(Server{ID: "jogo-b", No: "games"}, source)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if d.Nome != "games" || d.Transport != TransportAgent {
+		if d.Name != "games" || d.Transport != TransportAgent {
 			t.Errorf("resolved to the wrong node: %+v", d)
 		}
 	})
@@ -193,9 +193,9 @@ func TestNodeWithInvalidTransport(t *testing.T) {
 		"valor torto": "banana",
 		"vazio":       "",
 	}
-	for nome, transport := range cases {
-		t.Run(nome, func(t *testing.T) {
-			source := fakeSource{"games": {Nome: "games", Transport: transport}}
+	for name, transport := range cases {
+		t.Run(name, func(t *testing.T) {
+			source := fakeSource{"games": {Name: "games", Transport: transport}}
 			_, err := ResolveTarget(Server{ID: "jogo-b", No: "games"}, source)
 			if err == nil {
 				t.Fatalf("transport %q should fail instead of picking a back end", transport)
@@ -211,16 +211,16 @@ func TestNodeWithInvalidTransport(t *testing.T) {
 // combination of missing fields may result in a usable destination.
 func TestResolverHasNoImplicitDefault(t *testing.T) {
 	empties := []struct {
-		nome   string
+		name   string
 		s      Server
 		source NodeSource
 	}{
 		{"tudo vazio", Server{}, fakeSource{}},
 		{"so id", Server{ID: "x"}, fakeSource{}},
-		{"no vazio com fonte cheia", Server{ID: "x"}, fakeSource{"games": {Nome: "games", Transport: TransportAgent, Base: "http://x:1", Token: "t"}}},
+		{"no vazio com fonte cheia", Server{ID: "x"}, fakeSource{"games": {Name: "games", Transport: TransportAgent, Base: "http://x:1", Token: "t"}}},
 	}
 	for _, c := range empties {
-		t.Run(c.nome, func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			d, err := ResolveTarget(c.s, c.source)
 			if err == nil {
 				t.Fatalf("IMPLICIT DEFAULT: resolved to %+v with no node declared", d)

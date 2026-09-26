@@ -79,7 +79,7 @@ func TestCloneUsesRightNameParamPerType(t *testing.T) {
 // born, or the POST turns into another route.
 func TestCloneRejectsBeforeDialing(t *testing.T) {
 	cases := []struct {
-		nome       string
+		name       string
 		newID      int
 		targetName string
 	}{
@@ -100,10 +100,10 @@ func TestCloneRejectsBeforeDialing(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":"` + fakeUPID + `"}`))
 		})
 		if _, err := c.Clone(context.Background(), "pve", 204, "lxc", cs.newID, cs.targetName, ""); err == nil {
-			t.Errorf("%s: it was accepted", cs.nome)
+			t.Errorf("%s: it was accepted", cs.name)
 		}
 		if dialed {
-			t.Errorf("%s: IT ACTUALLY DIALED — it has to be refused before that", cs.nome)
+			t.Errorf("%s: IT ACTUALLY DIALED — it has to be refused before that", cs.name)
 		}
 	}
 }
@@ -149,7 +149,7 @@ func TestVZDumpNeitherPrunesNorNeedsExtraPrivilege(t *testing.T) {
 // body of a POST to the hypervisor. A free string would give the panel the
 // chance to send anything a future hypervisor version might come to accept there.
 func TestVZDumpRejectsOutsideAllowlist(t *testing.T) {
-	cases := []struct{ nome, storage, mode, compress string }{
+	cases := []struct{ name, storage, mode, compress string }{
 		{"modo inventado", "pbs", "rapido", "zstd"},
 		{"modo com espaço", "pbs", "snapshot ", "zstd"},
 		{"modo em maiúscula", "pbs", "SNAPSHOT", "zstd"},
@@ -170,10 +170,10 @@ func TestVZDumpRejectsOutsideAllowlist(t *testing.T) {
 			no = "../../cluster"
 		}
 		if _, err := c.VZDump(context.Background(), no, 204, cs.storage, cs.mode, cs.compress); err == nil {
-			t.Errorf("%s: it was accepted", cs.nome)
+			t.Errorf("%s: it was accepted", cs.name)
 		}
 		if dialed {
-			t.Errorf("%s: IT ACTUALLY DIALED", cs.nome)
+			t.Errorf("%s: IT ACTUALLY DIALED", cs.name)
 		}
 	}
 }
