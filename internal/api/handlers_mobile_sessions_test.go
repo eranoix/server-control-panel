@@ -149,7 +149,7 @@ func specRegisterRealCredential(t *testing.T, w *webauthn.WebAuthn, username str
 // specification.
 func specRealWebAuthnRP(t *testing.T) *webauthn.WebAuthn {
 	t.Helper()
-	w, err := webauthn.New(auth.NewWebAuthnConfig(specRPID, specOrigin, "VPS Manager teste"))
+	w, err := webauthn.New(auth.NewWebAuthnConfig(specRPID, specOrigin, "VPS Manager test"))
 	if err != nil {
 		t.Fatalf("webauthn.New: %v", err)
 	}
@@ -183,22 +183,22 @@ func doMobileSessionsRequest(t *testing.T, handler http.HandlerFunc, user, metho
 // returns 404 (never 403 — that would confirm the ID exists to somebody who
 // does not own it), and never mutates the real owner's record.
 func TestMobileSessions_CrossUserApproveRevoke404NeverResurrects(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.exemplo.com.br")
+	r := newPasskeyRouter(t, "vpsm.example.com")
 
 	victimStore := r.credentialStore("sam")
-	rec, err := victimStore.Add(webauthn.Credential{ID: []byte("victim-cred")}, "celular da vítima")
+	rec, err := victimStore.Add(webauthn.Credential{ID: []byte("victim-cred")}, "victim's phone")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
-	// "invasor" does not exist in Config.Users — but the isolation is by FILE
+	// "intruder" does not exist in Config.Users — but the isolation is by FILE
 	// path (WebAuthnCredentialsPath), not by a valid-user check, so even an
 	// arbitrary username cannot reach the other user's record.
-	respApprove := doMobileSessionsRequest(t, r.handleApproveMobileCredential, "invasor", http.MethodPost, map[string]string{"id": rec.ID})
+	respApprove := doMobileSessionsRequest(t, r.handleApproveMobileCredential, "intruder", http.MethodPost, map[string]string{"id": rec.ID})
 	if respApprove.Code != 404 {
 		t.Fatalf("approve of someone else's credential: status = %d, expected 404 (never 403 — would leak existence)", respApprove.Code)
 	}
-	respRevoke := doMobileSessionsRequest(t, r.handleRevokeMobileSession, "invasor", http.MethodPost, map[string]string{"id": rec.ID})
+	respRevoke := doMobileSessionsRequest(t, r.handleRevokeMobileSession, "intruder", http.MethodPost, map[string]string{"id": rec.ID})
 	if respRevoke.Code != 404 {
 		t.Fatalf("revoke of someone else's credential: status = %d, expected 404", respRevoke.Code)
 	}
@@ -218,13 +218,13 @@ func TestMobileSessions_CrossUserApproveRevoke404NeverResurrects(t *testing.T) {
 // sees the caller's OWN credentials — another user in the same DataDir does not
 // show up in the list.
 func TestMobileSessions_ListSelfScoped(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.exemplo.com.br")
+	r := newPasskeyRouter(t, "vpsm.example.com")
 
-	if _, err := r.credentialStore("sam").Add(webauthn.Credential{ID: []byte("cred-sam")}, "celular do sam"); err != nil {
+	if _, err := r.credentialStore("sam").Add(webauthn.Credential{ID: []byte("cred-sam")}, "sam's phone"); err != nil {
 		t.Fatalf("Add sam: %v", err)
 	}
-	if _, err := r.credentialStore("outro-usuario").Add(webauthn.Credential{ID: []byte("cred-outro")}, "celular do outro"); err != nil {
-		t.Fatalf("Add outro: %v", err)
+	if _, err := r.credentialStore("other-user").Add(webauthn.Credential{ID: []byte("cred-other")}, "other user's phone"); err != nil {
+		t.Fatalf("Add other: %v", err)
 	}
 
 	rec := doMobileSessionsRequest(t, r.handleListMobileSessions, "sam", http.MethodGet, nil)
@@ -238,17 +238,17 @@ func TestMobileSessions_ListSelfScoped(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("len(out) = %d, expected 1 (only sam's credential) — payload: %s", len(out), rec.Body.String())
 	}
-	if out[0]["label"] != "celular do sam" {
-		t.Fatalf("label = %v, expected sam's credential, not outro-usuario's", out[0]["label"])
+	if out[0]["label"] != "sam's phone" {
+		t.Fatalf("label = %v, expected sam's credential, not other-user's", out[0]["label"])
 	}
 }
 
 // TestMobileSessions_ApproveTwiceIsIdempotent proves the edge case asked for
 // explicitly: approving an already approved credential is not an error.
 func TestMobileSessions_ApproveTwiceIsIdempotent(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.exemplo.com.br")
+	r := newPasskeyRouter(t, "vpsm.example.com")
 	store := r.credentialStore("sam")
-	rec, err := store.Add(webauthn.Credential{ID: []byte("cred-dupla-aprovacao")}, "celular")
+	rec, err := store.Add(webauthn.Credential{ID: []byte("cred-double-approval")}, "phone")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -271,9 +271,9 @@ func TestMobileSessions_ApproveTwiceIsIdempotent(t *testing.T) {
 // explicitly: approving an already revoked credential fails (404) — Remove()
 // deletes the record entirely, leaving no remnant for Approve() to revive.
 func TestMobileSessions_ApproveAfterRevokeFails(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.exemplo.com.br")
+	r := newPasskeyRouter(t, "vpsm.example.com")
 	store := r.credentialStore("sam")
-	rec, err := store.Add(webauthn.Credential{ID: []byte("cred-revogada")}, "celular")
+	rec, err := store.Add(webauthn.Credential{ID: []byte("cred-revoked")}, "phone")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -289,9 +289,9 @@ func TestMobileSessions_ApproveAfterRevokeFails(t *testing.T) {
 // pairing uses the same removal operation as revoking an approved one —
 // Remove() does not look at status.
 func TestMobileSessions_DenyReusesRevokeSemantics(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.exemplo.com.br")
+	r := newPasskeyRouter(t, "vpsm.example.com")
 	store := r.credentialStore("sam")
-	rec, err := store.Add(webauthn.Credential{ID: []byte("cred-pendente-negada")}, "celular")
+	rec, err := store.Add(webauthn.Credential{ID: []byte("cred-pending-denied")}, "phone")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -308,13 +308,13 @@ func TestMobileSessions_DenyReusesRevokeSemantics(t *testing.T) {
 // drop the current desktop session — sessions.Store (JWT/jti) and
 // WebAuthnCredentialsStore (passkey) are separate stores.
 func TestMobileSessions_RevokeCurrentCredentialDoesNotTouchDesktopSession(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.exemplo.com.br")
+	r := newPasskeyRouter(t, "vpsm.example.com")
 	sessStore := r.auth.Sessions()
 	if sessStore == nil {
 		t.Fatal("sessions store unavailable — test precondition failed")
 	}
 	sessStore.Add(sessions.Session{
-		JTI:       "desktop-jti-corrente",
+		JTI:       "desktop-jti-current",
 		User:      "sam",
 		IssuedAt:  time.Now().Unix(),
 		LastSeen:  time.Now().Unix(),
@@ -322,14 +322,14 @@ func TestMobileSessions_RevokeCurrentCredentialDoesNotTouchDesktopSession(t *tes
 	})
 
 	credStore := r.credentialStore("sam")
-	rec, err := credStore.Add(webauthn.Credential{ID: []byte("cred-em-uso")}, "celular em uso")
+	rec, err := credStore.Add(webauthn.Credential{ID: []byte("cred-in-use")}, "phone in use")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	if resp := doMobileSessionsRequest(t, r.handleRevokeMobileSession, "sam", http.MethodPost, map[string]string{"id": rec.ID}); resp.Code != 200 {
 		t.Fatalf("revoke: status = %d", resp.Code)
 	}
-	if !sessStore.Has("desktop-jti-corrente") {
+	if !sessStore.Has("desktop-jti-current") {
 		t.Fatal("revoking the passkey brought down the current desktop session — they should be independent stores")
 	}
 }
@@ -352,7 +352,7 @@ func TestMobileSessions_RevokeCurrentCredentialDoesNotTouchDesktopSession(t *tes
 //     "existed and was revoked").
 func TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately(t *testing.T) {
 	const username = "sam"
-	r := newPasskeyRouter(t, "vpsm.exemplo.com.br")
+	r := newPasskeyRouter(t, "vpsm.example.com")
 
 	// The ceremony itself runs against the official vector's fixed RPID
 	// (example.org), not against the Router's test hostname — it swaps the RP
@@ -363,7 +363,7 @@ func TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately(t *testing
 
 	cred := specRegisterRealCredential(t, specRP, username)
 	store := r.credentialStore(username)
-	credRec, err := store.Add(*cred, "dispositivo do vetor §16.2")
+	credRec, err := store.Add(*cred, "vector device §16.2")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -390,14 +390,14 @@ func TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately(t *testing
 	// approved by any desktop session — only the (public) login continuation
 	// token was used, never the pairing ticket nor a session from the device
 	// itself. It must fail with "pending", never issue a token.
-	if _, err := r.FinishPasskeyLogin(beginLoginSession(), specBuildAssertionJSON(t, username), "10.0.0.1", "vetor-teste"); err == nil {
+	if _, err := r.FinishPasskeyLogin(beginLoginSession(), specBuildAssertionJSON(t, username), "10.0.0.1", "vector-test"); err == nil {
 		t.Fatal("login with a pending credential should fail, but returned success (nil error)")
 	} else if err != mobilebff.ErrPasskeyPendingApproval {
 		t.Fatalf("login with a pending credential: err = %v, expected ErrPasskeyPendingApproval", err)
 	}
 
-	// 2. APROVA — via handler HTTP real, exatamente como o painel desktop
-	// autenticado chamaria.
+	// 2. APPROVE through the real HTTP handler, exactly as the authenticated
+	// desktop panel would.
 	if resp := doMobileSessionsRequest(t, r.handleApproveMobileCredential, username, http.MethodPost, map[string]string{"id": credRec.ID}); resp.Code != 200 {
 		t.Fatalf("approve: status = %d, body = %s", resp.Code, resp.Body.String())
 	}
@@ -405,7 +405,7 @@ func TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately(t *testing
 	// 3. APPROVED: the SAME signature now issues the access+refresh pair —
 	// passkey is the product's primary path and needs the SAME silent renewal
 	// that password login already has (never the access token alone).
-	result, err := r.FinishPasskeyLogin(beginLoginSession(), specBuildAssertionJSON(t, username), "10.0.0.1", "vetor-teste")
+	result, err := r.FinishPasskeyLogin(beginLoginSession(), specBuildAssertionJSON(t, username), "10.0.0.1", "vector-test")
 	if err != nil {
 		t.Fatalf("login with an approved credential should work, err = %v", err)
 	}
@@ -416,7 +416,7 @@ func TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately(t *testing
 		t.Fatal("approved login returned an empty refresh_token — passkey would silently stop renewing the session")
 	}
 
-	// 4. REVOGA.
+	// 4. REVOKE.
 	if resp := doMobileSessionsRequest(t, r.handleRevokeMobileSession, username, http.MethodPost, map[string]string{"id": credRec.ID}); resp.Code != 200 {
 		t.Fatalf("revoke: status = %d, body = %s", resp.Code, resp.Body.String())
 	}
@@ -425,7 +425,7 @@ func TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately(t *testing
 	// exists, and the error is the invalid-credential sentinel (not "pending",
 	// which would tell "never existed" apart from "was revoked" for anyone
 	// trying to log in with a stolen/cloned credential).
-	if _, err := r.FinishPasskeyLogin(beginLoginSession(), specBuildAssertionJSON(t, username), "10.0.0.1", "vetor-teste"); err == nil {
+	if _, err := r.FinishPasskeyLogin(beginLoginSession(), specBuildAssertionJSON(t, username), "10.0.0.1", "vector-test"); err == nil {
 		t.Fatal("login with a revoked credential should fail, but returned success")
 	} else if err != mobilebff.ErrPasskeyInvalidCredential {
 		t.Fatalf("login with a revoked credential: err = %v, expected ErrPasskeyInvalidCredential", err)
@@ -441,14 +441,14 @@ func TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately(t *testing
 // continuity than the password fallback.
 func TestPasskeyLogin_RefreshTokenRotatesAndInvalidatesOldToken(t *testing.T) {
 	const username = "sam"
-	r := newPasskeyRouter(t, "vpsm.exemplo.com.br")
+	r := newPasskeyRouter(t, "vpsm.example.com")
 
 	specRP := specRealWebAuthnRP(t)
 	r.webauthnRP = specRP
 
 	cred := specRegisterRealCredential(t, specRP, username)
 	store := r.credentialStore(username)
-	credRec, err := store.Add(*cred, "dispositivo do vetor §16.2")
+	credRec, err := store.Add(*cred, "vector device §16.2")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestPasskeyLogin_RefreshTokenRotatesAndInvalidatesOldToken(t *testing.T) {
 		t.Fatalf("IssueWebAuthnLoginSessionToken: %v", err)
 	}
 
-	login, err := r.FinishPasskeyLogin(cont, specBuildAssertionJSON(t, username), "10.0.0.1", "vetor-teste")
+	login, err := r.FinishPasskeyLogin(cont, specBuildAssertionJSON(t, username), "10.0.0.1", "vector-test")
 	if err != nil {
 		t.Fatalf("FinishPasskeyLogin: %v", err)
 	}

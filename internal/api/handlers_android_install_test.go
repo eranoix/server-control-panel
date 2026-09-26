@@ -52,7 +52,7 @@ func TestHandleAndroidInstallPage(t *testing.T) {
 
 		w := androidInstallReq(t, r, "vpsmanager.example.test")
 		if w.Code != http.StatusOK {
-			t.Fatalf("GET /android/install autenticado: got %d, want 200; body=%s", w.Code, w.Body.String())
+			t.Fatalf("GET /android/install authenticated: got %d, want 200; body=%s", w.Code, w.Body.String())
 		}
 		ct := w.Header().Get("Content-Type")
 		if !regexp.MustCompile(`^text/html`).MatchString(ct) {
@@ -151,7 +151,7 @@ func androidInstallReq(t *testing.T, r *Router, host string) *httptest.ResponseR
 //
 // Why a test and not just a comment: the wrong value produces no error symptom
 // at all — latestAndroidRelease returns ok=false and the page says
-// "nenhuma versão publicada ainda" even with a full repository. That was exactly
+// "no version published yet" even with a full repository. That was exactly
 // the bug found (the constant had been born as
 // "br.tech.vpsmanager.app"). Reading the build file instead of repeating the
 // literal here is what makes the test fail if the applicationId changes on one

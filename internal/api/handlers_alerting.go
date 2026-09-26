@@ -1,14 +1,13 @@
 package api
 
-// handlers_alerting.go — regras de alerta + configuracao + teste WhatsApp
+// handlers_alerting.go: alert rules, alerting config and the WhatsApp test.
 //
-// Cobre:
-//   - handleAlertList / Add / Remove / Fires (regras)
-//   - handleAlertingConfig (GET/POST configuracoes de alerta)
-//   - handleAlertingTest (envia mensagem de teste via canal configurado)
+// Covers:
+//   - handleAlertList / Add / Remove / Fires (rules)
+//   - handleAlertingConfig (GET/POST alerting settings)
+//   - handleAlertingTest (sends a test message through the configured channel)
 //   - normalizeAlertingJID (helper)
 //
-// Extraido de api.go.
 
 import (
 	"bytes"

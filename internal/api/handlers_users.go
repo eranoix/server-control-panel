@@ -761,7 +761,7 @@ func (r *Router) handleTerminalRawLog(w http.ResponseWriter, req *http.Request) 
 // that have already scrolled off the screen, as append-only text.
 //
 // It is what the dashboard writes into xterm when opening the session. The
-// difference from /log-bruto is not one of format, but of nature:
+// difference from the raw log route is not one of format, but of nature:
 //
 //	raw log  = everything that went over the wire, the drawing in progress
 //	           included
@@ -774,7 +774,7 @@ func (r *Router) handleTerminalRawLog(w http.ResponseWriter, req *http.Request) 
 // a screen the size of the session.
 //
 // Empty is a legitimate answer: a new session, or one that has not yet scrolled
-// a single line off. The dashboard falls back to /log-bruto in that case.
+// a single line off. The dashboard falls back to the raw log route in that case.
 func (r *Router) handleTerminalHistory(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
 	if user == "" {

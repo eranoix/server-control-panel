@@ -89,7 +89,7 @@ type terminalTombstone struct {
 
 // termTombstoneTTL is a tombstone's lifetime. After that the GC removes it on
 // the next save — the assumption being that every device has consumed the delete.
-const termTombstoneTTL = 30 * 24 * 60 * 60 * 1000 // 30 dias em ms
+const termTombstoneTTL = 30 * 24 * 60 * 60 * 1000 // 30 days in ms
 
 // gcTombstones removes expired tombstones (now - TTL). Idempotent.
 func gcTombstones(st *terminalState, nowMs int64) {

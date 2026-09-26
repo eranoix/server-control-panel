@@ -21,9 +21,9 @@ import (
 	"server-control-panel/internal/config"
 )
 
-// handleAIModelsConfig serve GET (config + modelos efetivos + allowlist) e
-// POST (valida contra a allowlist e persiste). "" em qualquer tier = herda o
-// default do processo (Opus).
+// handleAIModelsConfig serves GET (config, effective models, allowlist) and
+// POST (validates against the allowlist and persists). "" in any tier inherits
+// the process default (Opus).
 func (r *Router) handleAIModelsConfig(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
 	if !r.isPrimary(user) {
@@ -44,7 +44,7 @@ func (r *Router) handleAIModelsConfig(w http.ResponseWriter, req *http.Request) 
 				"suggest": aimodel.For(aimodel.Suggest, cur.Suggest),
 				"jira_ai": aimodel.For(aimodel.JiraAI, cur.JiraAI),
 			},
-			// "" = "Padrão (Opus)" in the dropdown; inherits the process default.
+			// "" = "Default (Opus)" in the dropdown; inherits the process default.
 			"allowed":  []string{"", "haiku", "sonnet", "opus", "fable"},
 			"defaults": map[string]string{"suggest": "haiku", "jira_ai": ""},
 		})

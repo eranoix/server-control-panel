@@ -152,7 +152,7 @@ func consoleEvents(al *auth.AuditLog) []auth.Event {
 
 // 🔴 TestConsoleTranslatesProtocolOnSERVER is the pin for the MEASURED pitfall:
 // termproxy reads N BYTES after "0:N:", and `data.length` in JavaScript counts
-// UTF-16 units. If the frame were assembled in the browser, "é" would arrive cut
+// UTF-16 units. If the frame were assembled in the browser, "ñ" would arrive cut
 // in half — measured against CT 204.
 func TestConsoleTranslatesProtocolOnSERVER(t *testing.T) {
 	fake := &fakePVE{console: newFakeConsole(), upid: "UPID:pve:x:vncproxy:204:lab@pve!node-lab:"}
@@ -168,7 +168,7 @@ func TestConsoleTranslatesProtocolOnSERVER(t *testing.T) {
 	if err := c.WriteJSON(map[string]any{"type": "resize", "cols": 120, "rows": 40}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.WriteJSON(map[string]any{"type": "input", "data": "é\n"}); err != nil {
+	if err := c.WriteJSON(map[string]any{"type": "input", "data": "ñ\n"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -179,8 +179,8 @@ func TestConsoleTranslatesProtocolOnSERVER(t *testing.T) {
 	if frames[0] != "1:120:40:" {
 		t.Errorf("resize frame = %q, want \"1:120:40:\"", frames[0])
 	}
-	if frames[1] != "0:3:é\n" {
-		t.Errorf("input frame = %q, want \"0:3:é\\n\" — 3 BYTES, not 2 characters", frames[1])
+	if frames[1] != "0:3:ñ\n" {
+		t.Errorf("input frame = %q, want \"0:3:ñ\\n\" — 3 BYTES, not 2 characters", frames[1])
 	}
 }
 
@@ -204,7 +204,7 @@ func TestConsoleDeliversTerminalOutput(t *testing.T) {
 	for {
 		mt, data, err := c.ReadMessage()
 		if err != nil {
-			t.Fatalf("leitura: %v", err)
+			t.Fatalf("read: %v", err)
 		}
 		if mt == websocket.TextMessage { // control ({"type":"ready"}) — move on
 			continue
@@ -270,7 +270,7 @@ func TestConsoleWithoutCredentialExplainsInsteadOfFailing(t *testing.T) {
 	}
 }
 
-// 🔴 TestConsoleAuditaAberturaEFECHAMENTO — the price of that conscious exception.
+// TestConsoleAuditsOpenAndClose: the price of that conscious exception.
 // A single event, at open time, would say who came in and never when they left; a
 // session opened and forgotten would be indistinguishable from a two-second one.
 func TestConsoleAuditsOpenAndClose(t *testing.T) {
@@ -295,10 +295,10 @@ func TestConsoleAuditsOpenAndClose(t *testing.T) {
 	if len(evs) != 2 {
 		t.Fatalf("pve.console events = %d (%+v), want 2: opened and closed", len(evs), evs)
 	}
-	if !strings.Contains(evs[0].Target, "abriu") || !strings.Contains(evs[0].Target, "lxc/204") {
+	if !strings.Contains(evs[0].Target, "opened") || !strings.Contains(evs[0].Target, "lxc/204") {
 		t.Errorf("open event = %q", evs[0].Target)
 	}
-	if !strings.Contains(evs[1].Target, "fechou") {
+	if !strings.Contains(evs[1].Target, "closed") {
 		t.Errorf("close event = %q", evs[1].Target)
 	}
 	for _, e := range evs {
@@ -322,7 +322,7 @@ func TestConsoleNeverLeaksSecretToBrowser(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer c.Close()
-	fake.console.output <- []byte("saída qualquer")
+	fake.console.output <- []byte("some output")
 
 	var all strings.Builder
 	for k, v := range resp.Header {
@@ -369,7 +369,7 @@ func TestConsoleRejectsNonGuestTarget(t *testing.T) {
 		target string
 		want   int
 	}{
-		// The `externo` node (the VPS, until December) is neither a guest of the
+		// An external node (the VPS) is neither a guest of the
 		// hypervisor nor the hypervisor itself: there is no termproxy for it anywhere.
 		{"vps-187", http.StatusBadRequest},
 		{"lxc/999", http.StatusNotFound},
@@ -377,7 +377,7 @@ func TestConsoleRejectsNonGuestTarget(t *testing.T) {
 	} {
 		_, resp, err := websocket.DefaultDialer.Dial(wsURL+"?node="+tc.target, nil)
 		if err == nil {
-			t.Fatalf("%q: upgrade aceito", tc.target)
+			t.Fatalf("%q: upgrade accepted", tc.target)
 		}
 		if resp == nil || resp.StatusCode != tc.want {
 			t.Errorf("%q: status = %v, want %d", tc.target, resp, tc.want)
@@ -388,7 +388,7 @@ func TestConsoleRejectsNonGuestTarget(t *testing.T) {
 	}
 }
 
-// 🔴 TestConsoleUsaOTokenDONO — the token rule applied to the console. What opens
+// TestConsoleUsesNodeToken: the token rule applied to the console. What opens
 // a console on a guest is THAT node's credential, never the audit one: the `audit`
 // token gets a 403 (measured: "Permission check failed (/vms/204, VM.Console)"),
 // and the dashboard would show "no permission" on a guest it CAN open.
@@ -460,7 +460,7 @@ func TestConsoleTellsBrowserWhenHypervisorRefuses(t *testing.T) {
 	_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
 	mt, data, err := c.ReadMessage()
 	if err != nil {
-		t.Fatalf("leitura: %v", err)
+		t.Fatalf("read: %v", err)
 	}
 	if mt != websocket.TextMessage {
 		t.Fatalf("type = %d, want text (control frame)", mt)

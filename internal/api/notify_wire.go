@@ -285,7 +285,7 @@ func jobTitle(j *queue.Job) string {
 // rule. It is conservative: it only acts on a PRISTINE config (zero channels and
 // zero rules), so it never clobbers operator edits. If config.Alerting has no
 // WhatsApp destination configured, it seeds nothing — the operator wires a
-// channel in the Alertas tab instead (no half-baked state).
+// channel in the Alerts tab instead (no half-baked state).
 func (r *Router) seedNotifyDefaults() {
 	if r.notify == nil {
 		return

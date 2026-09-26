@@ -1,6 +1,6 @@
 // jira_work_watcher.go — watches the (dtach) sessions opened through "Work on
-// it now" and detects when the user signals they are finished ("tá
-// funcionando", "ficou pronto", and so on). On detection it applies the
+// it now" and detects when the user explicitly asks to close the ticket ("you
+// can close it", "mark as done", "/done"). On detection it applies the
 // transition to Done in Jira and posts a comment marking the completion.
 //
 // Why polling instead of a hook inside Claude? Claude Code has no "the user
@@ -44,20 +44,17 @@ type jiraWorkWatcher struct {
 // userPromptGlyph is the prefix Claude Code's TUI puts on the line of the
 // message SUBMITTED by the user ("❯ text"). The assistant's answers start with
 // "●" and tool output with "⎿". The watcher may ONLY examine the user's lines —
-// otherwise the assistant's own prose (which mentions "done", "marcar como
-// concluído", "ficou pronto" all the time while explaining the work) would
-// trigger the closure on its own. This was the root cause of the premature
-// Dones.
+// otherwise the assistant's own prose (which mentions "done" and "mark as
+// done" all the time while explaining the work) would trigger the closure.
 const userPromptGlyph = "❯"
 
 // completionPatterns: ONLY an EXPLICIT intent to close, and it is tested only
 // against the lines the user typed (see matchesCompletion). Feedback phrases
-// ("ficou bom", "tá funcionando", "funcionou") were REMOVED on purpose: they
-// are praise or observation, not an order to close — and they were closing the
-// ticket in the middle of the work. To close, the user says explicitly "pode
-// fechar" / "marcar como done" / "/done".
+// ("looks good", "it works") are deliberately NOT matched: they are praise, not
+// an order to close. To close, the user says explicitly "you can close it" /
+// "mark as done" / "/done".
 var completionPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)\b(pode\s+fechar|pode\s+marcar|marcar?\s+(como\s+)?(done|conclu[ií]d[oa]|resolvido)|fechar\s+(o\s+)?(ticket|chamado|card)|pode\s+dar\s+done)\b`),
+	regexp.MustCompile(`(?i)\b(can\s+close\s+(it|this)|mark\s+(it\s+|this\s+)?(as\s+)?(done|resolved|complete[d]?)|close\s+(the\s+)?(ticket|issue|card)|you\s+can\s+mark\s+it)\b`),
 	// "/done" — an explicit shortcut
 	regexp.MustCompile(`(?mi)^\s*/done\b`),
 }

@@ -26,11 +26,11 @@ func TestIsGameWorldImportUpload_MatchesOnlyImportRoute(t *testing.T) {
 		path   string
 		want   bool
 	}{
-		{"import de mundo", http.MethodPost, "/api/gameservers/srv1/worlds/import", true},
-		{"GET nao casa", http.MethodGet, "/api/gameservers/srv1/worlds/import", false},
-		{"export nao casa", http.MethodPost, "/api/gameservers/srv1/worlds/export", false},
-		{"switch nao casa", http.MethodPost, "/api/gameservers/srv1/worlds/switch", false},
-		{"backups nao casa", http.MethodPost, "/api/gameservers/srv1/backups/restore", false},
+		{"world import", http.MethodPost, "/api/gameservers/srv1/worlds/import", true},
+		{"GET does not match", http.MethodGet, "/api/gameservers/srv1/worlds/import", false},
+		{"export does not match", http.MethodPost, "/api/gameservers/srv1/worlds/export", false},
+		{"switch does not match", http.MethodPost, "/api/gameservers/srv1/worlds/switch", false},
+		{"backups does not match", http.MethodPost, "/api/gameservers/srv1/backups/restore", false},
 	}
 	for _, c := range cases {
 		req := httptest.NewRequest(c.method, c.path, nil)
@@ -41,7 +41,7 @@ func TestIsGameWorldImportUpload_MatchesOnlyImportRoute(t *testing.T) {
 }
 
 func TestGameWorldImportUpload_BodyOver25MiB_NotCappedByGlobalMaxBody(t *testing.T) {
-	body := bytes.Repeat([]byte("w"), 40<<20) // 40 MiB — acima de 25 MiB, bem abaixo de 600 MiB
+	body := bytes.Repeat([]byte("w"), 40<<20) // 40 MiB: above 25 MiB, well below 600 MiB
 	var gotN int64
 	var gotErr error
 	handler := httpmw.MaxBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,10 +68,10 @@ func TestIsJiraAttachmentUpload_MatchesOnlyAttachmentRoute(t *testing.T) {
 		path   string
 		want   bool
 	}{
-		{"upload de anexo", http.MethodPost, "/api/jira/issue/WEB-1/attachments", true},
-		{"GET nao casa", http.MethodGet, "/api/jira/issue/WEB-1/attachments", false},
-		{"comment nao casa", http.MethodPost, "/api/jira/issue/WEB-1/comment", false},
-		{"transitions nao casa", http.MethodPost, "/api/jira/issue/WEB-1/transitions", false},
+		{"attachment upload", http.MethodPost, "/api/jira/issue/WEB-1/attachments", true},
+		{"GET does not match", http.MethodGet, "/api/jira/issue/WEB-1/attachments", false},
+		{"comment does not match", http.MethodPost, "/api/jira/issue/WEB-1/comment", false},
+		{"transitions does not match", http.MethodPost, "/api/jira/issue/WEB-1/transitions", false},
 	}
 	for _, c := range cases {
 		req := httptest.NewRequest(c.method, c.path, nil)
@@ -82,7 +82,7 @@ func TestIsJiraAttachmentUpload_MatchesOnlyAttachmentRoute(t *testing.T) {
 }
 
 func TestJiraAttachmentUpload_BodyOver25MiB_NotCappedByGlobalMaxBody(t *testing.T) {
-	body := bytes.Repeat([]byte("j"), 30<<20) // 30 MiB — acima de 25 MiB, abaixo do teto de 32 MiB
+	body := bytes.Repeat([]byte("j"), 30<<20) // 30 MiB: above 25 MiB, below the 32 MiB cap
 	var gotN int64
 	var gotErr error
 	handler := httpmw.MaxBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

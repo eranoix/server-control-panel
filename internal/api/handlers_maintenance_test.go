@@ -41,14 +41,11 @@ func testGuest() []inventory.Node {
 	return []inventory.Node{n}
 }
 
-// 🔴 TestCloneUsesPanelTokenNotNodeToken — the wrong credential here gives no
-// pretty error: it gives a 403 from the hypervisor, which reaches the operator
-// as "it failed" without saying the problem is privilege. The node token does
-// NOT have VM.Allocate on /vms/<newid> nor Datastore.AllocateSpace, and that was
-// MEASURED on /access/permissions before this code was written.
+// TestCloneUsesPanelTokenNotNodeToken: the node token has neither VM.Allocate on
+// /vms/<newid> nor Datastore.AllocateSpace, so using it would yield an opaque 403.
 func TestCloneUsesPanelTokenNotNodeToken(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
-	w, out := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"apps-copia","snapshot":"base"}`)
+	w, out := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"apps-copy","snapshot":"base"}`)
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
@@ -59,11 +56,10 @@ func TestCloneUsesPanelTokenNotNodeToken(t *testing.T) {
 	if strings.Contains(used, "token=lab@pve!node-apps") {
 		t.Errorf("the clone used the NODE's token, which has no VM.Allocate — calls: %v", *seen)
 	}
-	if !strings.Contains(used, "pve.clone:lxc/207->991:apps-copia:snap=base") {
+	if !strings.Contains(used, "pve.clone:lxc/207->991:apps-copy:snap=base") {
 		t.Errorf("the clone did not reach the hypervisor with source, destination and name: %v", *seen)
 	}
-	// 🔴 "aceita", NEVER "ok": the clone was not waited for, and saying "ok" would
-	// be asserting a result nobody checked.
+	// Accepted, never "ok": the clone was not waited for.
 	if out["status"] != "aceita" {
 		t.Errorf("status = %v, want \"aceita\" — the task was not awaited", out["status"])
 	}
@@ -72,9 +68,7 @@ func TestCloneUsesPanelTokenNotNodeToken(t *testing.T) {
 	}
 }
 
-// TestCloneWithoutPanelCredentialExplainsWhy — a button that fails without
-// saying why is the difference between fixing it in a minute and believing the
-// panel is broken.
+// TestCloneWithoutPanelCredentialExplainsWhy: the refusal names the missing key.
 func TestCloneWithoutPanelCredentialExplainsWhy(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), false)
 	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"snapshot":"base"}`)
@@ -91,8 +85,8 @@ func TestCloneWithoutPanelCredentialExplainsWhy(t *testing.T) {
 	}
 }
 
-// TestCloneGETFiresNothing — the GET exists to ASK for the next free id. If it
-// cloned, merely loading the screen would create guests.
+// TestCloneGETFiresNothing: the GET only asks for the next free id; loading the
+// screen must never create guests.
 func TestCloneGETFiresNothing(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/clone", "")
@@ -102,27 +96,22 @@ func TestCloneGETFiresNothing(t *testing.T) {
 	if out["next_id"] == nil {
 		t.Error("GET did not return next_id — the operator would have to TYPE the id")
 	}
-	if out["sugestao"] != "apps-copia" {
-		t.Errorf("suggestion = %v, want apps-copia", out["sugestao"])
+	if out["sugestao"] != "apps-copy" {
+		t.Errorf("suggestion = %v, want apps-copy", out["sugestao"])
 	}
 	if out["ligado"] != true {
 		t.Errorf("ligado = %v — the crash-consistent-copy warning depends on this", out["ligado"])
 	}
 	for _, c := range *seen {
 		if strings.HasPrefix(c, "pve.clone") {
-			t.Fatalf("🔴 o GET CLONOU: %v", *seen)
+			t.Fatalf("the GET cloned: %v", *seen)
 		}
 	}
 }
 
-// 🔴 TestCloneOfRunningContainerRequiresSnapshot — the rule only the LIVE PROOF
-// revealed. The hypervisor refuses a full clone of a RUNNING container without
-// `snapname`, with "Full clone of a running container is only possible from a
-// snapshot", and that sentence turns up in no grep of the PVE source on this
-// machine. Reading code was no substitute for running it.
-//
-// The refusal happens HERE, and not on the hypervisor, for a reason: the message
-// from here says what to DO (take a snapshot in this tab, or shut the guest down).
+// TestCloneOfRunningContainerRequiresSnapshot: PVE refuses a full clone of a
+// running container without `snapname`. The panel refuses first, with a message
+// that says what to do (take a snapshot, or shut the guest down).
 func TestCloneOfRunningContainerRequiresSnapshot(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"x"}`)
@@ -140,18 +129,17 @@ func TestCloneOfRunningContainerRequiresSnapshot(t *testing.T) {
 
 	// With a snapshot it goes through — and the snapname REACHES the hypervisor.
 	r2, seen2 := maintenanceRouter(t, testGuest(), true)
-	w2, _ := callAPI(t, r2, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"x","snapshot":"antes-do-upgrade"}`)
+	w2, _ := callAPI(t, r2, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"x","snapshot":"before-upgrade"}`)
 	if w2.Code != 200 {
 		t.Fatalf("with snapshot: status = %d: %s", w2.Code, w2.Body)
 	}
-	if !strings.Contains(strings.Join(*seen2, " "), "snap=antes-do-upgrade") {
+	if !strings.Contains(strings.Join(*seen2, " "), "snap=before-upgrade") {
 		t.Errorf("the snapname did not reach the hypervisor: %v", *seen2)
 	}
 }
 
-// TestCloneOfStoppedGuestNeedsNoSnapshot — the mirror image: the requirement
-// belongs to the RUNNING container. Demanding a snapshot of a stopped guest
-// would be inventing a restriction the hypervisor does not have.
+// TestCloneOfStoppedGuestNeedsNoSnapshot: the snapshot requirement only applies
+// to a running container.
 func TestCloneOfStoppedGuestNeedsNoSnapshot(t *testing.T) {
 	n := testNode("lxc/207", "apps", 207, testNow)
 	n.Status.Value = "stopped"
@@ -165,8 +153,8 @@ func TestCloneOfStoppedGuestNeedsNoSnapshot(t *testing.T) {
 	}
 }
 
-// TestCloneGETWarnsSnapshotNeeded — the screen has to know BEFORE the
-// click, otherwise the operator fills in the form only to be handed an error.
+// TestCloneGETWarnsSnapshotNeeded: the screen learns about the requirement before
+// the form is submitted.
 func TestCloneGETWarnsSnapshotNeeded(t *testing.T) {
 	r, _ := maintenanceRouter(t, testGuest(), true)
 	_, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/clone", "")
@@ -178,9 +166,8 @@ func TestCloneGETWarnsSnapshotNeeded(t *testing.T) {
 	}
 }
 
-// TestCloneRejectsWithoutDestination — with no novo_id, nothing is fired. The id comes
-// from the hypervisor through the GET; accepting its absence would be an
-// invitation to make a number up.
+// TestCloneRejectsWithoutDestination: without a target id (from the GET), nothing
+// is fired.
 func TestCloneRejectsWithoutDestination(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"nome":"x"}`)
@@ -194,7 +181,6 @@ func TestCloneRejectsWithoutDestination(t *testing.T) {
 	}
 }
 
-// TestBackupPassesModeAndCompressionAndUsesPanel
 func TestBackupPassesModeAndCompressionAndUsesPanel(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	w, out := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/backup", `{"storage":"pbs","modo":"snapshot","compress":"zstd"}`)
@@ -213,10 +199,8 @@ func TestBackupPassesModeAndCompressionAndUsesPanel(t *testing.T) {
 	}
 }
 
-// TestBackupDefaultsAreUnsurprising — with no mode and no compression, the
-// default is `snapshot`+`zstd`: it does not stop the guest and it is the format
-// this lab already used. A `stop` default would power off the machine of someone
-// who only wanted a copy.
+// TestBackupDefaultsAreUnsurprising: the default is `snapshot`+`zstd`, which does
+// not stop the guest (a `stop` default would power it off).
 func TestBackupDefaultsAreUnsurprising(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	if w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/backup", `{"storage":"pbs"}`); w.Code != 200 {
@@ -227,7 +211,7 @@ func TestBackupDefaultsAreUnsurprising(t *testing.T) {
 	}
 }
 
-// TestBackupRejectsWithoutStorage — WHERE the copy goes cannot be guessed.
+// TestBackupRejectsWithoutStorage: where the copy goes cannot be guessed.
 func TestBackupRejectsWithoutStorage(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/backup", `{}`)
@@ -241,10 +225,8 @@ func TestBackupRejectsWithoutStorage(t *testing.T) {
 	}
 }
 
-// 🔴 TestMaintenanceRejectsHostWithDistinctReason — host and external node give the
-// SAME refusal today if nobody takes care, and the operator's next action
-// differs: one is not clonable by nature, the other is not even on this
-// hypervisor.
+// TestMaintenanceRejectsHostWithDistinctReason: the host and an external node get
+// different refusals because the operator's next step differs.
 func TestMaintenanceRejectsHostWithDistinctReason(t *testing.T) {
 	host := testNode("node/pve", "pve", 0, testNow)
 	host.Kind = inventory.NodeKindHost
@@ -265,9 +247,8 @@ func TestMaintenanceRejectsHostWithDistinctReason(t *testing.T) {
 	}
 }
 
-// TestRebootGoesThroughWaitTask — reboot is the ONLY one of the three that waits
-// for the task, and it has to keep waiting: a guest that ignores the request
-// from the inside stays up, and only the task knows that.
+// TestRebootGoesThroughWaitTask: reboot waits for the task, because a guest that
+// ignores the request stays up and only the task result shows it.
 func TestRebootGoesThroughWaitTask(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
 	w, out := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/power", `{"action":"reboot"}`)
@@ -290,15 +271,9 @@ func TestRebootGoesThroughWaitTask(t *testing.T) {
 	}
 }
 
-// 🔴 TestRebootOutsideAllowlistNeverDials — whatever is NOT one of the four
-// actions never reaches the hypervisor.
-//
-// Normalisation (trim + lowercase) happens BEFORE the allowlist, and that is
-// deliberate: it loosens nothing, because what comes next is an EXACT match
-// against four strings. "reboot " becomes "reboot" and passes; "reboot;stop"
-// becomes nothing at all and dies. The pin asserts both halves, otherwise
-// somebody "hardens" it by removing the TrimSpace and breaks the screen without
-// gaining any security.
+// TestRebootOutsideAllowlistNeverDials: anything that is not one of the four
+// actions never reaches the hypervisor. Normalization (trim + lowercase) runs
+// before an exact match, so it loosens nothing; both halves are asserted.
 func TestRebootOutsideAllowlistNeverDials(t *testing.T) {
 	t.Run("normalization accepted, and that is on purpose", func(t *testing.T) {
 		for _, action := range []string{"reboot", " reboot ", "REBOOT", "Reboot", "reboot\n", "\treboot"} {
@@ -330,8 +305,6 @@ func TestRebootOutsideAllowlistNeverDials(t *testing.T) {
 	})
 }
 
-// ── a NOTA: o que a caixa faz ───────────────────────────────────────────────
-
 func noteRouter(t *testing.T, nodes []inventory.Node, text string) (*Router, *[]string) {
 	t.Helper()
 	var seen []string
@@ -348,11 +321,10 @@ func noteRouter(t *testing.T, nodes []inventory.Node, text string) (*Router, *[]
 	return r, &seen
 }
 
-// TestGuestNoteComesFromPVE — the note is READ from the hypervisor, never invented
-// here. A second description written by the panel would become a second truth,
-// and the two would diverge on the first day somebody edited the one in Proxmox.
+// TestGuestNoteComesFromPVE: the note is read from the hypervisor, the single
+// source of truth.
 func TestGuestNoteComesFromPVE(t *testing.T) {
-	const text = "## apps — as aplicações\n\n**O que faz:** hoje, nada."
+	const text = "## apps: the applications\n\n**What it does:** nothing yet."
 	r, seen := noteRouter(t, testGuest(), text)
 	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
 	if w.Code != 200 {
@@ -364,53 +336,37 @@ func TestGuestNoteComesFromPVE(t *testing.T) {
 	if out["origem"] != "pve-notes" {
 		t.Errorf("origem = %v, want pve-notes — the screen needs to know WHERE it came from", out["origem"])
 	}
-	if !strings.Contains(strings.Join(*seen, " "), "pve.descricao:lxc/207") {
+	if !strings.Contains(strings.Join(*seen, " "), "pve.description:lxc/207") {
 		t.Errorf("did not read the right guest's description: %v", *seen)
 	}
 }
 
-// 🔴 TestHOSTNoteReadsNODEConfig — the hypervisor has a note of its OWN, at
-// /nodes/<node>/config. If the handler sent the host's vmid (which is 0 in the
-// inventory, but the path is a different one), it would read the config of a
-// non-existent guest and the hypervisor's screen would stay mute forever.
+// TestHOSTNoteReadsNODEConfig: the hypervisor's own note lives at
+// /nodes/<node>/config, not under a guest vmid.
 func TestHOSTNoteReadsNODEConfig(t *testing.T) {
-	// 🔴 The host is born with VMID 999 ON PURPOSE, not 0.
-	//
-	// The first version of this pin used 0 — which is what the real inventory
-	// holds — and for that very reason it COULD NOT FAIL: removing the guard from
-	// the handler left everything green. A pin that does not bite is documentation
-	// disguised as proof, and that disease is what let the screen open black in
-	// production.
-	//
-	// With 999, the pin asserts what the handler really does: for the HOST it
-	// ignores the inventory's vmid and asks for the NODE's config.
+	// VMID 999, not 0, so the test fails if the handler used the inventory vmid.
 	host := testNode("node/pve", "pve", 999, testNow)
 	host.Kind = inventory.NodeKindHost
-	r, seen := noteRouter(t, []inventory.Node{host}, "# pve — o servidor de casa")
+	r, seen := noteRouter(t, []inventory.Node{host}, "# pve: the home server")
 	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/node/pve/nota", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
-	if !strings.Contains(out["markdown"].(string), "servidor de casa") {
+	if !strings.Contains(out["markdown"].(string), "home server") {
 		t.Errorf("markdown = %v", out["markdown"])
 	}
-	// What matters is the ZERO VMID: it is what tells the client to read
-	// /nodes/<node>/config instead of /nodes/<node>/<tipo>/<vmid>/config. The
-	// type prefix is irrelevant here and pinning it would be a brittle pin.
+	// vmid 0 tells the client to read /nodes/<node>/config.
 	used := strings.Join(*seen, " ")
 	if !strings.Contains(used, "/0 ") && !strings.HasSuffix(used, "/0") {
 		t.Errorf("did not ask for the NODE's config (vmid 0): %v", *seen)
 	}
 	if strings.Contains(used, "/999") {
-		t.Errorf("🔴 asked for the config of GUEST 999 — the hypervisor is not a guest, and its note"+
-			"mora em /nodes/<node>/config: %v", *seen)
+		t.Errorf("asked for the config of GUEST 999; the hypervisor is not a guest, and its note "+
+			"lives at /nodes/<node>/config: %v", *seen)
 	}
 }
 
-// 🔴 TestEmptyNoteIsNotError — a guest with no note is a guest nobody described.
-// The screen needs to say where to write one, and to do that it needs to tell
-// "empty" apart from "could not be read". They are opposite problems: one asks
-// somebody to write, the other asks somebody to fix access.
+// TestEmptyNoteIsNotError: "empty" must stay distinct from "could not be read".
 func TestEmptyNoteIsNotError(t *testing.T) {
 	r, _ := noteRouter(t, testGuest(), "   \n  ")
 	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
@@ -422,15 +378,14 @@ func TestEmptyNoteIsNotError(t *testing.T) {
 	}
 }
 
-// TestNoteOfEXTERNALNodeSkipsPVE — `canario` is no hypervisor's guest.
-// Looking its config up on the PVE would give a 500, and the screen would show a
-// failure where what there is is an absent source.
+// TestNoteOfEXTERNALNodeSkipsPVE: an external node has no PVE config, which is an
+// absent source rather than a failure.
 func TestNoteOfEXTERNALNodeSkipsPVE(t *testing.T) {
-	ext := testNode("canario", "canario", 0, testNow)
-	ext.Kind = "externo"
-	ext.Transport = "agente"
-	r, seen := noteRouter(t, []inventory.Node{ext}, "nao deveria ser lida")
-	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/canario/nota", "")
+	ext := testNode("canary", "canary", 0, testNow)
+	ext.Kind = inventory.NodeKindExternal
+	ext.Transport = inventory.TransportAgent
+	r, seen := noteRouter(t, []inventory.Node{ext}, "should not be read")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/canary/nota", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
@@ -441,17 +396,14 @@ func TestNoteOfEXTERNALNodeSkipsPVE(t *testing.T) {
 		t.Error("without a reason — the screen would show a blank with no explanation")
 	}
 	for _, c := range *seen {
-		if strings.HasPrefix(c, "pve.descricao") {
+		if strings.HasPrefix(c, "pve.description") {
 			t.Errorf("went to the PVE for the config of a node that isn't its guest: %v", *seen)
 		}
 	}
 }
 
-// TestNoteOfNodeGoneFromHypervisor — the inventory lists the node for one more
-// cycle after it is deleted. Passing the PVE's 500 straight through hands the
-// operator a Perl message about a file path; what they need to know is that the
-// box does not exist any more. Found by the live proof, with the clone from the
-// previous proof.
+// TestNoteOfNodeGoneFromHypervisor: the inventory lists a deleted guest for one
+// more cycle; the PVE 500 about a missing config file becomes a plain message.
 func TestNoteOfNodeGoneFromHypervisor(t *testing.T) {
 	r, _ := noteRouter(t, testGuest(), "")
 	r.pveDial = func(value string) (hypervisorOps, error) {
@@ -471,13 +423,12 @@ func TestNoteOfNodeGoneFromHypervisor(t *testing.T) {
 		t.Errorf("motivo = %q — does not say what happened", reason)
 	}
 	if strings.Contains(reason, "Configuration file") || strings.Contains(reason, ".conf") {
-		t.Errorf("🔴 the Perl message leaked to the screen: %q", reason)
+		t.Errorf("the raw PVE message leaked to the screen: %q", reason)
 	}
 }
 
-// 🔴 THE NEGATIVE CONTROL: a hypervisor that is down must NOT turn into "it is
-// gone". They are opposite problems — one asks somebody to take the node off the
-// list, the other asks for help. Confusing them is worse than saying nothing.
+// TestNoteWithHypervisorDownIsStillError is the negative control: a hypervisor
+// that is down must not be reported as a deleted guest.
 func TestNoteWithHypervisorDownIsStillError(t *testing.T) {
 	r, _ := noteRouter(t, testGuest(), "")
 	r.pveDial = func(value string) (hypervisorOps, error) {
@@ -489,16 +440,10 @@ func TestNoteWithHypervisorDownIsStillError(t *testing.T) {
 	}
 }
 
-// 🔴 TestWriteNoteUsesWRITECredential — reading and writing the note use
-// DIFFERENT credentials, and the pin exists so nobody "simplifies" that away.
-//
-// Reading is auditing and goes through the read credential. Writing changes the
-// guest's configuration (VM.Config.Options) and goes through the panel's. Using
-// the write credential to read would give the screen's most common path a
-// privilege it does not need — and an unnecessary privilege is a privilege used
-// by mistake one day.
+// TestWriteNoteUsesWRITECredential: writing (VM.Config.Options) goes through the
+// panel credential; reading goes through the read credential.
 func TestWriteNoteUsesWRITECredential(t *testing.T) {
-	const text = "## apps\n\n**O que faz:** serve as aplicações."
+	const text = "## apps\n\n**What it does:** serves the applications."
 	r, seen := noteRouter(t, testGuest(), "")
 	body, _ := json.Marshal(map[string]string{"markdown": text})
 	w, out := callAPI(t, r, http.MethodPut, "/api/nodes/lxc/207/nota", string(body))
@@ -506,7 +451,7 @@ func TestWriteNoteUsesWRITECredential(t *testing.T) {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
 	used := strings.Join(*seen, " ")
-	if !strings.Contains(used, "pve.set-descricao:lxc/207") {
+	if !strings.Contains(used, "pve.set-description:lxc/207") {
 		t.Errorf("did not write: %v", *seen)
 	}
 	if !strings.Contains(used, "token=lab@pve!painel") {
@@ -516,20 +461,9 @@ func TestWriteNoteUsesWRITECredential(t *testing.T) {
 		t.Errorf("origem = %v", out["origem"])
 	}
 
-	// 🔴 THE DIFFERENCE BETWEEN READING AND WRITING ONLY SHOWS UP WITHOUT THE
-	// PANEL TOKEN.
-	//
-	// The first version of this pin claimed that READING never uses the panel's
-	// credential — and it failed, rightly: `hypervisorReadSecret()`
-	// PREFERS the panel token when it exists in the vault. In this house, today,
-	// reading and writing use the same token, and claiming otherwise was
-	// describing a design that does not exist.
-	//
-	// What actually tells the two paths apart, and is what matters to the
-	// operator: WITHOUT the panel token, READING keeps working (it falls back to
-	// the audit one) and WRITING refuses, saying which key is missing. A screen
-	// that loses the node's explanation along with permission to edit would be
-	// worse than one that loses only the editing.
+	// hypervisorReadSecret() prefers the panel token when present, so the paths
+	// only differ without it: reading falls back to the audit token, writing is
+	// refused and names the missing key.
 	r2, seen2 := noteRouter(t, testGuest(), text)
 	r2.nodeVaultFn = func() (nodeVault, error) {
 		return &fakeVault{seen: seen2, data: map[string]string{"pve_token_audit": "lab@pve!audit=a"}}, nil
@@ -549,9 +483,8 @@ func TestWriteNoteUsesWRITECredential(t *testing.T) {
 	}
 }
 
-// TestWriteNoteRejectsHugeText — a note is for READING. The cap refuses
-// HERE, in the operator's own language, instead of shipping the text to the
-// hypervisor and translating its refusal afterwards.
+// TestWriteNoteRejectsHugeText: the size cap is enforced before calling the
+// hypervisor.
 func TestWriteNoteRejectsHugeText(t *testing.T) {
 	r, seen := noteRouter(t, testGuest(), "")
 	body, _ := json.Marshal(map[string]string{"markdown": strings.Repeat("a", pve.MaxNoteSize+1)})
@@ -560,18 +493,16 @@ func TestWriteNoteRejectsHugeText(t *testing.T) {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
 	for _, c := range *seen {
-		if strings.HasPrefix(c, "pve.set-descricao") {
+		if strings.HasPrefix(c, "pve.set-description") {
 			t.Errorf("sent the giant text to the hypervisor: %v", *seen)
 		}
 	}
 }
 
-// 🔴 TestNoteTrailOmitsCONTENT — the note describes the house:
-// addresses, what each box holds, what happens if it falls over. The audit trail
-// is read by more people and kept for longer than the note itself. It records
-// the SIZE and the TARGET; the content stays where it lives.
+// TestNoteTrailOmitsCONTENT: the audit trail records size and target, never the
+// note's content.
 func TestNoteTrailOmitsCONTENT(t *testing.T) {
-	const secret = "o cofre fica atras do quadro na sala"
+	const secret = "the safe is behind the painting in the living room"
 	r, _ := noteRouter(t, testGuest(), "")
 	al, err := auth.NewAuditLog(filepath.Join(t.TempDir(), "audit.log"))
 	if err != nil {
@@ -588,7 +519,7 @@ func TestNoteTrailOmitsCONTENT(t *testing.T) {
 	}
 	joined := strings.Join(lines, " | ")
 	if strings.Contains(joined, secret) {
-		t.Errorf("🔴 the note's content leaked into the trail: %s", joined)
+		t.Errorf("the note's content leaked into the trail: %s", joined)
 	}
 	if !strings.Contains(joined, "pve.nota") || !strings.Contains(joined, "bytes=") {
 		t.Errorf("the trail did not record the write: %s", joined)

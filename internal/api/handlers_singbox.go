@@ -1,6 +1,6 @@
 package api
 
-// handlers_singbox.go — the tunnel's "Dispositivos" panel (Segurança → Dispositivos).
+// handlers_singbox.go — the tunnel's "Devices" panel (Security → Devices).
 //
 // Manages sing-box's devices (VLESS users): lists them with live state
 // (Clash API), adds one (generating link+QR), renames, revokes and switches each
@@ -59,7 +59,7 @@ func (r *Router) singboxClash() *singbox.ClashClient {
 	return singbox.NewClash(r.cfg.SingboxClashURL, secret)
 }
 
-// GET /api/tunnel/usage — consumo REAL por-aparelho em tempo real (conntrack).
+// GET /api/tunnel/usage: real per-device usage in real time (conntrack).
 func (r *Router) handleTunnelUsage(w http.ResponseWriter, req *http.Request) {
 	if auth.UserFrom(req) == "" {
 		writeErr(w, 401, "unauthorized")
@@ -125,7 +125,7 @@ func (r *Router) handleTunnelDevices(w http.ResponseWriter, req *http.Request) {
 
 // /api/tunnel/devices/{uuid}[/{action}]
 //
-//	DELETE {uuid}            → revoga
+//	DELETE {uuid}            → revoke
 //	POST   {uuid}/exit       → {exit}
 //	POST   {uuid}/rename     → {name}
 //	GET    {uuid}/link       → {link}
@@ -148,7 +148,7 @@ func (r *Router) handleTunnelDeviceAction(w http.ResponseWriter, req *http.Reque
 	}
 	mgr := r.singboxManager()
 
-	// DELETE {uuid} → revoga
+	// DELETE {uuid} → revoke
 	if req.Method == http.MethodDelete && action == "" {
 		if err := mgr.Remove(req.Context(), uuid); err != nil {
 			writeErr(w, 502, err.Error())
@@ -257,7 +257,7 @@ func (r *Router) handleTunnelDeviceAction(w http.ResponseWriter, req *http.Reque
 			writeErr(w, 404, "device not found")
 			return
 		}
-		// ?variant=reality → perfil Reality (residencial); default = WS/TLS (anti-Zscaler).
+		// ?variant=reality → Reality profile (residential); default = WS/TLS (anti-Zscaler).
 		var link string
 		variant := req.URL.Query().Get("variant")
 		if variant == "reality" {

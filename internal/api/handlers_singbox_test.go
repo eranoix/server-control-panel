@@ -12,7 +12,7 @@ import (
 func TestTunnelDeviceRoutesGatedAndDegrade(t *testing.T) {
 	r := newSmokeRouter(t)
 	// force a non-existent config path → List() fails deterministically
-	r.cfg.SingboxConfigPath = filepath.Join(t.TempDir(), "nao-existe.json")
+	r.cfg.SingboxConfigPath = filepath.Join(t.TempDir(), "does-not-exist.json")
 
 	// no token → 401 (the route exists; never 404)
 	if w := privAIReq(t, r, "GET", "/api/tunnel/devices", "", ""); w.Code != 401 {
@@ -22,10 +22,10 @@ func TestTunnelDeviceRoutesGatedAndDegrade(t *testing.T) {
 		t.Fatalf("DELETE device without a token: got %d, want 401; body=%s", w.Code, w.Body.String())
 	}
 
-	// autenticado, config ausente → 503 com dica
+	// authenticated, config missing → 503 with a hint
 	w := privAIReq(t, r, "GET", "/api/tunnel/devices", "", "sam")
 	if w.Code != 503 {
-		t.Fatalf("GET devices autenticado: got %d, want 503; body=%s", w.Code, w.Body.String())
+		t.Fatalf("GET devices authenticated: got %d, want 503; body=%s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), "tunnel") {
 		t.Fatalf("503 body should mention the tunnel; got %s", w.Body.String())

@@ -154,7 +154,7 @@ func isHallucination(text string) (bool, string) {
 	if len(lower) > 0 {
 		for phrase := range hallucinationPhrasesLower {
 			if len(phrase) < 8 {
-				continue // skip muito curto pra substring match
+				continue // too short for a substring match
 			}
 			if strings.Contains(lower, phrase) {
 				ratio := float64(len(phrase)) / float64(len(lower))

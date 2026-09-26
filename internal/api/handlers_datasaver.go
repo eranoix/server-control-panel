@@ -1,7 +1,7 @@
 package api
 
-// handlers_datasaver.go — the "Economia" panel (Segurança → Economia): controls
-// the compression proxy (data saver). Same gated design as AdGuard/Dispositivos:
+// handlers_datasaver.go — the "Data saver" panel (Security → Data saver): controls
+// the compression proxy (data saver). Same gated design as AdGuard/Devices:
 // the routes live on the `protected` sub-mux. The state lives in files on the host
 // (/opt/datasaver/state), read/edited via internal/datasaver; the CA is served
 // for download; changing the bypass list restarts the proxies (it is read at start).
@@ -33,7 +33,7 @@ func (r *Router) restartDatasaverProxies(req *http.Request) error {
 	return nil
 }
 
-// GET /api/datasaver/status — settings + bypass + bytes economizados + has_ca.
+// GET /api/datasaver/status: settings, bypass, bytes saved and has_ca.
 func (r *Router) handleDatasaverStatus(w http.ResponseWriter, req *http.Request) {
 	if auth.UserFrom(req) == "" {
 		writeErr(w, 401, "unauthorized")
@@ -106,7 +106,7 @@ func (r *Router) handleDatasaverBypass(w http.ResponseWriter, req *http.Request)
 	}
 }
 
-// GET /api/datasaver/ca — baixa o certificado CA (para instalar nos aparelhos).
+// GET /api/datasaver/ca: downloads the CA certificate (to install on devices).
 func (r *Router) handleDatasaverCA(w http.ResponseWriter, req *http.Request) {
 	if auth.UserFrom(req) == "" {
 		writeErr(w, 401, "unauthorized")

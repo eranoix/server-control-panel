@@ -377,7 +377,7 @@ func (r *Router) handleSystemLogTail(w http.ResponseWriter, req *http.Request) {
 	cmd := exec.CommandContext(ctx, "tail", "-n", "200", "-F", path)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		_ = safeWrite(websocket.TextMessage, []byte("erro: "+err.Error()))
+		_ = safeWrite(websocket.TextMessage, []byte("error: "+err.Error()))
 		return
 	}
 	cmd.Stderr = cmd.Stdout

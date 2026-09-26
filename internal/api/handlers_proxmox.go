@@ -930,7 +930,7 @@ func (r *Router) guestSnapshots(w http.ResponseWriter, req *http.Request, inv in
 
 	if _, err := waitTask(ctx, cli, host, upid); err != nil {
 		r.auditEvent(req, auth.UserFrom(req), "pve.snapshot",
-			"node="+id+" acao="+action+" nome="+name+" upid="+upid+" status=falhou")
+			"node="+id+" action="+action+" name="+name+" upid="+upid+" status=failed")
 		// The exitstatus goes in EXPLICITLY: when Status is 0, the pve.Error
 		// formatter takes the Err branch and the Body — which carries the real
 		// reason — never shows up on its own.
@@ -941,7 +941,7 @@ func (r *Router) guestSnapshots(w http.ResponseWriter, req *http.Request, inv in
 	// A mutation on the hypervisor with NO trail is a mutation nobody can
 	// reconstruct afterwards.
 	r.auditEvent(req, auth.UserFrom(req), "pve.snapshot",
-		"node="+id+" acao="+action+" nome="+name+" upid="+upid+" status=ok")
+		"node="+id+" action="+action+" name="+name+" upid="+upid+" status=ok")
 	writeJSON(w, map[string]any{"node": id, "action": action, "name": name, "upid": upid, "status": "ok"})
 }
 
@@ -1010,7 +1010,7 @@ func (r *Router) guestRollback(w http.ResponseWriter, req *http.Request, inv inv
 	}
 	if _, err := waitTask(ctx, cli, host, upid); err != nil {
 		r.auditEvent(req, auth.UserFrom(req), "pve.snapshot",
-			"node="+id+" acao=rollback nome="+name+" upid="+upid+" status=falhou")
+			"node="+id+" action=rollback name="+name+" upid="+upid+" status=failed")
 		writeErr(w, 502, "task "+upid+" did not finish cleanly: "+pveErrorDetail(err))
 		return
 	}
@@ -1019,7 +1019,7 @@ func (r *Router) guestRollback(w http.ResponseWriter, req *http.Request, inv inv
 	// dashboard fires, and what it erases has no second copy — the pool is
 	// single-disk.
 	r.auditEvent(req, auth.UserFrom(req), "pve.snapshot",
-		"node="+id+" acao=rollback nome="+name+" upid="+upid+" status=ok")
+		"node="+id+" action=rollback name="+name+" upid="+upid+" status=ok")
 	writeJSON(w, map[string]any{"node": id, "action": "rollback", "name": name, "upid": upid, "status": "ok"})
 }
 

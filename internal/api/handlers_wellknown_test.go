@@ -45,7 +45,7 @@ func TestAssetLinksUnauthenticated(t *testing.T) {
 	r := newSmokeRouter(t)
 
 	req := httptest.NewRequest("GET", "/.well-known/assetlinks.json", nil)
-	// Explicitamente NENHUM header de auth.
+	// Explicitly NO auth header.
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -117,6 +117,6 @@ func TestAssetLinksPopulatedConfig(t *testing.T) {
 		}
 	}
 	if !foundHandleURLs || !foundLoginCreds {
-		t.Fatalf("relation incompleta: %+v", entry.Relation)
+		t.Fatalf("incomplete relation: %+v", entry.Relation)
 	}
 }

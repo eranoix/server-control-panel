@@ -36,11 +36,11 @@ import (
 
 const (
 	leakInterval   = 5 * time.Minute
-	leakFailBefore = 3 // ciclos consecutivos antes de acreditar na queda
+	leakFailBefore = 3 // consecutive cycles before trusting the outage
 	leakDedup      = "tunnel:leak"
-	TypeTunnelLeak = "tunnel.leak"      // casa saindo pelo VPS
+	TypeTunnelLeak = "tunnel.leak"      // home traffic leaving through the VPS
 	TypeTunnelDown = "tunnel.casa_down" // home exit unreachable
-	TypeTunnelOK   = "tunnel.recovered" // voltou ao normal
+	TypeTunnelOK   = "tunnel.recovered" // back to normal
 )
 
 type leakSentinel struct {
@@ -185,7 +185,7 @@ func (s *leakSentinel) homeEgressIP(r *Router) (string, error) {
 	defer tr.CloseIdleConnections()
 	ip := fetchIP(tr)
 	if ip == "" {
-		return "", fmt.Errorf("no IP response through the casa exit")
+		return "", fmt.Errorf("no IP response through the home exit")
 	}
 	return ip, nil
 }
@@ -209,7 +209,7 @@ func fetchIP(tr http.RoundTripper) string {
 	return ip
 }
 
-// readHomeSOCKS extracts server/port/user/pass from the "casa" outbound in the config.
+// readHomeSOCKS extracts server/port/user/pass from the home socks outbound in the config.
 func readHomeSOCKS(configPath string) (host, port, user, pass string, err error) {
 	raw, err := os.ReadFile(configPath)
 	if err != nil {
@@ -233,5 +233,5 @@ func readHomeSOCKS(configPath string) (host, port, user, pass string, err error)
 			return o.Server, fmt.Sprintf("%d", o.Port), o.Username, o.Password, nil
 		}
 	}
-	return "", "", "", "", fmt.Errorf("casa (socks) outbound not found in the config")
+	return "", "", "", "", fmt.Errorf("home (socks) outbound not found in the config")
 }

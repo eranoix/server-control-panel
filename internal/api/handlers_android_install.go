@@ -7,7 +7,7 @@ package api
 // the F-Droid add-repo URL pointing at the self-hosted repository
 // (internal/api/handlers_fdroid.go), with the SHA-256 fingerprint of the
 // repository's signing key embedded — exactly what the F-Droid client
-// expects under "Repositórios → escanear QR".
+// expects under "Repositories → scan QR".
 //
 // The fingerprint is read LIVE from data/secrets.vault (key
 // fdroidRepoFingerprintKey), never copied into the code: if the repokey is
@@ -54,7 +54,7 @@ const fdroidRepoFingerprintKey = "fdroid_repo_fingerprint"
 // patch generation) would inherit the same silent bug.
 const androidPackageID = "tech.northwind.vpsm.app"
 
-// androidInstallPageData alimenta o template android-install.html.
+// androidInstallPageData feeds the android-install.html template.
 type androidInstallPageData struct {
 	RepoPublished bool // the fingerprint already exists in the vault (repokey generated and published)
 	Fingerprint   string

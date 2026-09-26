@@ -86,7 +86,7 @@ func TestPowerRejectsCommandOutsideAllowlist(t *testing.T) {
 	}
 }
 
-// TestEnergiaAuditaANTESDeDisparar: if the audit were only written afterwards, a
+// TestPowerAuditsBeforeFiring: if the audit were only written afterwards, a
 // successful shutdown would take the record with it — and nobody would know who
 // pressed the button, because the machine that would hold the answer is the one
 // that powered off.

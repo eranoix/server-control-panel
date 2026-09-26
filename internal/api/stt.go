@@ -49,7 +49,7 @@ const (
 	sttPongWait       = 60 * time.Second
 	sttPingPeriod     = 25 * time.Second
 	sttWriteWait      = 10 * time.Second
-	sttMaxMessageSize = 1 << 20 // 1MB — frames PCM Int16 ~2.5KB cada
+	sttMaxMessageSize = 1 << 20 // 1MB; PCM Int16 frames are ~2.5KB each
 )
 
 var (
@@ -81,7 +81,7 @@ type clientStartMsg struct {
 	Type   string `json:"type"`
 	Lang   string `json:"lang"`
 	Prompt string `json:"prompt"`
-	Model  string `json:"model"` // opcional; se vazio usa env default
+	Model  string `json:"model"` // optional; empty uses the env default
 }
 
 // clientControlMsg covers stop and the browser's other textual controls.
@@ -107,8 +107,8 @@ type wlInitMsg struct {
 
 // wlSegment mirrors the JSON WhisperLive returns on each update.
 type wlSegment struct {
-	Start     string `json:"start"` // segundos como string ("1.536")
-	End       string `json:"end"`   // segundos como string
+	Start     string `json:"start"` // seconds as a string ("1.536")
+	End       string `json:"end"`   // seconds as a string
 	Text      string `json:"text"`
 	Completed bool   `json:"completed"`
 }
@@ -296,7 +296,7 @@ func (r *Router) handleSTTTranscribe(w http.ResponseWriter, req *http.Request) {
 	// State for segment dedup. Identified by the start_time string.
 	// Promoted to final when a new start_time appears OR when upstream closes.
 	segments := make(map[string]*segState) // start -> state
-	segOrder := []string{}                 // ordem de chegada pra promover em loop final
+	segOrder := []string{}                 // arrival order, for promotion in the final loop
 	var segMu sync.Mutex
 
 	// queueFinal/queuePartial accumulate messages while the lock is held.
@@ -502,7 +502,7 @@ func (r *Router) handleSTTTranscribe(w http.ResponseWriter, req *http.Request) {
 				}
 				// Bag-of-Hallucinations filter — discards outputs known to be
 				// Whisper hallucinations (ICASSP 2025 paper). Cuts about 67% of
-				// "Thanks for watching", "[Música]", loops and the like.
+				// "Thanks for watching", "[Music]", loops and the like.
 				// Applied to BOTH partial and final — do not pollute the UI with junk.
 				if hall, reason := isHallucination(txt); hall {
 					_ = reason

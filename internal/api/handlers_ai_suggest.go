@@ -3,7 +3,7 @@ package api
 // handlers_ai_suggest.go — AI-suggested alert name+description.
 //
 // The alert builder fills name/description instantly (a front-end heuristic). The
-// "✨ refinar com IA" button calls HERE, which runs `claude -p` (same pattern as
+// "✨ refine with AI" button calls HERE, which runs `claude -p` (same pattern as
 // jira_ai: jiraai/runner.go:213) with the jobs account's CLAUDE_CONFIG_DIR, and
 // returns a more natural text. Best-effort: if the AI fails or times out, the
 // front-end keeps the instant suggestion.
@@ -37,7 +37,7 @@ type suggestAlertReq struct {
 	EventLabel string  `json:"event_label"`
 }
 
-// handleAISuggestAlert gera {name, description} para um alerta, via `claude -p`.
+// handleAISuggestAlert generates {name, description} for an alert via `claude -p`.
 func (r *Router) handleAISuggestAlert(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		writeErr(w, 405, "method not allowed")
@@ -122,7 +122,7 @@ func buildAlertSuggestPrompt(b suggestAlertReq) string {
 
 func sevOrDefault(s string) string {
 	if s == "" {
-		return "aviso"
+		return "warning"
 	}
 	return s
 }

@@ -28,7 +28,7 @@ import (
 // agentPort is the port of the lab-agent's two listeners (see cmd/lab-agent).
 //
 // A constant of ours, not network configuration: it is neither an IP nor a CTID,
-// and the physical allocation still lives only in ALOCACAO.tsv under ~/infra.
+// and the physical allocation is tracked outside this repository.
 const agentPort = 8710
 
 // panelNodeSource implements gameservers.NodeSource on top of the
@@ -157,12 +157,9 @@ func translateNodeError(err error, no string) (int, string) {
 // errorsAs is errors.As with the slim signature the switch above uses.
 func errorsAs(err error, target any) bool { return errors.As(err, target) }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// EXECUTION + AUDIT
-
 // execOp is the body shared by every case: resolve, execute, audit, translate.
 //
-// `escrita` decides TWO things: whether the operation requires the primary
+// `isWrite` decides TWO things: whether the operation requires the primary
 // account, and whether it produces an audit event. Auditing reads would fill
 // the log with noise — and an audit trail that records everything is one nobody
 // reads, which amounts to having no audit trail when it matters.
@@ -229,7 +226,7 @@ func (r *Router) auditGame(req *http.Request, no, server string, op gameservers.
 	user := auth.UserFrom(req)
 	result := "ok"
 	if err != nil {
-		result = "erro"
+		result = "error"
 	}
 	r.auditEvent(req, user, "gameserver."+string(op),
 		fmt.Sprintf("node=%s server=%s result=%s", no, server, result))

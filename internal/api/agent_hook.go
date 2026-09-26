@@ -41,7 +41,7 @@ type agentHookPayload struct {
 	HookEventName  string `json:"hook_event_name"`
 	TranscriptPath string `json:"transcript_path"`
 	Message        string `json:"message"`
-	// Source distingue startup / resume / clear / compact num SessionStart.
+	// Source tells startup / resume / clear / compact apart in a SessionStart.
 	Source string `json:"source"`
 }
 

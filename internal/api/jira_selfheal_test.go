@@ -21,7 +21,7 @@ func TestClaudeProjectDirSlug(t *testing.T) {
 
 func TestClaudeProjectHasMessages(t *testing.T) {
 	cfg := t.TempDir()
-	cwd := "/tmp/projeto-x"
+	cwd := "/tmp/project-x"
 	dir := filepath.Join(cfg, "projects", claudeProjectDirSlug(cwd))
 
 	// 1. a missing folder = the session never received a message -> self-heal may act
@@ -29,7 +29,7 @@ func TestClaudeProjectHasMessages(t *testing.T) {
 		t.Fatal("no project folder should be false")
 	}
 
-	// 2. pasta vazia idem
+	// 2. an empty folder too
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}

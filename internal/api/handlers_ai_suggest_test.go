@@ -10,9 +10,9 @@ func TestParseSuggestJSON(t *testing.T) {
 		wantDesc   string
 		wantFailed bool
 	}{
-		{`{"name":"CPU saturada","description":"Avisa quando a CPU passar de 90%."}`, "CPU saturada", "Avisa quando a CPU passar de 90%.", false},
-		{"Claro! Aqui está:\n```json\n{\"name\":\"Custo alto\",\"description\":\"Gasto do Claude acima do limite.\"}\n```", "Custo alto", "Gasto do Claude acima do limite.", false},
-		{"sem json aqui", "", "", true},
+		{`{"name":"CPU saturated","description":"Warns when the CPU goes above 90%."}`, "CPU saturated", "Warns when the CPU goes above 90%.", false},
+		{"Sure! Here it is:\n```json\n{\"name\":\"High cost\",\"description\":\"Agent spend above the cap.\"}\n```", "High cost", "Agent spend above the cap.", false},
+		{"no json here", "", "", true},
 		{`{"name":"  Trim  ","description":" ok "}`, "Trim", "ok", false},
 	}
 	for _, c := range cases {

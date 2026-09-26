@@ -12,34 +12,18 @@ import (
 	"server-control-panel/internal/pve"
 )
 
-// handlers_maintenance.go — clone a guest, and ask for a copy to be stored.
+// Clone a guest and store a backup copy.
 //
-// ────────────────────────────────────────────────────────────────────────────
-// 🔴 THESE TWO DO NOT WAIT FOR THE TASK TO FINISH, AND THE RESPONSE SAYS SO.
+// Neither handler waits for the task to finish: a full clone takes minutes, longer
+// than a browser holds a request. The response reports the task as ACCEPTED with
+// its UPID (never "ok"), and the dashboard follows the task log for the outcome.
 //
-// The rest of the dashboard follows the rule to the letter: PVE's POST returns
-// 200 with a UPID as soon as the task is CREATED, so start/stop/reboot only
-// answer success after WaitTask. That does not work here: a full 14 GB clone
-// takes minutes, and holding the HTTP request open for minutes is the same as
-// having no button at all — the browser gives up first.
-//
-// The way out is NOT to fake success. It is for the response to tell the truth
-// that exists on this side: the task was ACCEPTED by the hypervisor, and this
-// is its UPID. The dashboard opens that task's log right away, so the operator
-// follows the real outcome instead of reading an "ok" nobody checked.
-//
-// 🔴 AND BOTH USE THE DASHBOARD'S TOKEN, NOT THE NODE'S. Measured, not assumed:
-// cloning requires VM.Allocate on /vms/<newid> — a path that does not exist yet
-// and where the node's token has no ACL at all — and storing a copy requires
-// Datastore.AllocateSpace on /storage/<name>, likewise. The node's token would
-// give 403 on both, and that 403 would reach the operator as a "mysterious
-// failure".
-// ────────────────────────────────────────────────────────────────────────────
+// Both use the dashboard's token, not the node's: cloning needs VM.Allocate on
+// /vms/<newid> and backup needs Datastore.AllocateSpace on /storage/<name>, and
+// the node token has neither (it would get 403).
 
-// maintenanceClient returns the client carrying the DASHBOARD's token and,
-// with it, the reason in plain language when it cannot — because "it did not
-// work" with no reason is the difference between the operator fixing it in a
-// minute and raising a ticket with themselves.
+// maintenanceClient returns a client carrying the dashboard's token, or writes
+// a plain-language reason when it cannot.
 func (r *Router) maintenanceClient(w http.ResponseWriter) (hypervisorOps, bool) {
 	value, state := r.vaultToken(pveSecretPanel)
 	switch state {
@@ -110,15 +94,8 @@ func (r *Router) nodeClone(w http.ResponseWriter, req *http.Request, st *invento
 		}
 		running := isGuestRunning(no)
 
-		// 🔴 A RUNNING CONTAINER ONLY CLONES FROM A SNAPSHOT — A MEASURED RULE.
-		//
-		// It appears in no grep of this machine's PVE source: what revealed it
-		// was the live run, with the hypervisor refusing the clone and saying
-		// "Full clone of a running container is only possible from a snapshot".
-		// It does not hold for a VM (qemu) — PVE clones a running VM.
-		//
-		// The screen needs to know BEFORE the operator clicks, otherwise they
-		// fill in the form and take an error from the hypervisor in the face.
+		// PVE only clones a running container (not a VM) from a snapshot, so the
+		// screen needs to know before the operator submits the form.
 		needsSnap := running && kind == "lxc"
 		snaps := []string{}
 		if needsSnap {
@@ -165,7 +142,7 @@ func (r *Router) nodeClone(w http.ResponseWriter, req *http.Request, st *invento
 	// reach the operator (tab closed, network dropping). The record of what was
 	// ASKED FOR must not depend on what was ANSWERED.
 	r.auditEvent(req, auth.UserFrom(req), "pve.clone",
-		fmt.Sprintf("origem=%s destino=%d nome=%s snap=%s status=pedido", id, body.NewID, body.Name, body.Snapshot))
+		fmt.Sprintf("source=%s target=%d name=%s snap=%s status=requested", id, body.NewID, body.Name, body.Snapshot))
 
 	// Refuse HERE, with the message that resolves it, instead of letting the
 	// hypervisor return its own. The difference is that this one says what to DO.
@@ -177,14 +154,14 @@ func (r *Router) nodeClone(w http.ResponseWriter, req *http.Request, st *invento
 	upid, err := cli.Clone(ctx, node, no.VMID, kind, body.NewID, strings.TrimSpace(body.Name), strings.TrimSpace(body.Snapshot))
 	if err != nil {
 		r.auditEvent(req, auth.UserFrom(req), "pve.clone",
-			fmt.Sprintf("origem=%s destino=%d status=recusado erro=%s", id, body.NewID, err.Error()))
+			fmt.Sprintf("source=%s target=%d status=refused error=%s", id, body.NewID, err.Error()))
 		writeErr(w, pveErrorCode(err), "hypervisor refused the clone: "+err.Error())
 		return
 	}
 	r.auditEvent(req, auth.UserFrom(req), "pve.clone",
-		fmt.Sprintf("origem=%s destino=%d upid=%s status=aceita", id, body.NewID, upid))
+		fmt.Sprintf("source=%s target=%d upid=%s status=accepted", id, body.NewID, upid))
 
-	// 🔴 "accepted", never "ok". See the file header.
+	// Reported as accepted, never "ok": see the file header.
 	writeJSON(w, map[string]any{
 		"origem": id, "destino": body.NewID, "upid": upid, "status": "aceita",
 		"node": node,
@@ -226,7 +203,7 @@ func (r *Router) nodeBackup(w http.ResponseWriter, req *http.Request, st *invent
 	_, node := kindAndHost(no)
 
 	r.auditEvent(req, auth.UserFrom(req), "pve.backup",
-		fmt.Sprintf("no=%s storage=%s modo=%s status=pedido", id, body.Storage, body.Mode))
+		fmt.Sprintf("node=%s storage=%s mode=%s status=requested", id, body.Storage, body.Mode))
 
 	upid, err := cli.VZDump(req.Context(), node, no.VMID, body.Storage, body.Mode, body.Compress)
 	if err != nil {
@@ -236,7 +213,7 @@ func (r *Router) nodeBackup(w http.ResponseWriter, req *http.Request, st *invent
 		return
 	}
 	r.auditEvent(req, auth.UserFrom(req), "pve.backup",
-		fmt.Sprintf("no=%s storage=%s upid=%s status=aceita", id, body.Storage, upid))
+		fmt.Sprintf("node=%s storage=%s upid=%s status=accepted", id, body.Storage, upid))
 
 	writeJSON(w, map[string]any{
 		"node_id": id, "storage": body.Storage, "modo": body.Mode,
@@ -244,20 +221,13 @@ func (r *Router) nodeBackup(w http.ResponseWriter, req *http.Request, st *invent
 	})
 }
 
-// waitTask is the ONLY place in the package that interprets the end of a
-// hypervisor task. It exists because of a defect measured in the live run: the
-// clone transferred 768 MB, created the guest and finished on `WARNINGS: 1` —
-// and the dashboard would have told the operator it had failed.
-//
-// The rule, now in a single place:
+// waitTask is the only place in the package that interprets the end of a
+// hypervisor task. A task ending in `WARNINGS: n` did succeed:
 //
 //	exitstatus "OK"           → success, no message
 //	exitstatus "WARNINGS: n"  → success WITH a message, and the message GOES to
 //	                            the screen
 //	anything else             → failure
-//
-// Three callers had the same `if err := WaitTask(...); err != nil` line, and
-// three copies would diverge the day someone touched one of them.
 func waitTask(ctx context.Context, cli hypervisorOps, node, upid string) (warnings string, err error) {
 	if e := cli.WaitTask(ctx, node, upid); e != nil {
 		if a, ok := pve.AsTaskWarning(e); ok {
@@ -270,12 +240,8 @@ func waitTask(ctx context.Context, cli hypervisorOps, node, upid string) (warnin
 
 // nodeNote delivers the explanation of what that node DOES.
 //
-// 🔴 THE ORIGIN TRAVELS WITH THE TEXT. The screen has to be able to say WHERE
-// it came from — "this is the Proxmox note" is different from "this is
-// something the dashboard wrote". Without the origin, an empty note and an
-// unreachable note become the same thing on screen, and they are opposite
-// problems: one asks for somebody to write it, the other for somebody to fix
-// the access.
+// The response carries the note's origin so the screen can tell an empty note
+// (someone should write one) from an unreachable one (someone should fix access).
 func (r *Router) nodeNote(w http.ResponseWriter, req *http.Request, st *inventory.Store, id string) {
 	inv, err := st.Snapshot()
 	if err != nil {
@@ -288,29 +254,18 @@ func (r *Router) nodeNote(w http.ResponseWriter, req *http.Request, st *inventor
 		return
 	}
 
-	// An external node is no hypervisor's guest: there is no PVE config to read.
-	// That is an absence of SOURCE, not a failure — and the screen says something
-	// different.
+	// An external node has no PVE config to read: an absent source, not a failure.
 	if no.Transport != inventory.TransportPVEAPI {
 		writeJSON(w, map[string]any{
 			"node": id, "markdown": "", "origem": "fora-do-pve",
-			"motivo": "este nó não é guest deste hipervisor — a nota do PVE não se aplica a ele",
+			"motivo": "this node is not a guest of this hypervisor, so the PVE note does not apply to it",
 		})
 		return
 	}
 
-	// 🔴 READING ASKS FOR THE READ CREDENTIAL; WRITING REQUIRES THE DASHBOARD'S.
-	//
-	// Today the two coincide, and the comment says so rather than pretending to
-	// a prettier design: `hypervisorReadSecret()` PREFERS the dashboard's
-	// token when it exists in the vault. The separation matters on the day it
-	// does NOT exist — and that day is precisely the day of a revocation or of a
-	// half-configured vault.
-	//
-	// On that day: READING keeps working (it falls back to the audit token) and
-	// WRITING refuses, naming the key that is missing. A screen that loses the
-	// node's EXPLANATION along with permission to edit it would be worse than one
-	// that loses only the edit — and that is the difference the pin asserts.
+	// Reading uses the read credential; writing requires the dashboard's. When the
+	// dashboard token is missing from the vault, reading still works (it falls back
+	// to the audit token) and only writing is refused.
 	var cli hypervisorOps
 	var ok2 bool
 	if req.Method == http.MethodPut {
@@ -352,11 +307,10 @@ func (r *Router) nodeNote(w http.ResponseWriter, req *http.Request, st *inventor
 				len(body.Markdown), pve.MaxNoteSize))
 			return
 		}
-		// AUDIT the size and the target, never the CONTENT: the note describes the
-		// house (addresses, what each box holds), and the audit trail is read by
-		// more people and kept for longer than the note itself.
+		// Audit the size and target, never the content: the note may describe the
+		// network, and the audit trail is kept longer and read more widely.
 		r.auditEvent(req, auth.UserFrom(req), "pve.nota",
-			fmt.Sprintf("no=%s bytes=%d status=pedido", id, len(body.Markdown)))
+			fmt.Sprintf("node=%s bytes=%d status=requested", id, len(body.Markdown)))
 		if err := cli.SetDescription(req.Context(), node, vmid, kind, body.Markdown); err != nil {
 			r.auditEvent(req, auth.UserFrom(req), "pve.nota",
 				fmt.Sprintf("node=%s status=refused error=%s", id, err.Error()))
@@ -364,7 +318,7 @@ func (r *Router) nodeNote(w http.ResponseWriter, req *http.Request, st *inventor
 			return
 		}
 		r.auditEvent(req, auth.UserFrom(req), "pve.nota",
-			fmt.Sprintf("no=%s bytes=%d status=ok", id, len(body.Markdown)))
+			fmt.Sprintf("node=%s bytes=%d status=ok", id, len(body.Markdown)))
 		origin := "pve-notes"
 		if strings.TrimSpace(body.Markdown) == "" {
 			origin = "vazia"
@@ -375,20 +329,10 @@ func (r *Router) nodeNote(w http.ResponseWriter, req *http.Request, st *inventor
 
 	txt, err := cli.Description(req.Context(), node, vmid, kind)
 	if err != nil {
-		// 🔴 A NODE THAT DISAPPEARED FROM THE HYPERVISOR GETS ITS OWN ANSWER.
-		//
-		// Found by the live run: the inventory keeps the node for one cycle after
-		// it stops existing (someone deleted the guest from the Proxmox screen),
-		// and PVE answers 500 with "Configuration file
-		// 'nodes/pve/lxc/101.conf' does not exist". Passing that through gives
-		// the operator a message in Perl about a file path, when what happened is
-		// simple and it is what they need to know: that box does not exist any
-		// more.
-		//
-		// The match is by text, and that is deliberately fragile IN ONE DIRECTION
-		// ONLY: if PVE's message changes, the raw error comes back — worse, but
-		// not wrong. The opposite (assuming "it is gone" for any failure) would
-		// hide a hypervisor that is down.
+		// The inventory keeps a deleted guest for one cycle, and PVE then answers
+		// 500 "Configuration file ... does not exist". Match that text only: if the
+		// message changes the raw error comes back, which is worse but never hides
+		// a hypervisor that is down.
 		if strings.Contains(err.Error(), "does not exist") {
 			writeJSON(w, map[string]any{
 				"node": id, "markdown": "", "origem": "inexistente",
@@ -402,17 +346,14 @@ func (r *Router) nodeNote(w http.ResponseWriter, req *http.Request, st *inventor
 	}
 	origin := "pve-notes"
 	if strings.TrimSpace(txt) == "" {
-		// 🔴 EMPTY IS NOT AN ERROR. A guest with no note is a guest nobody has
-		// described, and the screen has to say WHERE to write one instead of
-		// showing a blank.
+		// Empty is not an error: nobody has described this guest yet.
 		origin = "vazia"
 	}
 	writeJSON(w, map[string]any{"node": id, "markdown": txt, "origem": origin})
 }
 
-// suggestName builds the clone's name from the source's name, already inside
-// the hostname rules — because the operator should not discover that "cópia de
-// lab" is invalid only after typing it.
+// suggestName builds the clone's name from the source's name, already valid as
+// a hostname.
 func suggestName(origin string) string {
 	clean := make([]rune, 0, len(origin)+6)
 	for _, r := range strings.ToLower(origin) {
@@ -427,16 +368,15 @@ func suggestName(origin string) string {
 	if base == "" {
 		base = "clone"
 	}
-	s := base + "-copia"
+	s := base + "-copy"
 	if len(s) > 63 {
 		s = s[:63]
 	}
 	return strings.Trim(s, "-")
 }
 
-// isGuestRunning answers the question that changes the confirmation's WARNING:
-// copying a running guest produces a crash-consistent copy, as if the cable had
-// been pulled midway. That is not a reason to forbid it — it is a reason to WARN.
+// isGuestRunning decides the confirmation warning: copying a running guest
+// yields a crash-consistent copy, which is allowed but worth a warning.
 func isGuestRunning(n inventory.Node) bool {
 	st := strings.ToLower(strings.TrimSpace(n.Status.Value))
 	return st == "running" || st == "online"

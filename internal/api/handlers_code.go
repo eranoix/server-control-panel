@@ -78,8 +78,8 @@ func (r *Router) codeServerProxy() http.Handler {
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		h := resp.Header
 		if h.Get("X-Frame-Options") == "" {
-			// SAMEORIGIN: o iframe embarca no painel (same-origin), mas nenhum
-			// site externo consegue embarcar o editor.
+			// SAMEORIGIN: the panel may embed the editor in an iframe, no other
+			// site can.
 			h.Set("X-Frame-Options", "SAMEORIGIN")
 		}
 		if h.Get("Referrer-Policy") == "" {
@@ -93,8 +93,9 @@ func (r *Router) codeServerProxy() http.Handler {
 		http.Error(w, "editor (code-server) unavailable: "+err.Error(), http.StatusBadGateway)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		// Gate admin-only (mustPrimary = IsAdmin: primary ou admin). Escreve
-		// 401/403 e audita a negada. Sem isto, qualquer autenticado teria shell root.
+		// Admin-only gate (mustPrimary = IsAdmin: primary or admin). Writes
+		// 401/403 and audits the denial; without it any authenticated user
+		// would get a root shell.
 		if _, ok := r.mustPrimary(w, req); !ok {
 			return
 		}

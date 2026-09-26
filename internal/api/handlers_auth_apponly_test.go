@@ -65,7 +65,7 @@ func TestHandleLogin_AppOnly_RejectedOnPanel(t *testing.T) {
 	gt2 := newFakeGoTrue()
 	gt2.addUser(&fakeGoTrueUser{email: "normal@test.local", password: testPassword})
 	r2 := newLoginTestRouter(t, gt2, "normal", "normal@test.local")
-	wWrong, _ := doLogin(t, r2, map[string]any{"username": "normal", "password": "senha-errada"})
+	wWrong, _ := doLogin(t, r2, map[string]any{"username": "normal", "password": "wrong-password"})
 	if got, want := w.Body.String(), wWrong.Body.String(); got != want {
 		t.Fatalf("gate response = %q, wrong password = %q — they must be identical", got, want)
 	}
@@ -98,7 +98,7 @@ func TestMobileLogin_AppOnly_EntersThroughApp(t *testing.T) {
 	markAppOnly(t, r, "appuser")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/mobile/auth/login", strings.NewReader("{}"))
-	res, err := r.MobileLogin(req, "appuser", testPassword, "", "Pixel de teste")
+	res, err := r.MobileLogin(req, "appuser", testPassword, "", "Test Pixel")
 	if err != nil {
 		t.Fatalf("MobileLogin returned an error for app-only account: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestHandleRecoveryAuth_AppOnly_Rejected(t *testing.T) {
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, expected 401; body = %s", w.Code, w.Body.String())
 	}
-	if strings.Contains(strings.ToLower(w.Body.String()), "aplicativo") {
+	if strings.Contains(strings.ToLower(w.Body.String()), "app-only") {
 		t.Fatalf("the /recovery response leaked the real reason: %s", w.Body.String())
 	}
 	for _, c := range w.Result().Cookies() {
@@ -153,7 +153,7 @@ func TestLogin_NormalAccount_EntersBothPaths(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/mobile/auth/login", strings.NewReader("{}"))
-	res, err := r.MobileLogin(req, "normal", testPassword, "", "Pixel de teste")
+	res, err := r.MobileLogin(req, "normal", testPassword, "", "Test Pixel")
 	if err != nil {
 		t.Fatalf("app: MobileLogin returned an error for normal account: %v", err)
 	}

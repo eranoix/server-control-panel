@@ -113,7 +113,7 @@ func (r *Router) handlePrometheusMetrics(w http.ResponseWriter, _ *http.Request)
 		}
 	}
 
-	// Subsystem up gauges — 1 se operacional, 0 se desabilitado/degraded.
+	// Subsystem up gauges: 1 if operational, 0 if disabled/degraded.
 	help("vpsm_subsystem_up", "gauge", "1 if the subsystem is operational, 0 otherwise.")
 	upVal := func(b bool) string {
 		if b {

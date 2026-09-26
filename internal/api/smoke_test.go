@@ -369,7 +369,7 @@ func TestSmokeSecurityHeaders(t *testing.T) {
 
 	for _, h := range []string{"X-Content-Type-Options", "Referrer-Policy"} {
 		if w.Header().Get(h) == "" {
-			t.Errorf("missing security header %q (securityHeaders middleware quebrou?)", h)
+			t.Errorf("missing security header %q (is the securityHeaders middleware broken?)", h)
 		}
 	}
 }

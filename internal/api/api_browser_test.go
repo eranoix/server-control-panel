@@ -72,7 +72,7 @@ func TestBrowserPersistentProxy_404WhenInstanceUnknown(t *testing.T) {
 }
 
 func TestBrowserPersistentProxy_RoutesToInstance(t *testing.T) {
-	// Upstream fake — registra o path recebido.
+	// Fake upstream that records the received path.
 	var gotPath string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		gotPath = req.URL.Path

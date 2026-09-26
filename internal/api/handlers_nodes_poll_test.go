@@ -20,7 +20,7 @@ func TestListNodesPublishesSecondClock(t *testing.T) {
 	// diagnosis: the panel is alive, it is the hypervisor that does not answer.
 	if err := st.Replace(func(iv *inventory.Inventory) {
 		iv.LastPollAt = testNow - 4
-		iv.LastPollError = "descoberta: hipervisor mudo"
+		iv.LastPollError = "discovery: hypervisor silent"
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestListNodesPublishesSecondClock(t *testing.T) {
 	if got := poll["age_seconds"]; got != float64(4) {
 		t.Errorf("poll.age_seconds = %v, want 4", got)
 	}
-	if got := poll["error"]; got != "descoberta: hipervisor mudo" {
+	if got := poll["error"]; got != "discovery: hypervisor silent" {
 		t.Errorf("poll.error = %v — without the reason, 'tried' and 'tried and failed' become the same screen", got)
 	}
 

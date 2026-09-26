@@ -137,7 +137,7 @@ func (r *Router) handleNotifyChannelDelete(w http.ResponseWriter, req *http.Requ
 }
 
 // handleNotifyChannelTest sends a synthetic event through one channel right now,
-// returning the real delivery outcome so the UI's "testar" button is honest.
+// returning the real delivery outcome so the UI's "test" button is honest.
 func (r *Router) handleNotifyChannelTest(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return
@@ -268,10 +268,10 @@ var notifyChannelCatalog = []map[string]any{
 		"help": "Sends through an SMTP server. Port 587 (STARTTLS) or 465 (TLS).",
 		"fields": []map[string]any{
 			{"key": "smtp_host", "label": "SMTP server", "kind": "text", "ph": "smtp.gmail.com"},
-			{"key": "smtp_port", "label": "Porta", "kind": "number", "ph": "587"},
-			{"key": "smtp_user", "label": "Usuário", "kind": "text", "ph": "voce@gmail.com"},
+			{"key": "smtp_port", "label": "Port", "kind": "number", "ph": "587"},
+			{"key": "smtp_user", "label": "Username", "kind": "text", "ph": "you@gmail.com"},
 			{"key": "smtp_pass", "label": "Password / app password", "kind": "text", "secret": true},
-			{"key": "from", "label": "From", "kind": "text", "ph": "alertas@seudominio.com"},
+			{"key": "from", "label": "From", "kind": "text", "ph": "alerts@yourdomain.com"},
 			{"key": "to", "label": "To", "kind": "text", "ph": "you@email.com, someone@email.com"},
 		}},
 	{"type": notify.TypeWebhook, "label": "Webhook", "icon": "🔗",

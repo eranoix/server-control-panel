@@ -18,10 +18,9 @@ package api
 //     resolve away from home, the certificate comes from the cluster's own CA
 //     and the SAN lists a stale IP. Only the dashboard holds the TLS pin and the
 //     address override (pve/tls.go).
-//  3. THE FRAME LENGTH IS IN BYTES. Measured against CT 204: "0:2:é" delivers
-//     0xC3 0xA9; "0:1:é" delivers 0xC3 — half a character. And `data.length`
-//     in JavaScript counts UTF-16 units. A "ç" typed in the browser would
-//     arrive truncated. Whoever counts bytes has to be the Go side.
+//  3. THE FRAME LENGTH IS IN BYTES. A two-byte character like "ñ" needs
+//     length 2, and `data.length` in JavaScript counts UTF-16 units, so the
+//     browser would truncate it. The Go side counts bytes.
 //  4. Without the bridge there is no TRAIL. And it is the trail that pays for
 //     the exception below.
 //
@@ -220,8 +219,8 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 			"fatal":   true,
 			"message": "the hypervisor refused the console for " + id + ": " + pveErrorDetail(err),
 		})
-		r.auditEvent(req, user, "pve.console", "node="+id+" acao=abriu status=recusado motivo="+pveErrorDetail(err))
-		r.auditEvent(req, user, "pve.console", "node="+id+" acao=fechou status=recusado")
+		r.auditEvent(req, user, "pve.console", "node="+id+" action=opened status=refused reason="+pveErrorDetail(err))
+		r.auditEvent(req, user, "pve.console", "node="+id+" action=closed status=refused")
 		return
 	}
 	defer upConn.Close()
@@ -229,10 +228,10 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 	// 🔴 THE TRAIL, at BOTH ends. A single event, on opening, would leave a
 	// session left open and forgotten indistinguishable from a two-second one.
 	start := time.Now()
-	r.auditEvent(req, user, "pve.console", "node="+id+" acao=abriu upid="+upid)
+	r.auditEvent(req, user, "pve.console", "node="+id+" action=opened upid="+upid)
 	defer func() {
 		r.auditEvent(req, user, "pve.console",
-			fmt.Sprintf("node=%s acao=fechou upid=%s duracao=%s", id, upid, time.Since(start).Round(time.Second)))
+			fmt.Sprintf("node=%s action=closed upid=%s duration=%s", id, upid, time.Since(start).Round(time.Second)))
 	}()
 
 	sendControl(map[string]any{"type": "ready", "node": id, "vmid": no.VMID, "guest": no.Name})

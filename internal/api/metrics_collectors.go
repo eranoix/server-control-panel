@@ -389,7 +389,7 @@ func (r *Router) claudeCollector() metrics.Collector {
 func (r *Router) dockerCollector() metrics.Collector {
 	desc := []metrics.MetricDescriptor{
 		{Key: "docker.running", Label: "Containers running", Unit: "count", Category: catDocker, Kind: "gauge"},
-		{Key: "docker.stopped", Label: "Containers parados", Unit: "count", Category: catDocker, Kind: "gauge"},
+		{Key: "docker.stopped", Label: "Stopped containers", Unit: "count", Category: catDocker, Kind: "gauge"},
 		{Key: "docker.total", Label: "Containers (total)", Unit: "count", Category: catDocker, Kind: "gauge"},
 	}
 	return metrics.NewFuncCollector(30*time.Second, desc, func(ctx context.Context) map[string]float64 {

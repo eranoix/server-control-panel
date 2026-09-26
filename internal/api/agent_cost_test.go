@@ -62,9 +62,9 @@ func TestCostForModelCacheTTLSplit(t *testing.T) {
 		cc1h int64
 		want float64
 	}{
-		{"tudo 5m (transcript antigo)", 0, base + cc/1e6*6.25},
-		{"tudo 1h", cc, base + cc/1e6*10},
-		{"metade de cada", cc / 2, base + (cc/2)/1e6*6.25 + (cc/2)/1e6*10},
+		{"all 5m (old transcript)", 0, base + cc/1e6*6.25},
+		{"all 1h", cc, base + cc/1e6*10},
+		{"half of each", cc / 2, base + (cc/2)/1e6*6.25 + (cc/2)/1e6*10},
 	}
 	for _, tc := range cases {
 		got := costForModel("claude-opus-5", AgentTokens{CacheCreation: cc, CacheCreation1h: tc.cc1h})
@@ -98,11 +98,11 @@ func TestCcUsageCache1hParsing(t *testing.T) {
 		raw  string
 		want int64
 	}{
-		{"1h puro (formato real)", `{"input_tokens":20478,"cache_creation_input_tokens":59972,"cache_read_input_tokens":0,"output_tokens":510,"cache_creation":{"ephemeral_1h_input_tokens":59972,"ephemeral_5m_input_tokens":0}}`, 59972},
-		{"5m puro", `{"cache_creation_input_tokens":1000,"cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":1000}}`, 0},
-		{"misto", `{"cache_creation_input_tokens":1000,"cache_creation":{"ephemeral_1h_input_tokens":400,"ephemeral_5m_input_tokens":600}}`, 400},
-		{"sem breakdown (transcript antigo)", `{"cache_creation_input_tokens":1000}`, 0},
-		{"1h maior que o total (corrompido)", `{"cache_creation_input_tokens":10,"cache_creation":{"ephemeral_1h_input_tokens":999}}`, 10},
+		{"pure 1h (real format)", `{"input_tokens":20478,"cache_creation_input_tokens":59972,"cache_read_input_tokens":0,"output_tokens":510,"cache_creation":{"ephemeral_1h_input_tokens":59972,"ephemeral_5m_input_tokens":0}}`, 59972},
+		{"pure 5m", `{"cache_creation_input_tokens":1000,"cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":1000}}`, 0},
+		{"mixed", `{"cache_creation_input_tokens":1000,"cache_creation":{"ephemeral_1h_input_tokens":400,"ephemeral_5m_input_tokens":600}}`, 400},
+		{"no breakdown (old transcript)", `{"cache_creation_input_tokens":1000}`, 0},
+		{"1h larger than the total (corrupted)", `{"cache_creation_input_tokens":10,"cache_creation":{"ephemeral_1h_input_tokens":999}}`, 10},
 	}
 	for _, tc := range cases {
 		var u ccUsage
@@ -115,11 +115,9 @@ func TestCcUsageCache1hParsing(t *testing.T) {
 	}
 }
 
-// TestPriceForModelOpus55 trava o preço do Opus 5.5 e — o ponto crítico — que
-// ele NÃO cai na linha do Opus 5. A tabela casa por substring e "claude-opus-5-5"
-// contém "opus-5": se a linha nova ficar depois da antiga, a sessão passa a ser
-// cobrada a $5/$25 em vez de $4/$20 (e o cache read a 0.50 em vez de 0.20), um
-// erro silencioso de ~25% no token e 2,5× no cache.
+// TestPriceForModelOpus55 pins the Opus 5.5 price and, crucially, that it does
+// not fall into the Opus 5 row: the table matches by substring and
+// "claude-opus-5-5" contains "opus-5", so the newer row must come first.
 func TestPriceForModelOpus55(t *testing.T) {
 	want := modelPrice{4, 20, 5, 8, 0.20}
 	for _, model := range []string{"claude-opus-5-5[1m]", "claude-opus-5-5", "opus-5-5"} {
@@ -137,22 +135,21 @@ func TestPriceForModelOpus55(t *testing.T) {
 		}
 	}
 	if i55 < 0 {
-		t.Fatal("modelPriceTable não tem entrada explícita para opus-5-5")
+		t.Fatal("modelPriceTable has no explicit entry for opus-5-5")
 	}
 	if i5 >= 0 && i55 > i5 {
-		t.Errorf("opus-5-5 (idx %d) vem DEPOIS de opus-5 (idx %d): o substring casa antes e cobra a taxa antiga", i55, i5)
+		t.Errorf("opus-5-5 (idx %d) comes AFTER opus-5 (idx %d): the substring matches first and charges the old rate", i55, i5)
 	}
 }
 
-// TestCostForModelOpus55Empirical reproduz a fatura REAL medida numa chamada
-// one-shot ao Opus 5.5 pelo router deste host: in=2, out=4, cache_creation=58850
-// todo em TTL de 1h, e a API devolveu costUSD 0.470888. É o teste-âncora das
-// taxas novas — com as do Opus 5 daria 0.589088, ~25% acima da fatura.
+// TestCostForModelOpus55Empirical reproduces a real billed call: in=2, out=4,
+// cache_creation=58850 all with a 1h TTL, for which the API returned costUSD
+// 0.470888 (the Opus 5 rates would give 0.589088).
 func TestCostForModelOpus55Empirical(t *testing.T) {
 	got := costForModel("claude-opus-5-5[1m]", AgentTokens{
 		In: 2, Out: 4, CacheCreation: 58850, CacheCreation1h: 58850,
 	})
-	const want = 0.470888 // valor literal devolvido pela API
+	const want = 0.470888 // literal value returned by the API
 	if diff := got - want; diff > 1e-9 || diff < -1e-9 {
 		t.Errorf("costForModel = %v, want %v (the actual API invoice)", got, want)
 	}

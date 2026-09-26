@@ -14,9 +14,6 @@ import (
 	"server-control-panel/internal/gameservers"
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// OS 27 CASE
-
 // os27Case is the triage transcribed LINE BY LINE, carrying the line number of
 // the original file, so that checking it is mechanical.
 //
@@ -25,7 +22,7 @@ import (
 // would be exactly the kind of discrepancy nobody notices:
 //
 //   - line 84 (`start|stop|restart`) is the VALUE sub-switch inside `action`;
-//     it was never a route of its own and became the closed set `Verbo`.
+//     it was never a route of its own and became the closed set `Verb`.
 //   - lines 320 and 498 (`worlds`, `backups`) are the FAMILY header; the real
 //     route is the empty action right below them (322 and 500).
 //
@@ -39,35 +36,35 @@ var os27Case = []struct {
 	note     string
 }{
 	{72, "action", "", true, ""},
-	{84, "action", "", false, "start|stop|restart viraram valores de Verbo"},
-	{95, "connection", "", true, "campo de server.status"},
-	{98, "groups", "", true, "secao de settings"},
-	{131, "bans", "", true, "secao de settings"},
+	{84, "action", "", false, "start|stop|restart became values of Verb"},
+	{95, "connection", "", true, "field of server.status"},
+	{98, "groups", "", true, "settings section"},
+	{131, "bans", "", true, "settings section"},
 	{157, "history", "", true, ""},
-	{166, "build", "", true, "campo de server.status"},
-	{169, "update", "", true, "verbo de server.action"},
-	{179, "rawconfig", "", true, "estreitado pelo contrato"},
+	{166, "build", "", true, "field of server.status"},
+	{169, "update", "", true, "verb of server.action"},
+	{179, "rawconfig", "", true, "narrowed by the contract"},
 	// Line 209 covers trainer.status, trainer.apply and trainer.desired: one
 	// triage line, three operations. The sub-actions are exercised in
 	// subActionsOfLine209, outside the count, so the table stays a faithful
 	// transcription of the triage — 27 lines, not one more.
-	{209, "trainer", "", true, "cobre status, apply e desired"},
+	{209, "trainer", "", true, "covers status, apply and desired"},
 	{254, "runtime", "", true, ""},
 	{280, "server", "", true, ""},
-	{320, "worlds", "", false, "cabecalho da familia; a rota e a acao vazia (322)"},
+	{320, "worlds", "", false, "family header; the route is the empty action (322)"},
 	{322, "worlds", "", true, ""},
 	{333, "worlds", "switch", true, ""},
-	{350, "worlds", "export", true, "caminho virou Handle"},
-	{362, "worlds", "import", true, "upload virou Receber + Handle"},
+	{350, "worlds", "export", true, "path became a Handle"},
+	{362, "worlds", "import", true, "upload became Receive + Handle"},
 	{400, "worlds", "rename", true, ""},
 	{417, "worlds", "duplicate", true, ""},
 	{434, "worlds", "delete", true, ""},
 	{455, "settings", "", true, ""},
-	{498, "backups", "", false, "cabecalho da familia; a rota e a acao vazia (500)"},
+	{498, "backups", "", false, "family header; the route is the empty action (500)"},
 	{500, "backups", "", true, ""},
 	{511, "backups", "create", true, ""},
 	{522, "backups", "restore", true, ""},
-	{552, "backups", "download", true, "caminho virou Handle"},
+	{552, "backups", "download", true, "path became a Handle"},
 	{568, "logs", "", true, ""},
 }
 
@@ -78,7 +75,7 @@ var subActionsOfLine209 = []string{"apply", "desired"}
 func gamesRouter(t *testing.T) (*Router, string) {
 	t.Helper()
 	dir := t.TempDir()
-	inv := `[{"id":"jogo-b","name":"Enshrouded","game":"enshrouded","container":"jogo-b","root":"` + dir + `","node":""}]`
+	inv := `[{"id":"game-b","name":"Enshrouded","game":"enshrouded","container":"game-b","root":"` + dir + `","node":""}]`
 	if err := os.WriteFile(filepath.Join(dir, "gameservers.json"), []byte(inv), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -115,10 +112,10 @@ func TestEveryCaseHasDestination(t *testing.T) {
 	t.Logf("27 triage lines: %d endpoints, %d non-endpoints declared", 27-nonEndpoint, nonEndpoint)
 
 	for _, c := range subActionsOfLine209 {
-		req := httptest.NewRequest(http.MethodPost, "/api/gameservers/jogo-b/trainer/"+c, nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/gameservers/game-b/trainer/"+c, nil)
 		w := httptest.NewRecorder()
 		r.handleGameServerSub(w, req)
-		if w.Code == http.StatusNotFound && strings.Contains(w.Body.String(), "desconhecid") {
+		if w.Code == http.StatusNotFound && strings.Contains(w.Body.String(), "unknown") {
 			t.Errorf("SUB-ACTION LOST: trainer/%s → route 404 (%s)", c, strings.TrimSpace(w.Body.String()))
 		}
 	}
@@ -132,7 +129,7 @@ func TestEveryCaseHasDestination(t *testing.T) {
 			name += "/" + c.action
 		}
 		t.Run(name, func(t *testing.T) {
-			path := "/api/gameservers/jogo-b/" + c.resource
+			path := "/api/gameservers/game-b/" + c.resource
 			if c.action != "" {
 				path += "/" + c.action
 			}
@@ -142,7 +139,7 @@ func TestEveryCaseHasDestination(t *testing.T) {
 
 			if w.Code == http.StatusNotFound {
 				body := w.Body.String()
-				if strings.Contains(body, "desconhecid") {
+				if strings.Contains(body, "unknown") {
 					t.Errorf("CASE LOST IN THE REWRITE: %s → route 404 (%s)", name, strings.TrimSpace(body))
 				}
 			}
@@ -150,17 +147,17 @@ func TestEveryCaseHasDestination(t *testing.T) {
 	}
 }
 
-// TestServerWithoutNodeRejectedAtSurface: a regra dura chega ao HTTP.
+// TestServerWithoutNodeRejectedAtSurface: the hard rule reaches the HTTP layer.
 func TestServerWithoutNodeRejectedAtSurface(t *testing.T) {
 	r, _ := gamesRouter(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/gameservers/jogo-b/worlds", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/gameservers/game-b/worlds", nil)
 	w := httptest.NewRecorder()
 	r.handleGameServerSub(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("server with no node should give 400, gave %d: %s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "jogo-b") {
+	if !strings.Contains(w.Body.String(), "game-b") {
 		t.Errorf("the response has to name the server: %s", w.Body.String())
 	}
 }
@@ -187,20 +184,18 @@ func TestListSurvivesMissingNode(t *testing.T) {
 	if body.Servers[0]["err"] == nil {
 		t.Error("the item should carry that server's error, not hide it")
 	}
-	if body.Servers[0]["id"] != "jogo-b" {
+	if body.Servers[0]["id"] != "game-b" {
 		t.Errorf("the item lost its identity: %v", body.Servers[0])
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// A node error must not leak the credential
-
+// A node error must not leak the credential.
 func TestAgentErrorNeverLeaksToken(t *testing.T) {
-	const token = "TOKEN-SUPER-SECRETO-DO-NO-123456"
+	const token = "TOKEN-TOP-SECRET-OF-NODE-123456"
 	err := &gameservers.AuthorizationError{
 		// A deliberate worst case: an error that ALREADY carries the token. If the
 		// translation passed any part of it through, this test would catch it.
-		Msg: "401 ao chamar http://10.0.0.5:8710/v1/op/server.status com Bearer " + token,
+		Msg: "401 calling http://10.0.0.5:8710/v1/op/server.status with Bearer " + token,
 	}
 	code, msg := translateNodeError(err, "games")
 	if code != http.StatusBadGateway {
@@ -211,7 +206,7 @@ func TestAgentErrorNeverLeaksToken(t *testing.T) {
 	}
 	for _, frag := range []string{token[:8], "Bearer", "10.0.0.5"} {
 		if strings.Contains(msg, frag) {
-			t.Errorf("fragmento sensivel (%q) vazou: %s", frag, msg)
+			t.Errorf("sensitive fragment (%q) leaked: %s", frag, msg)
 		}
 	}
 	if !strings.Contains(msg, "games") || !strings.Contains(msg, "token") {
@@ -223,17 +218,14 @@ func TestBusinessErrorPassesThrough(t *testing.T) {
 	// The class that MUST get through: a message produced by our own agent,
 	// telling the operator what happened. Translating this one too would leave
 	// every failure wearing the same useless sentence.
-	code, msg := translateNodeError(&gameservers.OperationError{Msg: "mundo 'alfa' nao existe"}, "games")
+	code, msg := translateNodeError(&gameservers.OperationError{Msg: "world 'alpha' does not exist"}, "games")
 	if code != http.StatusBadRequest {
 		t.Errorf("business error should give 400, gave %d", code)
 	}
-	if msg != "mundo 'alfa' nao existe" {
+	if msg != "world 'alpha' does not exist" {
 		t.Errorf("the business message was lost: %s", msg)
 	}
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// RBAC E AUDITORIA
 
 // TestRBACPreserved: every mutation still requires the primary account.
 //
@@ -294,17 +286,14 @@ func TestWriteOperationIsAudited(t *testing.T) {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// NOME DE DOWNLOAD
-
 func TestSafeDownloadName(t *testing.T) {
 	cases := map[string]string{
-		"mundo-alfa":                  "mundo-alfa",
+		"world-alpha":                 "world-alpha",
 		"../../etc/passwd":            "etcpasswd",
-		"a\r\nX-Injetado: sim":        "aX-Injetado:sim",
-		`nome com "aspas"`:            "nomecomaspas",
-		"":                            "padrao",
-		"...":                         "padrao",
+		"a\r\nX-Injected: yes":        "aX-Injected:yes",
+		`name with "quotes"`:          "namewithquotes",
+		"":                            "fallback",
+		"...":                         "fallback",
 		"backup-2026-08-24_10-00.zip": "backup-2026-08-24_10-00.zip",
 	}
 	keys := make([]string, 0, len(cases))
@@ -313,7 +302,7 @@ func TestSafeDownloadName(t *testing.T) {
 	}
 	sort.Strings(keys)
 	for _, entry := range keys {
-		got := safeDownloadName(entry, "padrao")
+		got := safeDownloadName(entry, "fallback")
 		// The property that matters is not the exact text but this: nothing that
 		// could break the header survives.
 		for _, bad := range []string{"\r", "\n", `"`, "/", "\\"} {
@@ -325,7 +314,7 @@ func TestSafeDownloadName(t *testing.T) {
 			t.Errorf("name %q produced empty, without falling back to the default", entry)
 		}
 	}
-	if safeDownloadName("", "padrao") != "padrao" {
+	if safeDownloadName("", "fallback") != "fallback" {
 		t.Error("empty name should fall back to the default")
 	}
 }

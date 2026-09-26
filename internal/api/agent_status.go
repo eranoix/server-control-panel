@@ -88,9 +88,8 @@ func newAgentStatusStore(path string) *agentStatusStore {
 	return s
 }
 
-// Snapshot retorna uma copia do mapa de status (leitura pro kanban/dashboard
-// de custo). Copia rasa basta: AgentStatus e valor; Tokens e ponteiro que os
-// handlers de leitura nao mutam.
+// Snapshot returns a copy of the status map for the kanban and cost
+// dashboard. A shallow copy is enough: read handlers never mutate Tokens.
 func (s *agentStatusStore) Snapshot() map[string]AgentStatus {
 	if s == nil {
 		return map[string]AgentStatus{}

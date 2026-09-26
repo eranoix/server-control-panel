@@ -32,7 +32,7 @@ const (
 
 type dsWatch struct {
 	mu    sync.Mutex
-	fails map[string]int // exit (vps|casa) → consecutive proxy failures
+	fails map[string]int // exit (vps or home) → consecutive proxy failures
 }
 
 func (r *Router) startDatasaverWatcher(ctx context.Context) {

@@ -1,6 +1,6 @@
 package api
 
-// jira_worktree.go — VPSM agent-ops #2: worktree-per-agent for "Trabalhar agora".
+// jira_worktree.go: one worktree per agent for "Work on it now".
 //
 // When the mapped repo path for a ticket is a git repo, the agent session runs
 // in a DEDICATED git worktree on its own branch (agent/<ticket-slug>) instead of
@@ -87,7 +87,7 @@ func worktreeRegistered(ctx context.Context, repoPath, wt string) bool {
 // and whether a dedicated git worktree was set up. Guarded: only when repoPath
 // is a git repo; otherwise returns (repoPath, false) unchanged. Idempotent:
 // reuses an existing worktree/branch for the ticket on reattach; falls back to
-// the shared repo on any git failure so "Trabalhar agora" never hard-breaks.
+// the shared repo on any git failure so "Work on it now" never hard-breaks.
 func ensureTicketWorktree(ctx context.Context, repoPath, key string) (string, bool) {
 	if repoPath == "" || !isGitRepo(ctx, repoPath) {
 		return repoPath, false

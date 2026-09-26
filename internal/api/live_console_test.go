@@ -131,7 +131,7 @@ func TestLiveGuestConsole(t *testing.T) {
 				}
 			}
 			if ready["type"] != "ready" {
-				t.Fatalf("%s (%s): o hipervisor recusou o console: %v", g.id, g.name, ready["message"])
+				t.Fatalf("%s (%s): the hypervisor refused the console: %v", g.id, g.name, ready["message"])
 			}
 
 			mark := "PVC-" + g.name
@@ -254,7 +254,7 @@ func TestLiveGuestConsole(t *testing.T) {
 	}
 	if opened < 2 {
 		t.Fatalf("console measured on %d guest(s) — the measurement needs more than one,"+
-			"porque `vncproxy 204` já falhou neste host e uma amostra de 1 daria o caminho por bom", opened)
+			"because `vncproxy 204` has already failed on this host and a sample of 1 would pass the path as good", opened)
 	}
 
 	// ── 3. the trail, at both ends, for every session ────────────────────
@@ -280,10 +280,10 @@ func TestLiveGuestConsole(t *testing.T) {
 			if e.Action != "pve.console" {
 				continue
 			}
-			if strings.Contains(e.Target, "acao=abriu") {
+			if strings.Contains(e.Target, "action=opened") {
 				opens++
 			}
-			if strings.Contains(e.Target, "acao=fechou") {
+			if strings.Contains(e.Target, "action=closed") {
 				closes++
 			}
 		}
@@ -294,7 +294,7 @@ func TestLiveGuestConsole(t *testing.T) {
 	}
 	if opens != closes || opens < opened {
 		t.Errorf("trail: %d opens and %d closes for %d sessions, even after 10 s of waiting"+
-			"— o console tem de registrar os dois extremos", opens, closes, opened)
+			": the console has to record both ends", opens, closes, opened)
 	}
 	t.Logf("trail: %d opens and %d closes recorded (the price of the exception to §7.3)", opens, closes)
 
@@ -335,7 +335,7 @@ func TestLiveRollbackDoesNotRelayPVE200(t *testing.T) {
 
 	// A name that is valid for PVE and nonexistent by construction: the rollback
 	// dies looking the snapshot up, before touching any disk.
-	const nonexistent = "pvc-prova-viva-inexistente"
+	const nonexistent = "pvc-live-probe-nonexistent"
 	w, out := pvxPOST(t, r, "/api/proxmox/snapshots/rollback?node=lxc/204&name="+nonexistent)
 	if w.Code != 502 {
 		t.Fatalf("status = %d, want 502 (body=%s)", w.Code, w.Body)
@@ -344,7 +344,7 @@ func TestLiveRollbackDoesNotRelayPVE200(t *testing.T) {
 		t.Fatalf("body = %s — PVE's exitstatus is the only clue to the real reason", w.Body)
 	}
 	t.Logf("rollback of a nonexistent snapshot → PVE accepted it (ACL passed) and the task failed;"+
-		"o painel devolveu 502 com o motivo: %v", out["error"])
+		"the panel returned 502 with the reason: %v", out["error"])
 
 	// And the guest is still up: nothing was restored, nothing was stopped.
 	wl, outl := pvxGET(t, r, "/api/proxmox/snapshots?node=lxc/204")

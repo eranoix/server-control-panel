@@ -35,7 +35,7 @@ type fakeGoTrueUser struct {
 	factorOK   string // the TOTP code the verify accepts as correct
 }
 
-// fakeGoTrue emula o subconjunto do GoTrue self-hosted usado por
+// fakeGoTrue emulates the subset of self-hosted GoTrue used by
 // VerifyDetailed + supabaseGetUserMFA + supabaseChallengeAndVerify:
 // POST /auth/v1/token (password), GET /auth/v1/user, POST
 // /auth/v1/factors/{id}/challenge, POST /auth/v1/factors/{id}/verify.
@@ -241,7 +241,7 @@ func TestHandleLogin_PasswordWrong(t *testing.T) {
 	gt.addUser(&fakeGoTrueUser{email: "sam@test.local", password: testPassword})
 	r := newLoginTestRouter(t, gt, "sam", "sam@test.local")
 
-	w, out := doLogin(t, r, map[string]any{"username": "sam", "password": "senha-errada"})
+	w, out := doLogin(t, r, map[string]any{"username": "sam", "password": "wrong-password"})
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
@@ -341,7 +341,7 @@ func TestHandleLogin_MFAWrongCode_BackupCodeFallback(t *testing.T) {
 	}
 	store := auth.NewBackupCodesStore(auth.BackupCodesPath(r.cfg.DataDir, "sam"))
 	if err := store.Save(file); err != nil {
-		t.Fatalf("salvar backup codes: %v", err)
+		t.Fatalf("save backup codes: %v", err)
 	}
 	backupCode := codes[0]
 

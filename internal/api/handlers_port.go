@@ -24,9 +24,9 @@ const portForwardPrefix = "/_port/"
 // selfPort is vps-manager's own port — never proxy to it (loop).
 const selfPort = 8765
 
-// parsePortPath extrai a porta e o resto do caminho de /_port/<n>[/...].
-// ok=false se malformado. needSlash=true quando falta a barra final
-// (/_port/8000) — o chamador redireciona pra resolver assets relativos.
+// parsePortPath extracts the port and the rest of the path from /_port/<n>[/...].
+// ok=false when malformed. needSlash=true when the trailing slash is missing
+// (/_port/8000); the caller redirects so relative assets resolve.
 func parsePortPath(p string) (port int, rest string, needSlash, ok bool) {
 	s := strings.TrimPrefix(p, portForwardPrefix)
 	if s == p || s == "" {
@@ -52,7 +52,7 @@ func parsePortPath(p string) (port int, rest string, needSlash, ok bool) {
 }
 
 func forwardablePort(n int) bool {
-	// User ports only; never the control plane's own, nor <1024 (infra/root).
+	// User ports only; never the control plane's own, nor <1024 (system/root).
 	return n >= 1024 && n <= 65535 && n != selfPort
 }
 
@@ -68,7 +68,7 @@ func (r *Router) portForwardProxy() http.Handler {
 			req.URL.Scheme = "http"
 			req.URL.Host = "127.0.0.1:" + strconv.Itoa(port)
 			req.URL.Path = rest
-			// nginx termina o TLS; sinaliza pro app upstream.
+			// nginx terminates TLS; tell the upstream app.
 			if req.Header.Get("X-Forwarded-Proto") == "" {
 				req.Header.Set("X-Forwarded-Proto", "https")
 			}
@@ -101,7 +101,7 @@ type devPort struct {
 	Proc string `json:"proc"`
 }
 
-// GET /api/dev/ports → portas TCP em escuta (para o painel de forwarding).
+// GET /api/dev/ports → listening TCP ports (for the forwarding panel).
 func (r *Router) handleDevPorts(w http.ResponseWriter, req *http.Request) {
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return

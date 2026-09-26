@@ -1,6 +1,6 @@
 package api
 
-// Inventario de servidores de jogo (gameservers.json) editavel pela pagina.
+// Game server inventory (gameservers.json), editable from the page.
 
 import (
 	"net/http"

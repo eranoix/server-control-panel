@@ -41,11 +41,11 @@ func TestSentinelDoesNotTrustFirstTick(t *testing.T) {
 		t.Fatalf("on the third cycle it had to alert: %d events", len(*evs))
 	}
 	if (*evs)[0].Type != TypeHypervisorUnreachable {
-		t.Errorf("tipo = %q", (*evs)[0].Type)
+		t.Errorf("type = %q", (*evs)[0].Type)
 	}
 }
 
-// 🔴 TestSentinelaAlertaNaBORDA — while the problem lasts, silence. An alarm
+// TestSentinelAlertsOnEdge: while the problem lasts, silence. An alarm
 // that fires every cycle is not an alarm: it is a running tap, and it trains
 // people to ignore it.
 func TestSentinelAlertsOnEdge(t *testing.T) {
@@ -101,7 +101,7 @@ func TestMessageSaysWhatWhereAndWhy(t *testing.T) {
 		r.checkReachability(badInv(), int64(1000+i*60))
 	}
 	if len(*evs) != 1 {
-		t.Fatalf("eventos = %d", len(*evs))
+		t.Fatalf("events = %d", len(*evs))
 	}
 	b := (*evs)[0].Body
 	for _, required := range []string{"WHAT:", "WHERE:", "SINCE:", "WHY THIS IS SERIOUS:", "HOW TO CHECK:"} {

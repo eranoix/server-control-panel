@@ -26,7 +26,7 @@ package api
 //
 // RBAC: reading is open to any authenticated session; EVERY mutation requires
 // the primary account. The check stays at the same points — it lives in
-// `execOp`, with `escrita: true`, and was not reimplemented in the agent:
+// `execOp`, with `isWrite: true`, and was not reimplemented in the agent:
 // session and permission belong to the dashboard and already existed.
 
 import (
@@ -171,7 +171,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		writeRaw(w, doc)
 
-	case "update": // 27-case: `update` — virou VERBO de server.action
+	case "update": // now a verb of server.action
 		// Updating IS restarting (steamcmd runs when the container starts). The
 		// route still exists because the screen still calls it; what changed is
 		// that it is no longer an operation of the catalogue's own.
@@ -514,7 +514,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 		if !ok {
 			return
 		}
-		deliverArtifact(w, req, back, dest, doc, safeDownloadName(name, "mundo")+".zip")
+		deliverArtifact(w, req, back, dest, doc, safeDownloadName(name, "world")+".zip")
 
 	case "import": // 27-case: `worlds/import`
 		if _, ok := r.mustPrimary(w, req); !ok {

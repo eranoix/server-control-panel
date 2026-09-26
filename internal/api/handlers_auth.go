@@ -83,7 +83,7 @@ const (
 // "remember this device" block that follows (required).
 type mfaCheckOutcome struct {
 	result   mfaCheckResult
-	required bool // true sse havia factor enrolado — usado pelo bloco RememberDevice
+	required bool // true iff a factor was enrolled; used by the RememberDevice block
 	factorID string
 }
 
@@ -215,7 +215,7 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 		}
 		w.Header().Set("Retry-After", strconv.Itoa(retry))
 		r.auditEvent(req, body.Username, "login.locked", "")
-		writeErr(w, 423, "conta temporariamente bloqueada por falhas, tente em "+strconv.Itoa(retry)+"s")
+		writeErr(w, 423, "account temporarily locked after failed attempts, try again in "+strconv.Itoa(retry)+"s")
 		return
 	}
 	// VerifyDetailed runs the backend policy (local | supabase | both) and
@@ -587,7 +587,7 @@ func (r *Router) handleLogout(w http.ResponseWriter, req *http.Request) {
 
 // handleSessionsList returns the user's active sessions, newest first. The
 // caller's current session is flagged with `current: true` so the UI can
-// hide the revoke button on it (and show "esta sessão").
+// hide the revoke button on it (and show "this session").
 func (r *Router) handleSessionsList(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
 	store := r.auth.Sessions()

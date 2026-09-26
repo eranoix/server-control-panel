@@ -32,7 +32,7 @@ import (
 	"server-control-panel/internal/mobilebff"
 )
 
-// MobileLogin implementa mobilebff.PasskeyBackend.
+// MobileLogin implements mobilebff.PasskeyBackend.
 func (r *Router) MobileLogin(req *http.Request, username, password, totpCode, deviceLabel string) (mobilebff.MobileLoginResult, error) {
 	ip := auth.ClientIP(req)
 	if !r.limiter.Allow(ip) {
@@ -111,7 +111,7 @@ func (r *Router) MobileLogin(req *http.Request, username, password, totpCode, de
 	}, nil
 }
 
-// MobileRefresh implementa mobilebff.PasskeyBackend.
+// MobileRefresh implements mobilebff.PasskeyBackend.
 func (r *Router) MobileRefresh(refreshToken string) (mobilebff.MobileLoginResult, error) {
 	username, ok := auth.ParseMobileRefreshUsername(refreshToken)
 	if !ok {

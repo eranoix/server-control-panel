@@ -1,4 +1,4 @@
-// handlers_jira_ai.go — wires the "Iniciar AI" button to the queue.
+// handlers_jira_ai.go — wires the "Start AI" button to the queue.
 //
 // One endpoint:
 //
@@ -122,7 +122,7 @@ func (r *Router) handleJiraAIWork(w http.ResponseWriter, req *http.Request, key 
 
 	sessionName := "vpsm-" + owner + "-jira-" + strings.ReplaceAll(strings.ToLower(key), "_", "-")
 
-	// Auto-transition "→ Em andamento" — best-effort, does not block the spawn.
+	// Auto-transition to "In Progress", best-effort, does not block the spawn.
 	// Done in the background so it does not delay the response (the Jira call takes ~600ms).
 	// Silently skipped if the issue is already in that category or if there is no
 	// mapped transition — that is no reason to fail.
@@ -148,7 +148,7 @@ func (r *Router) handleJiraAIWork(w http.ResponseWriter, req *http.Request, key 
 		}
 		if !claudeProjectHasMessages(r.forkConfigDir(), healCwd) {
 			_ = ptysvc.SessionKill(sessionName)
-			time.Sleep(200 * time.Millisecond) // deixa o socket sumir antes de recriar
+			time.Sleep(200 * time.Millisecond) // let the socket go away before recreating
 			r.auditEvent(req, owner, "jira.ai.work.selfheal",
 				key+" → "+sessionName+" (empty session, recreated with the prompt)")
 		}
@@ -157,8 +157,8 @@ func (r *Router) handleJiraAIWork(w http.ResponseWriter, req *http.Request, key 
 		if r.sessionOwn != nil {
 			_ = r.sessionOwn.Claim(sessionName, owner)
 		}
-		// Reattach: garantir watcher rodando (cobre caso de o vps-manager
-		// ter reiniciado entre clicks).
+		// Reattach: make sure the watcher runs (the server may have restarted
+		// between clicks).
 		r.startJiraWorkWatcher(owner, key, sessionName)
 		// Best-effort: re-establishes the name→cwd map if it was
 		// lost (e.g. the sidecar was deleted). The worktree is deterministic and idempotent.
@@ -254,7 +254,7 @@ func (r *Router) handleAIPrompts(w http.ResponseWriter, req *http.Request) {
 // calling the API.
 //
 // Best-effort by design — if the project's workflow has no transition
-// for the requested category (e.g. a kanban with no "Em andamento"), it returns an
+// for the requested category (e.g. a kanban with no "In Progress"), it returns an
 // error but the caller may ignore it.
 func tryJiraTransition(ctx context.Context, cli *jira.Client, key, targetCat string) (oldStatus, newStatus string, err error) {
 	issue, err := cli.GetIssue(ctx, key)
@@ -283,7 +283,7 @@ func tryJiraTransition(ctx context.Context, cli *jira.Client, key, targetCat str
 // buildWorkPromptFromDetail: short, action-oriented prompt fed to the
 // Claude session right after spawn. Carries the full ticket context
 // (title + description — which already has the AI analysis block
-// appended from earlier "Iniciar AI" runs) so the assistant has zero
+// appended from earlier "Start AI" runs) so the assistant has zero
 // guesswork about what's being asked.
 func (r *Router) buildWorkPromptFromDetail(d *jira.IssueDetail, repoPath string) string {
 	var b strings.Builder
@@ -303,12 +303,12 @@ func (r *Router) buildWorkPromptFromDetail(d *jira.IssueDetail, repoPath string)
 	b.WriteString(d.Summary)
 	b.WriteString("\n\n")
 	if d.IssueType != nil {
-		b.WriteString("**Tipo:** ")
+		b.WriteString("**Type:** ")
 		b.WriteString(d.IssueType.Name)
 		b.WriteString("\n")
 	}
 	if d.Priority != nil {
-		b.WriteString("**Prioridade:** ")
+		b.WriteString("**Priority:** ")
 		b.WriteString(d.Priority.Name)
 		b.WriteString("\n")
 	}

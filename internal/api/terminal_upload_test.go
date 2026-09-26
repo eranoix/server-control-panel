@@ -25,21 +25,21 @@ func TestSafeUploadName(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"nome comum preservado", "contrato.pdf", "contrato.pdf"},
-		{"traço e underscore ficam", "spec_v2-final.md", "spec_v2-final.md"},
-		{"path traversal vira basename", "../../../etc/cron.d/backdoor", "backdoor"},
-		{"traversal puro não sobra nada", "../../..", ""},
-		{"separador windows", `C:\Users\sam\nota.txt`, "nota.txt"},
-		{"barra no meio", "a/b/c.log", "c.log"},
-		{"espaços viram underscore", "meu arquivo final.pdf", "meu_arquivo_final.pdf"},
-		{"acento vira underscore", "relatório.pdf", "relat_rio.pdf"},
-		{"ponto inicial removido", ".bashrc", "bashrc"},
-		{"só pontos não sobra nada", "...", ""},
-		{"vazio", "", ""},
-		{"só espaço", "   ", ""},
-		{"controle é descartado", "no\x00me\x1f.txt", "nome.txt"},
-		{"newline não vira quebra", "a\nb.txt", "ab.txt"},
-		{"underscores colapsam", "a    b     c.txt", "a_b_c.txt"},
+		{"plain name kept", "contract.pdf", "contract.pdf"},
+		{"dash and underscore stay", "spec_v2-final.md", "spec_v2-final.md"},
+		{"path traversal becomes basename", "../../../etc/cron.d/backdoor", "backdoor"},
+		{"pure traversal leaves nothing", "../../..", ""},
+		{"windows separator", `C:\Users\sam\note.txt`, "note.txt"},
+		{"slash in the middle", "a/b/c.log", "c.log"},
+		{"spaces become underscore", "my final file.pdf", "my_final_file.pdf"},
+		{"non-ASCII becomes underscore", "naïve.pdf", "na_ve.pdf"},
+		{"leading dot removed", ".bashrc", "bashrc"},
+		{"only dots leaves nothing", "...", ""},
+		{"empty", "", ""},
+		{"only spaces", "   ", ""},
+		{"control chars dropped", "na\x00me\x1f.txt", "name.txt"},
+		{"newline does not become a break", "a\nb.txt", "ab.txt"},
+		{"underscores collapse", "a    b     c.txt", "a_b_c.txt"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -73,7 +73,7 @@ func TestSafeUploadNameLimit(t *testing.T) {
 func TestSafeUploadNameNeverHasSeparator(t *testing.T) {
 	entries := []string{
 		"../x", "a/b", `a\b`, "/etc/passwd", `..\..\win.ini`,
-		"nor mal.pdf", "arquivo.tar.gz", "ção.txt",
+		"nor mal.pdf", "archive.tar.gz", "Ωmega.txt",
 	}
 	for _, in := range entries {
 		got := safeUploadName(in)
@@ -123,7 +123,7 @@ func TestUploadAcceptsNonImage(t *testing.T) {
 	r, _ := testRouter(t)
 	// Minimal PDF: before the fix this hit 415 ("the file is not an image").
 	pdf := []byte("%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n%%EOF\n")
-	w := postFile(t, r, "file", "contrato cliente.pdf", pdf)
+	w := postFile(t, r, "file", "client contract.pdf", pdf)
 	if w.Code != 200 {
 		t.Fatalf("PDF rejected with %d: %s", w.Code, w.Body.String())
 	}
@@ -138,7 +138,7 @@ func TestUploadAcceptsNonImage(t *testing.T) {
 		t.Fatalf("size = %d, want %d", resp.Size, len(pdf))
 	}
 	// The user's name survives (a space becomes _): it is what orients whoever reads the path.
-	if !strings.HasSuffix(resp.Name, "contrato_cliente.pdf") {
+	if !strings.HasSuffix(resp.Name, "client_contract.pdf") {
 		t.Fatalf("original name lost: %q", resp.Name)
 	}
 	got, err := os.ReadFile(resp.Path)
@@ -157,11 +157,11 @@ func TestUploadAcceptsNonImage(t *testing.T) {
 func TestUploadVariousTypes(t *testing.T) {
 	r, _ := testRouter(t)
 	cases := []struct{ name, content string }{
-		{"planilha.csv", "a,b,c\n1,2,3\n"},
-		{"log do servidor.log", "2026-08-18 erro\n"},
-		{"notas.md", "# titulo\n"},
-		{"pacote.tar.gz", "\x1f\x8b\x08\x00binário"},
-		{"sem-extensao", "conteúdo qualquer"},
+		{"sheet.csv", "a,b,c\n1,2,3\n"},
+		{"server log.log", "2026-08-18 error\n"},
+		{"notes.md", "# title\n"},
+		{"package.tar.gz", "\x1f\x8b\x08\x00binary"},
+		{"no-extension", "any content"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -187,7 +187,7 @@ func TestUploadAcceptsLegacyImageField(t *testing.T) {
 // A name carrying traversal must not escape the tenant's upload directory.
 func TestUploadStaysInsideDirectory(t *testing.T) {
 	r, dir := testRouter(t)
-	w := postFile(t, r, "file", "../../../../tmp/invadido.txt", []byte("x"))
+	w := postFile(t, r, "file", "../../../../tmp/pwned.txt", []byte("x"))
 	if w.Code != 200 {
 		t.Fatalf("expected to write with a sanitized name, got %d: %s", w.Code, w.Body.String())
 	}
@@ -200,8 +200,8 @@ func TestUploadStaysInsideDirectory(t *testing.T) {
 	if strings.Contains(clean, "..") {
 		t.Fatalf("final path still contains traversal: %s", clean)
 	}
-	if _, err := os.Stat("/tmp/invadido.txt"); err == nil {
-		t.Fatalf("wrote to /tmp/invadido.txt — traversal got through")
+	if _, err := os.Stat("/tmp/pwned.txt"); err == nil {
+		t.Fatalf("wrote to /tmp/pwned.txt — traversal got through")
 	}
 }
 
@@ -209,7 +209,7 @@ func TestUploadRequiresFile(t *testing.T) {
 	r, _ := testRouter(t)
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
-	_ = mw.WriteField("outro", "coisa")
+	_ = mw.WriteField("other", "thing")
 	mw.Close()
 	req := httptest.NewRequest(http.MethodPost, "/api/terminal/upload", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())

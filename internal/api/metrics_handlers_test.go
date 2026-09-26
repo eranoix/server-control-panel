@@ -16,7 +16,7 @@ func testRouterWithMetric(t *testing.T, key string) *Router {
 	t.Helper()
 	reg := metrics.NewRegistry()
 	reg.Register(metrics.NewFuncCollector(0,
-		[]metrics.MetricDescriptor{{Key: key, Label: "Teste", Unit: "count", Category: "Teste", Kind: "gauge"}},
+		[]metrics.MetricDescriptor{{Key: key, Label: "Test", Unit: "count", Category: "Test", Kind: "gauge"}},
 		func(context.Context) map[string]float64 { return map[string]float64{key: 3} }))
 	reg.Gather(context.Background())
 	return &Router{
@@ -118,7 +118,7 @@ func TestAlertAddKnownMetricEnrichesLabel(t *testing.T) {
 	if len(body.Rules) != 1 {
 		t.Fatalf("want 1 rule, got %d", len(body.Rules))
 	}
-	if body.Rules[0].Label != "Teste" || body.Rules[0].Unit != "count" {
+	if body.Rules[0].Label != "Test" || body.Rules[0].Unit != "count" {
 		t.Fatalf("label/unit not enriched: %+v", body.Rules[0])
 	}
 }

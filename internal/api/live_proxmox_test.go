@@ -49,7 +49,7 @@ func liveRouter(t *testing.T) (*Router, context.CancelFunc) {
 	}
 	vault, err := secrets.Open(filepath.Join(cfg.DataDir, "secrets.vault"), cfg.JWTSecret)
 	if err != nil {
-		t.Fatalf("cofre real: %v", err)
+		t.Fatalf("real vault: %v", err)
 	}
 	pc, err := loadPVEDescriptor(cfg.DataDir)
 	if err != nil {
@@ -178,7 +178,7 @@ func TestLiveProxmoxWave1(t *testing.T) {
 	// Negative control: a filter that matches nothing returns 200 with an empty
 	// list. It proves TWO things at once — that the filter acts, and that empty is
 	// not an error (PVE's {"data":[]} envelope, a known pitfall).
-	w, out = pvxGET(t, r, "/api/proxmox/tasks?errors=1&typefilter=tipo-que-nao-existe-jamais")
+	w, out = pvxGET(t, r, "/api/proxmox/tasks?errors=1&typefilter=type-that-never-exists")
 	if w.Code != 200 {
 		t.Errorf("negative control = %d, want 200 (empty is not an error): %s", w.Code, w.Body)
 	}
@@ -257,7 +257,7 @@ func TestLiveProxmoxWave1(t *testing.T) {
 	var created map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 	createUPID, _ := created["upid"].(string)
-	t.Logf("snapshot criado: %s · upid=%s", name, createUPID)
+	t.Logf("snapshot created: %s · upid=%s", name, createUPID)
 	// 🔴 The token rule, live: what acted was the NODE's credential, and the UPID
 	// carries its name. If `audit` shows up here, the token choice has collapsed.
 	if !strings.Contains(createUPID, "lab@pve!node-"+targetGuest) {
@@ -298,14 +298,7 @@ func TestLiveProxmoxWave1(t *testing.T) {
 
 	// ── 6. permissions ──────────────────────────────────────────────────────
 	//
-	// 🔴 THIS ASSERTION WAS INVERTED, and the inversion is what the later pass proves.
-	//
-	// Until the ACL was granted, this test demanded `storage_visivel == false` and
-	// that NO /storage path show up: that was how the first pass recorded, by
-	// measurement and not by promise, that capacity and zpool were out of the
-	// token's reach. The operator granted `PVEAuditor` propagated from the root, and
-	// the measurement changed. What did NOT change was the guard: it is still in the
-	// code, still measuring, and it simply passed.
+	// With `PVEAuditor` propagated from the root, the datastore must be auditable.
 	w, out = pvxGET(t, r, "/api/proxmox/permissions")
 	if w.Code != 200 {
 		t.Fatalf("GET /permissions = %d: %s", w.Code, w.Body)
@@ -333,7 +326,7 @@ func TestLiveProxmoxWave1(t *testing.T) {
 		t0.Format(time.RFC3339), t1.Format(time.RFC3339), t1.Sub(t0).Seconds())
 }
 
-// live_proxmox_onda2 — the LIVE proof of capacity and zpool.
+// The live proof of capacity and zpool.
 //
 // Unlike the earlier drill, this test is READ-ONLY: it neither creates nor
 // deletes anything, and it does not touch the hypervisor's ACL. The double lock
@@ -447,7 +440,7 @@ func TestLiveProxmoxWave2(t *testing.T) {
 	if age > 120 {
 		t.Errorf("age_seconds = %v — capacity is not being observed on the tick", age)
 	}
-	t.Logf("capacidade: %d storages, idade %vs, stale=%v", len(pools), age, out["stale"])
+	t.Logf("capacity: %d storages, age %vs, stale=%v", len(pools), age, out["stale"])
 
 	// ── 2. the GUARD, live and in BOTH directions ───────────────────────────
 	//
@@ -513,7 +506,7 @@ func TestLiveProxmoxWave2(t *testing.T) {
 	}
 	for _, n := range []string{"backup", "rpool"} {
 		if !names[n] {
-			t.Errorf("zpool %q ausente", n)
+			t.Errorf("zpool %q missing", n)
 		}
 	}
 
@@ -548,7 +541,7 @@ func TestLiveProxmoxWave2(t *testing.T) {
 		t0.Format(time.RFC3339), t1.Format(time.RFC3339), t1.Sub(t0).Seconds())
 }
 
-// humano formats bytes for the test log. It exists only here: production
+// human formats bytes for the test log. It exists only here: production
 // formatting belongs to the browser, and duplicating it on the server would
 // create two truths about how a number is written.
 func human(v any) string {

@@ -146,12 +146,12 @@ const graphControlsHTML = `
   var maxDeg=0; nodesDS.forEach(function(n){ if((n._degree||0)>maxDeg) maxDeg=n._degree||0; });
   var el=document.createElement('div'); el.id='vpsm-graph-ctl';
   el.innerHTML=
-    '<h4>Organização</h4>'+
-    '<label><input type="checkbox" id="vg-tests"> Esconder testes</label>'+
-    '<label><input type="checkbox" id="vg-leaves"> Esconder folhas (grau &le;1)</label>'+
-    '<div class="vpsm-row"><span>Grau mín.</span><input type="range" id="vg-deg" min="0" max="'+maxDeg+'" value="0"><span class="vpsm-count" id="vg-degv">0</span></div>'+
-    '<button id="vg-collapse">Colapsar por comunidade</button>'+
-    '<button id="vg-freeze">Congelar layout</button>'+
+    '<h4>Layout</h4>'+
+    '<label><input type="checkbox" id="vg-tests"> Hide tests</label>'+
+    '<label><input type="checkbox" id="vg-leaves"> Hide leaves (degree &le;1)</label>'+
+    '<div class="vpsm-row"><span>Min degree</span><input type="range" id="vg-deg" min="0" max="'+maxDeg+'" value="0"><span class="vpsm-count" id="vg-degv">0</span></div>'+
+    '<button id="vg-collapse">Collapse by community</button>'+
+    '<button id="vg-freeze">Freeze layout</button>'+
     '<div class="vpsm-count" id="vg-stat"></div>';
   sb.appendChild(el);
   function isTest(f){ f=(f||'').toLowerCase(); return f.indexOf('_test')>=0||f.indexOf('.test.')>=0||f.indexOf('/tests/')>=0||f.indexOf('.spec.')>=0; }
@@ -165,7 +165,7 @@ const graphControlsHTML = `
       var h=(ht&&isTest(n._source_file))||(hl&&d<=1)||(d<md);
       upd.push({id:n.id,hidden:!!h}); if(h)hidden++; });
     nodesDS.update(upd);
-    document.getElementById('vg-stat').textContent=(total-hidden)+' visíveis · '+hidden+' ocultos';
+    document.getElementById('vg-stat').textContent=(total-hidden)+' visible · '+hidden+' hidden';
   }
   document.getElementById('vg-tests').onchange=apply;
   document.getElementById('vg-leaves').onchange=apply;
@@ -174,21 +174,21 @@ const graphControlsHTML = `
   var collapsed=false;
   document.getElementById('vg-collapse').onclick=function(){
     if(!collapsed){
-      var comms={}; nodesDS.forEach(function(n){ if(n._community!=null) comms[n._community]=n._community_name||('Comunidade '+n._community); });
+      var comms={}; nodesDS.forEach(function(n){ if(n._community!=null) comms[n._community]=n._community_name||('Community '+n._community); });
       Object.keys(comms).forEach(function(c){
         try{ network.cluster({ joinCondition:function(o){ return String(o._community)===String(c); },
           clusterNodeProperties:{ label:comms[c], shape:'dot', size:26, color:'#3b82f6', font:{color:'#e5e7eb',size:14} } }); }catch(e){}
       });
-      collapsed=true; this.textContent='Expandir comunidades';
+      collapsed=true; this.textContent='Expand communities';
     } else {
       try{ network.setData({nodes:nodesDS, edges:edgesDS}); }catch(e){}
-      collapsed=false; this.textContent='Colapsar por comunidade';
+      collapsed=false; this.textContent='Collapse by community';
     }
   };
   var frozen=false;
   document.getElementById('vg-freeze').onclick=function(){
     frozen=!frozen; try{ network.setOptions({physics:{enabled:!frozen}}); }catch(e){}
-    this.textContent=frozen?'Descongelar layout':'Congelar layout';
+    this.textContent=frozen?'Unfreeze layout':'Freeze layout';
   };
 })();
 </script>

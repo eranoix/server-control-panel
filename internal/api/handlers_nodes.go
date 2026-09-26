@@ -11,12 +11,10 @@ package api
 //     machine is not a controlled variable, and a client running fast would
 //     make everything look expired.
 //
-//  2. THREE VAULT STATES, NEVER TWO. `handlers_ai.go:186` returns `""` both
-//     for "vault unreachable" and for "key missing" — that exact collapse is
-//     what produced a logged defect: the dashboard said "no credential" when
-//     the problem was the whole vault being down. Here: vault unavailable →
-//     503 on mutations and an explicit state on reads; key missing →
-//     credential "ausente"; key present → "ok".
+//  2. THREE VAULT STATES, NEVER TWO: vault unavailable → 503 on mutations and
+//     an explicit state on reads; key missing → credential CredMissing; key
+//     present → "ok". Collapsing the first two would report "no credential"
+//     when the whole vault is down.
 //     The inventory stays READABLE in all three cases: a dead vault must not
 //     wipe the node list off the screen.
 
@@ -39,22 +37,16 @@ import (
 	"server-control-panel/internal/scope"
 )
 
-// Vault keys written by the credential provisioning tool (bin/pve-credencial).
+// Vault keys written by the credential provisioning tool (the pve credential tool).
 // Each value is the WHOLE token in the form "lab@pve!<name>=<secret>", which is
 // what the PVEAPIToken header requires — storing the bare secret was the defect
 // that only a live call revealed.
 const (
 	pveSecretAdmin = "pve_token_admin"
 	pveSecretAudit = "pve_token_audit"
-	// 🔴 pve_token_painel is the FULL-ACCESS token, created by an explicit
-	// decision of the operator. It REPLACES the audit token on hypervisor reads
-	// whenever it exists, and the audit token stays the fallback when it does not.
-	//
-	// The fallback is not a courtesy: without it, a machine where this token was
-	// never provisioned — a clone of the repo, a test environment, the VPS itself
-	// before the migration — would lose the entire screen instead of losing the
-	// two routes only that token reaches. And undoing the grant goes back to
-	// deleting ONE key from the vault, without touching code.
+	// pveSecretPanel is the full-access token. It replaces the audit token on
+	// hypervisor reads when present; the audit token stays the fallback so a
+	// machine without it only loses the routes that need it.
 	pveSecretPanel      = "pve_token_painel"
 	pveSecretNodePrefix = "pve_token_node_"
 	pveTokenUser        = "lab@pve"
@@ -255,13 +247,9 @@ func (r *Router) hypervisorReadSecret() string {
 	return pveSecretAudit
 }
 
-// credentialKey says WHICH vault key answers for a node. It is ONE function
-// because having two — one in the poller's source and one in the handler's read
-// — has already produced a measured defect: the host held `lab@pve!audit` in
-// the inventory and the screen said "no credential (ausente)", because the
-// handler was looking for `pve_token_node_pve`, which does not exist. A screen
-// that shows an expiry date and "no credential" at the same time is a screen
-// that contradicts itself.
+// credentialKey says which vault key answers for a node. The poller and the
+// handler must both use it, or the screen can show an expiry date and "no
+// credential" at the same time.
 //
 // The hypervisor has no "per-node" token: what observes it is the audit one.
 func credentialKey(n inventory.Node) string {
@@ -353,7 +341,7 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// agora is the handler's clock. Injectable so a test can prove expiry without
+// now is the handler's clock. Injectable so a test can prove expiry without
 // waiting — the same reason as in freshness.go and in the poller.
 func (r *Router) now() time.Time {
 	if r.inventoryNow != nil {
@@ -399,10 +387,10 @@ func (r *Router) listNodes(w http.ResponseWriter, st *inventory.Store) {
 // enrichVault reconciles what the model holds against what the vault HAS
 // right now, and returns the vault's global state. The three cases stay apart:
 //
-//	vault down  → state "inalcancavel"; credentials stay as the model left
-//	              them (we do not invent "ausente" for failing to look)
-//	key gone    → credential "ausente" on that node
-//	key present → keep what the model says (ok/revogada/expirada)
+//	vault down  → vaultUnreachable; credentials stay as the model left
+//	              them (we do not invent CredMissing for failing to look)
+//	key gone    → CredMissing on that node
+//	key present → keep what the model says (ok/revoked/expired)
 func (r *Router) enrichVault(seen []inventory.NodeView) string {
 	v, err := r.nodeVaultOrErr()
 	if err != nil {
@@ -413,11 +401,8 @@ func (r *Router) enrichVault(seen []inventory.NodeView) string {
 			continue
 		}
 		if seen[i].Credential.State == inventory.CredRevoked {
-			// 🔴 REVOKED BEATS MISSING. After a successful revocation the key is
-			// GONE from the vault — that is step 3 of the revocation procedure.
-			// Without this guard, the revocation itself would erase its own record
-			// and the screen would say "ausente" (= never had a credential) for a
-			// token the operator has just revoked. Found by TestRevokeIsolation.
+			// Revoked beats missing: revocation deletes the key from the vault,
+			// and without this guard the node would read as never having had one.
 			continue
 		}
 		value, ok := v.Get(credentialKey(seen[i].Node))
@@ -565,9 +550,7 @@ func (r *Router) nodePower(w http.ResponseWriter, req *http.Request, st *invento
 	value, state := r.vaultToken(nodeKey(no))
 	switch state {
 	case vaultUnreachable:
-		// Distinct from "ausente" ON PURPOSE: one is the vault being down, the
-		// other is a credential that does not exist. They call for opposite
-		// actions from the operator.
+		// Distinct from vaultMissing on purpose: the operator's action differs.
 		writeErr(w, 503, "vault unreachable — the node credential could not be read")
 		return
 	case vaultMissing:
@@ -608,7 +591,7 @@ func (r *Router) nodePower(w http.ResponseWriter, req *http.Request, st *invento
 	// was asked. `WARNINGS: n` counts as done — see waitTask.
 	warnings, err := waitTask(ctx, cli, node, upid)
 	if err != nil {
-		r.auditEvent(req, auth.UserFrom(req), "pve.power", fmt.Sprintf("node=%s action=%s upid=%s status=falhou", id, action, upid))
+		r.auditEvent(req, auth.UserFrom(req), "pve.power", fmt.Sprintf("node=%s action=%s upid=%s status=failed", id, action, upid))
 		// The exitstatus is attached EXPLICITLY, without depending on how
 		// pve.Error.Error() formats it: when Status is 0 (which is the case for a
 		// task that ended badly), that formatter takes the Err branch and the
@@ -619,7 +602,7 @@ func (r *Router) nodePower(w http.ResponseWriter, req *http.Request, st *invento
 	}
 
 	r.auditEvent(req, auth.UserFrom(req), "pve.power",
-		fmt.Sprintf("node=%s action=%s upid=%s status=ok avisos=%s", id, action, upid, warnings))
+		fmt.Sprintf("node=%s action=%s upid=%s status=ok warnings=%s", id, action, upid, warnings))
 	// The warning does NOT disappear: it travels together with the success,
 	// because whoever does not see it here will not see it anywhere.
 	writeJSON(w, map[string]any{"node": id, "action": action, "upid": upid, "status": "ok", "avisos": warnings})
@@ -840,14 +823,9 @@ func (r *Router) startInventoryPoller(ctx context.Context) {
 	go p.Run(ctx)
 }
 
-// ── the poller's credential source ───────────────────────────────────────────
-//
-// 🔴 This is the fix for the defect that only the LIVE call revealed: the
-// poller never filled Node.Credential, so credentialState() returned "ausente"
-// for EVERY node — with a vault full of valid tokens — and Expire stayed 0,
-// which made the "expires in N days" warning IMPOSSIBLE to fire. The unit tests
-// did not catch it because the fixtures already came with Credential filled in
-// by hand.
+// The poller's credential source. The poller cannot fill Node.Credential by
+// itself; without this every node would read as CredMissing and the expiry
+// warning could never fire.
 //
 // The assembly respects the layers: internal/inventory cannot reach the vault
 // and internal/pve cannot reach the vault; what joins the two halves is this
@@ -871,11 +849,9 @@ func (r *Router) credentialSource() func([]inventory.Node) (map[string]inventory
 
 	return func(nodes []inventory.Node) (map[string]inventory.Credential, error) {
 		// 🔴 The vault is an IN-MEMORY map loaded at boot. A secret written by
-		// ANOTHER process (`vpsmctl secrets set`, `bin/pve-credencial --apply`)
-		// was invisible until the next restart — measured: the revocation drill
-		// recreated the node's token and the dashboard went on saying "revogada"
-		// with the key already back in the vault AND on the hypervisor. In the
-		// common case this is one os.Stat.
+		// ANOTHER process (`vpsmctl secrets set`, the pve credential tool)
+		// would stay invisible until the next restart, so reload when the file
+		// changed. In the common case this is one os.Stat.
 		if r.secrets != nil {
 			if _, err := r.secrets.ReloadIfChanged(); err != nil {
 				log.Printf("inventory: the vault could not be re-read (%v) — carrying on with the in-memory copy", err)

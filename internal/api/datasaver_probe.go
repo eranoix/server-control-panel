@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-// probeDatasaverProxy verifies that the compression proxy of the exit (vps|casa)
+// probeDatasaverProxy verifies that the compression proxy of the exit (vps or home)
 // really reaches the internet. Returns the exit IP as seen by the proxy.
 func (r *Router) probeDatasaverProxy(ctx context.Context, exit string) (string, error) {
 	ep, err := r.singboxManager().ProxyEndpoint(exit)

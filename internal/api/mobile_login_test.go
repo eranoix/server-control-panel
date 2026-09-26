@@ -14,15 +14,15 @@ import (
 	"server-control-panel/internal/mobilebff"
 )
 
-// TestMobileLogin_PasswordOK_NoMFA espelha TestHandleLogin_PasswordOK_NoMFA:
-// senha correta, sem factor enrolado -> tokens emitidos direto.
+// TestMobileLogin_PasswordOK_NoMFA mirrors TestHandleLogin_PasswordOK_NoMFA:
+// correct password, no enrolled factor -> tokens issued directly.
 func TestMobileLogin_PasswordOK_NoMFA(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "sam@test.local", password: testPassword})
 	r := newLoginTestRouter(t, gt, "sam", "sam@test.local")
 
 	req := httptest.NewRequest("POST", "/api/mobile/v1/auth/login", nil)
-	res, err := r.MobileLogin(req, "sam", testPassword, "", "Pixel de teste")
+	res, err := r.MobileLogin(req, "sam", testPassword, "", "Test Pixel")
 	if err != nil {
 		t.Fatalf("MobileLogin: %v", err)
 	}
@@ -37,14 +37,14 @@ func TestMobileLogin_PasswordOK_NoMFA(t *testing.T) {
 	}
 }
 
-// TestMobileLogin_PasswordWrong espelha TestHandleLogin_PasswordWrong.
+// TestMobileLogin_PasswordWrong mirrors TestHandleLogin_PasswordWrong.
 func TestMobileLogin_PasswordWrong(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{email: "sam@test.local", password: testPassword})
 	r := newLoginTestRouter(t, gt, "sam", "sam@test.local")
 
 	req := httptest.NewRequest("POST", "/api/mobile/v1/auth/login", nil)
-	_, err := r.MobileLogin(req, "sam", "senha-errada", "", "")
+	_, err := r.MobileLogin(req, "sam", "wrong-password", "", "")
 	if err != mobilebff.ErrMobileLoginInvalidCredentials {
 		t.Fatalf("err = %v, expected ErrMobileLoginInvalidCredentials", err)
 	}
@@ -76,7 +76,7 @@ func TestMobileLogin_MFARequired_NoCode(t *testing.T) {
 	}
 }
 
-// TestMobileLogin_MFACorrectCode espelha TestHandleLogin_MFACorrectCode.
+// TestMobileLogin_MFACorrectCode mirrors TestHandleLogin_MFACorrectCode.
 func TestMobileLogin_MFACorrectCode(t *testing.T) {
 	gt := newFakeGoTrue()
 	gt.addUser(&fakeGoTrueUser{
@@ -95,7 +95,7 @@ func TestMobileLogin_MFACorrectCode(t *testing.T) {
 	}
 }
 
-// TestMobileLogin_MFAWrongCode_NoValidBackup espelha
+// TestMobileLogin_MFAWrongCode_NoValidBackup mirrors
 // TestHandleLogin_MFAWrongCode_NoValidBackup.
 func TestMobileLogin_MFAWrongCode_NoValidBackup(t *testing.T) {
 	gt := newFakeGoTrue()
@@ -122,7 +122,7 @@ func TestMobileRefresh_RotatesAndInvalidatesOldToken(t *testing.T) {
 	r := newLoginTestRouter(t, gt, "sam", "sam@test.local")
 
 	req := httptest.NewRequest("POST", "/api/mobile/v1/auth/login", nil)
-	login, err := r.MobileLogin(req, "sam", testPassword, "", "Pixel de teste")
+	login, err := r.MobileLogin(req, "sam", testPassword, "", "Test Pixel")
 	if err != nil {
 		t.Fatalf("MobileLogin: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestMobileRefresh_UnknownToken_Invalid(t *testing.T) {
 	gt.addUser(&fakeGoTrueUser{email: "sam@test.local", password: testPassword})
 	r := newLoginTestRouter(t, gt, "sam", "sam@test.local")
 
-	if _, err := r.MobileRefresh("sam.nunca-emitido"); err != mobilebff.ErrMobileRefreshInvalid {
+	if _, err := r.MobileRefresh("sam.never-issued"); err != mobilebff.ErrMobileRefreshInvalid {
 		t.Fatalf("err = %v, expected ErrMobileRefreshInvalid", err)
 	}
 	if _, err := r.MobileRefresh(""); err != mobilebff.ErrMobileRefreshInvalid {

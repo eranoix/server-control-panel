@@ -7,8 +7,8 @@ import (
 	"server-control-panel/internal/notify"
 )
 
-// recordFires must ALWAYS populate the legacy ring (r.fires) — the "Disparos
-// recentes" UI depends on it — independently of the notify spine. This is the
+// recordFires must ALWAYS populate the legacy ring (r.fires) — the "Recent
+// fires" UI depends on it — independently of the notify spine. This is the
 // non-regression guard for the dual-write migration.
 func TestRecordFiresStillPopulatesRing(t *testing.T) {
 	r := &Router{} // zero value: recordFires only touches firesMu/fires/notify

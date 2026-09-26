@@ -46,8 +46,8 @@ func (r *Router) handleClaudeVersions(w http.ResponseWriter, req *http.Request) 
 	// Second anchor: the master's argv carries the path of the session's socket.
 	// Without it the dtach backend — the active one — resolves NOTHING: it never
 	// records a PID in the registry (the master is forked by `dtach -n`, and the PID
-	// the server sees when spawning dies right after), so `alvos` came out empty and
-	// every process ended up with no session. The visible effect was the "Reiniciar"
+	// the server sees when spawning dies right after), so the target list came out empty and
+	// every process ended up with no session. The visible effect was the "Restart"
 	// button being born disabled on EVERY row: useless by construction, and not
 	// because there was no owning session.
 	socks := ptysvc.SessionSockets()
@@ -59,10 +59,10 @@ func (r *Router) handleClaudeVersions(w http.ResponseWriter, req *http.Request) 
 		return claudever.AncestorByArgv(pid, socks)
 	})
 
-	// The recovery container is brought up SEPARATELY, on purpose: Levantar
+	// The recovery container is brought up SEPARATELY, on purpose: Detect
 	// discards it (sameMount) because it has its OWN CLI installation, and comparing
 	// against the host's has already called a Claude NEWER than the host "outdated".
-	// Here the reference is its own installation, and Alvo tells the front end that this
+	// Here the reference is its own installation, and Target tells the front end that this
 	// one restarts via the container — not by typing into a pane, which it does not have.
 	for _, p := range claudever.DetectExternal("VPSM_RECOVERY=1", "recovery") {
 		state.Processes = append(state.Processes, p)
@@ -99,7 +99,7 @@ func (r *Router) handleClaudeVersions(w http.ResponseWriter, req *http.Request) 
 
 // handleClaudeRecoveryRestart restarts the recovery Claude's container.
 //
-// It is the action behind the "Reiniciar" button on the /recovery row of the
+// It is the action behind the "Restart" button on the /recovery row of the
 // version panel. The other rows are restarted by typing into the session's pane —
 // this one has no pane (it runs in a container), so it needs its own path.
 //

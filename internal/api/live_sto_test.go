@@ -138,7 +138,7 @@ func TestLiveParityWithProxmox(t *testing.T) {
 			t.Fatalf("= %d", w.Code)
 		}
 		if j, _ := out["janela"].(string); j != "hour" {
-			t.Errorf("janela = %q, expected the default 'hour' — the allowlist did not hold", j)
+			t.Errorf("window = %q, expected the default 'hour' — the allowlist did not hold", j)
 		}
 	})
 
@@ -151,10 +151,10 @@ func TestLiveParityWithProxmox(t *testing.T) {
 		if len(pts) < 10 {
 			t.Fatalf("only %d points for the guest", len(pts))
 		}
-		t.Logf("qemu/208: %d pontos", len(pts))
+		t.Logf("qemu/208: %d points", len(pts))
 	})
 
-	t.Run("sistema", func(t *testing.T) {
+	t.Run("system", func(t *testing.T) {
 		w, out := pvxGET(t, r, "/api/proxmox/sistema")
 		if w.Code != http.StatusOK {
 			t.Fatalf("= %d: %s", w.Code, w.Body.String())
@@ -167,10 +167,10 @@ func TestLiveParityWithProxmox(t *testing.T) {
 		ifaces, _ := out["network"].([]any)
 		tm, _ := out["time"].(map[string]any)
 		certs, _ := out["certificados"].([]any)
-		t.Logf("%d interfaces · fuso=%v · %d certificados", len(ifaces), tm["timezone"], len(certs))
+		t.Logf("%d interfaces · timezone=%v · %d certificates", len(ifaces), tm["timezone"], len(certs))
 	})
 
-	t.Run("pacotes", func(t *testing.T) {
+	t.Run("packages", func(t *testing.T) {
 		w, out := pvxGET(t, r, "/api/proxmox/pacotes")
 		if w.Code != http.StatusOK {
 			t.Fatalf("= %d: %s", w.Code, w.Body.String())
@@ -179,7 +179,7 @@ func TestLiveParityWithProxmox(t *testing.T) {
 		if len(ps) == 0 {
 			t.Fatal("no package — the route responded empty")
 		}
-		t.Logf("%d pacotes instalados", len(ps))
+		t.Logf("%d installed packages", len(ps))
 	})
 
 	t.Run("syslog", func(t *testing.T) {
@@ -257,7 +257,7 @@ func TestLiveDisarmedIsNotFailure(t *testing.T) {
 		if ag == "ativo" {
 			withSchedule++
 		}
-		t.Logf("%-12s agendamento=%-12s schedule=%q", st, ag, sch)
+		t.Logf("%-12s scheduling=%-12s schedule=%q", st, ag, sch)
 	}
 	t.Logf("%d of %d datastores have a live schedule", withSchedule, len(ds))
 }

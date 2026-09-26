@@ -98,7 +98,7 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 		if mt > 0 {
 			pctRAM = mu / mt * 100
 		}
-		disk := "não reportado"
+		disk := "not reported"
 		if du >= 0 {
 			disk = fmt.Sprintf("%.1f GB", du/1e9)
 		}
@@ -175,7 +175,7 @@ func TestLivePVUCountersAndTwoClocks(t *testing.T) {
 	// this block fails.
 	if err := r.inventoryStore.Replace(func(iv *inventory.Inventory) {
 		iv.LastPollAt = iv.LastPollAt - 3600
-		iv.LastPollError = "controle negativo da prova viva (não é falha real)"
+		iv.LastPollError = "negative control of the live probe (not a real failure)"
 	}); err != nil {
 		t.Fatal(err)
 	}

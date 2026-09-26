@@ -26,7 +26,7 @@ func TestTranslateWLControl(t *testing.T) {
 		}
 	})
 
-	t.Run("DISCONNECT vira error fatal upstream-disconnect", func(t *testing.T) {
+	t.Run("DISCONNECT becomes fatal upstream-disconnect error", func(t *testing.T) {
 		payload, handled := translateWLControl(wlUpdateMsg{Message: "DISCONNECT"})
 		if !handled {
 			t.Fatal("DISCONNECT should be treated as a control signal")

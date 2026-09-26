@@ -43,7 +43,7 @@ type schedOptGroup struct {
 func (r *Router) handleSchedulerOptions(w http.ResponseWriter, req *http.Request) {
 	source := req.URL.Query().Get("source")
 
-	// sessoes_do_usuario is scoped to the user THEMSELVES (each account sees only its
+	// The sessoes_do_usuario source is scoped to the user THEMSELVES (each account sees only its
 	// own sessions), so it is open to any authenticated user — unlike the other
 	// sources (systemd/docker/databases/…), which list host-wide resources and
 	// therefore require primary. Handled before the primary gate.
@@ -53,11 +53,11 @@ func (r *Router) handleSchedulerOptions(w http.ResponseWriter, req *http.Request
 			writeErr(w, 401, "unauthorized")
 			return
 		}
-		// Always-present option: "Todas" saves EACH active session individually
+		// Always-present option: "All" saves EACH active session individually
 		// (one backup per session) at fire time. It comes first so it is the
 		// default "back up everything" path.
 		groups := []schedOptGroup{{
-			Label:   "Atalho",
+			Label:   "Shortcut",
 			Options: []schedOption{{Value: "all", Label: "All active sessions (each saved individually)"}},
 		}}
 		if r.sessionOwn != nil {
@@ -104,13 +104,13 @@ func (r *Router) handleSchedulerOptions(w http.ResponseWriter, req *http.Request
 				}
 			}
 			if len(active) > 0 {
-				groups = append(groups, schedOptGroup{Label: "Ativos", Options: active})
+				groups = append(groups, schedOptGroup{Label: "Active", Options: active})
 			}
 			if len(failed) > 0 {
-				groups = append(groups, schedOptGroup{Label: "Falhando", Options: failed})
+				groups = append(groups, schedOptGroup{Label: "Failing", Options: failed})
 			}
 			if len(inactive) > 0 {
-				groups = append(groups, schedOptGroup{Label: "Inativos", Options: inactive})
+				groups = append(groups, schedOptGroup{Label: "Inactive", Options: inactive})
 			}
 		}
 	case "docker_containers":
@@ -133,10 +133,10 @@ func (r *Router) handleSchedulerOptions(w http.ResponseWriter, req *http.Request
 					}
 				}
 				if len(running) > 0 {
-					groups = append(groups, schedOptGroup{Label: "Rodando", Options: running})
+					groups = append(groups, schedOptGroup{Label: "Running", Options: running})
 				}
 				if len(other) > 0 {
-					groups = append(groups, schedOptGroup{Label: "Parados", Options: other})
+					groups = append(groups, schedOptGroup{Label: "Stopped", Options: other})
 				}
 			}
 		}
@@ -220,7 +220,7 @@ func (r *Router) handleSchedulerOptions(w http.ResponseWriter, req *http.Request
 			}
 		}
 	case "certbot_certs":
-		// Lista os nomes em /etc/letsencrypt/live/* (cada dir = um certificado).
+		// Lists the names under /etc/letsencrypt/live/* (each dir is one certificate).
 		if entries, err := os.ReadDir("/etc/letsencrypt/live"); err == nil {
 			var opts []schedOption
 			for _, e := range entries {
@@ -230,7 +230,7 @@ func (r *Router) handleSchedulerOptions(w http.ResponseWriter, req *http.Request
 			}
 			sort.Slice(opts, func(i, j int) bool { return opts[i].Value < opts[j].Value })
 			if len(opts) > 0 {
-				groups = append(groups, schedOptGroup{Label: "Certificados", Options: opts})
+				groups = append(groups, schedOptGroup{Label: "Certificates", Options: opts})
 			}
 		}
 	default:
@@ -258,7 +258,7 @@ type schedArg struct {
 type schedDescriptor struct {
 	Kind        string `json:"kind"`
 	Label       string `json:"label"`
-	Category    string `json:"category,omitempty"` // UI group (Operação, Backup & Dados, Segurança & Auditoria, Monitoramento, Higiene, Notificações, Rede)
+	Category    string `json:"category,omitempty"` // UI group, see schedCategory
 	Description string `json:"description,omitempty"`
 	// RequiresPrimary is a cosmetic hint for the UI (badge). It is NOT the
 	// authority — the catalogue is already filtered by AuthorizedFor and the
@@ -300,7 +300,7 @@ var schedDescriptors = map[string]schedDescriptor{
 		Description: "docker pull of a specific image.",
 		Schedulable: true,
 		Args: []schedArg{
-			{Name: "ref", Label: "Imagem", Type: "select", Source: "docker_images", Required: true, Placeholder: "e.g. nginx:latest"},
+			{Name: "ref", Label: "Image", Type: "select", Source: "docker_images", Required: true, Placeholder: "e.g. nginx:latest"},
 		},
 	},
 	"docker_compose_pull": {
@@ -309,7 +309,7 @@ var schedDescriptors = map[string]schedDescriptor{
 		Description: "docker compose pull in a project's directory.",
 		Schedulable: true,
 		Args: []schedArg{
-			{Name: "dir", Label: "Compose project", Type: "select", Source: "compose_projects", Required: true, Placeholder: "/caminho/absoluto/do/projeto"},
+			{Name: "dir", Label: "Compose project", Type: "select", Source: "compose_projects", Required: true, Placeholder: "/absolute/path/to/project"},
 		},
 	},
 	"image_prune": {
@@ -328,7 +328,7 @@ var schedDescriptors = map[string]schedDescriptor{
 		Schedulable:     true,
 		Args: []schedArg{
 			{Name: "target", Label: "What to save", Type: "enum", Required: true, Options: []string{"all", "vault", "config"}},
-			{Name: "retention", Label: "Keep the last N (0 = all)", Type: "number", Placeholder: "ex.: 7"},
+			{Name: "retention", Label: "Keep the last N (0 = all)", Type: "number", Placeholder: "e.g. 7"},
 		},
 	},
 	"shell": {
@@ -339,7 +339,7 @@ var schedDescriptors = map[string]schedDescriptor{
 		Schedulable:     true,
 		Args: []schedArg{
 			{Name: "cmd", Label: "Binary", Type: "string", Required: true, Placeholder: "e.g. /usr/bin/systemctl"},
-			{Name: "args", Label: "Argumentos", Type: "string_list", Placeholder: "one argument per line"},
+			{Name: "args", Label: "Arguments", Type: "string_list", Placeholder: "one argument per line"},
 		},
 	},
 	"docker_restart": {
@@ -359,7 +359,7 @@ var schedDescriptors = map[string]schedDescriptor{
 		RequiresPrimary: true,
 		Schedulable:     true,
 		Args: []schedArg{
-			{Name: "dir", Label: "Compose project", Type: "select", Source: "compose_projects", Required: true, Placeholder: "/caminho/absoluto/do/projeto"},
+			{Name: "dir", Label: "Compose project", Type: "select", Source: "compose_projects", Required: true, Placeholder: "/absolute/path/to/project"},
 		},
 	},
 	"systemd_restart": {
@@ -369,7 +369,7 @@ var schedDescriptors = map[string]schedDescriptor{
 		RequiresPrimary: true,
 		Schedulable:     true,
 		Args: []schedArg{
-			{Name: "action", Label: "Ação", Type: "enum", Required: true, Options: []string{"restart", "reload"}},
+			{Name: "action", Label: "Action", Type: "enum", Required: true, Options: []string{"restart", "reload"}},
 			{Name: "unit", Label: "Service (unit)", Type: "select", Source: "systemd_units", Required: true, Placeholder: "e.g. nginx.service"},
 		},
 	},
@@ -390,7 +390,7 @@ var schedDescriptors = map[string]schedDescriptor{
 		RequiresPrimary: true,
 		Schedulable:     true,
 		Args: []schedArg{
-			{Name: "url", Label: "URL", Type: "string", Required: true, Placeholder: "https://exemplo.com/health"},
+			{Name: "url", Label: "URL", Type: "string", Required: true, Placeholder: "https://example.com/health"},
 			{Name: "expect", Label: "Expected status (optional)", Type: "number", Placeholder: "e.g. 200 — empty = accepts 2xx/3xx"},
 		},
 	},
@@ -402,7 +402,7 @@ var schedDescriptors = map[string]schedDescriptor{
 		Schedulable:     true,
 		Args: []schedArg{
 			{Name: "host", Label: "Host", Type: "string", Required: true, Placeholder: "e.g. example.com"},
-			{Name: "port", Label: "Porta", Type: "number", Placeholder: "443"},
+			{Name: "port", Label: "Port", Type: "number", Placeholder: "443"},
 			{Name: "warn_days", Label: "Warn if fewer than N days remain", Type: "number", Placeholder: "14"},
 		},
 	},
@@ -432,7 +432,7 @@ var schedDescriptors = map[string]schedDescriptor{
 		RequiresPrimary: true,
 		Schedulable:     true,
 		Args: []schedArg{
-			{Name: "tool", Label: "Ferramenta", Type: "enum", Required: true, Options: []string{"rkhunter", "chkrootkit"}},
+			{Name: "tool", Label: "Tool", Type: "enum", Required: true, Options: []string{"rkhunter", "chkrootkit"}},
 		},
 	},
 	"integrity_check": {
@@ -450,7 +450,7 @@ var schedDescriptors = map[string]schedDescriptor{
 		RequiresPrimary: true,
 		Schedulable:     true,
 		Args: []schedArg{
-			{Name: "scope", Label: "Alvo", Type: "enum", Required: true, Options: []string{"image", "fs"}},
+			{Name: "scope", Label: "Target", Type: "enum", Required: true, Options: []string{"image", "fs"}},
 			{Name: "target", Label: "Image or path", Type: "string", Required: true, Placeholder: "nginx:latest  or  /opt/app"},
 			{Name: "severity", Label: "Severities (optional)", Type: "string", Placeholder: "HIGH,CRITICAL"},
 		},
@@ -510,7 +510,7 @@ var schedDescriptors = map[string]schedDescriptor{
 		RequiresPrimary: true,
 		Schedulable:     true,
 		Args: []schedArg{
-			{Name: "dir", Label: "Compose project", Type: "select", Source: "compose_projects", Required: true, Placeholder: "/caminho/absoluto/do/projeto"},
+			{Name: "dir", Label: "Compose project", Type: "select", Source: "compose_projects", Required: true, Placeholder: "/absolute/path/to/project"},
 		},
 	},
 	"git_pull": {
@@ -546,7 +546,7 @@ var schedDescriptors = map[string]schedDescriptor{
 		RequiresPrimary: true,
 		Schedulable:     true,
 		Args: []schedArg{
-			{Name: "engine", Label: "Banco", Type: "enum", Required: true, Options: []string{"postgres", "mysql"}},
+			{Name: "engine", Label: "Database", Type: "enum", Required: true, Options: []string{"postgres", "mysql"}},
 			{Name: "database", Label: "Database name", Type: "select", Source: "databases", Required: true, Placeholder: "e.g. myapp"},
 			{Name: "dest", Label: "Destination folder (optional)", Type: "folder", Placeholder: "default: data/backups"},
 			{Name: "retention", Label: "Keep the last N (0 = all)", Type: "number", Placeholder: "7"},
@@ -585,12 +585,12 @@ var schedDescriptors = map[string]schedDescriptor{
 	// catalogue keeps it out of the scheduler UI.
 	"session_backup": {
 		Kind:        "session_backup",
-		Label:       "Backup de sessões do terminal",
+		Label:       "Terminal session backup",
 		Description: "Saves the state of your sessions (windows, panes, each pane's folder and history) at the interval you choose. Pick 'All' and it looks at the sessions active at fire time and saves EACH ONE individually. Restore later from the session Backups tab.",
 		Schedulable: true,
 		Args: []schedArg{
-			{Name: "session", Label: "Sessão", Type: "select", Source: "sessoes_do_usuario", Placeholder: "All = every active session, saved individually"},
-			{Name: "retention", Label: "Keep the last N per session (0 = default)", Type: "number", Placeholder: "ex.: 24"},
+			{Name: "session", Label: "Session", Type: "select", Source: "sessoes_do_usuario", Placeholder: "All = every active session, saved individually"},
+			{Name: "retention", Label: "Keep the last N per session (0 = default)", Type: "number", Placeholder: "e.g. 24"},
 		},
 	},
 	"jira_ai_analysis": {

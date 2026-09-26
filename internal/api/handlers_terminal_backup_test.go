@@ -43,7 +43,7 @@ func countScheduled(t *testing.T, r *Router, user, name string) int {
 	return n
 }
 
-// countSource conta backups por origem.
+// countSource counts backups by origin.
 func countSource(t *testing.T, r *Router, user, source string) int {
 	t.Helper()
 	dir, _ := r.sessionBackupsDir(user)
@@ -75,7 +75,7 @@ func TestPruneSessionBackupsForSessionIsolated(t *testing.T) {
 	for _, id := range []int64{200, 201, 202} {
 		writeBK(t, r, u, id, "scheduled", "work")
 	}
-	writeBK(t, r, u, 300, "auto", "main", "work") // bundle do coletor
+	writeBK(t, r, u, 300, "auto", "main", "work") // collector bundle
 
 	r.pruneSessionBackupsForSession(u, "main", 2)
 
@@ -83,10 +83,10 @@ func TestPruneSessionBackupsForSessionIsolated(t *testing.T) {
 		t.Fatalf("main after prune(2) = %d, want 2", got)
 	}
 	if got := countScheduled(t, r, u, "work"); got != 3 {
-		t.Fatalf("work intacta = %d, want 3", got)
+		t.Fatalf("work intact = %d, want 3", got)
 	}
 	if got := countSource(t, r, u, "auto"); got != 1 {
-		t.Fatalf("bundle auto intacto = %d, want 1", got)
+		t.Fatalf("auto bundle intact = %d, want 1", got)
 	}
 }
 

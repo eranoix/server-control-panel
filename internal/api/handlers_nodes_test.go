@@ -22,8 +22,6 @@ import (
 
 const testNow = 1800000000
 
-// ---------------------------------------------------------------- duplos ----
-
 // fakeVault records every call in `seen`, which is what makes the ORDER of
 // revocation verifiable. Modelled on privateaiapi_test.go.
 type fakeVault struct {
@@ -36,7 +34,7 @@ type fakeVault struct {
 
 func (c *fakeVault) Get(k string) (string, bool) {
 	if c.deleteCalled && c.resurrect {
-		return "ressuscitado", true
+		return "resurrected", true
 	}
 	v, ok := c.data[k]
 	return v, ok
@@ -54,7 +52,7 @@ func (c *fakeVault) Delete(k string) error {
 	return nil
 }
 
-// fakePVE is the stand-in hypervisor. `papel` says which token opened it, so
+// fakePVE is the stand-in hypervisor. `role` says which token opened it, so
 // the test can prove that revocation uses the ADMIN token and confirmation uses
 // the OPERATIONAL one.
 type fakePVE struct {
@@ -126,7 +124,7 @@ func (p *fakePVE) Reboot(ctx context.Context, node string, vmid int, typ string)
 }
 
 func (p *fakePVE) Description(ctx context.Context, node string, vmid int, typ string) (string, error) {
-	p.mark(fmt.Sprintf("pve.descricao:%s/%d", typ, vmid))
+	p.mark(fmt.Sprintf("pve.description:%s/%d", typ, vmid))
 	if p.verbErr != nil {
 		return "", p.verbErr
 	}
@@ -134,7 +132,7 @@ func (p *fakePVE) Description(ctx context.Context, node string, vmid int, typ st
 }
 
 func (p *fakePVE) SetDescription(ctx context.Context, node string, vmid int, typ, text string) error {
-	p.mark(fmt.Sprintf("pve.set-descricao:%s/%d:%dbytes", typ, vmid, len(text)))
+	p.mark(fmt.Sprintf("pve.set-description:%s/%d:%dbytes", typ, vmid, len(text)))
 	if p.verbErr != nil {
 		return p.verbErr
 	}
@@ -237,7 +235,7 @@ func (p *fakePVE) Certificates(ctx context.Context, node string) ([]pve.Certific
 	return p.certs, p.verbErr
 }
 func (p *fakePVE) Packages(ctx context.Context, node string) ([]pve.PackageInfo, error) {
-	p.mark("pve.pacotes")
+	p.mark("pve.packages")
 	return p.packages, p.verbErr
 }
 func (p *fakePVE) Syslog(ctx context.Context, node string, limit int) ([]pve.SyslogLine, error) {
@@ -338,8 +336,6 @@ func (p *fakePVE) ClusterResources(ctx context.Context) ([]pve.Resource, error) 
 	return nil, &pve.Error{Kind: pve.KindNoCredential, Status: 401, Path: "/cluster/resources"}
 }
 
-// ------------------------------------------------------------- andaimes ----
-
 func newNodesRouter(t *testing.T, nodes []inventory.Node) (*Router, *inventory.Store) {
 	t.Helper()
 	dir := t.TempDir()
@@ -394,7 +390,7 @@ func testNode(id, name string, vmid int, observedAt int64) inventory.Node {
 func TestNodesList(t *testing.T) {
 	r, _ := newNodesRouter(t, []inventory.Node{
 		testNode("lxc/207", "apps", 207, testNow-10),  // fresco
-		testNode("qemu/208", "dev", 208, testNow-600), // velho
+		testNode("qemu/208", "dev", 208, testNow-600), // old
 	})
 	r.nodeVaultFn = func() (nodeVault, error) {
 		return &fakeVault{data: map[string]string{
@@ -411,7 +407,7 @@ func TestNodesList(t *testing.T) {
 	if len(nodes) == 0 {
 		t.Fatal("response with no nodes")
 	}
-	// Itera TODAS as entradas — amostrar a primeira deixaria a segunda mentir.
+	// Check every entry: sampling only the first would let the second lie.
 	for i, raw := range nodes {
 		n, _ := raw.(map[string]any)
 		if _, ok := n["age_seconds"]; !ok {
@@ -453,7 +449,7 @@ func TestNodesList(t *testing.T) {
 func TestNodesVaultStates(t *testing.T) {
 	t.Run("vault unreachable: the list STILL responds 200", func(t *testing.T) {
 		r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow-10)})
-		r.nodeVaultFn = func() (nodeVault, error) { return nil, errors.New("cofre fora do ar") }
+		r.nodeVaultFn = func() (nodeVault, error) { return nil, errors.New("vault is down") }
 
 		w, out := callAPI(t, r, http.MethodGet, "/api/nodes", "")
 		if w.Code != 200 {
@@ -462,7 +458,7 @@ func TestNodesVaultStates(t *testing.T) {
 		if out["vault"] != vaultUnreachable {
 			t.Fatalf("vault = %v, want %q", out["vault"], vaultUnreachable)
 		}
-		// And we do NOT invent "ausente" just because we could not look.
+		// And we do NOT invent CredMissing just because we could not look.
 		n := out["nodes"].([]any)[0].(map[string]any)
 		cred := n["credential"].(map[string]any)
 		if cred["state"] == inventory.CredMissing {
@@ -575,7 +571,7 @@ func TestRevokeOrder(t *testing.T) {
 	}}
 	r.nodeVaultFn = func() (nodeVault, error) { return vault, nil }
 	r.pveDial = func(value string) (hypervisorOps, error) {
-		role := "operacional"
+		role := "operational"
 		if strings.HasPrefix(value, "lab@pve!admin") {
 			role = "admin"
 		}
@@ -812,25 +808,18 @@ func TestMalformedDescriptorDoesNotStart(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "pve"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "pve", "pve.json"), []byte("{nao e json"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "pve", "pve.json"), []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, err := loadPVEDescriptor(dir)
 	if err == nil || !strings.Contains(err.Error(), "malformed") {
-		t.Fatalf("error = %v, want it to mention 'malformado'", err)
+		t.Fatalf("error = %v, want it to mention 'malformed'", err)
 	}
 }
 
-// 🔴 TestCredentialSourceFillsNode is the pin for the defect only the LIVE
-// call revealed: in production ALL 11 nodes read as having no credential (the
-// "ausente" state) with the vault full of valid tokens, and `expire` stayed 0 —
-// which made the expiry warning impossible to fire.
-//
-// The cause was structural, not a typo: the poller never filled Node.Credential,
-// and credentialState() returns "ausente" whenever TokenID is empty. The unit
-// tests did not catch it because the fixtures already arrived with Credential
-// filled in by hand — this test starts from the RAW node, the way the poller
-// hands it over.
+// TestCredentialSourceFillsNode starts from the raw node as the poller hands it
+// over: credentialState() reports CredMissing whenever TokenID is empty, so the
+// router must fill Node.Credential itself.
 func TestCredentialSourceFillsNode(t *testing.T) {
 	r, _ := newNodesRouter(t, nil)
 	r.nodeVaultFn = func() (nodeVault, error) {
@@ -854,7 +843,7 @@ func TestCredentialSourceFillsNode(t *testing.T) {
 		{ID: "lxc/204", Name: "lab", VMID: 204, Kind: inventory.NodeKindGuest, Transport: inventory.TransportPVEAPI},
 		{ID: "lxc/207", Name: "apps", VMID: 207, Kind: inventory.NodeKindGuest, Transport: inventory.TransportPVEAPI},
 		{ID: "node/pve", Name: "pve", Kind: inventory.NodeKindHost, Transport: inventory.TransportPVEAPI},
-		{ID: "canario", Name: "canario", Kind: inventory.NodeKindExternal, Transport: inventory.TransportAgent},
+		{ID: "canary", Name: "canary", Kind: inventory.NodeKindExternal, Transport: inventory.TransportAgent},
 	}
 
 	creds, err := r.credentialSource()(nodes)
@@ -872,13 +861,13 @@ func TestCredentialSourceFillsNode(t *testing.T) {
 	if c.Expire != 1802645875 {
 		t.Errorf("expire = %d, want the hypervisor's — without it the staleness warning never fires", c.Expire)
 	}
-	// The host is observed through the AUDIT token; reporting "ausente" on it
+	// The host is observed through the AUDIT token; reporting CredMissing on it
 	// would be lying about a node the panel can see perfectly well.
 	if h, ok := creds["node/pve"]; !ok || h.TokenID != "lab@pve!audit" {
 		t.Errorf("host = %+v (ok=%v), want the audit credential", h, ok)
 	}
 	// A non-PVE transport has no per-node token.
-	if _, ok := creds["canario"]; ok {
+	if _, ok := creds["canary"]; ok {
 		t.Error("the canary (agent transport) received a PVE credential")
 	}
 
@@ -897,7 +886,7 @@ func TestCredentialSourceFillsNode(t *testing.T) {
 	if got := byID["lxc/204"].Credential.State; got != inventory.CredOK {
 		t.Fatalf("state of the node with a live token = %q, want %q", got, inventory.CredOK)
 	}
-	if got := byID["canario"].Credential.State; got != inventory.CredMissing {
+	if got := byID["canary"].Credential.State; got != inventory.CredMissing {
 		t.Errorf("canary = %q, want missing", got)
 	}
 }
@@ -908,7 +897,7 @@ func TestCredentialSourceFillsNode(t *testing.T) {
 // credentials — when what went down was the vault.
 func TestCredentialSourceDeadVaultDoesNotLie(t *testing.T) {
 	r, _ := newNodesRouter(t, nil)
-	r.nodeVaultFn = func() (nodeVault, error) { return nil, errors.New("cofre fora do ar") }
+	r.nodeVaultFn = func() (nodeVault, error) { return nil, errors.New("vault is down") }
 	if _, err := r.credentialSource()([]inventory.Node{
 		{ID: "lxc/204", Name: "lab", Kind: inventory.NodeKindGuest, Transport: inventory.TransportPVEAPI},
 	}); err == nil {
@@ -925,7 +914,7 @@ func TestCredentialSourceWithoutExpireStillReportsToken(t *testing.T) {
 	r.nodeVaultFn = func() (nodeVault, error) {
 		return &fakeVault{data: map[string]string{"pve_token_node_lab": "lab@pve!node-lab=s"}}, nil
 	}
-	r.pveDial = func(string) (hypervisorOps, error) { return nil, errors.New("sem descritor") }
+	r.pveDial = func(string) (hypervisorOps, error) { return nil, errors.New("no descriptor") }
 
 	creds, err := r.credentialSource()([]inventory.Node{
 		{ID: "lxc/204", Name: "lab", Kind: inventory.NodeKindGuest, Transport: inventory.TransportPVEAPI},
@@ -945,7 +934,7 @@ func TestCredentialSourceWithoutExpireStillReportsToken(t *testing.T) {
 // 🔴 TestHostDoesNotContradictItself: the host held `lab@pve!audit` in the
 // inventory while the screen said it had no credential, because the source and
 // the read picked the vault key by DIFFERENT paths. The symptom was one row
-// showing an expiry date and "ausente" at the same time.
+// showing an expiry date and CredMissing at the same time.
 func TestHostDoesNotContradictItself(t *testing.T) {
 	host := inventory.Node{
 		ID: "node/pve", Name: "pve", Kind: inventory.NodeKindHost,
@@ -970,7 +959,7 @@ func TestHostDoesNotContradictItself(t *testing.T) {
 	if cred["token_id"] == "" {
 		t.Error("the handler erased the host's token_id")
 	}
-	// The concrete contradiction: an expiry present with credential "ausente".
+	// The concrete contradiction: an expiry present with credential CredMissing.
 	if cred["expire"].(float64) > 0 && cred["state"] == inventory.CredMissing {
 		t.Error("contradictory line: shows an expiry date AND 'no credential'")
 	}

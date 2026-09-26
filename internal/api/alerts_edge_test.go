@@ -77,7 +77,7 @@ func TestNoRefireAcrossReloadProductionPath(t *testing.T) {
 }
 
 // The ring receives crossings only; a resolved fire reaches the notify spine but
-// not the legacy "Disparos recentes" ring (which means crossings).
+// not the legacy "Recent fires" ring (which means crossings).
 func TestRecordFiresRingExcludesResolved(t *testing.T) {
 	r, _ := newEdgeRouter(t)
 	r.recordFires([]metrics.Fire{

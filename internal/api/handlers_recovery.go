@@ -123,7 +123,7 @@ func (r *Router) handleRecoveryAuth(w http.ResponseWriter, req *http.Request) {
 		}
 		w.Header().Set("Retry-After", strconv.Itoa(retry))
 		r.auditEvent(req, body.Username, "recovery.login.locked", "")
-		writeErr(w, 423, "conta temporariamente bloqueada; tente em "+strconv.Itoa(retry)+"s")
+		writeErr(w, 423, "account temporarily locked; try again in "+strconv.Itoa(retry)+"s")
 		return
 	}
 	if !r.auth.Verify(body.Username, body.Password) {
@@ -420,7 +420,7 @@ func (r *Router) handleRecoveryClaudePTY(w http.ResponseWriter, req *http.Reques
 	// `-z` disables suspend (^Z) for the same reason.
 	ptysvc.ContainerExec(w, req, r.docker.Raw(), recoveryClaudeContainer, []string{
 		"/bin/bash", "-lc",
-		"dtach -A /tmp/recovery.sock -E -z bash -lc '/usr/local/bin/bemvindo.sh; exec bash -l'",
+		"dtach -A /tmp/recovery.sock -E -z bash -lc '/usr/local/bin/welcome.sh; exec bash -l'",
 	}, []string{"CLAUDE_CONFIG_DIR=/config", "VPSM_RECOVERY=1"})
 }
 

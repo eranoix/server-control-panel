@@ -159,8 +159,8 @@ func TestEmptyWithAndWithoutPrivilegeAreDIFFERENTResponses(t *testing.T) {
 		name string
 		can  bool
 	}{
-		{"com privilégio: vazio é vazio de verdade", true},
-		{"sem privilégio: vazio é a ACL filtrando", false},
+		{"with privilege: empty really is empty", true},
+		{"without privilege: empty is the ACL filtering", false},
 	}
 	seen := map[bool]any{}
 	for _, cs := range cases {
@@ -208,17 +208,17 @@ func TestPermissionsUseSameDatastoreVerdict(t *testing.T) {
 		want  bool
 	}{
 		{
-			"antes da ACL: nem caminho, nem privilégio",
+			"before the ACL: neither path nor privilege",
 			map[string]map[string]int{"/vms/204": {"VM.Audit": 1}, "/nodes": {"Sys.Audit": 1}},
 			false,
 		},
 		{
-			"🔴 caminho presente, privilégio ausente — o falso-verde que presença-de-caminho deixaria passar",
+			"path present, privilege missing: the false green a path-presence check would let through",
 			map[string]map[string]int{"/storage": {"VM.Audit": 1}},
 			false,
 		},
 		{
-			"depois da ACL: Datastore.Audit propagado da raiz (é o estado VIVO de hoje)",
+			"after the ACL: Datastore.Audit propagated from the root (the live state)",
 			map[string]map[string]int{
 				"/":        {"Datastore.Audit": 1, "Sys.Audit": 1, "VM.Audit": 1},
 				"/storage": {"Datastore.Audit": 1, "Sys.Audit": 1},
@@ -249,7 +249,7 @@ func TestPermissionsUseSameDatastoreVerdict(t *testing.T) {
 	}
 }
 
-// TestCapacidadeSoResponsdeGET: both routes are pure reads. A POST here is
+// TestCapacityOnlyAnswersGET: both routes are pure reads. A POST here is
 // neither 404 nor 500 — it is 405, and saying so saves an investigation.
 func TestCapacityOnlyAnswersGET(t *testing.T) {
 	for _, path := range []string{"/api/proxmox/storage", "/api/proxmox/zfs"} {

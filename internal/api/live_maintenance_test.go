@@ -105,13 +105,13 @@ func TestLiveMaintenance(t *testing.T) {
 	needsSnap, _ := out["precisa_snapshot"].(bool)
 	probeSnap := ""
 	if needsSnap {
-		probeSnap = "prova-clone-base"
+		probeSnap = "probe-clone-base"
 		snapBody, _ := json.Marshal(map[string]any{"nome": probeSnap})
 		ws, _ := callAPI(t, r, http.MethodPost, "/api/nodes/"+cloneSourceLive+"/snapshot", string(snapBody))
 		if ws.Code != 200 {
 			// No snapshot route around here, so create it through the client
 			// directly: what this test measures is the CLONE, and the snapshot is only the step up to it.
-			upidSnap, err := cli.SnapshotCreate(ctx, "pve", 203, "lxc", probeSnap, "prova viva de clone")
+			upidSnap, err := cli.SnapshotCreate(ctx, "pve", 203, "lxc", probeSnap, "live clone probe")
 			if err != nil {
 				t.Fatalf("could not create the source snapshot: %v", err)
 			}
@@ -131,7 +131,7 @@ func TestLiveMaintenance(t *testing.T) {
 		t.Logf("container powered on — cloning from snapshot %q", probeSnap)
 	}
 
-	name := "prova-clone"
+	name := "probe-clone"
 	body, _ := json.Marshal(map[string]any{"novo_id": newID, "nome": name, "snapshot": probeSnap})
 	w, out = callAPI(t, r, http.MethodPost, "/api/nodes/"+cloneSourceLive+"/clone", string(body))
 	if w.Code != 200 {
@@ -238,7 +238,7 @@ type pveResource struct {
 	VMID   int    `json:"vmid"`
 }
 
-var errNotFound = errors.New("não achei o recurso no hipervisor")
+var errNotFound = errors.New("resource not found on the hypervisor")
 
 // pveHTTP talks to the hypervisor with the SAME address override as the
 // production client (dial cfg.Resolve, verify the certificate against
@@ -315,7 +315,7 @@ func backupStorages(t *testing.T, cfg pve.Config) []string {
 		} `json:"data"`
 	}
 	if err := pveHTTP(cfg, http.MethodGet, "/api2/json/nodes/pve/storage", &out); err != nil {
-		t.Fatalf("lendo storages: %v", err)
+		t.Fatalf("reading storages: %v", err)
 	}
 	var r []string
 	for _, s := range out.Data {
@@ -370,7 +370,7 @@ func TestLiveNoteOfEveryNode(t *testing.T) {
 	for _, n := range inv.Nodes {
 		w, out := callAPI(t, r, http.MethodGet, "/api/nodes/"+n.ID+"/nota", "")
 		if w.Code != 200 {
-			t.Errorf("%s: nota = %d: %s", n.ID, w.Code, w.Body)
+			t.Errorf("%s: note = %d: %s", n.ID, w.Code, w.Body)
 			continue
 		}
 		origin, _ := out["origem"].(string)
@@ -405,7 +405,7 @@ func TestLiveNoteOfEveryNode(t *testing.T) {
 		if len(md) < 120 {
 			t.Errorf("%s: note with %d characters — too short to explain what the box does", n.ID, len(md))
 		}
-		t.Logf("%-10s %5d caracteres · %s", n.ID, len(md), firstLine(md))
+		t.Logf("%-10s %5d characters · %s", n.ID, len(md), firstLine(md))
 	}
 	if len(withoutNote) > 0 {
 		t.Errorf("🔴 %d node(s) without a note in PVE: %s — whoever clicks on them won't find out what they do",
@@ -418,8 +418,7 @@ func firstLine(s string) string {
 		s = s[:i]
 	}
 	s = strings.TrimLeft(s, "# ")
-	// 🔴 Cut by RUNE, not by byte: this text is Portuguese, and `s[:58]` splits
-	// a "ç" down the middle, printing garbage into the test log.
+	// Cut by rune, not byte, so a multi-byte character is never split.
 	r := []rune(s)
 	if len(r) > 58 {
 		return string(r[:58]) + "…"
@@ -444,7 +443,7 @@ func TestLiveEditNote(t *testing.T) {
 	// 1. read the original
 	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/"+target+"/nota", "")
 	if w.Code != 200 {
-		t.Fatalf("GET nota = %d: %s", w.Code, w.Body)
+		t.Fatalf("GET note = %d: %s", w.Code, w.Body)
 	}
 	original, _ := out["markdown"].(string)
 	if len(original) < 120 {
@@ -468,11 +467,11 @@ func TestLiveEditNote(t *testing.T) {
 	}()
 
 	// 3. write the original + a marker
-	mark := "\n\n<!-- prova viva de edicao: esta linha e apagada no fim -->"
+	mark := "\n\n<!-- live edit probe: this line is deleted at the end -->"
 	body, _ := json.Marshal(map[string]string{"markdown": original + mark})
 	w, _ = callAPI(t, r, http.MethodPut, "/api/nodes/"+target+"/nota", string(body))
 	if w.Code != 200 {
-		t.Fatalf("PUT nota = %d: %s", w.Code, w.Body)
+		t.Fatalf("PUT note = %d: %s", w.Code, w.Body)
 	}
 
 	// 4. the hypervisor really does have the new text — read back, not assumed
@@ -481,7 +480,7 @@ func TestLiveEditNote(t *testing.T) {
 		t.Fatalf("GET after the PUT = %d", w.Code)
 	}
 	now, _ := out["markdown"].(string)
-	if !strings.Contains(now, "prova viva de edicao") {
+	if !strings.Contains(now, "live edit probe") {
 		t.Errorf("the marker did not reach the hypervisor")
 	}
 	if !strings.HasPrefix(now, strings.TrimSpace(original)[:60]) {

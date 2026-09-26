@@ -83,7 +83,7 @@ func (r *Router) handleClaudePanic(w http.ResponseWriter, req *http.Request) {
 
 // interactiveModel resolves the model of an interactive claude panel. Interactive
 // panels do NOT go through tiering: an explicit per-session choice (reqModel —
-// e.g. the fork's "modelo" selector) wins; otherwise it returns "" = NO --model,
+// e.g. the fork's model selector) wins; otherwise it returns "" = NO --model,
 // inheriting the model the operator predefined in Claude Code's settings.json
 // (Opus / full window). The tier applies only to parallel agents and to the other
 // AI functions (suggest, jira_ai). The spawner revalidates reqModel against the
@@ -108,7 +108,7 @@ func (r *Router) handleClaudeSessionFork(w http.ResponseWriter, req *http.Reques
 	var body struct {
 		SessionName string `json:"session_name"`
 		ResumeUUID  string `json:"resume_uuid"`
-		Model       string `json:"model"` // tier opcional; "" = default configurado
+		Model       string `json:"model"` // optional tier; "" = configured default
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeErr(w, 400, "bad json")
@@ -141,7 +141,7 @@ func (r *Router) handleClaudeSessionRestart(w http.ResponseWriter, req *http.Req
 	}
 	var body struct {
 		SessionName string `json:"session_name"`
-		Model       string `json:"model"` // tier opcional; "" = default configurado
+		Model       string `json:"model"` // optional tier; "" = configured default
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.SessionName == "" {
 		writeErr(w, 400, "session_name required")
@@ -225,8 +225,8 @@ func readEnvFileVar(path, key string) string {
 	return ""
 }
 
-// writePrivateAIResult repassa a resposta crua da admin API (status + body)
-// para o cliente, preservando o status upstream.
+// writePrivateAIResult relays the admin API's raw response (status + body)
+// to the client, keeping the upstream status.
 func writePrivateAIResult(w http.ResponseWriter, res *privateaiapi.Result) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(res.Status)
@@ -340,7 +340,7 @@ func (r *Router) handlePrivateAITokenAction(w http.ResponseWriter, req *http.Req
 	}
 }
 
-// handlePrivateAIStatus — painel de status (OAuth + sistema + uso 24h).
+// handlePrivateAIStatus serves the status panel (OAuth, system, 24h usage).
 func (r *Router) handlePrivateAIStatus(w http.ResponseWriter, req *http.Request) {
 	if auth.UserFrom(req) == "" {
 		writeErr(w, 401, "unauthorized")

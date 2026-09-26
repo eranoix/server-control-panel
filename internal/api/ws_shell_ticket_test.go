@@ -35,7 +35,7 @@ func TestWSShell_TicketAuthenticatesHandshake(t *testing.T) {
 
 	ticket := auth.IssueWSTicket("sam", "jti-do-app")
 	conn, resp, err := websocket.DefaultDialer.Dial(
-		wsURL+"/ws/shell?name=sessao-que-nao-existe&attach=1&ticket="+ticket, nil)
+		wsURL+"/ws/shell?name=session-that-does-not-exist&attach=1&ticket="+ticket, nil)
 	if err != nil {
 		status := 0
 		if resp != nil {
@@ -68,7 +68,7 @@ func TestWSShell_TicketAuthenticatesHandshake(t *testing.T) {
 // would be silent privilege escalation.
 func TestWSShell_OtherUsersTicketCannotOpenForeignSession(t *testing.T) {
 	r := newSmokeRouter(t)
-	const session = "sessao-do-sam"
+	const session = "sams-session"
 	if err := r.sessionOwn.Claim(session, "sam"); err != nil {
 		t.Fatalf("Claim: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestWSShell_NoCredentialStill401(t *testing.T) {
 
 	for _, url := range []string{
 		wsURL + "/ws/shell?name=main",
-		wsURL + "/ws/shell?name=main&ticket=bilhete-inventado",
+		wsURL + "/ws/shell?name=main&ticket=made-up-ticket",
 	} {
 		conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 		if err == nil {

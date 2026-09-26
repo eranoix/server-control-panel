@@ -269,7 +269,7 @@ func (r *Router) handleBackupRemoteConnect(w http.ResponseWriter, req *http.Requ
 		if body.Pass != "" {
 			args = append(args, "pass", body.Pass)
 		}
-	default: // OAuth (drive/onedrive/dropbox/box/pcloud/yandex/b2): token colado
+	default: // OAuth (drive/onedrive/dropbox/box/pcloud/yandex/b2): pasted token
 		if strings.TrimSpace(body.Token) == "" {
 			writeErr(w, 400, "paste the token produced by: rclone authorize \""+body.Type+"\"")
 			return
@@ -458,7 +458,7 @@ func (r *Router) handleBackupRemoteAuthorize(w http.ResponseWriter, req *http.Re
 				tok.WriteString(strings.TrimSpace(line))
 			}
 		}
-		<-waitErr // processo ja encerrado (Wait feito acima)
+		<-waitErr // process already exited (Wait done above)
 		rcAuthMu.Lock()
 		t := strings.TrimSpace(tok.String())
 		if t != "" {

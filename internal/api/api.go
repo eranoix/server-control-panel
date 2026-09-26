@@ -114,7 +114,7 @@ var systemScreenRegisterOnce sync.Once
 var securityScreenRegisterOnce sync.Once
 
 // networkScreenRegisterOnce guards the four Network screens' registration
-// (screens.RegisterNetwork: ufw/adguard/devices/economia — all four
+// (screens.RegisterNetwork: ufw/adguard/devices/data saver, all four
 // registered under the "security." screen id prefix even though the seam
 // is its own NetworkDeps struct, see deps.go's NetworkDeps doc comment)
 // exactly like securityScreenRegisterOnce guards the Security screens.
@@ -146,7 +146,7 @@ type Router struct {
 	mobileRefreshLimiter *auth.Limiter
 	audit                *auth.AuditLog
 	docker               *docksvc.Client
-	gameMgr              *gameservers.Manager // pagina Jogos: servidores de jogo em Docker
+	gameMgr              *gameservers.Manager // Games page: game servers in Docker
 	secrets              *secrets.Store
 	netUsage             *netusage.Tracker // per-device tunnel usage (conntrack, read-only)
 	ring                 *metrics.Ring
@@ -235,8 +235,8 @@ type Router struct {
 	// client for the same destination. nil when the push credential has not
 	// been provisioned yet (it degrades like every other optional field here).
 	fcmSender *fcmpush.Sender
-	// sentinela watches whether the home hypervisor is REACHABLE from the VPS —
-	// the one point in the system that can still speak when the house goes down. See hypervisor_watcher.go.
+	// sentinel watches whether the home hypervisor is reachable from the VPS,
+	// which can still alert when the home network is down. See hypervisor_watcher.go.
 	sentinel *hypervisorSentinel
 	// sentinelSink diverts the sentinel's output in tests. In production it is
 	// nil and the event goes to the notification router.
@@ -407,7 +407,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	// <DataDir>/ai_prompts.json. Initialised before the queue so NewRunner
 	// can inject it. Always non-nil (falls back to compiled-in defaults).
 	r.aiPrompts = aiprompts.New(cfg.DataDir)
-	r.deployStore = deploy.Open(cfg.DataDir) // #33: registro de apps (apps.json com lock cross-processo (flock))
+	r.deployStore = deploy.Open(cfg.DataDir) // app registry (apps.json with a cross-process flock)
 
 	// Multi-node inventory. BOTH of these may fail without taking the panel
 	// down: a missing store becomes a 503 on the route (the deployStoreOrNil
@@ -452,32 +452,32 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 		register(queue.BackupNowRunner{DataDir: cfg.DataDir})
 		register(queue.AppDeployRunner{DataDir: cfg.DataDir})               // #33: deploy PaaS git-push (UI/rollback)
 		register(queue.DeployPreviewReapRunner{DataDir: cfg.DataDir})       // #37: TTL de preview envs
-		register(queue.MobileUploadStagingReapRunner{DataDir: cfg.DataDir}) // TTL de upload movel abandonado
+		register(queue.MobileUploadStagingReapRunner{DataDir: cfg.DataDir}) // TTL for abandoned mobile uploads
 		register(queue.ShellRunner{})
-		register(queue.DockerRestartRunner{})        // reiniciar container
+		register(queue.DockerRestartRunner{})        // restart a container
 		register(queue.DockerComposeRestartRunner{}) // restart compose services
 		register(queue.SystemdRestartRunner{})       // restart/reload de unit systemd
-		register(queue.DockerPruneRunner{})          // prune de volumes/redes/builder
-		register(queue.HTTPCheckRunner{})            // health-check HTTP agendado
+		register(queue.DockerPruneRunner{})          // prune volumes/networks/builder cache
+		register(queue.HTTPCheckRunner{})            // scheduled HTTP health check
 		// Security, auditing and host health
 		register(queue.SSLCheckRunner{})       // TLS certificate expiry
-		register(queue.DiskCheckRunner{})      // uso de disco acima do limite
+		register(queue.DiskCheckRunner{})      // disk usage above the threshold
 		register(queue.SecurityAuditRunner{})  // lynis audit system
 		register(queue.RootkitScanRunner{})    // rkhunter / chkrootkit
 		register(queue.IntegrityCheckRunner{}) // aide --check
-		register(queue.TrivyScanRunner{})      // scan de CVEs (imagem/fs)
+		register(queue.TrivyScanRunner{})      // CVE scan (image/fs)
 		register(queue.Fail2banReportRunner{}) // status do fail2ban
-		register(queue.AuditReportRunner{})    // snapshot timers/cron/portas/logins
-		register(queue.CleanupRunner{})        // higiene apt/journal/tmp
+		register(queue.AuditReportRunner{})    // snapshot of timers/cron/ports/logins
+		register(queue.CleanupRunner{})        // apt/journal/tmp cleanup
 		// More operations and maintenance
 		register(queue.CertRenewRunner{})                                  // certbot renew
-		register(queue.RcloneSyncRunner{})                                 // espelhar pasta -> nuvem
+		register(queue.RcloneSyncRunner{})                                 // mirror a folder to the cloud
 		register(queue.DockerComposeUpRunner{})                            // compose up -d
 		register(queue.GitPullRunner{})                                    // git pull de um repo
-		register(queue.AptUpdateCheckRunner{})                             // relatorio de pacotes atualizaveis
-		register(queue.RebootRunner{})                                     // reiniciar o servidor
-		register(queue.SelfDeployRunner{})                                 // agentctl deploy disparado pelo app mobile
-		register(queue.DBBackupRunner{DataDir: cfg.DataDir})               // dump de banco postgres/mysql
+		register(queue.AptUpdateCheckRunner{})                             // report of upgradable packages
+		register(queue.RebootRunner{})                                     // reboot the server
+		register(queue.SelfDeployRunner{})                                 // agentctl deploy triggered from the mobile app
+		register(queue.DBBackupRunner{DataDir: cfg.DataDir})               // postgres/mysql database dump
 		register(queue.WatchdogRunner{DataDir: cfg.DataDir})               // #46: watchdog de disco + backup
 		register(queue.SessionBackupRunner{Backup: r.runSessionBackupJob}) // schedulable session backup (per session/all, per user)
 		register(queue.AgentRoutineRunner{Spawn: r.runAgentRoutineJob})    // scheduled agent routine (detached spawn of a Claude session)
@@ -487,7 +487,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 		// and zero jobs with the old kind on disk. Migration code that has
 		// already migrated everything is just a way for the old word to keep
 		// living.
-		// Jira "Iniciar AI": spawns claude CLI in the repo's cwd, posts
+		// Jira "Start AI": spawns claude CLI in the repo's cwd, posts
 		// the audit report back as a comment + labels. Per-user clients
 		// + repo mapping injected via closures so the worker (which
 		// has no http.Request context) still authenticates as the job
@@ -1654,7 +1654,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 			},
 		})
 	})
-	// Network — four screens (ufw/adguard/devices/economia), registered under
+	// Network — four screens (ufw/adguard/devices/data saver), registered under
 	// the "security." id prefix even though the seam is a struct of its own
 	// (NetworkDeps) — see the NetworkDeps doc comment in deps.go. Each closure
 	// below delegates to the SAME code handlers_system.go (UFW),
@@ -1783,7 +1783,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 		})
 	})
 	// miscScreenRegisterOnce.Do wires ai.settings/jira.issues/deploy.apps/
-	// queue.jobs (Plano 08-06). deploy.apps/queue.jobs manage
+	// queue.jobs. deploy.apps/queue.jobs manage
 	// internal/deploy's PaaS app catalog and internal/queue's generic job
 	// queue — never Phase 6's self-deploy trigger (ops_deploy.go's
 	// POST /ops/deploy) or its status surface (ops_health.go's
@@ -1991,7 +1991,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	// 08-07) — every closure below adapts internal/notify.Router (Rules/
 	// UpsertRule/DeleteRule/ChannelDefsRedacted), the SAME engine
 	// handleNotifyRules/handleNotifyRuleDelete (handlers_notify.go) already
-	// use for the panel's own Alertas tab, and notifyEventCatalog
+	// use for the panel's own Alerts tab, and notifyEventCatalog
 	// (handlers_notify.go) for the condition catalog — never a
 	// reimplementation of rule storage or matching. r.notify may be nil
 	// (notify.New failed at boot, see notify_wire.go's initNotify), so every
@@ -2090,8 +2090,8 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	protected.HandleFunc("/api/auth/sessions/revoke", r.handleSessionRevoke)
 	protected.HandleFunc("/api/auth/sessions/revoke-all", r.handleSessionRevokeAll)
 	// Paired devices (the Android app's passkeys). This is the approval side of
-	// pairing by QR code; see the top-of-section docstring for "Dispositivos
-	// pareados" in handlers_auth.go.
+	// pairing by QR code; see the top-of-section docstring for "Paired
+	// devices" in handlers_auth.go.
 	protected.HandleFunc("/api/auth/mobile-sessions", r.handleListMobileSessions)
 	protected.HandleFunc("/api/auth/mobile-sessions/approve", r.handleApproveMobileCredential)
 	protected.HandleFunc("/api/auth/mobile-sessions/deny", r.handleDenyMobileCredential)
@@ -2144,11 +2144,11 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	protected.HandleFunc("/api/scheduler/preview", r.handleSchedulerPreview)
 	protected.HandleFunc("/api/scheduler/catalog", r.handleSchedulerCatalog)                         // schedulable kinds filtered by authz
 	protected.HandleFunc("/api/scheduler/options", r.handleSchedulerOptions)                         // dynamic dropdown options (units/containers/compose/images)
-	protected.HandleFunc("/api/fs/browse", r.handleFSBrowse)                                         // navegador de pastas da VPS
-	protected.HandleFunc("/api/backup/remotes", r.handleBackupRemotes)                               // remotes rclone (nuvem)
-	protected.HandleFunc("/api/backup/remote-browse", r.handleBackupRemoteBrowse)                    // navegar pastas do remote
-	protected.HandleFunc("/api/backup/remote-connect", r.handleBackupRemoteConnect)                  // conectar nuvem (cria remote rclone)
-	protected.HandleFunc("/api/backup/remote-authorize", r.handleBackupRemoteAuthorize)              // inicia OAuth in-app
+	protected.HandleFunc("/api/fs/browse", r.handleFSBrowse)                                         // VPS folder browser
+	protected.HandleFunc("/api/backup/remotes", r.handleBackupRemotes)                               // rclone remotes (cloud)
+	protected.HandleFunc("/api/backup/remote-browse", r.handleBackupRemoteBrowse)                    // browse the remote's folders
+	protected.HandleFunc("/api/backup/remote-connect", r.handleBackupRemoteConnect)                  // connect a cloud (creates an rclone remote)
+	protected.HandleFunc("/api/backup/remote-authorize", r.handleBackupRemoteAuthorize)              // starts in-app OAuth
 	protected.HandleFunc("/api/backup/remote-authorize/status", r.handleBackupRemoteAuthorizeStatus) // status do OAuth in-app
 
 	// Jira Cloud kanban (J1+J2) — see internal/jira + handlers_jira{,_extra}.go
@@ -2214,8 +2214,8 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	protected.HandleFunc("/api/deploy/catalog", r.handleDeployCatalog)
 	protected.HandleFunc("/api/deploy/catalog/create", r.handleDeployCatalogCreate)
 	protected.HandleFunc("/api/deploy/app/preview/teardown", r.handleDeployPreviewTeardown)
-	protected.HandleFunc("/api/dev/ports", r.handleDevPorts)           // #21: portas em escuta
-	protected.HandleFunc("/api/agent/sessions", r.handleAgentSessions) // #32/#52: kanban+custo
+	protected.HandleFunc("/api/dev/ports", r.handleDevPorts)           // listening ports
+	protected.HandleFunc("/api/agent/sessions", r.handleAgentSessions) // kanban + cost
 	protected.HandleFunc("/api/docker/compose/file", r.handleComposeFile)
 	protected.HandleFunc("/api/docker/prune", r.handlePrune)
 	protected.HandleFunc("/api/docker/pull", r.handlePull)
@@ -2269,9 +2269,9 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	// tunnel: device manager for the sing-box tunnel (Security → Devices).
 	protected.HandleFunc("/api/tunnel/devices", r.handleTunnelDevices)
 	protected.HandleFunc("/api/tunnel/devices/", r.handleTunnelDeviceAction)
-	protected.HandleFunc("/api/tunnel/usage", r.handleTunnelUsage) // consumo por-aparelho em tempo real
+	protected.HandleFunc("/api/tunnel/usage", r.handleTunnelUsage) // live per-device usage
 
-	// datasaver: a per-device compression proxy (Security → Economia).
+	// datasaver: a per-device compression proxy (Security → Data saver).
 	// State lives in files on the host; the CA is downloadable; bypass restarts the proxies.
 	protected.HandleFunc("/api/datasaver/status", r.handleDatasaverStatus)
 	protected.HandleFunc("/api/datasaver/settings", r.handleDatasaverSettings)
@@ -2344,7 +2344,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 					return
 				}
 				// Audits set/reveal/delete (never the value); the reserved
-				// "Sistema" group is gated to the primary user only; size is capped.
+				// "System" group is gated to the primary user only; size is capped.
 				scope.NewUserVault(r.secrets, u).Handler(scope.HandlerOpts{
 					Audit:            func(action, target string) { r.auditEvent(req, user, action, target) },
 					AllowSystemGroup: r.isPrimary(user),
@@ -2357,11 +2357,11 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	protected.HandleFunc("/ws/shell", r.handleHostShell)
 	protected.HandleFunc("/ws/container/", r.handleContainerShell)
 	protected.HandleFunc("/api/terminal/sessions", r.handleTerminalSessions)
-	protected.HandleFunc("/api/terminal/create", r.handleTerminalCreate)                // "Nova sessão" form (cwd/account)
-	protected.HandleFunc("/api/terminal/code-restore-ping", r.handleCodeRestorePing)    // gatilho de restore do code-server no reload
+	protected.HandleFunc("/api/terminal/create", r.handleTerminalCreate)                // "New session" form (cwd/account)
+	protected.HandleFunc("/api/terminal/code-restore-ping", r.handleCodeRestorePing)    // code-server restore trigger on reload
 	protected.HandleFunc("/api/terminal/assign-session", r.handleTerminalAssignSession) // reassigns the audience (admin-only)
 	protected.HandleFunc("/api/terminal/scrollback", r.handleTerminalScrollback)
-	protected.HandleFunc("/api/terminal/log-bruto", r.handleTerminalRawLog)  // primer do painel: bytes crus (reserva)
+	protected.HandleFunc("/api/terminal/log-bruto", r.handleTerminalRawLog)  // panel primer: raw bytes (fallback)
 	protected.HandleFunc("/api/terminal/historico", r.handleTerminalHistory) // panel primer: rendered scrollback
 	protected.HandleFunc("/api/terminal/kill-session", r.handleTerminalKillSession)
 	// Which sessions are running an OLD version of the Claude Code CLI. The CLI
@@ -2686,11 +2686,11 @@ func (r *Router) StartBackgroundWorkers(ctx context.Context) {
 	r.startMetricsCollector(ctx)
 	r.startInventoryPoller(ctx) // discovery + stamping
 	r.startSessionBackupCollector(ctx)
-	r.startHypervisorWatcher(ctx)     // a casa caiu e ninguem avisou (2026-08-21): a sentinela mora no VPS de proposito
-	r.startAgentStatusAggregator(ctx) // VPSM agent-ops #3: cost/token aggregator → session-status.json
+	r.startHypervisorWatcher(ctx)     // runs on the VPS so it can report the home network going down
+	r.startAgentStatusAggregator(ctx) // cost/token aggregator → session-status.json
 	r.startLeakWatcher(ctx)           // tunnel leak watchdog — home-exit traffic must never leave through the VPS
 	if r.netUsage != nil {
-		r.netUsage.Start(ctx) // consumo por-aparelho em tempo real (conntrack read-only)
+		r.netUsage.Start(ctx) // live per-device usage (read-only conntrack)
 	}
 	r.startDatasaverWatcher(ctx) // auto-reverts data saving to direct if the proxy goes down (connectivity > compression)
 }
@@ -2793,7 +2793,7 @@ func (r *Router) startMetricsCollector(ctx context.Context) {
 }
 
 // recordFires stores metric fires in the legacy ring (r.fires — the source the
-// "Disparos recentes" UI reads via f.Rule/Value/Time) AND dual-writes them to
+// "Recent fires" UI reads via f.Rule/Value/Time) AND dual-writes them to
 // the notify spine so thresholds reach configured channels. The ring
 // write is preserved and happens FIRST — removing it is a later step, the UI
 // depends on it today. Extracted from the metrics goroutine so the ring-populated
@@ -2802,7 +2802,7 @@ func (r *Router) startMetricsCollector(ctx context.Context) {
 // Fires are now EDGE transitions: a fire arrives only when a rule
 // crosses its threshold or normalizes, not on every tick. Resolved fires are
 // recovery signals — they go to the notify spine (so a "recovered" rule can
-// notify) but NOT to the legacy "Disparos recentes" ring, which means crossings.
+// notify) but NOT to the legacy "Recent fires" ring, which means crossings.
 // On any transition we persist the engine state so the new ActiveSince/LastFired
 // survive a deploy/restart — this is what closes the re-notify-on-every-deploy
 // vector. Persist runs AFTER Evaluate has mutated and unlocked the engine, so
@@ -3196,7 +3196,7 @@ func (r *Router) handleTerminalUpload(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// The name: keep the user's own wherever possible — "contrato-cliente.pdf"
+	// The name: keep the user's own wherever possible — "client-contract.pdf"
 	// carries intent that "paste-1787….bin" does not, and whoever reads the path
 	// in the terminal (person or AI) navigates by it. The timestamp prefix avoids
 	// collisions and keeps the folder sortable by arrival.

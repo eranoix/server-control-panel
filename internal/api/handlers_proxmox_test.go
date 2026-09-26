@@ -88,7 +88,7 @@ func newProxmoxRouter(t *testing.T, vault *spyVault, fake *fakePVE) (*Router, *i
 	}
 	r.nodeVaultFn = func() (nodeVault, error) {
 		if vault == nil || vault.unreachable {
-			return nil, fmt.Errorf("cofre fora do ar")
+			return nil, fmt.Errorf("vault is down")
 		}
 		return vault, nil
 	}
@@ -172,7 +172,7 @@ func TestTasksUseAuditToken(t *testing.T) {
 			vault := defaultVault()
 			fake := &fakePVE{
 				tasks:    []pve.Task{{UPID: "UPID:x", Type: "push_file", Status: "failed"}},
-				logLines: []string{"linha"},
+				logLines: []string{"line"},
 				disks:    []pve.Disk{{Model: "Lexar NQ790 1TB", Health: "PASSED"}},
 				perms:    map[string]map[string]int{"/vms/204": {"VM.Audit": 1}},
 			}
@@ -199,8 +199,8 @@ func TestTasksUseAuditToken(t *testing.T) {
 func TestSnapshotUsesNodeToken(t *testing.T) {
 	cases := []struct{ method, path string }{
 		{http.MethodGet, "/api/proxmox/snapshots?node=lxc/207"},
-		{http.MethodPost, "/api/proxmox/snapshots?node=lxc/207&name=pvx-teste"},
-		{http.MethodDelete, "/api/proxmox/snapshots?node=lxc/207&name=pvx-teste"},
+		{http.MethodPost, "/api/proxmox/snapshots?node=lxc/207&name=pvx-test"},
+		{http.MethodDelete, "/api/proxmox/snapshots?node=lxc/207&name=pvx-test"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.method, func(t *testing.T) {
@@ -227,7 +227,7 @@ func TestSnapshotUsesNodeToken(t *testing.T) {
 // that 200 along would be the screen saying "snapshot ready" for a snapshot that
 // may not even have started.
 func TestSnapshotRespondsOnlyAfterWaitTask(t *testing.T) {
-	t.Run("ordem", func(t *testing.T) {
+	t.Run("order", func(t *testing.T) {
 		var seen []string
 		fake := &fakePVE{upid: "UPID:abc", seen: &seen}
 		r, _ := newProxmoxRouter(t, defaultVault(), fake)
@@ -267,7 +267,7 @@ func TestSnapshotRespondsOnlyAfterWaitTask(t *testing.T) {
 // what builds the resource path on the hypervisor. The refusal happens before any
 // call — and the test proves that by the absence of a mark on the double, not by the status.
 func TestInvalidNameNeverReachesHypervisor(t *testing.T) {
-	for _, name := range []string{"1abc", "com espaço", "com/barra", ""} {
+	for _, name := range []string{"1abc", "with space", "with/slash", ""} {
 		t.Run(fmt.Sprintf("%q", name), func(t *testing.T) {
 			var seen []string
 			fake := &fakePVE{upid: "UPID:abc", seen: &seen}
@@ -301,7 +301,7 @@ func TestUnreachableVaultIsNotEmptyList(t *testing.T) {
 			t.Error("vault being down turned into an empty list — exactly the false-green that phase 7 forbade")
 		}
 	})
-	t.Run("ausente = 409", func(t *testing.T) {
+	t.Run("missing = 409", func(t *testing.T) {
 		vault := &spyVault{data: map[string]string{}}
 		r, _ := newProxmoxRouter(t, vault, &fakePVE{})
 		w, _ := callPVX(t, r, http.MethodGet, "/api/proxmox/tasks", "")
@@ -344,7 +344,7 @@ func TestWrongMethodGives405(t *testing.T) {
 		{http.MethodPost, "/api/proxmox", 405},
 		{http.MethodDelete, "/api/proxmox/tasks", 405},
 		{http.MethodPut, "/api/proxmox/snapshots?node=lxc/204&name=x", 405},
-		{http.MethodGet, "/api/proxmox/nao-existe", 404},
+		{http.MethodGet, "/api/proxmox/does-not-exist", 404},
 		{http.MethodGet, "/api/proxmox/snapshots?node=lxc/999", 404},
 	}
 	for _, tc := range cases {
@@ -427,7 +427,7 @@ func TestHealthNeverObservedSaysSo(t *testing.T) {
 // never happened — and, worse, on a guest the operator would then believe to be
 // in an earlier state.
 func TestRollbackRespondsOnlyAfterWaitTask(t *testing.T) {
-	t.Run("ordem", func(t *testing.T) {
+	t.Run("order", func(t *testing.T) {
 		var seen []string
 		fake := &fakePVE{upid: "UPID:roll", seen: &seen}
 		r, _ := newProxmoxRouter(t, defaultVault(), fake)
@@ -502,7 +502,7 @@ func TestRollbackOnlyAcceptsPOST(t *testing.T) {
 // chooses WHICH state the guest will take on. Refused before dialling, proved by
 // the absence of a mark on the double.
 func TestRollbackInvalidNameNeverReachesHypervisor(t *testing.T) {
-	for _, name := range []string{"", "1abc", "com espaço", "com/barra", "../lxc/207"} {
+	for _, name := range []string{"", "1abc", "with space", "with/slash", "../lxc/207"} {
 		var seen []string
 		fake := &fakePVE{upid: "UPID:roll", seen: &seen}
 		r, _ := newProxmoxRouter(t, defaultVault(), fake)

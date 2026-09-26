@@ -25,7 +25,7 @@ func TestAdguardRoutesGatedAndDegrade(t *testing.T) {
 		// Authenticated but with no credential in the vault → 503 with a clear hint.
 		w := privAIReq(t, r, p.method, p.path, `{"enabled":true}`, "sam")
 		if w.Code != 503 {
-			t.Fatalf("%s %s autenticado: got %d, want 503; body=%s", p.method, p.path, w.Code, w.Body.String())
+			t.Fatalf("%s %s authenticated: got %d, want 503; body=%s", p.method, p.path, w.Code, w.Body.String())
 		}
 		if !strings.Contains(w.Body.String(), "adguard_password") {
 			t.Fatalf("%s %s 503 body should mention the secret; got %s", p.method, p.path, w.Body.String())

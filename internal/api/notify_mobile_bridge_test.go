@@ -35,7 +35,7 @@ func TestNotifyDispatch_ReachesMobileEventsWSInboxChannel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertChannel: %v", err)
 	}
-	if _, err := r.notify.UpsertRule(notify.Rule{Name: "tudo", Enabled: true, Channels: []string{ch.ID}}); err != nil {
+	if _, err := r.notify.UpsertRule(notify.Rule{Name: "all", Enabled: true, Channels: []string{ch.ID}}); err != nil {
 		t.Fatalf("UpsertRule: %v", err)
 	}
 
@@ -69,7 +69,7 @@ func TestNotifyDispatch_ReachesMobileEventsWSInboxChannel(t *testing.T) {
 		Severity: notify.SeverityInfo,
 		Source:   "user",
 		Owner:    "sam",
-		Title:    "prova de ponte",
+		Title:    "bridge probe",
 		TS:       time.Now().Unix(),
 		DedupKey: "bridge-test-1",
 	})
@@ -90,7 +90,7 @@ func TestNotifyDispatch_ReachesMobileEventsWSInboxChannel(t *testing.T) {
 	if err := json.Unmarshal(frame.Data, &ev); err != nil {
 		t.Fatalf("unmarshal event: %v", err)
 	}
-	if ev.Title != "prova de ponte" || ev.Owner != "sam" {
+	if ev.Title != "bridge probe" || ev.Owner != "sam" {
 		t.Fatalf("event = %#v, want the dispatched job.done event", ev)
 	}
 }

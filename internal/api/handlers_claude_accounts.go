@@ -41,7 +41,7 @@ func swapAccountLabel(accountID string) string {
 		}
 	}
 	if b.Len() == 0 {
-		return "padrao"
+		return "default"
 	}
 	return b.String()
 }

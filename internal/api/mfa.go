@@ -182,7 +182,7 @@ func (r *Router) handleMFAEnrollStart(w http.ResponseWriter, req *http.Request) 
 	r.auditEvent(req, username, "mfa.enroll_start", "factor_id="+gotrueResp.ID)
 	writeJSON(w, map[string]any{
 		"factor_id": gotrueResp.ID,
-		"qr_code":   gotrueResp.TOTP.QRCode, // data URL SVG retornado por GoTrue
+		"qr_code":   gotrueResp.TOTP.QRCode, // SVG data URL returned by GoTrue
 		"secret":    gotrueResp.TOTP.Secret,
 		"uri":       gotrueResp.TOTP.URI,
 	})

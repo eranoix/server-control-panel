@@ -129,7 +129,7 @@ func TestConsumePairingTicket_ReplayFails(t *testing.T) {
 // never returns a reg_token.
 func TestConsumePairingTicket_InvalidTicketFails(t *testing.T) {
 	r := newSmokeRouter(t)
-	if _, err := r.ConsumePairingTicket("ticket-nunca-emitido"); err == nil {
+	if _, err := r.ConsumePairingTicket("ticket-never-issued"); err == nil {
 		t.Fatal("a ticket never issued should fail")
 	}
 }

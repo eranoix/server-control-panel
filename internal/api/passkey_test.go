@@ -67,7 +67,7 @@ func newPasskeyRouter(t *testing.T, hostname string) *Router {
 // the assetlinks one ever read DIFFERENT fields of Config, App Link and passkey
 // drift out of sync silently.
 func TestPasskeyRPIDSourcedFromPublicHostname(t *testing.T) {
-	const hostname = "vpsm.exemplo.com.br"
+	const hostname = "vpsm.example.com"
 	r := newPasskeyRouter(t, hostname)
 
 	if r.webauthnRP == nil {
@@ -96,7 +96,7 @@ func TestPasskeyUnavailableWithoutPublicHostname(t *testing.T) {
 		t.Fatalf("webauthnRP should be nil without PublicHostname, got %+v", r.webauthnRP.Config)
 	}
 
-	if _, _, err := r.BeginPasskeyRegistration("qualquer-token"); !errors.Is(err, mobilebff.ErrPasskeyUnavailable) {
+	if _, _, err := r.BeginPasskeyRegistration("any-token"); !errors.Is(err, mobilebff.ErrPasskeyUnavailable) {
 		t.Fatalf("BeginPasskeyRegistration: err = %v, expected ErrPasskeyUnavailable", err)
 	}
 	if err := r.FinishPasskeyRegistration("cont", "label", []byte(`{}`)); !errors.Is(err, mobilebff.ErrPasskeyUnavailable) {
@@ -119,16 +119,16 @@ func TestPasskeyUnavailableWithoutPublicHostname(t *testing.T) {
 // attacker using the endpoint's response to find out whether a user/credential
 // exists.
 func TestPasskeyLoginFinish_EnumerationResistance(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.exemplo.com.br")
+	r := newPasskeyRouter(t, "vpsm.example.com")
 	if r.webauthnRP == nil {
 		t.Fatal("webauthnRP nil — test precondition failed")
 	}
 
 	payloads := map[string][]byte{
-		"json ilegível":                        []byte(`{not valid json`),
-		"json vazio":                           []byte(`{}`),
-		"json bem-formado sem campos WebAuthn": []byte(`{"id":"YWJj","rawId":"YWJj","type":"public-key","response":{}}`),
-		"userHandle de usuário inexistente":    []byte(`{"id":"YWJj","rawId":"YWJj","type":"public-key","response":{"clientDataJSON":"e30=","authenticatorData":"AA==","signature":"AA==","userHandle":"dXN1YXJpby1mYW50YXNtYQ=="}}`),
+		"unreadable json": []byte(`{not valid json`),
+		"empty json":      []byte(`{}`),
+		"well-formed json without WebAuthn fields": []byte(`{"id":"YWJj","rawId":"YWJj","type":"public-key","response":{}}`),
+		"userHandle of a nonexistent user":         []byte(`{"id":"YWJj","rawId":"YWJj","type":"public-key","response":{"clientDataJSON":"e30=","authenticatorData":"AA==","signature":"AA==","userHandle":"dXN1YXJpby1mYW50YXNtYQ=="}}`),
 	}
 
 	// Each payload needs its OWN continuation token — the login token is
@@ -142,7 +142,7 @@ func TestPasskeyLoginFinish_EnumerationResistance(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: BeginPasskeyLogin: %v", name, err)
 		}
-		_, err = r.FinishPasskeyLogin(cont, payload, "10.0.0.1", "teste-agent")
+		_, err = r.FinishPasskeyLogin(cont, payload, "10.0.0.1", "test-agent")
 		if err == nil {
 			t.Fatalf("%s: expected an error (no real authenticator signed this), got nil", name)
 		}
@@ -174,7 +174,7 @@ func TestPasskeyLoginFinish_EnumerationResistance(t *testing.T) {
 // FinishPasskeyLogin twice with the SAME continuation token does not reopen
 // the same challenge session.
 func TestPasskeyLoginFinish_ReplayContinuationTokenFails(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.exemplo.com.br")
+	r := newPasskeyRouter(t, "vpsm.example.com")
 	_, cont, err := r.BeginPasskeyLogin()
 	if err != nil {
 		t.Fatalf("BeginPasskeyLogin: %v", err)

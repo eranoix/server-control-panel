@@ -1,6 +1,6 @@
 package api
 
-// handlers_adguard.go — server-side proxy for AdGuard Home (Segurança → AdGuard).
+// handlers_adguard.go — server-side proxy for AdGuard Home (Security → AdGuard).
 //
 // Same design as the private-ai integration (handlers_ai.go): it resolves the
 // credentials from the vault, builds a thin client that talks to the local admin
