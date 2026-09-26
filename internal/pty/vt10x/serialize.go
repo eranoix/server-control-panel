@@ -1,6 +1,6 @@
 package vt10x
 
-// serialize.go — a vps-manager ADDITION. See `vpsm.go`.
+// serialize.go — a server-control-panel ADDITION. See `panel.go`.
 //
 // Converts a line of glyphs back into terminal bytes: the text with the
 // minimal SGR sequences needed to reproduce the colours and attributes.

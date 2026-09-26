@@ -16,13 +16,13 @@
 
 
 # JNI for terminal-engine. libterminal_engine_jni.so exports symbols with the fully
-# qualified class name (Java_com_vpsmanager_terminalengine_TerminalEngine_nativeResize)
+# qualified class name (Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeResize)
 # and is bound by name on first call (no RegisterNatives). Renaming the class or methods
 # causes UnsatisfiedLinkError when the user opens the terminal.
 # The `external` methods are @JvmStatic in the companion, so Kotlin emits them on the outer
 # class; that is why the rule targets TerminalEngine and not TerminalEngine$Companion.
 # includedescriptorclasses also keeps signature types in case an app type is ever passed.
--keepclasseswithmembernames,includedescriptorclasses class com.vpsmanager.terminalengine.TerminalEngine {
+-keepclasseswithmembernames,includedescriptorclasses class dev.servercontrolpanel.terminalengine.TerminalEngine {
     native <methods>;
 }
 

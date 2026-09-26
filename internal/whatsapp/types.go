@@ -1,4 +1,4 @@
-// Package whatsapp integrates the vps-manager with a self-hosted WAHA gateway
+// Package whatsapp integrates the server-control-panel with a self-hosted WAHA gateway
 // (https://github.com/devlikeapro/waha) running on 127.0.0.1, exposing the
 // WhatsApp Web protocol as REST + webhook. The gateway is pinned to the GOWS
 // engine (Whatsmeow, Go-based) for production-grade stability.
@@ -96,7 +96,7 @@ type Reaction struct {
 }
 
 // Media references a downloaded attachment on disk. Path is relative to the
-// media root (/var/lib/vpsm-whatsapp/media) — the HTTP handler validates and
+// media root (/var/lib/panel-whatsapp/media) — the HTTP handler validates and
 // serves under /api/whatsapp/media/<path>.
 type Media struct {
 	Path     string `json:"path"`

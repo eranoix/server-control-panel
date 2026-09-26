@@ -80,10 +80,10 @@ func TestAncestorByArgvNoMarks(t *testing.T) {
 
 // The pid itself can be the master (a direct spawn of `dtach -n … claude`).
 func TestAncestorByArgvMatchesOwnPid(t *testing.T) {
-	buildProc(t, ent{600, 1, "/usr/bin/dtach -n /opt/panel/data/session-sox/Vpsm.sock -E -z claude"})
-	marks := map[string]string{"/opt/panel/data/session-sox/Vpsm.sock": "Vpsm"}
-	if got := AncestorByArgv(600, marks); got != "Vpsm" {
-		t.Fatalf("AncestorByArgv = %q, want \"Vpsm\"", got)
+	buildProc(t, ent{600, 1, "/usr/bin/dtach -n /opt/panel/data/session-sox/Panel.sock -E -z claude"})
+	marks := map[string]string{"/opt/panel/data/session-sox/Panel.sock": "Panel"}
+	if got := AncestorByArgv(600, marks); got != "Panel" {
+		t.Fatalf("AncestorByArgv = %q, want \"Panel\"", got)
 	}
 }
 

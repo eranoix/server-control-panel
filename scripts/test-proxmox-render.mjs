@@ -57,7 +57,7 @@ const WEB = path.join(ROOT, 'internal', 'webassets', 'web');
 // `npm update` into a broken pin. The search takes the first one that exists.
 function findBrowser() {
   const cands = [];
-  if (process.env.VPSM_CHROMIUM) cands.push(process.env.VPSM_CHROMIUM);
+  if (process.env.PANEL_CHROMIUM) cands.push(process.env.PANEL_CHROMIUM);
   const cache = '/root/.cache/ms-playwright';
   if (fs.existsSync(cache)) {
     for (const d of fs.readdirSync(cache).filter((x) => x.startsWith('chromium-')).sort().reverse()) {
@@ -123,13 +123,13 @@ if (section.length < 20000) { console.error(`FAILED: the extracted section is on
 const fixture = fs.readFileSync(path.join(ROOT, 'scripts', 'proxmox-render-fixture.js'), 'utf8');
 
 // Which bundle to render: `min` (what production serves) or `src` (the source).
-const BUNDLE = process.env.VPSM_RENDER_BUNDLE === 'src' ? 'src' : 'min';
+const BUNDLE = process.env.PANEL_RENDER_BUNDLE === 'src' ? 'src' : 'min';
 
 // 🔴 A STALE .min.js IS WORSE THAN A MISSING ONE: the server serves the old file
 // without a word, so the screen in the air lags behind the repository code and
 // every test that reads the source passes green over the top of it.
 if (BUNDLE === 'min') {
-  const dirApp = path.join(WEB, 'vendor', 'vpsm', 'app');
+  const dirApp = path.join(WEB, 'vendor', 'panel', 'app');
   const stale = [];
   for (const name of fs.readdirSync(dirApp).filter((x) => x.endsWith('.js') && !x.endsWith('.min.js'))) {
     const src = path.join(dirApp, name);
@@ -161,12 +161,12 @@ ${styles}
 <style>[x-cloak]{display:none!important}</style>
 </head><body x-data="app()">
 ${section}
-<script src="/vendor/vpsm/app/00-shell.js"></script>
-<script src="/vendor/vpsm/app/10-git.js"></script>
-<script src="/vendor/vpsm/app/20-deploy.js"></script>
-<script src="/vendor/vpsm/app/30-agents.js"></script>
-<script src="/vendor/vpsm/app/40-nodes.js"></script>
-<script src="/vendor/vpsm/app/41-proxmox.js"></script>
+<script src="/vendor/panel/app/00-shell.js"></script>
+<script src="/vendor/panel/app/10-git.js"></script>
+<script src="/vendor/panel/app/20-deploy.js"></script>
+<script src="/vendor/panel/app/30-agents.js"></script>
+<script src="/vendor/panel/app/40-nodes.js"></script>
+<script src="/vendor/panel/app/41-proxmox.js"></script>
 <script src="/__fixture.js"></script>
 <script defer src="/vendor/alpine/alpine.min.js"></script>
 </body></html>`;
@@ -201,7 +201,7 @@ const srv = http.createServer((req, res) => {
 const exe = findBrowser();
 if (!exe) {
   console.error('FAILED: no Chromium found. This pin RENDERS — skipping would be faking coverage.');
-  console.error('       Install it with `npx playwright install chromium` or point VPSM_CHROMIUM=<path>.');
+  console.error('       Install it with `npx playwright install chromium` or point PANEL_CHROMIUM=<path>.');
   process.exit(1);
 }
 
@@ -212,15 +212,15 @@ const page = await browser.newPage();
 
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') { const l = m.location(); errors.push('console: ' + m.text() + ' @ ' + (l ? l.url + ':' + l.lineNumber : '?')); } });
-page.on('pageerror', (e) => errors.push('pageerror: ' + ((e && e.message) || e) + (process.env.VPSM_RENDER_DEBUG && e && e.stack ? '\n          ' + String(e.stack).split('\n').slice(0,4).join('\n          ') : '')));
+page.on('pageerror', (e) => errors.push('pageerror: ' + ((e && e.message) || e) + (process.env.PANEL_RENDER_DEBUG && e && e.stack ? '\n          ' + String(e.stack).split('\n').slice(0,4).join('\n          ') : '')));
 page.on('response', (r) => { if (r.status() >= 400) errors.push('HTTP ' + r.status() + ': ' + r.url()); });
 // says WHICH resource was missing, instead of the console's opaque 'Failed to load resource'
 page.on('requestfailed', (r) => errors.push('resource failed: ' + r.url()));
-if (process.env.VPSM_RENDER_DEBUG) page.on('request', (r) => console.log('    req ' + r.url()));
+if (process.env.PANEL_RENDER_DEBUG) page.on('request', (r) => console.log('    req ' + r.url()));
 
 await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle' });
 await page.waitForTimeout(400);
-if (process.env.VPSM_DIAG) await page.evaluate(() => { window.__diag = true; });
+if (process.env.PANEL_DIAG) await page.evaluate(() => { window.__diag = true; });
 
 const total = await page.evaluate(() => (window.__script || []).length);
 if (total < 20) {

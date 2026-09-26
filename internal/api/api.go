@@ -78,10 +78,10 @@ var buildStamp = webassets.BuildStamp
 // telemetryFork identifies the fork in the telemetry record.
 // It is a source-code constant, not a build-time one: the fork IS this
 // repository, and the value never varies from build to build. The copy of this
-// package in the VM panel passes "vm-manager"; here it passes "vps-manager".
+// package in the VM panel passes "vm-manager"; here it passes "server-control-panel".
 // That field is what lets triage add both JSONL streams together without
 // confusing screens that exist on only one side.
-const telemetryFork = "vps-manager"
+const telemetryFork = "server-control-panel"
 
 // schedulerScreenRegisterOnce guards the scheduler.jobs screen registration
 // (sdui.Register + RegisterAction, see internal/mobilebff/screens.Register) so
@@ -242,7 +242,7 @@ type Router struct {
 	// nil and the event goes to the notification router.
 	sentinelSink func(notify.Event)
 
-	// Agent status telemetry (VPSM agent-ops #3/#4). agentStatus writes the
+	// Agent status telemetry (PANEL agent-ops #3/#4). agentStatus writes the
 	// shared <DataDir>/session-status.json the code-server session extension reads;
 	// agentCWD maps dtach session name → cwd (the hook + aggregator resolve
 	// through it); agentHookSecret gates POST /api/agent/hook; agentCostCache is
@@ -251,7 +251,7 @@ type Router struct {
 	agentCWD        *agentCWDStore
 	agentHookSecret string
 	agentCostCache  map[string]agentCostEntry
-	// Spend ceilings (VPSM Wave-3 #55). agentBudget owns <DataDir>/agent-budget.json
+	// Spend ceilings (PANEL Wave-3 #55). agentBudget owns <DataDir>/agent-budget.json
 	// (alert-only caps); budgetNotified throttles alerts to once-per-breach-per-period
 	// (aggregator-goroutine-owned, like agentCostCache — no lock).
 	agentBudget    *agentBudgetStore
@@ -319,7 +319,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	// Refactor: extract this into a function the next time it is reworked.
 	if cfg.SupabaseURL != "" && cfg.SupabaseAnonKey != "" {
 		backend := auth.BackendSupabase
-		if v := os.Getenv("VPSM_AUTH_BACKEND"); v != "" {
+		if v := os.Getenv("PANEL_AUTH_BACKEND"); v != "" {
 			backend = auth.AuthBackend(v)
 		} else if cfg.AuthBackend != "" {
 			backend = auth.AuthBackend(cfg.AuthBackend)
@@ -382,7 +382,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	} else {
 		log.Printf("session registry disabled: %v", err)
 	}
-	// Pins the active session backend from the VPSM_SESSION_BACKEND flag (dtach
+	// Pins the active session backend from the PANEL_SESSION_BACKEND flag (dtach
 	// by default). A single point; the pty package's Session* dispatchers all route through it.
 	ptysvc.InitSessionBackend(cfg.DataDir, r.sessReg)
 	// Per-session log recorder: without this, a session that survived a deploy
@@ -502,12 +502,12 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 			func() string { return aimodel.For(aimodel.JiraAI, r.cfg.AIModels.JiraAI) },
 		))
 		// Run jira_ai_analysis DETACHED in its own systemd scope so a
-		// deploy/restart of vps-manager doesn't kill a 5–20min analysis. The
+		// deploy/restart of server-control-panel doesn't kill a 5–20min analysis. The
 		// reaper merges the detached job's progress back into /api/queue.
-		// Disable with VPSM_DETACH_JOBS=0; if systemd-run is missing the
+		// Disable with PANEL_DETACH_JOBS=0; if systemd-run is missing the
 		// launcher returns an error and Enqueue falls back to in-process —
 		// detach is a survivability bonus, never required.
-		if os.Getenv("VPSM_DETACH_JOBS") != "0" {
+		if os.Getenv("PANEL_DETACH_JOBS") != "0" {
 			if exe, eErr := os.Executable(); eErr == nil {
 				r.queue.SetDetach(func(id string) (string, error) {
 					return launchDetachedJob(exe, id)
@@ -565,7 +565,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	// r.notify has to exist by then.
 	r.initPasskey()
 
-	// Agent status telemetry (VPSM agent-ops #3/#4). Stores load from
+	// Agent status telemetry (PANEL agent-ops #3/#4). Stores load from
 	// <DataDir>/session-status.json and session-cwd.json (tolerating absence).
 	// The hook secret is loaded/generated here so ensureAgentHooks() can embed
 	// it into the spawned sessions' settings.json. All best-effort; failures
@@ -616,8 +616,8 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 		// gateway. It extracts the port from cfg.Listen (e.g. ":8766" → 8766).
 		// With no extractable port it uses 8766, the v2 default. v1 (:8765)
 		// stays intact while v2 runs alongside it sharing the gateway container.
-		// VPSM_SELF_BASE_URL can override this for deploys behind a reverse proxy.
-		selfBaseURL := strings.TrimSpace(os.Getenv("VPSM_SELF_BASE_URL"))
+		// PANEL_SELF_BASE_URL can override this for deploys behind a reverse proxy.
+		selfBaseURL := strings.TrimSpace(os.Getenv("PANEL_SELF_BASE_URL"))
 		if selfBaseURL == "" {
 			selfPort := 8766
 			if listen := strings.TrimSpace(cfg.Listen); listen != "" {
@@ -631,7 +631,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 		}
 		mgr, err := whatsapp.NewManager(whatsapp.ManagerOptions{
 			DataDir:       cfg.DataDir,
-			ContainerRoot: "/var/lib/vpsm-whatsapp",
+			ContainerRoot: "/var/lib/panel-whatsapp",
 			Vault:         r.secrets,
 			SelfBaseURL:   selfBaseURL,
 		})
@@ -674,7 +674,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	}
 
 	// Videocall: in-process signaling + room registry. TURN config is loaded
-	// from /etc/vpsm/coturn.env if `vpsmctl videocall init` has been run;
+	// from /etc/panel/coturn.env if `panelctl videocall init` has been run;
 	// absent that file, the service still works (P2P + Google STUN only),
 	// which is fine for LAN/same-NAT tests but will fail behind symmetric NAT.
 	if vc, err := videocall.Open(videocall.Options{
@@ -705,7 +705,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 		}
 		// Cloud recordings: the blobs go under /var/lib (they can run to hundreds of MB).
 		// If the directory is not writable the feature switches off gracefully — the UI hides it.
-		if recs, err := videocall.OpenRecordingStore(cfg.DataDir, "/var/lib/vpsm-videocalls/recordings"); err == nil {
+		if recs, err := videocall.OpenRecordingStore(cfg.DataDir, "/var/lib/panel-videocalls/recordings"); err == nil {
 			vc.Recordings = recs
 		} else {
 			log.Printf("videocall recordings disabled: %v", err)
@@ -744,7 +744,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 
 	// Public
 	r.mux.HandleFunc("/api/auth/login", r.handleLogin)
-	// Refresh via the HttpOnly vpsm_refresh cookie — PUBLIC on purpose: it
+	// Refresh via the HttpOnly panel_refresh cookie — PUBLIC on purpose: it
 	// renews the JWT once the access token has already expired (it cannot demand
 	// a valid JWT, or there would be no way to recover on its own). This is what
 	// stops auto-logout from killing the session or the terminal in an idle tab.
@@ -816,8 +816,8 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	// from the middleware would also break the dashboard's fallback login flow.
 	r.mux.HandleFunc("/api/forward-auth", r.handleForwardAuth)
 
-	// Claude Code hook sink (VPSM agent-ops #4). Unauthenticated by JWT but gated
-	// on loopback + a shared secret in the X-Vpsm-Agent-Secret header (see
+	// Claude Code hook sink (PANEL agent-ops #4). Unauthenticated by JWT but gated
+	// on loopback + a shared secret in the X-Panel-Agent-Secret header (see
 	// handleAgentHook). Exact path beats the "/api/" protected catch-all below.
 	r.mux.HandleFunc("/api/agent/hook", r.handleAgentHook)
 
@@ -2281,7 +2281,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	protected.HandleFunc("/api/ai/prompts", r.handleAIPrompts)
 	protected.HandleFunc("/api/exec", r.handleExec)
 	protected.HandleFunc("/api/config", r.handleConfig)
-	protected.HandleFunc("/api/vpsm/health", r.handleVPSMHealth)
+	protected.HandleFunc("/api/panel/health", r.handlePanelHealth)
 
 	// Audit
 	protected.HandleFunc("/api/audit/tail", r.handleAuditTail)
@@ -2422,7 +2422,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 				time.Sleep(time.Duration(jb[0]) * 20 * time.Microsecond)
 				http.NotFound(w, req)
 			}
-			tok, _ := req.Cookie("vpsm_token")
+			tok, _ := req.Cookie("panel_token")
 			if tok == nil {
 				notFound()
 				return
@@ -2532,8 +2532,8 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	sub, _ := fs.Sub(webFS, "web")
 	fileServer := http.FileServer(http.FS(sub))
 	// vendorCached wraps fileServer to set the right Cache-Control:
-	//   - /vendor/vpsm/app/* and /tailwind.css: change between deploys ->
-	//     revalidate every time (cache-busting via ?v=__VPSM_BUILD__ on the
+	//   - /vendor/panel/app/* and /tailwind.css: change between deploys ->
+	//     revalidate every time (cache-busting via ?v=__PANEL_BUILD__ on the
 	//     <script src>).
 	//   - /vendor/<lib>/*: versions pinned in fixed files (xterm, alpine,
 	//     monaco) -> immutable + one year.
@@ -2554,7 +2554,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 		// ?raw=1 returns the original: the LIVE invariant check greps the served
 		// asset literally, and minification rewrites whitespace and quotes. Same
 		// public content, just not minified.
-		if strings.HasPrefix(p, "/vendor/vpsm/app/") && strings.HasSuffix(p, ".js") &&
+		if strings.HasPrefix(p, "/vendor/panel/app/") && strings.HasSuffix(p, ".js") &&
 			!strings.HasSuffix(p, ".min.js") && req.URL.Query().Get("raw") != "1" {
 			if mp, ok := webassets.MinifiedOf(strings.TrimPrefix(p, "/")); ok {
 				r2 := req.Clone(req.Context())
@@ -2563,7 +2563,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 				p = r2.URL.Path
 			}
 		}
-		if strings.HasPrefix(p, "/vendor/vpsm/") || p == "/tailwind.css" {
+		if strings.HasPrefix(p, "/vendor/panel/") || p == "/tailwind.css" {
 			// no-cache means always revalidate, BUT with a real ETag. embed.FS
 			// has a zero ModTime, so http.ServeContent emitted neither ETag nor
 			// Last-Modified and every reload re-downloaded the whole body. ETag =
@@ -2606,7 +2606,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	})
 	// "/" does mobile detection plus override. Other routes (assets, /m, etc.)
 	// go straight to fileServer. indexInjector intercepts "/" and "/index.html"
-	// to replace __VPSM_BUILD__ with the current buildStamp (the front-end
+	// to replace __PANEL_BUILD__ with the current buildStamp (the front-end
 	// purges incompatible state after a deploy).
 	// The separate mobile app (/m/) was removed — phones get the desktop UI,
 	// with no redirect.
@@ -2993,7 +2993,7 @@ func (r *Router) mustPrimary(w http.ResponseWriter, req *http.Request) (string, 
 // that inherits legacy untagged sessions (and, in time, any other
 // resource that pre-dates per-user namespacing). Empty config.Primary or
 // empty user → false. Used by terminal handlers + HostShell so the
-// "vpsm-<user>-" ACL is widened only for the primary user.
+// "panel-<user>-" ACL is widened only for the primary user.
 func (r *Router) isPrimary(user string) bool { return httpx.IsPrimary(r.cfg, user) }
 
 // ---------- Auth ----------
@@ -3059,7 +3059,7 @@ func execCmdLong(name string, args ...string) (string, error) {
 	return string(out), err
 }
 
-// handleExec runs a shell command as the vps-manager process owner (root).
+// handleExec runs a shell command as the server-control-panel process owner (root).
 // PRIMARY-ONLY by design — this is direct RCE if exposed to non-admins.
 // Request context drives a 60s hard timeout so a runaway subprocess dies
 // when the client disconnects.
@@ -3427,7 +3427,7 @@ func (r *Router) handleComposeCreate(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, map[string]string{"status": "ok", "path": target})
 }
 
-// loadTURNConfig reads /etc/vpsm/coturn.env (written by `vpsmctl videocall
+// loadTURNConfig reads /etc/panel/coturn.env (written by `panelctl videocall
 // init`) and returns the TURN config the videocall service uses to mint
 // time-limited credentials. Returns nil when the file is missing — the
 // videocall feature still works P2P-only, just without symmetric-NAT
@@ -3440,7 +3440,7 @@ func (r *Router) handleComposeCreate(w http.ResponseWriter, req *http.Request) {
 //	TURN_PORT        UDP listen port (default 3478)
 //	TURN_PORT_TLS    TLS-TCP listen port (optional; default empty = TLS off)
 func loadTURNConfig() *videocall.TURNConfig {
-	const envPath = "/etc/vpsm/coturn.env"
+	const envPath = "/etc/panel/coturn.env"
 	b, err := os.ReadFile(envPath)
 	if err != nil {
 		return nil
@@ -3569,7 +3569,7 @@ func (r *Router) handleForwardAuth(w http.ResponseWriter, req *http.Request) {
 		token = strings.TrimPrefix(h, "Bearer ")
 	}
 	if token == "" {
-		if c, err := req.Cookie("vpsm_token"); err == nil {
+		if c, err := req.Cookie("panel_token"); err == nil {
 			token = c.Value
 		}
 	}

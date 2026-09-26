@@ -270,7 +270,7 @@ func handleChown(w http.ResponseWriter, r *http.Request) {
 
 // ─── TRASH / RESTORE ───────────────────────────────────────────
 
-const trashDir = "/root/.vpsm-trash"
+const trashDir = "/root/.panel-trash"
 
 func ensureTrash() error { return os.MkdirAll(trashDir, 0700) }
 

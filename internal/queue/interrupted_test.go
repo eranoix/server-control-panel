@@ -74,7 +74,7 @@ func TestReconcileSafeKindResumes(t *testing.T) {
 	if j.Status == StatusInterrupted {
 		t.Fatalf("safe kind became interrupted; want resumed")
 	}
-	if j.Error == "interrupted: vps-manager restart" {
+	if j.Error == "interrupted: server-control-panel restart" {
 		t.Fatalf("safe kind got interrupt error; want resume branch")
 	}
 }

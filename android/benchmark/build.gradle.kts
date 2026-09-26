@@ -15,7 +15,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vpsmanager.benchmark"
+    namespace = "dev.servercontrolpanel.benchmark"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {

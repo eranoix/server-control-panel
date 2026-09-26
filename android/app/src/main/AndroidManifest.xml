@@ -84,7 +84,7 @@
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <application
-        android:name=".VpsManagerApplication"
+        android:name=".PanelApplication"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -126,7 +126,7 @@
         </receiver>
 
         <service
-            android:name="com.vpsmanager.feature.notifications.fcm.VpsFirebaseMessagingService"
+            android:name="dev.servercontrolpanel.feature.notifications.fcm.VpsFirebaseMessagingService"
             android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
@@ -136,7 +136,7 @@
         <!-- BIND_TELECOM_CONNECTION_SERVICE is enforced by the system, not this app: exported
              but only Telecom itself can bind to it. -->
         <service
-            android:name="com.vpsmanager.feature.videocall.call.VpsmConnectionService"
+            android:name="dev.servercontrolpanel.feature.videocall.call.PanelConnectionService"
             android:exported="true"
             android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
             <intent-filter>
@@ -144,13 +144,13 @@
             </intent-filter>
         </service>
 
-        <!-- Not exported: only VpsmConnection (same app) ever starts/stops this service. -->
+        <!-- Not exported: only PanelConnection (same app) ever starts/stops this service. -->
         <service
-            android:name="com.vpsmanager.feature.videocall.call.CallForegroundService"
+            android:name="dev.servercontrolpanel.feature.videocall.call.CallForegroundService"
             android:exported="false"
             android:foregroundServiceType="phoneCall|camera|microphone" />
 
-        <!-- Android share target: lets another app hand vps-manager a file
+        <!-- Android share target: lets another app hand server-control-panel a file
              (or several) or plain text directly through the system share sheet. `*/*`
              is deliberate: a file manager's share target should accept arbitrary file
              types the same way its manual upload does: narrowing the MIME type would
@@ -189,7 +189,7 @@
         <!-- Not exported: only this app's own notification PendingIntents ever target it
              (a spoofed broadcast from another app cannot reach this receiver). -->
         <receiver
-            android:name="com.vpsmanager.feature.notifications.fcm.NotificationActionReceiver"
+            android:name="dev.servercontrolpanel.feature.notifications.fcm.NotificationActionReceiver"
             android:exported="false" />
 
     </application>

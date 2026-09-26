@@ -19,7 +19,7 @@ func TestCancelDetachedJob(t *testing.T) {
 	defer q.Shutdown(context.Background())
 	q.Register(&fakeRunner{kind: "jira_ai_analysis", mode: "ok", steps: 1})
 	q.SetDetach(func(id string) (string, error) {
-		return "vpsm-job-" + id + ".scope", nil
+		return "panel-job-" + id + ".scope", nil
 	}, "jira_ai_analysis")
 
 	nc := &notifyCounter{}

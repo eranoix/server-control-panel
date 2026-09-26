@@ -26,7 +26,7 @@ import (
 
 // EnvOverride is the escape hatch for pointing at a specific binary (e.g. a
 // test build, or an installation outside the known paths).
-const EnvOverride = "VPSM_CLAUDE_BIN"
+const EnvOverride = "PANEL_CLAUDE_BIN"
 
 var (
 	mu     sync.Mutex

@@ -102,7 +102,7 @@ func TestMigrateAppsHappyPath(t *testing.T) {
 			Env: map[string]string{"FOO": "bar"},
 			Deploys: []DeployRecord{{
 				ID: "d20260719-131515-03d885", Ref: "refs/heads/main",
-				Commit: "c34ea95f", Project: "vpsm-hello", Status: "running",
+				Commit: "c34ea95f", Project: "panel-hello", Status: "running",
 			}},
 		},
 		App{Name: "api", Branch: "prod", ComposeFile: "compose.yml", Domain: "api.x"},
@@ -267,7 +267,7 @@ func TestMigrateAppsRollbackOnWriteFailure(t *testing.T) {
 // Goroutines would not do: appsFileMu is package-level, so the mutex alone
 // would already serialise the two — the test would pass with the flock REMOVED,
 // and the flock is precisely what covers the real case (the post-receive hook
-// runs inside vpsmctl, which is another process). The child is this very test
+// runs inside panelctl, which is another process). The child is this very test
 // binary, re-executed with an environment variable, and it holds the lock until
 // the parent closes its stdin — no sleep, no waiting on a clock.
 func TestMigrateAppsConcurrentLock(t *testing.T) {
@@ -380,7 +380,7 @@ func TestMigrateAppsAuditAppended(t *testing.T) {
 	}
 }
 
-// TestGuardCLIRejectsShapes: the guard vpsmctl calls BEFORE touching the file.
+// TestGuardCLIRejectsShapes: the guard panelctl calls BEFORE touching the file.
 // It accepts only what this binary knows how to read; the rest is a refusal
 // that NAMES the binary — never a rewrite.
 func TestGuardCLIRejectsShapes(t *testing.T) {
@@ -407,9 +407,9 @@ func TestGuardCLIRejectsShapes(t *testing.T) {
 				return
 			}
 			if err == nil {
-				t.Fatalf("shape %q was ACCEPTED by vpsmctl", c.body)
+				t.Fatalf("shape %q was ACCEPTED by panelctl", c.body)
 			}
-			if !strings.Contains(err.Error(), "vpsmctl") {
+			if !strings.Contains(err.Error(), "panelctl") {
 				t.Fatalf("the refusal does not NAME the binary: %v", err)
 			}
 			if !strings.Contains(err.Error(), "schema_version") {

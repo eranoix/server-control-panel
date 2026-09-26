@@ -1,4 +1,4 @@
-// agent_status.go — shared agent status file (VPSM agent-ops #3/#4).
+// agent_status.go — shared agent status file (PANEL agent-ops #3/#4).
 //
 // This produces <DataDir>/session-status.json, the CONTRACT the code-server
 // code-server session extension reads. It is a JSON object keyed by dtach
@@ -190,7 +190,7 @@ func (s *agentStatusStore) persistLocked() error {
 // ─── cwd sidecar ────────────────────────────────────────────────────────────
 
 // projectMangleRe mirrors Claude Code's cwd→project-dir mapping: every
-// non-alphanumeric character becomes '-'. (Same rule as cmd/vpsmctl's
+// non-alphanumeric character becomes '-'. (Same rule as cmd/panelctl's
 // projectMangle; duplicated here to keep the api package self-contained.)
 var projectMangleRe = regexp.MustCompile(`[^a-zA-Z0-9]`)
 

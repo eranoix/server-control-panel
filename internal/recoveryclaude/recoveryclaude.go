@@ -25,7 +25,7 @@ var assets embed.FS
 // Container is the name of the container and of the image. It lives here
 // because it is the same truth manage.sh uses — whoever needs the name takes it
 // from this package instead of repeating the string.
-const Container = "vpsm-recovery-claude"
+const Container = "panel-recovery-claude"
 
 // Materialize writes the embedded assets into <dataDir>/recovery-claude and
 // returns the path of the manager (manage.sh), ready to execute.

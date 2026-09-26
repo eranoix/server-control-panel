@@ -15,9 +15,9 @@
 #   recovery-claude.sh doctor    # check the guarantees (no router, login, reach)
 set -euo pipefail
 
-IMAGE="vpsm-recovery-claude:latest"
-NAME="vpsm-recovery-claude"
-VOLUME="vpsm-recovery-claude-config"
+IMAGE="panel-recovery-claude:latest"
+NAME="panel-recovery-claude"
+VOLUME="panel-recovery-claude-config"
 # The build context is this script's own directory (Dockerfile, entrypoint and
 # banner are its siblings), both in the repository and where the binary
 # materializes it (<DataDir>/recovery-claude/).
@@ -61,7 +61,7 @@ up() {
     -v /opt/panel:/opt/panel \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -e CLAUDE_CONFIG_DIR=/config \
-    -e VPSM_RECOVERY=1 \
+    -e PANEL_RECOVERY=1 \
     "$IMAGE" >/dev/null
   msg "container $NAME created and running"
 }

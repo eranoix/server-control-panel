@@ -1,4 +1,4 @@
-// Package todos is the maintenance-checklist backend for vps-manager.
+// Package todos is the maintenance-checklist backend for server-control-panel.
 //
 // Each user owns a `<DataDir>/users/<u>/todos.json` file. The store
 // supports one-shot TODOs (with a due date) and recurring TODOs (which

@@ -71,8 +71,8 @@ func seedCommit(ctx context.Context, name, branch string, files map[string]strin
 		c := exec.CommandContext(ctx, "git", args...)
 		c.Env = append(os.Environ(),
 			"GIT_DIR="+repo, "GIT_WORK_TREE="+work,
-			"GIT_AUTHOR_NAME=vpsm", "GIT_AUTHOR_EMAIL=deploy@vpsm",
-			"GIT_COMMITTER_NAME=vpsm", "GIT_COMMITTER_EMAIL=deploy@vpsm")
+			"GIT_AUTHOR_NAME=panel", "GIT_AUTHOR_EMAIL=deploy@panel",
+			"GIT_COMMITTER_NAME=panel", "GIT_COMMITTER_EMAIL=deploy@panel")
 		out, err := c.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("%v: %s", err, out)

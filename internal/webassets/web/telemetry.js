@@ -12,7 +12,7 @@
  *     matches 'csrf'), so both paths are allowed;
  *   - but this fork authenticates with `Authorization: Bearer` (the SPA keeps
  *     the JWT in localStorage) AND, as a fallback, with the HttpOnly cookie
- *     `vpsm_token` (internal/auth/auth.go). sendBeacon CANNOT send a header,
+ *     `panel_token` (internal/auth/auth.go). sendBeacon CANNOT send a header,
  *     so it depends entirely on the cookie. Depending on the cookie alone would
  *     make telemetry die IN SILENCE in any scenario where it is not there —
  *     and 14 days of an empty file would only be found out much later, too late.
@@ -56,10 +56,10 @@
   }
 
   try {
-    sid = sessionStorage.getItem('vpsm_tel_sid') || '';
+    sid = sessionStorage.getItem('panel_tel_sid') || '';
     if (!/^[a-f0-9]{8,32}$/.test(sid)) {
       sid = newSid();
-      sessionStorage.setItem('vpsm_tel_sid', sid);
+      sessionStorage.setItem('panel_tel_sid', sid);
     }
   } catch (_) { sid = newSid(); }
 
@@ -79,7 +79,7 @@
       dropped = 0;
 
       var tok = '';
-      try { tok = localStorage.getItem('vpsm_token') || ''; } catch (_) {}
+      try { tok = localStorage.getItem('panel_token') || ''; } catch (_) {}
 
       // (1) main path: fetch keepalive with Bearer — the same authentication
       //     channel every other call in this SPA uses.
@@ -96,7 +96,7 @@
         } catch (_) { /* fall through to the fallback */ }
       }
 
-      // (2) fallback: sendBeacon — authenticates with the HttpOnly vpsm_token cookie.
+      // (2) fallback: sendBeacon — authenticates with the HttpOnly panel_token cookie.
       //     Sends Content-Type: text/plain;charset=UTF-8, which the handler accepts.
       try {
         if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, body)) return;

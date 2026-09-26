@@ -1,5 +1,5 @@
 // Package jira is a thin client for Atlassian Cloud REST v3 — just the
-// surface the vps-manager UI needs (search, issue CRUD, transitions,
+// surface the server-control-panel UI needs (search, issue CRUD, transitions,
 // comments, projects, attachments).
 //
 // Auth: HTTP Basic with email + API token. Tokens come from

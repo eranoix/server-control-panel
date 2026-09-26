@@ -79,7 +79,7 @@ meant the 267th arrived unguarded.
 A separate CLI administers the same data directory with no web UI: reset
 credentials, inspect state, rotate secrets. The failure it exists for is the one
 where a web-only administration story leaves you locked out of your own machine.
-→ `cmd/vpsmctl/`
+→ `cmd/panelctl/`
 
 ## Stack
 
@@ -128,7 +128,7 @@ page. Point it at a server with one property:
 
 ```properties
 # android/gradle.properties
-vpsmanager.defaultServerUrl=https://your-server.example
+servercontrolpanel.defaultServerUrl=https://your-server.example
 ```
 
 The prebuilt `libghostty-vt` static libraries are not committed here (they carry
@@ -198,7 +198,7 @@ adding the socket's group:
       - "999"   # the output of: stat -c %g /var/run/docker.sock
 ```
 
-Configuration is one JSON file (`VPSM_CONFIG`, default
+Configuration is one JSON file (`PANEL_CONFIG`, default
 `/opt/panel/data/config.json`; the image sets it to `/app/data/config.json`).
 The first start without one generates it, including the random admin password
 written to `INITIAL_CREDENTIALS.txt` beside it.

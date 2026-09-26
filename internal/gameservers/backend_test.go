@@ -22,7 +22,7 @@ import (
 // This harness proves the CONTRACT: given the same envelope, both back ends
 // return the same value and error class, the Handle stays opaque, the token
 // stays in the header, and the factory chooses by the node's transport. The
-// HTTP side runs the lab-agent IN PROCESS over the same BackendLocal, so it
+// HTTP side runs the node-agent IN PROCESS over the same BackendLocal, so it
 // proves the transport does not alter results; it does not prove the agent
 // works live on the real node.
 
@@ -94,13 +94,13 @@ func setupEnvAt(t *testing.T, root string) (*Manager, Server) {
 }
 
 // backendPair returns the local back-end and an HTTP one pointing at an
-// in-process lab-agent with the SAME local one behind it.
+// in-process node-agent with the SAME local one behind it.
 //
-// Is the agent assembled by package reflection? No: labagent imports gameservers,
-// so gameservers CANNOT import labagent (cycle). The harness reproduces the
+// Is the agent assembled by package reflection? No: nodeagent imports gameservers,
+// so gameservers CANNOT import nodeagent (cycle). The harness reproduces the
 // agent's routing here — the two routes the client uses — with one caveat: if the
 // agent changes shape, it is TestContractParity that goes stale, and that is
-// why the route test that counts lives in internal/labagent/exec_test.go.
+// why the route test that counts lives in internal/nodeagent/exec_test.go.
 func backendPair(t *testing.T, m *Manager) (*BackendLocal, *BackendHTTP, *httptest.Server, *[]string) {
 	t.Helper()
 	local := NewBackendLocal(m, "test-node")

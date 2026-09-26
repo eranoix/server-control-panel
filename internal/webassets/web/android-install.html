@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Install the Android app — VPS Manager</title>
+<title>Install the Android app — Server Control Panel</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232563eb'/%3E%3Ctext x='32' y='42' font-family='sans-serif' font-size='28' font-weight='700' fill='white' text-anchor='middle'%3EVM%3C/text%3E%3C/svg%3E">
 <style>
   body {
@@ -62,11 +62,11 @@
 <div class="card">
   <div class="logo">VM</div>
   <h1>Install the Android app</h1>
-  <p class="sub">Scan this with the F-Droid app (Settings → Repositories → scan QR) to add this self-hosted repository and install vps-manager on your device.</p>
+  <p class="sub">Scan this with the F-Droid app (Settings → Repositories → scan QR) to add this self-hosted repository and install server-control-panel on your device.</p>
 
   {{if .RepoPublished}}
   <div class="qr-frame">
-    <img src="{{.QRDataURL}}" alt="QR code for the vps-manager F-Droid repository">
+    <img src="{{.QRDataURL}}" alt="QR code for the server-control-panel F-Droid repository">
   </div>
 
   <div class="field">
@@ -92,8 +92,8 @@
     <ol class="steps">
       <li><b>Install the F-Droid app</b> on the device, if you do not have it yet (f-droid.org).</li>
       <li><b>Scan the QR code above</b> in F-Droid → Settings → Repositories → QR icon — it confirms the fingerprint and adds this repository.</li>
-      <li><b>Install vps-manager</b> from the F-Droid app list, inside the repository you have just added.</li>
-      <li class="done-elsewhere"><b>Pair the device</b> — open vps-manager in this browser (the computer, not the phone), go to Settings → Mobile devices and generate the pairing QR there; it is a different code from this one, specific to the device.</li>
+      <li><b>Install server-control-panel</b> from the F-Droid app list, inside the repository you have just added.</li>
+      <li class="done-elsewhere"><b>Pair the device</b> — open server-control-panel in this browser (the computer, not the phone), go to Settings → Mobile devices and generate the pairing QR there; it is a different code from this one, specific to the device.</li>
     </ol>
   </div>
   {{else}}

@@ -71,7 +71,7 @@ compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 compose-foundation = { module = "androidx.compose.foundation:foundation" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
 # Core icon set only (823 KB); material-icons-extended is 35.7 MB. Missing
-# glyphs are drawn in :design-system from the official Material paths (VpsmIcons.kt).
+# glyphs are drawn in :design-system from the official Material paths (PanelIcons.kt).
 # No version.ref on purpose: the version comes from compose-bom.
 compose-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
@@ -97,7 +97,7 @@ coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 coil-video = { module = "io.coil-kt:coil-video", version.ref = "coil" }
 media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
 media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
-# Referenced only by :data (com.vpsmanager.data.media).
+# Referenced only by :data (dev.servercontrolpanel.data.media).
 media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3" }
 sora-editor-bom = { group = "io.github.rosemoe", name = "editor-bom", version.ref = "soraEditor" }
 sora-editor = { group = "io.github.rosemoe", name = "editor" }

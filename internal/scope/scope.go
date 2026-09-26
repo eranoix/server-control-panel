@@ -1,4 +1,4 @@
-// Package scope implements per-user tenant isolation for vps-manager.
+// Package scope implements per-user tenant isolation for server-control-panel.
 //
 // While `auth` answers "who is this request?", `scope` answers "what can this
 // who-is-this see?". The two are deliberately separate: scope depends on the
@@ -105,7 +105,7 @@ func (u User) Valid() bool {
 	return err == nil
 }
 
-// Paths is the closed set of per-user directories and files that vps-manager
+// Paths is the closed set of per-user directories and files that server-control-panel
 // touches. Holding them in one struct means a handler never builds a path by
 // hand — it asks for the one it needs and the layout is enforced centrally.
 //
@@ -121,7 +121,7 @@ type Paths struct {
 	// used to write under <DataDir>/whatsapp/.
 	Whatsapp string
 
-	// WhatsappContainer is /var/lib/vpsm-whatsapp/<user>/ — owned by the
+	// WhatsappContainer is /var/lib/panel-whatsapp/<user>/ — owned by the
 	// WAHA container for this user (docker-compose.yml, .env, sessions/,
 	// media/, files/). NOT under DataDir because the container's bind
 	// mounts need a stable host path that survives DataDir migration.
@@ -131,7 +131,7 @@ type Paths struct {
 	// callers that only need the media subdir.
 	WhatsappMedia string
 
-	// Uploads is <Root>/uploads/. Replaces /tmp/vpsm-paste-* for
+	// Uploads is <Root>/uploads/. Replaces /tmp/panel-paste-* for
 	// terminal-paste images. The session engine runs as root → it still reads 0700.
 	Uploads string
 
@@ -149,7 +149,7 @@ type Paths struct {
 // computation. Use EnsureDirs to actually create the directories.
 func PathsFor(dataDir string, u User) Paths {
 	root := filepath.Join(dataDir, "users", u.String())
-	wac := filepath.Join("/var/lib/vpsm-whatsapp", u.String())
+	wac := filepath.Join("/var/lib/panel-whatsapp", u.String())
 	return Paths{
 		Root:              root,
 		Whatsapp:          filepath.Join(root, "whatsapp"),

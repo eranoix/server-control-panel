@@ -486,14 +486,14 @@ func readJSONFile(path string) (map[string]interface{}, error) {
 // NodeTarget is the minimum the factory needs to know about a node.
 //
 // A small struct instead of `inventory.Node`, on purpose: having `gameservers`
-// import `inventory` would couple the package the lab-agent LINKS to the package
+// import `inventory` would couple the package the node-agent LINKS to the package
 // that talks to the Proxmox API — the agent would carry the whole hypervisor
 // inventory just to open a zip. The panel builds this struct from its own Node;
 // the agent never needs it.
 type NodeTarget struct {
 	Name      string // readable name of the node ("games", "apps")
 	Transport string // value of inventory.Transport
-	Base      string // HTTP root of the lab-agent, when the transport is the agent
+	Base      string // HTTP root of the node-agent, when the transport is the agent
 	Token     string // that node's bearer — injected ON THE SERVER
 }
 

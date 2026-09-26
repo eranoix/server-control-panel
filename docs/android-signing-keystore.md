@@ -1,13 +1,13 @@
 # RUNBOOK — Android release signing keystore
 
-> **APPLICATION ID LOCKED — `tech.northwind.vpsm.app` (decided by the operator on 2026-09-05)**
+> **APPLICATION ID LOCKED — `tech.northwind.servercontrolpanel` (decided by the operator on 2026-09-05)**
 >
 > A deliberate, confirmed choice: the operator chose to bind the app to a
 > domain he controls. The trade-offs were raised before the decision and the
 > operator confirmed it anyway. Recorded here so that nobody "fixes" it later.
 >
 > Rejected alternatives: an ID under a domain the operator does not own, and
-> `com.vpsmanager.app` (the value the module skeleton picked on its own, which
+> `dev.servercontrolpanel.app` (the value the module skeleton picked on its own, which
 > would imply controlling yet another domain).
 >
 > **It becomes irreversible** once (a) the real keystore is generated
@@ -15,7 +15,7 @@
 > Verification. From then on, changing it creates a brand-new app as far as the
 > platform is concerned, with no migration for anyone who already installed it.
 >
-> The Gradle `namespace` stays `com.vpsmanager.app` on purpose: in AGP it is the
+> The Gradle `namespace` stays `dev.servercontrolpanel.app` on purpose: in AGP it is the
 > Kotlin/R-class package, independent of the distribution identity. Renaming the
 > source tree would bring no benefit and would touch every file.
 
@@ -51,7 +51,7 @@ compromise of exactly this machine.
 ## 2. Application ID
 
 ```
-tech.northwind.vpsm.app
+tech.northwind.servercontrolpanel
 ```
 
 Reverse-DNS of the project domain. **Immutable after the first release** — it is
@@ -67,8 +67,8 @@ process that runs here:
 
 ```bash
 keytool -genkeypair -v \
-  -keystore vpsmanager-release.jks \
-  -alias vpsmanager \
+  -keystore servercontrolpanel-release.jks \
+  -alias servercontrolpanel \
   -keyalg RSA \
   -keysize 4096 \
   -validity 10000 \
@@ -77,8 +77,8 @@ keytool -genkeypair -v \
 
 Parameter by parameter:
 
-- `-keystore vpsmanager-release.jks` — name of the resulting file.
-- `-alias vpsmanager` — fixed alias of the entry inside the keystore; used by
+- `-keystore servercontrolpanel-release.jks` — name of the resulting file.
+- `-alias servercontrolpanel` — fixed alias of the entry inside the keystore; used by
   every future verification/signing command. Do not change it.
 - `-keyalg RSA -keysize 4096` — RSA 4096 bits; there is no reason to use
   anything weaker than `keytool`'s own default (2048) for a key that has to
@@ -92,7 +92,7 @@ When prompted, `keytool` asks for the keystore password. **Careful**: `PKCS12`
 keystores (the format used here) do not support a key password different from
 the keystore password — `keytool` accepts `-keypass`/a second interactive
 password but **silently ignores it** and uses the keystore password for the
-`vpsmanager` entry as well (confirmed by running the real command: `keytool`
+`servercontrolpanel` entry as well (confirmed by running the real command: `keytool`
 prints `Warning: Different store and key passwords not supported for PKCS12
 KeyStores. Ignoring user-specified -keypass value.`). In other words: there is
 exactly **ONE effective password** to keep, not two. Use a strong one and:
@@ -116,17 +116,17 @@ the fingerprint nor the behavior of the app — any value works.
 Full procedure (the same one validated, with disposable material, by the drill
 in Section 6.1 — `scripts/android-keystore-drill.sh`):
 
-1. Encrypt the `vpsmanager-release.jks` file with a backup password
+1. Encrypt the `servercontrolpanel-release.jks` file with a backup password
    **different** from the keystore password (Section 3), also generated and
    kept only in the operator's password manager. Example command, equivalent to
    what the drill exercises:
    ```bash
    openssl enc -aes-256-cbc -pbkdf2 -salt \
-     -in vpsmanager-release.jks -out vpsmanager-release.jks.enc
+     -in servercontrolpanel-release.jks -out servercontrolpanel-release.jks.enc
    ```
    (`openssl` asks for the backup password interactively — do not pass it in
    clear text on the command line).
-2. Copy `vpsmanager-release.jks.enc` (never the plaintext `.jks`) to TWO
+2. Copy `servercontrolpanel-release.jks.enc` (never the plaintext `.jks`) to TWO
    independent locations that:
    - are not this VPS;
    - are not the same provider/account as each other;
@@ -134,7 +134,7 @@ in Section 6.1 — `scripts/android-keystore-drill.sh`):
      safe/encrypted drive + cloud storage encrypted client-side before upload,
      such as Backblaze B2 or similar).
 3. Verify each copy at backup time (before considering the copy valid): run
-   `sha256sum vpsmanager-release.jks.enc` at the source and, after copying, run
+   `sha256sum servercontrolpanel-release.jks.enc` at the source and, after copying, run
    `sha256sum` again at the destination — the hashes of the encrypted file (not
    to be confused with the certificate fingerprint of Section 5) must match
    byte for byte, confirming the copy was not corrupted in transit.
@@ -158,7 +158,7 @@ Verification command to obtain/recheck the value (always run it against the
 operator's machine, never copy the `.jks` to this VPS for it):
 
 ```bash
-keytool -list -v -keystore vpsmanager-release.jks -alias vpsmanager
+keytool -list -v -keystore servercontrolpanel-release.jks -alias servercontrolpanel
 ```
 
 The line starting with `SHA256:` is the value to record above.
@@ -181,7 +181,7 @@ against a real backup, and it is what is still missing to close this section.
 deleted on exit (`trap ... EXIT`):
 
 1. generates a keystore with the same security parameters as Section 3 (RSA
-   4096, 10000-day validity, PKCS12, alias `vpsmanager`), with throwaway
+   4096, 10000-day validity, PKCS12, alias `servercontrolpanel`), with throwaway
    passwords passed through environment variables (`-storepass:env`/
    `-keypass:env`, never literals in shell arguments);
 2. encrypts that disposable keystore (`openssl enc -aes-256-cbc -pbkdf2`),
@@ -219,8 +219,8 @@ copy) and restore it into a scratch directory on the operator's own machine:
 
 ```bash
 openssl enc -d -aes-256-cbc -pbkdf2 \
-  -in vpsmanager-release.jks.enc -out /scratch/path/vpsmanager-release.jks
-keytool -list -v -keystore /scratch/path/vpsmanager-release.jks -alias vpsmanager
+  -in servercontrolpanel-release.jks.enc -out /scratch/path/servercontrolpanel-release.jks
+keytool -list -v -keystore /scratch/path/servercontrolpanel-release.jks -alias servercontrolpanel
 ```
 
 Confirm that the printed `SHA256:` line is **identical** to the one recorded in
@@ -230,7 +230,7 @@ Drill record:
 
 - Date: `<PENDING — fill in after the drill>`
 - Copy tested: `<PENDING — fill in after the drill>` (e.g. "copy B — Backblaze")
-- Command run: `keytool -list -v -keystore <restored> -alias vpsmanager`
+- Command run: `keytool -list -v -keystore <restored> -alias servercontrolpanel`
 - Result: `<PENDING — fill in after the drill>` (fingerprint matched / did not match)
 
 If the fingerprint does not match, that is a serious failure to fix
@@ -254,7 +254,7 @@ and runs the restore drill. From here on:
   `android_package_name` and `android_signing_fingerprints` (struct `Config` in
   `internal/config/config.go`), read at runtime by the handler — not compiled
   into the binary. Populating those fields (by editing `data/config.json`
-  directly and restarting `vps-manager`, since there is no `vpsmctl config set`
+  directly and restarting `server-control-panel`, since there is no `panelctl config set`
   yet) is the step that materializes the value of Section 5 in the production
   system. **That file (`data/config.json`) is the runtime source of truth** —
   any other consumer must read from it rather than keep an independent copy.
@@ -269,14 +269,14 @@ and runs the restore drill. From here on:
   checkout CI uses to build the APK (self-hosted runner, but its own checkout,
   not the production install directory). Reading that file at Gradle build time
   is not viable today. The canonical build-time copy is
-  `android/gradle.properties`, key `vpsmanager.applicationId` — the build's only
+  `android/gradle.properties`, key `servercontrolpanel.applicationId` — the build's only
   literal (`app/build.gradle.kts` reads that property instead of hardcoding the
   value). To keep that copy and this Section 2 from drifting silently,
   `app/build.gradle.kts` registers the `verifyApplicationIdMatchesDocs` task
   (wired to `preBuild`, so it fires on `./gradlew build`, `assembleDebug`,
   `assembleRelease`, and so on): it reads the code block of this Section 2 and
   fails the build with a `GradleException` if the value does not match
-  `vpsmanager.applicationId`. `data/config.json` remains the runtime source for
+  `servercontrolpanel.applicationId`. `data/config.json` remains the runtime source for
   `assetlinks.json` (`internal/api/handlers_wellknown.go`) — the operator
   populating that field manually from this Section 2 is still the step that
   connects them, with no fourth independent value.

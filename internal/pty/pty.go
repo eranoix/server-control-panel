@@ -71,7 +71,7 @@ type ctrlMsg struct {
 
 // HostShell spawns (or reattaches to) a session and pipes it through
 // the websocket. Session names are taken verbatim from the client (just
-// sanitised to [A-Za-z0-9_-], max 40 chars) — no "vpsm-<user>-" prefix
+// sanitised to [A-Za-z0-9_-], max 40 chars) — no "panel-<user>-" prefix
 // glued on. Ownership is recorded in the *Ownership registry instead.
 //
 // `user` must come from the JWT (never the query string) so an attacker
@@ -129,7 +129,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	defer conn.Close()
 
 	// The session engine is `dtach`, and it is the only one. There was a flag
-	// selector (VPSM_SESSION_BACKEND) while two engines ran side by side, for an
+	// selector (PANEL_SESSION_BACKEND) while two engines ran side by side, for an
 	// instant rollback during the migration; the migration finished and the selector
 	// went away. `NewSessionBackend` survives anyway because it keeps callers
 	// decoupled from the concrete engine — which cost nothing and pays off the day

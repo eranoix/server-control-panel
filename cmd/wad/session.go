@@ -26,12 +26,12 @@ func init() {
 }
 
 // session wraps one whatsmeow client bound to a single WhatsApp account (one
-// vps-manager user). It reuses the device already paired in the copied gows.db,
+// server-control-panel user). It reuses the device already paired in the copied gows.db,
 // so no QR is needed on a healthy migration.
 type session struct {
 	user      string
 	dbPath    string
-	push      *pusher // emits WAHA-shaped webhook events to vps-manager
+	push      *pusher // emits WAHA-shaped webhook events to server-control-panel
 	log       waLog.Logger
 	container *sqlstore.Container
 
@@ -120,7 +120,7 @@ func (s *session) connect(ctx context.Context) error {
 // and every scan after the window failed with a pairing error. It also pushed a
 // status only on the FIRST code (setStatus is change-gated), so once the daemon
 // rotated, the UI kept showing a stale code. This version force-pushes on every
-// rotation (the vps-manager re-pulls GetQR on each SCAN_QR_CODE event, so the
+// rotation (the server-control-panel re-pulls GetQR on each SCAN_QR_CODE event, so the
 // displayed QR stays in sync) and, when the window ends without a scan,
 // regenerates a fresh channel so a live QR is always available.
 func (s *session) pairLoop(ctx context.Context, cli *whatsmeow.Client) {
@@ -175,7 +175,7 @@ func (s *session) pairLoop(ctx context.Context, cli *whatsmeow.Client) {
 }
 
 // pushScanQR marks the session SCAN_QR_CODE and unconditionally emits a status
-// event so the vps-manager re-pulls the freshly rotated QR. setStatus only
+// event so the server-control-panel re-pulls the freshly rotated QR. setStatus only
 // pushes on transitions, which would drop the intermediate QR rotations.
 func (s *session) pushScanQR() {
 	s.mu.Lock()

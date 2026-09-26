@@ -26,7 +26,7 @@ import (
 
 // fcmServiceAccountSecret is the vault key (internal/secrets) holding the FCM
 // service-account JSON credential. Provisioned by a human via
-// `vpsmctl secrets set --user sam fcm_service_account` — never generated,
+// `panelctl secrets set --user sam fcm_service_account` — never generated,
 // printed, or hardcoded here. Absent secret ⇒ initFCMSender logs and returns
 // nil, and native Android push degrades to zero deliveries (webpush keeps
 // working) instead of panicking, matching every other channel's degrade-on-

@@ -1,4 +1,4 @@
-// agent_cost.go — cost/token aggregation (VPSM agent-ops #3).
+// agent_cost.go — cost/token aggregation (PANEL agent-ops #3).
 //
 // A cancelable ticker (~60s) walks every mapped dtach session (agentCWD), finds
 // its newest Claude Code JSONL under <ClaudeHome>/projects/<mangled-cwd>/, sums

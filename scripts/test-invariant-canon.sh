@@ -28,8 +28,8 @@ ok() { echo "  ✓ $1"; pass=$((pass+1)); }
 no() { echo "  ✗ $1"; fail=$((fail+1)); }
 echo "=== test-invariant-canon ==="
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/vpsm-inv-test.XXXXXX")" || exit 2
-trap 'case "$TMP" in /tmp/vpsm-inv-test.*|"${TMPDIR:-/tmp}"/vpsm-inv-test.*) rm -rf "$TMP";; esac' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/panel-inv-test.XXXXXX")" || exit 2
+trap 'case "$TMP" in /tmp/panel-inv-test.*|"${TMPDIR:-/tmp}"/panel-inv-test.*) rm -rf "$TMP";; esac' EXIT
 
 CANON="refactor/foundation"
 
@@ -59,7 +59,7 @@ IGN
 }
 
 add_inv() {  # add_inv <root> <description>
-  VPSM_ROOT="$1" VPSM_CANON="$CANON" bash "$AGENTCTL" invariant add \
+  PANEL_ROOT="$1" PANEL_CANON="$CANON" bash "$AGENTCTL" invariant add \
     "file.go" "newSymbol" 1 999 "$2" - 2>&1
 }
 

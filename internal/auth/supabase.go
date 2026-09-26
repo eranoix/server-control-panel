@@ -9,7 +9,7 @@
 //   - The v2 JWT stays HS256 with the same secret as GoTrue (an earlier step
 //     synchronised them). The 5 jwt.Parse sites keep working byte-identically.
 //   - Supabase refresh/logout/MFA arrive in later steps.
-//   - Rollback is switching VPSM_AUTH_BACKEND=local — local bcrypt remained
+//   - Rollback is switching PANEL_AUTH_BACKEND=local — local bcrypt remained
 //     viable until it was retired.
 //
 // Classified errors (the caller decides what to do):
@@ -230,7 +230,7 @@ type AuthCallResult struct {
 // method/path/body are the parameters of the GoTrue call; e.g.:
 //
 //	AuthenticatedRequest(ctx, access, refresh, "POST", "/auth/v1/factors",
-//	    map[string]any{"factor_type":"totp","friendly_name":"vpsm"})
+//	    map[string]any{"factor_type":"totp","friendly_name":"panel"})
 //
 // The caller is responsible for writing the updated cookie from Refreshed.AccessToken
 // (when non-nil) — keep it response-aware.
@@ -330,7 +330,7 @@ func (c *SupabaseClient) RevokeRefreshToken(ctx context.Context, refreshToken st
 // Fast GoTrue health probe (used by /api/api/health). Issues GET /auth/v1/settings
 // (a public endpoint that still requires the apikey — it confirms both that ANON
 // authentication works AND that the server answers). Short timeout (2s) so it does
-// not slow down the vps-manager health check.
+// not slow down the server-control-panel health check.
 // Returns nil = OK; an error means unreachable/down.
 func (c *SupabaseClient) Health(ctx context.Context) error {
 	if c == nil {

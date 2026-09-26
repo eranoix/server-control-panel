@@ -125,7 +125,7 @@ type InviteSessionsCheck interface {
 	Tombstone(jti string)
 }
 
-// Options for Open. DataDir is the vps-manager data root; rooms.json will
+// Options for Open. DataDir is the server-control-panel data root; rooms.json will
 // live under DataDir/videocalls/.
 type Options struct {
 	DataDir string

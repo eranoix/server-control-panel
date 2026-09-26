@@ -26,7 +26,7 @@ import (
 // whole under concurrent deploys) and the reason the mutex is PACKAGE-level: each
 // Open() returns a different *Store — the queue runner and HTTP each have their own —
 // so a per-instance mutex serializes nothing. The flock covers the
-// CROSS-PROCESS case (the post-receive hook runs in vpsmctl, another process).
+// CROSS-PROCESS case (the post-receive hook runs in panelctl, another process).
 // The two together are what give atomic read-modify-write.
 //
 // # The write: copied from internal/config/migrate.go:451-482, NOT from deploy

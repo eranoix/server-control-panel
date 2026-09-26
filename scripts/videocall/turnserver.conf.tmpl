@@ -1,4 +1,4 @@
-# coturn config — written by `vpsmctl videocall init`. Variables in {{...}}
+# coturn config — written by `panelctl videocall init`. Variables in {{...}}
 # are substituted; everything else is verbatim. See man turnserver(1) for the
 # full reference.
 
@@ -21,7 +21,7 @@ realm={{TURN_REALM}}
 
 # Long-Term Credential MECH is what enables coturn to honor the time-limited
 # usernames our backend mints (format <expiration>:<user>). The HMAC secret
-# below MUST match TURN_SECRET in /etc/vpsm/coturn.env.
+# below MUST match TURN_SECRET in /etc/panel/coturn.env.
 lt-cred-mech
 use-auth-secret
 static-auth-secret={{TURN_SECRET}}

@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const APP = join(here, '..', 'internal', 'webassets', 'web', 'vendor', 'vpsm', 'app');
+const APP = join(here, '..', 'internal', 'webassets', 'web', 'vendor', 'panel', 'app');
 const IDX = join(here, '..', 'internal', 'webassets', 'web', 'index.html');
 
 const shell = readFileSync(join(APP, '00-shell.js'), 'utf8');
@@ -76,7 +76,7 @@ check('41-proxmox.js does not contain Date.now(', !pvxCode.includes('Date.now(')
 check('41-proxmox.js does not contain new Date(', !pvxCode.includes('new Date('));
 check('41-proxmox.js does not mention nodesPollTimer', !pvxCode.includes('nodesPollTimer'));
 check('41-proxmox.js has a timer of its own (pvxPollTimer)', pvxCode.includes('pvxPollTimer'));
-check('41-proxmox.js exposes window.VPSMProxmoxModule', /window\.VPSMProxmoxModule\s*=\s*function/.test(pvxCode));
+check('41-proxmox.js exposes window.PanelProxmoxModule', /window\.PanelProxmoxModule\s*=\s*function/.test(pvxCode));
 
 // ── 3. the seven grafts ────────────────────────────────────────────────────
 const grafts = [
@@ -90,8 +90,8 @@ const grafts = [
     /^\s*<template x-if="currentView==='proxmox' && typeof pvxStaleStyle==='function'">$/m],
   ['index.html: fallback when the module is missing', index,
     /^\s*<template x-if="currentView==='proxmox' && typeof pvxStaleStyle!=='function'">$/m],
-  ['index.html: the module script', index, /^<script src="\/vendor\/vpsm\/app\/41-proxmox\.js\?v=__VPSM_BUILD__"><\/script>$/m],
-  ['00-shell.js: spread into app()', shell, /^\s*\.\.\.\(window\.VPSMProxmoxModule \? window\.VPSMProxmoxModule\(\) : \{ pvx: \{ health: null \} \}\),$/m],
+  ['index.html: the module script', index, /^<script src="\/vendor\/panel\/app\/41-proxmox\.js\?v=__PANEL_BUILD__"><\/script>$/m],
+  ['00-shell.js: spread into app()', shell, /^\s*\.\.\.\(window\.PanelProxmoxModule \? window\.PanelProxmoxModule\(\) : \{ pvx: \{ health: null \} \}\),$/m],
   ['00-shell.js: command palette', shell, /^\s*\{label:'Operations · Proxmox',\s*kind:'page',\s*page:'proxmox',/m],
   ['00-shell.js: PAGE_REMAP', shell, /^\s*proxmox:\s*\['operations',\s*'proxmox'\],$/m],
   ['00-shell.js: _triggerViewLoaders', shell, /^\s*if \(p==='proxmox'\)\s*\{ this\.pvxInit\(\); this\.pvxStartPoll\(\); \}$/m],
@@ -107,7 +107,7 @@ for (const [name, src, re] of grafts) check(name, re.test(src));
 // COMMENT before they appear in a tag, and folding the two screens together
 // changed the comment order without changing load order. A pin that fails when
 // the code is right is as bad as one that passes when it is wrong.
-const tag = (arq) => index.indexOf('<script src="/vendor/vpsm/app/' + arq + '?v=__VPSM_BUILD__">');
+const tag = (arq) => index.indexOf('<script src="/vendor/panel/app/' + arq + '?v=__PANEL_BUILD__">');
 check('41-proxmox.js loads after 40-nodes.js (comparing the TAGS)',
   tag('40-nodes.js') > 0 && tag('41-proxmox.js') > tag('40-nodes.js'),
   `40-nodes=${tag('40-nodes.js')} 41-proxmox=${tag('41-proxmox.js')}`);
@@ -267,7 +267,7 @@ check('🔴 41-proxmox.js does NOT build a hypervisor URL (vncwebsocket)',
   'the browser cannot reach hypervisor.local and has no TLS pin');
 // The check cuts out the WHOLE EXPRESSION of `new WebSocket(...)` — and not the
 // string literal of the route. An earlier version of this pin looked only at
-// the literal, and the mutation `... + '&token=' + localStorage.vpsm_token`
+// the literal, and the mutation `... + '&token=' + localStorage.panel_token`
 // walked straight past it: the `token=` came from OUTSIDE the quotes. A pin
 // that fails like that is worse than none, because it looks like it is guarding.
 const wsExpr = (() => {
@@ -280,7 +280,7 @@ check('🔴 the console WebSocket does NOT carry a token in the URL',
   wsExpr !== '' && !/token/i.test(wsExpr),
   'a query lands in the access log = a replayable shell credential (see /ws/shell)');
 check('🔴 41-proxmox.js does not even touch the panel JWT',
-  !pvxCode.includes('vpsm_token') && !pvxCode.includes('localStorage'),
+  !pvxCode.includes('panel_token') && !pvxCode.includes('localStorage'),
   'the session travels in the HttpOnly cookie; the module has no reason to read the token');
 check('🔴 41-proxmox.js does NOT build the "0:N:" frame (the count is in BYTES, on the server)',
   !/['"`]0:['"`]\s*\+/.test(pvxCode),
@@ -821,7 +821,7 @@ check('🔴 the empty state replaces the WHOLE TABLE, header included',
   /<template x-if="!pvxEmpty\(\)">/.test(index),
   'a standing header makes a screen reader announce six columns of a table with no rows');
 check('a skeleton, not a spinner, on the first load',
-  /vpsm-skel/.test(index.slice(index.indexOf("currentView==='proxmox'"))) &&
+  /panel-skel/.test(index.slice(index.indexOf("currentView==='proxmox'"))) &&
   /pvx\.firstLoad/.test(index));
 
 // ── rate: a hole rendered as a hole ──────────────────────────────────────

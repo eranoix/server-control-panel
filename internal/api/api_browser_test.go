@@ -24,7 +24,7 @@ import (
 
 func newBrowserTestRouter(t *testing.T) (*Router, string) {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "vpsm-browser-test-")
+	dir, err := os.MkdirTemp("", "panel-browser-test-")
 	if err != nil {
 		t.Fatalf("mkdtemp: %v", err)
 	}

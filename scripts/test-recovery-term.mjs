@@ -73,11 +73,11 @@ const ctx = {
     // would lose that.
     getElementById: (id) => (elements[id] ||= { id, textContent: '', style: {}, dataset: {}, hidden: true }),
     addEventListener: (ev, f) => { (listeners[ev] ||= []).push(f); },
-    cookie: 'vpsm_recovery_user=sam',
+    cookie: 'panel_recovery_user=sam',
     hidden: false,
   },
   window: { addEventListener: (ev, f) => { (listeners[ev] ||= []).push(f); } },
-  location: { protocol: 'https:', host: 'vpsm.example', href: '' },
+  location: { protocol: 'https:', host: 'panel.example', href: '' },
   requestAnimationFrame: (f) => { timers.push(f); return timers.length; },
   cancelAnimationFrame: () => {},
   setTimeout, clearTimeout, setInterval, clearInterval,

@@ -1,9 +1,9 @@
 {
-  "name": "vpsm-browser",
+  "name": "panel-browser",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Navegador tunelado (Ultraviolet + Wisp) embutido no VPS Manager",
+  "description": "Navegador tunelado (Ultraviolet + Wisp) embutido no Server Control Panel",
   "scripts": {
     "start": "node server.js"
   },

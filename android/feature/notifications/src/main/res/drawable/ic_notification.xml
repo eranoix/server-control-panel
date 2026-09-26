@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Status bar notification icon: the vps-manager mark (same as logo-mark.svg).
+    Status bar notification icon: the server-control-panel mark (same as logo-mark.svg).
 
     The xmlns must be ".../apk/res/android"; a typo compiles silently with aapt2 but
     the vector then fails to inflate at runtime.

@@ -12,7 +12,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vpsmanager.patchengine"
+    namespace = "dev.servercontrolpanel.patchengine"
     compileSdk = libs.versions.compileSdk.get().toInt()
     ndkVersion = libs.versions.ndk.get()
 

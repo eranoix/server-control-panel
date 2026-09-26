@@ -72,7 +72,7 @@ func fdroidContentType(name string) string {
 }
 
 // handleFdroidRepo serves <cfg.DataDir>/fdroid/repo/* directly. Public,
-// unauthenticated by design — the F-Droid client presents no vps-manager
+// unauthenticated by design — the F-Droid client presents no server-control-panel
 // session cookie and never will. Reached only via fdroidGate, never
 // registered on r.mux.
 func (r *Router) handleFdroidRepo(w http.ResponseWriter, req *http.Request) {

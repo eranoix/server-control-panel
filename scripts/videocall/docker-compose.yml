@@ -1,6 +1,6 @@
-# coturn — TURN/STUN server for vps-manager videocall.
+# coturn — TURN/STUN server for server-control-panel videocall.
 #
-# Managed by `vpsmctl videocall init` (writes /etc/vpsm/coturn.env and
+# Managed by `panelctl videocall init` (writes /etc/panel/coturn.env and
 # /etc/coturn/turnserver.conf from the templates next to this file). Restarts
 # automatically; healthchecks via the coturn admin port loopback ping.
 #
@@ -13,18 +13,18 @@
 # UDP 3478 (control + relay) MUST be exposed to the internet for TURN to work
 # behind hostile NAT. Plus the UDP range [TURN_MIN_PORT..TURN_MAX_PORT] for
 # the relays themselves. If `ufw` is on, see the post-install hint printed by
-# `vpsmctl videocall init`.
+# `panelctl videocall init`.
 
 services:
   coturn:
     image: coturn/coturn:4.6
-    container_name: vpsm-coturn
+    container_name: panel-coturn
     restart: unless-stopped
     network_mode: host
-    env_file: /etc/vpsm/coturn.env
+    env_file: /etc/panel/coturn.env
     volumes:
       - /etc/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
-      - /var/lib/vpsm-coturn:/var/lib/coturn
+      - /var/lib/panel-coturn:/var/lib/coturn
     healthcheck:
       # The coturn binary itself runs the test via its admin loopback. If the
       # process is alive and responding to local STUN binding requests, we're

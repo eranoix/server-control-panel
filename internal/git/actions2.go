@@ -212,7 +212,7 @@ func (s *svc) handleRebaseInteractive(w http.ResponseWriter, r *http.Request) {
 	}
 	todo := strings.Join(lines, "\n") + "\n"
 
-	tmp, terr := os.CreateTemp("", "vpsm-rebase-*.txt")
+	tmp, terr := os.CreateTemp("", "panel-rebase-*.txt")
 	if terr != nil {
 		httpx.WriteErr(w, http.StatusInternalServerError, "failed to prepare the rebase")
 		return

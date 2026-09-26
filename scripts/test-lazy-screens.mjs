@@ -78,12 +78,12 @@ ${styles}
 <style>[x-cloak]{display:none!important}</style>
 </head><body x-data="app()">
 ${blocks.join('\n')}
-<script src="/vendor/vpsm/app/00-shell.js"></script>
-<script src="/vendor/vpsm/app/10-git.js"></script>
-<script src="/vendor/vpsm/app/20-deploy.js"></script>
-<script src="/vendor/vpsm/app/30-agents.js"></script>
-<script src="/vendor/vpsm/app/40-nodes.js"></script>
-<script src="/vendor/vpsm/app/41-proxmox.js"></script>
+<script src="/vendor/panel/app/00-shell.js"></script>
+<script src="/vendor/panel/app/10-git.js"></script>
+<script src="/vendor/panel/app/20-deploy.js"></script>
+<script src="/vendor/panel/app/30-agents.js"></script>
+<script src="/vendor/panel/app/40-nodes.js"></script>
+<script src="/vendor/panel/app/41-proxmox.js"></script>
 <script>${fixture}</script>
 <script defer src="/vendor/alpine/alpine.min.js"></script>
 </body></html>`;
@@ -102,7 +102,7 @@ const srv = http.createServer((req, res) => {
 
 function findBrowser() {
   const cands = [];
-  if (process.env.VPSM_CHROMIUM) cands.push(process.env.VPSM_CHROMIUM);
+  if (process.env.PANEL_CHROMIUM) cands.push(process.env.PANEL_CHROMIUM);
   const cache = '/root/.cache/ms-playwright';
   if (fs.existsSync(cache)) for (const d of fs.readdirSync(cache).filter((x) => x.startsWith('chromium-')).sort().reverse())
     cands.push(path.join(cache, d, 'chrome-linux64', 'chrome'));

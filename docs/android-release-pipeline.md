@@ -98,7 +98,7 @@ On the operator's machine, **never** on this VPS:
 
 1. Download `app-release-unsigned.apk` (via `scp` from the staging path, or
    `gh run download`).
-2. `apksigner sign --ks vpsmanager-release.jks --ks-key-alias vpsmanager --out app-release-signed.apk app-release-unsigned.apk`
+2. `apksigner sign --ks servercontrolpanel-release.jks --ks-key-alias servercontrolpanel --out app-release-signed.apk app-release-unsigned.apk`
 3. `apksigner verify --print-certs app-release-signed.apk` and check that the
    `SHA-256 digest` matches `docs/android-signing-keystore.md` §5 — if it does
    not, **stop**, do not move on to the next step.

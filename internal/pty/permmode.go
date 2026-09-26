@@ -1,9 +1,9 @@
-// permmode.go — per-session Claude Code permission mode (VPSM Wave-3 #53).
+// permmode.go — per-session Claude Code permission mode (PANEL Wave-3 #53).
 //
 // A session may carry a Claude Code permission mode that is passed to `claude`
 // at spawn via `--permission-mode <mode>`. The mode is stored in a tiny sidecar
 // <DataDir>/session-permmode.json (dtach session name → mode) written by the
-// cockpit picker (via `vpsmctl agent-permmode`) and READ by the spawners here.
+// cockpit picker (via `panelctl agent-permmode`) and READ by the spawners here.
 //
 // Anti-injection: the mode is allowlist-validated before it ever
 // reaches an argv, and it is only ever passed as a discrete argv element (never

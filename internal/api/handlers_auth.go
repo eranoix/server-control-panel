@@ -312,7 +312,7 @@ func (r *Router) handleLogin(w http.ResponseWriter, req *http.Request) {
 			setSupabaseAccessCookie(w, vres.Session.AccessToken, vres.Session.ExpiresIn)
 		}
 	}
-	// WhatsApp warm-up (v2): fires systemctl start vpsm-whatsapp@<user> in the
+	// WhatsApp warm-up (v2): fires systemctl start panel-whatsapp@<user> in the
 	// background. Idempotent (a no-op if it is already running). No await — the
 	// UI shows STARTING via /api/whatsapp/status until the container answers.
 	if r.whatsappMgr != nil {
@@ -456,9 +456,9 @@ func (r *Router) handleRefresh(w http.ResponseWriter, req *http.Request) {
 }
 
 // handleRefreshCookie issues a fresh JWT WITHOUT depending on a still-valid
-// access token in the header — it uses only the HttpOnly `vpsm_refresh` cookie
+// access token in the header — it uses only the HttpOnly `panel_refresh` cookie
 // (the GoTrue refresh_token, valid about 30 days) to rotate the Supabase
-// session and mint a fresh vps-manager JWT.
+// session and mint a fresh server-control-panel JWT.
 //
 // Why it exists, separate from the protected handleRefresh: when the access
 // token expires (idle tab, backgrounded, laptop suspended), handleRefresh —
@@ -504,7 +504,7 @@ func (r *Router) handleRefreshCookie(w http.ResponseWriter, req *http.Request) {
 		writeErr(w, 503, "refresh temporarily unavailable")
 		return
 	}
-	// Remap the Supabase identity to the canonical vps-manager username.
+	// Remap the Supabase identity to the canonical server-control-panel username.
 	username, ok := r.auth.UUIDMap().LookupByEmail(sess.Email)
 	if !ok || username == "" {
 		writeErr(w, 401, "unknown session")
@@ -530,7 +530,7 @@ func (r *Router) handleRefreshCookie(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	// Rotate the Supabase cookies (GoTrue rotates the refresh_token on every use)
-	// and store the new vps-manager JWT.
+	// and store the new server-control-panel JWT.
 	if sess.RefreshToken != "" {
 		setSupabaseRefreshCookie(w, sess.RefreshToken)
 	}
@@ -563,7 +563,7 @@ func (r *Router) handleLogout(w http.ResponseWriter, req *http.Request) {
 		store.Revoke(jti)
 	}
 	// Revoke the refresh_token on GoTrue (best effort; it does not block the
-	// local logout). Reads the httpOnly vpsm_refresh cookie set at login.
+	// local logout). Reads the httpOnly panel_refresh cookie set at login.
 	logoutDetail := "local"
 	if refresh := readSupabaseRefreshCookie(req); refresh != "" {
 		if sb := r.auth.SupabaseClient(); sb != nil {
@@ -842,7 +842,7 @@ func (r *Router) totpSecretFor(username string) (string, bool) {
 	return r.cfg.TOTPSecretFor(username)
 }
 
-const totpIssuer = "VPS Manager"
+const totpIssuer = "Server Control Panel"
 
 func (r *Router) handleTOTPStatus(w http.ResponseWriter, req *http.Request) {
 	user := auth.UserFrom(req)
@@ -1075,7 +1075,7 @@ func (r *Router) handleChangePassword(w http.ResponseWriter, req *http.Request) 
 	// Re-wire the Supabase backend (auth.New zeroed it). Same constructor as at boot.
 	if r.cfg.SupabaseURL != "" && r.cfg.SupabaseAnonKey != "" {
 		backend := auth.BackendBoth
-		if v := os.Getenv("VPSM_AUTH_BACKEND"); v != "" {
+		if v := os.Getenv("PANEL_AUTH_BACKEND"); v != "" {
 			backend = auth.AuthBackend(v)
 		} else if r.cfg.AuthBackend != "" {
 			backend = auth.AuthBackend(r.cfg.AuthBackend)

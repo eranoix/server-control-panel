@@ -1,4 +1,4 @@
-// Package scheduler is the cron-driven job runner for vps-manager.
+// Package scheduler is the cron-driven job runner for server-control-panel.
 //
 // It owns a JSON store of Job definitions (cron expr + kind + args) and a
 // single goroutine that ticks every 30s, deciding what to fire and pushing

@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// pusher emits WAHA-compatible webhook events to the vps-manager server, so the
+// pusher emits WAHA-compatible webhook events to the server-control-panel server, so the
 // existing internal/whatsapp/webhook.go handlers (and Store/Broadcaster) keep
 // working unchanged. It signs each POST with the per-user HMAC secret.
 type pusher struct {
@@ -78,7 +78,7 @@ func (p *pusher) event(user, event string, payload interface{}) {
 		return
 	}
 	// Asynchronous delivery with retry: the daemon is the ONLY source of inbound
-	// events (the server no longer polls). If vps-manager is restarting (the very
+	// events (the server no longer polls). If server-control-panel is restarting (the very
 	// deploy scenario this daemon exists to survive), a single delivery attempt
 	// would lose the message forever (whatsmeow does not redeliver). Retry with
 	// backoff covers the restart window; async so it never blocks whatsmeow's event loop.
@@ -154,7 +154,7 @@ func (p *pusher) deliver(user, event, url, secret string, body []byte) {
 					case strings.Contains(reason, "missing"):
 						hint = " (the daemon did not sign it: hmac_secret is EMPTY in the meta.json of " + user + ")"
 					case strings.Contains(reason, "bad hmac"):
-						hint = " (the secrets DIFFER between meta.json and the running panel, and re-reading the disk did not fix it — the panel is holding a stale secret in cache; restart vps-manager)"
+						hint = " (the secrets DIFFER between meta.json and the running panel, and re-reading the disk did not fix it — the panel is holding a stale secret in cache; restart server-control-panel)"
 					default:
 						hint = " (response: " + reason + ")"
 					}

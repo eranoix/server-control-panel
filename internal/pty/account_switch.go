@@ -19,7 +19,7 @@ import (
 
 // SessionClaudePID finds the PID of the `claude` running in the session. 0 if there is none.
 //
-// The previous version looked for `VPSM_SESSION=<session>` in the environ — a
+// The previous version looked for `PANEL_SESSION=<session>` in the environ — a
 // variable NO point in the code ever writes (grep: two readers, zero writers). In
 // other words, this function ALWAYS returned 0, and with it the live account
 // switch never respawned claude: it fell silently into the "there was no claude

@@ -37,11 +37,11 @@ APK="${3:-$ROOT_DIR/android/app/build/outputs/apk/release/app-release.apk}"
 # The target is the data/ THE SERVER SERVES, never the one under the current
 # directory: every worktree has its own empty data/, and a repo-relative path
 # would "succeed" into a directory nothing serves. The running binary always
-# uses VPSM_HOME as its DataDir.
-VPSM_HOME="${VPSM_HOME:-/opt/panel}"
-[ -d "$VPSM_HOME/data" ] || fail_early "VPSM_HOME=$VPSM_HOME has no data/; point VPSM_HOME at the served installation"
-FDROID_REPO_DIR="${FDROID_REPO_DIR:-$VPSM_HOME/data/fdroid/repo}"
-UPDATES_DIR="${UPDATES_DIR:-$VPSM_HOME/data/android-updates}"
+# uses PANEL_HOME as its DataDir.
+PANEL_HOME="${PANEL_HOME:-/opt/panel}"
+[ -d "$PANEL_HOME/data" ] || fail_early "PANEL_HOME=$PANEL_HOME has no data/; point PANEL_HOME at the served installation"
+FDROID_REPO_DIR="${FDROID_REPO_DIR:-$PANEL_HOME/data/fdroid/repo}"
+UPDATES_DIR="${UPDATES_DIR:-$PANEL_HOME/data/android-updates}"
 WINDOW="${JANELA:-5}"
 APKSIGNER="${APKSIGNER:-apksigner}"
 
@@ -50,7 +50,7 @@ fail() { echo "ERROR: $*" >&2; exit 1; }
 [ -f "$APK" ] || fail "APK not found: $APK"
 
 default_package_id() {
-  sed -n 's/^vpsmanager\.applicationId=//p' "$ROOT_DIR/android/gradle.properties" | head -1 | tr -d '[:space:]'
+  sed -n 's/^servercontrolpanel\.applicationId=//p' "$ROOT_DIR/android/gradle.properties" | head -1 | tr -d '[:space:]'
 }
 PACKAGE_ID="${PACKAGE_ID:-$(default_package_id)}"
 [ -n "$PACKAGE_ID" ] || fail "PACKAGE_ID is empty"
@@ -68,13 +68,13 @@ mkdir -p "$FDROID_REPO_DIR"
 
 # The FILE NAME and the versionName differ on purpose. The dev build appends
 # "-devsigned" to the versionName so a throwaway-key artifact identifies itself
-# everywhere, but the public file name is `vpsm-<version>.apk` because it becomes
+# everywhere, but the public file name is `panel-<version>.apk` because it becomes
 # a link that must keep its shape.
 #
 # The versionName comes from the APK itself, never from the argument: the app
 # compares the index with what is installed, and an index announcing "0.1.24"
 # for an APK named "0.1.24-devsigned" would make the update banner lie.
-FILE_NAME="vpsm-$VERSION_NAME.apk"
+FILE_NAME="panel-$VERSION_NAME.apk"
 REAL_VERSION_NAME="$VERSION_NAME"
 AAPT2="${AAPT2:-$(command -v aapt2 || ls /opt/android-sdk/build-tools/*/aapt2 2>/dev/null | sort -r | head -1)}"
 if [ -n "${AAPT2:-}" ] && [ -x "$AAPT2" ]; then
@@ -133,7 +133,7 @@ if not registry:
                 seen.setdefault(c, (p.get("from_version_name", ""), p["from_sha256"], size))
         for c, (n, s, t) in seen.items():
             registry.append({"version_code": c, "version_name": n, "sha256": s,
-                             "size_bytes": t, "file": "vpsm-%s.apk" % n})
+                             "size_bytes": t, "file": "panel-%s.apk" % n})
         if registry:
             sys.stderr.write("registry seeded with %d version(s) from the incremental channel\n" % len(registry))
 
@@ -156,7 +156,7 @@ if os.path.abspath(apk) != os.path.abspath(dest):
     shutil.copy2(apk, dest)
 os.chmod(dest, 0o644)
 for f in os.listdir(repo):
-    if f.startswith("vpsm-") and f.endswith(".apk") and f != name:
+    if f.startswith("panel-") and f.endswith(".apk") and f != name:
         os.remove(os.path.join(repo, f))
 
 with io.open(registry_path, "w", encoding="utf-8") as fh:
@@ -168,7 +168,7 @@ for v in registry:
         "manifest": {"versionCode": int(v["version_code"]), "versionName": v["version_name"]},
         "file": {"name": "/" + v["file"], "sha256": v["sha256"], "size": int(v["size_bytes"])},
     }
-idx = {"repo": {"name": "vps-manager"}, "packages": {pkg: {"versions": versions}}}
+idx = {"repo": {"name": "server-control-panel"}, "packages": {pkg: {"versions": versions}}}
 with io.open(os.path.join(repo, "index-v2.json"), "w", encoding="utf-8") as fh:
     json.dump(idx, fh, indent=2)
 

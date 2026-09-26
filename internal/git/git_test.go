@@ -218,9 +218,9 @@ func TestEffectiveReposMergeAndDefaults(t *testing.T) {
 	if len(seed) != 3 {
 		t.Fatalf("the seed should have 3 repos, got %d", len(seed))
 	}
-	// vps-manager is writable (changed at the user's request) with the personal identity.
-	if r, ok := findRepo(seed, "vps-manager"); !ok || r.Policy != policyWrite || r.ExpEmail != "sam.rivera@personal.example" {
-		t.Errorf("vps-manager should be write/personal in the seed: %+v", r)
+	// server-control-panel is writable (changed at the user's request) with the personal identity.
+	if r, ok := findRepo(seed, "server-control-panel"); !ok || r.Policy != policyWrite || r.ExpEmail != "sam.rivera@personal.example" {
+		t.Errorf("server-control-panel should be write/personal in the seed: %+v", r)
 	}
 	// northwind-web is write with the work identity.
 	if r, ok := findRepo(seed, "northwind-web"); !ok || r.Policy != policyWrite || r.ExpEmail != "sam@northwind.example" {
@@ -242,7 +242,7 @@ func TestParseBlamePorcelain(t *testing.T) {
 		"summary first commit",
 		"boundary",
 		"filename go.mod",
-		"\tmodule vps-manager",
+		"\tmodule server-control-panel",
 		"7f5bf270c8001384284acfd799a2cc27697a087a 2 2",
 		"\tgo 1.22",
 	}, "\n")
@@ -253,7 +253,7 @@ func TestParseBlamePorcelain(t *testing.T) {
 	if got[0].Author != "Alice" || got[0].Email != "alice@x.com" {
 		t.Errorf("wrong authorship: %+v", got[0])
 	}
-	if got[0].Line != 1 || got[0].Content != "module vps-manager" || !got[0].Boundary {
+	if got[0].Line != 1 || got[0].Content != "module server-control-panel" || !got[0].Boundary {
 		t.Errorf("line0 wrong: %+v", got[0])
 	}
 	if got[0].Short != "7f5bf270" {

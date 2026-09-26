@@ -24,7 +24,7 @@ func WriteJSON(w http.ResponseWriter, v interface{}) {
 }
 
 // WriteErr sends a JSON error `{"error": msg}` with the given status code.
-// The convention followed by every handler in vps-manager.
+// The convention followed by every handler in server-control-panel.
 func WriteErr(w http.ResponseWriter, code int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)

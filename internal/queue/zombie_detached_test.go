@@ -24,7 +24,7 @@ func TestReaperInterruptsDetachedWithDeadScopeAtRuntime(t *testing.T) {
 	// The scope it hands back does not really exist -> scopeAlive() is false, which
 	// is exactly the "the process died" state we want to simulate.
 	q.SetDetach(func(id string) (string, error) {
-		return "vpsm-job-missing-" + id + ".scope", nil
+		return "panel-job-missing-" + id + ".scope", nil
 	}, "jira_ai_analysis")
 
 	j, err := q.Enqueue("jira_ai_analysis", json.RawMessage(`{"issue_key":"X-1","owner":"u"}`), "u", "user")

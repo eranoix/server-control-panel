@@ -49,7 +49,7 @@ func (w *WebhookChannel) Send(ctx context.Context, ev Event, cfg ChannelConfig) 
 		return err
 	}
 	req.Header.Set("Content-Type", kind)
-	req.Header.Set("User-Agent", "vps-manager-notify/1")
+	req.Header.Set("User-Agent", "server-control-panel-notify/1")
 	resp, err := w.client.Do(req)
 	if err != nil {
 		return err

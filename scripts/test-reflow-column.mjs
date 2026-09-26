@@ -40,7 +40,7 @@ const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
 console.log('=== test-reflow-column ===');
 
-const shell = fs.readFileSync(path.join(WEB, 'vendor/vpsm/app/00-shell.js'), 'utf8');
+const shell = fs.readFileSync(path.join(WEB, 'vendor/panel/app/00-shell.js'), 'utf8');
 const recovery = fs.readFileSync(path.join(WEB, 'recovery-term.html'), 'utf8');
 const index = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 
@@ -139,7 +139,7 @@ const base = 'http://127.0.0.1:' + srv.address().port + '/';
 // chrome. Skipping for lack of a browser would be faking coverage.
 function findBrowser() {
   const c = [];
-  if (process.env.VPSM_CHROMIUM) c.push(process.env.VPSM_CHROMIUM);
+  if (process.env.PANEL_CHROMIUM) c.push(process.env.PANEL_CHROMIUM);
   const cache = '/root/.cache/ms-playwright';
   if (fs.existsSync(cache)) for (const d of fs.readdirSync(cache).filter((x) => x.startsWith('chromium-')).sort().reverse())
     c.push(path.join(cache, d, 'chrome-linux64', 'chrome'));
@@ -180,7 +180,7 @@ const guard = async (script) => page.evaluate(`(async () => {
   t.reset(); t.resize(56, 30);
   let prop = { cols: 56, rows: 30 };
   const fit = {
-    _vpsmTerm: t,
+    _panelTerm: t,
     proposeDimensions: () => prop,
     fit: () => t.resize(prop.cols, prop.rows),
   };

@@ -8,8 +8,8 @@ import (
 )
 
 // A session that is ALIVE but UNREGISTERED (e.g. created by code-server's
-// vpsm-session-attach, which does not write the registry) must APPEAR in List()
-// — otherwise it vanishes from the site's list (that is what made "Vpsm" disappear).
+// panel-session-attach, which does not write the registry) must APPEAR in List()
+// — otherwise it vanishes from the site's list (that is what made "Panel" disappear).
 func TestListIncludesUnregisteredAliveSocket(t *testing.T) {
 	dir := t.TempDir()
 	sox := filepath.Join(dir, "session-sox")

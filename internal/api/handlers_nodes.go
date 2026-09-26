@@ -849,7 +849,7 @@ func (r *Router) credentialSource() func([]inventory.Node) (map[string]inventory
 
 	return func(nodes []inventory.Node) (map[string]inventory.Credential, error) {
 		// 🔴 The vault is an IN-MEMORY map loaded at boot. A secret written by
-		// ANOTHER process (`vpsmctl secrets set`, the pve credential tool)
+		// ANOTHER process (`panelctl secrets set`, the pve credential tool)
 		// would stay invisible until the next restart, so reload when the file
 		// changed. In the common case this is one os.Stat.
 		if r.secrets != nil {

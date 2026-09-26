@@ -484,7 +484,7 @@ func TestAggregatesReferences(t *testing.T) {
 			return []JobRef{{ID: "j_1", Kind: "queue", NodeID: "lxc/207", Source: "user"}}, nil
 		},
 		Services: func() ([]Service, error) {
-			return []Service{{ID: "s1", NodeID: "lxc/207", Name: "panel", Unit: "vps-manager.service"}}, nil
+			return []Service{{ID: "s1", NodeID: "lxc/207", Name: "panel", Unit: "server-control-panel.service"}}, nil
 		},
 	}
 	f := &fakePVE{resources: testResources()}
@@ -502,7 +502,7 @@ func TestAggregatesReferences(t *testing.T) {
 	if len(inv.Jobs) != 1 || inv.Jobs[0].Kind != "queue" || inv.Jobs[0].Source != "user" {
 		t.Errorf("jobs = %+v", inv.Jobs)
 	}
-	if len(inv.Services) != 1 || inv.Services[0].Unit != "vps-manager.service" {
+	if len(inv.Services) != 1 || inv.Services[0].Unit != "server-control-panel.service" {
 		t.Errorf("services = %+v", inv.Services)
 	}
 	if inv.SchemaVersion != SchemaVersion {

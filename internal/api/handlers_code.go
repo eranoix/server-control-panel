@@ -3,7 +3,7 @@ package api
 // handlers_code.go — native VSCode (code-server) served gated under
 // /_code, embedded as the "VSCode" sub-tab of the Dev page.
 //
-// code-server runs as a persistent systemd service (vpsm-code-server.service),
+// code-server runs as a persistent systemd service (panel-code-server.service),
 // bound EXCLUSIVELY to 127.0.0.1:8770 — never a public port. The only access
 // path is this route, behind auth.Middleware + the mustPrimary gate. Since the
 // editor hands out a ROOT shell over the web, the mustPrimary gate is
@@ -30,10 +30,10 @@ import (
 )
 
 // codeServerSocket is the root-only UNIX SOCKET of the systemd service
-// vpsm-code-server. It matches --socket in ExecStart. Only root reaches it —
+// panel-code-server. It matches --socket in ExecStart. Only root reaches it —
 // this closes non-root co-tenants' access to the editor's API (the mustPrimary
 // gate only covers traffic that goes through here).
-const codeServerSocket = "/run/vpsm-code-server/code.sock"
+const codeServerSocket = "/run/panel-code-server/code.sock"
 
 // codeServerProxy reverse-proxies /_code/* to the local code-server on
 // 127.0.0.1:8770, stripping the /_code prefix, and gating on the primary user.
@@ -89,7 +89,7 @@ func (r *Router) codeServerProxy() http.Handler {
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		// A friendly 502 when the systemd service is down (the editor is
-		// independent of the vps-manager deploy, so it may be restarting).
+		// independent of the server-control-panel deploy, so it may be restarting).
 		http.Error(w, "editor (code-server) unavailable: "+err.Error(), http.StatusBadGateway)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

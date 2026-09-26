@@ -1,18 +1,18 @@
 groups:
-  - name: vpsmanager
+  - name: servercontrolpanel
     interval: 30s
     rules:
       - alert: BinaryDown
-        expr: up{job="vpsmanager"} == 0
+        expr: up{job="servercontrolpanel"} == 0
         for: 3m
         labels:
           severity: critical
         annotations:
-          summary: "vps-manager binary down"
+          summary: "server-control-panel binary down"
           description: "Instance {{ $labels.instance }} has been down for > 3 minutes."
 
       - alert: LoginFailuresHigh
-        expr: sum(rate(vpsm_login_failures_total[5m])) > 0.0833
+        expr: sum(rate(panel_login_failures_total[5m])) > 0.0833
         for: 2m
         labels:
           severity: warning
@@ -21,7 +21,7 @@ groups:
           description: "Rate > 5/min for 2m."
 
       - alert: SubsystemDown
-        expr: vpsm_subsystem_up == 0
+        expr: panel_subsystem_up == 0
         for: 5m
         labels:
           severity: warning
@@ -31,8 +31,8 @@ groups:
 
       - alert: WSCliff
         expr: |
-          (vpsm_ws_connections_active - vpsm_ws_connections_active offset 30s)
-          / (vpsm_ws_connections_active offset 30s + 1) < -0.5
+          (panel_ws_connections_active - panel_ws_connections_active offset 30s)
+          / (panel_ws_connections_active offset 30s + 1) < -0.5
         for: 30s
         labels:
           severity: warning

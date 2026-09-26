@@ -7,7 +7,7 @@ plugins {
     id("org.jetbrains.kotlin.jvm") version "2.4.10"
 }
 
-group = "com.vpsmanager.buildlogic"
+group = "dev.servercontrolpanel.buildlogic"
 version = "unespecified"
 
 kotlin {

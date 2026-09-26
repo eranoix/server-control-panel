@@ -1,4 +1,4 @@
-# Technical record — the VPS Manager Android app
+# Technical record — the Server Control Panel Android app
 
 > **What this document is.** The complete record of the native Android app:
 > where it came from, how it was built day by day, what each piece is made of,
@@ -46,7 +46,7 @@
 
 ## 1. What came before, and why it died
 
-VPS Manager is a web panel served by a single Go binary: 380 HTTP routes, 17
+Server Control Panel is a web panel served by a single Go binary: 380 HTTP routes, 17
 WebSocket endpoints, ~40 navigation sections, an Alpine.js SPA embedded in the
 binary. It already worked in a phone browser.
 
@@ -407,7 +407,7 @@ was a draft living outside the repository that only did the first.
 exist outside the repository. Two traps found while writing it, both because
 they happened on the first run:
 
-- the target is the **served** `data/` (`VPSM_HOME`), never the one in
+- the target is the **served** `data/` (`PANEL_HOME`), never the one in
   whichever worktree you happen to be in — each ticket works in its own
   worktree with a genuinely empty `data/`, and a relative path publishes with a
   success exit code into a directory that serves nothing;
@@ -982,7 +982,7 @@ Details that hold this up:
   |---|---|---:|
   | `main.log` | shell | 244 B |
   | `Server.log` | mixed | 400 B |
-  | `Vpsm.log` | mixed | 667 B |
+  | `Panel.log` | mixed | 667 B |
   | `App.log` | Claude Code | 1,250 B |
 
   A five-fold spread. An average ratio would leave precisely the conversation
@@ -1101,13 +1101,13 @@ never runs here.
 
 For working builds there is a **development** key, disposable by construction
 and not by agreement: a file with a different name
-(`vpsmanager-DEV-NAO-E-RELEASE.jks`), a different alias, a CN that says
+(`servercontrolpanel-DEV-NAO-E-RELEASE.jks`), a different alias, a CN that says
 "DEV - NAO E RELEASE", a shorter validity, and a deliberately public password
 (like the `android` of the SDK's own debug keystore — keeping the password of a
 disposable key in the vault would only teach people to treat the vault as a
 dumping ground).
 
-The release build comes out **unsigned** without the `vpsmanager.devKeystore`
+The release build comes out **unsigned** without the `servercontrolpanel.devKeystore`
 property — correct and deliberate behaviour, because a `signingConfig` enabled
 by default would erase the guarantee with nobody noticing. With it, it applies
 the dev key and marks the `versionName` with `-devsigned`.

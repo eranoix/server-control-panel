@@ -99,10 +99,10 @@
   // Clears sessionStorage so a reload does not re-enter with the stale token.
   if (new URLSearchParams(location.search).get('expired') === '1') {
     try {
-      sessionStorage.removeItem('vpsm_vc_guest_token');
-      sessionStorage.removeItem('vpsm_vc_guest_room_id');
-      sessionStorage.removeItem('vpsm_vc_guest_room_name');
-      sessionStorage.removeItem('vpsm_vc_guest_expires_at');
+      sessionStorage.removeItem('panel_vc_guest_token');
+      sessionStorage.removeItem('panel_vc_guest_room_id');
+      sessionStorage.removeItem('panel_vc_guest_room_name');
+      sessionStorage.removeItem('panel_vc_guest_expires_at');
     } catch (_) {}
     showErr('Your session expired. Sign in with the PIN again.');
   }
@@ -112,7 +112,7 @@
   });
 
   // Remember the name used last time
-  const lastName = localStorage.getItem('vpsm_vc_guest_name') || '';
+  const lastName = localStorage.getItem('panel_vc_guest_name') || '';
   if (lastName) $('name').value = lastName;
 
   $('frm').addEventListener('submit', async (e) => {
@@ -133,11 +133,11 @@
       if (!r.ok) throw new Error('Error ' + r.status + ' from the server.');
       const data = await r.json();
       // Persist token + name
-      sessionStorage.setItem('vpsm_vc_guest_token', data.token);
-      sessionStorage.setItem('vpsm_vc_guest_room_id', data.room_id);
-      sessionStorage.setItem('vpsm_vc_guest_room_name', data.room_name || '');
-      sessionStorage.setItem('vpsm_vc_guest_expires_at', String(data.expires_at || 0));
-      if (name) localStorage.setItem('vpsm_vc_guest_name', name);
+      sessionStorage.setItem('panel_vc_guest_token', data.token);
+      sessionStorage.setItem('panel_vc_guest_room_id', data.room_id);
+      sessionStorage.setItem('panel_vc_guest_room_name', data.room_name || '');
+      sessionStorage.setItem('panel_vc_guest_expires_at', String(data.expires_at || 0));
+      if (name) localStorage.setItem('panel_vc_guest_name', name);
       // Redirect to the hash the panel intercepts
       location.href = '/?vc_guest=1#videocall=guest';
     } catch (err) {

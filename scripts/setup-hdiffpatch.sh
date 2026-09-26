@@ -42,7 +42,7 @@ command -v curl >/dev/null 2>&1 || fail "curl not found"
 command -v unzip >/dev/null 2>&1 || fail "unzip not found"
 command -v sha256sum >/dev/null 2>&1 || fail "sha256sum not found"
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/vpsm-hdiffpatch.XXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/panel-hdiffpatch.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
 echo "==> downloading ${ARCHIVE}"

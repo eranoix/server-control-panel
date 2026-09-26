@@ -1,0 +1,35 @@
+# server-control-panel WhatsApp daemon (wad) — embeds whatsmeow (the lib WAHA's GOWS
+# engine wraps) to send/receive WhatsApp for free, replacing the paywalled WAHA
+# media endpoints. Hosts one whatsmeow session per migrated user, reusing the
+# device already paired in a COPY of gows.db (no re-pairing).
+#
+# PERSISTENT (Restart=always): survives server-control-panel deploys — WhatsApp sessions
+# stay connected across server restarts (by design).
+#
+# Install: cp this to /etc/systemd/system/panel-wad.service && systemctl daemon-reload
+#          && systemctl enable --now panel-wad
+[Unit]
+Description=server-control-panel WhatsApp daemon (whatsmeow)
+After=network-online.target
+Wants=network-online.target
+# NO start rate limit. With systemd's default (5 starts / 10s) a burst of
+# restarts leaves the unit in `start-limit-hit`, which Restart=always does NOT
+# recover from: the daemon stays dead until restarted by hand. For the daemon
+# holding the WhatsApp sessions, retrying is always better than giving up.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=root
+# State (per-user session DBs + meta.json) and where to push inbound events.
+Environment=WAD_STATE_DIR=/var/lib/panel-wad
+Environment=WAD_LISTEN=127.0.0.1:8769
+Environment=WAD_WEBHOOK_BASE=http://127.0.0.1:8765
+ExecStart=/opt/panel/bin/wad
+Restart=always
+RestartSec=3
+# whatsmeow keeps long-lived sockets; give it room.
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

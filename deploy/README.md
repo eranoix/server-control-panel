@@ -21,7 +21,7 @@ script. Integrate before you test.
 
 **2. The contract runs WHERE THE ARTIFACT LANDS, not where it was built.** That is
 what an empty `BUILD_CMD` is for: the binary can be built on another machine and
-arrive ready. `lab-agent` is built on the VPS and lands on another host, and
+arrive ready. `node-agent` is built on the VPS and lands on another host, and
 `deploy.sh` does not need to know about the network for that to work.
 
 ## Exit codes
@@ -106,7 +106,7 @@ they use `--validar`, which exits before the first side effect.
 
 Three projects use this contract and **none of them exercises all of it**:
 
-| Part of the contract | panel | lab-agent | tl-agent |
+| Part of the contract | panel | node-agent | tl-agent |
 |---|---|---|---|
 | **Build** step | ✅ (in `agentctl`) | ✅ Go, on the VPS | ❌ Python, nothing to build |
 | Empty `BUILD_CMD` | ✅ | ✅ (build is an earlier step) | ✅ |
@@ -124,7 +124,7 @@ Not covered by any of them: `INV_FILE` and `BIN_CHECK_ARG` outside the panel.
 ### Single-artifact scope
 
 The contract swaps **one file** atomically (`install -m 0755`). For the panel and
-`lab-agent` that is the whole program. For `tl-agent` it is only the entrypoint:
+`node-agent` that is the whole program. For `tl-agent` it is only the entrypoint:
 its support files travel with a checked hash but stay **outside the atomic swap
 and the rollback**. A deploy that rolls back restores the previous entrypoint
 while the support files stay on the new version.

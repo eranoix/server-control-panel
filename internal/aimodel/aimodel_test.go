@@ -26,11 +26,11 @@ func TestForPrecedence(t *testing.T) {
 	}
 
 	// env overrides config (and the default).
-	t.Setenv("VPSM_AI_MODEL_JIRA", "opus")
+	t.Setenv("PANEL_AI_MODEL_JIRA", "opus")
 	if got := For(JiraAI, "sonnet"); got != "opus" {
 		t.Fatalf("env>config JiraAI = %q, want opus", got)
 	}
-	t.Setenv("VPSM_AI_MODEL_SUGGEST", "sonnet")
+	t.Setenv("PANEL_AI_MODEL_SUGGEST", "sonnet")
 	if got := For(Suggest, ""); got != "sonnet" {
 		t.Fatalf("env Suggest = %q, want sonnet", got)
 	}
@@ -63,7 +63,7 @@ func TestIntakeModel(t *testing.T) {
 		t.Errorf("IntakeModel(full id) = %q, want it passed straight through", got)
 	}
 	// Env overrides config.
-	t.Setenv("VPSM_AI_MODEL_INTAKE", "opus")
+	t.Setenv("PANEL_AI_MODEL_INTAKE", "opus")
 	if got := IntakeModel("sonnet"); got != "claude-opus-4-7" {
 		t.Errorf("IntakeModel with env=opus = %q, want claude-opus-4-7", got)
 	}

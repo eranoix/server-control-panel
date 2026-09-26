@@ -149,7 +149,7 @@ func specRegisterRealCredential(t *testing.T, w *webauthn.WebAuthn, username str
 // specification.
 func specRealWebAuthnRP(t *testing.T) *webauthn.WebAuthn {
 	t.Helper()
-	w, err := webauthn.New(auth.NewWebAuthnConfig(specRPID, specOrigin, "VPS Manager test"))
+	w, err := webauthn.New(auth.NewWebAuthnConfig(specRPID, specOrigin, "Server Control Panel test"))
 	if err != nil {
 		t.Fatalf("webauthn.New: %v", err)
 	}
@@ -183,7 +183,7 @@ func doMobileSessionsRequest(t *testing.T, handler http.HandlerFunc, user, metho
 // returns 404 (never 403 — that would confirm the ID exists to somebody who
 // does not own it), and never mutates the real owner's record.
 func TestMobileSessions_CrossUserApproveRevoke404NeverResurrects(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.example.com")
+	r := newPasskeyRouter(t, "panel.example.com")
 
 	victimStore := r.credentialStore("sam")
 	rec, err := victimStore.Add(webauthn.Credential{ID: []byte("victim-cred")}, "victim's phone")
@@ -218,7 +218,7 @@ func TestMobileSessions_CrossUserApproveRevoke404NeverResurrects(t *testing.T) {
 // sees the caller's OWN credentials — another user in the same DataDir does not
 // show up in the list.
 func TestMobileSessions_ListSelfScoped(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.example.com")
+	r := newPasskeyRouter(t, "panel.example.com")
 
 	if _, err := r.credentialStore("sam").Add(webauthn.Credential{ID: []byte("cred-sam")}, "sam's phone"); err != nil {
 		t.Fatalf("Add sam: %v", err)
@@ -246,7 +246,7 @@ func TestMobileSessions_ListSelfScoped(t *testing.T) {
 // TestMobileSessions_ApproveTwiceIsIdempotent proves the edge case asked for
 // explicitly: approving an already approved credential is not an error.
 func TestMobileSessions_ApproveTwiceIsIdempotent(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.example.com")
+	r := newPasskeyRouter(t, "panel.example.com")
 	store := r.credentialStore("sam")
 	rec, err := store.Add(webauthn.Credential{ID: []byte("cred-double-approval")}, "phone")
 	if err != nil {
@@ -271,7 +271,7 @@ func TestMobileSessions_ApproveTwiceIsIdempotent(t *testing.T) {
 // explicitly: approving an already revoked credential fails (404) — Remove()
 // deletes the record entirely, leaving no remnant for Approve() to revive.
 func TestMobileSessions_ApproveAfterRevokeFails(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.example.com")
+	r := newPasskeyRouter(t, "panel.example.com")
 	store := r.credentialStore("sam")
 	rec, err := store.Add(webauthn.Credential{ID: []byte("cred-revoked")}, "phone")
 	if err != nil {
@@ -289,7 +289,7 @@ func TestMobileSessions_ApproveAfterRevokeFails(t *testing.T) {
 // pairing uses the same removal operation as revoking an approved one —
 // Remove() does not look at status.
 func TestMobileSessions_DenyReusesRevokeSemantics(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.example.com")
+	r := newPasskeyRouter(t, "panel.example.com")
 	store := r.credentialStore("sam")
 	rec, err := store.Add(webauthn.Credential{ID: []byte("cred-pending-denied")}, "phone")
 	if err != nil {
@@ -308,7 +308,7 @@ func TestMobileSessions_DenyReusesRevokeSemantics(t *testing.T) {
 // drop the current desktop session — sessions.Store (JWT/jti) and
 // WebAuthnCredentialsStore (passkey) are separate stores.
 func TestMobileSessions_RevokeCurrentCredentialDoesNotTouchDesktopSession(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.example.com")
+	r := newPasskeyRouter(t, "panel.example.com")
 	sessStore := r.auth.Sessions()
 	if sessStore == nil {
 		t.Fatal("sessions store unavailable — test precondition failed")
@@ -352,7 +352,7 @@ func TestMobileSessions_RevokeCurrentCredentialDoesNotTouchDesktopSession(t *tes
 //     "existed and was revoked").
 func TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately(t *testing.T) {
 	const username = "sam"
-	r := newPasskeyRouter(t, "vpsm.example.com")
+	r := newPasskeyRouter(t, "panel.example.com")
 
 	// The ceremony itself runs against the official vector's fixed RPID
 	// (example.org), not against the Router's test hostname — it swaps the RP
@@ -441,7 +441,7 @@ func TestPasskeyLogin_ApproveIsSoleGateAndRevokeKillsLoginImmediately(t *testing
 // continuity than the password fallback.
 func TestPasskeyLogin_RefreshTokenRotatesAndInvalidatesOldToken(t *testing.T) {
 	const username = "sam"
-	r := newPasskeyRouter(t, "vpsm.example.com")
+	r := newPasskeyRouter(t, "panel.example.com")
 
 	specRP := specRealWebAuthnRP(t)
 	r.webauthnRP = specRP

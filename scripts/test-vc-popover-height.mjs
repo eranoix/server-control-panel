@@ -26,7 +26,7 @@ catch {
 }
 function findBrowser() {
   const c = [];
-  if (process.env.VPSM_CHROMIUM) c.push(process.env.VPSM_CHROMIUM);
+  if (process.env.PANEL_CHROMIUM) c.push(process.env.PANEL_CHROMIUM);
   const cache = '/root/.cache/ms-playwright';
   if (fs.existsSync(cache)) for (const d of fs.readdirSync(cache).filter((x) => x.startsWith('chromium-')).sort().reverse())
     c.push(path.join(cache, d, 'chrome-linux64', 'chrome'));
@@ -131,7 +131,7 @@ const rule = (html.match(/\.vc-popover \{[^}]*\}/) || [''])[0];
 /max-height:\s*calc\(var\(--vc-root-h/.test(rule)
   ? ok('the .vc-popover rule measures against the panel (--vc-root-h)')
   : no('the .vc-popover rule went back to measuring against the viewport: ' + rule.replace(/\s+/g, ' '));
-/_vcSetupPopoverBounds\(\)/.test(fs.readFileSync(path.join(WEB, 'vendor/vpsm/app/00-shell.js'), 'utf8'))
+/_vcSetupPopoverBounds\(\)/.test(fs.readFileSync(path.join(WEB, 'vendor/panel/app/00-shell.js'), 'utf8'))
   ? ok('00-shell.js publishes the panel height')
   : no('00-shell.js no longer calls _vcSetupPopoverBounds() — the var falls back to the viewport');
 

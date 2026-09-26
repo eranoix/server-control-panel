@@ -43,9 +43,9 @@ type graphViews struct {
 // user-supplied path: only these known destinations are servable via
 // /_graph, which eliminates path traversal.
 var knowledgeGraphs = map[string]graphViews{
-	"vps-manager": {
+	"server-control-panel": {
 		"/opt/panel/graphify-out/graph.html",
-		"/opt/panel/graphify-out/vps-manager-callflow.html",
+		"/opt/panel/graphify-out/server-control-panel-callflow.html",
 	},
 	"northwind-web": {
 		"/root/projetos/northwind-web/graphify-out/graph.html",
@@ -130,29 +130,29 @@ func (r *Router) handleKnowledgeGraph(w http.ResponseWriter, req *http.Request) 
 // (classic scripts => shared global lexical scope), with a guard.
 const graphControlsHTML = `
 <style>
-#vpsm-graph-ctl{padding:12px 14px;border-top:1px solid rgba(255,255,255,.06);font:12px system-ui,-apple-system,sans-serif;color:#9aa4b2}
-#vpsm-graph-ctl h4{margin:0 0 8px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:#6b7280;font-weight:600}
-#vpsm-graph-ctl label{display:flex;align-items:center;gap:7px;margin:6px 0;cursor:pointer}
-#vpsm-graph-ctl .vpsm-row{display:flex;align-items:center;gap:8px;margin:9px 0}
-#vpsm-graph-ctl .vpsm-row input[type=range]{flex:1}
-#vpsm-graph-ctl button{width:100%;margin:5px 0;padding:6px;border:1px solid rgba(255,255,255,.12);background:#141a26;color:#cbd5e1;border-radius:5px;cursor:pointer;font:11px system-ui}
-#vpsm-graph-ctl button:hover{background:#1b2433}
-#vpsm-graph-ctl .vpsm-count{color:#6b7280;font-size:11px}
+#panel-graph-ctl{padding:12px 14px;border-top:1px solid rgba(255,255,255,.06);font:12px system-ui,-apple-system,sans-serif;color:#9aa4b2}
+#panel-graph-ctl h4{margin:0 0 8px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:#6b7280;font-weight:600}
+#panel-graph-ctl label{display:flex;align-items:center;gap:7px;margin:6px 0;cursor:pointer}
+#panel-graph-ctl .panel-row{display:flex;align-items:center;gap:8px;margin:9px 0}
+#panel-graph-ctl .panel-row input[type=range]{flex:1}
+#panel-graph-ctl button{width:100%;margin:5px 0;padding:6px;border:1px solid rgba(255,255,255,.12);background:#141a26;color:#cbd5e1;border-radius:5px;cursor:pointer;font:11px system-ui}
+#panel-graph-ctl button:hover{background:#1b2433}
+#panel-graph-ctl .panel-count{color:#6b7280;font-size:11px}
 </style>
 <script>
 (function(){
   if (typeof nodesDS==='undefined' || typeof network==='undefined') return;
   var sb=document.getElementById('sidebar'); if(!sb) return;
   var maxDeg=0; nodesDS.forEach(function(n){ if((n._degree||0)>maxDeg) maxDeg=n._degree||0; });
-  var el=document.createElement('div'); el.id='vpsm-graph-ctl';
+  var el=document.createElement('div'); el.id='panel-graph-ctl';
   el.innerHTML=
     '<h4>Layout</h4>'+
     '<label><input type="checkbox" id="vg-tests"> Hide tests</label>'+
     '<label><input type="checkbox" id="vg-leaves"> Hide leaves (degree &le;1)</label>'+
-    '<div class="vpsm-row"><span>Min degree</span><input type="range" id="vg-deg" min="0" max="'+maxDeg+'" value="0"><span class="vpsm-count" id="vg-degv">0</span></div>'+
+    '<div class="panel-row"><span>Min degree</span><input type="range" id="vg-deg" min="0" max="'+maxDeg+'" value="0"><span class="panel-count" id="vg-degv">0</span></div>'+
     '<button id="vg-collapse">Collapse by community</button>'+
     '<button id="vg-freeze">Freeze layout</button>'+
-    '<div class="vpsm-count" id="vg-stat"></div>';
+    '<div class="panel-count" id="vg-stat"></div>';
   sb.appendChild(el);
   function isTest(f){ f=(f||'').toLowerCase(); return f.indexOf('_test')>=0||f.indexOf('.test.')>=0||f.indexOf('/tests/')>=0||f.indexOf('.spec.')>=0; }
   function apply(){

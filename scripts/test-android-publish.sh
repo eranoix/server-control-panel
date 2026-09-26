@@ -37,8 +37,8 @@ ok() { echo "  OK: $1"; pass=$((pass+1)); }
 no() { echo "  FAILED: $1"; fail=$((fail+1)); }
 echo "=== test-android-publish ==="
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/vpsm-android-publish.XXXXXX")" || exit 2
-trap 'case "$TMP" in "${TMPDIR:-/tmp}"/vpsm-android-publish.*) rm -rf "$TMP";; esac' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/panel-android-publish.XXXXXX")" || exit 2
+trap 'case "$TMP" in "${TMPDIR:-/tmp}"/panel-android-publish.*) rm -rf "$TMP";; esac' EXIT
 
 # Fixtures: a real throwaway keystore (same parameters as the drill in
 # docs/android-signing-keystore.md, but with a short validity).
@@ -59,7 +59,7 @@ make_signed_apk() {
   cat > "$manifest" <<'EOF'
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="br.tech.vpsmanager.app.fixture">
+    package="tech.northwind.servercontrolpanel.fixture">
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
 </manifest>
 EOF
@@ -126,7 +126,7 @@ mkdir -p "$T2_STAGING/101/fdroid-repo" "$T2_REPO"
 cp "$APK_OK" "$T2_STAGING/101/app-release-signed.apk"
 cp "$APK_OK" "$T2_STAGING/101/fdroid-repo/app-release-signed.apk"
 cat > "$T2_STAGING/101/fdroid-repo/index-v2.json" <<'EOF'
-{"packages": {"br.tech.vpsmanager.app": {"versions": {"app-release-signed.apk": {}}}}}
+{"packages": {"tech.northwind.servercontrolpanel": {"versions": {"app-release-signed.apk": {}}}}}
 EOF
 
 if STAGING_DIR="$T2_STAGING" FDROID_REPO_DIR="$T2_REPO" KEYSTORE_DOC="$KEYSTORE_DOC" \
@@ -146,7 +146,7 @@ fi
 echo "--- Test 3: no key material survives, the script never touches the vault ---"
 # Checks for a real INVOCATION, not the explanatory comments (which mention
 # data/secrets.vault to say it is NOT used).
-if grep -qE "vpsmctl secrets get|fdroid_repo_keystore_b64|fdroid_repo_keystore_pass" "$SCRIPT"; then
+if grep -qE "panelctl secrets get|fdroid_repo_keystore_b64|fdroid_repo_keystore_pass" "$SCRIPT"; then
   no "android-publish.sh invokes the vault/repokey and must not (docs/android-fdroid-repo.md §1-2)"
 else
   ok "android-publish.sh never invokes data/secrets.vault or the repokey"

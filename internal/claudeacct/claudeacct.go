@@ -72,10 +72,10 @@ type Account struct {
 }
 
 // accountsBaseDir is where non-default account config dirs are provisioned.
-// Overridable via VPSM_CLAUDE_ACCOUNTS_DIR (portability for non-root deploys +
+// Overridable via PANEL_CLAUDE_ACCOUNTS_DIR (portability for non-root deploys +
 // hermetic tests); defaults to /srv/agent-accounts.
 func accountsBaseDir() string {
-	if v := strings.TrimSpace(os.Getenv("VPSM_CLAUDE_ACCOUNTS_DIR")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("PANEL_CLAUDE_ACCOUNTS_DIR")); v != "" {
 		return v
 	}
 	return "/srv/agent-accounts"

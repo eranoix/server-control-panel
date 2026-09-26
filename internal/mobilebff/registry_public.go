@@ -6,7 +6,7 @@ package mobilebff
 // internal/api/api.go mounts the ENTIRE mobilebff.Mount surface under a
 // "protected" mux, which is in turn wrapped by r.auth.Middleware (applied with
 // no path exception to "/api/" and "/ws/") — any request without a valid
-// vpsm_token/Bearer session gets a 401 right there, before it ever reaches a
+// panel_token/Bearer session gets a 401 right there, before it ever reaches a
 // handler. That is correct for every already-authenticated route, but it is
 // incompatible with login and with the passkey registration step: by
 // definition, those calls happen BEFORE any session exists (login/begin,
@@ -66,7 +66,7 @@ func RegisterPublic(name string, fn Registrar) {
 // tell a public route from a protected one by base path, only by the presence
 // or absence of the session Bearer/cookie it already sends by default.
 func MountPublic(mux *http.ServeMux, deps Deps) huma.API {
-	config := huma.DefaultConfig("vps-manager mobile BFF (public)", "1.0.0")
+	config := huma.DefaultConfig("server-control-panel mobile BFF (public)", "1.0.0")
 	// DELIBERATE OMISSION: unlike Mount, applyBearerSecurity (security.go) is
 	// NOT called here. These routes happen before any session exists, so
 	// declaring `security` on them would be a spec that lies — and it would make

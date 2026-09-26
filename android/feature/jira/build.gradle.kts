@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vpsmanager.feature.jira"
+    namespace = "dev.servercontrolpanel.feature.jira"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {

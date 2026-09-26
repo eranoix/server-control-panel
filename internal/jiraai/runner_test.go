@@ -334,7 +334,7 @@ func TestRatchetThreshold(t *testing.T) {
 func TestBuildRefinePrompt(t *testing.T) {
 	d := &jira.IssueDetail{Issue: jira.Issue{Key: "TASK-99", Summary: "ticket title"}}
 	p := buildRefinePrompt(d, "clean original description", "## 🛠 Fix Plan\n1. old step", 78,
-		"VPSM", "/repo", "REFINE-PREAMBLE")
+		"PANEL", "/repo", "REFINE-PREAMBLE")
 	for _, want := range []string{"REFINE-PREAMBLE", "TASK-99", "clean original description", "old step", "78%", "PREVIOUS PLAN", "beat it"} {
 		if !contains(p, want) {
 			t.Errorf("buildRefinePrompt missing %q", want)

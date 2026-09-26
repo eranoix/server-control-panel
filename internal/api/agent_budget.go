@@ -1,4 +1,4 @@
-// agent_budget.go — VPSM Wave-3 #55: spend ceilings (ALERT-ONLY).
+// agent_budget.go — PANEL Wave-3 #55: spend ceilings (ALERT-ONLY).
 //
 // Configurable USD caps (per-session, per-day, per-month) live in a tiny config
 // <DataDir>/agent-budget.json (all default 0 = off). The cost aggregator

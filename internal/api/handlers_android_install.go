@@ -2,7 +2,7 @@ package api
 
 // handlers_android_install.go — /android/install: an authenticated page inside
 // the panel itself that gives the admin a complete path to install the Android
-// app without leaving vps-manager. It shows a QR code (same mechanism as
+// app without leaving server-control-panel. It shows a QR code (same mechanism as
 // internal/api/handlers_auth.go's TOTP: qrcode.Encode + data URL) encoding
 // the F-Droid add-repo URL pointing at the self-hosted repository
 // (internal/api/handlers_fdroid.go), with the SHA-256 fingerprint of the
@@ -36,14 +36,14 @@ import (
 
 // fdroidRepoFingerprintKey is the same vault key that
 // docs/android-fdroid-repo.md §4 tells the operator to fill in
-// (`vpsmctl secrets set --user sam fdroid_repo_fingerprint`) after
+// (`panelctl secrets set --user sam fdroid_repo_fingerprint`) after
 // generating the repokey offline.
 const fdroidRepoFingerprintKey = "fdroid_repo_fingerprint"
 
 // androidPackageID is the native app's applicationId — the key under which the
 // package appears in `packages` of F-Droid's index-v2.json.
 //
-// Source of truth: android/gradle.properties (vpsmanager.applicationId), the
+// Source of truth: android/gradle.properties (servercontrolpanel.applicationId), the
 // ONLY place in the build where the literal exists, locked by the operator's
 // decision in docs/android-signing-keystore.md §2. A wrong value here breaks
 // nothing visibly — latestAndroidRelease simply does not find the key in the
@@ -52,7 +52,7 @@ const fdroidRepoFingerprintKey = "fdroid_repo_fingerprint"
 // That is why this value has its own test (TestAndroidPackageID) pinning it
 // to the documented value: any new code reusing the constant (e.g. incremental
 // patch generation) would inherit the same silent bug.
-const androidPackageID = "tech.northwind.vpsm.app"
+const androidPackageID = "tech.northwind.servercontrolpanel"
 
 // androidInstallPageData feeds the android-install.html template.
 type androidInstallPageData struct {

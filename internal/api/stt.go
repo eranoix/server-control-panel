@@ -20,7 +20,7 @@ import (
 	"server-control-panel/internal/wsorigin"
 )
 
-// STT bridge: client (browser) ↔ vps-manager ↔ WhisperLive (Collabora, Docker).
+// STT bridge: client (browser) ↔ server-control-panel ↔ WhisperLive (Collabora, Docker).
 //
 // The client connects authenticated by JWT on /ws/stt/transcribe and keeps
 // speaking the protocol it always spoke (Int16 PCM 16kHz mono + control JSON).
@@ -41,8 +41,8 @@ import (
 //
 // Audit: stt.session.start/end with duration and lang.
 //
-// Upstream URL via VPSM_STT_UPSTREAM_URL (default ws://127.0.0.1:9091). Model
-// via VPSM_STT_MODEL (default "small" — balanced for CPU; switch to "medium"
+// Upstream URL via PANEL_STT_UPSTREAM_URL (default ws://127.0.0.1:9091). Model
+// via PANEL_STT_MODEL (default "small" — balanced for CPU; switch to "medium"
 // or "large-v3-turbo" for more accuracy at the cost of latency).
 
 const (
@@ -65,11 +65,11 @@ type sttConfig struct {
 }
 
 var sttCfg = func() sttConfig {
-	upstream := os.Getenv("VPSM_STT_UPSTREAM_URL")
+	upstream := os.Getenv("PANEL_STT_UPSTREAM_URL")
 	if upstream == "" {
 		upstream = "ws://127.0.0.1:9091"
 	}
-	model := os.Getenv("VPSM_STT_MODEL")
+	model := os.Getenv("PANEL_STT_MODEL")
 	if model == "" {
 		model = "small"
 	}
@@ -247,7 +247,7 @@ func (r *Router) handleSTTTranscribe(w http.ResponseWriter, req *http.Request) {
 	// metadata from leaking identity.
 	var randBytes [8]byte
 	_, _ = rand.Read(randBytes[:])
-	uid := fmt.Sprintf("vpsm-%x", randBytes[:])
+	uid := fmt.Sprintf("panel-%x", randBytes[:])
 	// Initial prompt: biases the model towards Brazilian-Portuguese
 	// conversational context. Reduces hallucination during silence and improves
 	// punctuation. Replaceable by start.Prompt if the client sends its own (for
@@ -581,7 +581,7 @@ func (r *Router) resolveSTTUser(req *http.Request) string {
 	}
 	tok := req.URL.Query().Get("token")
 	if tok == "" {
-		if c, err := req.Cookie("vpsm_token"); err == nil {
+		if c, err := req.Cookie("panel_token"); err == nil {
 			tok = c.Value
 		}
 	}

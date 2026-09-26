@@ -1,7 +1,7 @@
 // Package procs is the host process manager backend.
 //
 // It exposes List/Tree/Signal over gopsutil/v4/process with a hard denylist
-// on the system-critical PIDs (init, sshd, this very vps-manager) so a UI
+// on the system-critical PIDs (init, sshd, this very server-control-panel) so a UI
 // kill button can never lock the operator out of the box.
 //
 // All exported functions are safe for concurrent use; gopsutil snapshots

@@ -651,7 +651,7 @@ var schedHelp = map[string]schedHelpEntry{
 		Details:   "Packs the vault and/or configuration into a .tgz. Destination on the VPS itself (with a folder browser) or in the cloud through rclone (Drive/OneDrive/S3/Dropbox). Supports retention (keep only the last N).",
 		UseCases:  []string{"Daily vault backup to a safe folder or the cloud", "A snapshot before big changes", "Automatic off-site copy with retention"},
 		Examples:  []string{"Daily 03:00, target 'all', keep the last 7, destination Google Drive", "Weekly 'vault' to /mnt/backup, retention 4"},
-		Output:    jobLogNote + "The vpsm-backup-<target>-<date>.tgz file is saved to the DESTINATION you chose (a VPS folder or a cloud remote) — the exact path appears at the end of the log.",
+		Output:    jobLogNote + "The panel-backup-<target>-<date>.tgz file is saved to the DESTINATION you chose (a VPS folder or a cloud remote) — the exact path appears at the end of the log.",
 		NextSteps: []string{"Check the .tgz path in the log (📄 button)", "Test a restore now and then — a backup with no tested restore is not a backup", "Use retention so the disk does not fill up"},
 	},
 	"shell": {
@@ -823,11 +823,11 @@ var schedHelp = map[string]schedHelpEntry{
 		NextSteps: []string{"Restore from the session Backups tab (Restore button)", "Tune the retention (per session) to balance history against disk space", "The per-session retention is independent of the general automatic backup"},
 	},
 	"agent_routine": {
-		Details:   "On every fire it creates a DETACHED Claude session (dtach, shielded in user.slice) in the repository/worktree you chose and pastes the prompt as the first message — the agent starts working on its own. It does not block: the session stays alive and you attach from the terminal whenever you want to follow it. Only the primary can schedule it (the session runs as root). Leave the name empty to generate one automatically (vpsm-routine-<timestamp>).",
+		Details:   "On every fire it creates a DETACHED Claude session (dtach, shielded in user.slice) in the repository/worktree you chose and pastes the prompt as the first message — the agent starts working on its own. It does not block: the session stays alive and you attach from the terminal whenever you want to follow it. Only the primary can schedule it (the session runs as root). Leave the name empty to generate one automatically (panel-routine-<timestamp>).",
 		UseCases:  []string{"Nightly triage of new Jira tickets", "Daily review of the agents' work", "A maintenance/cleanup routine for a repository"},
 		Examples:  []string{"Every day 03:00: 'triage the new tickets and comment on each one' in /opt/app", "Monday 08:00: 'review the PRs the agents opened in the last week'"},
 		Output:    jobLogNote + "The job records the name of the session it created; the agent's work happens inside it (attach from the terminal).",
-		NextSteps: []string{"Open the terminal and attach to the session to follow it or step in", "Pair it with spend caps (vpsmctl agent-budget) to be alerted if it costs too much"},
+		NextSteps: []string{"Open the terminal and attach to the session to follow it or step in", "Pair it with spend caps (panelctl agent-budget) to be alerted if it costs too much"},
 	},
 }
 

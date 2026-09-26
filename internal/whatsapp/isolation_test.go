@@ -28,7 +28,7 @@ import (
 func TestDaemonStateNeverPointsToProductionUnderTest(t *testing.T) {
 	os.Unsetenv("WAD_STATE_DIR")
 	got := wadStateDir()
-	if got == "/var/lib/vpsm-wad" {
+	if got == "/var/lib/panel-wad" {
 		t.Fatalf("wadStateDir() = %q under test — the suite would write into PRODUCTION state", got)
 	}
 	if !strings.HasPrefix(got, os.TempDir()) {

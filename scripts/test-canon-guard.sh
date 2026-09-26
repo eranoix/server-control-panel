@@ -32,8 +32,8 @@ ok() { echo "  ✓ $1"; pass=$((pass+1)); }
 no() { echo "  ✗ $1"; fail=$((fail+1)); }
 echo "=== test-canon-guard ==="
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/vpsm-guard.XXXXXX")" || exit 2
-trap 'case "$TMP" in "${TMPDIR:-/tmp}"/vpsm-guard.*) rm -rf "$TMP";; esac' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/panel-guard.XXXXXX")" || exit 2
+trap 'case "$TMP" in "${TMPDIR:-/tmp}"/panel-guard.*) rm -rf "$TMP";; esac' EXIT
 
 CANON="refactor/foundation"
 
@@ -54,7 +54,7 @@ mk_repo() { # repo with the canonical branch, the hook installed and a work bran
   [ "$top" = "$(cd "$d" && pwd -P)" ] || { echo "  ✗ ABORTED: the fixture is not the target repo (GIT_DIR leaking?)"; exit 3; }
 }
 canon_at() { git -C "$1" rev-parse "$CANON"; }
-sync_cmd() { local d="$1"; shift; VPSM_ROOT="$d" VPSM_CANON="$CANON" bash "$AGENTCTL" canon-sync "$@" 2>&1; }
+sync_cmd() { local d="$1"; shift; PANEL_ROOT="$d" PANEL_CANON="$CANON" bash "$AGENTCTL" canon-sync "$@" 2>&1; }
 
 # 1. Raw git is BLOCKED, and the barrier states the reach.
 echo "[1] raw move of the canonical branch"

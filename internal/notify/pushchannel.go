@@ -271,7 +271,7 @@ func buildPushPayload(ev Event) map[string]any {
 	return map[string]any{
 		"title":      ev.Title,
 		"body":       ev.Body,
-		"tag":        "vpsm-" + strings.ReplaceAll(ev.Type, ".", "-"),
+		"tag":        "panel-" + strings.ReplaceAll(ev.Type, ".", "-"),
 		"event_type": ev.Type,
 		"severity":   ev.Severity,
 		"job_id":     ev.Labels["job_id"],

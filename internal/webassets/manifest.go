@@ -10,8 +10,8 @@ func HandleManifest(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write([]byte(`{
   "id": "/",
-  "name": "VPS Manager",
-  "short_name": "vpsm",
+  "name": "Server Control Panel",
+  "short_name": "panel",
   "description": "VPS control panel",
   "start_url": "/",
   "scope": "/",

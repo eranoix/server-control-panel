@@ -122,7 +122,7 @@ func (r *Router) handleDatasaverCA(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/x-pem-file")
-	w.Header().Set("Content-Disposition", `attachment; filename="vpsm-datasaver-ca.pem"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="panel-datasaver-ca.pem"`)
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(pem)
 }

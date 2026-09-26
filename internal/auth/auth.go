@@ -178,13 +178,13 @@ func (s *Service) Verify(username, password string) bool {
 // VerifyDetailed runs the active backend's policy and reports which source
 // accepted the credential. BackendSupabase is the only live path.
 // BackendLocal/BackendBoth stay defined in the enum as an operational kill
-// switch (the env var VPSM_AUTH_BACKEND=local re-enables verifyLocal for
+// switch (the env var PANEL_AUTH_BACKEND=local re-enables verifyLocal for
 // emergency recovery), but the default is Supabase. The audit log
 // distinguishes the source.
 func (s *Service) VerifyDetailed(ctx context.Context, username, password string) (VerifyResult, error) {
 	switch s.backend {
 	case BackendLocal:
-		// Operational kill switch: VPSM_AUTH_BACKEND=local, for when Supabase
+		// Operational kill switch: PANEL_AUTH_BACKEND=local, for when Supabase
 		// is down for an extended period. Local bcrypt login — but since the
 		// move to Supabase stripped password_hash out of config.json, this path
 		// only works if an operator manually restored a pre-migration
@@ -204,7 +204,7 @@ func (s *Service) VerifyDetailed(ctx context.Context, username, password string)
 }
 
 // verifyLocal — KILL SWITCH ONLY. It is reached only when an operator
-// explicitly sets VPSM_AUTH_BACKEND=local (env var in the systemd unit).
+// explicitly sets PANEL_AUTH_BACKEND=local (env var in the systemd unit).
 // On the normal path this is dead code. Kept for emergency recovery, for
 // when Supabase is down AND the operator restored a pre-migration
 // config.json.bak.
@@ -310,7 +310,7 @@ func (s *Service) Parse(token string) (string, error) {
 // without failing the request with a 401.
 //
 // SECURITY: rejects any token whose kind is neither "" nor "session".
-// Without this, a vpsm_recovery_token / videocall_invite / videocall_guest
+// Without this, a panel_recovery_token / videocall_invite / videocall_guest
 // (all signed with the same HMAC secret) would authenticate against any
 // /api/*. Issuing and verifying non-session tokens must go through dedicated
 // helpers (verifyKindToken) that check the kind explicitly.
@@ -472,7 +472,7 @@ func extractToken(r *http.Request) string {
 			return t
 		}
 	}
-	if c, err := r.Cookie("vpsm_token"); err == nil {
+	if c, err := r.Cookie("panel_token"); err == nil {
 		return c.Value
 	}
 	return ""

@@ -50,7 +50,7 @@ func TestHandleAndroidInstallPage(t *testing.T) {
 			t.Fatalf("secrets.Set: %v", err)
 		}
 
-		w := androidInstallReq(t, r, "vpsmanager.example.test")
+		w := androidInstallReq(t, r, "servercontrolpanel.example.test")
 		if w.Code != http.StatusOK {
 			t.Fatalf("GET /android/install authenticated: got %d, want 200; body=%s", w.Code, w.Body.String())
 		}
@@ -108,7 +108,7 @@ func TestHandleAndroidInstallPage(t *testing.T) {
 		if err := r.secrets.Set(fdroidRepoFingerprintKey, testFdroidFingerprint); err != nil {
 			t.Fatalf("secrets.Set: %v", err)
 		}
-		w := androidInstallReq(t, r, "vpsmanager.example.test")
+		w := androidInstallReq(t, r, "servercontrolpanel.example.test")
 		if w.Code != http.StatusOK {
 			t.Fatalf("empty repo: got %d, want 200; body=%s", w.Code, w.Body.String())
 		}
@@ -119,7 +119,7 @@ func TestHandleAndroidInstallPage(t *testing.T) {
 
 	t.Run("no fingerprint yet: page still 200, explains pending publication, no QR", func(t *testing.T) {
 		r := newSmokeRouter(t)
-		w := androidInstallReq(t, r, "vpsmanager.example.test")
+		w := androidInstallReq(t, r, "servercontrolpanel.example.test")
 		if w.Code != http.StatusOK {
 			t.Fatalf("no fingerprint: got %d, want 200; body=%s", w.Code, w.Body.String())
 		}
@@ -130,7 +130,7 @@ func TestHandleAndroidInstallPage(t *testing.T) {
 	})
 }
 
-// androidInstallReq builds a valid session (vpsm_token cookie) and fires
+// androidInstallReq builds a valid session (panel_token cookie) and fires
 // GET /android/install with the given Host.
 func androidInstallReq(t *testing.T, r *Router, host string) *httptest.ResponseRecorder {
 	t.Helper()
@@ -140,25 +140,25 @@ func androidInstallReq(t *testing.T, r *Router, host string) *httptest.ResponseR
 	}
 	req := httptest.NewRequest(http.MethodGet, "/android/install", nil)
 	req.Host = host
-	req.AddCookie(&http.Cookie{Name: "vpsm_token", Value: tok})
+	req.AddCookie(&http.Cookie{Name: "panel_token", Value: tok})
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w
 }
 
 // TestAndroidPackageID ties the androidPackageID constant to the build's SINGLE
-// source of truth (android/gradle.properties, vpsmanager.applicationId).
+// source of truth (android/gradle.properties, servercontrolpanel.applicationId).
 //
 // Why a test and not just a comment: the wrong value produces no error symptom
 // at all — latestAndroidRelease returns ok=false and the page says
 // "no version published yet" even with a full repository. That was exactly
 // the bug found (the constant had been born as
-// "br.tech.vpsmanager.app"). Reading the build file instead of repeating the
+// "tech.northwind.servercontrolpanel"). Reading the build file instead of repeating the
 // literal here is what makes the test fail if the applicationId changes on one
 // side only — including for every new consumer of the constant (incremental
 // patch generation would inherit the same silent bug).
 func TestAndroidPackageID(t *testing.T) {
-	const prop = "vpsmanager.applicationId"
+	const prop = "servercontrolpanel.applicationId"
 	raw, err := os.ReadFile(filepath.Join("..", "..", "android", "gradle.properties"))
 	if err != nil {
 		t.Fatalf("could not read android/gradle.properties: %v", err)
@@ -186,8 +186,8 @@ func TestAndroidPackageID(t *testing.T) {
 func TestLatestAndroidReleaseFindsRealPackage(t *testing.T) {
 	dir := t.TempDir()
 	idx := `{"packages":{"` + androidPackageID + `":{"versions":{` +
-		`"aaa":{"manifest":{"versionName":"0.1.5","versionCode":105},"file":{"name":"/vpsmanager-0.1.5.apk"}},` +
-		`"bbb":{"manifest":{"versionName":"0.1.6","versionCode":106},"file":{"name":"/vpsmanager-0.1.6.apk"}}` +
+		`"aaa":{"manifest":{"versionName":"0.1.5","versionCode":105},"file":{"name":"/servercontrolpanel-0.1.5.apk"}},` +
+		`"bbb":{"manifest":{"versionName":"0.1.6","versionCode":106},"file":{"name":"/servercontrolpanel-0.1.6.apk"}}` +
 		`}}}}`
 	if err := os.WriteFile(filepath.Join(dir, "index-v2.json"), []byte(idx), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -199,7 +199,7 @@ func TestLatestAndroidReleaseFindsRealPackage(t *testing.T) {
 	if code != 106 || name != "0.1.6" {
 		t.Fatalf("wrong version: %s/%d, want 0.1.6/106", name, code)
 	}
-	if apkURL != "/fdroid/repo/vpsmanager-0.1.6.apk" {
+	if apkURL != "/fdroid/repo/servercontrolpanel-0.1.6.apk" {
 		t.Fatalf("apkURL = %q", apkURL)
 	}
 }

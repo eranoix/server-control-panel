@@ -38,7 +38,7 @@ echo "[A0] per-worktree build-tailwind"
 if [[ -x "$ROOT/scripts/tailwindcss" ]]; then
   tmpd="$(mktemp -d)"; mkdir -p "$tmpd/internal/webassets/web"
   cp "$ROOT/internal/webassets/web/index.html" "$tmpd/internal/webassets/web/" 2>/dev/null
-  cp "$ROOT/internal/webassets/web/vendor/vpsm/app/00-shell.js" "$tmpd/internal/webassets/web/" 2>/dev/null
+  cp "$ROOT/internal/webassets/web/vendor/panel/app/00-shell.js" "$tmpd/internal/webassets/web/" 2>/dev/null
   before="$(md5sum "$ROOT/internal/webassets/web/tailwind.css" | awk '{print $1}')"
   if bash "$BUILDTW" "$tmpd" >/dev/null 2>&1 && [[ -s "$tmpd/internal/webassets/web/tailwind.css" ]]; then
     ok "CSS generated in the target ($(stat -c%s "$tmpd/internal/webassets/web/tailwind.css") bytes)"
@@ -58,7 +58,7 @@ echo "[A3/A4/B3] agentctl structure"
 bash -n "$AGENTCTL" && ok "agentctl: syntax OK" || no "agentctl: syntax error"
 grep -q 'flock -w 600 8' "$AGENTCTL" && ok "single lock (flock -w 600 8) present" || no "single lock missing"
 grep -q '_advance_canon_and_publish()' "$AGENTCTL" && ok "advance/propagation helper present" || no "helper missing"
-grep -q 'make build' "$AGENTCTL" && ok "deploy uses make build (tailwind+vpsmctl)" || no "deploy does NOT use make build"
+grep -q 'make build' "$AGENTCTL" && ok "deploy uses make build (tailwind+panelctl)" || no "deploy does NOT use make build"
 grep -q 'merge -X theirs' "$AGENTCTL" && no "propagation still uses -X theirs (destructive)" || ok "non-destructive propagation (no -X theirs)"
 grep -q 'go build ./... && go vet ./...' "$AGENTCTL" && ok "backend gate (go build/vet) present" || no "backend gate missing"
 

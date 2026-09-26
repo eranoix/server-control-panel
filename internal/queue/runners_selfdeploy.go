@@ -13,12 +13,12 @@ import (
 // SelfDeployRunner is the "self_deploy" job kind: it shells out to the
 // existing `agentctl deploy` pipeline (gate -> converge canon -> check
 // invariants -> build -> health-gated deploy w/ auto-rollback -> live
-// invariant verify -> advance/propagate canon) so a deploy of vps-manager's
+// invariant verify -> advance/propagate canon) so a deploy of server-control-panel's
 // own binary can be triggered remotely without reimplementing any of that
 // safety machinery — this runner never touches scripts/deploy.sh directly
 // and never re-derives the deploy steps itself.
 //
-// No fields: agentctl resolves its own repo root/coord paths (VPSM_ROOT env
+// No fields: agentctl resolves its own repo root/coord paths (PANEL_ROOT env
 // var, default /opt/panel) — there is nothing for the caller to inject.
 //
 // This is a completely separate job kind from "app_deploy"

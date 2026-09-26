@@ -16,7 +16,7 @@ plugins {
     // `plugins { id(...) }` form is what triggers composite-build plugin
     // resolution; a bare `apply(plugin = ...)` with no prior declarative
     // reference to the id does not.
-    id("com.vpsmanager.bff-only-network") apply false
+    id("dev.servercontrolpanel.bff-only-network") apply false
     // Same reason as the apply false above -- it resolves the id on the classpath before
     // the subprojects{} below applies it imperatively.
     alias(libs.plugins.detekt) apply false
@@ -36,7 +36,7 @@ subprojects {
         // it into this module's check task -- the subprojects conditional
         // above is the whole "every module by default, no per-module
         // enumeration" mechanism; nothing more is needed here.
-        apply(plugin = "com.vpsmanager.bff-only-network")
+        apply(plugin = "dev.servercontrolpanel.bff-only-network")
 
         // The type-resolution half of the same gate -- it sees the RESOLVED
         // type of an expression, not the source text, closing the class of
@@ -59,7 +59,7 @@ subprojects {
             // The version here is ignored -- Gradle's dependency substitution
             // for included builds resolves by group:name, not by
             // version (build-logic/settings.gradle.kts includes :lint-rules).
-            add("detektPlugins", "com.vpsmanager.buildlogic:lint-rules:1.0")
+            add("detektPlugins", "dev.servercontrolpanel.buildlogic:lint-rules:1.0")
         }
 
         // The `detekt` task (no suffix) only runs with type resolution when

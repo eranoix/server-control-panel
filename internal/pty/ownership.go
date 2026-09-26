@@ -11,7 +11,7 @@ import (
 // Ownership is the tenant boundary for sessions (dtach).
 //
 // The legacy scheme encoded ownership in the session name itself
-// ("vpsm-<user>-<tab>"); that was dropped so users can pick session
+// ("panel-<user>-<tab>"); that was dropped so users can pick session
 // names freely ("venice", "main", whatever). Ownership now lives in a
 // sidecar JSON map[session_name]owner persisted at
 // <DataDir>/session-ownership.json, written atomically on every mutation.

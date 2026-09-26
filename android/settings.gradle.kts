@@ -15,7 +15,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "vps-manager-android"
+rootProject.name = "server-control-panel-android"
 
 // The pluginManagement includeBuild only covers plugin resolution. :lint-rules
 // is an ordinary dependency, so it needs this top-level includeBuild too.

@@ -139,7 +139,7 @@ itself does), not for an app that consumes push like this one.
    published in the official F-Droid index
    (`f-droid.org/api/v1/packages/io.heckel.ntfy`). It does not need to be in
    *this* project's F-Droid repository — it is an independent community app.
-2. Open ntfy once. The first time the VPS Manager app tries to register for push
+2. Open ntfy once. The first time the Server Control Panel app tries to register for push
    (`UnifiedPush.tryUseCurrentOrDefaultDistributor` / `tryPickDistributor`),
    Android shows the system screen for picking a distributor — with only ntfy
    installed, the choice is automatic.
@@ -151,7 +151,7 @@ itself does), not for an app that consumes push like this one.
 5. Battery optimization exemption and autostart — see the caveat below.
 
 None of these steps asks the user to copy/paste a token, endpoint or QR code —
-registration between the VPS Manager app and ntfy happens through a local
+registration between the Server Control Panel app and ntfy happens through a local
 `Intent`/broadcast on the device (`org.unifiedpush.android.distributor.*`), not
 by hand.
 
@@ -160,7 +160,7 @@ by hand.
 **Not the way the brief suggested, and this matters enough to call out.** There
 are three distinct roles in UnifiedPush, and the brief conflated two of them:
 
-1. **The app (VPS Manager Android)** — registers through `connector`, receives a
+1. **The app (Server Control Panel Android)** — registers through `connector`, receives a
    `PushEndpoint.url`, and **sends** encrypted Web Push POSTs to that URL.
    **This role is already done**: `internal/webpush.Store.send()` does exactly
    that today (`webpush.SendNotificationWithContext` against `sub.Endpoint`, with
@@ -217,7 +217,7 @@ What has to be configured per device, per manufacturer:
 - **All of them:** Settings → Apps → ntfy → Battery → "Unrestricted" (not
   "Optimized"). That is the equivalent of the
   `Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` that
-  `BatteryOptimizationPrompt` already requests for VPS Manager itself — the same
+  `BatteryOptimizationPrompt` already requests for Server Control Panel itself — the same
   prompt/educational flow should apply to ntfy as well (document it in the app's
   onboarding screen, not just ask for our own package).
 - **Samsung (One UI):** besides the battery exemption, "Background data usage"
@@ -278,20 +278,20 @@ Surveyed by reading every file that references `Firebase`/`FCM`
 | `android/feature/notifications/src/main/kotlin/.../fcm/NotificationChannels.kt` | Does not reference FCM in code, only in a comment/doc | No logic change; the comment about "before an FCM message can arrive" should become "before a UnifiedPush message can arrive" |
 | `android/feature/notifications/src/main/kotlin/.../fcm/NotificationActionReceiver.kt` | Zero coupling to FCM | No change |
 | `android/feature/notifications/src/main/kotlin/.../fcm/BatteryOptimizationPrompt.kt` | Zero coupling to FCM (it is about the app's own battery) | No code change; the explanatory text should mention ntfy as well (see section 2) |
-| `android/data/src/main/kotlin/com/vpsmanager/data/push/PushDeviceRepository.kt` | The HTTP call logic is agnostic; only the **parameter/field name** (`fcmToken`, serialized as `"fcm_token"` on the wire) is FCM-specific | Rename to something like `pushEndpoint`/`endpoint_url` (or the full `PushEndpoint` shape: url + p256dh + auth) — this is a contract change with the backend, so the `RegisterDeviceInputBody` generated from the OpenAPI spec has to change too (outside pure Android scope; it is the client generated from the BFF spec) |
-| `android/data/src/test/kotlin/com/vpsmanager/data/push/PushDeviceRepositoryTest.kt` | same as above | The two assertions that check `"fcm_token":"fcm-token-abc"` in the request body (2 `@Test`) move to the new field shape |
-| `android/data/src/main/kotlin/com/vpsmanager/data/push/PushOnboardingState.kt` | Zero coupling to FCM | No change |
-| `android/data/src/main/kotlin/com/vpsmanager/data/videocall/IncomingCallHandler.kt` | Pure interface, operates on `Map<String,String>`/domain `String`s (`room_id`, `call_id`) — comments mention "FCM" but the interface imports nothing from `com.google.firebase.*` | No code change; doc comments mentioning "FCM" (e.g. "hand a call-shaped FCM payload off to...") should be updated to "UnifiedPush" |
-| `android/data/src/main/kotlin/com/vpsmanager/data/videocall/ActiveCallRegistry.kt` | same — only a comment mentions "FCM push" | No code change, docs only |
+| `android/data/src/main/kotlin/dev/servercontrolpanel/data/push/PushDeviceRepository.kt` | The HTTP call logic is agnostic; only the **parameter/field name** (`fcmToken`, serialized as `"fcm_token"` on the wire) is FCM-specific | Rename to something like `pushEndpoint`/`endpoint_url` (or the full `PushEndpoint` shape: url + p256dh + auth) — this is a contract change with the backend, so the `RegisterDeviceInputBody` generated from the OpenAPI spec has to change too (outside pure Android scope; it is the client generated from the BFF spec) |
+| `android/data/src/test/kotlin/dev/servercontrolpanel/data/push/PushDeviceRepositoryTest.kt` | same as above | The two assertions that check `"fcm_token":"fcm-token-abc"` in the request body (2 `@Test`) move to the new field shape |
+| `android/data/src/main/kotlin/dev/servercontrolpanel/data/push/PushOnboardingState.kt` | Zero coupling to FCM | No change |
+| `android/data/src/main/kotlin/dev/servercontrolpanel/data/videocall/IncomingCallHandler.kt` | Pure interface, operates on `Map<String,String>`/domain `String`s (`room_id`, `call_id`) — comments mention "FCM" but the interface imports nothing from `com.google.firebase.*` | No code change; doc comments mentioning "FCM" (e.g. "hand a call-shaped FCM payload off to...") should be updated to "UnifiedPush" |
+| `android/data/src/main/kotlin/dev/servercontrolpanel/data/videocall/ActiveCallRegistry.kt` | same — only a comment mentions "FCM push" | No code change, docs only |
 | `android/feature/videocall/.../TelecomIncomingCallHandler.kt` | same — comment "silently misses the ring rather than crashing the FCM-delivery path" | No code change, docs only |
-| `android/feature/videocall/.../VpsmConnection.kt` | same — comment "call-ended FCM push" | No code change, docs only |
+| `android/feature/videocall/.../PanelConnection.kt` | same — comment "call-ended FCM push" | No code change, docs only |
 | `android/feature/videocall/src/test/kotlin/.../TelecomIncomingCallHandlerTest.kt` | A test comment mentions "FCM payload upstream"; it does not test FCM itself | No functional change, comment only |
-| `android/app/src/main/kotlin/com/vpsmanager/app/MainActivity.kt` | Only imports `NotificationDeepLink` (an app class that lives under the `...fcm` *package*, not the Firebase API) | No logic change; if the `fcm` package is renamed (e.g. to `push`), the import path changes |
-| `android/app/src/main/kotlin/com/vpsmanager/app/nav/AppNavHost.kt` | same | same |
-| `android/app/src/test/kotlin/com/vpsmanager/app/nav/ResolveNotificationDeepLinkTest.kt` | same, only `import ...fcm.NotificationDeepLink` | No functional change; the import path changes if the package is renamed |
-| `android/app/src/main/kotlin/com/vpsmanager/app/VpsManagerApplication.kt` | Imports nothing from `com.google.firebase.*`; only comments "before any FCM message can possibly arrive" | No code change, comments swap "FCM" for "UnifiedPush"; **needs new code** (not a rewrite) to call `UnifiedPush.tryUseCurrentOrDefaultDistributor`/register the `MessagingReceiver` where today nothing has to be done (the FCM `<service>` starts itself) |
+| `android/app/src/main/kotlin/dev/servercontrolpanel/app/MainActivity.kt` | Only imports `NotificationDeepLink` (an app class that lives under the `...fcm` *package*, not the Firebase API) | No logic change; if the `fcm` package is renamed (e.g. to `push`), the import path changes |
+| `android/app/src/main/kotlin/dev/servercontrolpanel/app/nav/AppNavHost.kt` | same | same |
+| `android/app/src/test/kotlin/dev/servercontrolpanel/app/nav/ResolveNotificationDeepLinkTest.kt` | same, only `import ...fcm.NotificationDeepLink` | No functional change; the import path changes if the package is renamed |
+| `android/app/src/main/kotlin/dev/servercontrolpanel/app/PanelApplication.kt` | Imports nothing from `com.google.firebase.*`; only comments "before any FCM message can possibly arrive" | No code change, comments swap "FCM" for "UnifiedPush"; **needs new code** (not a rewrite) to call `UnifiedPush.tryUseCurrentOrDefaultDistributor`/register the `MessagingReceiver` where today nothing has to be done (the FCM `<service>` starts itself) |
 
-**Naming note:** the Kotlin package `com.vpsmanager.feature.notifications.fcm`
+**Naming note:** the Kotlin package `dev.servercontrolpanel.feature.notifications.fcm`
 currently holds 5 files that do **not** touch the Firebase API
 (`ActionableNotificationBuilder`, `BatteryOptimizationPrompt`,
 `NotificationActionReceiver`, `NotificationChannels`, plus the
@@ -313,7 +313,7 @@ Static count of `@Test` in the classes that touch FCM directly:
 Total: **8 of 412 tests** need test-code changes. The other 3 files that mention
 "fcm" (`ActionableNotificationBuilderTest.kt`, `NotificationChannelsTest.kt`,
 `ResolveNotificationDeepLinkTest.kt`) only mention the package name
-(`package com.vpsmanager.feature.notifications.fcm` /
+(`package dev.servercontrolpanel.feature.notifications.fcm` /
 `import ...fcm.NotificationDeepLink`) — zero assertion changes, and they only
 need a `sed` on the path if the package is renamed.
 

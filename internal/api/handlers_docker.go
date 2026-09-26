@@ -375,7 +375,7 @@ func (r *Router) handleComposeAction(w http.ResponseWriter, req *http.Request) {
 	// SECURITY: primary-only — working_dir is literally any absolute path on the
 	// host. A non-primary user could point at /etc/cron.daily (or any dir with a
 	// docker-compose.yml) and run compose up/down and the rest as root
-	// (vps-manager). Without the gate, any authenticated login effectively has
+	// (server-control-panel). Without the gate, any authenticated login effectively has
 	// RCE through the path.
 	if _, ok := r.mustPrimary(w, req); !ok {
 		return

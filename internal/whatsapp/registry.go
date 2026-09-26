@@ -2,7 +2,7 @@ package whatsapp
 
 // registry.go — allocates TCP ports from the 3100-3199 range for per-profile
 // WAHA containers, persisting the allocation in
-// /var/lib/vpsm-whatsapp/port-registry.json.
+// /var/lib/panel-whatsapp/port-registry.json.
 //
 // The range cap (100 profiles) is the design's practical ceiling — beyond
 // that the RAM taken by WAHA Core containers becomes prohibitive (~150 MB
@@ -56,7 +56,7 @@ type Registry struct {
 }
 
 // NewRegistry opens or creates the registry under root (normally
-// /var/lib/vpsm-whatsapp). It creates root with 0o755 if needed.
+// /var/lib/panel-whatsapp). It creates root with 0o755 if needed.
 func NewRegistry(root string) (*Registry, error) {
 	if root == "" {
 		return nil, errors.New("whatsapp: registry root required")

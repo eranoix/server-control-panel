@@ -63,7 +63,7 @@ func buildLabUpdate(t *testing.T) labUpdate {
 	m := androidupdate.Manifest{
 		SchemaVersion: androidupdate.SchemaVersion,
 		GeneratedAt:   "2026-09-06T00:00:00Z",
-		PackageID:     "tech.northwind.vpsm.app",
+		PackageID:     "tech.northwind.servercontrolpanel",
 		PatchTool:     "HDiffPatch::hdiffz v5.1.3 -SD -c-lzma2-9-64m",
 		Latest: androidupdate.Release{
 			VersionName: "0.1.6",

@@ -20,7 +20,7 @@ import (
 )
 
 // recordingStore keeps the in-memory index of the cloud recordings.
-// The files live in /var/lib/vpsm-videocalls/recordings/<user>/<id>.webm
+// The files live in /var/lib/panel-videocalls/recordings/<user>/<id>.webm
 // and the index in data/videocalls/recordings.json.
 //
 // Deliberate decision: do NOT use S3/MinIO in the MVP. The local server already
@@ -32,7 +32,7 @@ type recordingStore struct {
 	items  map[string]*Recording // id → record
 	path   string                // index file: data/videocalls/recordings.json
 	dirty  bool
-	rootFS string // /var/lib/vpsm-videocalls/recordings
+	rootFS string // /var/lib/panel-videocalls/recordings
 	stop   chan struct{}
 }
 

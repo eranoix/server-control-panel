@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VPS Manager · Recovery Terminal</title>
+<title>Server Control Panel · Recovery Terminal</title>
 <link rel="stylesheet" href="/vendor/xterm/xterm.css">
 <style>
   * { box-sizing: border-box; }
@@ -157,8 +157,8 @@
 <div id="banner" hidden></div>
 <div class="action-bar">
   <span class="label">Quick actions:</span>
-  <button onclick="doAction('rollback')" class="danger">vpsmctl rollback</button>
-  <button onclick="doAction('restart')">restart vps-manager</button>
+  <button onclick="doAction('rollback')" class="danger">panelctl rollback</button>
+  <button onclick="doAction('restart')">restart server-control-panel</button>
   <button onclick="doAction('health')">health check</button>
   <button onclick="downloadEvidence()" title="saves the terminal screen and the action log to a file (post-mortem)">Save evidence</button>
   <span class="status" id="action-status"></span>
@@ -188,8 +188,8 @@
 <div id="claude-off" class="aviso" hidden>
   <h3>The recovery Claude is not running</h3>
   <p id="claude-off-txt">
-    It runs in its own container (<code>vpsm-recovery-claude</code>), alongside
-    vps-manager and with no claude-router in the path — so that it keeps answering when the
+    It runs in its own container (<code>panel-recovery-claude</code>), alongside
+    server-control-panel and with no claude-router in the path — so that it keeps answering when the
     router, the host install or the panel are the problem.
   </p>
   <button onclick="startClaude()" id="claude-off-btn">Start the container</button>
@@ -203,7 +203,7 @@
 <script src="/vendor/xterm/xterm.js"></script>
 <script src="/vendor/xterm/fit.js"></script>
 <script>
-document.getElementById('user-label').textContent = 'user: ' + (document.cookie.match(/vpsm_recovery_user=([^;]+)/)?.[1] || '?');
+document.getElementById('user-label').textContent = 'user: ' + (document.cookie.match(/panel_recovery_user=([^;]+)/)?.[1] || '?');
 
 // ════════════════════════════════════════════════════════════════════════════
 // Recovery PTY client
@@ -918,8 +918,8 @@ async function checkClaude() {
   if (!claudeUnlocked) {
     hint.textContent = d.existe ? 'container stopped' : 'container does not exist yet';
     document.getElementById('claude-off-txt').textContent = d.existe
-      ? 'The vpsm-recovery-claude container exists but is not running. It is independent of vps-manager and of claude-router — which is why it keeps serving even when they are down.'
-      : 'The vpsm-recovery-claude container has not been created on this server yet. It runs alongside vps-manager, with no claude-router in the path and with its own login.';
+      ? 'The panel-recovery-claude container exists but is not running. It is independent of server-control-panel and of claude-router — which is why it keeps serving even when they are down.'
+      : 'The panel-recovery-claude container has not been created on this server yet. It runs alongside server-control-panel, with no claude-router in the path and with its own login.';
     return;
   }
   hint.textContent = (d.versao ? d.versao + ' · ' : '')
@@ -1134,9 +1134,9 @@ function clearConsole() {
 function downloadEvidence() {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const parts = [
-    '# VPS Manager — recovery terminal evidence',
+    '# Server Control Panel — recovery terminal evidence',
     'generated: ' + new Date().toISOString(),
-    'user: ' + (document.cookie.match(/vpsm_recovery_user=([^;]+)/)?.[1] || '?'),
+    'user: ' + (document.cookie.match(/panel_recovery_user=([^;]+)/)?.[1] || '?'),
     'engine: ' + (host.term.simple ? 'simple (xterm unavailable)' : 'xterm'),
     '',
     '## quick actions', consoleText() || '(none)', '',

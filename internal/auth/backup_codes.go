@@ -138,7 +138,7 @@ func (s *BackupCodesStore) Load() (*BackupCodesFile, error) {
 }
 
 // Delete removes the file (not an error if absent). Used by mfa/disable and
-// vpsmctl mfa-emergency-reset.
+// panelctl mfa-emergency-reset.
 func (s *BackupCodesStore) Delete() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -203,7 +203,7 @@ func (s *BackupCodesStore) CountUnused() (int, error) {
 }
 
 // BackupCodesPath returns the canonical file path given the data dir and the
-// user. Centralised to avoid drift between the handlers and vpsmctl.
+// user. Centralised to avoid drift between the handlers and panelctl.
 func BackupCodesPath(dataDir, user string) string {
 	return fmt.Sprintf("%s/mfa-backup-codes-%s.json", strings.TrimRight(dataDir, "/"), user)
 }

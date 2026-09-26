@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # scripts/whatsapp/install.sh — installs the WAHA WhatsApp gateway for
-# vps-manager. Idempotent (re-runs are safe).
+# server-control-panel. Idempotent (re-runs are safe).
 #
 # What it does:
-#   1. Creates /var/lib/vpsm-whatsapp/{sessions,media,files} (mode 0700)
-#   2. Lays down /opt/vpsm-whatsapp/{docker-compose.yml,.env}
+#   1. Creates /var/lib/panel-whatsapp/{sessions,media,files} (mode 0700)
+#   2. Lays down /opt/panel-whatsapp/{docker-compose.yml,.env}
 #   3. Generates random WAHA_API_KEY + WAHA_HMAC_SECRET (preserved on re-run)
-#   4. Mirrors the secrets into the vps-manager secrets vault so the Go
+#   4. Mirrors the secrets into the server-control-panel secrets vault so the Go
 #      service picks them up on next restart
-#   5. Installs the systemd unit /etc/systemd/system/vpsm-whatsapp.service
+#   5. Installs the systemd unit /etc/systemd/system/panel-whatsapp.service
 #   6. Enables (but does NOT auto-start — user clicks "Connect" in the UI)
 #
-# After this script: restart vps-manager so it reads the vault, then go to
+# After this script: restart server-control-panel so it reads the vault, then go to
 # /whatsapp in the panel and click "Connect".
 
 set -euo pipefail
@@ -22,14 +22,14 @@ if [ "${EUID:-$(id -u)}" -ne 0 ]; then
 fi
 
 REPO_DIR="${REPO_DIR:-/opt/panel}"
-INSTALL_DIR="/opt/vpsm-whatsapp"
-DATA_DIR="/var/lib/vpsm-whatsapp"
-UNIT_DST="/etc/systemd/system/vpsm-whatsapp.service"
-UNIT_TMPL_DST="/etc/systemd/system/vpsm-whatsapp@.service"
+INSTALL_DIR="/opt/panel-whatsapp"
+DATA_DIR="/var/lib/panel-whatsapp"
+UNIT_DST="/etc/systemd/system/panel-whatsapp.service"
+UNIT_TMPL_DST="/etc/systemd/system/panel-whatsapp@.service"
 COMPOSE_SRC="${REPO_DIR}/scripts/whatsapp/docker-compose.yml"
-UNIT_SRC="${REPO_DIR}/scripts/whatsapp/vpsm-whatsapp.service"
-UNIT_TMPL_SRC="${REPO_DIR}/scripts/whatsapp/vpsm-whatsapp@.service"
-VPSM_DATA="${VPSM_DATA:-/opt/panel/data}"
+UNIT_SRC="${REPO_DIR}/scripts/whatsapp/panel-whatsapp.service"
+UNIT_TMPL_SRC="${REPO_DIR}/scripts/whatsapp/panel-whatsapp@.service"
+PANEL_DATA="${PANEL_DATA:-/opt/panel/data}"
 VAULT_HELPER="${REPO_DIR}/scripts/whatsapp/vault-put.sh"
 
 bold() { printf "\033[1m%s\033[0m\n" "$*"; }
@@ -43,9 +43,9 @@ docker compose version >/dev/null 2>&1 || fail "docker compose plugin not instal
 [ -f "$COMPOSE_SRC" ] || fail "missing $COMPOSE_SRC (run from a checked-out repo)"
 [ -f "$UNIT_SRC" ] || fail "missing $UNIT_SRC"
 [ -f "$UNIT_TMPL_SRC" ] || fail "missing $UNIT_TMPL_SRC"
-[ -d "$VPSM_DATA" ] || fail "vps-manager data dir not found at $VPSM_DATA"
+[ -d "$PANEL_DATA" ] || fail "server-control-panel data dir not found at $PANEL_DATA"
 ok "docker present"
-ok "vps-manager data dir: $VPSM_DATA"
+ok "server-control-panel data dir: $PANEL_DATA"
 
 bold "→ Creating directories"
 mkdir -p "$DATA_DIR/sessions" "$DATA_DIR/media" "$DATA_DIR/files"
@@ -77,30 +77,30 @@ EOF
 chmod 0600 "$ENV_FILE"
 ok "$ENV_FILE (mode 0600)"
 
-bold "→ Mirroring secrets into vps-manager vault"
+bold "→ Mirroring secrets into server-control-panel vault"
 # We can't decrypt the vault from a shell script (AES-GCM under JWT secret).
-# The Go service writes a sidecar manifest at $VPSM_DATA/whatsapp/secrets.put
-# which the next vps-manager startup ingests. Failsafe: also accept manual
+# The Go service writes a sidecar manifest at $PANEL_DATA/whatsapp/secrets.put
+# which the next server-control-panel startup ingests. Failsafe: also accept manual
 # entry via the panel's Secrets UI.
-mkdir -p "$VPSM_DATA/whatsapp"
-chmod 0700 "$VPSM_DATA/whatsapp"
-cat > "$VPSM_DATA/whatsapp/secrets.put" <<EOF
+mkdir -p "$PANEL_DATA/whatsapp"
+chmod 0700 "$PANEL_DATA/whatsapp"
+cat > "$PANEL_DATA/whatsapp/secrets.put" <<EOF
 {"waha_api_key":"${WAHA_API_KEY}","waha_hmac_secret":"${WAHA_HMAC_SECRET}"}
 EOF
-chmod 0600 "$VPSM_DATA/whatsapp/secrets.put"
-ok "$VPSM_DATA/whatsapp/secrets.put (consumed on next restart)"
+chmod 0600 "$PANEL_DATA/whatsapp/secrets.put"
+ok "$PANEL_DATA/whatsapp/secrets.put (consumed on next restart)"
 
 bold "→ systemd units"
 # Legacy single-tenant unit (v1), disabled after MigrateV1ToV2.
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
-# Templated unit (v2 multi-tenant): vpsm-whatsapp@<user> instances are enabled
+# Templated unit (v2 multi-tenant): panel-whatsapp@<user> instances are enabled
 # by Manager.Provision when each user is created.
 install -m 0644 "$UNIT_TMPL_SRC" "$UNIT_TMPL_DST"
 systemctl daemon-reload
 # Only enables the legacy unit if SchemaVersion < 2 (or there is no config).
 # After the migration this unit stays disabled.
-if [ ! -f "$VPSM_DATA/config.json" ] || ! grep -q '"schema_version": 2' "$VPSM_DATA/config.json" 2>/dev/null; then
-  systemctl enable vpsm-whatsapp.service >/dev/null 2>&1 || true
+if [ ! -f "$PANEL_DATA/config.json" ] || ! grep -q '"schema_version": 2' "$PANEL_DATA/config.json" 2>/dev/null; then
+  systemctl enable panel-whatsapp.service >/dev/null 2>&1 || true
   ok "$UNIT_DST enabled (legacy v1, pre-migration)"
 else
   ok "$UNIT_DST installed (v2 active, legacy disabled)"
@@ -114,15 +114,15 @@ bold ""
 bold "✅ Installation complete."
 echo
 echo "Next steps:"
-echo "  1) Restart vps-manager so it ingests the secrets:"
-echo "       systemctl restart vps-manager"
+echo "  1) Restart server-control-panel so it ingests the secrets:"
+echo "       systemctl restart server-control-panel"
 echo "  2) Open the panel and navigate to the WhatsApp tab."
 echo "  3) Click \"Connect\" — the QR will render in the UI."
 echo "  4) Scan it from your phone (WhatsApp → Settings → Linked Devices)."
 echo
 echo "Operational:"
-echo "  vpsmctl whatsapp status    — connection state from CLI"
-echo "  vpsmctl whatsapp restart   — full container restart"
-echo "  vpsmctl whatsapp logs      — tail WAHA container logs"
-echo "  vpsmctl whatsapp logout    — unpair the device"
+echo "  panelctl whatsapp status    — connection state from CLI"
+echo "  panelctl whatsapp restart   — full container restart"
+echo "  panelctl whatsapp logs      — tail WAHA container logs"
+echo "  panelctl whatsapp logout    — unpair the device"
 echo

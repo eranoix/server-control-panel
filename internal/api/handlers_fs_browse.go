@@ -332,7 +332,7 @@ func (r *Router) handleBackupRemoteBrowse(w http.ResponseWriter, req *http.Reque
 // ── automatic in-app OAuth ──
 // Orchestrates `rclone authorize "<type>"`: the process prints a
 // http://127.0.0.1:53682/auth?... URL and waits for the OAuth callback. The
-// user opens that URL in vps-manager's OWN BROWSER (the persistent Chrome runs
+// user opens that URL in server-control-panel's OWN BROWSER (the persistent Chrome runs
 // ON the VPS, so it reaches 127.0.0.1) and signs in; rclone captures the token
 // and prints it. We capture the token and create the remote — all without a
 // second browser.

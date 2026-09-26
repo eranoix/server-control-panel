@@ -110,7 +110,7 @@ func TestLoginStatusMetadataOnly(t *testing.T) {
 	dir := t.TempDir()
 	// Isolate sam's config dir into the tempdir so the test never reads the
 	// real host credential (/srv/agent-accounts/sam).
-	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", filepath.Join(dir, "accounts"))
+	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", filepath.Join(dir, "accounts"))
 	home := filepath.Join(dir, "claude-home")
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)
@@ -190,7 +190,7 @@ func TestLoginStatusExpiredRefreshable(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", filepath.Join(dir, "accounts"))
+			t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", filepath.Join(dir, "accounts"))
 			home := filepath.Join(dir, "claude-home")
 			if err := os.MkdirAll(home, 0o700); err != nil {
 				t.Fatal(err)
@@ -219,7 +219,7 @@ func TestLoginStatusExpiredRefreshable(t *testing.T) {
 // itoa avoids importing strconv just for the test fixture.
 func TestSetSessionAccount(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", dir)
+	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", dir)
 	s, err := Open(dir, "")
 	if err != nil {
 		t.Fatal(err)
@@ -246,7 +246,7 @@ func TestSetSessionAccount(t *testing.T) {
 
 func TestSessionOverridesPersistence(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", dir)
+	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", dir)
 	s, err := Open(dir, "")
 	if err != nil {
 		t.Fatal(err)

@@ -1,25 +1,25 @@
 # server-control-panel Makefile
 # Single-tenant Linux control plane. Stack: Go 1.25 backend + embedded HTML SPA.
 
-.PHONY: help build lab-agent dev test fmt vet check tools tailwind minify deploy rollback health logs backup clean install-scripts health-ai docs docs-check docs-embed docs-data mobile-openapi-spec sdui-contract sdui-golden sdui-check
+.PHONY: help build node-agent dev test fmt vet check tools tailwind minify deploy rollback health logs backup clean install-scripts health-ai docs docs-check docs-embed docs-data mobile-openapi-spec sdui-contract sdui-golden sdui-check
 
 BIN_DIR := bin
-SERVER_BIN := $(BIN_DIR)/vps-manager-new
-CTL_BIN := $(BIN_DIR)/vpsmctl-new
+SERVER_BIN := $(BIN_DIR)/server-control-panel-new
+CTL_BIN := $(BIN_DIR)/panelctl-new
 WAD_BIN := $(BIN_DIR)/wad-new
-AGENT_BIN := $(BIN_DIR)/lab-agent-new
+AGENT_BIN := $(BIN_DIR)/node-agent-new
 DEPLOY_SCRIPT := scripts/deploy.sh
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build: tailwind docs-embed minify ## Regenerate tailwind.css + sync the embedded doc + build cmd/server, cmd/vpsmctl and cmd/wad
+build: tailwind docs-embed minify ## Regenerate tailwind.css + sync the embedded doc + build cmd/server, cmd/panelctl and cmd/wad
 	CGO_ENABLED=0 go build -o $(SERVER_BIN) ./cmd/server
-	CGO_ENABLED=0 go build -o $(CTL_BIN) ./cmd/vpsmctl
+	CGO_ENABLED=0 go build -o $(CTL_BIN) ./cmd/panelctl
 	CGO_ENABLED=0 go build -o $(WAD_BIN) ./cmd/wad
 	@echo "✓ binaries in $(BIN_DIR)/"
 
-# lab-agent has its OWN target and is deliberately NOT a dependency of `build`.
+# node-agent has its OWN target and is deliberately NOT a dependency of `build`.
 #
 # The reason is operational, not aesthetic: the deploy script runs
 # `make build` to ship the PANEL, which is the operator's main working
@@ -30,7 +30,7 @@ build: tailwind docs-embed minify ## Regenerate tailwind.css + sync the embedded
 # What is NOT lost by the split: the gate's `go build ./...` already ensures
 # the agent COMPILES on every deploy. What is avoided is coupling the ARTIFACT:
 # each binary ships and rolls back on its own.
-lab-agent: ## Build only cmd/lab-agent (kept out of the panel build on purpose)
+node-agent: ## Build only cmd/node-agent (kept out of the panel build on purpose)
 	@# BUILD STAMP, and why it is worth it here.
 	@# A rollback drill once left FIVE artifacts in bin/ on the node, with names
 	@# that differed only by timestamp — and TWO of them with the same content, because
@@ -38,7 +38,7 @@ lab-agent: ## Build only cmd/lab-agent (kept out of the panel build on purpose)
 	@# was live meant hashing all five. The process could not say where it came from.
 	@# The stamp trades bit-for-bit reproducibility for TRACEABILITY: every build is
 	@# distinct, and the agent itself announces in the journal which artifact it is.
-	CGO_ENABLED=0 go build -ldflags "-X main.stamp=$$(git rev-parse --short HEAD 2>/dev/null || echo no-git)-$$(date -u +%Y%m%dT%H%M%SZ)" -o $(AGENT_BIN) ./cmd/lab-agent
+	CGO_ENABLED=0 go build -ldflags "-X main.stamp=$$(git rev-parse --short HEAD 2>/dev/null || echo no-git)-$$(date -u +%Y%m%dT%H%M%SZ)" -o $(AGENT_BIN) ./cmd/node-agent
 	@echo "✓ $(AGENT_BIN)"
 
 ESBUILD := .tools/node_modules/.bin/esbuild
@@ -62,11 +62,11 @@ minify: ## Generate <x>.min.js for the app assets (best-effort; without esbuild 
 	@# served: that is how a bundle from 08/26 erased AdGuard from the app on
 	@# 08/30 and took down the whole SPA with a ReferenceError during Alpine boot.
 	@if [ -x "$(ESBUILD)" ]; then \
-	  for f in internal/webassets/web/vendor/vpsm/app/*.js; do \
+	  for f in internal/webassets/web/vendor/panel/app/*.js; do \
 	    case "$$f" in *.min.js) continue;; esac; \
 	    o="$${f%.js}.min.js"; \
 	    if "$(ESBUILD)" "$$f" --minify-whitespace --minify-syntax --target=es2020 > "$$o.tmp" 2>/dev/null; then \
-	      printf '\n//# vpsm-src-sha256=%s\n' "$$(sha256sum "$$f" | cut -d" " -f1)" >> "$$o.tmp"; \
+	      printf '\n//# panel-src-sha256=%s\n' "$$(sha256sum "$$f" | cut -d" " -f1)" >> "$$o.tmp"; \
 	      mv "$$o.tmp" "$$o"; \
 	    else \
 	      rm -f "$$o.tmp" "$$o"; \
@@ -76,16 +76,16 @@ minify: ## Generate <x>.min.js for the app assets (best-effort; without esbuild 
 	  echo "\342\234\223 app assets minified (with provenance stamp)"; \
 	else \
 	  : "Delete rather than keep: an orphaned minified file would be embedded in the binary"; \
-	  rm -f internal/webassets/web/vendor/vpsm/app/*.min.js; \
+	  rm -f internal/webassets/web/vendor/panel/app/*.min.js; \
 	  echo "  esbuild missing from .tools/ -- serving the assets unminified"; \
 	fi
 
 docs-embed: docs-check ## Copy the technical report (.docs/) into the gated /_docs embed (generated artifact)
-	@cp ".docs/Documentacao Tecnica - VPS Manager.html" internal/webassets/docs/report.html
+	@cp ".docs/Documentacao Tecnica - Server Control Panel.html" internal/webassets/docs/report.html
 	@echo "✓ internal/webassets/docs/report.html synced with .docs/"
 
 docs-check: ## Validate the nesting of the doc pages (blocks content outside .page)
-	@python3 scripts/check-docs-structure.py ".docs/Documentacao Tecnica - VPS Manager.html"
+	@python3 scripts/check-docs-structure.py ".docs/Documentacao Tecnica - Server Control Panel.html"
 
 docs-data: ## Regenerate the report's metrics/routes from the repo (GEN blocks)
 	@./scripts/gen-docs-data.sh
@@ -125,22 +125,22 @@ deploy: build ## Build (which runs tailwind first) + deploy.sh (auto-rollback)
 rollback: ## Roll back to the previous binary
 	@$(DEPLOY_SCRIPT) --rollback
 
-health: ## vpsmctl health (deep check)
-	@$(CTL_BIN) health 2>/dev/null || vpsmctl health
+health: ## panelctl health (deep check)
+	@$(CTL_BIN) health 2>/dev/null || panelctl health
 
 logs: ## Tail the last 50 audit events
-	@$(CTL_BIN) logs 2>/dev/null || vpsmctl logs
+	@$(CTL_BIN) logs 2>/dev/null || panelctl logs
 
-backup: build ## vpsmctl backup → ~/vpsm-backup-<ts>.tar.gz
+backup: build ## panelctl backup → ~/panel-backup-<ts>.tar.gz
 	@$(CTL_BIN) backup
 
-backup-containers: build ## backup + tarball /var/lib/vpsm-whatsapp/
+backup-containers: build ## backup + tarball /var/lib/panel-whatsapp/
 	@$(CTL_BIN) backup --containers
 
-stt-test: ## Run the STT E2E suite (needs a running vps-manager + WhisperLive)
+stt-test: ## Run the STT E2E suite (needs a running server-control-panel + WhisperLive)
 	@python3 /tmp/stt_e2e_suite.py
 
-DOCS_HTML := .docs/Documentacao Tecnica - VPS Manager.html
+DOCS_HTML := .docs/Documentacao Tecnica - Server Control Panel.html
 
 docs: ## Open the HTML technical report
 	@test -f "$(DOCS_HTML)" || { echo "✗ $(DOCS_HTML) does not exist; regenerate it with make docs-data"; exit 1; }

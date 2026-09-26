@@ -6,8 +6,8 @@ import (
 )
 
 // launchDetachedJob starts `<exe> run-job <id>` inside a transient systemd
-// scope under user.slice — outside vps-manager.service's cgroup — so the job
-// survives `systemctl restart vps-manager` (a deploy). Returns the scope unit
+// scope under user.slice — outside server-control-panel.service's cgroup — so the job
+// survives `systemctl restart server-control-panel` (a deploy). Returns the scope unit
 // name, which the queue stores on the Job and later checks via
 // `systemctl is-active` to tell a live detached job from a dead one.
 //
@@ -23,13 +23,13 @@ func launchDetachedJob(exe, id string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("systemd-run unavailable: %w", err)
 	}
-	unit := "vpsm-job-" + id + ".scope"
+	unit := "panel-job-" + id + ".scope"
 	cmd := exec.Command(sdrun,
 		"--quiet", "--collect", "--scope",
 		"--slice=user.slice", "--unit="+unit,
 		"--", exe, "run-job", id,
 	)
-	// Inherit the parent env (HOME, ANTHROPIC_BASE_URL, VPSM_CONFIG, …).
+	// Inherit the parent env (HOME, ANTHROPIC_BASE_URL, PANEL_CONFIG, …).
 	cmd.Env = nil
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("start systemd-run: %w", err)

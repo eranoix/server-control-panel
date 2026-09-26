@@ -255,7 +255,7 @@ func (b BackupNowRunner) Run(ctx context.Context, args json.RawMessage, logW io.
 	if err := os.MkdirAll(out, 0o700); err != nil {
 		return err
 	}
-	archive := fmt.Sprintf("%s/vpsm-backup-%s-%s.tgz", out, target, stamp)
+	archive := fmt.Sprintf("%s/panel-backup-%s-%s.tgz", out, target, stamp)
 	fmt.Fprintln(logW, "$ tar czf "+archive)
 	// Allowlist what gets backed up — never the whole DataDir (would
 	// include the queue history we're writing into right now).
@@ -317,11 +317,11 @@ func (b BackupNowRunner) Run(ctx context.Context, args json.RawMessage, logW io.
 
 // pruneBackups keeps the newest `keep` archives for a given target in dir and
 // deletes the rest. Archive names embed a sortable UTC stamp
-// (vpsm-backup-<target>-YYYYMMDD-HHMMSS.tgz), so lexical sort == chronological.
+// (panel-backup-<target>-YYYYMMDD-HHMMSS.tgz), so lexical sort == chronological.
 // Returns the basenames removed. Per-target so retention on "config" never
 // touches "vault" archives.
 func pruneBackups(dir, target string, keep int) ([]string, error) {
-	prefix := "vpsm-backup-" + target + "-"
+	prefix := "panel-backup-" + target + "-"
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -471,7 +471,7 @@ func (DockerComposeRestartRunner) Run(ctx context.Context, args json.RawMessage,
 }
 
 // validUnitName accepts a systemd unit name: leading alnum, then alnum and
-// [_.@-] (covers templated units like vpsm-whatsapp@sam.service). Rejects
+// [_.@-] (covers templated units like panel-whatsapp@sam.service). Rejects
 // slashes/spaces/metachars.
 func validUnitName(s string) bool {
 	if s == "" || len(s) > 128 {

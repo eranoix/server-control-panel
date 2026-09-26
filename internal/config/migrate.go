@@ -64,12 +64,12 @@ var ErrConcurrentMigration = errors.New("config: concurrent migration in progres
 //  5. Create <DataDir>/users/<primary>/{whatsapp,uploads,browser}/.
 //  6. Move data/whatsapp/{state.json,chats.json,contacts.json,messages/}
 //     into the per-user dir.
-//  7. Move /var/lib/vpsm-whatsapp/{sessions,media,files} → /var/lib/vpsm-whatsapp/<primary>/.
+//  7. Move /var/lib/panel-whatsapp/{sessions,media,files} → /var/lib/panel-whatsapp/<primary>/.
 //  8. Re-key vault: every non-global, non-prefixed key gets "<primary>:".
 //  9. Re-Owner videocall rooms from "admin" or "" → primary.
 //  10. Move data/browser-instances.json → data/users/<primary>/browser-instances.json.
 //  11. Move /etc/claude-router/env → /etc/claude-router/users/<primary>.env.
-//  12. systemctl disable vpsm-whatsapp.service (legacy singleton).
+//  12. systemctl disable panel-whatsapp.service (legacy singleton).
 //  13. Strip admin from config: remove top-level Username/PasswordHash/TOTP
 //     and any Users entry named "admin".
 //  14. Bump SchemaVersion=2; Save().
@@ -165,7 +165,7 @@ func MigrateV1ToV2(d MigrationDeps) error {
 		return rollback("move whatsapp/messages", err)
 	}
 
-	// Step 7: /var/lib/vpsm-whatsapp. Backing up is non-trivial (separate
+	// Step 7: /var/lib/panel-whatsapp. Backing up is non-trivial (separate
 	// filesystem), so we don't roll this back — if it fails, the layout
 	// is partially migrated but DataDir is intact for inspection.
 	//
@@ -176,28 +176,28 @@ func MigrateV1ToV2(d MigrationDeps) error {
 	// becomes a "stale source" — we archive it as sessions.legacy-<ts> rather
 	// than try to merge it (merging a live SQLite-WAL is guaranteed
 	// corruption).
-	containerRoot := filepath.Join("/var/lib/vpsm-whatsapp", d.Primary)
-	if _, err := os.Stat("/var/lib/vpsm-whatsapp/sessions"); err == nil {
+	containerRoot := filepath.Join("/var/lib/panel-whatsapp", d.Primary)
+	if _, err := os.Stat("/var/lib/panel-whatsapp/sessions"); err == nil {
 		if err := os.MkdirAll(containerRoot, 0o700); err != nil {
 			return rollback("mkdir container root", err)
 		}
 		ts := time.Now().Unix()
 		for _, name := range []string{"sessions", "media", "files"} {
-			src := filepath.Join("/var/lib/vpsm-whatsapp", name)
+			src := filepath.Join("/var/lib/panel-whatsapp", name)
 			dst := filepath.Join(containerRoot, name)
 			if _, dstErr := os.Stat(dst); dstErr == nil {
 				// Dst already exists: archive the legacy src, never overwrite dst.
-				legacyArchive := filepath.Join("/var/lib/vpsm-whatsapp",
+				legacyArchive := filepath.Join("/var/lib/panel-whatsapp",
 					fmt.Sprintf("%s.legacy-%d", name, ts))
 				log.Printf("migrate: %s already exists at %s — archiving the legacy one at %s",
 					name, dst, legacyArchive)
 				if err := os.Rename(src, legacyArchive); err != nil && !os.IsNotExist(err) {
-					return rollback("archive legacy /var/lib/vpsm-whatsapp/"+name, err)
+					return rollback("archive legacy /var/lib/panel-whatsapp/"+name, err)
 				}
 				continue
 			}
 			if err := moveIfExists(src, dst); err != nil {
-				return rollback("move /var/lib/vpsm-whatsapp/"+name, err)
+				return rollback("move /var/lib/panel-whatsapp/"+name, err)
 			}
 		}
 	}
@@ -278,13 +278,13 @@ func MigrateV1ToV2(d MigrationDeps) error {
 	}
 
 	// Step 12: disable legacy singleton unit. Best-effort — the template
-	// unit (vpsm-whatsapp@.service) is installed by deploy.sh; nothing
+	// unit (panel-whatsapp@.service) is installed by deploy.sh; nothing
 	// to enable here. If systemctl is missing (CI / container tests),
 	// silently skip.
 	if _, err := exec.LookPath("systemctl"); err == nil {
 		// 30s timeout — systemctl can hang on shutdown or on a unit-failed state.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		_ = exec.CommandContext(ctx, "systemctl", "disable", "--now", "vpsm-whatsapp.service").Run()
+		_ = exec.CommandContext(ctx, "systemctl", "disable", "--now", "panel-whatsapp.service").Run()
 		cancel()
 	}
 

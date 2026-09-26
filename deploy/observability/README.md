@@ -21,7 +21,7 @@ file defines.
 
 | file | what |
 |---|---|
-| `prometheus-rules.yml` | the alerts, in three groups: `vpsmanager`, `host`, `containers` |
+| `prometheus-rules.yml` | the alerts, in three groups: `servercontrolpanel`, `host`, `containers` |
 | `alertmanager.yml` | routing; the only receiver is the panel's own loopback webhook (`/_internal/alert`), with no secret |
 | `docker-compose.yml` | prometheus, grafana, node-exporter, cadvisor, alertmanager |
 

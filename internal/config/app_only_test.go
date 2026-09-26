@@ -37,7 +37,7 @@ func TestAppOnly_SurvivesSaveLoadCycle(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	t.Setenv("VPSM_CONFIG", path)
+	t.Setenv("PANEL_CONFIG", path)
 	reloaded, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -60,7 +60,7 @@ func TestAppOnly_SurvivesSaveLoadCycle(t *testing.T) {
 	if err := Save(reloaded, path2); err != nil {
 		t.Fatalf("Save 2: %v", err)
 	}
-	t.Setenv("VPSM_CONFIG", path2)
+	t.Setenv("PANEL_CONFIG", path2)
 	again, err := Load()
 	if err != nil {
 		t.Fatalf("Load 2: %v", err)

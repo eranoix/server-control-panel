@@ -17,7 +17,7 @@ import (
 //
 // Jira Cloud accepts/returns Atlassian Document Format (ADF) for
 // description and comment bodies — a structured JSON tree. We collapse
-// it to plain text on read (good enough for vps-manager) and wrap
+// it to plain text on read (good enough for server-control-panel) and wrap
 // outgoing text in a single-paragraph ADF doc on write. Markdown support
 // is a future enhancement.
 

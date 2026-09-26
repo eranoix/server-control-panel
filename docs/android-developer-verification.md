@@ -87,7 +87,7 @@ Sources: `https://developer.android.com/developer-verification`,
 
 ## 2. What is being registered
 
-- **Application ID:** `tech.northwind.vpsm.app`
+- **Application ID:** `tech.northwind.servercontrolpanel`
   (source: `docs/android-signing-keystore.md`, section 2 — immutable after the
   first release).
 - **SHA-256 fingerprint of the signing certificate:** **PENDING.**
@@ -142,7 +142,7 @@ Submission checklist:
    above). If it is not there yet, **stop here** and go back to the signing-key
    work.
 4. In the package name registration flow, provide:
-   - Application ID: `tech.northwind.vpsm.app`
+   - Application ID: `tech.northwind.servercontrolpanel`
    - SHA-256 fingerprint: the value from `docs/android-signing-keystore.md` §5
      (copy it straight from there at submission time, do not retype it from
      memory).

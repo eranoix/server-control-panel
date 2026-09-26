@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SRC = join(here, '..', 'internal', 'webassets', 'web', 'vendor', 'vpsm', 'app', '00-shell.js');
+const SRC = join(here, '..', 'internal', 'webassets', 'web', 'vendor', 'panel', 'app', '00-shell.js');
 const src = readFileSync(SRC, 'utf8');
 
 // Non-greedy up to the first 4-space `},` terminator; the inner `return { ... };`

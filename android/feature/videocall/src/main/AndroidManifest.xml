@@ -17,7 +17,7 @@
 
     <!-- The camera/microphone types require CAMERA/RECORD_AUDIO to be GRANTED at
          startForeground() time or the system throws SecurityException. Requested in
-         RoomLobbyScreen and rechecked by VpsmConnection.onAnswer. -->
+         RoomLobbyScreen and rechecked by PanelConnection.onAnswer. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
@@ -33,7 +33,7 @@
         <!-- Exported, but BIND_TELECOM_CONNECTION_SERVICE is system-enforced, so only
              Telecom can bind. -->
         <service
-            android:name="com.vpsmanager.feature.videocall.call.VpsmConnectionService"
+            android:name="dev.servercontrolpanel.feature.videocall.call.PanelConnectionService"
             android:exported="true"
             android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
             <intent-filter>
@@ -41,9 +41,9 @@
             </intent-filter>
         </service>
 
-        <!-- Not exported: only VpsmConnection and CallViewModel start and stop it. -->
+        <!-- Not exported: only PanelConnection and CallViewModel start and stop it. -->
         <service
-            android:name="com.vpsmanager.feature.videocall.call.CallForegroundService"
+            android:name="dev.servercontrolpanel.feature.videocall.call.CallForegroundService"
             android:exported="false"
             android:foregroundServiceType="phoneCall|camera|microphone" />
 

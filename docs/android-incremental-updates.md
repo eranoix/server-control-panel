@@ -280,7 +280,7 @@ a bug.
 **`requestUserPreapproval` asks BEFORE the download** (API 34; `minSdk` is 34).
 Two traps found on the emulator, both fatal and silent:
 
-1. The `label` has to be EXACTLY the app's label. "VPS Manager 0.1.7" made the
+1. The `label` has to be EXACTLY the app's label. "Server Control Panel 0.1.7" made the
    system answer `INSTALL_FAILED_INTERNAL_ERROR: PreapprovalDetails { ... }
    inconsistent with app label`.
 2. When pre-approval fails, the system **destroys the session**. Committing on a

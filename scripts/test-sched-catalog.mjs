@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SRC = join(here, '..', 'internal', 'webassets', 'web', 'vendor', 'vpsm', 'app', '00-shell.js');
+const SRC = join(here, '..', 'internal', 'webassets', 'web', 'vendor', 'panel', 'app', '00-shell.js');
 const src = readFileSync(SRC, 'utf8');
 
 // Extract a 4-space-indented object method body by name. Methods terminate at
@@ -99,8 +99,8 @@ check('unknown kind → empty args list', eq(comp.schedArgsOf('does_not_exist'),
 // 6. backup destination merge (custom block, outside the generic schema).
 comp.schedForm = { j: { kind: 'backup_now', name: 'b', schedule: '0 3 * * *' }, args: { target: 'all', retention: '7' }, dest: { type: 'local', localPath: '/opt/backups' } };
 check('backup local dest merge', eq(comp.schedFormArgs(), { target: 'all', retention: 7, dest_type: 'local', dest: '/opt/backups' }), comp.schedFormArgs());
-comp.schedForm = { j: { kind: 'backup_now', name: 'b', schedule: '0 3 * * *' }, args: { target: 'vault', retention: '' }, dest: { type: 'rclone', remote: 'gdrive', remotePath: 'backups/vpsm' } };
-check('backup rclone dest merge', eq(comp.schedFormArgs(), { target: 'vault', retention: 0, dest_type: 'rclone', remote: 'gdrive', remote_path: 'backups/vpsm' }), comp.schedFormArgs());
+comp.schedForm = { j: { kind: 'backup_now', name: 'b', schedule: '0 3 * * *' }, args: { target: 'vault', retention: '' }, dest: { type: 'rclone', remote: 'gdrive', remotePath: 'backups/panel' } };
+check('backup rclone dest merge', eq(comp.schedFormArgs(), { target: 'vault', retention: 0, dest_type: 'rclone', remote: 'gdrive', remote_path: 'backups/panel' }), comp.schedFormArgs());
 
 console.log(failed === 0 ? '\nPASS — sched catalogue form logic' : `\nFAIL — ${failed} case(s)`);
 process.exit(failed === 0 ? 0 : 1);

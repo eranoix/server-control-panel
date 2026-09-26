@@ -115,7 +115,7 @@ func (r *Router) handleClaudeSessionFork(w http.ResponseWriter, req *http.Reques
 		return
 	}
 	if body.SessionName == "" {
-		body.SessionName = "vpsm-" + user + "-fork-" + strconv.FormatInt(time.Now().Unix(), 10)
+		body.SessionName = "panel-" + user + "-fork-" + strconv.FormatInt(time.Now().Unix(), 10)
 	}
 	created, err := ptysvc.SpawnClaudeSession(body.SessionName, body.ResumeUUID, r.forkConfigDir(), r.interactiveModel(body.Model))
 	if err != nil {
@@ -159,7 +159,7 @@ func (r *Router) handleClaudeSessionRestart(w http.ResponseWriter, req *http.Req
 //
 // The /api/private-ai/ proxy was removed from the UI; these handlers reintroduce
 // it only for token management (admin API). The service is still on the host
-// (127.0.0.1:8787). VPSM proxies server-side with the ADMIN_TOKEN — the token
+// (127.0.0.1:8787). PANEL proxies server-side with the ADMIN_TOKEN — the token
 // never reaches the browser. Access: any logged-in user (auth.UserFrom).
 // Mutations are audited.
 //

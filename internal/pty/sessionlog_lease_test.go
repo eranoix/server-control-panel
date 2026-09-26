@@ -26,7 +26,7 @@ func withClock(t *testing.T) *time.Time {
 // no FIN. Then nobody writes and **the session log stops**.
 //
 // And it does not stop in harmless silence: it stops IN THE MIDDLE. Measured on
-// the "Vpsm" session, the log ended exactly at `ESC[H ESC[J` — "erase the whole
+// the "Panel" session, the log ended exactly at `ESC[H ESC[J` — "erase the whole
 // screen" — without the repaint that follows in the other fifteen occurrences of
 // the same sequence in the file. The app replays the log to rebuild the screen,
 // so it faithfully reproduced "erase everything" and stopped: a black screen,
@@ -35,9 +35,9 @@ func TestStalledScribeIsReplaced(t *testing.T) {
 	now := withClock(t)
 	dir := t.TempDir()
 
-	zombie, _, _, releaseZombie := acquireSessionLog(dir, "sam", "Vpsm")
+	zombie, _, _, releaseZombie := acquireSessionLog(dir, "sam", "Panel")
 	defer releaseZombie()
-	live, _, _, releaseLive := acquireSessionLog(dir, "sam", "Vpsm")
+	live, _, _, releaseLive := acquireSessionLog(dir, "sam", "Panel")
 	defer releaseLive()
 
 	// The zombie takes the lease by writing the first chunk.
@@ -51,7 +51,7 @@ func TestStalledScribeIsReplaced(t *testing.T) {
 	*now = now.Add(leaseValidity + time.Millisecond)
 	_, _ = live.Write([]byte("|after"))
 
-	content, err := os.ReadFile(sessionLogPath(dir, "sam", "Vpsm"))
+	content, err := os.ReadFile(sessionLogPath(dir, "sam", "Panel"))
 	if err != nil {
 		t.Fatalf("log was not written: %v", err)
 	}
@@ -120,14 +120,14 @@ func TestExitReleasesLeaseImmediately(t *testing.T) {
 // correct; recorded into the session log it is poison, because the app replays
 // the log to rebuild the screen and faithfully reproduces "erase everything".
 //
-// Measured on the "Vpsm" session: the file ended on exactly those six bytes,
+// Measured on the "Panel" session: the file ended on exactly those six bytes,
 // without the repaint that follows in the other fifteen occurrences — and the
 // owner saw a black screen with the whole content intact one scroll above.
 func TestDtachAttachClearStaysOutOfLog(t *testing.T) {
 	withClock(t)
 	dir := t.TempDir()
 
-	w, _, _, release := acquireSessionLog(dir, "sam", "Vpsm")
+	w, _, _, release := acquireSessionLog(dir, "sam", "Panel")
 	defer release()
 
 	// dtach's first chunk: the clear, glued to the start of the real output.
@@ -141,7 +141,7 @@ func TestDtachAttachClearStaysOutOfLog(t *testing.T) {
 	// After the first chunk, a real clear from the PROGRAM does go through.
 	_, _ = w.Write([]byte("\x1b[H\x1b[J|its"))
 
-	content, _ := os.ReadFile(sessionLogPath(dir, "sam", "Vpsm"))
+	content, _ := os.ReadFile(sessionLogPath(dir, "sam", "Panel"))
 	if got := string(content); got != "hey\x1b[H\x1b[J|its" {
 		t.Errorf("log = %q", got)
 	}
@@ -179,14 +179,14 @@ func TestLoneClearInFirstBlockVanishes(t *testing.T) {
 // in the session log it is worse than the attach clear, because it does not only
 // erase, it scrolls.
 //
-// Measured on the "Vpsm" session: the app's own engine, fed with the log,
+// Measured on the "Panel" session: the app's own engine, fed with the log,
 // returned 52 blank lines and `[detached]` on line 51. The owner's report, again
 // and again: "the screen goes dark, but when you scroll the page the text appears".
 func TestDtachFarewellStaysOutOfLog(t *testing.T) {
 	withClock(t)
 	dir := t.TempDir()
 
-	w, _, _, release := acquireSessionLog(dir, "sam", "Vpsm")
+	w, _, _, release := acquireSessionLog(dir, "sam", "Panel")
 	defer release()
 
 	_, _ = w.Write([]byte("what the program painted"))
@@ -201,7 +201,7 @@ func TestDtachFarewellStaysOutOfLog(t *testing.T) {
 	// And nothing after it goes through.
 	_, _ = w.Write([]byte("rest of the goodbye"))
 
-	content, _ := os.ReadFile(sessionLogPath(dir, "sam", "Vpsm"))
+	content, _ := os.ReadFile(sessionLogPath(dir, "sam", "Panel"))
 	if got := string(content); got != "what the program painted" {
 		t.Errorf("log = %q — the pipe's goodbye got into the program's record", got)
 	}
@@ -229,7 +229,7 @@ func TestContentBeforeFarewellIsPreserved(t *testing.T) {
 // them — the owner needs the history and will delete none of it, so fixing the
 // past cannot be destructive. The file stays intact; what is trimmed is what GOES OUT.
 func TestServedTailDoesNotEndInDtachNoise(t *testing.T) {
-	// Exactly the tail measured on the "Vpsm" session: two clears and the goodbye.
+	// Exactly the tail measured on the "Panel" session: two clears and the goodbye.
 	tail := "\x1b[H\x1b[J\x1b[H\x1b[J\x1b[999H\r\n[detached]\r\n\x1b[?25h"
 	got := string(trimTrailingDtachNoise([]byte("what the program painted" + tail)))
 	if got != "what the program painted" {

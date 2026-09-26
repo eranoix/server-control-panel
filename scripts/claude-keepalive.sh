@@ -30,9 +30,9 @@
 set -uo pipefail
 
 USAGE_URL="https://api.anthropic.com/api/oauth/usage"
-STATE_DIR="${VPSM_KEEPALIVE_DIR:-/opt/panel/data/keepalive}"
+STATE_DIR="${PANEL_KEEPALIVE_DIR:-/opt/panel/data/keepalive}"
 PING_PROMPT="reply only: ok"
-PING_MODEL="${VPSM_KEEPALIVE_MODEL:-haiku}"
+PING_MODEL="${PANEL_KEEPALIVE_MODEL:-haiku}"
 FALLBACK_MIN_AGE=17100   # 4h45m in seconds: minimum age to ping in the fallback
 PING_TIMEOUT=120
 

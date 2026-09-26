@@ -56,7 +56,7 @@ func TestHandleMobilePairStart_RequiresPublicHostname(t *testing.T) {
 // ANOTHER user.
 func TestHandleMobilePairStart_UsesServerDerivedUsername(t *testing.T) {
 	r := newSmokeRouter(t)
-	r.cfg.PublicHostname = "vpsm.example.com"
+	r.cfg.PublicHostname = "panel.example.com"
 	req := httptest.NewRequest("POST", "/api/auth/mobile-pair", nil)
 	req = req.WithContext(auth.WithUser(req.Context(), "sam"))
 	w := httptest.NewRecorder()
@@ -72,8 +72,8 @@ func TestHandleMobilePairStart_UsesServerDerivedUsername(t *testing.T) {
 	if ticket == "" {
 		t.Fatalf("expected non-empty \"ticket\" field: %v", out)
 	}
-	if serverURL, _ := out["server_url"].(string); serverURL != "https://vpsm.example.com" {
-		t.Fatalf("server_url = %q, expected https://vpsm.example.com", serverURL)
+	if serverURL, _ := out["server_url"].(string); serverURL != "https://panel.example.com" {
+		t.Fatalf("server_url = %q, expected https://panel.example.com", serverURL)
 	}
 	if qrPNG, _ := out["qr_png"].(string); qrPNG == "" {
 		t.Fatalf("expected non-empty \"qr_png\" (base64) field: %v", out)
@@ -106,7 +106,7 @@ func TestHandleMobilePairStart_UsesServerDerivedUsername(t *testing.T) {
 // exchanged for a SECOND reg_token — not even inside the validity window.
 func TestConsumePairingTicket_ReplayFails(t *testing.T) {
 	r := newSmokeRouter(t)
-	r.cfg.PublicHostname = "vpsm.example.com"
+	r.cfg.PublicHostname = "panel.example.com"
 	req := httptest.NewRequest("POST", "/api/auth/mobile-pair", nil)
 	req = req.WithContext(auth.WithUser(req.Context(), "sam"))
 	w := httptest.NewRecorder()

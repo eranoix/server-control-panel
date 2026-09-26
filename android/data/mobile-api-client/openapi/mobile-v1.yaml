@@ -2178,7 +2178,7 @@ components:
       scheme: bearer
       type: http
 info:
-  title: vps-manager mobile BFF
+  title: server-control-panel mobile BFF
   version: 1.0.0
 openapi: 3.0.3
 paths:

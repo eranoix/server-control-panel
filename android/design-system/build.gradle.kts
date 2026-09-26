@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vpsmanager.designsystem"
+    namespace = "dev.servercontrolpanel.designsystem"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {

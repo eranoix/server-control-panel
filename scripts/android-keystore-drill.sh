@@ -5,7 +5,7 @@
 #
 # Everything runs in a throwaway temp dir (removed by an EXIT trap). The keystore
 # uses the SAME security parameters as section 3 of the runbook (RSA 4096,
-# 10000 days, PKCS12, alias vpsmanager); only -dname/-storepass:env/-keypass:env
+# 10000 days, PKCS12, alias servercontrolpanel); only -dname/-storepass:env/-keypass:env
 # are added so it runs without a TTY. Exits non-zero if the fingerprints differ,
 # a tool is missing, or any step fails.
 #
@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-ALIAS="vpsmanager"
+ALIAS="servercontrolpanel"
 
 for bin in keytool openssl; do
   if ! command -v "$bin" >/dev/null 2>&1; then

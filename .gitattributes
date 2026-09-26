@@ -12,7 +12,7 @@ android/data/mobile-api-client/openapi-templates/** linguist-vendored=true
 
 # Ours; it lives under vendor/ because the asset server reads from there.
 # Must come AFTER the rule above: in git the last matching pattern wins.
-internal/webassets/web/vendor/vpsm/**               linguist-vendored=false
+internal/webassets/web/vendor/panel/**               linguist-vendored=false
 
 # Generated
 internal/webassets/web/tailwind.css                 linguist-generated=true

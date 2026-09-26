@@ -5,11 +5,11 @@
 package config
 
 const (
-	// DefaultControlPlanePort — the port of the vps-manager binary (overridden
+	// DefaultControlPlanePort — the port of the server-control-panel binary (overridden
 	// by config.Listen in data/config.json).
 	DefaultControlPlanePort = 8765
 
-	// V2ParallelPort — the port of vpsmanager-v2 running alongside (dev/staging).
+	// V2ParallelPort — the port of servercontrolpanel-v2 running alongside (dev/staging).
 	V2ParallelPort = 8766
 
 	// PrivateAIPort (8787) and VeniceAIPort (8784) were removed — the app no

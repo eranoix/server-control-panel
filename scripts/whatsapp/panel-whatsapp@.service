@@ -1,0 +1,32 @@
+# /etc/systemd/system/panel-whatsapp@.service
+#
+# Templated unit: one instance per profile (panel-whatsapp@sam,
+# panel-whatsapp@jordan, ...). Installed by scripts/whatsapp/install.sh.
+#
+# Each instance runs a docker-compose in /var/lib/panel-whatsapp/%i rendered by
+# internal/whatsapp/manager.go from docker-compose.tmpl.yml.
+#
+# %i = the user (after the "@" in the unit name).
+
+[Unit]
+Description=server-control-panel WhatsApp gateway for %i (WAHA + GOWS)
+Documentation=https://github.com/devlikeapro/waha
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+# Restart throttle — MUST be in [Unit] (systemd 255 ignores in [Service]).
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/var/lib/panel-whatsapp/%i
+EnvironmentFile=/var/lib/panel-whatsapp/%i/.env
+ExecStartPre=/usr/bin/docker compose pull --quiet
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

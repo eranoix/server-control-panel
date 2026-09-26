@@ -5,7 +5,7 @@ package api
 // A UI independent of the SPA. If index.html breaks (JS, Alpine, Tailwind),
 // /recovery still gives you a terminal + basic actions (rollback, restart).
 // Dedicated auth (separate cookie, separate secret, without touching the
-// primary lockout). Recovery vault codes live in the config (vpsmctl
+// primary lockout). Recovery vault codes live in the config (panelctl
 // reset-totp/recovery-totp restores them when the user loses their apps).
 //
 // Covers: handleRecoveryPage / Auth / Term / PTY / Action / Logout +
@@ -41,12 +41,12 @@ import (
 //   - Session cookie name + kind claim are different
 //   - Failed login here doesn't increment primary lockout counters
 //
-// Recovery codes vault: vpsmctl reset-totp + vpsmctl reset-recovery-totp are
+// Recovery codes vault: panelctl reset-totp + panelctl reset-recovery-totp are
 // the last line of defense if you lose both authenticator apps.
 // ============================================================================
 
-const recoveryCookieName = "vpsm_recovery_token"
-const recoveryCookieUser = "vpsm_recovery_user" // non-HttpOnly, JS reads to show username in UI
+const recoveryCookieName = "panel_recovery_token"
+const recoveryCookieUser = "panel_recovery_user" // non-HttpOnly, JS reads to show username in UI
 
 func (r *Router) handleRecoveryPage(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
@@ -76,7 +76,7 @@ func (r *Router) handleRecoveryPage(w http.ResponseWriter, req *http.Request) {
 // anyone who knew the local bcrypt password (with no Supabase MFA check)
 // generate a recovery TOTP out of thin air and escalate to a root
 // shell. A recovery TOTP now has to be pre-enrolled from the console
-// (`vpsmctl reset-recovery-totp <user>`).
+// (`panelctl reset-recovery-totp <user>`).
 func (r *Router) handleRecoveryAuth(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		writeErr(w, 405, "method not allowed")
@@ -141,13 +141,13 @@ func (r *Router) handleRecoveryAuth(w http.ResponseWriter, req *http.Request) {
 	// thin air and open an escalation path. A recovery TOTP now has to be
 	// enrolled beforehand, from the console:
 	//
-	//   vpsmctl reset-recovery-totp <user>
+	//   panelctl reset-recovery-totp <user>
 	//
-	// Anyone who can run vpsmctl is already root on the host — the physical
+	// Anyone who can run panelctl is already root on the host — the physical
 	// access gate replaces the Supabase MFA gate that /recovery lacks.
 	if !hasStored {
 		r.auditEvent(req, body.Username, "recovery.login.fail", "no_recovery_totp_enrolled")
-		writeErr(w, 403, "recovery TOTP not enrolled — run 'vpsmctl reset-recovery-totp "+body.Username+"' on the console")
+		writeErr(w, 403, "recovery TOTP not enrolled — run 'panelctl reset-recovery-totp "+body.Username+"' on the console")
 		return
 	}
 
@@ -279,15 +279,15 @@ func (r *Router) handleRecoveryAction(w http.ResponseWriter, req *http.Request) 
 	var execErr error
 	switch action {
 	case "rollback":
-		out, err := exec.CommandContext(req.Context(), "/usr/local/bin/vpsmctl", "rollback").CombinedOutput()
+		out, err := exec.CommandContext(req.Context(), "/usr/local/bin/panelctl", "rollback").CombinedOutput()
 		output = string(out)
 		execErr = err
 	case "restart":
-		out, err := exec.CommandContext(req.Context(), "/usr/bin/systemctl", "restart", "vps-manager").CombinedOutput()
+		out, err := exec.CommandContext(req.Context(), "/usr/bin/systemctl", "restart", "server-control-panel").CombinedOutput()
 		output = string(out)
 		execErr = err
 	case "health":
-		out, err := exec.CommandContext(req.Context(), "/usr/local/bin/vpsmctl", "health").CombinedOutput()
+		out, err := exec.CommandContext(req.Context(), "/usr/local/bin/panelctl", "health").CombinedOutput()
 		output = string(out)
 		execErr = err
 	case "claude-up":
@@ -326,9 +326,9 @@ func (r *Router) handleRecoveryAction(w http.ResponseWriter, req *http.Request) 
 // points at 127.0.0.1:8788). The router is one more service in the path, and
 // one more service in the path is one more thing that can be broken exactly
 // when you fall back to this screen. This Claude runs in its OWN container,
-// alongside vps-manager, with no ANTHROPIC_BASE_URL and with a login of its
+// alongside server-control-panel, with no ANTHROPIC_BASE_URL and with a login of its
 // own: neither the router, nor the host's Claude installation, nor the
-// vps-manager process is part of the equation.
+// server-control-panel process is part of the equation.
 //
 // The container is brought up by Docker (restart=always), not by us — so it is
 // already on its feet before anything of ours runs.
@@ -421,7 +421,7 @@ func (r *Router) handleRecoveryClaudePTY(w http.ResponseWriter, req *http.Reques
 	ptysvc.ContainerExec(w, req, r.docker.Raw(), recoveryClaudeContainer, []string{
 		"/bin/bash", "-lc",
 		"dtach -A /tmp/recovery.sock -E -z bash -lc '/usr/local/bin/welcome.sh; exec bash -l'",
-	}, []string{"CLAUDE_CONFIG_DIR=/config", "VPSM_RECOVERY=1"})
+	}, []string{"CLAUDE_CONFIG_DIR=/config", "PANEL_RECOVERY=1"})
 }
 
 // recoveryHardCap caps how long a recovery session can go on being

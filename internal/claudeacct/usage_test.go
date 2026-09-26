@@ -11,7 +11,7 @@ func TestUsageAggregation(t *testing.T) {
 	dir := t.TempDir()
 	// Isolate sam's dir into the tempdir so the test never reads the real
 	// host transcripts (/srv/agent-accounts/sam/projects).
-	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", filepath.Join(dir, "accounts"))
+	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", filepath.Join(dir, "accounts"))
 	home := filepath.Join(dir, "claude-home")
 	proj := filepath.Join(home, "projects", "-some-repo")
 	if err := os.MkdirAll(proj, 0o755); err != nil {

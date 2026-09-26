@@ -8,7 +8,7 @@
 // `systemd-run --scope --slice=user.slice`, EXACTLY as the previous engine did —
 // it survives a service restart, a deploy and a logout.
 //
-// Isolation (replacing the dedicated `-L vpsmgr` socket): every socket lives in a
+// Isolation (replacing the dedicated `-L panelgr` socket): every socket lives in a
 // dedicated directory <DataDir>/session-sox/, far from the SSH/screen sockets.
 package pty
 
@@ -336,8 +336,8 @@ func (b dtachBackend) List() ([]map[string]any, error) {
 		seen[rec.Socket] = true
 	}
 	// Sessions that are ALIVE but UNREGISTERED (e.g. created by code-server's
-	// vpsm-session-attach, which does NOT write the registry) vanished from the
-	// site's list — that is what made "Vpsm" disappear. Sweep the sox dir and include
+	// panel-session-attach, which does NOT write the registry) vanished from the
+	// site's list — that is what made "Panel" disappear. Sweep the sox dir and include
 	// any live socket not already covered by the registry, using the file name as
 	// the name.
 	soxDir := sessionSoxDir(b.dataDir)

@@ -13,7 +13,7 @@ import (
 // and the flags (archived/pinned/muted).
 //
 // Why? WAHA Core does not expose this data over REST. But Whatsmeow keeps all
-// of it locally in /var/lib/vpsm-whatsapp/sessions/gows/default/gows.db.
+// of it locally in /var/lib/panel-whatsapp/sessions/gows/default/gows.db.
 // We read it through the `sqlite3` CLI (read-only, mode=ro) — no new Go
 // dependency, and no conflict with WAHA writing to the same file.
 //

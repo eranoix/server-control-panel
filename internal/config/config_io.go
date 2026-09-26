@@ -36,10 +36,10 @@ const maxBackups = 10
 
 // Load reads the config, applying defaults. If the live file fails to parse,
 // it falls back to the most recent .bak.<ts> with a loud warning. The returned
-// Config has LoadedFromBackup set so the caller (and /api/vpsm/health) can
+// Config has LoadedFromBackup set so the caller (and /api/panel/health) can
 // surface the degradation to the user.
 func Load() (*Config, error) {
-	path := os.Getenv("VPSM_CONFIG")
+	path := os.Getenv("PANEL_CONFIG")
 	if path == "" {
 		path = defaultPath
 	}

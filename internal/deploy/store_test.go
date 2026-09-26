@@ -151,7 +151,7 @@ func TestStoreRejectsUnmigratedV1(t *testing.T) {
 	if err == nil {
 		t.Fatalf("List ACCEPTED a v1 array and returned %d app(s)", len(apps))
 	}
-	if !strings.Contains(err.Error(), "vps-manager") || !strings.Contains(err.Error(), "schema_version") {
+	if !strings.Contains(err.Error(), "server-control-panel") || !strings.Contains(err.Error(), "schema_version") {
 		t.Fatalf("the error says neither which binary migrates nor mentions schema_version: %v", err)
 	}
 	if after := sha256Of(t, appsPath(dataDir)); after != before {

@@ -15,7 +15,7 @@ func setupTwoAccounts(t *testing.T) (*Store, string) {
 	t.Helper()
 	base := t.TempDir()
 	accounts := filepath.Join(base, "accounts")
-	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", accounts)
+	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", accounts)
 
 	shared := filepath.Join(base, "shared", "projects")
 	if err := os.MkdirAll(filepath.Join(shared, "-repo"), 0o755); err != nil {
@@ -204,7 +204,7 @@ func TestConfigDirMapsToAccount(t *testing.T) {
 func TestBlockedAccountKeepsTokens(t *testing.T) {
 	base := t.TempDir()
 	accounts := filepath.Join(base, "accounts")
-	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", accounts)
+	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", accounts)
 
 	shared := filepath.Join(base, "shared", "projects")
 	repo := filepath.Join(shared, "-repo")

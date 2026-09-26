@@ -3,7 +3,7 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
-    id("com.vpsmanager.no-android-imports-in-core")
+    id("dev.servercontrolpanel.no-android-imports-in-core")
 }
 
 kotlin {

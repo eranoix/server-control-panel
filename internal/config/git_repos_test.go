@@ -18,7 +18,7 @@ func TestGitReposRoundTrip(t *testing.T) {
 		DataDir:       dir,
 		JWTSecret:     "x", // avoids the file-based path in Save
 		GitRepos: []GitRepo{
-			{ID: "vps-manager", Path: "/opt/panel", Name: "VPS Manager", Policy: "read-only"},
+			{ID: "server-control-panel", Path: "/opt/panel", Name: "Server Control Panel", Policy: "read-only"},
 			{ID: "northwind-web", Path: "/root/projects/northwind-web", Name: "Northwind Web",
 				Policy: "write", ExpName: "Sam Rivera", ExpEmail: "sam@northwind.example"},
 		},

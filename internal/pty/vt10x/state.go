@@ -83,8 +83,8 @@ type parseState func(c rune)
 type State struct {
 	DebugLogger *log.Logger
 
-	// vps-manager PATCH: who receives the lines that leave through the top.
-	// See `vpsm.go` and the patch in [State.scrollUp].
+	// server-control-panel PATCH: who receives the lines that leave through the top.
+	// See `panel.go` and the patch in [State.scrollUp].
 	onScrollOut func(lines [][]Glyph)
 
 	w             io.Writer
@@ -480,7 +480,7 @@ func (t *State) scrollDown(orig, n int) {
 
 func (t *State) scrollUp(orig, n int) {
 	n = clamp(n, 0, t.bottom-orig+1)
-	// ── vps-manager PATCH ────────────────────────────────────────────────
+	// ── server-control-panel PATCH ────────────────────────────────────────────────
 	// The lines that leave through the top are the session's HISTORY. The original
 	// emulator discards them — for it, scrollback is the problem of whoever draws.
 	// Here they are the product: they are the only record of what the person saw that does not

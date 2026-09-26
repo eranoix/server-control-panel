@@ -1,6 +1,6 @@
 package auth
 
-// tokens.go — issuing and validating JWTs (vps-manager plus auxiliary tokens)
+// tokens.go — issuing and validating JWTs (server-control-panel plus auxiliary tokens)
 //
 // Tokens covered here:
 //   - Main JWT (Issue; with IssueMeta -> records the session in the store)
@@ -267,7 +267,7 @@ func (s *Service) VerifySetupToken(token string) (string, error) {
 // IssueRecoveryToken mints a session token for the /recovery flow. Carries
 // claim kind="recovery" so it's never accepted by the protected.HandleFunc
 // middleware (which only accepts kind unset or kind="session"). Stored in
-// HttpOnly cookie `vpsm_recovery_token`.
+// HttpOnly cookie `panel_recovery_token`.
 func (s *Service) IssueRecoveryToken(username string, ttl time.Duration) (string, error) {
 	return s.IssueRecoveryTokenFrom(username, ttl, time.Now())
 }

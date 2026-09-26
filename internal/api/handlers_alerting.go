@@ -219,16 +219,16 @@ func (r *Router) handleAlertingTest(w http.ResponseWriter, req *http.Request) {
 	now := time.Now().UTC()
 	payload := map[string]any{
 		"version":  "4",
-		"groupKey": "test-from-vpsmanager",
+		"groupKey": "test-from-servercontrolpanel",
 		"status":   "firing",
-		"receiver": "vps-manager-alert",
+		"receiver": "server-control-panel-alert",
 		"alerts": []map[string]any{
 			{
 				"status":      "firing",
 				"labels":      map[string]string{"alertname": "TestAlert", "severity": "critical", "instance": "127.0.0.1:8765"},
-				"annotations": map[string]string{"summary": "Test alert fired from the UI", "description": "Confirms the Prometheus→Alertmanager→vps-manager→WhatsApp stack."},
+				"annotations": map[string]string{"summary": "Test alert fired from the UI", "description": "Confirms the Prometheus→Alertmanager→server-control-panel→WhatsApp stack."},
 				"startsAt":    now.Format(time.RFC3339),
-				"fingerprint": "test-vpsm-alert",
+				"fingerprint": "test-panel-alert",
 			},
 		},
 	}

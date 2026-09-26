@@ -11,8 +11,8 @@ NAME=${1:-check1}
 
 shot() { $A exec-out screencap -p > "$S/$1"; echo "screenshot $1"; }
 
-$A shell am force-stop tech.northwind.vpsm.app
-$A shell am start -n tech.northwind.vpsm.app/com.vpsmanager.app.MainActivity >/dev/null
+$A shell am force-stop tech.northwind.servercontrolpanel
+$A shell am start -n tech.northwind.servercontrolpanel/dev.servercontrolpanel.app.MainActivity >/dev/null
 sleep 12
 
 $A shell input tap 74 214;  sleep 2   # drawer

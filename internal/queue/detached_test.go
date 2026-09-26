@@ -21,7 +21,7 @@ func TestDetachedEnqueueAndReap(t *testing.T) {
 
 	// Launcher just hands back a scope name (the real one starts systemd-run).
 	q.SetDetach(func(id string) (string, error) {
-		return "vpsm-job-" + id + ".scope", nil
+		return "panel-job-" + id + ".scope", nil
 	}, "jira_ai_analysis")
 
 	j, err := q.Enqueue("jira_ai_analysis", json.RawMessage(`{"issue_key":"X-1","owner":"u"}`), "u", "user")
@@ -62,7 +62,7 @@ func TestDetachedEnqueueAndReap(t *testing.T) {
 // terminal result must ADOPT that result — never be clobbered to interrupted.
 // (The detached process finished while the main process was down for deploy.)
 func TestReconcileDetachedAdoptsTerminal(t *testing.T) {
-	jobs := []*Job{{ID: "j_d", Kind: "jira_ai_analysis", Status: StatusRunning, Started: 1, Scope: "vpsm-job-j_d.scope"}}
+	jobs := []*Job{{ID: "j_d", Kind: "jira_ai_analysis", Status: StatusRunning, Started: 1, Scope: "panel-job-j_d.scope"}}
 	dir := seedState(t, jobs)
 	// Write the terminal detached file the "finished" external process left.
 	queueRoot := dir + "/queue"
@@ -87,7 +87,7 @@ func TestReconcileDetachedAdoptsTerminal(t *testing.T) {
 // On boot, a detached job whose scope is dead AND has no terminal file (the
 // external process crashed) must become interrupted — recoverable, not lost.
 func TestReconcileDetachedInterruptedWhenNoFile(t *testing.T) {
-	jobs := []*Job{{ID: "j_c", Kind: "jira_ai_analysis", Status: StatusRunning, Started: 1, Scope: "vpsm-job-j_c.scope"}}
+	jobs := []*Job{{ID: "j_c", Kind: "jira_ai_analysis", Status: StatusRunning, Started: 1, Scope: "panel-job-j_c.scope"}}
 	dir := seedState(t, jobs)
 	q, err := NewQueue(Options{DataDir: dir, Workers: 1, MaxKeep: 50})
 	if err != nil {

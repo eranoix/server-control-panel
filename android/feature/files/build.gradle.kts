@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vpsmanager.feature.files"
+    namespace = "dev.servercontrolpanel.feature.files"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {

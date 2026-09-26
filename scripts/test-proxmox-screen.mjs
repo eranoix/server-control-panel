@@ -6,11 +6,11 @@ import { fileURLToPath } from 'url';
 // under `go test ./internal/webassets/`, whose cwd is the package.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
-const src = read('internal/webassets/web/vendor/vpsm/app/41-proxmox.js');
+const src = read('internal/webassets/web/vendor/panel/app/41-proxmox.js');
 const win = {};
 new Function('window','document','location','setInterval','clearInterval', src)(
   win, {hidden:false,getElementById:()=>null}, {protocol:'http:',host:'x'}, ()=>1, ()=>0);
-const mod = win.VPSMProxmoxModule();
+const mod = win.PanelProxmoxModule();
 const obs = (v, t=1) => ({value:v, observed_at:t});
 const comp = Object.assign({
   nodes:{ list:[

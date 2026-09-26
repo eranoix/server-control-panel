@@ -13,11 +13,11 @@ plugins {
 gradlePlugin {
     plugins {
         register("noAndroidImportsInCore") {
-            id = "com.vpsmanager.no-android-imports-in-core"
+            id = "dev.servercontrolpanel.no-android-imports-in-core"
             implementationClass = "NoAndroidImportsInCorePlugin"
         }
         register("bffOnlyNetwork") {
-            id = "com.vpsmanager.bff-only-network"
+            id = "dev.servercontrolpanel.bff-only-network"
             implementationClass = "BffOnlyNetworkPlugin"
         }
     }

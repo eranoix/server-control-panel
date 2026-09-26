@@ -5,7 +5,7 @@ package api
 // Covers:
 //   - handleHealth (/api/health, public; the basis of deploy.sh's auto-rollback)
 //   - handleHealthDetailed (/api/health/detailed, admin only)
-//   - handleVPSMHealth (/api/vpsm-health, info about the running binary)
+//   - handlePanelHealth (/api/panel-health, info about the running binary)
 //   - readCertExpiry + tlsMode (TLS helpers)
 //   - handleConfig (/api/config, the info that can be exposed to the frontend)
 //
@@ -182,7 +182,7 @@ func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
 	}
 	resp := map[string]any{"ok": ok, "time": time.Now().Unix(), "checks": checks}
 	// build identifies THIS binary. The frontend compares it with the stamp that
-	// came in the page's <meta vpsm-build>: an open tab goes on running the old JS
+	// came in the page's <meta panel-build>: an open tab goes on running the old JS
 	// forever after a deploy (the ?v=<stamp> is only re-evaluated on a reload),
 	// so without this every frontend fix stays invisible to anyone who does not
 	// reload — which is exactly what happened once.
@@ -357,13 +357,13 @@ func (r *Router) healthDetailedSnapshot() (ok bool, checks map[string]string) {
 	return ok, checks
 }
 
-// handleVPSMHealth surfaces self-monitoring info: process uptime, TLS cert
+// handlePanelHealth surfaces self-monitoring info: process uptime, TLS cert
 // expiration (when configured), TOTP coverage, and last-login summary from
 // the audit log. The frontend dashboard uses this to display a "system card".
-func (r *Router) handleVPSMHealth(w http.ResponseWriter, req *http.Request) {
+func (r *Router) handlePanelHealth(w http.ResponseWriter, req *http.Request) {
 	out := map[string]any{
 		"uptime_seconds":            int64(time.Since(processStart).Seconds()),
-		"version":                   "vps-manager", // could embed build tag here later
+		"version":                   "server-control-panel", // could embed build tag here later
 		"tls_enabled":               r.cfg.TLSEnabled,
 		"tls_mode":                  tlsMode(r.cfg),
 		"config_loaded_from_backup": r.cfg.LoadedFromBackup,
@@ -446,7 +446,7 @@ func tlsMode(c *config.Config) string {
 	return "self-signed"
 }
 
-// processStart is captured at init() so handleVPSMHealth can report uptime.
+// processStart is captured at init() so handlePanelHealth can report uptime.
 var processStart = time.Now()
 
 func (r *Router) handleConfig(w http.ResponseWriter, req *http.Request) {

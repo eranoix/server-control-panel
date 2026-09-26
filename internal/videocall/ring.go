@@ -11,7 +11,7 @@ import (
 )
 
 // Ringer instrumentation. Every ring decision is counted by reason and exposed
-// in vpsm_videocall_rings_total{reason}. It is what turns "it keeps ringing"
+// in panel_videocall_rings_total{reason}. It is what turns "it keeps ringing"
 // into a number — before and after the fix — and what denounces a future
 // regression without depending on someone complaining.
 var (

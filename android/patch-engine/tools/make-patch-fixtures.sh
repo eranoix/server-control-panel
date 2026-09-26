@@ -26,7 +26,7 @@ STAGE_DIR="$MODULE_DIR/.build/apks"
 # x86_64 by default because tests run on the emulator. Releases are
 # arm64-v8a, but to the patcher an APK is just bytes, so the cycle is the same.
 ABI="${ABI:-x86_64}"
-KEYSTORE="${KEYSTORE:-/opt/panel/data/android-dev-signing/vpsmanager-DEV-NAO-E-RELEASE.jks}"
+KEYSTORE="${KEYSTORE:-/opt/panel/data/android-dev-signing/servercontrolpanel-DEV-NAO-E-RELEASE.jks}"
 
 OLD_VERSION_NAME="${OLD_VERSION_NAME:-0.1.5}"
 OLD_VERSION_CODE="${OLD_VERSION_CODE:-105}"
@@ -55,8 +55,8 @@ build_apk() {
   ( cd "$ANDROID_DIR" && ./gradlew :app:assembleRelease \
       "-PversionName=$version_name" \
       "-PversionCode=$version_code" \
-      "-Pvpsmanager.devKeystore=$KEYSTORE" \
-      "-Pvpsmanager.abi=$ABI" >/dev/null )
+      "-Pservercontrolpanel.devKeystore=$KEYSTORE" \
+      "-Pservercontrolpanel.abi=$ABI" >/dev/null )
   cp -f "$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk" "$dest"
 }
 

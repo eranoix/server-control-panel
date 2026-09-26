@@ -28,7 +28,7 @@
     -->
     <application>
         <provider
-            android:name="com.vpsmanager.feature.terminal.attach.AttachmentFileProvider"
+            android:name="dev.servercontrolpanel.feature.terminal.attach.AttachmentFileProvider"
             android:authorities="${applicationId}.terminalattach.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">

@@ -7,7 +7,7 @@ package api
 // grouped here as the "admin actions" only the host's owner may perform.
 //
 // Covers:
-//   - handleExec (POST /api/exec — direct shell, vps-manager root)
+//   - handleExec (POST /api/exec — direct shell, server-control-panel root)
 //   - handleHostShell (GET /api/host-shell — PTY wrapper for the host shell)
 //   - handleUsersList / Create / Delete / ResetPassword / Disable2FA
 //     / RevokeSessions (admin UI)
@@ -439,7 +439,7 @@ func (r *Router) handleUserRevokeSessions(w http.ResponseWriter, req *http.Reque
 }
 
 // handleTerminalSessions lists only the authenticated user's sessions. Tenant
-// boundary: each profile sees only its own sessions (the vpsm-<user>- prefix).
+// boundary: each profile sees only its own sessions (the panel-<user>- prefix).
 // Other profiles' sessions are invisible in the UI — not "listed but not
 // attachable", genuinely invisible.
 func (r *Router) handleTerminalSessions(w http.ResponseWriter, req *http.Request) {
@@ -752,7 +752,7 @@ func (r *Router) handleTerminalRawLog(w http.ResponseWriter, req *http.Request) 
 	// painting.
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Vpsm-Log-Total", strconv.Itoa(total))
+	w.Header().Set("X-Panel-Log-Total", strconv.Itoa(total))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 }
@@ -799,7 +799,7 @@ func (r *Router) handleTerminalHistory(w http.ResponseWriter, req *http.Request)
 	data, total := ptysvc.SessionHistory(user, name, requestedBytes)
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Vpsm-Hist-Total", strconv.Itoa(total))
+	w.Header().Set("X-Panel-Hist-Total", strconv.Itoa(total))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 }

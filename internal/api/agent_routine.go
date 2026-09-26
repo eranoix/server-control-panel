@@ -1,6 +1,6 @@
 package api
 
-// agent_routine.go — VPSM Wave-3 #56: the Router-side spawn closure injected
+// agent_routine.go — PANEL Wave-3 #56: the Router-side spawn closure injected
 // into queue.AgentRoutineRunner. Kept next to the other agent-ops glue.
 //
 // It reuses the shared work-session spawn path (ptysvc.SpawnClaudeWorkSession),
@@ -25,8 +25,8 @@ func (r *Router) runAgentRoutineJob(ctx context.Context, a queue.AgentRoutineArg
 	repo := a.RepoPath()
 	name := a.SessionName
 	if name == "" {
-		// Deterministic-ish, collision-resistant default: vpsm-routine-<unixnano>.
-		name = "vpsm-routine-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+		// Deterministic-ish, collision-resistant default: panel-routine-<unixnano>.
+		name = "panel-routine-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	}
 	name = ptysvc.SafeSessionName(name)
 

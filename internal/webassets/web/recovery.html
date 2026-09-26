@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Cache-Control" content="no-store">
-<title>VPS Manager · Recovery</title>
+<title>Server Control Panel · Recovery</title>
 <link rel="stylesheet" href="/vendor/xterm/xterm.css">
 <style>
   /* Recovery is INTENTIONALLY independent of the main SPA's tailwind.css.
@@ -111,7 +111,7 @@
         <button type="button" class="copy-btn" onclick="copySecret()">copy</button>
       </div>
       <div class="hint">
-        Label it in the app as <b>vps-manager recovery</b> to tell it apart from the normal TOTP.<br>
+        Label it in the app as <b>server-control-panel recovery</b> to tell it apart from the normal TOTP.<br>
         Algorithm: SHA1 · 6 digits · 30s.
       </div>
     </div>
@@ -122,7 +122,7 @@
     <div class="err" id="err" style="display:none"></div>
   </form>
   <div class="footer" id="footer-default">
-    To roll back the last deploy without the UI: <code>vpsmctl rollback</code>.
+    To roll back the last deploy without the UI: <code>panelctl rollback</code>.
   </div>
 </div>
 

@@ -16,7 +16,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-DOC=".docs/Documentacao Tecnica - VPS Manager.html"
+DOC=".docs/Documentacao Tecnica - Server Control Panel.html"
 
 [ -f "$DOC" ] || { echo "✗ $DOC does not exist" >&2; exit 1; }
 
@@ -25,7 +25,7 @@ LOC=$(find internal cmd -name '*.go' 2>/dev/null | xargs wc -l 2>/dev/null | tai
 PKGS=$(ls -d internal/*/ 2>/dev/null | wc -l | tr -d ' ')
 HANDLERS=$(ls internal/api/handlers_*.go 2>/dev/null | wc -l | tr -d ' ')
 ROUTES=$(grep -rhoE 'HandleFunc\("[^"]+"' internal/api/*.go 2>/dev/null | sort -u | wc -l | tr -d ' ')
-SUBCMDS=$(grep -rhoE 'case "[a-z][a-z-]+"' cmd/vpsmctl/*.go 2>/dev/null | sort -u | wc -l | tr -d ' ')
+SUBCMDS=$(grep -rhoE 'case "[a-z][a-z-]+"' cmd/panelctl/*.go 2>/dev/null | sort -u | wc -l | tr -d ' ')
 
 # ---------- helper: replaces the content between markers ----------
 # replace_block NAME FRAGMENT_FILE
@@ -49,7 +49,7 @@ cat > "$METRICS_FRAG" <<EOF
   <div class="card metric"><div class="value">${ROUTES}</div><div class="label">HTTP/WS routes</div><div class="metric-bar"><div class="metric-bar-fill" style="width:100%"></div></div></div>
   <div class="card metric"><div class="value">${HANDLERS}</div><div class="label">Handler files</div><div class="metric-bar"><div class="metric-bar-fill" style="width:65%"></div></div></div>
   <div class="card metric"><div class="value">2</div><div class="label">Binaries (server + ctl)</div><div class="metric-bar"><div class="metric-bar-fill" style="width:20%"></div></div></div>
-  <div class="card metric"><div class="value">${SUBCMDS}</div><div class="label">vpsmctl subcommands</div><div class="metric-bar"><div class="metric-bar-fill" style="width:80%"></div></div></div>
+  <div class="card metric"><div class="value">${SUBCMDS}</div><div class="label">panelctl subcommands</div><div class="metric-bar"><div class="metric-bar-fill" style="width:80%"></div></div></div>
 </div>
 EOF
 replace_block metrics "$METRICS_FRAG"

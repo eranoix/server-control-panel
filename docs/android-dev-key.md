@@ -3,7 +3,7 @@
 Generated on 2026-09-05 **on this VPS**, at the operator's request: he had no
 access to his laptop and needed to unblock on-device verification.
 
-File: `data/android-dev-signing/vpsmanager-DEV-NAO-E-RELEASE.jks`
+File: `data/android-dev-signing/servercontrolpanel-DEV-NAO-E-RELEASE.jks`
 (outside git — `.gitignore:12` covers `/data/`; mode `600`).
 
 ## Why this key can never become the release key
@@ -17,9 +17,9 @@ It is disposable **by construction**, not by agreement:
 
 | | dev (this one) | release (future) |
 |---|---|---|
-| file | `vpsmanager-DEV-NAO-E-RELEASE.jks` | `vpsmanager-release.jks` |
-| alias | `vpsmanager-dev` | `vpsmanager` |
-| CN | `... (DEV - NAO E RELEASE)` | `tech.northwind.vpsm.app` |
+| file | `servercontrolpanel-DEV-NAO-E-RELEASE.jks` | `servercontrolpanel-release.jks` |
+| alias | `servercontrolpanel-dev` | `servercontrolpanel` |
+| CN | `... (DEV - NAO E RELEASE)` | `tech.northwind.servercontrolpanel` |
 | validity | 3650 days | 10000 days |
 | password | `example-not-a-secret` — **not a secret** | only in the operator's password manager |
 
@@ -57,7 +57,7 @@ Exactly what was blocked for lack of a key — all on-device verification:
 
 - **Registering this fingerprint with Android Developer Verification.** The
   registration binds certificate + package name permanently. Registering the dev
-  one means the real key could never be used with `tech.northwind.vpsm.app`.
+  one means the real key could never be used with `tech.northwind.servercontrolpanel`.
 - **Publishing an APK signed with it in the F-Droid repository.** Whoever
   installs it is stuck with this key — an F-Droid update requires the same
   signature. Switching later forces an uninstall and reinstall on every device.

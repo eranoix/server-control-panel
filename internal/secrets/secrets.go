@@ -50,7 +50,7 @@ func deriveKey(passphrase, salt []byte) ([]byte, error) {
 	return scrypt.Key(passphrase, salt, 32768, 8, 1, 32)
 }
 
-// legacySalt is the deterministic salt used by vps-manager < 2026-06-09.
+// legacySalt is the deterministic salt used by server-control-panel < 2026-06-09.
 // We keep deriving it for back-compat read of existing vaults. New writes
 // always use a random 16-byte salt persisted alongside the ciphertext.
 func legacySalt(passphrase []byte) []byte {
@@ -215,7 +215,7 @@ func (s *Store) Export() map[string]string {
 // current design prefers the caller to Reload.
 //
 // Use case: the passphrase leaked in a paste/log; the admin runs
-// `vpsmctl secrets rotate` (to be added in cmd/vpsmctl).
+// `panelctl secrets rotate` (to be added in cmd/panelctl).
 func (s *Store) Rotate(newPassphrase string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -399,7 +399,7 @@ func (s *Store) stamp() {
 // ReloadIfChanged re-reads the vault when the file changed outside this process.
 //
 // 🔴 Why it exists: Get() reads an IN-MEMORY map loaded exactly once at
-// Open. Any secret written by another process — `vpsmctl secrets set`,
+// Open. Any secret written by another process — `panelctl secrets set`,
 // a credential-applying tool, a restore script — stayed invisible to the
 // panel until the next restart. Measured: the revocation drill
 // recreated the node's token and the panel kept saying "revoked" indefinitely,

@@ -1,6 +1,6 @@
 // :feature-whatsapp — conversation list and messages, native UI. The transport
 // (WhatsAppWsClient) depends on :data only through the pure interfaces in
-// com.vpsmanager.data.whatsapp (WhatsAppRepository, WhatsAppWebSocketPort) — it
+// dev.servercontrolpanel.data.whatsapp (WhatsAppRepository, WhatsAppWebSocketPort) — it
 // never imports okhttp3/retrofit2 directly; the real OkHttp implementation
 // lives whole in :data.
 plugins {
@@ -10,7 +10,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vpsmanager.feature.whatsapp"
+    namespace = "dev.servercontrolpanel.feature.whatsapp"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
@@ -39,7 +39,7 @@ dependencies {
     implementation(libs.coil.compose)
     // Playback (video/audio) — ExoPlayer + PlayerView. The
     // Range-request-aware OkHttp DataSource.Factory itself is built in
-    // :data (com.vpsmanager.data.media.createMediaDataSourceFactory) — this
+    // :data (dev.servercontrolpanel.data.media.createMediaDataSourceFactory) — this
     // module only ever sees Media3's own DataSource.Factory type, never
     // okhttp3.* directly.
     implementation(libs.media3.exoplayer)

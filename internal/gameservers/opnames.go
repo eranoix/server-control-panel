@@ -1,14 +1,14 @@
 package gameservers
 
-// CLOSED catalog of the lab-agent's named operations.
+// CLOSED catalog of the node-agent's named operations.
 //
-// WHY THE CONSTANTS LIVE HERE, AND NOT IN `labagent`
+// WHY THE CONSTANTS LIVE HERE, AND NOT IN `nodeagent`
 //
 // The panel's HTTP back-end needs these names to build the request, and
-// `gameservers` cannot import `labagent` without creating an import cycle. So
+// `gameservers` cannot import `nodeagent` without creating an import cycle. So
 // the shared vocabulary lives in the lower package. This is NOT an accident of
 // organization — if a future session "tidies it up" by moving it into
-// `labagent`, the cycle shows up on the spot.
+// `nodeagent`, the cycle shows up on the spot.
 //
 // TRIAGE: the 27 `case` arms of internal/api/handlers_gameservers.go
 //

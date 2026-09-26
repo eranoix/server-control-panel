@@ -12,10 +12,10 @@
 set -euo pipefail
 
 A=${ADB:-/opt/android-sdk/platform-tools/adb}
-PKG=tech.northwind.vpsm.app
+PKG=tech.northwind.servercontrolpanel
 S=${SCRATCH:-/tmp}
 SOURCE=${1:-}
-DATA_DIR=${VPSM_DATA_DIR:-/opt/panel/data}
+DATA_DIR=${PANEL_DATA_DIR:-/opt/panel/data}
 INBOX="$DATA_DIR/mobile-inbox"
 STAGING="$DATA_DIR/.mobile-upload-staging"
 
@@ -37,7 +37,7 @@ $A push "$SOURCE" "/sdcard/Download/$REMOTE_NAME" >/dev/null
 echo "== 2. opening the terminal in a known state =="
 $A logcat -c
 $A shell am force-stop $PKG || true
-$A shell am start -n $PKG/com.vpsmanager.app.MainActivity >/dev/null
+$A shell am start -n $PKG/dev.servercontrolpanel.app.MainActivity >/dev/null
 sleep 12
 $A shell input tap 74 214;  sleep 2   # drawer
 $A shell input tap 254 489; sleep 5   # Terminal

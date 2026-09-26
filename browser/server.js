@@ -1,4 +1,4 @@
-// VPS Manager — Navegador tunelado (Ultraviolet + Wisp)
+// Server Control Panel — Navegador tunelado (Ultraviolet + Wisp)
 // Servidor Node isolado, escuta apenas em 127.0.0.1 e é exposto pelo painel
 // (Go) sob /browser/ com autenticação. NÃO deve ser exposto direto à internet.
 import { createServer } from "node:http";
@@ -34,14 +34,14 @@ Object.assign(wisp.options, {
   // processo. O limite total abaixo usa Object.keys e funciona normalmente.
   stream_limit_per_host: -1,
   stream_limit_total: 512,
-  wisp_motd: "vpsm-browser",
+  wisp_motd: "panel-browser",
 });
 
 const app = express();
 app.disable("x-powered-by");
 
 // Healthcheck para o painel monitorar o serviço.
-app.get("/healthz", (_req, res) => res.json({ ok: true, service: "vpsm-browser" }));
+app.get("/healthz", (_req, res) => res.json({ ok: true, service: "panel-browser" }));
 
 // Counters de banda (KB) por aba+pane, expostos via /api/bandwidth. Atualizado
 // no upgrade handler do wisp envolvendo o socket pra somar bytes trafegados.
@@ -134,7 +134,7 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`[vpsm-browser] Ultraviolet+Wisp em http://${HOST}:${PORT} (wisp em /wisp/)`);
+  console.log(`[panel-browser] Ultraviolet+Wisp em http://${HOST}:${PORT} (wisp em /wisp/)`);
 });
 
 for (const sig of ["SIGINT", "SIGTERM"]) {

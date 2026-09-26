@@ -12,7 +12,7 @@
 # Usage:
 #   scripts/build-tailwind.sh [<target-root>]
 #     no arg   -> root = the cwd's repo (git toplevel), where `make build` runs
-#     with arg -> root = the given path (e.g. .claude/worktrees/vpsm-22)
+#     with arg -> root = the given path (e.g. .claude/worktrees/panel-22)
 set -euo pipefail
 
 # Shared toolchain (not versioned, it only exists in the main tree).

@@ -12,7 +12,7 @@ import (
 // auth.Middleware accepts both channels.
 func SetAuthCookie(w http.ResponseWriter, token string) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "vpsm_token",
+		Name:     "panel_token",
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
@@ -24,7 +24,7 @@ func SetAuthCookie(w http.ResponseWriter, token string) {
 
 func ClearAuthCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "vpsm_token",
+		Name:     "panel_token",
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
@@ -40,7 +40,7 @@ func ClearAuthCookie(w http.ResponseWriter) {
 //
 // TTL = the expires_in returned by GoTrue (1h by default). When it expires (a
 // 401 on /api/auth/mfa/*), supabaseCallWithRefresh transparently attempts a
-// refresh through vpsm_refresh.
+// refresh through panel_refresh.
 func SetSupabaseAccessCookie(w http.ResponseWriter, access string, ttlSeconds int) {
 	if access == "" {
 		return
@@ -49,7 +49,7 @@ func SetSupabaseAccessCookie(w http.ResponseWriter, access string, ttlSeconds in
 		ttlSeconds = 3600
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     "vpsm_supabase_access",
+		Name:     "panel_supabase_access",
 		Value:    access,
 		Path:     "/api/auth/",
 		HttpOnly: true,
@@ -61,7 +61,7 @@ func SetSupabaseAccessCookie(w http.ResponseWriter, access string, ttlSeconds in
 
 func ClearSupabaseAccessCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "vpsm_supabase_access",
+		Name:     "panel_supabase_access",
 		Value:    "",
 		Path:     "/api/auth/",
 		HttpOnly: true,
@@ -72,7 +72,7 @@ func ClearSupabaseAccessCookie(w http.ResponseWriter) {
 }
 
 func ReadSupabaseAccessCookie(req *http.Request) string {
-	c, err := req.Cookie("vpsm_supabase_access")
+	c, err := req.Cookie("panel_supabase_access")
 	if err != nil || c == nil {
 		return ""
 	}
@@ -87,7 +87,7 @@ func SetSupabaseRefreshCookie(w http.ResponseWriter, refresh string) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     "vpsm_refresh",
+		Name:     "panel_refresh",
 		Value:    refresh,
 		Path:     "/api/auth/",
 		HttpOnly: true,
@@ -99,7 +99,7 @@ func SetSupabaseRefreshCookie(w http.ResponseWriter, refresh string) {
 
 func ClearSupabaseRefreshCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{
-		Name:     "vpsm_refresh",
+		Name:     "panel_refresh",
 		Value:    "",
 		Path:     "/api/auth/",
 		HttpOnly: true,
@@ -110,7 +110,7 @@ func ClearSupabaseRefreshCookie(w http.ResponseWriter) {
 }
 
 func ReadSupabaseRefreshCookie(req *http.Request) string {
-	c, err := req.Cookie("vpsm_refresh")
+	c, err := req.Cookie("panel_refresh")
 	if err != nil || c == nil {
 		return ""
 	}
@@ -118,7 +118,7 @@ func ReadSupabaseRefreshCookie(req *http.Request) string {
 }
 
 // DeviceCookieName is the cookie holding the opaque trusted-device secret.
-const DeviceCookieName = "vpsm_device"
+const DeviceCookieName = "panel_device"
 
 // SetDeviceCookie stores the opaque trust secret in an HttpOnly cookie with
 // Path=/api/auth/ (the same scope as the Supabase cookies — it covers
@@ -167,7 +167,7 @@ func ReadDeviceCookie(req *http.Request) string {
 // by the post-deploy auto-refresh.
 func SetCookieFlag(w http.ResponseWriter, set bool) {
 	c := &http.Cookie{
-		Name:     "vpsm_cookie_set",
+		Name:     "panel_cookie_set",
 		Value:    "1",
 		Path:     "/",
 		HttpOnly: false,

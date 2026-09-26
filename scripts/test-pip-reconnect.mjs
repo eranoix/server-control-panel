@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SRC = join(here, '..', 'internal', 'webassets', 'web', 'vendor', 'vpsm', 'videocall.js');
+const SRC = join(here, '..', 'internal', 'webassets', 'web', 'vendor', 'panel', 'videocall.js');
 const src = readFileSync(SRC, 'utf8');
 
 function extract(name, sig) {

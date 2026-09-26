@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vpsmanager.feature.notifications"
+    namespace = "dev.servercontrolpanel.feature.notifications"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {

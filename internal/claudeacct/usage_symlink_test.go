@@ -60,7 +60,7 @@ func writeIdentityInDir(t *testing.T, dir, email, uuid string) {
 // the case that does not break. This one builds the case that did break.
 func TestUsageFollowsSymlinkedProjects(t *testing.T) {
 	base := t.TempDir()
-	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
+	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
 
 	shared := filepath.Join(base, "shared", "projects")
 	writeTranscript(t, filepath.Join(shared, "-repo"), "s1.jsonl", 1_000_000)
@@ -108,7 +108,7 @@ func mustEval(t *testing.T, p string) string {
 // number has to say why.
 func TestEmptyUsageExplainsReason(t *testing.T) {
 	base := t.TempDir()
-	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
+	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
 	home := filepath.Join(base, "claude-home")
 	if err := os.MkdirAll(filepath.Join(home, "projects"), 0o755); err != nil {
 		t.Fatal(err)
@@ -134,7 +134,7 @@ func TestEmptyUsageExplainsReason(t *testing.T) {
 // name is worse than no number at all, because nothing about it looks wrong.
 func TestSlotWithOtherAccountCredentialHidesNumber(t *testing.T) {
 	base := t.TempDir()
-	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
+	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
 
 	shared := filepath.Join(base, "shared", "projects")
 	writeTranscript(t, filepath.Join(shared, "-repo"), "s1.jsonl", 5_000_000)
@@ -181,7 +181,7 @@ func TestSlotWithOtherAccountCredentialHidesNumber(t *testing.T) {
 // is the fact. When they match nothing is blocked — the gate must not be a general brake.
 func TestMatchingIdentityDoesNotBlock(t *testing.T) {
 	base := t.TempDir()
-	t.Setenv("VPSM_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
+	t.Setenv("PANEL_CLAUDE_ACCOUNTS_DIR", filepath.Join(base, "accounts"))
 
 	shared := filepath.Join(base, "shared", "projects")
 	writeTranscript(t, filepath.Join(shared, "-repo"), "s1.jsonl", 7_000_000)

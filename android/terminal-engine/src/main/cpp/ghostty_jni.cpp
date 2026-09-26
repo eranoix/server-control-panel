@@ -240,7 +240,7 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* /*reserved*/) {
 }
 
 JNIEXPORT jlong JNICALL
-Java_com_vpsmanager_terminalengine_TerminalEngine_nativeCreate(
+Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeCreate(
     JNIEnv* env, jclass, jint cols, jint rows, jint scrollback) {
     auto* h = new EngineHandle();
 
@@ -288,7 +288,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeCreate(
 }
 
 JNIEXPORT jobject JNICALL
-Java_com_vpsmanager_terminalengine_TerminalEngine_nativeBuffer(
+Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeBuffer(
     JNIEnv* env, jclass, jlong handle) {
     EngineHandle* h = handleFrom(handle);
     if (h == nullptr || h->closed) {
@@ -302,7 +302,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeBuffer(
 }
 
 JNIEXPORT void JNICALL
-Java_com_vpsmanager_terminalengine_TerminalEngine_nativeWrite(
+Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeWrite(
     JNIEnv* env, jclass, jlong handle, jbyteArray data) {
     EngineHandle* h = handleFrom(handle);
     if (h == nullptr || h->closed) {
@@ -323,7 +323,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeWrite(
 }
 
 JNIEXPORT void JNICALL
-Java_com_vpsmanager_terminalengine_TerminalEngine_nativeSnapshot(
+Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeSnapshot(
     JNIEnv* env, jclass, jlong handle) {
     EngineHandle* h = handleFrom(handle);
     if (h == nullptr || h->closed) {
@@ -460,7 +460,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeSnapshot(
 }
 
 JNIEXPORT jobject JNICALL
-Java_com_vpsmanager_terminalengine_TerminalEngine_nativeResize(
+Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeResize(
     JNIEnv* env, jclass, jlong handle, jint cols, jint rows) {
     EngineHandle* h = handleFrom(handle);
     if (h == nullptr || h->closed) {
@@ -479,7 +479,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeResize(
 }
 
 JNIEXPORT jbyteArray JNICALL
-Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodeKey(
+Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeEncodeKey(
     JNIEnv* env, jclass, jlong handle, jint action, jint androidKeyCode, jint mods,
     jint unshiftedCodepoint, jbyteArray utf8OrNull, jboolean cursorApplicationMode,
     jboolean altEscPrefix) {
@@ -553,7 +553,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodeKey(
 // bit 4 = cursor keys in APPLICATION mode (DECCKM, DECSET 1): arrows are sent
 //         as ESC O A instead of ESC[A.
 JNIEXPORT jint JNICALL
-Java_com_vpsmanager_terminalengine_TerminalEngine_nativeModes(
+Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeModes(
     JNIEnv* env, jclass, jlong handle) {
     EngineHandle* h = handleFrom(handle);
     if (h == nullptr || h->closed) {
@@ -601,7 +601,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeModes(
 // On the alternate screen the library pins the viewport to the active area,
 // so this call is harmless there and Kotlin need not duplicate the rule.
 JNIEXPORT void JNICALL
-Java_com_vpsmanager_terminalengine_TerminalEngine_nativeScrollViewport(
+Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeScrollViewport(
     JNIEnv* env, jclass, jlong handle, jint tag, jlong value) {
     EngineHandle* h = handleFrom(handle);
     if (h == nullptr || h->closed) {
@@ -635,7 +635,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeScrollViewport(
 //
 // The library has no scroll-change notification, so the UI polls this once per frame.
 JNIEXPORT jlongArray JNICALL
-Java_com_vpsmanager_terminalengine_TerminalEngine_nativeScrollState(
+Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeScrollState(
     JNIEnv* env, jclass, jlong handle) {
     EngineHandle* h = handleFrom(handle);
     if (h == nullptr || h->closed) {
@@ -673,7 +673,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeScrollState(
 // from the live terminal. With mode "none" the encoder emits zero bytes, so a
 // tap at a bash prompt does not dump "[<0;28;15M" onto the command line.
 JNIEXPORT jbyteArray JNICALL
-Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodeMouse(
+Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeEncodeMouse(
     JNIEnv* env, jclass, jlong handle, jint action, jint button, jint mods,
     jfloat xPx, jfloat yPx, jint cellWidthPx, jint cellHeightPx,
     jint screenWidthPx, jint screenHeightPx, jboolean anyButtonPressed) {
@@ -746,7 +746,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodeMouse(
 // including an embedded "\x1b[201~" that would otherwise end the paste early
 // and turn the rest into a COMMAND.
 JNIEXPORT jbyteArray JNICALL
-Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodePaste(
+Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeEncodePaste(
     JNIEnv* env, jclass, jlong handle, jbyteArray utf8) {
     EngineHandle* h = handleFrom(handle);
     if (h == nullptr || h->closed) {
@@ -793,7 +793,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodePaste(
 
 // Test-only accessor backing TerminalEngineTest's "exactly one buffer" assertion.
 JNIEXPORT jint JNICALL
-Java_com_vpsmanager_terminalengine_TerminalEngine_nativeDebugBufferAllocationCount(
+Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeDebugBufferAllocationCount(
     JNIEnv* env, jclass, jlong handle) {
     EngineHandle* h = handleFrom(handle);
     if (h == nullptr || h->closed) {
@@ -805,7 +805,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeDebugBufferAllocationCou
 }
 
 JNIEXPORT void JNICALL
-Java_com_vpsmanager_terminalengine_TerminalEngine_nativeClose(
+Java_dev_servercontrolpanel_terminalengine_TerminalEngine_nativeClose(
     JNIEnv* env, jclass, jlong handle) {
     EngineHandle* h = handleFrom(handle);
     if (h == nullptr || h->closed) return;

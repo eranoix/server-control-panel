@@ -1,5 +1,5 @@
 // Package videocall provides WebRTC signaling + room management for the
-// vps-manager built-in videoconferencing feature.
+// server-control-panel built-in videoconferencing feature.
 //
 // Architecture: peer-to-peer WebRTC. The server only relays SDP/ICE between
 // peers in the same room and mints time-limited TURN credentials for the

@@ -29,7 +29,7 @@ import (
 // opening the browser.
 
 const (
-	shellFile = "web/vendor/vpsm/app/00-shell.js"
+	shellFile = "web/vendor/panel/app/00-shell.js"
 	indexFile = "web/index.html"
 )
 

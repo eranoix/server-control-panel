@@ -14,7 +14,7 @@ func TestPRURLFor(t *testing.T) {
 	cases := []struct {
 		remote, branch, wantSub, wantProv string
 	}{
-		{"git@github.com:northwind-dev/vps-manager.git", "feat/x", "github.com/northwind-dev/vps-manager/compare/feat%2Fx?expand=1", "github"},
+		{"git@github.com:northwind-dev/server-control-panel.git", "feat/x", "github.com/northwind-dev/server-control-panel/compare/feat%2Fx?expand=1", "github"},
 		{"https://github.com/NorthwindLabs/northwind-web.git", "fix", "github.com/NorthwindLabs/northwind-web/compare/fix?expand=1", "github"},
 		{"git@gitlab.com:grp/proj.git", "b1", "gitlab.com/grp/proj/-/merge_requests/new?merge_request%5Bsource_branch%5D=b1", "gitlab"},
 		{"https://bitbucket.org/team/repo.git", "b2", "bitbucket.org/team/repo/pull-requests/new?source=b2", "bitbucket"},

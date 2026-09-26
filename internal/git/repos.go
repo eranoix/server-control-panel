@@ -12,7 +12,7 @@ import (
 
 // defaultRepos is the built-in seed of the allowlist, used when
 // config.GitRepos is empty. It reflects the policy the user confirmed:
-//   - vps-manager : strongly read-only (personal remote + it is the app itself).
+//   - server-control-panel : strongly read-only (personal remote + it is the app itself).
 //   - northwind-web: write, WORK identity.
 //   - acme-booking: write, PERSONAL identity (never a work e-mail).
 //   - venice-cli / supabase: read-only (upstream forks).
@@ -21,13 +21,13 @@ import (
 // effectiveRepos) — each with its own policy and identity.
 func defaultRepos() []config.GitRepo {
 	return []config.GitRepo{
-		// vps-manager: fully writable at the user's request. Personal identity
+		// server-control-panel: fully writable at the user's request. Personal identity
 		// (it matches the northwind-dev remote and the history). Safety against clashing
 		// with the deploy flow: the writes use withRepoWriteLock (mutex +
-		// flock .git/vpsm-git.lock + an index.lock check) and the commits land
+		// flock .git/panel-git.lock + an index.lock check) and the commits land
 		// on refactor/foundation itself (canon), which `agentctl deploy`
 		// converges — so it neither diverges nor clobbers.
-		{ID: "vps-manager", Path: "/opt/panel", Name: "VPS Manager", Policy: policyWrite,
+		{ID: "server-control-panel", Path: "/opt/panel", Name: "Server Control Panel", Policy: policyWrite,
 			ExpName: "northwind-dev", ExpEmail: "sam.rivera@personal.example"},
 		{ID: "northwind-web", Path: "/root/projetos/northwind-web", Name: "Northwind Web",
 			Policy: policyWrite, ExpName: "Sam Rivera", ExpEmail: "sam@northwind.example"},

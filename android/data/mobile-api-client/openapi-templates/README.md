@@ -36,7 +36,7 @@ generator's unreleased `master` has the same block. 7.25.0 is the latest release
 
 Byte-identical copy of the 7.25.0 template **plus one guard** in `request()`:
 `updateAuthParams(requestConfig)` only runs when
-`requestConfig.requiresAuthentication` is `true` (search for `VPSM GUARD`).
+`requestConfig.requiresAuthentication` is `true` (search for `PANEL GUARD`).
 
 **Defect:** the template generates the `requiresAuthentication` field on every
 `RequestConfig` (derived from each operation's `security` in the spec) and then

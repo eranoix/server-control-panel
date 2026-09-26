@@ -321,13 +321,13 @@ const sessionBackupRetention = 10
 
 // startSessionBackupCollector runs a periodic automatic backup of ALL sessions,
 // grouped by owner, and applies retention. Interval via
-// VPSM_SESSION_BACKUP_INTERVAL (e.g. "6h", "30m"); default 6h; "0"/"off" turns
+// PANEL_SESSION_BACKUP_INTERVAL (e.g. "6h", "30m"); default 6h; "0"/"off" turns
 // it off. Same goroutine+recover+ctx pattern as startMetricsCollector.
 func (r *Router) startSessionBackupCollector(ctx context.Context) {
 	interval := 6 * time.Hour
-	if v := strings.TrimSpace(os.Getenv("VPSM_SESSION_BACKUP_INTERVAL")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("PANEL_SESSION_BACKUP_INTERVAL")); v != "" {
 		if v == "0" || strings.EqualFold(v, "off") {
-			log.Printf("automatic session backup: turned off via VPSM_SESSION_BACKUP_INTERVAL")
+			log.Printf("automatic session backup: turned off via PANEL_SESSION_BACKUP_INTERVAL")
 			return
 		}
 		if d, err := time.ParseDuration(v); err == nil && d >= time.Minute {

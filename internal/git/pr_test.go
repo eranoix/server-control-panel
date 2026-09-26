@@ -26,7 +26,7 @@ func TestGitHubOwnerRepo(t *testing.T) {
 		url, owner, repo string
 		ok               bool
 	}{
-		{"git@github.com:northwind-dev/vps-manager.git", "northwind-dev", "vps-manager", true},
+		{"git@github.com:northwind-dev/server-control-panel.git", "northwind-dev", "server-control-panel", true},
 		{"https://github.com/NorthwindLabs/northwind-web.git", "NorthwindLabs", "northwind-web", true},
 		{"https://github.com/NorthwindLabs/northwind-web", "NorthwindLabs", "northwind-web", true},
 		{"git@gitlab.com:grp/proj.git", "", "", false},

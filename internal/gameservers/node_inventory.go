@@ -27,7 +27,7 @@ import (
 // NodeSource is the minimum the resolution needs to know about the inventory.
 //
 // An interface instead of `*inventory.Store` for the same reason as `NodeTarget`:
-// `gameservers` is the package the `lab-agent` LINKS, and importing `inventory`
+// `gameservers` is the package the `node-agent` LINKS, and importing `inventory`
 // would drag the Proxmox API client into the agent. The panel implements this
 // interface over its own Store; the agent never needs to.
 type NodeSource interface {

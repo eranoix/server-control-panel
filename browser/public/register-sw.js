@@ -1,6 +1,6 @@
 "use strict";
 /**
- * VPS Manager — registro do service worker + transporte Wisp (via Epoxy).
+ * Server Control Panel — registro do service worker + transporte Wisp (via Epoxy).
  * Substitui o register-sw.js padrão do ultraviolet-static para configurar
  * o transporte epoxy apontando para o endpoint Wisp servido por este host.
  *
@@ -77,11 +77,11 @@ async function registerSW() {
 // chega ao servidor antes do SW interceptar.
 const swReadyPromise = registerSW()
   .then(() => {
-    try { window.parent.postMessage({ type: "vpsm-browser-ready" }, location.origin); } catch (_) {}
+    try { window.parent.postMessage({ type: "panel-browser-ready" }, location.origin); } catch (_) {}
   })
   .catch((err) => {
-    console.error("vpsm-browser: SW register failed", err);
-    try { window.parent.postMessage({ type: "vpsm-browser-error", message: String(err) }, location.origin); } catch (_) {}
+    console.error("panel-browser: SW register failed", err);
+    try { window.parent.postMessage({ type: "panel-browser-error", message: String(err) }, location.origin); } catch (_) {}
   });
 
 // Ouve pedidos de navegação vindos do painel pai. Aguarda o SW pronto antes
@@ -89,7 +89,7 @@ const swReadyPromise = registerSW()
 window.addEventListener("message", async (ev) => {
   if (ev.origin !== location.origin) return;
   const d = ev.data || {};
-  if (d.type !== "vpsm-browser-navigate") return;
+  if (d.type !== "panel-browser-navigate") return;
   try { await swReadyPromise; } catch (_) {}
   if (typeof d.encoded === "string" && d.encoded.length) {
     const prefix = (typeof __uv$config !== "undefined" && __uv$config && __uv$config.prefix) || "/browser/uv/service/";

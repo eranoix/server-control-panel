@@ -13,7 +13,7 @@ package whatsapp
 // Defence in depth: ports come from the Registry (file-locked), the HMAC
 // secret from the user's vault namespace, the store under
 // data/users/<user>/whatsapp, the container under
-// /var/lib/vpsm-whatsapp/<user>. Every layer checks the user.
+// /var/lib/panel-whatsapp/<user>. Every layer checks the user.
 //
 // Bootstrap: api.NewRouter calls NewManager(...) ONCE; the first profiles are
 // lazily warmed at login (Manager.WarmUp). The systemctl enable done during
@@ -54,7 +54,7 @@ type ManagerOptions struct {
 	DataDir string
 
 	// ContainerRoot is where the WAHA containers keep their state. In
-	// production: /var/lib/vpsm-whatsapp. Each user gets <ContainerRoot>/<u>/.
+	// production: /var/lib/panel-whatsapp. Each user gets <ContainerRoot>/<u>/.
 	ContainerRoot string
 
 	// Vault is the global secret store. The Manager goes through
@@ -90,7 +90,7 @@ func NewManager(opts ManagerOptions) (*Manager, error) {
 		return nil, errors.New("whatsapp manager: DataDir required")
 	}
 	if opts.ContainerRoot == "" {
-		opts.ContainerRoot = "/var/lib/vpsm-whatsapp"
+		opts.ContainerRoot = "/var/lib/panel-whatsapp"
 	}
 	if opts.Vault == nil {
 		return nil, errors.New("whatsapp manager: Vault required")
@@ -154,7 +154,7 @@ func (m *Manager) buildService(u scope.User) (*Service, error) {
 	opts := Options{
 		StoreRoot: paths.Whatsapp,
 		MediaRoot: paths.WhatsappMedia,
-		// Per-user: /var/lib/vpsm-whatsapp/<user>/sessions/gows/default/gows.db
+		// Per-user: /var/lib/panel-whatsapp/<user>/sessions/gows/default/gows.db
 		// Empty keeps the legacy default of the single-tenant layout.
 		GowsDBPath:  filepath.Join(paths.WhatsappContainer, "sessions/gows/default/gows.db"),
 		WAHABaseURL: fmt.Sprintf("http://127.0.0.1:%d", port),
@@ -167,7 +167,7 @@ func (m *Manager) buildService(u scope.User) (*Service, error) {
 			v, _ := scope.NewUserVault(m.opts.Vault, u).Get("waha_hmac_secret")
 			return v
 		},
-		ServiceUnit: fmt.Sprintf("vpsm-whatsapp@%s.service", u.String()),
+		ServiceUnit: fmt.Sprintf("panel-whatsapp@%s.service", u.String()),
 	}
 	// When SelfBaseURL is set (a v2 that knows its own host:port), register a
 	// per-session webhook pointing back here — required in multi-instance
@@ -182,7 +182,7 @@ func (m *Manager) buildService(u scope.User) (*Service, error) {
 	// events in the WAHA envelope to the same webhook (HMACSecret =
 	// waha_hmac_secret), so the rest of the Service is unchanged. The flag is
 	// file-based, with no vault or endpoint involved:
-	// /var/lib/vpsm-wad/<user>/enabled + meta.json{api_key}.
+	// /var/lib/panel-wad/<user>/enabled + meta.json{api_key}.
 	if mc := maybeMeowBackend(u); mc != nil {
 		opts.Backend = mc
 		// The @lid->@c.us resolver has to read the daemon's LIVE database, not
@@ -204,7 +204,7 @@ func wadStateDir() string {
 	//
 	// Without this, any test that builds a Router (newSmokeRouter does, with
 	// SchemaVersion 2 and a temporary DataDir) runs the WhatsApp bootstrap, and
-	// Provision writes into the PRODUCTION /var/lib/vpsm-wad — despite the
+	// Provision writes into the PRODUCTION /var/lib/panel-wad — despite the
 	// isolated DataDir, because this path ignored DataDir entirely. The test's
 	// vault is brand new, so Provision GENERATES a fresh waha_hmac_secret and
 	// writes it into production's meta.json; the daemon reloads and starts
@@ -214,9 +214,9 @@ func wadStateDir() string {
 	// redeliver, so they are gone for good. `go test ./internal/api/` on its
 	// own produced 77 daemon restarts.
 	if testing.Testing() {
-		return filepath.Join(os.TempDir(), "vpsm-wad-test")
+		return filepath.Join(os.TempDir(), "panel-wad-test")
 	}
-	return "/var/lib/vpsm-wad"
+	return "/var/lib/panel-wad"
 }
 func wadBaseURL() string {
 	if v := os.Getenv("WAD_BASE_URL"); v != "" {
@@ -266,11 +266,11 @@ func (m *Manager) LookupRunning(u scope.User) *Service {
 
 // Provision prepares ALL of the user's infrastructure for running WhatsApp:
 //
-//  1. Creates dirs (data/users/<u>/whatsapp, /var/lib/vpsm-whatsapp/<u>/{sessions,media,files})
+//  1. Creates dirs (data/users/<u>/whatsapp, /var/lib/panel-whatsapp/<u>/{sessions,media,files})
 //  2. Allocates a port in the Registry (idempotent)
 //  3. Generates waha_api_key and waha_hmac_secret in the vault if absent
-//  4. Renders docker-compose.yml and .env into /var/lib/vpsm-whatsapp/<u>/
-//  5. systemctl enable vpsm-whatsapp@<u>.service (does not start it yet — WarmUp does)
+//  4. Renders docker-compose.yml and .env into /var/lib/panel-whatsapp/<u>/
+//  5. systemctl enable panel-whatsapp@<u>.service (does not start it yet — WarmUp does)
 //
 // Idempotent. Re-running rewrites compose/env, which is useful when the
 // template changes.
@@ -398,11 +398,11 @@ var restartWadDaemon = func() {
 	if _, err := os.Stat("/usr/bin/systemctl"); err != nil {
 		return
 	}
-	_, _ = exec.Command("/usr/bin/systemctl", "restart", "vpsm-wad.service").CombinedOutput()
+	_, _ = exec.Command("/usr/bin/systemctl", "restart", "panel-wad.service").CombinedOutput()
 }
 
 // renderCompose renders docker-compose.tmpl.yml into
-// /var/lib/vpsm-whatsapp/<u>/docker-compose.yml.
+// /var/lib/panel-whatsapp/<u>/docker-compose.yml.
 func (m *Manager) renderCompose(u scope.User, port int) error {
 	tmpl, err := template.ParseFiles(composeTemplatePath)
 	if err != nil {
@@ -454,7 +454,7 @@ func (m *Manager) WarmUp(u scope.User) {
 	if maybeMeowBackend(u) != nil {
 		return
 	}
-	unit := fmt.Sprintf("vpsm-whatsapp@%s.service", u.String())
+	unit := fmt.Sprintf("panel-whatsapp@%s.service", u.String())
 	go func() {
 		// 30s timeout — systemctl start rarely takes more than 5s. If it hangs
 		// (unit-failed loop, dependency timeout, shutdown) this aborts instead
@@ -472,8 +472,8 @@ func (m *Manager) WarmUp(u scope.User) {
 // .archive/<u>-<ts>:
 //
 //  1. (best effort) WhatsApp logout (revokes the pairing on Meta's servers)
-//  2. systemctl disable --now vpsm-whatsapp@<u>
-//  3. mv /var/lib/vpsm-whatsapp/<u> -> /var/lib/vpsm-whatsapp/.archive/<u>-<ts>
+//  2. systemctl disable --now panel-whatsapp@<u>
+//  3. mv /var/lib/panel-whatsapp/<u> -> /var/lib/panel-whatsapp/.archive/<u>-<ts>
 //  4. mv data/users/<u>/whatsapp -> data/users/.archive/<u>-<ts>/whatsapp
 //  5. registry.Release(u)
 //  6. delete the vault keys "<u>:*"
@@ -491,7 +491,7 @@ func (m *Manager) Decommission(u scope.User) error {
 
 	// 2. systemctl disable --now
 	if _, err := os.Stat("/usr/bin/systemctl"); err == nil {
-		unit := fmt.Sprintf("vpsm-whatsapp@%s.service", u.String())
+		unit := fmt.Sprintf("panel-whatsapp@%s.service", u.String())
 		// Order: stop, then disable. Errors are logged.
 		_, _ = exec.Command("/usr/bin/systemctl", "stop", unit).CombinedOutput()
 		_, _ = exec.Command("/usr/bin/systemctl", "disable", unit).CombinedOutput()

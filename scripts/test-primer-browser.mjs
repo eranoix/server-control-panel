@@ -11,7 +11,7 @@
 // Proving the code is there is not proving that xterm paints.
 //
 // So here a TEST INSTANCE of the real server comes up (real binary, its own
-// VPSM_CONFIG, its own port, a temporary dataDir — production is never touched)
+// PANEL_CONFIG, its own port, a temporary dataDir — production is never touched)
 // and a real browser walks the path from the report:
 //
 //   1. sign in to the panel
@@ -54,7 +54,7 @@ if (spawnSync('sh', ['-c', 'command -v dtach'], { stdio: 'ignore' }).status !== 
 // the system cache holds several versions. Same search as the other harnesses.
 function findBrowser() {
   const cands = [];
-  if (process.env.VPSM_CHROMIUM) cands.push(process.env.VPSM_CHROMIUM);
+  if (process.env.PANEL_CHROMIUM) cands.push(process.env.PANEL_CHROMIUM);
   const cache = '/root/.cache/ms-playwright';
   if (fs.existsSync(cache)) {
     for (const d of fs.readdirSync(cache).filter(x => x.startsWith('chromium-')).sort().reverse()) {
@@ -99,8 +99,8 @@ async function waitHealthy(url, capMs = 40000) {
 
 console.log('=== test-primer-browser ===');
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vpsm-primer-'));
-const binary = path.join(tmp, 'vps-manager');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'panel-primer-'));
+const binary = path.join(tmp, 'server-control-panel');
 let server = null;
 
 function shutdown() {
@@ -139,7 +139,7 @@ try {
   console.log(`• bringing the test instance up on ${base} (dataDir ${tmp})`);
   server = spawn(binary, [], {
     cwd: ROOT,
-    env: { ...process.env, VPSM_CONFIG: cfg },
+    env: { ...process.env, PANEL_CONFIG: cfg },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const serverLog = [];

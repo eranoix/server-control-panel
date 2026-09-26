@@ -30,7 +30,7 @@ func fakeJira(t *testing.T, transitions string) *httptest.Server {
 		case strings.Contains(r.URL.Path, "/myself"):
 			_, _ = w.Write([]byte(`{"accountId":"acc-eu","displayName":"Sam Rivera"}`))
 		case strings.Contains(r.URL.Path, "/project/search"), strings.HasSuffix(r.URL.Path, "/project"):
-			_, _ = w.Write([]byte(`{"values":[{"key":"VPSM","name":"VPS Manager"}]}`))
+			_, _ = w.Write([]byte(`{"values":[{"key":"PANEL","name":"Server Control Panel"}]}`))
 		case strings.Contains(r.URL.Path, "/search"):
 			_, _ = w.Write([]byte(`{"issues":[
 				{"id":"1","key":"TASK-1","fields":{"summary":"drain the queue","status":{"name":"Backlog","statusCategory":{"key":"new"}}}},
@@ -58,7 +58,7 @@ func depsWithJira(srv *httptest.Server) Deps {
 			return jira.NewForTests(srv.URL, "u@e.com", "tok", srv.Client()), nil
 		},
 		JiraConfigFor: func(user string) jira.Config {
-			return jira.Config{Site: srv.URL, ProjectKey: "VPSM", HasToken: true}
+			return jira.Config{Site: srv.URL, ProjectKey: "PANEL", HasToken: true}
 		},
 	}
 }
@@ -271,7 +271,7 @@ func starvingJira(t *testing.T) (*httptest.Server, *[]string) {
 				if i > 0 {
 					sb.WriteString(",")
 				}
-				fmt.Fprintf(&sb, `{"id":"%d","key":"VPSM-D%d","fields":{"summary":"done","status":{"name":"Ready","statusCategory":{"key":"done"}}}}`, 100+i, i)
+				fmt.Fprintf(&sb, `{"id":"%d","key":"PANEL-D%d","fields":{"summary":"done","status":{"name":"Ready","statusCategory":{"key":"done"}}}}`, 100+i, i)
 			}
 			sb.WriteString(`],"total":99}`)
 			_, _ = w.Write([]byte(sb.String()))
@@ -350,7 +350,7 @@ func TestFirstLoadEqualsRefresh(t *testing.T) {
 	// yet, so it does not send `project=`. The server read that as "the operator
 	// picked no project" and swapped the filter's JQL for the board_jql from the
 	// vault — which, in his case, returned zero. On refresh the app already knew
-	// the project, sent `project=VPSM`, the detour did not happen, and the board
+	// the project, sent `project=PANEL`, the detour did not happen, and the board
 	// filled up.
 	//
 	// The same filter, with the same project, gave two different boards depending
@@ -362,14 +362,14 @@ func TestFirstLoadEqualsRefresh(t *testing.T) {
 		// A configured board_jql that matches NOTHING must not hijack the filter.
 		return jira.Config{
 			Site:       srv.URL,
-			ProjectKey: "VPSM",
+			ProjectKey: "PANEL",
 			BoardJQL:   `project = PROJECT_THAT_DOES_NOT_EXIST`,
 			HasToken:   true,
 		}
 	}
 
 	first := call(t, deps, http.MethodGet, "/jira/board", "")
-	second := call(t, deps, http.MethodGet, "/jira/board?project=VPSM", "")
+	second := call(t, deps, http.MethodGet, "/jira/board?project=PANEL", "")
 
 	var a, b JiraBoardResponse
 	if err := json.Unmarshal(first.Body.Bytes(), &a); err != nil {
@@ -403,7 +403,7 @@ func TestMyBoardChosenOnPurposeUsesOperatorJQL(t *testing.T) {
 	srv := fakeJira(t, `{"transitions":[]}`)
 	deps := depsWithJira(srv)
 	deps.JiraConfigFor = func(user string) jira.Config {
-		return jira.Config{Site: srv.URL, ProjectKey: "VPSM", BoardJQL: "assignee = currentUser()", HasToken: true}
+		return jira.Config{Site: srv.URL, ProjectKey: "PANEL", BoardJQL: "assignee = currentUser()", HasToken: true}
 	}
 
 	rec := call(t, deps, http.MethodGet, "/jira/board?filter=board", "")

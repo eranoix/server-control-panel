@@ -12,7 +12,7 @@ import (
 // TURNConfig is what the videocall.Service needs to mint coturn-compatible
 // time-limited credentials. The same `Secret` must be configured in
 // /etc/coturn/turnserver.conf under `static-auth-secret` (or
-// `use-auth-secret` keyword); vpsmctl videocall init writes both sides from
+// `use-auth-secret` keyword); panelctl videocall init writes both sides from
 // the same source.
 //
 // Hosts is the list of TURN/STUN endpoints to advertise. Typically:

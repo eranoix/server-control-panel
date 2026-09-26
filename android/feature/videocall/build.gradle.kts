@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vpsmanager.feature.videocall"
+    namespace = "dev.servercontrolpanel.feature.videocall"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {

@@ -12,7 +12,7 @@ import (
 //
 //	1 alert:
 //	  🚨 *FIRING* [critical] BinaryDown
-//	  vps-manager binary down
+//	  server-control-panel binary down
 //	  Instance 127.0.0.1:8765 has been down for > 3 minutes.
 //	  ⏱ 2026-06-08 15:30 UTC
 //

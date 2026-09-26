@@ -26,7 +26,7 @@ import { fileURLToPath } from 'url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const index = read('internal/webassets/web/index.html');
-const shell = read('internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const shell = read('internal/webassets/web/vendor/panel/app/00-shell.js');
 
 let bad = 0;
 const ok = (name, cond, extra = '') => {

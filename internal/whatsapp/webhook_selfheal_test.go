@@ -16,7 +16,7 @@ func subscribe(secret string, body []byte) string {
 
 // The hole that was still open: the secret stayed cached on the *Service
 // FOREVER. Once it diverged from the daemon, EVERY incoming message was
-// discarded until someone restarted vps-manager — in silence, with the panel
+// discarded until someone restarted server-control-panel — in silence, with the panel
 // still saying "connected". It happened in the wild: both sides stable, no
 // restart, two real messages lost.
 func TestWebhookReloadsStaleSecretInsteadOfDropping(t *testing.T) {

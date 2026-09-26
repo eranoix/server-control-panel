@@ -1,13 +1,13 @@
-// Command wad is the vps-manager WhatsApp daemon: a persistent process that
+// Command wad is the server-control-panel WhatsApp daemon: a persistent process that
 // embeds whatsmeow (the same library WAHA's GOWS engine wraps) to send/receive
 // WhatsApp messages for free, replacing the paywalled WAHA media endpoints.
 //
-// It hosts one whatsmeow client per vps-manager user, each reusing the device
+// It hosts one whatsmeow client per server-control-panel user, each reusing the device
 // already paired in a COPY of WAHA's gows.db (so no re-pairing). It exposes a
-// loopback HTTP API for the vps-manager server to send through, and pushes
+// loopback HTTP API for the server-control-panel server to send through, and pushes
 // inbound events back to the server in WAHA-compatible webhook envelopes.
 //
-// Survives vps-manager deploys: runs under its own systemd unit (Restart=always).
+// Survives server-control-panel deploys: runs under its own systemd unit (Restart=always).
 package main
 
 import (
@@ -39,7 +39,7 @@ type manager struct {
 }
 
 func main() {
-	stateDir := envOr("WAD_STATE_DIR", "/var/lib/vpsm-wad")
+	stateDir := envOr("WAD_STATE_DIR", "/var/lib/panel-wad")
 	listen := envOr("WAD_LISTEN", "127.0.0.1:8769")
 	webhookBase := envOr("WAD_WEBHOOK_BASE", "http://127.0.0.1:8765")
 

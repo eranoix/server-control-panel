@@ -31,8 +31,8 @@ let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
 
-const FONTE_VC = path.join(WEB, 'vendor', 'vpsm', 'videocall.js');
-const FONTE_SHELL = path.join(WEB, 'vendor', 'vpsm', 'app', '00-shell.js');
+const FONTE_VC = path.join(WEB, 'vendor', 'panel', 'videocall.js');
+const FONTE_SHELL = path.join(WEB, 'vendor', 'panel', 'app', '00-shell.js');
 const srcVC = fs.readFileSync(FONTE_VC, 'utf8');
 const srcShell = fs.readFileSync(FONTE_SHELL, 'utf8');
 
@@ -78,8 +78,8 @@ async function scenario(browser, name, hasAudio, hasVideo) {
   await page.goto('about:blank');
   await page.addScriptTag({ content: srcVC });
   const r = await page.evaluate(async () => {
-    const probe = await window.VPSMVideoCall.probeDevicePermission();
-    const devs = await window.VPSMVideoCall.listDevices();
+    const probe = await window.PanelVideoCall.probeDevicePermission();
+    const devs = await window.PanelVideoCall.listDevices();
     return { probe, devs, gum: window.__gumCalls };
   });
   await page.close();
@@ -90,7 +90,7 @@ async function scenario(browser, name, hasAudio, hasVideo) {
 // downloads no browser, so it points at the cache or system chromium.
 function findBrowser() {
   const c = [];
-  if (process.env.VPSM_CHROMIUM) c.push(process.env.VPSM_CHROMIUM);
+  if (process.env.PANEL_CHROMIUM) c.push(process.env.PANEL_CHROMIUM);
   const cache = '/root/.cache/ms-playwright';
   if (fs.existsSync(cache)) for (const d of fs.readdirSync(cache).filter((x) => x.startsWith('chromium-')).sort().reverse())
     c.push(path.join(cache, d, 'chrome-linux64', 'chrome'));
@@ -145,7 +145,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
     const events = [];
     let err = '';
     try {
-      await window.VPSMVideoCall.connect({
+      await window.PanelVideoCall.connect({
         roomId: 'x', token: 't', displayName: 'test',
         videosEl: document.createElement('div'),
         onState: (ev) => events.push(ev),

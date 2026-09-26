@@ -31,7 +31,7 @@ import (
 // gracefully degraded. The focus is exercising the routing, not the features.
 func newSmokeRouter(t *testing.T) *Router {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "vpsm-smoke-")
+	dir, err := os.MkdirTemp("", "panel-smoke-")
 	if err != nil {
 		t.Fatalf("mkdtemp: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestSmokePublicRoutes(t *testing.T) {
 		{"login bad json", "POST", "/api/auth/login", "not json", []int{400}},
 		{"login bad creds", "POST", "/api/auth/login", `{"username":"nope","password":"nope"}`, []int{401, 400, 423}},
 		{"login method get", "GET", "/api/auth/login", "", []int{405}},
-		// refresh-cookie is PUBLIC (outside the protected mux) — with no vpsm_refresh cookie
+		// refresh-cookie is PUBLIC (outside the protected mux) — with no panel_refresh cookie
 		// it answers 401 from the handler ITSELF (not from the middleware). A 404 here = route gone.
 		{"refresh-cookie no cookie", "POST", "/api/auth/refresh-cookie", "", []int{401}},
 		{"refresh-cookie method get", "GET", "/api/auth/refresh-cookie", "", []int{405}},
@@ -140,7 +140,7 @@ func TestSmokePublicRoutes(t *testing.T) {
 // TestRefreshCookieIsPublicAndWired — /api/auth/refresh-cookie MUST be public
 // (it renews the JWT through an HttpOnly cookie once the access token has
 // expired; that is what stops auto-logout tearing down the session/terminal in an
-// idle tab). With no vpsm_refresh cookie, the handler ITSELF answers 401 "no
+// idle tab). With no panel_refresh cookie, the handler ITSELF answers 401 "no
 // refresh session" — not the middleware's "unauthorized". A 404 here = route gone
 // (a regression that would reopen the bug of the terminal dropping on its own).
 func TestRefreshCookieIsPublicAndWired(t *testing.T) {
@@ -204,7 +204,7 @@ func TestSmokeDocsGated(t *testing.T) {
 func TestSmokeGraphGated(t *testing.T) {
 	r := newSmokeRouter(t)
 
-	req := httptest.NewRequest("GET", "/_graph?project=vps-manager", nil)
+	req := httptest.NewRequest("GET", "/_graph?project=server-control-panel", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -286,7 +286,7 @@ func TestSmokeProtectedRoutesRequire401(t *testing.T) {
 		"/api/audit/actions",
 		"/api/claude/overview",
 		"/api/config",
-		"/api/vpsm/health",
+		"/api/panel/health",
 		"/api/session/bandwidth",
 		"/api/files/list",
 		"/api/secrets/list",

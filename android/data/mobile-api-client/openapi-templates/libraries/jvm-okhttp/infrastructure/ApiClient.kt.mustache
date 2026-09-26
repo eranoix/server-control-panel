@@ -1,7 +1,7 @@
 {{! Override of org.openapi.generator's built-in kotlin-client/libraries/jvm-okhttp/infrastructure/ApiClient.kt.mustache
    (verified byte-identical to upstream 7.25.0). The ONLY difference is the
    `if (requestConfig.requiresAuthentication)` guard around updateAuthParams() inside request();
-   search for "VPSM GUARD" below.
+   search for "PANEL GUARD" below.
 
    Why: upstream calls updateAuthParams() on EVERY request, ignoring the requiresAuthentication
    field it generates for each RequestConfig. The BFF spec declares security only on protected
@@ -13,7 +13,7 @@
    With the guard: on a protected route the generated code sets the header from
    ApiClient.accessToken and AuthTokenInterceptor overwrites it (Request.header() replaces, never
    duplicates) with the SessionManager token, since only it knows how to refresh; on a public route
-   nobody sets the header. See android/data/src/main/kotlin/com/vpsmanager/data/auth/AuthTokenInterceptor.kt.
+   nobody sets the header. See android/data/src/main/kotlin/dev/servercontrolpanel/data/auth/AuthTokenInterceptor.kt.
 
    Files not found here fall back to the generator's built-in templates. See
    android/data/mobile-api-client/build.gradle.kts (templateDir). }}
@@ -514,7 +514,7 @@ import com.squareup.moshi.adapter
         {{#hasAuthMethods}}
 
         // take authMethod from operation
-        // VPSM GUARD: only operations that declare security in the spec get the header (see the
+        // PANEL GUARD: only operations that declare security in the spec get the header (see the
         // comment at the top of this template).
         if (requestConfig.requiresAuthentication) {
             updateAuthParams(requestConfig)

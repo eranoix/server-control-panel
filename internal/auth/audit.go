@@ -27,7 +27,7 @@ const (
 	auditRingCap = 1000
 	// auditMaxBytes is the maximum size of the live audit.log before it rotates.
 	// 50MB ~ 500k events (avg 100 bytes/line). On a server at 10 evt/s that is a
-	// rotation roughly every 14h. Override via the env VPSM_AUDIT_MAX_BYTES.
+	// rotation roughly every 14h. Override via the env PANEL_AUDIT_MAX_BYTES.
 	auditMaxBytes int64 = 50 * 1024 * 1024
 	// auditKeepRotated is how many rotated .gz files to keep.
 	auditKeepRotated = 10

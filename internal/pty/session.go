@@ -64,7 +64,7 @@ func resolveSessionCWD(name string) string {
 	return fn(name)
 }
 
-// InitSessionBackend pins the active backend from the VPSM_SESSION_BACKEND flag.
+// InitSessionBackend pins the active backend from the PANEL_SESSION_BACKEND flag.
 // Called once at server boot, after loading the registry.
 func InitSessionBackend(dataDir string, reg *Registry) {
 	activeMu.Lock()

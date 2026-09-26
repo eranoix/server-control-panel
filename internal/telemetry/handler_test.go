@@ -24,7 +24,7 @@ func newHandler(t *testing.T) (http.HandlerFunc, string) {
 	}
 	t.Cleanup(func() { s.Close() })
 	freeze(s, fixedDay)
-	return Handler(s, "vps-manager"), filepath.Join(dir, fixedDay+".jsonl")
+	return Handler(s, "server-control-panel"), filepath.Join(dir, fixedDay+".jsonl")
 }
 
 // content returns the day's file, or "" if it never even came into existence.
@@ -89,8 +89,8 @@ func TestHandler(t *testing.T) {
 			if m["sid"] != "9f3a1c72" {
 				t.Errorf("line %d sid: expected=9f3a1c72 observed=%v", i+1, m["sid"])
 			}
-			if m["fork"] != "vps-manager" {
-				t.Errorf("line %d fork: expected=vps-manager observed=%v", i+1, m["fork"])
+			if m["fork"] != "server-control-panel" {
+				t.Errorf("line %d fork: expected=server-control-panel observed=%v", i+1, m["fork"])
 			}
 			if v, ok := m["v"].(float64); !ok || v != 1 {
 				t.Errorf("line %d v: expected=1 observed=%v", i+1, m["v"])
@@ -461,7 +461,7 @@ func TestHandlerSurvivesDeadSink(t *testing.T) {
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
-	h := Handler(s, "vps-manager")
+	h := Handler(s, "server-control-panel")
 	rec := post(h, "application/json",
 		`{"v":1,"s":"9f3a1c72","e":[{"screen":"dashboard","origin":"default"}]}`)
 	if rec.Code != http.StatusNoContent {

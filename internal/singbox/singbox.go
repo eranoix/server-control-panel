@@ -159,7 +159,7 @@ func outbounds(doc map[string]any) []map[string]any {
 // ProxyEndpoint returns the "host:port" of the data-saver proxy outbound for an
 // exit (proxy-vps for ExitVPS, proxy-casa for ExitHome). The handler probes this
 // before turning data-saver on, so enabling never routes a device through a
-// proxy that is down/unreachable (that was the NXDOMAIN outage — VPSM-ds-safe).
+// proxy that is down/unreachable (that was the NXDOMAIN outage — PANEL-ds-safe).
 func (m *Manager) ProxyEndpoint(exit string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

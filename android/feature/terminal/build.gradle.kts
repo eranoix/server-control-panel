@@ -1,7 +1,7 @@
 // :feature-terminal — the terminal screen: session list/resume, /ws/shell
 // lifecycle, hosts the Compose Canvas renderer that consumes snapshots from
 // :terminal-engine. The transport (TerminalSocketClient) depends on :data only
-// through the pure interfaces in com.vpsmanager.data.terminal
+// through the pure interfaces in dev.servercontrolpanel.data.terminal
 // (TerminalRepository, TerminalWebSocketFactory) — it never imports
 // okhttp3/retrofit2 directly; the real OkHttp implementation lives whole in :data.
 plugins {
@@ -11,7 +11,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vpsmanager.feature.terminal"
+    namespace = "dev.servercontrolpanel.feature.terminal"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
@@ -49,12 +49,12 @@ android {
 dependencies {
     implementation(project(":terminal-engine"))
     implementation(project(":data"))
-    // :core brings the shell quoting (com.vpsmanager.core.shell) used when
+    // :core brings the shell quoting (dev.servercontrolpanel.core.shell) used when
     // inserting an attachment's path into the command line. It lives in :core,
     // and not here, because it is pure logic and its test runs a real /bin/sh —
     // no Android involved.
     implementation(project(":core"))
-    // :design-system brings the terminal icon (VpsmIcons, drawn by hand so as
+    // :design-system brings the terminal icon (PanelIcons, drawn by hand so as
     // not to drag in the 35.7 MB material-icons-extended) and the state colours
     // the session list uses on the "active" badge.
     implementation(project(":design-system"))

@@ -1,7 +1,7 @@
 # Android app UX/UI research — what to do, in this order
 
 Written on 2026-09-06, for the native app (Kotlin + Compose, Material 3) of
-vps-manager. **This document is opinionated on purpose.** Where there is a
+server-control-panel. **This document is opinionated on purpose.** Where there is a
 choice, it makes the choice and says why; every source is cited with a URL, so
 it can be checked. Where a claim is my judgement and not the source's, it is
 marked **(opinion)**.
@@ -375,7 +375,7 @@ Two more things worth knowing:
 ### 2.5 The opportunity nobody has taken
 
 Scrollback search. None of the eight apps has a good one: Termius admits it is
-desktop-only, Blink has none, Termux tells you to use tmux. Since vps-manager
+desktop-only, Blink has none, Termux tells you to use tmux. Since server-control-panel
 **persists the scrollback on the server** (`GET /terminal/scrollback`), this app
 can offer **server-side search over the session history**, with navigable
 results. It is the only feature on this list where it is possible to get
@@ -600,7 +600,7 @@ the **history**: what the server sent, when, and what happened afterwards.
 Datadog calls this a *Notification Center* and describes it as the piece that
 avoids "switching to another device, authenticating, navigating to the source"
 ([datadoghq.com/blog](https://www.datadoghq.com/blog/mobile-app-reduce-mttr/)).
-The three channels already exist (`vpsm_deploy`, `vpsm_alerts`, `vpsm_inbox`),
+The three channels already exist (`panel_deploy`, `panel_alerts`, `panel_inbox`),
 with the right importance levels.
 
 Two high-value improvements:
@@ -721,7 +721,7 @@ the rest.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  ☰   vps-manager                                    ⋮    │
+│  ☰   server-control-panel                                    ⋮    │
 │                                                          │
 │                      [ content ]                         │
 │                                                          │

@@ -41,7 +41,7 @@ HDIFFZ="${HDIFFZ:-hdiffz}"
 # of truth also used by internal/api/handlers_android_install.go (pinned by
 # TestAndroidPackageID). Never repeat the literal here.
 default_package_id() {
-  sed -n 's/^vpsmanager\.applicationId=//p' "$ROOT_DIR/android/gradle.properties" | head -1 | tr -d '[:space:]'
+  sed -n 's/^servercontrolpanel\.applicationId=//p' "$ROOT_DIR/android/gradle.properties" | head -1 | tr -d '[:space:]'
 }
 PACKAGE_ID="${PACKAGE_ID:-$(default_package_id)}"
 
@@ -71,7 +71,7 @@ command -v sha256sum >/dev/null 2>&1 || fail "sha256sum not found"
 INDEX_JSON="$FDROID_REPO_DIR/index-v2.json"
 [ -f "$INDEX_JSON" ] || fail "$INDEX_JSON does not exist: nothing published yet; run scripts/android-publish.sh first"
 
-[ -n "$PACKAGE_ID" ] || fail "PACKAGE_ID is empty and android/gradle.properties does not define vpsmanager.applicationId"
+[ -n "$PACKAGE_ID" ] || fail "PACKAGE_ID is empty and android/gradle.properties does not define servercontrolpanel.applicationId"
 
 mkdir -p "$UPDATES_DIR/apks" "$UPDATES_DIR/patches" "$UPDATES_DIR/full"
 
@@ -114,7 +114,7 @@ PY
 
 # 2. Archive every APK in the window as apks/<sha256>.apk.
 # Work TSV: sha256, versionCode, versionName, size.
-WORK="$(mktemp "${TMPDIR:-/tmp}/vpsm-android-patches.XXXXXX")"
+WORK="$(mktemp "${TMPDIR:-/tmp}/panel-android-patches.XXXXXX")"
 trap 'rm -f "$WORK" "$WORK.manifest"' EXIT
 
 while IFS=$'\t' read -r code name apk_file; do

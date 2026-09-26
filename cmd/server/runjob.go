@@ -22,8 +22,8 @@ import (
 	"server-control-panel/internal/secrets"
 )
 
-// runDetachedJob is the entrypoint for `vps-manager run-job <id>`. It runs a
-// single queued job OUT OF PROCESS — launched by the main vps-manager into its
+// runDetachedJob is the entrypoint for `server-control-panel run-job <id>`. It runs a
+// single queued job OUT OF PROCESS — launched by the main server-control-panel into its
 // own systemd scope so a deploy/restart can't kill it. It reconstructs the
 // request-independent runner wiring (per-owner Jira client + repo map +
 // prompt registry, all derived from scope.New(user)+vault — zero HTTP), runs

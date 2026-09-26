@@ -1,7 +1,7 @@
 // session_meta.go — session metadata/ACL, tool-agnostic (after the engine
 // migration). It replaced the old file, which no longer exists: the functions
 // that talked to the previous engine's CLI
-// (list/kill/rename/has/capture over the vpsmgr socket) were removed; the engine
+// (list/kill/rename/has/capture over the panelgr socket) were removed; the engine
 // is dtach (backend_dtach.go) behind the Session* dispatchers (session.go). What
 // is left here is only the pieces that do not depend on the engine: name
 // sanitisation, quota, ownership-filtered listing and the management gate.

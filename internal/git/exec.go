@@ -1,4 +1,4 @@
-// Package git implements the visual Git client of VPS Manager: reading
+// Package git implements the visual Git client of Server Control Panel: reading
 // (commit graph, status, diff, branches) and writing (stage, commit, branch,
 // checkout, discard) over an allowlist of repositories, each one with its own
 // policy (read-only/write) and expected commit identity.
@@ -252,7 +252,7 @@ func resolveGitDir(repoPath string) (string, error) {
 
 // withRepoWriteLock serializes a write: it takes the intra-process mutex,
 // refuses (errLocked) when an index.lock already exists in the repo, and takes
-// a non-blocking exclusive flock on the dedicated .git/vpsm-git.lock. All of
+// a non-blocking exclusive flock on the dedicated .git/panel-git.lock. All of
 // that goes away when fn returns. Any contention becomes errLocked → a clean 409.
 func withRepoWriteLock(repoPath string, fn func() error) error {
 	mu := repoMutex(repoPath)
@@ -267,7 +267,7 @@ func withRepoWriteLock(repoPath string, fn func() error) error {
 	if _, err := os.Stat(filepath.Join(gitDir, "index.lock")); err == nil {
 		return errLocked
 	}
-	lockPath := filepath.Join(gitDir, "vpsm-git.lock")
+	lockPath := filepath.Join(gitDir, "panel-git.lock")
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err

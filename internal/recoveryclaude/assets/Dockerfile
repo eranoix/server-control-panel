@@ -32,7 +32,7 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
  && /usr/local/bin/claude --version
 
 # hostctl: enters the host PID 1 namespaces (needs --pid=host --privileged), so
-# `hostctl systemctl restart vps-manager` works from inside the container.
+# `hostctl systemctl restart server-control-panel` works from inside the container.
 RUN printf '%s\n' '#!/bin/sh' \
   '# Runs the command ON THE HOST (PID 1 namespaces). Needs --pid=host --privileged.' \
   'exec nsenter -t 1 -m -u -i -n -p -- "$@"' > /usr/local/bin/hostctl \
@@ -45,7 +45,7 @@ COPY host-bridge.sh /usr/local/bin/host-bridge
 RUN chmod +x /usr/local/bin/host-bridge \
  && mkdir -p /root/.local/bin \
  && ln -sf /usr/local/bin/host-bridge /usr/local/bin/agentctl \
- && ln -sf /usr/local/bin/host-bridge /usr/local/bin/vpsmctl \
+ && ln -sf /usr/local/bin/host-bridge /usr/local/bin/panelctl \
  && ln -sf /usr/local/bin/host-bridge /root/.local/bin/graphify \
  && ln -sf /usr/local/bin/host-bridge /usr/local/bin/graphify \
  && ln -sf /usr/local/bin/host-bridge /usr/local/bin/jira-api

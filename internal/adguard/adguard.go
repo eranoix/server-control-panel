@@ -2,9 +2,9 @@
 //
 // AdGuard Home (http://127.0.0.1:3000 by default) is a self-hosted DNS filter
 // that blocks ads/trackers/telemetry. It runs on the host in Docker, published
-// only on loopback. VPSM proxies its control surface server-side (Security →
+// only on loopback. PANEL proxies its control surface server-side (Security →
 // AdGuard) so the admin credentials never reach the browser and the panel is
-// gated by VPSM's own auth instead of being exposed publicly.
+// gated by PANEL's own auth instead of being exposed publicly.
 //
 // The admin API uses HTTP Basic auth. This client covers the two things the
 // panel needs: read a combined status (protection on/off + stats) and toggle

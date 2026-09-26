@@ -34,10 +34,10 @@ openApiGenerate {
     // Files the generator doesn't find here fall back to its own built-in templates, so every
     // other endpoint's generated code is unaffected.
     templateDir.set("$projectDir/openapi-templates")
-    packageName.set("com.vpsmanager.mobileapiclient")
-    apiPackage.set("com.vpsmanager.mobileapiclient.api")
-    modelPackage.set("com.vpsmanager.mobileapiclient.model")
-    invokerPackage.set("com.vpsmanager.mobileapiclient.invoker")
+    packageName.set("dev.servercontrolpanel.mobileapiclient")
+    apiPackage.set("dev.servercontrolpanel.mobileapiclient.api")
+    modelPackage.set("dev.servercontrolpanel.mobileapiclient.model")
+    invokerPackage.set("dev.servercontrolpanel.mobileapiclient.invoker")
     configOptions.set(
         mapOf(
             "library" to "jvm-okhttp4",

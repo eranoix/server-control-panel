@@ -580,7 +580,7 @@ func readTail(path string, maxBytes int) ([]byte, int) {
 // he will never delete it; fixing his past by rewriting the record would trade a
 // defect for a loss. You trim what goes out, not what is stored.
 //
-// The loop repeats because successive attaches and exits stack up: the "Vpsm"
+// The loop repeats because successive attaches and exits stack up: the "Panel"
 // session's file once ended with two clears and one goodbye, in that order.
 func trimTrailingDtachNoise(b []byte) []byte {
 	for {

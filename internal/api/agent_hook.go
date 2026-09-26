@@ -1,10 +1,10 @@
-// agent_hook.go — Claude Code hooks → agent state + notifications (VPSM #4).
+// agent_hook.go — Claude Code hooks → agent state + notifications (PANEL #4).
 //
 // Endpoint: POST /api/agent/hook. It is registered on the RAW mux (not behind
 // the JWT middleware) but is NOT an open mutation endpoint: it is gated on
 //
 //	(a) a loopback RemoteAddr (the hook curls 127.0.0.1), AND
-//	(b) a shared secret the hook command includes (X-Vpsm-Agent-Secret),
+//	(b) a shared secret the hook command includes (X-Panel-Agent-Secret),
 //
 // compared in constant time. The secret lives in <DataDir>/agent-hook.secret
 // and is the same value ensureAgentHooks() embeds into the spawned sessions'
@@ -104,7 +104,7 @@ func (r *Router) handleAgentHook(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	// Shared secret, constant-time. Fail closed when the secret is unset.
-	got := req.Header.Get("X-Vpsm-Agent-Secret")
+	got := req.Header.Get("X-Panel-Agent-Secret")
 	if r.agentHookSecret == "" || subtle.ConstantTimeCompare([]byte(got), []byte(r.agentHookSecret)) != 1 {
 		writeErr(w, 401, "unauthorized")
 		return
@@ -127,7 +127,7 @@ func (r *Router) handleAgentHook(w http.ResponseWriter, req *http.Request) {
 	// free: the respawn fires another SessionStart, which opens another interval,
 	// and the messages before and after the switch land on different accounts.
 	if p.HookEventName == "SessionStart" && r.claudeAccts != nil {
-		dir := req.Header.Get("X-Vpsm-Claude-Dir")
+		dir := req.Header.Get("X-Panel-Claude-Dir")
 		if id := r.claudeAccts.AccountIDForConfigDir(dir); id != "" {
 			_ = r.claudeAccts.RecordAttrib(claudeacct.AttribEntry{
 				Ts:        time.Now().Unix(),
@@ -184,14 +184,14 @@ func (r *Router) agentHookEvent(session, state, msg string) notify.Event {
 }
 
 // sessionOwnerOf best-effort resolves the owning user of a session (registry
-// first, then the "vpsm-<user>-…" naming convention). "" when unknown.
+// first, then the "panel-<user>-…" naming convention). "" when unknown.
 func (r *Router) sessionOwnerOf(session string) string {
 	if r.sessionOwn != nil {
 		if o := r.sessionOwn.Owner(session); o != "" {
 			return o
 		}
 	}
-	if rest, ok := strings.CutPrefix(session, "vpsm-"); ok {
+	if rest, ok := strings.CutPrefix(session, "panel-"); ok {
 		if i := strings.IndexByte(rest, '-'); i > 0 {
 			return rest[:i]
 		}
@@ -224,7 +224,7 @@ func (r *Router) ensureAgentHooks() {
 	if r.agentHookSecret == "" {
 		return
 	}
-	// X-Vpsm-Claude-Dir carries the CLAUDE_CONFIG_DIR of the process that fired
+	// X-Panel-Claude-Dir carries the CLAUDE_CONFIG_DIR of the process that fired
 	// the hook, expanded by the shell AT THAT MOMENT. It is what lets the
 	// attribution ledger know the account without inferring it.
 	//
@@ -236,8 +236,8 @@ func (r *Router) ensureAgentHooks() {
 	// account, which runs without CLAUDE_CONFIG_DIR — and empty is precisely its id.
 	cmd := "curl -sf -m 5 -X POST" +
 		" -H 'Content-Type: application/json'" +
-		" -H 'X-Vpsm-Agent-Secret: " + r.agentHookSecret + "'" +
-		" -H \"X-Vpsm-Claude-Dir: ${CLAUDE_CONFIG_DIR:-}\"" +
+		" -H 'X-Panel-Agent-Secret: " + r.agentHookSecret + "'" +
+		" -H \"X-Panel-Claude-Dir: ${CLAUDE_CONFIG_DIR:-}\"" +
 		" --data-binary @- http://127.0.0.1:" + strconv.Itoa(r.selfLoopbackPort()) + "/api/agent/hook"
 
 	dirs := map[string]bool{"/root/.claude": true}

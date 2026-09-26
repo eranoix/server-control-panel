@@ -62,7 +62,7 @@ RESP=$(curl -sk -X POST "$CFG_URL/auth/v1/token?grant_type=password" \
     -H "apikey: $CFG_KEY" \
     -H "Authorization: Bearer $CFG_KEY" \
     -H "Content-Type: application/json" \
-    -d '{"email":"smoke-test-nonexistent@vpsm.local","password":"x"}')
+    -d '{"email":"smoke-test-nonexistent@panel.local","password":"x"}')
 CODE=$(echo "$RESP" | jq -r '.error_code // ""')
 if [ "$CODE" != "invalid_credentials" ]; then
     fail "/auth/v1/token returned error_code=$CODE (expected invalid_credentials). Response: $RESP"

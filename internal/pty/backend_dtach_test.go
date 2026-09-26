@@ -132,7 +132,7 @@ func TestDtachRename(t *testing.T) {
 
 // TestNewSessionBackendDtach: with the flag, NewSessionBackend returns dtach.
 func TestNewSessionBackendDtach(t *testing.T) {
-	t.Setenv("VPSM_SESSION_BACKEND", "dtach")
+	t.Setenv("PANEL_SESSION_BACKEND", "dtach")
 	b := NewSessionBackend(t.TempDir(), nil)
 	if b.Kind() != "dtach" {
 		t.Fatalf("Kind = %q, want dtach", b.Kind())

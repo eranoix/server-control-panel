@@ -46,7 +46,7 @@ import (
 // nobody writes, and **the session log simply stops**.
 //
 // And it does not stop in harmless silence: it stops IN THE MIDDLE. Measured on
-// the "Vpsm" session — the log ended on exactly these six bytes:
+// the "Panel" session — the log ended on exactly these six bytes:
 //
 //	ESC[H ESC[J     (go to the top, erase the whole screen)
 //
@@ -138,7 +138,7 @@ type sessionWriter struct {
 // it to rebuild the screen. It faithfully reproduced "erase everything" and
 // stopped there.
 //
-// Measured on the "Vpsm" session: the file ended on exactly those six bytes. The
+// Measured on the "Panel" session: the file ended on exactly those six bytes. The
 // other fifteen occurrences were followed by the full repaint — and those are
 // precisely the attaches where the size CHANGED, because then the SIGWINCH from
 // `-r winch` produces a real repaint. When the size does not change, a

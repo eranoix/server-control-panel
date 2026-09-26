@@ -9,7 +9,7 @@ package api
 // same fail-closed on unavailability. The only policy that does NOT apply
 // here is the trusted-device skip via the HttpOnly cookie:
 // the native app has no session cookie jar, so
-// readDeviceCookie never finds the vpsm_device cookie and the 2nd factor is always
+// readDeviceCookie never finds the panel_device cookie and the 2nd factor is always
 // demanded when the user has a factor enrolled — a safe degradation, never an
 // unsafe one.
 //

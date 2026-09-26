@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vpsmanager.data"
+    namespace = "dev.servercontrolpanel.data"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
@@ -33,7 +33,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(project(":core"))
     implementation(project(":data:mobile-api-client"))
-    // com.vpsmanager.data.update rebuilds the APK with :patch-engine's
+    // dev.servercontrolpanel.data.update rebuilds the APK with :patch-engine's
     // hpatchz. The boundary is deliberate: :patch-engine does not download and does not
     // install (a file goes in, a file comes out, with the SHA-256 checked), and it is this
     // module that has network, disk and coroutines to give it context. It is also
@@ -59,7 +59,7 @@ dependencies {
     // EncryptedSharedPreferences (Keystore-backed) — see
     // gradle/libs.versions.toml.
     implementation(libs.androidx.security.crypto)
-    // com.vpsmanager.data.media builds the authenticated coil.ImageLoader
+    // dev.servercontrolpanel.data.media builds the authenticated coil.ImageLoader
     // (thumbnails for WhatsApp images/videos) and the Media3 DataSource.Factory
     // (streaming playback) entirely in this module -- the only one allowed to
     // construct an okhttp3.Call.Factory. coil-video adds
@@ -68,10 +68,10 @@ dependencies {
     // pool as every other BFF call instead of opening a second HTTP stack.
     implementation(libs.coil.video)
     implementation(libs.media3.datasource.okhttp)
-    // WebRtcSessionManager (com.vpsmanager.data.videocall) owns the
+    // WebRtcSessionManager (dev.servercontrolpanel.data.videocall) owns the
     // PeerConnectionFactory/track lifecycle — the only module allowed to
     // reference org.webrtc.* directly, same architectural boundary as
-    // com.vpsmanager.data.media's Call.Factory. -ktx adds the coroutine/Flow
+    // dev.servercontrolpanel.data.media's Call.Factory. -ktx adds the coroutine/Flow
     // wrappers this module's own suspend API is built on; -compose is
     // intentionally NOT declared here (the Compose layer owns that dependency).
     implementation(libs.stream.webrtc.android)

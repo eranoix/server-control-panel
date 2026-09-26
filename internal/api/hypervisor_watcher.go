@@ -68,7 +68,7 @@ type hypervisorSentinel struct {
 // needs 3 — and a `time.Sleep` in the test would mean waiting on the clock,
 // which is exactly what is forbidden here.
 func (r *Router) ticksToBelieve() int {
-	if v := os.Getenv("VPSM_SENTINELA_CICLOS"); v != "" {
+	if v := os.Getenv("PANEL_SENTINELA_CICLOS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
 		}
@@ -77,7 +77,7 @@ func (r *Router) ticksToBelieve() int {
 }
 
 func (r *Router) sentinelInterval() time.Duration {
-	if v := os.Getenv("VPSM_SENTINELA_INTERVALO_S"); v != "" {
+	if v := os.Getenv("PANEL_SENTINELA_INTERVALO_S"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return time.Duration(n) * time.Second
 		}

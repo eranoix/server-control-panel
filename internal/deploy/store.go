@@ -6,9 +6,9 @@
 //
 // On-disk layout:
 //
-//	/srv/vpsm-apps/<name>.git        bare repo (the target of `git push`)
-//	/srv/vpsm-apps/<name>            work-tree of the production deploy
-//	/srv/vpsm-apps/<name>-pr-<slug>  work-tree of a preview env
+//	/srv/panel-apps/<name>.git        bare repo (the target of `git push`)
+//	/srv/panel-apps/<name>            work-tree of the production deploy
+//	/srv/panel-apps/<name>-pr-<slug>  work-tree of a preview env
 //	<DataDir>/deploy/apps.json       registry (list of App, written atomically)
 //	<DataDir>/deploy/<name>/<id>.log log of each deploy (streamed by the UI)
 package deploy
@@ -27,9 +27,9 @@ import (
 
 // AppsRoot is where the bare repos and work-trees live. Outside DataDir on
 // purpose: it is the target of the git remote
-// (`root@vps:/srv/vpsm-apps/<name>.git`) and must not end up in control-plane
+// (`root@vps:/srv/panel-apps/<name>.git`) and must not end up in control-plane
 // state backups.
-const AppsRoot = "/srv/vpsm-apps"
+const AppsRoot = "/srv/panel-apps"
 
 // maxDeployHistory caps how many DeployRecord entries we keep per app (the
 // oldest are pruned). Keeps apps.json small while a rollback still reaches
@@ -77,7 +77,7 @@ type Store struct {
 // *Store (queue runner vs HTTP), so a per-instance mutex serialised NOTHING (a
 // measured bug: apps.json was overwritten whole under concurrent deploys). The
 // flock on .apps.lock covers the CROSS-PROCESS case (the post-receive hook runs
-// inside vpsmctl, a separate process). Together they guarantee an atomic
+// inside panelctl, a separate process). Together they guarantee an atomic
 // read-modify-write.
 var appsFileMu sync.Mutex
 
@@ -128,9 +128,9 @@ func WorkDir(name, preview string) string {
 // No consumer outside internal/deploy used the function (measured).
 func ComposeProject(name, preview string) string {
 	if preview == "" {
-		return "vpsm-" + name
+		return "panel-" + name
 	}
-	return "vpsm-" + name + "-pr-" + preview
+	return "panel-" + name + "-pr-" + preview
 }
 
 // ValidName reports whether name is a valid app slug.
@@ -161,11 +161,11 @@ func (s *Store) loadFile() (File, error) {
 	case ShapeV1Array:
 		return File{}, fmt.Errorf(
 			"apps.json still in v1 format (raw array, no schema_version) at %s: "+
-				"this binary reads schema_version=%d; start vps-manager (cmd/server) once, "+
+				"this binary reads schema_version=%d; start server-control-panel (cmd/server) once, "+
 				"it migrates at boot; nothing was written", s.file(), AppsSchemaVersion)
 	default:
 		return File{}, fmt.Errorf(
-			"apps.json in unknown format (schema_version=%d, this vps-manager binary reads %d) at %s: "+
+			"apps.json in unknown format (schema_version=%d, this server-control-panel binary reads %d) at %s: "+
 				"nothing was written", version, AppsSchemaVersion, s.file())
 	}
 }

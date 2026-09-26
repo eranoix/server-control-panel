@@ -16,7 +16,7 @@
 //     of inactivity (timeout), or if the dtach session stops existing.
 //
 // Idempotency: calling Start again on the same session replaces the previous
-// watcher. Useful to cover the reattach when vps-manager restarts.
+// watcher. Useful to cover the reattach when server-control-panel restarts.
 package api
 
 import (
@@ -177,7 +177,7 @@ func (r *Router) applyJiraDoneFromWatcher(ctx context.Context, w *jiraWorkWatche
 		return
 	}
 	body := fmt.Sprintf(
-		"✅ *Auto-completion (vps-manager)* — %s\n\n"+
+		"✅ *Auto-completion (server-control-panel)* — %s\n\n"+
 			"The watcher spotted a phrase in work session `%s` indicating the task is done and working. "+
 			"Status moved automatically from **%s** to **%s**.",
 		time.Now().UTC().Format("2006-01-02 15:04 UTC"),

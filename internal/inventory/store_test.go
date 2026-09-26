@@ -248,7 +248,7 @@ func missingFrom(wanted, got []string) []string {
 // TestStoreCrossProcess — the proof of the FLOCK, which the goroutine test
 // does NOT give: the package mutex on its own already serialises goroutines,
 // so only a second PROCESS tells the two locks apart. It re-executes the test
-// binary itself (the post-receive hook runs inside vpsmctl, a separate
+// binary itself (the post-receive hook runs inside panelctl, a separate
 // process — this is that scenario).
 func TestStoreCrossProcess(t *testing.T) {
 	if os.Getenv("INVENTORY_CHILD_DIR") != "" {

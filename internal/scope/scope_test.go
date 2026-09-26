@@ -121,7 +121,7 @@ func TestPaths_NoTraversalFromDataDir(t *testing.T) {
 func TestPaths_WhatsappContainerOutsideDataDir(t *testing.T) {
 	u := MustNew("sam")
 	p := PathsFor("/opt/panel/data", u)
-	wantPrefix := "/var/lib/vpsm-whatsapp/sam"
+	wantPrefix := "/var/lib/panel-whatsapp/sam"
 	if !strings.HasPrefix(p.WhatsappContainer, wantPrefix) {
 		t.Fatalf("WhatsappContainer = %q, want prefix %q",
 			p.WhatsappContainer, wantPrefix)

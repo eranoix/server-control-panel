@@ -47,7 +47,7 @@ func (r *Router) initPasskey() {
 		return
 	}
 	rpOrigin := "https://" + r.cfg.PublicHostname
-	w, err := webauthn.New(auth.NewWebAuthnConfig(r.cfg.PublicHostname, rpOrigin, "VPS Manager"))
+	w, err := webauthn.New(auth.NewWebAuthnConfig(r.cfg.PublicHostname, rpOrigin, "Server Control Panel"))
 	if err != nil {
 		log.Printf("passkey: invalid WebAuthn configuration (%v) — ceremonies disabled", err)
 		return

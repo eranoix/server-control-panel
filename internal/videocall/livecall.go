@@ -64,7 +64,7 @@ const (
 )
 
 // ringReason explains the decision taken at join. It goes to the audit log and
-// to the vpsm_videocall_rings_total{reason} metric — it is what turns "it keeps
+// to the panel_videocall_rings_total{reason} metric — it is what turns "it keeps
 // ringing" into a number, before and after the fix.
 const (
 	ringReasonNewCall    = "new-call"    // a genuinely new call → RINGS

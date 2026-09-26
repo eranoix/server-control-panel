@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vpsmanager.terminalengine"
+    namespace = "dev.servercontrolpanel.terminalengine"
     compileSdk = libs.versions.compileSdk.get().toInt()
     ndkVersion = libs.versions.ndk.get()
 

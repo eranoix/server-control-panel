@@ -11,8 +11,8 @@
 //     to keep a schema_version, unlike config.json. That is why detection here
 //     goes BY SHAPE (see DetectShape), not by a version field.
 //  2. This file has THREE possible writers (the HTTP server, the queue runner
-//     and the vpsmctl behind the post-receive hook), and only the server
-//     migrates: vpsmctl REFUSES an envelope it does not understand instead of
+//     and the panelctl behind the post-receive hook), and only the server
+//     migrates: panelctl REFUSES an envelope it does not understand instead of
 //     rewriting it (see GuardCLI).
 package deploy
 
@@ -89,7 +89,7 @@ const (
 )
 
 // ErrConcurrentAppsMigration is returned when the apps.json lock is already
-// taken — another process (the server, the queue runner or the vpsmctl behind
+// taken — another process (the server, the queue runner or the panelctl behind
 // the hook) is in the middle of a write. It fails CLOSED, like config's
 // ErrConcurrentMigration: systemd retries the boot and the second attempt sees
 // v2 and does nothing.
@@ -166,19 +166,19 @@ func detectShapeBytes(raw []byte) (Shape, int) {
 // is the whole point of the guard: whoever reads the error needs to know WHICH
 // binary is out of date, otherwise the symptom is a rejected `git push` with
 // text the operator cannot decipher.
-const cliBinaryName = "vpsmctl"
+const cliBinaryName = "panelctl"
 
-// GuardCLI is the refusal: vpsmctl shares apps.json with the server but NEVER
+// GuardCLI is the refusal: panelctl shares apps.json with the server but NEVER
 // migrates it. When it meets a shape this binary does not write, it fails
 // CLOSED — without opening the store, without writing, without a backup —
 // instead of rewriting the file into the format it knows.
 //
 // It mirrors internal/config/config_io.go:57 (a config whose schema_version is
 // higher than the binary's aborts instead of being rewritten). apps.json had no
-// such protection: an old vpsmctl opening the store would write the v2 back as
+// such protection: an old panelctl opening the store would write the v2 back as
 // a v1 array on the first `git push`, erasing the node_id of every deployment.
 //
-// Operational consequence: the server and vpsmctl have to be released TOGETHER.
+// Operational consequence: the server and panelctl have to be released TOGETHER.
 func GuardCLI(dataDir string) error {
 	shape, version, err := DetectShape(dataDir)
 	if err != nil {
@@ -190,13 +190,13 @@ func GuardCLI(dataDir string) error {
 	case ShapeV1Array:
 		return fmt.Errorf(
 			"%s: %s is still in v1 format (raw array, no schema_version) and %s does NOT migrate: "+
-				"start vps-manager (cmd/server) once, it migrates to schema_version=%d at boot, "+
+				"start server-control-panel (cmd/server) once, it migrates to schema_version=%d at boot, "+
 				"then run %s again; nothing was written",
 			cliBinaryName, appsPath(dataDir), cliBinaryName, AppsSchemaVersion, cliBinaryName)
 	default:
 		return fmt.Errorf(
 			"%s: %s in unknown format (schema_version=%d): this binary %s reads schema_version=%d — "+
-				"update %s (it ships together with vps-manager) instead of letting it rewrite the file; "+
+				"update %s (it ships together with server-control-panel) instead of letting it rewrite the file; "+
 				"nothing was written",
 			cliBinaryName, appsPath(dataDir), version, cliBinaryName, AppsSchemaVersion, cliBinaryName)
 	}
@@ -219,7 +219,7 @@ type AppsMigration struct {
 
 // MigrateApps converts the v1 apps.json into the v2 envelope. It is idempotent
 // (a cheap no-op once it is already v2), reentrant across PROCESSES (the server
-// and the vpsmctl behind the post-receive hook can both find it pending at the
+// and the panelctl behind the post-receive hook can both find it pending at the
 // same time) and atomic (backup first, write via tmp+rename with fsync,
 // rollback on error).
 //

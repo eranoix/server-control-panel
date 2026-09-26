@@ -16,7 +16,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="$ROOT/scripts/android-patches.sh"
-PACKAGE="tech.northwind.vpsm.app"
+PACKAGE="tech.northwind.servercontrolpanel"
 
 [ -f "$SCRIPT" ] || { echo "cannot find $SCRIPT"; exit 2; }
 command -v hdiffz  >/dev/null 2>&1 || { echo "hdiffz not found; run scripts/setup-hdiffpatch.sh"; exit 2; }
@@ -28,8 +28,8 @@ ok() { echo "  OK: $1"; pass=$((pass+1)); }
 no() { echo "  FAILED: $1"; fail=$((fail+1)); }
 echo "=== test-android-patches ==="
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/vpsm-android-patches-test.XXXXXX")" || exit 2
-trap 'case "$TMP" in "${TMPDIR:-/tmp}"/vpsm-android-patches-test.*) rm -rf "$TMP";; esac' EXIT
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/panel-android-patches-test.XXXXXX")" || exit 2
+trap 'case "$TMP" in "${TMPDIR:-/tmp}"/panel-android-patches-test.*) rm -rf "$TMP";; esac' EXIT
 
 REPO="$TMP/repo"
 UPDATES="$TMP/updates"
@@ -41,11 +41,11 @@ make_apk() {
   # Two lines on purpose: in a single `local a=.. b=..$a..` bash expands every
   # word before assigning, so $a would not exist yet (fatal under `set -u`).
   local code="$1"
-  local dest="$REPO/vpsmanager-$code.apk"
+  local dest="$REPO/servercontrolpanel-$code.apk"
   python3 - "$dest" "$code" <<'PY'
 import sys
 dest, code = sys.argv[1], int(sys.argv[2])
-shared = (b"vps-manager-shared-payload-" * 4096)[:2 * 1024 * 1024]
+shared = (b"server-control-panel-shared-payload-" * 4096)[:2 * 1024 * 1024]
 own = (("version-%d-" % code).encode() * 4096)[:128 * 1024]
 with open(dest, "wb") as fh:
     fh.write(shared[: 1024 * 1024])
@@ -64,7 +64,7 @@ versions = {}
 for code in sys.argv[3:]:
     versions["v" + code] = {
         "manifest": {"versionName": "0.1." + code, "versionCode": int(code)},
-        "file": {"name": "/vpsmanager-%s.apk" % code},
+        "file": {"name": "/servercontrolpanel-%s.apk" % code},
     }
 with open(dest, "w", encoding="utf-8") as fh:
     json.dump({"packages": {pkg: {"versions": versions}}}, fh)
@@ -152,7 +152,7 @@ else
 fi
 
 # Now the 6th: v1 leaves the window and everything from it must go.
-v1_sha="$(sha256sum "$REPO/vpsmanager-1.apk" | cut -d' ' -f1)"
+v1_sha="$(sha256sum "$REPO/servercontrolpanel-1.apk" | cut -d' ' -f1)"
 old_full="$FULL_FILE"
 make_apk 6
 write_index 1 2 3 4 5 6
@@ -185,7 +185,7 @@ fi
 
 # Test 6: an index version without its APK. The operator pruned an old APK;
 # generation must survive and only that base loses its patch.
-rm -f "$REPO/vpsmanager-2.apk" "$UPDATES/apks"/*.apk.versioncode
+rm -f "$REPO/servercontrolpanel-2.apk" "$UPDATES/apks"/*.apk.versioncode
 if run > "$TMP/run7.log" 2>&1; then
   ok "missing APK in the repository does not break generation (only that base degrades)"
 else

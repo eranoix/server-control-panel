@@ -156,7 +156,7 @@ func (f *fakeGoTrue) server(t *testing.T) *httptest.Server {
 // talking to a real GoTrue.
 func newLoginTestRouter(t *testing.T, gt *fakeGoTrue, username, email string) *Router {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "vpsm-login-test-")
+	dir, err := os.MkdirTemp("", "panel-login-test-")
 	if err != nil {
 		t.Fatalf("mkdtemp: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestHandleLogin_MFASkippedViaTrustedDevice(t *testing.T) {
 	b, _ := json.Marshal(map[string]any{"username": "sam", "password": testPassword})
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(string(b)))
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "vpsm_device", Value: secret})
+	req.AddCookie(&http.Cookie{Name: "panel_device", Value: secret})
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 

@@ -64,8 +64,8 @@ var defaults = map[Tier]string{
 // The env is the path that crosses processes: detached jobs inherit the parent's
 // env, so an env override holds for the detached path too.
 var envKeys = map[Tier]string{
-	Suggest: "VPSM_AI_MODEL_SUGGEST",
-	JiraAI:  "VPSM_AI_MODEL_JIRA",
+	Suggest: "PANEL_AI_MODEL_SUGGEST",
+	JiraAI:  "PANEL_AI_MODEL_JIRA",
 }
 
 // For resolves a tier's model id: env > configured > built-in default.
@@ -91,7 +91,7 @@ func For(t Tier, configured string) string {
 // config.AIModels.Intake.
 func IntakeModel(configured string) string {
 	pick := ""
-	if v := strings.TrimSpace(os.Getenv("VPSM_AI_MODEL_INTAKE")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("PANEL_AI_MODEL_INTAKE")); v != "" {
 		pick = v
 	} else if c := strings.TrimSpace(configured); c != "" {
 		pick = c

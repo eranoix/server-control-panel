@@ -85,5 +85,5 @@ def check(path):
 
 
 if __name__ == '__main__':
-    targets = sys.argv[1:] or ['.docs/Documentacao Tecnica - VPS Manager.html']
+    targets = sys.argv[1:] or ['.docs/Documentacao Tecnica - Server Control Panel.html']
     sys.exit(0 if all([check(t) for t in targets]) else 1)

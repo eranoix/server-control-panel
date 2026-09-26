@@ -9,8 +9,8 @@
 <meta name="theme-color" content="#0a0e1a" />
 <!-- Build stamp injected by the server handler. Used by bootSanitizer to
      purge incompatible localStorage after each deploy. DO NOT MODIFY — the
-     literal __VPSM_BUILD__ value is substituted at runtime. -->
-<meta name="vpsm-build" content="__VPSM_BUILD__">
+     literal __PANEL_BUILD__ value is substituted at runtime. -->
+<meta name="panel-build" content="__PANEL_BUILD__">
 <title>Server Control Panel</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3Cmask id='m'%3E%3Crect width='64' height='64' fill='white'/%3E%3Crect x='29' y='16' width='6' height='32' rx='3' fill='black'/%3E%3Cpath d='M17 20 L27 20 L27 26 L21 30 L15 27 Z' fill='black'/%3E%3Cpath d='M47 44 L37 44 L37 38 L43 34 L49 37 Z' fill='black'/%3E%3C/mask%3E%3C/defs%3E%3Crect width='64' height='64' rx='14' fill='%23020617'/%3E%3Cpath d='M32 4 L52 15 L56 32 L52 49 L32 60 L12 49 L8 32 L12 15 Z' fill='%2322d3ee' mask='url(%23m)'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="/tailwind.css">
@@ -57,7 +57,7 @@
 <meta name="theme-color" content="#020617">
 <!-- mobile-web-app-capable / apple-mobile-web-app-capable / status-bar-style
      are already declared above. Only the title (PWA-specific) is kept here. -->
-<meta name="apple-mobile-web-app-title" content="VPS Manager">
+<meta name="apple-mobile-web-app-title" content="Server Control Panel">
 <script defer src="/vendor/xterm/xterm.js"></script>
 <script defer src="/vendor/xterm/fit.js"></script>
 <script defer src="/vendor/xterm/web-links.js"></script>
@@ -72,12 +72,12 @@
      them on is opt-in/default OFF, so nobody pays 56KB gz for them any more. -->
 <!-- Chart.js: loaded ON DEMAND by _ensureChart() (00-shell.js), which works
      around the monaco loader's AMD `define`. See the comment over there. -->
-<script defer src="/vendor/vpsm/videocall-e2ee.js"></script>
-<script defer src="/vendor/vpsm/videocall-presence.js"></script>
-<script defer src="/vendor/vpsm/videocall-push.js"></script>
+<script defer src="/vendor/panel/videocall-e2ee.js"></script>
+<script defer src="/vendor/panel/videocall-presence.js"></script>
+<script defer src="/vendor/panel/videocall-push.js"></script>
 <!-- videocall.js: on demand inside vcJoinCall() (58KB gz). The -presence one,
      which announces an incoming call, stays eager just above. -->
-<script defer src="/vendor/vpsm/stt.js"></script>
+<script defer src="/vendor/panel/stt.js"></script>
 <script defer src="/vendor/monaco/vs/loader.js"></script>
 <!-- Alpine LAST on purpose: defer runs in document order, so this guarantees
      that xterm/Chart/videocall/monaco already exist by the time app() boots —
@@ -85,7 +85,7 @@
 <script defer src="/vendor/alpine/alpine.min.js"></script>
 <style>
   /* ═══════════════════════════════════════════════════════════════════════
-     vps-manager v2 — Design Tokens
+     server-control-panel v2 — Design Tokens
      Cyan-accent dark theme. Inspired by the northwind-web Ops Center.
      Anything historically hard-coded as a color must resolve through var().
      ═══════════════════════════════════════════════════════════════════════ */
@@ -185,7 +185,7 @@
      LIGHT theme. Overrides the SAME tokens as the dark one with a coherent
      light palette (light surfaces, dark text, cyan accent darkened for AA
      contrast over white). Values only — no second design language. Stamped
-     by vpsmTheme (00-shell.js) as [data-theme="light"] on the root element.
+     by panelTheme (00-shell.js) as [data-theme="light"] on the root element.
      NOT to be confused with .git-theme-light (local).
      ════════════════════════════════════════════════════════════════════ */
   :root[data-theme="light"] {
@@ -4372,14 +4372,14 @@
         <div class="w-12 h-12 flex-shrink-0" style="color: var(--accent); filter: drop-shadow(0 18px 40px rgba(34,211,238,.45));">
           <svg viewBox="0 0 64 64" width="48" height="48" aria-label="Server Control Panel">
             <defs>
-              <mask id="vpsm-mark-mask-login">
+              <mask id="panel-mark-mask-login">
                 <rect width="64" height="64" fill="white"/>
                 <rect x="29" y="16" width="6" height="32" rx="3" fill="black"/>
                 <path d="M17 20 L27 20 L27 26 L21 30 L15 27 Z" fill="black"/>
                 <path d="M47 44 L37 44 L37 38 L43 34 L49 37 Z" fill="black"/>
               </mask>
             </defs>
-            <path d="M32 4 L52 15 L56 32 L52 49 L32 60 L12 49 L8 32 L12 15 Z" fill="currentColor" mask="url(#vpsm-mark-mask-login)"/>
+            <path d="M32 4 L52 15 L56 32 L52 49 L32 60 L12 49 L8 32 L12 15 Z" fill="currentColor" mask="url(#panel-mark-mask-login)"/>
           </svg>
         </div>
         <div>
@@ -4467,20 +4467,20 @@
            :class="'is-collapsed' + (mobileSidebarOpen ? ' mobile-open' : '')"
            x-show="!focusMode && !guestMode" x-transition.opacity>
       <div class="sidebar-head px-3 py-3 flex items-center gap-2.5" style="border-bottom: 1px solid var(--border-default);">
-        <!-- VPS Manager mark — hexagonal control socket with a command spine + dock cuts.
+        <!-- Server Control Panel mark — hexagonal control socket with a command spine + dock cuts.
              It keeps currentColor → inherits from the parent (accent cyan #22d3ee).
              The online dot was moved on top, as an overlay in the bottom-right corner. -->
         <div class="w-9 h-9 flex-shrink-0 relative" style="color: var(--accent); filter: drop-shadow(0 4px 12px rgba(34,211,238,.35));">
           <svg viewBox="0 0 64 64" width="36" height="36" aria-label="Server Control Panel">
             <defs>
-              <mask id="vpsm-mark-mask-sidebar">
+              <mask id="panel-mark-mask-sidebar">
                 <rect width="64" height="64" fill="white"/>
                 <rect x="29" y="16" width="6" height="32" rx="3" fill="black"/>
                 <path d="M17 20 L27 20 L27 26 L21 30 L15 27 Z" fill="black"/>
                 <path d="M47 44 L37 44 L37 38 L43 34 L49 37 Z" fill="black"/>
               </mask>
             </defs>
-            <path d="M32 4 L52 15 L56 32 L52 49 L32 60 L12 49 L8 32 L12 15 Z" fill="currentColor" mask="url(#vpsm-mark-mask-sidebar)"/>
+            <path d="M32 4 L52 15 L56 32 L52 49 L32 60 L12 49 L8 32 L12 15 Z" fill="currentColor" mask="url(#panel-mark-mask-sidebar)"/>
           </svg>
         </div>
         <div class="sidebar-brand overflow-hidden flex-1 min-w-0">
@@ -4570,12 +4570,12 @@
           <div class="truncate" style="font-size: var(--fs-xs); font-weight: 600; color: var(--text-primary);" x-text="username" :title="userEmail || username"></div>
           <div class="truncate" style="font-size: var(--fs-2xs); color: var(--text-muted);" x-show="userEmail" x-text="userEmail" :title="userEmail"></div>
         </div>
-        <!-- Light/dark theme toggle. Global state lives in vpsmTheme
+        <!-- Light/dark theme toggle. Global state lives in panelTheme
              (00-shell.js); the local x-data only mirrors the icon.
              It syncs with the rail's toggle through the theme-changed event. -->
-        <button x-data="{ t: (window.vpsmTheme && vpsmTheme.resolved()) || 'dark' }"
-                @click="t = vpsmTheme.toggle()"
-                @theme-changed.window="t = (window.vpsmTheme && vpsmTheme.resolved()) || t"
+        <button x-data="{ t: (window.panelTheme && panelTheme.resolved()) || 'dark' }"
+                @click="t = panelTheme.toggle()"
+                @theme-changed.window="t = (window.panelTheme && panelTheme.resolved()) || t"
                 class="btn-icon"
                 :title="t==='light' ? 'Dark theme' : 'Light theme'"
                 :aria-label="t==='light' ? 'Switch to the dark theme' : 'Switch to the light theme'">
@@ -4591,10 +4591,10 @@
       </div>
       <div class="sidebar-foot-mini p-2 border-t border-[var(--border-default)] flex flex-col items-center gap-2">
         <div class="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style="background:linear-gradient(135deg,var(--success),#0ea5e9 60%,#6366f1); box-shadow: 0 0 8px rgba(14,165,233,.3), inset 0 1px 0 rgba(255,255,255,.2);" :title="username" x-text="(username||'?').slice(0,2).toUpperCase()"></div>
-        <!-- Theme toggle (collapsed rail). Mirrors vpsmTheme through the event. -->
-        <button x-data="{ t: (window.vpsmTheme && vpsmTheme.resolved()) || 'dark' }"
-                @click="t = vpsmTheme.toggle()"
-                @theme-changed.window="t = (window.vpsmTheme && vpsmTheme.resolved()) || t"
+        <!-- Theme toggle (collapsed rail). Mirrors panelTheme through the event. -->
+        <button x-data="{ t: (window.panelTheme && panelTheme.resolved()) || 'dark' }"
+                @click="t = panelTheme.toggle()"
+                @theme-changed.window="t = (window.panelTheme && panelTheme.resolved()) || t"
                 class="foot-logout" style="color:var(--text-secondary)"
                 :title="t==='light' ? 'Dark theme' : 'Light theme'"
                 :aria-label="t==='light' ? 'Switch to the dark theme' : 'Switch to the light theme'">
@@ -4880,7 +4880,7 @@
               <p class="page-header__subtitle">Real-time metrics · refreshed every 5s</p>
             </div>
             <div class="page-header__actions">
-              <button @click="loadStats(); loadVPSMHealth()" class="btn btn-ghost" title="Refresh now" aria-label="Refresh now">
+              <button @click="loadStats(); loadPanelHealth()" class="btn btn-ghost" title="Refresh now" aria-label="Refresh now">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
                 <span>Refresh</span>
               </button>
@@ -4900,27 +4900,27 @@
             </span>
           </div>
 
-          <!-- VPS Manager self-health -->
-          <div class="card p-5 mb-4" x-show="vpsmHealth">
+          <!-- Server Control Panel self-health -->
+          <div class="card p-5 mb-4" x-show="panelHealth">
             <div class="flex items-center justify-between mb-4">
               <div style="font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); font-weight: 600;">Server Control Panel</div>
-              <span class="mono" style="font-size: var(--fs-2xs); color: var(--text-muted);" x-text="'TLS: '+(vpsmHealth?.tls_mode||'?')"></span>
+              <span class="mono" style="font-size: var(--fs-2xs); color: var(--text-muted);" x-text="'TLS: '+(panelHealth?.tls_mode||'?')"></span>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-5">
               <div>
                 <div style="font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Uptime</div>
-                <div class="font-semibold" style="font-size: var(--fs-base); color: var(--text-primary);" x-text="vpsmHealthUptime()"></div>
+                <div class="font-semibold" style="font-size: var(--fs-base); color: var(--text-primary);" x-text="panelHealthUptime()"></div>
               </div>
               <div>
                 <div style="font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Users (2FA)</div>
                 <div class="font-semibold" style="font-size: var(--fs-base); color: var(--text-primary);">
-                  <span x-text="vpsmHealth?.users_count||0"></span>
-                  <span style="color: var(--success); font-size: var(--fs-xs); margin-left: 4px;" x-text="'('+(vpsmHealth?.users_totp_enrolled||0)+' MFA)'"></span>
+                  <span x-text="panelHealth?.users_count||0"></span>
+                  <span style="color: var(--success); font-size: var(--fs-xs); margin-left: 4px;" x-text="'('+(panelHealth?.users_totp_enrolled||0)+' MFA)'"></span>
                 </div>
               </div>
               <div>
                 <div style="font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">Last sign-in</div>
-                <div class="font-semibold mono truncate" style="font-size: var(--fs-sm); color: var(--text-primary);" :title="(vpsmHealth?.last_login_user||'—')+' @ '+(vpsmHealth?.last_login_ip||'')" x-text="(vpsmHealth?.last_login_user||'—') + ' · ' + timeAgo(vpsmHealth?.last_login_at)"></div>
+                <div class="font-semibold mono truncate" style="font-size: var(--fs-sm); color: var(--text-primary);" :title="(panelHealth?.last_login_user||'—')+' @ '+(panelHealth?.last_login_ip||'')" x-text="(panelHealth?.last_login_user||'—') + ' · ' + timeAgo(panelHealth?.last_login_at)"></div>
               </div>
               <div>
                 <div style="font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">TLS</div>
@@ -4946,7 +4946,7 @@
               <!-- stats is null until the first /api/system/stats answers. Rendering
                    0.0% in that window lied that the resource was idle; the skeleton
                    makes it explicit that the data has not arrived yet. -->
-              <div class="vpsm-skel" x-show="!stats" style="height:30px;width:64%;margin-top:2px"></div>
+              <div class="panel-skel" x-show="!stats" style="height:30px;width:64%;margin-top:2px"></div>
               <div class="metric-card__value" x-show="stats" x-cloak x-text="(stats?.cpu?.overall??0).toFixed(1)+'%'"></div>
               <div class="meter" style="margin-top:14px;"><div :style="'width:'+clamp01(stats?.cpu?.overall)+'%'"></div></div>
               <!-- STEAL: CPU stolen by the hypervisor (overloaded host). Highlighted in
@@ -4973,7 +4973,7 @@
               <!-- stats is null until the first /api/system/stats answers. Rendering
                    0.0% in that window lied that the resource was idle; the skeleton
                    makes it explicit that the data has not arrived yet. -->
-              <div class="vpsm-skel" x-show="!stats" style="height:30px;width:64%;margin-top:2px"></div>
+              <div class="panel-skel" x-show="!stats" style="height:30px;width:64%;margin-top:2px"></div>
               <div class="metric-card__value" x-show="stats" x-cloak x-text="(stats?.memory?.used_percent??0).toFixed(1)+'%'"></div>
               <div class="meter" style="margin-top:14px;"><div class="grad-green" :style="'width:'+clamp01(stats?.memory?.used_percent)+'%'"></div></div>
               <div class="metric-card__delta" x-text="bytes(stats?.memory?.used??0)+' / '+bytes(stats?.memory?.total??0)"></div>
@@ -4990,7 +4990,7 @@
               <!-- stats is null until the first /api/system/stats answers. Rendering
                    0.0% in that window lied that the resource was idle; the skeleton
                    makes it explicit that the data has not arrived yet. -->
-              <div class="vpsm-skel" x-show="!stats" style="height:30px;width:64%;margin-top:2px"></div>
+              <div class="panel-skel" x-show="!stats" style="height:30px;width:64%;margin-top:2px"></div>
               <div class="metric-card__value" x-show="stats" x-cloak x-text="(stats?.load?.load1||0).toFixed(2)"></div>
               <div class="metric-card__delta" style="margin-top: 14px;">
                 <span style="color:var(--text-muted);">5m</span> <span style="color:var(--text-primary);" x-text="(stats?.load?.load5||0).toFixed(2)"></span>
@@ -5009,7 +5009,7 @@
               <!-- stats is null until the first /api/system/stats answers. Rendering
                    0.0% in that window lied that the resource was idle; the skeleton
                    makes it explicit that the data has not arrived yet. -->
-              <div class="vpsm-skel" x-show="!stats" style="height:30px;width:64%;margin-top:2px"></div>
+              <div class="panel-skel" x-show="!stats" style="height:30px;width:64%;margin-top:2px"></div>
               <div class="metric-card__value" x-show="stats" x-cloak x-text="uptime(stats?.host?.uptime)"></div>
               <div class="metric-card__delta truncate" x-text="(stats?.host?.platform||'')+' '+(stats?.host?.platform_version||'')"></div>
             </div>
@@ -5102,9 +5102,9 @@
 
         <!-- METRICS (embedded Grafana via iframe — SSO through Traefik ForwardAuth) -->
         <section x-show="currentView==='metrics'" x-cloak x-data="{
-          grafanaDash: localStorage.getItem('vpsm_grafana_dash') || 'vpsm-overview',
-          grafanaTheme: localStorage.getItem('vpsm_grafana_theme') || 'dark',
-          grafanaKiosk: localStorage.getItem('vpsm_grafana_kiosk') || '1',
+          grafanaDash: localStorage.getItem('panel_grafana_dash') || 'panel-overview',
+          grafanaTheme: localStorage.getItem('panel_grafana_theme') || 'dark',
+          grafanaKiosk: localStorage.getItem('panel_grafana_kiosk') || '1',
           dashboards: [],
           dashboardsLoading: false,
           dashboardsError: '',
@@ -5113,14 +5113,14 @@
             this.dashboardsError = '';
             try {
               // Lists the dashboards visible to the logged-in user; SSO is already
-              // active (cookie vpsm_token → ForwardAuth → header X-WEBAUTH-USER).
+              // active (cookie panel_token → ForwardAuth → header X-WEBAUTH-USER).
               const r = await fetch('/grafana/api/search?type=dash-db', {credentials: 'same-origin', headers: {'Accept':'application/json'}});
               if (!r.ok) throw new Error('HTTP ' + r.status + (r.status===401?' (session expired — sign in again)':r.status===502||r.status===503?' (dashboard app unavailable)':''));
               const list = await r.json();
-              // vpsm-overview first, then alphabetical: stable whatever order Grafana returns.
+              // panel-overview first, then alphabetical: stable whatever order Grafana returns.
               const sorted = list.slice().sort((a,b) => {
-                if (a.uid === 'vpsm-overview') return -1;
-                if (b.uid === 'vpsm-overview') return 1;
+                if (a.uid === 'panel-overview') return -1;
+                if (b.uid === 'panel-overview') return 1;
                 return (a.title||'').localeCompare(b.title||'');
               });
               // Keep the slug from d.url (/d/UID/slug) to build the canonical iframe
@@ -5131,7 +5131,7 @@
               });
               if (this.dashboards.length && !this.dashboards.find(d => d.uid === this.grafanaDash)) {
                 this.grafanaDash = this.dashboards[0].uid;
-                localStorage.setItem('vpsm_grafana_dash', this.grafanaDash);
+                localStorage.setItem('panel_grafana_dash', this.grafanaDash);
               }
             } catch (e) {
               this.dashboardsError = e.message;
@@ -5152,16 +5152,16 @@
           openExternal() { window.open('/grafana/d/' + this.grafanaDash + this.currentSlug(), '_blank'); },
           setDash(uid) {
             this.grafanaDash = uid;
-            localStorage.setItem('vpsm_grafana_dash', uid);
+            localStorage.setItem('panel_grafana_dash', uid);
           },
           init() { this.loadDashboards(); },
-          $watch_grafanaTheme(v) { localStorage.setItem('vpsm_grafana_theme', v); },
-          $watch_grafanaKiosk(v) { localStorage.setItem('vpsm_grafana_kiosk', v); },
-        }" x-init="$watch('grafanaTheme', v => localStorage.setItem('vpsm_grafana_theme', v)); $watch('grafanaKiosk', v => localStorage.setItem('vpsm_grafana_kiosk', v))" class="flex flex-col" style="height: calc(var(--vh-dyn) - 100px)">
+          $watch_grafanaTheme(v) { localStorage.setItem('panel_grafana_theme', v); },
+          $watch_grafanaKiosk(v) { localStorage.setItem('panel_grafana_kiosk', v); },
+        }" x-init="$watch('grafanaTheme', v => localStorage.setItem('panel_grafana_theme', v)); $watch('grafanaKiosk', v => localStorage.setItem('panel_grafana_kiosk', v))" class="flex flex-col" style="height: calc(var(--vh-dyn) - 100px)">
           <div class="flex items-center justify-between mb-3 gap-2 flex-wrap">
             <div class="flex items-center gap-2">
               <h2 class="text-2xl font-bold">Metrics</h2>
-              <span class="text-xs text-muted">Embedded Grafana · SSO via vps-manager</span>
+              <span class="text-xs text-muted">Embedded Grafana · SSO via server-control-panel</span>
               <span x-show="dashboardsLoading" class="text-xs text-muted">loading…</span>
               <span x-show="dashboardsError" class="text-xs text-red-400" x-text="'error: ' + dashboardsError"></span>
             </div>
@@ -5224,7 +5224,7 @@
             </div>
           </div>
           <div class="text-[11px] text-muted mt-2">
-            Dashboards provisioned in <span class="mono">/opt/projetos/vpsmanager/deploy/grafana/dashboards/</span>. To add one, create a new JSON file there — it shows up in the dropdown on the next reload (↻).
+            Dashboards provisioned in <span class="mono">/opt/projetos/servercontrolpanel/deploy/grafana/dashboards/</span>. To add one, create a new JSON file there — it shows up in the dropdown on the next reload (↻).
           </div>
         </section>
 
@@ -6157,7 +6157,7 @@
             </table>
           </div>
           <p class="mt-3 text-[11px] text-muted">
-            PID 1, sshd and vps-manager itself are protected. Non-primary users may only signal processes they own.
+            PID 1, sshd and server-control-panel itself are protected. Non-primary users may only signal processes they own.
           </p>
         </section>
 
@@ -6171,7 +6171,7 @@
             </div>
             <div class="flex items-center gap-2" style="flex-wrap:nowrap; flex-shrink:0">
               <!-- Configurable auto-refresh. -->
-              <select aria-label="Ports Auto Refresh" x-model.number="portsAutoRefresh" @change="portsAutoStart(); localStorage.setItem('vpsm_ports_auto', String(portsAutoRefresh))"
+              <select aria-label="Ports Auto Refresh" x-model.number="portsAutoRefresh" @change="portsAutoStart(); localStorage.setItem('panel_ports_auto', String(portsAutoRefresh))"
                       class="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-1 text-sm" aria-label="Auto-refresh">
                 <option :value="0">⏸ Manual</option>
                 <option :value="5">▶ 5s</option>
@@ -6321,7 +6321,7 @@
                 <button x-show="filter.units" @click="filter.units=''" style="position:absolute; right:6px; top:50%; transform:translateY(-50%)" class="text-muted hover:text-white" aria-label="Clear">×</button>
               </div>
               <!-- Auto-refresh units. -->
-              <select aria-label="Units Auto Refresh" x-model.number="unitsAutoRefresh" @change="unitsAutoStart(); localStorage.setItem('vpsm_units_auto', String(unitsAutoRefresh))"
+              <select aria-label="Units Auto Refresh" x-model.number="unitsAutoRefresh" @change="unitsAutoStart(); localStorage.setItem('panel_units_auto', String(unitsAutoRefresh))"
                       class="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-1 text-sm" aria-label="Auto-refresh">
                 <option :value="0">⏸ Manual</option>
                 <option :value="5">▶ 5s</option>
@@ -6367,7 +6367,7 @@
                   <!-- lines selector for the journal -->
                   <div class="flex items-center gap-1">
                     <button @click="loadJournal(selectedUnit)" class="btn btn-ghost btn-sm" :class="unitMode==='journal' ? 'ring-1 ring-violet-400' : ''">Journal</button>
-                    <select aria-label="Journal Lines" x-model.number="journalLines" @change="localStorage.setItem('vpsm_journal_lines', String(journalLines)); if (unitMode==='journal') loadJournal(selectedUnit)"
+                    <select aria-label="Journal Lines" x-model.number="journalLines" @change="localStorage.setItem('panel_journal_lines', String(journalLines)); if (unitMode==='journal') loadJournal(selectedUnit)"
                             class="bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-1 py-0.5 text-xs" style="width:78px" aria-label="Lines">
                       <option :value="100">100 ln</option>
                       <option :value="300">300 ln</option>
@@ -6848,7 +6848,7 @@
             <div x-show="hostTermSearchOpen" x-transition class="absolute top-2 right-2 flex gap-1 items-center bg-[var(--surface-1)] border border-[var(--border-default)] rounded px-2 py-1 z-10">
               <input id="host-term-search-input" type="text" placeholder="search..." aria-label="Search the terminal" class="bg-transparent text-xs outline-none w-32" @keydown.enter.stop="hostTermSearchNext($event.shiftKey)" @keydown.escape.stop="hostTermSearchClose()" />
               <label class="flex items-center gap-1 text-[10px] text-gray-400 cursor-pointer" title="Case sensitive">
-                <input aria-label="Host Term Search Case" type="checkbox" x-model="hostTermSearchCase" @change="localStorage.setItem('vpsm_term_search_case', hostTermSearchCase?'1':'0'); hostTermSearchNext(false)" class="w-3 h-3"/>
+                <input aria-label="Host Term Search Case" type="checkbox" x-model="hostTermSearchCase" @change="localStorage.setItem('panel_term_search_case', hostTermSearchCase?'1':'0'); hostTermSearchNext(false)" class="w-3 h-3"/>
                 Aa
               </label>
               <span class="text-[10px] text-muted min-w-[36px] text-right" x-text="hostTermSearchMatchCount" aria-live="polite"></span>
@@ -7002,7 +7002,7 @@
                     <span>GPU acceleration (WebGL)</span>
                   </label>
                   <label class="flex items-center gap-2 text-xs mt-1" title="Ctrl+C copies when there is a selection (otherwise it sends SIGINT). Ctrl+V pastes. Turn it off if you use vim Ctrl+V (visual block).">
-                    <input type="checkbox" x-model="hostTermCtrlV" @change="localStorage.setItem('vpsm_term_ctrl_v', hostTermCtrlV?'1':'0')" aria-label="Ctrl+V pastes"/>
+                    <input type="checkbox" x-model="hostTermCtrlV" @change="localStorage.setItem('panel_term_ctrl_v', hostTermCtrlV?'1':'0')" aria-label="Ctrl+V pastes"/>
                     <span>Ctrl+V pastes <span class="text-muted">(Ctrl+C only copies when something is selected)</span></span>
                   </label>
                   <label class="flex items-center gap-2 text-[12px] py-0.5">
@@ -7013,7 +7013,7 @@
                        deploy. It never reloads while the tab is visible nor while work
                        is in progress — only with the tab hidden and idle. -->
                   <label class="flex items-center gap-2 text-[12px] py-0.5" title="Off by default: with frequent deploys the tab reloaded several times a day. On, it only reloads when the tab has been hidden for 10 min, nothing has been typed for 10 min and there is no pending send queue. Never while the tab is in front.">
-                    <input type="checkbox" x-model="hostTermAutoReload" @change="localStorage.setItem('vpsm_term_auto_reload', hostTermAutoReload?'1':'0'); if(hostTermAutoReload) _armSafeReload()" aria-label="Refresh on its own in the background"/>
+                    <input type="checkbox" x-model="hostTermAutoReload" @change="localStorage.setItem('panel_term_auto_reload', hostTermAutoReload?'1':'0'); if(hostTermAutoReload) _armSafeReload()" aria-label="Refresh on its own in the background"/>
                     <span>Refresh on its own <span class="text-muted">(off; only after the tab has been idle for 10 minutes)</span></span>
                   </label>
                   <div class="flex items-center gap-2 mt-1">
@@ -7027,7 +7027,7 @@
                 <div>
                   <label for="f-hostTermEco" class="text-gray-400 uppercase">Predictive echo (slow network)</label>
                   <select id="f-hostTermEco" x-model="hostTermPredictiveEcho"
-                          @change="localStorage.setItem('vpsm_term_eco_preditivo', hostTermPredictiveEcho)"
+                          @change="localStorage.setItem('panel_term_eco_preditivo', hostTermPredictiveEcho)"
                           class="input w-full mt-1" aria-label="Terminal predictive echo">
                     <option value="auto">Automatic — only when the network is slow</option>
                     <option value="sempre">Always</option>
@@ -7041,7 +7041,7 @@
                 <div x-show="hostTermPredictiveEcho === 'auto'">
                   <label for="f-hostTermEchoThreshold" class="text-gray-400 uppercase">Echo threshold (ms)</label>
                   <input id="f-hostTermEchoThreshold" type="number" x-model.number="hostTermEchoThreshold"
-                         @change="localStorage.setItem('vpsm_term_eco_limiar', String(hostTermEchoThreshold))"
+                         @change="localStorage.setItem('panel_term_eco_limiar', String(hostTermEchoThreshold))"
                          min="0" max="2000" step="10" class="input w-full mt-1" aria-label="Latency threshold for predictive echo"/>
                   <p class="text-[10px] text-muted mt-1">Above this measured latency, local echo kicks in. Default 60 ms.</p>
                 </div>
@@ -7063,7 +7063,7 @@
                 <div>
                   <label class="text-gray-400 uppercase block">Key toolbar (mobile)</label>
                   <label class="flex items-center gap-2 mt-1">
-                    <input aria-label="Host Mobile Toolbar" type="checkbox" x-model="hostMobileToolbar" @change="localStorage.setItem('vpsm_term_mobile_toolbar', hostMobileToolbar?'1':'0')"/>
+                    <input aria-label="Host Mobile Toolbar" type="checkbox" x-model="hostMobileToolbar" @change="localStorage.setItem('panel_term_mobile_toolbar', hostMobileToolbar?'1':'0')"/>
                     <span>Show Esc / Tab / ^C / arrows above the terminal</span>
                   </label>
                   <p class="text-[10px] text-muted mt-1">Useful on phones and tablets, where the on-screen keyboard has no such keys.</p>
@@ -7581,7 +7581,7 @@
         <!-- NETWORK & PRIVACY · unified tab (AdGuard + Devices + Data saver) -->
         <!-- It replaces the 3 old tabs: one screen centred on the device.
              currentView==='rede' + PAGE_REMAP rede/adguard/dispositivos/economia. -->
-        <section x-show="currentView==='rede'" x-cloak data-vpsm="net-unified">
+        <section x-show="currentView==='rede'" x-cloak data-panel="net-unified">
           <style>
             .net-kpi{position:relative;overflow:hidden}
             .net-kpi.on::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--focus,#22d3ee)}
@@ -7836,7 +7836,7 @@
         </section>
 
         <!-- SECRETS: multi-project vault (groups + metadata + audit) -->
-        <section x-show="currentView==='secrets'" x-cloak data-vpsm="vault-grouped">
+        <section x-show="currentView==='secrets'" x-cloak data-panel="vault-grouped">
           <div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
             <div>
               <h2 class="text-2xl font-bold">Credential vault</h2>
@@ -9134,7 +9134,7 @@
           </div>
         </div>
 
-        <!-- Schedules · vpsm Job Scheduler — server-driven rebuild -->
+        <!-- Schedules · panel Job Scheduler — server-driven rebuild -->
         <!-- Lazy mounting. The content lives inside a <template>, so
              the browser does not build this DOM and Alpine does not scan these directives
              at boot; the _mounted latch never goes back to false, so after the
@@ -9146,7 +9146,7 @@
               <h2 class="text-2xl font-bold">Schedules</h2>
               <p class="text-sm text-gray-400">
                 <span x-text="(schedJobs||[]).filter(j=>j.enabled).length"></span> active,
-                <span x-text="(schedJobs||[]).filter(j=>!j.enabled).length"></span> paused · vpsm cron
+                <span x-text="(schedJobs||[]).filter(j=>!j.enabled).length"></span> paused · panel cron
               </p>
             </div>
             <div class="flex items-center gap-2">
@@ -9164,7 +9164,7 @@
               <span class="ntf-flow-arrow">→</span>
               <span class="ntf-flow-step"><span class="ntf-flow-num">3</span><span class="ntf-flow-ico">✅</span> Fires on its own</span>
             </div>
-            <p class="ntf-hero-copy">vps-manager runs it on schedule (cron) and tells you when it fails. You only see the task types your account is allowed to run.</p>
+            <p class="ntf-hero-copy">server-control-panel runs it on schedule (cron) and tells you when it fails. You only see the task types your account is allowed to run.</p>
           </div>
 
           <!-- Guided builder -->
@@ -9357,7 +9357,7 @@
                     <button type="button" class="btn btn-ghost text-sm" @click="loadSchedRemotes()" title="Reload the remotes" aria-label="Reload the remotes">↻</button>
                   </div>
                   <div class="flex items-center gap-2 mt-2" x-show="schedForm.dest.remote">
-                    <input type="text" class="ntf-input font-mono" style="flex:1" x-model="schedForm.dest.remotePath" placeholder="folder on the remote (e.g. backups/vpsm)" aria-label="Folder on the remote" />
+                    <input type="text" class="ntf-input font-mono" style="flex:1" x-model="schedForm.dest.remotePath" placeholder="folder on the remote (e.g. backups/panel)" aria-label="Folder on the remote" />
                     <button type="button" class="btn btn-ghost text-sm whitespace-nowrap" @click="fsPickRemoteFolder()">📁 Browse</button>
                   </div>
                 </div>
@@ -9669,7 +9669,7 @@
                   <div class="ntf-row" style="margin-left:0"><label for="rc-s3-region" class="ntf-row-label">Region (optional)</label><input id="rc-s3-region" type="text" class="ntf-input font-mono" x-model="rcloneConnect.region" placeholder="us-east-1" /></div>
                   <div class="ntf-row" style="margin-left:0"><label for="rc-s3-endpoint" class="ntf-row-label">Endpoint (optional, S3-compatible)</label><input id="rc-s3-endpoint" type="text" class="ntf-input font-mono" x-model="rcloneConnect.endpoint" placeholder="https://s3.example.com" /></div>
                 </div>
-                <!-- OAuth (Drive/OneDrive/Dropbox/…) — sign-in inside vps-manager's OWN browser -->
+                <!-- OAuth (Drive/OneDrive/Dropbox/…) — sign-in inside server-control-panel's OWN browser -->
                 <div class="ntf-row" style="margin-left:0" x-show="rcloneMode(rcloneConnect.type)==='oauth'">
                   <div class="ntf-preview" style="margin-left:0; margin-bottom:.5rem">
                     🔑 Drive/OneDrive need a sign-in. Click <b>Connect automatically</b>: a link will show up to open in <b>the panel's own browser</b> (the Browser tab, which runs on the server). Sign in there — the token is captured on its own, with no second browser.
@@ -9678,7 +9678,7 @@
                   <div x-show="rcloneConnect.authBusy" class="ntf-preview" style="margin-left:0; margin-top:.5rem">
                     <template x-if="rcloneConnect.authUrl">
                       <div>
-                        <b>1)</b> Open this link in <b>Browser tab</b> of vps-manager:<br>
+                        <b>1)</b> Open this link in <b>Browser tab</b> of server-control-panel:<br>
                         <span class="font-mono" style="word-break:break-all; color:var(--accent); user-select:all" x-text="rcloneConnect.authUrl"></span><br>
                         <b>2)</b> Sign in and authorise — this window finishes on its own.
                       </div>
@@ -9987,7 +9987,7 @@
                       <div class="text-sm font-medium" x-text="tier.label"></div>
                       <div class="text-[10px] text-muted" x-text="tier.hint"></div>
                       <div class="text-[10px] text-muted mt-0.5">effective: <span class="mono" x-text="_modelLabel(aiModels.effective[tier.key])"></span>
-                        <span x-show="aiModels.config[tier.key]!==aiModels.effective[tier.key]" class="text-amber-500/80" title="An environment variable (VPSM_AI_MODEL_*) overrides the config">· env override</span>
+                        <span x-show="aiModels.config[tier.key]!==aiModels.effective[tier.key]" class="text-amber-500/80" title="An environment variable (PANEL_AI_MODEL_*) overrides the config">· env override</span>
                       </div>
                     </div>
                     <select class="input shrink-0" style="min-width:9rem;width:auto" x-model="aiModels.config[tier.key]">
@@ -10477,7 +10477,7 @@
              consumed, the other showed the hypervisor as if it were not a
              node. Now the hypervisor is the HEADING and the guests are the rows.
              This ANTICIPATES the rest of the plan; the half still missing (tabs filtered by
-             `caps`) depends on the lab-agent, which comes later.
+             `caps`) depends on the node-agent, which comes later.
 
              The ages on this screen come from DIFFERENT stamps and can diverge on
              purpose: health, capacity and zpool are three calls to the
@@ -10650,10 +10650,10 @@
                 <div class="divide-y" style="border-color:var(--border)">
                   <template x-for="i in 6" :key="'skel-' + i">
                     <div class="flex items-center gap-3 px-4 py-3">
-                      <div class="vpsm-skel" style="height:14px;width:120px"></div>
-                      <div class="vpsm-skel" style="height:14px;width:70px"></div>
-                      <div class="vpsm-skel flex-1" style="height:14px"></div>
-                      <div class="vpsm-skel" style="height:14px;width:90px"></div>
+                      <div class="panel-skel" style="height:14px;width:120px"></div>
+                      <div class="panel-skel" style="height:14px;width:70px"></div>
+                      <div class="panel-skel flex-1" style="height:14px"></div>
+                      <div class="panel-skel" style="height:14px;width:90px"></div>
                     </div>
                   </template>
                 </div>
@@ -12137,7 +12137,7 @@
         </template>
         <!-- Safety net: if 41-proxmox.js did not load (cold offline, a SW
              without the precache, or a fetch aborted by a deploy restart), the
-             VPSMProxmoxModule module is gone. typeof is SAFE in Alpine (it does not
+             PanelProxmoxModule module is gone. typeof is SAFE in Alpine (it does not
              throw a ReferenceError), so gate the whole section and show a reload
              card instead of taking the UI down. -->
         <template x-if="currentView==='proxmox' && typeof pvxStaleStyle!=='function'">
@@ -12152,8 +12152,8 @@
         <!-- Deploy / Heroku-style PaaS — git push to publish -->
         <section x-show="currentView==='deploy'" x-cloak>
         <style>
-          .vpsm-skel{background:var(--surface-1);border-radius:6px;animation:vpsmPulse 1.2s ease-in-out infinite}
-          @keyframes vpsmPulse{0%,100%{opacity:.45}50%{opacity:.9}}
+          .panel-skel{background:var(--surface-1);border-radius:6px;animation:panelPulse 1.2s ease-in-out infinite}
+          @keyframes panelPulse{0%,100%{opacity:.45}50%{opacity:.9}}
         </style>
           <div class="max-w-[1600px] mx-auto page-gutter-x py-6">
             <div class="flex items-center gap-3 mb-4">
@@ -12257,9 +12257,9 @@
             <div x-show="deploy.loading && !deploy.apps.length" class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(360px,1fr))" aria-hidden="true">
               <template x-for="i in 3" :key="'sk'+i">
                 <div class="card p-4">
-                  <div class="vpsm-skel" style="height:16px;width:45%"></div>
-                  <div class="vpsm-skel" style="height:11px;width:65%;margin-top:10px"></div>
-                  <div class="vpsm-skel" style="height:26px;width:100%;margin-top:14px"></div>
+                  <div class="panel-skel" style="height:16px;width:45%"></div>
+                  <div class="panel-skel" style="height:11px;width:65%;margin-top:10px"></div>
+                  <div class="panel-skel" style="height:26px;width:100%;margin-top:14px"></div>
                 </div>
               </template>
             </div>
@@ -12396,8 +12396,8 @@
             <div x-show="agents.loading && !agents.sessions.length" class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))" aria-hidden="true">
               <template x-for="i in 4" :key="'ak'+i">
                 <div class="card p-3">
-                  <div class="vpsm-skel" style="height:14px;width:50%"></div>
-                  <div class="vpsm-skel" style="height:48px;width:100%;margin-top:10px"></div>
+                  <div class="panel-skel" style="height:14px;width:50%"></div>
+                  <div class="panel-skel" style="height:48px;width:100%;margin-top:10px"></div>
                 </div>
               </template>
             </div>
@@ -12946,7 +12946,7 @@
                     <div x-show="git.repoInfo && git.repoInfo.writable" style="border:1px solid var(--border-default,#222);border-radius:10px;padding:10px;margin-bottom:10px">
                       <div class="git-row__meta" style="margin-bottom:6px">New worktree (created under <span class="mono">.claude/worktrees/</span>):</div>
                       <div class="flex items-center gap-2" style="flex-wrap:wrap">
-                        <input class="input" style="width:150px" placeholder="name (e.g. vpsm-40)" x-model="git.worktreeForm.name">
+                        <input class="input" style="width:150px" placeholder="name (e.g. panel-40)" x-model="git.worktreeForm.name">
                         <input class="input" style="width:150px" placeholder="branch" x-model="git.worktreeForm.branch">
                         <label class="flex items-center gap-1" style="font-size:11.5px;cursor:pointer"><input type="checkbox" x-model="git.worktreeForm.create_branch"> create branch</label>
                         <input class="input" style="width:130px" x-show="git.worktreeForm.create_branch" placeholder="base (optional)" x-model="git.worktreeForm.base">
@@ -13166,7 +13166,7 @@
               <!-- Monaco runs INSIDE this iframe (a separate document) → the
                    Alpine MutationObserver cannot see the editor DOM, which
                    removes the freeze. x-ignore on the iframe element for good measure. -->
-              <iframe id="git-monaco-frame" x-ignore src="/vendor/vpsm/git-editor.html?v=__VPSM_BUILD__"
+              <iframe id="git-monaco-frame" x-ignore src="/vendor/panel/git-editor.html?v=__PANEL_BUILD__"
                       style="width:100%;border:0;display:block;background:var(--surface-2)"></iframe>
             </div>
 
@@ -14514,7 +14514,7 @@
               <div class="min-w-0 flex-1">
                 <div style="font-size: var(--fs-base); font-weight: 600; color: var(--text-primary);">Install the app</div>
                 <div style="font-size: var(--fs-xs); color: var(--text-secondary); margin-top:4px;">
-                  Adds vps-manager to your desktop or home screen as a standalone app — it opens in its own window, without the browser bar, with its own icon.
+                  Adds server-control-panel to your desktop or home screen as a standalone app — it opens in its own window, without the browser bar, with its own icon.
                 </div>
               </div>
               <span class="text-xs whitespace-nowrap shrink-0"
@@ -14572,7 +14572,7 @@
             </form>
           </div>
 
-          <!-- vps-manager parameters (read-only) -->
+          <!-- server-control-panel parameters (read-only) -->
           <details class="card p-6 max-w-3xl mb-4" x-data="{open:false}" :open="open">
             <summary @click.prevent="open=!open" style="cursor:pointer; list-style: none; font-size: var(--fs-base); font-weight: 600; color: var(--text-primary); display:flex; align-items:center; gap:8px;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :style="open ? 'transform: rotate(90deg);' : ''" style="transition: transform var(--transition-base); color: var(--text-secondary);"><polyline points="9 18 15 12 9 6"/></svg>
@@ -14596,7 +14596,7 @@
             /* The inline SVG QR returned by GoTrue has a variable natural size
                (50KB+ of paths). Force the SVG to fill 100% of the wrapper
                container without distorting — without this the SVG bursts out of the card. */
-            .vpsm-mfa-qr svg {
+            .panel-mfa-qr svg {
               width: 100% !important;
               height: 100% !important;
               display: block;
@@ -14624,7 +14624,7 @@
               <div>
                 <p class="text-sm text-gray-300 mb-3">1) Scan the QR code in your authenticator. 2) Enter the six-digit code.</p>
                 <div class="flex flex-col md:flex-row gap-4 items-start">
-                  <div class="vpsm-mfa-qr rounded-lg border border-[var(--border-default)] bg-white p-2 shrink-0 overflow-hidden" style="width:200px;height:200px" x-html="mfaUI.qr"></div>
+                  <div class="panel-mfa-qr rounded-lg border border-[var(--border-default)] bg-white p-2 shrink-0 overflow-hidden" style="width:200px;height:200px" x-html="mfaUI.qr"></div>
                   <div class="flex-1 space-y-3 min-w-0">
                     <div>
                       <div class="text-xs text-gray-400 mb-1">Manual key</div>
@@ -14650,7 +14650,7 @@
               <div>
                 <div class="bg-amber-950/40 border border-amber-700/50 rounded-lg p-3 mb-3">
                   <div class="text-amber-300 font-semibold text-sm mb-1">⚠ Backup codes — shown ONCE</div>
-                  <div class="text-amber-200/80 text-xs">Save these in a password manager now. Each code works <b>exactly once</b> when you cannot reach your authenticator. If you lose them all, use <code class="bg-black/30 px-1 rounded">vpsmctl mfa-emergency-reset &lt;user&gt;</code>.</div>
+                  <div class="text-amber-200/80 text-xs">Save these in a password manager now. Each code works <b>exactly once</b> when you cannot reach your authenticator. If you lose them all, use <code class="bg-black/30 px-1 rounded">panelctl mfa-emergency-reset &lt;user&gt;</code>.</div>
                 </div>
                 <div class="grid grid-cols-2 gap-2 mb-3">
                   <template x-for="(c,i) in mfaUI.backupCodes" :key="i">
@@ -14745,8 +14745,8 @@
 
           <div class="card p-6 max-w-3xl mt-4 text-[11px] text-muted">
             Edit the config by hand: <span class="mono text-blue-400">/opt/panel/data/config.json</span><br/>
-            Restart: <span class="mono text-blue-400">systemctl restart vps-manager</span><br/>
-            Logs: <span class="mono text-blue-400">journalctl -u vps-manager -f</span>
+            Restart: <span class="mono text-blue-400">systemctl restart server-control-panel</span><br/>
+            Logs: <span class="mono text-blue-400">journalctl -u server-control-panel -f</span>
           </div>
         </section>
 
@@ -14782,7 +14782,7 @@
           </div>
           <div class="flex-1 relative bg-[var(--surface-0)] rounded" style="border:1px solid var(--border-default); min-height:200px;">
             <template x-if="currentView==='documentacao'">
-              <iframe src="/_docs" title="Technical documentation — VPS Manager"
+              <iframe src="/_docs" title="Technical documentation — Server Control Panel"
                       class="absolute inset-0"
                       style="width:100%;height:100%;border:0;display:block;background:var(--surface-0);"></iframe>
             </template>
@@ -14797,9 +14797,9 @@
         <section x-show="currentView==='grafos'" x-cloak
                  class="absolute inset-x-0 bottom-0 flex flex-col page-gutter-x pb-3 pt-2"
                  style="top: var(--section-top, 52px)"
-                 x-data="{ gp:'vps-manager', gview:'force', graphs:[
+                 x-data="{ gp:'server-control-panel', gview:'force', graphs:[
                     {g:'Own apps', items:[
-                       {v:'vps-manager', n:'vps-manager'},
+                       {v:'server-control-panel', n:'server-control-panel'},
                        {v:'northwind-web', n:'northwind-web'},
                        {v:'acme-booking', n:'acme-booking'},
                        {v:'private-ai-api', n:'private-ai-api'},
@@ -14846,7 +14846,7 @@
         </section>
 
         <!-- VSCODE — native code-server served gated at /_code (mustPrimary).
-             Full VSCode running on the VPS: the terminal is a REAL shell (agentctl/vpsmctl/
+             Full VSCode running on the VPS: the terminal is a REAL shell (agentctl/panelctl/
              git/deploy), direct access to the project filesystem + worktrees.
              KEEP-ALIVE iframe: it mounts on the 1st visit (lazy via codeMounted —
              no spurious fetch/401 on the other tabs) and NEVER unmounts again. Leaving the tab
@@ -14954,9 +14954,9 @@
             </div>
             <p class="text-sm text-gray-400 mb-3">The Ultraviolet+Wisp backend at <span class="mono text-gray-300">127.0.0.1:8090</span> did not answer the health check.</p>
             <ul class="text-sm text-gray-400 list-disc pl-5 space-y-1">
-              <li>Status: <span class="mono text-gray-300">systemctl status vpsm-browser</span></li>
-              <li>Logs: <span class="mono text-gray-300">journalctl -u vpsm-browser -f</span></li>
-              <li>Restart: <span class="mono text-gray-300">systemctl restart vpsm-browser</span></li>
+              <li>Status: <span class="mono text-gray-300">systemctl status panel-browser</span></li>
+              <li>Logs: <span class="mono text-gray-300">journalctl -u panel-browser -f</span></li>
+              <li>Restart: <span class="mono text-gray-300">systemctl restart panel-browser</span></li>
             </ul>
           </div>
 
@@ -14977,7 +14977,7 @@
                    transport — and the next SW fetch 404s with
                    "No BareTransport was set". -->
               <iframe src="/browser/" aria-hidden="true" tabindex="-1"
-                      data-vpsm-keepalive="1"
+                      data-panel-keepalive="1"
                       style="position:absolute;width:1px;height:1px;border:0;opacity:0;pointer-events:none;left:-9999px;top:-9999px"></iframe>
               <!-- Tab bar (Chrome style: favicon-letter, drag/drop, middle-click, ctx menu) -->
               <div class="flex items-end gap-0.5 pl-1 pr-2 select-none" style="border-bottom:1px solid var(--border-default)">
@@ -15137,7 +15137,7 @@
                 <div class="text-4xl mb-3">💬</div>
                 <div class="text-lg font-semibold mb-2">WhatsApp is not configured</div>
                 <p class="text-sm text-gray-400 mb-4">
-                  Rode <code class="px-2 py-1 bg-[var(--surface-0)] border border-[var(--border-default)] rounded font-mono text-[12px]">sudo bash /opt/panel/scripts/whatsapp/install.sh</code> on the server and then <code class="px-2 py-1 bg-[var(--surface-0)] border border-[var(--border-default)] rounded font-mono text-[12px]">systemctl restart vps-manager</code> to enable the integration.
+                  Rode <code class="px-2 py-1 bg-[var(--surface-0)] border border-[var(--border-default)] rounded font-mono text-[12px]">sudo bash /opt/panel/scripts/whatsapp/install.sh</code> on the server and then <code class="px-2 py-1 bg-[var(--surface-0)] border border-[var(--border-default)] rounded font-mono text-[12px]">systemctl restart server-control-panel</code> to enable the integration.
                 </p>
                 <p class="text-xs text-muted">
                   This page will show QR pairing, the chat list and live conversation as soon as the gateway is running.
@@ -15778,7 +15778,7 @@
 
         <!-- P2P video call (WebRTC) — signaling over /ws/videocall, media straight between peers.
              The server only sees SDP/ICE; the video never passes through it (except a TURN fallback).
-             JS client in /vendor/vpsm/videocall.js. -->
+             JS client in /vendor/panel/videocall.js. -->
         <section x-show="currentView==='videocall'" x-cloak
                  :class="videocall.inCall ? 'absolute inset-x-0 bottom-0 flex flex-col' : 'absolute inset-x-0 bottom-0 flex flex-col page-gutter-x pt-6 pb-3 overflow-y-auto'"
                  style="top: var(--section-top, 52px)">
@@ -17288,12 +17288,12 @@
     <div x-show="token && !focusMode && !guestMode && !(termChromeHidden && isMobile() && page==='dev')" class="fixed bottom-0 left-0 right-0 bg-[var(--surface-0)] border-t border-[var(--border-default)] px-4 text-[11px] flex items-center gap-4 z-30" style="height: var(--status-bar-h)">
       <span class="flex items-center gap-1" data-sb-optional>
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-        <span class="text-gray-400">vpsm</span>
+        <span class="text-gray-400">panel</span>
       </span>
       <span class="text-gray-400">CPU</span><span class="mono" x-text="(stats?.cpu?.overall||0).toFixed(0)+'%'"></span>
       <span class="text-gray-400">RAM</span><span class="mono" x-text="(stats?.memory?.used_percent||0).toFixed(0)+'%'"></span>
       <span class="text-gray-400">Load</span><span class="mono" x-text="(stats?.load?.load1||0).toFixed(2)"></span>
-      <!-- Session bandwidth (everything that went through the vpsm proxy since the first request).
+      <!-- Session bandwidth (everything that went through the panel proxy since the first request).
            Click to reset the counter. Updates every 3s. -->
       <span class="flex items-center gap-1 cursor-pointer hover:text-white" data-sb-optional @click="bwReset()" :title="'Total bandwidth since '+bwSince()+' (click to reset)'">
         <span class="text-gray-400">↓</span>
@@ -17303,7 +17303,7 @@
       </span>
       <span x-show="(terms.panes||[]).length>0" data-sb-optional class="text-gray-400">Panes: <span class="mono" x-text="terms.panes.length"></span></span>
       <span class="ml-auto flex items-center gap-3">
-        <button @click="bellOpen=!bellOpen; if(bellOpen){ lastSeenNotification=Math.floor(Date.now()/1000); localStorage.setItem('vpsm_last_seen_notif', String(lastSeenNotification)); }" class="relative hover:text-white" :title="'Notifications ('+(notifications.length)+')'" :aria-label="'Notifications ('+(notifications.length)+')'">
+        <button @click="bellOpen=!bellOpen; if(bellOpen){ lastSeenNotification=Math.floor(Date.now()/1000); localStorage.setItem('panel_last_seen_notif', String(lastSeenNotification)); }" class="relative hover:text-white" :title="'Notifications ('+(notifications.length)+')'" :aria-label="'Notifications ('+(notifications.length)+')'">
           🔔
           <span x-show="unreadNotifications()>0" class="absolute -top-1 -right-2 bg-rose-500 text-white text-[9px] rounded-full px-1 min-w-[14px] text-center" x-text="unreadNotifications()"></span>
         </button>
@@ -17891,22 +17891,22 @@
 </template>
 
 <!-- Shell JS extracted out of the inline <script> (it was 12552 lines) into
-     /vendor/vpsm/app/00-shell.js. It loads synchronously BEFORE alpine
+     /vendor/panel/app/00-shell.js. It loads synchronously BEFORE alpine
      (which is on defer) — by the time Alpine.start runs, app() exists. -->
 <!-- Screen usage telemetry. Loaded BEFORE the
      shell: the init() of the Alpine component calls window.tel on the first tick.
      No `defer` on purpose — the shell does not use one either. -->
-<script src="/telemetry.js?v=__VPSM_BUILD__"></script>
-<script src="/vendor/vpsm/app/00-shell.js?v=__VPSM_BUILD__"></script>
+<script src="/telemetry.js?v=__PANEL_BUILD__"></script>
+<script src="/vendor/panel/app/00-shell.js?v=__PANEL_BUILD__"></script>
 <!-- Visual Git client module. It loads AFTER 00-shell.js (which defines
-     window.VPSMGitModule) and BEFORE Alpine.start() — app() spreads it in. -->
-<script src="/vendor/vpsm/app/10-git.js?v=__VPSM_BUILD__"></script>
+     window.PanelGitModule) and BEFORE Alpine.start() — app() spreads it in. -->
+<script src="/vendor/panel/app/10-git.js?v=__PANEL_BUILD__"></script>
 <!-- Deploy tab module (PaaS). Loads AFTER 00-shell.js -->
-<script src="/vendor/vpsm/app/20-deploy.js?v=__VPSM_BUILD__"></script>
+<script src="/vendor/panel/app/20-deploy.js?v=__PANEL_BUILD__"></script>
 <!-- Agents tab module. Loads AFTER 00-shell.js -->
-<script src="/vendor/vpsm/app/30-agents.js?v=__VPSM_BUILD__"></script>
-<script src="/vendor/vpsm/app/40-nodes.js?v=__VPSM_BUILD__"></script>
+<script src="/vendor/panel/app/30-agents.js?v=__PANEL_BUILD__"></script>
+<script src="/vendor/panel/app/40-nodes.js?v=__PANEL_BUILD__"></script>
 <!-- Proxmox tab. Loads AFTER 00-shell.js and after 40-nodes.js -->
-<script src="/vendor/vpsm/app/41-proxmox.js?v=__VPSM_BUILD__"></script>
+<script src="/vendor/panel/app/41-proxmox.js?v=__PANEL_BUILD__"></script>
 </body>
 </html>

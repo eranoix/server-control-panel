@@ -21,7 +21,7 @@ import (
 
 const portForwardPrefix = "/_port/"
 
-// selfPort is vps-manager's own port — never proxy to it (loop).
+// selfPort is server-control-panel's own port — never proxy to it (loop).
 const selfPort = 8765
 
 // parsePortPath extracts the port and the rest of the path from /_port/<n>[/...].

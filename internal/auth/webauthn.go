@@ -63,7 +63,7 @@ func (u *webauthnUser) WebAuthnCredentials() []webauthn.Credential {
 // Digital Asset Links.
 func NewWebAuthnConfig(rpID, rpOrigin, displayName string) *webauthn.Config {
 	if displayName == "" {
-		displayName = "VPS Manager"
+		displayName = "Server Control Panel"
 	}
 	return &webauthn.Config{
 		RPID:          rpID,

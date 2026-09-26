@@ -18,7 +18,7 @@
 // # The inventory OBSERVES; it does not execute
 //
 // A direct consequence of the read-only scope and of the normative table
-// ("stays in the lab-agent × goes to the PVE API"):
+// ("stays in the node-agent × goes to the PVE API"):
 //
 //   - JobRef is a REFERENCE to `queue.Job.ID` or `scheduler.Job.ID`, with the
 //     same `Source` convention the queue already uses ("user" | "scheduler:<id>",
@@ -52,7 +52,7 @@ type Transport string
 
 const (
 	// TransportAgent exists in the domain already, but has NO implementation
-	// in this phase: the lab-agent comes later. The value is accepted by the
+	// in this phase: the node-agent comes later. The value is accepted by the
 	// model and refused by whoever goes to dial it — faking support here would
 	// be lying to the planning of the stage that follows.
 	TransportAgent Transport = "agente"

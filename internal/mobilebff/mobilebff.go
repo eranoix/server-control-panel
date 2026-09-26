@@ -45,7 +45,7 @@ const Prefix = "/api/mobile/v1"
 // The routes are not listed here: each handlers_*.go file signs itself up via
 // Register() in an init(). See registry.go for why.
 func Mount(mux *http.ServeMux, deps Deps) huma.API {
-	config := huma.DefaultConfig("vps-manager mobile BFF", "1.0.0")
+	config := huma.DefaultConfig("server-control-panel mobile BFF", "1.0.0")
 	// Declares bearer JWT in the OpenAPI document and marks EVERY route
 	// registered here as protected — that is what makes the generated Kotlin
 	// client attach the Authorization header instead of being born with dead

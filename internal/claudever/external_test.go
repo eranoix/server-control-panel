@@ -69,9 +69,9 @@ const verDir = "/root/.local/share/claude/versions/"
 // The point of the feature: the container's reference is ITS OWN installation,
 // not the host's. A process on 2.1.241 with the container on 2.1.246 = really behind.
 func TestDetectExternalComparesWithContainerInstall(t *testing.T) {
-	buildExternal(t, 900, verDir+"2.1.241", "VPSM_RECOVERY=1\x00HOME=/root\x00", verDir+"2.1.246", false)
+	buildExternal(t, 900, verDir+"2.1.241", "PANEL_RECOVERY=1\x00HOME=/root\x00", verDir+"2.1.246", false)
 
-	got := DetectExternal("VPSM_RECOVERY=1", "recovery")
+	got := DetectExternal("PANEL_RECOVERY=1", "recovery")
 	if len(got) != 1 {
 		t.Fatalf("found %d processes, want 1", len(got))
 	}
@@ -91,9 +91,9 @@ func TestDetectExternalComparesWithContainerInstall(t *testing.T) {
 // reintroduce: a container NEWER than the host is not behind. Here the host does
 // not even enter the tally — the reference is the container's own.
 func TestDetectExternalDoesNotFlagUpToDate(t *testing.T) {
-	buildExternal(t, 901, verDir+"2.1.246", "VPSM_RECOVERY=1\x00", verDir+"2.1.246", false)
+	buildExternal(t, 901, verDir+"2.1.246", "PANEL_RECOVERY=1\x00", verDir+"2.1.246", false)
 
-	got := DetectExternal("VPSM_RECOVERY=1", "recovery")
+	got := DetectExternal("PANEL_RECOVERY=1", "recovery")
 	if len(got) != 1 {
 		t.Fatalf("found %d, want 1", len(got))
 	}
@@ -105,9 +105,9 @@ func TestDetectExternalDoesNotFlagUpToDate(t *testing.T) {
 // A HOST process must not leak in here — Detect takes care of it, with the
 // host's reference. Listing it twice would give two rows for the same Claude.
 func TestDetectExternalIgnoresSameNamespaceProcess(t *testing.T) {
-	buildExternal(t, 902, verDir+"2.1.241", "VPSM_RECOVERY=1\x00", verDir+"2.1.246", true)
+	buildExternal(t, 902, verDir+"2.1.241", "PANEL_RECOVERY=1\x00", verDir+"2.1.246", true)
 
-	if got := DetectExternal("VPSM_RECOVERY=1", "recovery"); len(got) != 0 {
+	if got := DetectExternal("PANEL_RECOVERY=1", "recovery"); len(got) != 0 {
 		t.Fatalf("found %d, wanted 0 (same mount namespace)", len(got))
 	}
 }
@@ -117,17 +117,17 @@ func TestDetectExternalIgnoresSameNamespaceProcess(t *testing.T) {
 func TestDetectExternalRequiresMarker(t *testing.T) {
 	buildExternal(t, 903, verDir+"2.1.241", "HOME=/root\x00OTHER=1\x00", verDir+"2.1.246", false)
 
-	if got := DetectExternal("VPSM_RECOVERY=1", "recovery"); len(got) != 0 {
-		t.Fatalf("found %d, wanted 0 (no VPSM_RECOVERY)", len(got))
+	if got := DetectExternal("PANEL_RECOVERY=1", "recovery"); len(got) != 0 {
+		t.Fatalf("found %d, wanted 0 (no PANEL_RECOVERY)", len(got))
 	}
 }
 
 // With no readable reference symlink there is no way to assert being behind — and
 // asserting "behind" with no basis would make the panel ask for a pointless restart.
 func TestDetectExternalNoReferenceReportsNoLag(t *testing.T) {
-	buildExternal(t, 904, verDir+"2.1.241", "VPSM_RECOVERY=1\x00", "", false)
+	buildExternal(t, 904, verDir+"2.1.241", "PANEL_RECOVERY=1\x00", "", false)
 
-	got := DetectExternal("VPSM_RECOVERY=1", "recovery")
+	got := DetectExternal("PANEL_RECOVERY=1", "recovery")
 	if len(got) != 1 {
 		t.Fatalf("found %d, want 1", len(got))
 	}
@@ -137,7 +137,7 @@ func TestDetectExternalNoReferenceReportsNoLag(t *testing.T) {
 }
 
 func TestDetectExternalNoMarkerIsEmpty(t *testing.T) {
-	buildExternal(t, 905, verDir+"2.1.241", "VPSM_RECOVERY=1\x00", verDir+"2.1.246", false)
+	buildExternal(t, 905, verDir+"2.1.241", "PANEL_RECOVERY=1\x00", verDir+"2.1.246", false)
 	if got := DetectExternal("", "recovery"); len(got) != 0 {
 		t.Fatalf("found %d with an empty marker, wanted 0", len(got))
 	}

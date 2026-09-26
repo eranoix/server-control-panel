@@ -291,8 +291,8 @@ func (RebootRunner) AuthorizedFor(_ string, isPrimary bool) bool { return isPrim
 
 func (RebootRunner) Run(ctx context.Context, _ json.RawMessage, logW io.Writer, progress func(int), step func(string)) error {
 	step("scheduling a reboot in 1 min")
-	fmt.Fprintln(logW, "$ shutdown -r +1 \"Reboot scheduled by vps-manager\"")
+	fmt.Fprintln(logW, "$ shutdown -r +1 \"Reboot scheduled by server-control-panel\"")
 	// +1: gives a one-minute warning (and time for the job to record the trigger) before rebooting.
-	cmd := exec.CommandContext(ctx, "shutdown", "-r", "+1", "Reboot scheduled by vps-manager")
+	cmd := exec.CommandContext(ctx, "shutdown", "-r", "+1", "Reboot scheduled by server-control-panel")
 	return streamCommand(ctx, cmd, logW, progress)
 }

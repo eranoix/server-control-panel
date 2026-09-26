@@ -20,7 +20,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Optional target via argv: lets the test run against a MUTATED COPY of
 // 00-shell.js and prove it fails when the bug comes back (a test that only ever
 // passes proves nothing).
-const target = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const target = process.argv[2] || join(root, 'internal/webassets/web/vendor/panel/app/00-shell.js');
 const src = readFileSync(target, 'utf8');
 
 let pass = 0, fail = 0;

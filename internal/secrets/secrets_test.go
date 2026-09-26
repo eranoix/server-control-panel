@@ -33,7 +33,7 @@ func readFileFormat(t *testing.T, path string) fileFormat {
 	return ff
 }
 
-// writeLegacyVault writes a vault the way vps-manager < 2026-06-09 did:
+// writeLegacyVault writes a vault the way server-control-panel < 2026-06-09 did:
 // plaintext is a plain map[string]string, salt derived deterministically
 // from the passphrase, and NO `salt` field in the JSON. This is the exact
 // shape Open() must keep reading.
@@ -256,7 +256,7 @@ func TestLargeValueRoundTrips(t *testing.T) {
 
 // 🔴 TestReloadIfChanged pins a defect MEASURED in production: Get() reads an
 // in-memory map loaded once at Open, so a secret written by ANOTHER
-// process (`vpsmctl secrets set`, a credential-applying tool) stayed
+// process (`panelctl secrets set`, a credential-applying tool) stayed
 // invisible to the panel until the next restart. The revocation drill
 // recreated a node's token and the panel kept saying "revoked" with the key already
 // back in the vault and on the hypervisor.

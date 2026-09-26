@@ -83,7 +83,7 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><style>
   <main style="height:100%"><div id="fora" style="width:400px;height:400px"></div></main>
 </body></html>`;
 
-const profile = mkdtempSync(join(tmpdir(), 'vpsm-chrome-'));
+const profile = mkdtempSync(join(tmpdir(), 'panel-chrome-'));
 const file = join(profile, 'sidebar.html');
 writeFileSync(file, page);
 

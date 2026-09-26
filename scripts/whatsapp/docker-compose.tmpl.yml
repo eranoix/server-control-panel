@@ -1,4 +1,4 @@
-# WAHA WhatsApp gateway — per-user template managed by vpsm-whatsapp@{{.User}}
+# WAHA WhatsApp gateway — per-user template managed by panel-whatsapp@{{.User}}
 #
 # Rendered by internal/whatsapp/manager.go for each profile. WAHA Core hardcodes
 # session=default, so we run N containers (one per profile) instead of one
@@ -16,7 +16,7 @@
 services:
   waha:
     image: devlikeapro/waha:latest
-    container_name: vpsm-whatsapp-{{.User}}
+    container_name: panel-whatsapp-{{.User}}
     restart: unless-stopped
     # network_mode: host → the webhook reaches 127.0.0.1:8765 without a bridge.
     # Each container exposes its API on WHATSAPP_API_PORT in the 3100-3199 range.
@@ -44,9 +44,9 @@ services:
       - WAHA_DASHBOARD_ENABLED=false
       - WAHA_SWAGGER_ENABLED=false
     volumes:
-      - /var/lib/vpsm-whatsapp/{{.User}}/sessions:/app/.sessions
-      - /var/lib/vpsm-whatsapp/{{.User}}/media:/app/.media
-      - /var/lib/vpsm-whatsapp/{{.User}}/files:/app/.files
+      - /var/lib/panel-whatsapp/{{.User}}/sessions:/app/.sessions
+      - /var/lib/panel-whatsapp/{{.User}}/media:/app/.media
+      - /var/lib/panel-whatsapp/{{.User}}/files:/app/.files
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O- --header=\"X-Api-Key: $${WHATSAPP_API_KEY}\" http://127.0.0.1:{{.Port}}/api/server/version || exit 1"]
       interval: 30s

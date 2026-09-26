@@ -13,7 +13,7 @@ import (
 )
 
 // BackendHTTP is the Backend the panel uses when the node has `transport: agente` (the config value for the agent transport).
-// It talks to that node's lab-agent over the internal bridge.
+// It talks to that node's node-agent over the internal bridge.
 //
 // # ONE FORWARDER, NOT 23 FUNCTIONS — and why
 //

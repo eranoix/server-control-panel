@@ -17,7 +17,7 @@ func privAIReq(t *testing.T, r *Router, method, path, body, user string) *httpte
 		if err != nil {
 			t.Fatalf("auth.Issue(%q): %v", user, err)
 		}
-		req.AddCookie(&http.Cookie{Name: "vpsm_token", Value: tok})
+		req.AddCookie(&http.Cookie{Name: "panel_token", Value: tok})
 	}
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

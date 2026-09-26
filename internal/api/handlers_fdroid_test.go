@@ -42,9 +42,9 @@ func fdroidFixtureRouter(t *testing.T) (*Router, []byte) {
 	}
 
 	write("index-v1.jar", append([]byte("PK\x03\x04"), bytes.Repeat([]byte{0x11}, 512)...)) // JAR = ZIP container, PK magic
-	write("index-v2.json", []byte(`{"repo":{"name":"vps-manager","timestamp":1234567890},"packages":{}}`))
+	write("index-v2.json", []byte(`{"repo":{"name":"server-control-panel","timestamp":1234567890},"packages":{}}`))
 	write("entry.json", []byte(`{"timestamp":1234567890,"version":20002,"index":{"name":"/index-v2.json"}}`))
-	write("icons/br.tech.vpsmanager.app.1.png", bytes.Repeat([]byte{0x89, 0x50, 0x4E, 0x47}, 16)) // PNG-ish filler
+	write("icons/tech.northwind.servercontrolpanel.1.png", bytes.Repeat([]byte{0x89, 0x50, 0x4E, 0x47}, 16)) // PNG-ish filler
 
 	apkBytes := append([]byte("PK\x03\x04"), bytes.Repeat([]byte{0xAB}, 8192)...) // real APKs are ZIPs too
 	write("app-release.apk", apkBytes)
@@ -85,7 +85,7 @@ func TestFdroidRepoIndexV2(t *testing.T) {
 	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
 		t.Fatalf("Content-Type = %q, want application/json", ct)
 	}
-	want := `{"repo":{"name":"vps-manager","timestamp":1234567890},"packages":{}}`
+	want := `{"repo":{"name":"server-control-panel","timestamp":1234567890},"packages":{}}`
 	if w.Body.String() != want {
 		t.Fatalf("body mismatch:\n got=%s\nwant=%s", w.Body.String(), want)
 	}
@@ -176,7 +176,7 @@ func TestFdroidRepoNeverRedirectsAcrossClientWalkedPaths(t *testing.T) {
 		"/fdroid/repo/index-v1.jar",
 		"/fdroid/repo/index-v2.json",
 		"/fdroid/repo/entry.json",
-		"/fdroid/repo/icons/br.tech.vpsmanager.app.1.png",
+		"/fdroid/repo/icons/tech.northwind.servercontrolpanel.1.png",
 		"/fdroid/repo/app-release.apk",
 		// Canonicalization-triggering variants — a bare http.FileServer or
 		// http.ServeMux registration would 301 every one of these.

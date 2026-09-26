@@ -72,12 +72,12 @@ type Runner struct {
 	// ctx (the queue imposes no deadline — see queue.go), so the verify loop
 	// can keep refining toward the threshold without eating into (or being
 	// starved by) the time the initial audit already spent. Env override:
-	// VPSM_AI_VERIFY_TIMEOUT (a Go duration like "15m").
+	// PANEL_AI_VERIFY_TIMEOUT (a Go duration like "15m").
 	verifyTimeout time.Duration
 	// accountDir returns the CLAUDE_CONFIG_DIR for the "jobs" consumer,
 	// or "" to inherit the process default ($HOME/.claude). Read fresh per
 	// spawn so a runtime account reassignment takes effect on the next job
-	// without restarting vps-manager. nil (tests/degraded boot) → inherit,
+	// without restarting server-control-panel. nil (tests/degraded boot) → inherit,
 	// i.e. byte-identical to the behaviour before per-consumer accounts.
 	accountDir func() string
 	// model returns the --model to pass to `claude` for this audit/refine
@@ -148,12 +148,12 @@ func (r *Runner) applyAccountEnv(cmd *exec.Cmd) {
 	}
 }
 
-// verifyTimeoutDefault reads VPSM_AI_VERIFY_TIMEOUT or falls back to 15min.
+// verifyTimeoutDefault reads PANEL_AI_VERIFY_TIMEOUT or falls back to 15min.
 // 15min matches the "hard cap of 6 rounds + a time budget" convergence policy:
 // enough wall-clock for ~6 refinement rounds without letting a single vague
 // ticket starve the 3-worker pool indefinitely.
 func verifyTimeoutDefault() time.Duration {
-	if v := strings.TrimSpace(os.Getenv("VPSM_AI_VERIFY_TIMEOUT")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("PANEL_AI_VERIFY_TIMEOUT")); v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			return d
 		}
@@ -980,7 +980,7 @@ func buildCommentBody(report, issueKey string, certainty, rounds, priorCertainty
 		progress = fmt.Sprintf(" · progress %d%% → %d%% (%+d)", priorCertainty, certainty, certainty-priorCertainty)
 	}
 	header := fmt.Sprintf(
-		"🤖 *Automated analysis (vps-manager AI · %s)*\n\n"+
+		"🤖 *Automated analysis (server-control-panel AI · %s)*\n\n"+
 			"Generated from the title + description of ticket %s.\n\n"+
 			"**Iterative verification:** %s · confidence %d%% (target %d%%) · %d round(s)%s\n",
 		stamp, issueKey, verdict, certainty, threshold, rounds, progress,

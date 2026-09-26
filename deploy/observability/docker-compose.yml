@@ -6,7 +6,7 @@ services:
     volumes:
       - /var/lib/prometheus/data:/prometheus
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./prometheus-rules.yml:/etc/prometheus/rules/vpsmanager.yml:ro
+      - ./prometheus-rules.yml:/etc/prometheus/rules/servercontrolpanel.yml:ro
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -26,7 +26,7 @@ services:
       - ../grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
       - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
       - type: bind
-        source: ${VPSM_DATA_DIR:-/opt/projetos/vpsmanager/data}/.grafana_admin_pw
+        source: ${PANEL_DATA_DIR:-/opt/projetos/servercontrolpanel/data}/.grafana_admin_pw
         target: /secrets/admin_pw
         read_only: true
     environment:

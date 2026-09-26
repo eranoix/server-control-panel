@@ -3,7 +3,7 @@ package telemetry
 // ─── MEASUREMENT REDONE IN THIS FORK — sendBeacon × fetch(keepalive) ─────────
 //
 // The two forks diverged; the answer measured on the VM's panel does NOT count as
-// proof here. Measured on `vps-manager` itself, against its own source tree. What
+// proof here. Measured on `server-control-panel` itself, against its own source tree. What
 // the measurement found:
 //
 // (1) Is there CSRF middleware on POST /api/*?  NO.
@@ -20,7 +20,7 @@ package telemetry
 // (2) How does this fork authenticate?  OVER TWO CHANNELS — and this is where it DIVERGES
 //
 //	from the VM's fork. `internal/auth/auth.go:376-390` (extractToken) accepts
-//	`Authorization: Bearer` AND the `vpsm_token` cookie; `internal/httpx/cookies.go`
+//	`Authorization: Bearer` AND the `panel_token` cookie; `internal/httpx/cookies.go`
 //	emits that cookie as HttpOnly, Secure, Path=/, SameSite=Lax, and
 //	`internal/api/handlers_auth.go` sets it in 3 places (login, refresh, MFA).
 //	The SPA keeps the JWT in localStorage and sends Bearer on every call

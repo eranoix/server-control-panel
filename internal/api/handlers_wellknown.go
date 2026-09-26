@@ -5,7 +5,7 @@ package api
 //
 // /.well-known/assetlinks.json is fetched by the Android OS itself (and by
 // any client) over HTTPS WITHOUT credentials, to validate that this domain
-// authorizes the app br.tech.vpsmanager.app to use App Links and the Credential
+// authorizes the app tech.northwind.servercontrolpanel to use App Links and the Credential
 // Manager (native passkeys). A known pitfall of this project: a mistake here — 404,
 // a redirect, or an auth wall — breaks the native passkey ceremony
 // silently (no clear log points back here).

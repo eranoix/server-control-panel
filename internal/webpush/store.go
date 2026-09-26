@@ -134,7 +134,7 @@ func (p *Store) loadKeys() error {
 	if err != nil {
 		return fmt.Errorf("vapid keygen: %w", err)
 	}
-	p.keys = vapidKeys{Public: pub, Private: priv, Subject: "mailto:videocall@vps-manager.local"}
+	p.keys = vapidKeys{Public: pub, Private: priv, Subject: "mailto:videocall@server-control-panel.local"}
 	return atomicWriteJSON(p.keysPath, p.keys, 0o600)
 }
 

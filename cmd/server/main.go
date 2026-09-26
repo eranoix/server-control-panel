@@ -34,7 +34,7 @@ import (
 )
 
 // buildVersion is overridden via -ldflags at build time. For now it's a fixed
-// placeholder so `vps-manager -version` doesn't print nothing.
+// placeholder so `server-control-panel -version` doesn't print nothing.
 var buildVersion = "dev"
 
 func main() {
@@ -58,7 +58,7 @@ func main() {
 		return
 	}
 
-	// `vps-manager run-job <id>`: run a single queued job out of process,
+	// `server-control-panel run-job <id>`: run a single queued job out of process,
 	// launched by the main server into its own systemd scope so a
 	// deploy/restart can't kill it. Does its own config load + wiring; never
 	// binds a port. Exits when the job finishes.
@@ -79,13 +79,13 @@ func main() {
 	}
 
 	// Defence against a binary downgrade: SchemaVersion > CurrentSchemaVersion
-	// means some operator ran a future version of vps-manager against this
+	// means some operator ran a future version of server-control-panel against this
 	// DataDir and then tried to come back to this one. The layout may have
 	// changed incompatibly — abort instead of pretending everything is fine
 	// (reading a v3 config with a v2 parser can silently DROP new fields).
 	// The operator fixes it by redoing the upgrade.
 	if cfg.SchemaVersion > config.CurrentSchemaVersion {
-		log.Fatalf("config schema_version=%d is from a newer vps-manager (this binary speaks v%d); downgrade not supported", cfg.SchemaVersion, config.CurrentSchemaVersion)
+		log.Fatalf("config schema_version=%d is from a newer server-control-panel (this binary speaks v%d); downgrade not supported", cfg.SchemaVersion, config.CurrentSchemaVersion)
 	}
 
 	// V1→V2 migration: per-user layout. Idempotent — if it is already on v2,
@@ -132,7 +132,7 @@ func main() {
 
 	// apps.json v1→v2 migration: the deploy registry stops being an array tied
 	// to a single node and becomes {schema_version, projects, deployments}.
-	// This is the ONLY place that migrates apps.json — the vpsmctl run by the
+	// This is the ONLY place that migrates apps.json — the panelctl run by the
 	// post-receive hook refuses an envelope it does not understand instead of
 	// rewriting it (deploy.GuardCLI). Two placement choices, both deliberate:
 	//   - OUTSIDE the `if cfg.SchemaVersion < …` above: the two migrations are
@@ -314,7 +314,7 @@ func generateSelfSigned(certPath, keyPath string) error {
 	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	tmpl := x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "vps-manager"},
+		Subject:               pkix.Name{CommonName: "server-control-panel"},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,

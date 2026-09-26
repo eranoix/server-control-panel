@@ -84,7 +84,7 @@ func (r *Router) handleJiraAIAnalyze(w http.ResponseWriter, req *http.Request, k
 	writeJSON(w, map[string]string{"job_id": j.ID, "issue_key": key})
 }
 
-// handleJiraAIWork creates a dtach session "vpsm-<user>-jira-<KEY>" with
+// handleJiraAIWork creates a dtach session "panel-<user>-jira-<KEY>" with
 // claude already running, cwd=mapped repo, and the ticket context pasted
 // as the first prompt. Returns the session name so the UI can open the
 // terminal page directly on it.
@@ -120,7 +120,7 @@ func (r *Router) handleJiraAIWork(w http.ResponseWriter, req *http.Request, key 
 		}
 	}
 
-	sessionName := "vpsm-" + owner + "-jira-" + strings.ReplaceAll(strings.ToLower(key), "_", "-")
+	sessionName := "panel-" + owner + "-jira-" + strings.ReplaceAll(strings.ToLower(key), "_", "-")
 
 	// Auto-transition to "In Progress", best-effort, does not block the spawn.
 	// Done in the background so it does not delay the response (the Jira call takes ~600ms).

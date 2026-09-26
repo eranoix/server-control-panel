@@ -2,7 +2,7 @@ global:
   resolve_timeout: 5m
 
 route:
-  receiver: vps-manager
+  receiver: server-control-panel
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
@@ -10,12 +10,12 @@ route:
     # Critical alerts in their own group: notify at once, repeat more often.
     - matchers:
         - severity = "critical"
-      receiver: vps-manager
+      receiver: server-control-panel
       group_wait: 10s
       repeat_interval: 1h
 
 receivers:
-  - name: vps-manager
+  - name: server-control-panel
     webhook_configs:
       # Loopback only: /_internal/alert has no auth middleware; the handler
       # accepts only RemoteAddr 127.0.0.1 (isLoopback).

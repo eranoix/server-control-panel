@@ -30,8 +30,8 @@ const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
 const near = (v, target, tol) => Math.abs(v - target) <= tol;
 
-const srcVC = fs.readFileSync(path.join(WEB, 'vendor', 'vpsm', 'videocall.js'), 'utf8');
-const srcSTT = fs.readFileSync(path.join(WEB, 'vendor', 'vpsm', 'stt.js'), 'utf8');
+const srcVC = fs.readFileSync(path.join(WEB, 'vendor', 'panel', 'videocall.js'), 'utf8');
+const srcSTT = fs.readFileSync(path.join(WEB, 'vendor', 'panel', 'stt.js'), 'utf8');
 
 // Steady 440 Hz tone at -10 dBFS: a stable tone is what makes a dB volume
 // difference measurable (Chromium's default fake audio is beeps).
@@ -48,7 +48,7 @@ function writeTone(arq) {
 
 function findBrowser() {
   const c = [];
-  if (process.env.VPSM_CHROMIUM) c.push(process.env.VPSM_CHROMIUM);
+  if (process.env.PANEL_CHROMIUM) c.push(process.env.PANEL_CHROMIUM);
   const cache = '/root/.cache/ms-playwright';
   if (fs.existsSync(cache)) for (const d of fs.readdirSync(cache).filter((x) => x.startsWith('chromium-')).sort().reverse())
     c.push(path.join(cache, d, 'chrome-linux64', 'chrome'));
@@ -87,7 +87,7 @@ const INIT = `
   window.__wsIn = (s) => { const w = window.__ws; if (w && w.onmessage) w.onmessage({ data: s }); };
   // STT engine stub: records the stream the call hands to transcription.
   window.__sttStarts = [];
-  window.VPSMSTT = {
+  window.PanelSTT = {
     start(o) { window.__sttStarts.push(o.stream); return { stop() {} }; },
     setBackend() {}, probeWhisperLocal: async () => false,
   };
@@ -197,7 +197,7 @@ async function connect(page, id, extra) {
   return page.evaluate(async ({ id, extra }) => {
     const el = document.createElement('div'); document.body.appendChild(el);
     window.__events = [];
-    await window.VPSMVideoCall.connect(Object.assign({
+    await window.PanelVideoCall.connect(Object.assign({
       roomId: 'room', token: 't', displayName: id, videosEl: el, quality: 'eco',
       onState: (ev) => window.__events.push(ev), onError: (e) => window.__events.push({ type: 'erro', e }),
     }, extra));
@@ -269,14 +269,14 @@ const aLocal = (fn, arg) => A.evaluate(fn, arg);
 }
 await new Promise((r) => setTimeout(r, 3000)); // let the Opus/jitter buffer settle
 const at200 = await received();
-await aLocal(() => window.VPSMVideoCall.setMicGain(1));
+await aLocal(() => window.PanelVideoCall.setMicGain(1));
 const at100 = await received();
 near(at200 - at100, 6.02, 1.5)
   ? ok(`live volume: 200% arrives ${(at200 - at100).toFixed(1)} dB above 100% on the other side`)
   : no(`live volume: 200% vs 100% gave ${(at200 - at100).toFixed(1)} dB at the receiver (expected ~6)`);
 
 // ── 2. Live volume down ─────────────────────────────────────────────────
-await aLocal(() => window.VPSMVideoCall.setMicGain(0.5));
+await aLocal(() => window.PanelVideoCall.setMicGain(0.5));
 const at50 = await received();
 near(at100 - at50, 6.02, 1.5)
   ? ok(`live volume: 50% arrives ${(at100 - at50).toFixed(1)} dB below 100%`)
@@ -285,12 +285,12 @@ near(at100 - at50, 6.02, 1.5)
 // ── 3. Limiter ──────────────────────────────────────────────────────────
 // Tone at -10 dBFS × 400% = +2 dBFS would clip without a limiter. With it,
 // the meter reports `limiting` and the sent peak stays below 0 dBFS.
-await aLocal(() => window.VPSMVideoCall.setMicGain(4));
+await aLocal(() => window.PanelVideoCall.setMicGain(4));
 await new Promise((r) => setTimeout(r, 400));
 const lim = await aLocal(async () => {
   let limiting = false, peak = 0;
   for (let i = 0; i < 20; i++) {
-    const r = window.VPSMVideoCall.getMicLevel();
+    const r = window.PanelVideoCall.getMicLevel();
     if (r) { limiting = limiting || r.limiting; peak = Math.max(peak, r.peak); }
     await new Promise((res) => setTimeout(res, 50));
   }
@@ -298,12 +298,12 @@ const lim = await aLocal(async () => {
 });
 lim.limiting ? ok('limiter: 400% on a strong signal lights the "limiting" warning') : no('limiter: getMicLevel().limiting never became true at 400%');
 lim.peak < 1.0 ? ok(`limiter: peak sent ${lim.peak.toFixed(2)} < 1.0 (no clipping)`) : no(`limiter: peak sent ${lim.peak.toFixed(2)}, clipping`);
-await aLocal(() => window.VPSMVideoCall.setMicGain(2));
+await aLocal(() => window.PanelVideoCall.setMicGain(2));
 
 // ── 4. Switching mics keeps the volume ──────────────────────────────────
 // The new track must go through the gain chain, not RAW to the senders.
 const beforeSwap = await received();
-const swapped = await aLocal(() => window.VPSMVideoCall.setMicDevice('default'));
+const swapped = await aLocal(() => window.PanelVideoCall.setMicDevice('default'));
 const afterSwap = await received();
 swapped ? ok('mic switch: setMicDevice completed') : no('mic switch: setMicDevice failed');
 near(afterSwap, beforeSwap, 1.5)
@@ -311,36 +311,36 @@ near(afterSwap, beforeSwap, 1.5)
   : no(`mic switch: received level went from ${beforeSwap.toFixed(1)} to ${afterSwap.toFixed(1)} dBFS, volume lost in the switch`);
 
 // ── 5. Switching processing does not drop the audio ─────────────────────
-const proc = await aLocal(() => window.VPSMVideoCall.setMicProcessing({ echoCancellation: true }));
+const proc = await aLocal(() => window.PanelVideoCall.setMicProcessing({ echoCancellation: true }));
 proc && proc.echoCancellation === true && proc.noiseSuppression === false
   ? ok('processing: setMicProcessing applied only the requested key')
   : no('processing: unexpected return ' + JSON.stringify(proc));
 const withEcho = await received();
 withEcho > -40 ? ok(`processing: audio keeps arriving after reopening the mic (${withEcho.toFixed(1)} dBFS)`) : no(`processing: audio gone after setMicProcessing (${withEcho.toFixed(1)} dBFS)`);
-await aLocal((p) => window.VPSMVideoCall.setMicProcessing(p), SEM_PROC);
+await aLocal((p) => window.PanelVideoCall.setMicProcessing(p), SEM_PROC);
 
 // ── 5b. 100% is neutral ─────────────────────────────────────────────────
 // The Web Audio compressor adds automatic makeup gain (+1.7 dB here) and the
 // pipeline compensates; otherwise "100%" would be louder than the mic itself.
 {
-  await aLocal(() => window.VPSMVideoCall.setMicGain(1));
-  await aLocal(() => { window.VPSMVideoCall.setSubtitles(true, { backend: 'web-speech', lang: 'pt-BR' }); });
+  await aLocal(() => window.PanelVideoCall.setMicGain(1));
+  await aLocal(() => { window.PanelVideoCall.setSubtitles(true, { backend: 'web-speech', lang: 'pt-BR' }); });
   await new Promise((r) => setTimeout(r, 400));
   const n = await aLocal(async () => {
     const raw = window.__sttStarts[window.__sttStarts.length - 1].getAudioTracks()[0];
     const sent = document.querySelector('[data-vc-local="1"]').srcObject.getAudioTracks()[0];
     return window.__diffDb(raw, sent, 1200);
   });
-  await aLocal(() => { window.VPSMVideoCall.setSubtitles(false); });
+  await aLocal(() => { window.PanelVideoCall.setSubtitles(false); });
   await new Promise((r) => setTimeout(r, 600)); // fast-toggle guard (500 ms)
   near(n.diff, 0, 0.3)
     ? ok(`neutral: 100% sends the same level as the mic (${n.diff >= 0 ? '+' : ''}${n.diff.toFixed(2)} dB)`)
     : no(`neutral: at 100% the sent level was ${n.diff.toFixed(2)} dB off the mic (limiter makeup gain?)`);
-  await aLocal(() => window.VPSMVideoCall.setMicGain(2));
+  await aLocal(() => window.PanelVideoCall.setMicGain(2));
 }
 
 // ── 6. Transcription reads the raw mic ──────────────────────────────────
-await aLocal(() => { window.VPSMVideoCall.setSubtitles(true, { backend: 'web-speech', lang: 'pt-BR' }); });
+await aLocal(() => { window.PanelVideoCall.setSubtitles(true, { backend: 'web-speech', lang: 'pt-BR' }); });
 await new Promise((r) => setTimeout(r, 400));
 const stt = await aLocal(async () => {
   const s = window.__sttStarts[window.__sttStarts.length - 1];
@@ -362,12 +362,12 @@ near(stt.dbStt, -13, 2)
 // The raw track must be disabled on mute, or speech while muted would be
 // transcribed and sent as captions.
 const mute = await aLocal(async () => {
-  window.VPSMVideoCall.setMuted(true);
+  window.PanelVideoCall.setMuted(true);
   const t = window.__sttStarts[window.__sttStarts.length - 1].getAudioTracks()[0];
   await new Promise((r) => setTimeout(r, 300));
-  const lvl = window.VPSMVideoCall.getMicLevel();
+  const lvl = window.PanelVideoCall.getMicLevel();
   const r = { enabled: t.enabled, level: lvl ? lvl.level : -1 };
-  window.VPSMVideoCall.setMuted(false);
+  window.PanelVideoCall.setMuted(false);
   r.voltou = t.enabled;
   return r;
 });
@@ -379,7 +379,7 @@ mute.voltou === true ? ok('mute: unmuting turns the transcription track back on'
 const restart = await aLocal(async () => {
   const before = window.__sttStarts.length;
   const old = window.__sttStarts[before - 1].getAudioTracks()[0];
-  await window.VPSMVideoCall.setMicDevice('default');
+  await window.PanelVideoCall.setMicDevice('default');
   await new Promise((r) => setTimeout(r, 300));
   const fresh = window.__sttStarts[window.__sttStarts.length - 1].getAudioTracks()[0];
   return { newOnes: window.__sttStarts.length - before, oldState: old.readyState, newState: fresh.readyState, equal: old === fresh };
@@ -387,7 +387,7 @@ const restart = await aLocal(async () => {
 (restart.newOnes >= 1 && !restart.equal && restart.newState === 'live')
   ? ok('stt: a mic switch restarts transcription on the new (live) track')
   : no('stt: after the mic switch transcription stayed on the ' + restart.oldState + ' track (' + JSON.stringify(restart) + ')');
-await aLocal(() => { window.VPSMVideoCall.setSubtitles(false); });
+await aLocal(() => { window.PanelVideoCall.setSubtitles(false); });
 
 // ── 9. Web Speech recognizes the handed-over track ──────────────────────
 // SpeechRecognition.start(track) (Chrome 135+); where start(track) throws,
@@ -408,10 +408,10 @@ await aLocal(() => { window.VPSMVideoCall.setSubtitles(false); });
   await page.addScriptTag({ content: srcSTT });
   const r = await page.evaluate(async () => {
     const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const h1 = window.VPSMSTT.start({ backend: 'web-speech', continuous: true, stream: s, lang: 'pt-BR' });
+    const h1 = window.PanelSTT.start({ backend: 'web-speech', continuous: true, stream: s, lang: 'pt-BR' });
     h1 && h1.stop && h1.stop();
     window.__srRejectTrack = true;
-    const h2 = window.VPSMSTT.start({ backend: 'web-speech', continuous: true, stream: s, lang: 'pt-BR' });
+    const h2 = window.PanelSTT.start({ backend: 'web-speech', continuous: true, stream: s, lang: 'pt-BR' });
     h2 && h2.stop && h2.stop();
     return window.__srArgs;
   });

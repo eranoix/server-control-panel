@@ -77,7 +77,7 @@ func TestAssetLinksPopulatedConfig(t *testing.T) {
 	r := newSmokeRouter(t)
 
 	r.cfgMu.Lock()
-	r.cfg.AndroidPackageName = "br.tech.vpsmanager.app"
+	r.cfg.AndroidPackageName = "tech.northwind.servercontrolpanel"
 	r.cfg.AndroidSigningFingerprints = []string{
 		"AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99",
 	}
@@ -101,8 +101,8 @@ func TestAssetLinksPopulatedConfig(t *testing.T) {
 	if entry.Target.Namespace != "android_app" {
 		t.Fatalf("namespace = %q, want android_app", entry.Target.Namespace)
 	}
-	if entry.Target.PackageName != "br.tech.vpsmanager.app" {
-		t.Fatalf("package_name = %q, want br.tech.vpsmanager.app", entry.Target.PackageName)
+	if entry.Target.PackageName != "tech.northwind.servercontrolpanel" {
+		t.Fatalf("package_name = %q, want tech.northwind.servercontrolpanel", entry.Target.PackageName)
 	}
 	if len(entry.Target.SHA256CertFingerprints) != 1 {
 		t.Fatalf("expected 1 fingerprint, got %+v", entry.Target.SHA256CertFingerprints)

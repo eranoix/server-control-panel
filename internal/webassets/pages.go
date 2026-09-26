@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-// IndexInjector intercepts "/" and "/index.html" to replace the __VPSM_BUILD__
+// IndexInjector intercepts "/" and "/index.html" to replace the __PANEL_BUILD__
 // placeholder with the current BuildStamp. Without it the front-end would have
 // to guess when the localStorage schema changed.
 //
@@ -38,7 +38,7 @@ func buildIndex() {
 		if err != nil {
 			return
 		}
-		cachedIndexHTML = []byte(strings.ReplaceAll(string(data), "__VPSM_BUILD__", BuildStamp))
+		cachedIndexHTML = []byte(strings.ReplaceAll(string(data), "__PANEL_BUILD__", BuildStamp))
 	})
 }
 
@@ -55,7 +55,7 @@ func IndexInjector(next http.Handler) http.Handler {
 			return
 		}
 		// The document is revalidatable, not no-store. The content of the index only
-		// changes when the build changes (the __VPSM_BUILD__ injected above is itself
+		// changes when the build changes (the __PANEL_BUILD__ injected above is itself
 		// part of the body), so ETag = BuildStamp describes the resource exactly.
 		// `no-cache` keeps the old guarantee — the browser ALWAYS asks the server
 		// before using its copy, it never serves a stale front-end — but when nothing

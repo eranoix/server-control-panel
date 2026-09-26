@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// BackendLocal is the Backend that runs WHERE THE DISK IS: inside the lab-agent,
+// BackendLocal is the Backend that runs WHERE THE DISK IS: inside the node-agent,
 // on the node. It is today's `os.*` code, reached by operation name instead of by
 // an HTTP route of the panel.
 //
@@ -18,7 +18,7 @@ import (
 // Decided by the operator and recorded in the planning notes.
 //
 // The criterion used to say ".ini rewritten preserving owner and mode". Measured
-// in this fork (the fork where the lab-agent is born): `internal/gameservers`
+// in this fork (the fork where the node-agent is born): `internal/gameservers`
 // has 10 files, the adapter map has only `enshrouded`, and grep for `.ini`
 // returns ZERO. `PalWorldSettings.ini` lives in the OTHER fork.
 //

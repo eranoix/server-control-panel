@@ -80,7 +80,7 @@ and publish **only** the `SHA256:` value (no colons, uppercase hex) into this
 server's vault:
 
 ```bash
-vpsmctl secrets set --user <user> fdroid_repo_fingerprint
+panelctl secrets set --user <user> fdroid_repo_fingerprint
 ```
 
 Never the keystore, never the password — only the fingerprint, which is public

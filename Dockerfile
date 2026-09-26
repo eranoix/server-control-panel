@@ -25,8 +25,8 @@ COPY demo/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh && mkdir -p /app/data && chown app:app /app/data
 USER app
 WORKDIR /app
-ENV VPSM_CONFIG=/app/data/config.json \
-    VPSM_DETACH_JOBS=0
+ENV PANEL_CONFIG=/app/data/config.json \
+    PANEL_DETACH_JOBS=0
 EXPOSE 8765
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
   CMD wget -qO- http://127.0.0.1:8765/api/health >/dev/null || exit 1

@@ -20,14 +20,14 @@ plugins {
 // android/gradle.properties; verifyApplicationIdMatchesDocs fails the build if it differs
 // from docs/android-signing-keystore.md section 2.
 val applicationIdFromProperties = requireNotNull(
-    project.findProperty("vpsmanager.applicationId") as String?
+    project.findProperty("servercontrolpanel.applicationId") as String?
 ) {
-    "vpsmanager.applicationId missing from android/gradle.properties, " +
+    "servercontrolpanel.applicationId missing from android/gradle.properties, " +
         "see docs/android-signing-keystore.md section 7"
 }
 
 android {
-    namespace = "com.vpsmanager.app"
+    namespace = "dev.servercontrolpanel.app"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
@@ -40,10 +40,10 @@ android {
         versionName = project.findProperty("versionName") as String? ?: "0.1.0"
 
         // arm64-v8a + x86_64 (device + emulator). Without the filter stream-webrtc-android
-        // ships x86 and armeabi-v7a too (18 MB unused). `vpsmanager.abi` narrows further for
-        // a single-device build (-Pvpsmanager.abi=arm64-v8a saves another 20 MB).
+        // ships x86 and armeabi-v7a too (18 MB unused). `servercontrolpanel.abi` narrows further for
+        // a single-device build (-Pservercontrolpanel.abi=arm64-v8a saves another 20 MB).
         ndk {
-            val soAbi = project.findProperty("vpsmanager.abi") as String?
+            val soAbi = project.findProperty("servercontrolpanel.abi") as String?
             abiFilters += soAbi?.split(",")?.map { it.trim() } ?: listOf("arm64-v8a", "x86_64")
         }
 
@@ -52,7 +52,7 @@ android {
         buildConfigField(
             "String",
             "DEFAULT_SERVER_URL",
-            "\"${project.findProperty("vpsmanager.defaultServerUrl") ?: ""}\"",
+            "\"${project.findProperty("servercontrolpanel.defaultServerUrl") ?: ""}\"",
         )
     }
 
@@ -83,18 +83,18 @@ android {
         }
     }
 
-    // Development signing, strictly opt-in. Without `vpsmanager.devKeystore` the release
+    // Development signing, strictly opt-in. Without `servercontrolpanel.devKeystore` the release
     // build is unsigned on purpose: the release key must never exist on this VPS, and the
     // operator signs offline. With it, the disposable dev key is used and versionName gets
     // `-devsigned` so the APK can never be mistaken for a publishable release.
-    val devKeystorePath = project.findProperty("vpsmanager.devKeystore") as String?
+    val devKeystorePath = project.findProperty("servercontrolpanel.devKeystore") as String?
     if (devKeystorePath != null) {
         signingConfigs {
             create("dev") {
                 storeFile = file(devKeystorePath)
-                storePassword = project.findProperty("vpsmanager.devKeystorePassword") as String?
+                storePassword = project.findProperty("servercontrolpanel.devKeystorePassword") as String?
                     ?: "devkey-nao-secreta"
-                keyAlias = "vpsmanager-dev"
+                keyAlias = "servercontrolpanel-dev"
                 keyPassword = storePassword
             }
         }
@@ -135,7 +135,7 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     // Drawer icons: the `core` set (823 KB), not `extended` (35.7 MB); see
-    // gradle/libs.versions.toml. Missing glyphs come from VpsmIcons in :design-system.
+    // gradle/libs.versions.toml. Missing glyphs come from PanelIcons in :design-system.
     implementation(libs.compose.material.icons.core)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
@@ -150,7 +150,7 @@ dependencies {
     // Pure JVM unit tests for the deep-link route resolution/consumption logic;
     // no Android framework classes involved, so plain JUnit is enough (no Robolectric).
     testImplementation(libs.junit)
-    // Bootstrap/VpsManagerApplication launch-path tests touch a real Context (crash file
+    // Bootstrap/PanelApplication launch-path tests touch a real Context (crash file
     // persistence, TelecomManager, NotificationManager), so they use Robolectric.
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
@@ -202,7 +202,7 @@ abstract class VerifyApplicationIdMatchesDocsTask : DefaultTask() {
         if (documented != expected) {
             throw GradleException(
                 "applicationId differs between the build and the docs:\n" +
-                    "  gradle.properties (vpsmanager.applicationId): $expected\n" +
+                    "  gradle.properties (servercontrolpanel.applicationId): $expected\n" +
                     "  ${file.path} section 2: ${documented ?: "<not found>"}\n" +
                     "They must match. Update one of them before continuing."
             )

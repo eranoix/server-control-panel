@@ -24,7 +24,7 @@ func validManifest() Manifest {
 	return Manifest{
 		SchemaVersion: SchemaVersion,
 		GeneratedAt:   "2026-09-06T00:00:00Z",
-		PackageID:     "tech.northwind.vpsm.app",
+		PackageID:     "tech.northwind.servercontrolpanel",
 		PatchTool:     "HDiffPatch::hdiffz v5.1.3 -SD -c-lzma2-9-64m",
 		Latest:        Release{VersionName: "0.1.6", VersionCode: 6, SHA256: shaNew, SizeBytes: 31135416},
 		Full:          Artifact{Kind: "full", File: "full/" + shaNew + ".hdiff", SizeBytes: 10029237, SHA256: shaFull},

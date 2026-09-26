@@ -5,7 +5,7 @@
 // /admin/* surface — gated by a bearer ADMIN_TOKEN — to manage the user-facing
 // API keys ("tokens"): list, create, revoke and edit limits.
 //
-// VPSM proxies these endpoints server-side so the ADMIN_TOKEN never reaches the
+// PANEL proxies these endpoints server-side so the ADMIN_TOKEN never reaches the
 // browser. To stay resilient to upstream shape changes, most methods pass the
 // raw JSON body + HTTP status straight through (see Result); only Status fans
 // several read endpoints into one object for the dashboard.

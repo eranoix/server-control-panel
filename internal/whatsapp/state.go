@@ -197,7 +197,7 @@ func (s *Service) DeepImport(historyPerChat int) error {
 // gowsDBPath is Whatsmeow's internal SQLite (the GOWS engine), where the chat
 // flags (archived/pinned/muted) live — information WAHA Core does not expose
 // over REST. We read it read-only and merge it into the Store.
-const gowsDBPath = "/var/lib/vpsm-whatsapp/sessions/gows/default/gows.db"
+const gowsDBPath = "/var/lib/panel-whatsapp/sessions/gows/default/gows.db"
 
 // syncChatFlagsFromGOWS is a backwards-compatible alias for syncChatNames —
 // all of the SQLite reading now lives there (flags included). Kept so

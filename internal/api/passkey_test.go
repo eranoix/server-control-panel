@@ -29,7 +29,7 @@ import (
 // PublicHostname filled in, so that initPasskey() is really exercised.
 func newPasskeyRouter(t *testing.T, hostname string) *Router {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "vpsm-passkey-")
+	dir, err := os.MkdirTemp("", "panel-passkey-")
 	if err != nil {
 		t.Fatalf("mkdtemp: %v", err)
 	}
@@ -67,7 +67,7 @@ func newPasskeyRouter(t *testing.T, hostname string) *Router {
 // the assetlinks one ever read DIFFERENT fields of Config, App Link and passkey
 // drift out of sync silently.
 func TestPasskeyRPIDSourcedFromPublicHostname(t *testing.T) {
-	const hostname = "vpsm.example.com"
+	const hostname = "panel.example.com"
 	r := newPasskeyRouter(t, hostname)
 
 	if r.webauthnRP == nil {
@@ -119,7 +119,7 @@ func TestPasskeyUnavailableWithoutPublicHostname(t *testing.T) {
 // attacker using the endpoint's response to find out whether a user/credential
 // exists.
 func TestPasskeyLoginFinish_EnumerationResistance(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.example.com")
+	r := newPasskeyRouter(t, "panel.example.com")
 	if r.webauthnRP == nil {
 		t.Fatal("webauthnRP nil — test precondition failed")
 	}
@@ -174,7 +174,7 @@ func TestPasskeyLoginFinish_EnumerationResistance(t *testing.T) {
 // FinishPasskeyLogin twice with the SAME continuation token does not reopen
 // the same challenge session.
 func TestPasskeyLoginFinish_ReplayContinuationTokenFails(t *testing.T) {
-	r := newPasskeyRouter(t, "vpsm.example.com")
+	r := newPasskeyRouter(t, "panel.example.com")
 	_, cont, err := r.BeginPasskeyLogin()
 	if err != nil {
 		t.Fatalf("BeginPasskeyLogin: %v", err)

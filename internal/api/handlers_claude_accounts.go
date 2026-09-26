@@ -253,9 +253,9 @@ func (r *Router) handleClaudeAccountSessionSwap(w http.ResponseWriter, req *http
 		// setEnv applies the account to the shell (CLAUDE_CONFIG_DIR + label).
 		var setEnv string
 		if dir == "" {
-			setEnv = "unset CLAUDE_CONFIG_DIR; export VPSM_CLAUDE_ACCOUNT=" + acctLabel
+			setEnv = "unset CLAUDE_CONFIG_DIR; export PANEL_CLAUDE_ACCOUNT=" + acctLabel
 		} else {
-			setEnv = "export CLAUDE_CONFIG_DIR=" + dir + " VPSM_CLAUDE_ACCOUNT=" + acctLabel
+			setEnv = "export CLAUDE_CONFIG_DIR=" + dir + " PANEL_CLAUDE_ACCOUNT=" + acctLabel
 		}
 		// If a claude IS RUNNING in the session, switch it LIVE (respawn: kill + relaunch
 		// `claude --continue` on the new account — the conversation is preserved because
@@ -331,7 +331,7 @@ func (r *Router) handleClaudeAccountLoginTerminal(w http.ResponseWriter, req *ht
 	// acct.ConfigDir == "" is the default account (jordan): SpawnLoginShell
 	// handles it as a HOME-mode login shell (/root/.claude), so no special
 	// casing here — the button must work for the default account too.
-	sessionName := "vpsm-" + user + "-claude-login-" + acct.ID
+	sessionName := "panel-" + user + "-claude-login-" + acct.ID
 	created, err := ptysvc.SpawnLoginShell(sessionName, acct.ConfigDir)
 	if err != nil {
 		writeErr(w, 500, err.Error())

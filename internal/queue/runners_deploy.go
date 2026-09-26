@@ -11,7 +11,7 @@ import (
 
 // AppDeployRunner runs a PaaS deploy through the queue — the path taken by the
 // UI and by rollback. The `git push` trigger does NOT come through here: the
-// hook calls the core deploy.Deploy directly (via vpsmctl), streaming to the
+// hook calls the core deploy.Deploy directly (via panelctl), streaming to the
 // git client. Both paths share deploy.Deploy, so the behaviour is identical.
 type AppDeployRunner struct {
 	DataDir string

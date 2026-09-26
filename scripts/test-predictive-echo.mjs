@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const target = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const target = process.argv[2] || join(root, 'internal/webassets/web/vendor/panel/app/00-shell.js');
 const src = readFileSync(target, 'utf8');
 
 let pass = 0, fail = 0;

@@ -9,7 +9,7 @@ import (
 func TestClaudeProjectDirSlug(t *testing.T) {
 	cases := map[string]string{
 		"/root":                                "-root",
-		"/opt/panel/.claude/worktrees/vpsm-47": "-opt-panel--claude-worktrees-vpsm-47",
+		"/opt/panel/.claude/worktrees/panel-47": "-opt-panel--claude-worktrees-panel-47",
 		"/root/projetos/acme-booking":          "-root-projetos-acme-booking",
 	}
 	for in, want := range cases {

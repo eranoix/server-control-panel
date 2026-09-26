@@ -100,7 +100,7 @@ fi
 # 6. The binary must carry what it needs. A script at a fixed path fails because
 # the deploy builds from the ticket's worktree while /opt/panel is on another
 # branch, and a deploy step that installs the script never runs from a worktree.
-if grep -qE '"/opt/panel/scripts/|/usr/local/bin/vpsm-recovery-claude' "$HANDLER"; then
+if grep -qE '"/opt/panel/scripts/|/usr/local/bin/panel-recovery-claude' "$HANDLER"; then
   no "the handler depends on a script at a fixed disk path again"
 else
   ok "handler does not depend on a script at a fixed path (neither repo nor /usr/local/bin)"
@@ -134,7 +134,7 @@ fi
 # 8. Runtime (only where the container exists).
 if ! command -v docker >/dev/null 2>&1; then
   skip "runtime checks: docker missing in this environment"
-elif ! docker inspect vpsm-recovery-claude >/dev/null 2>&1; then
+elif ! docker inspect panel-recovery-claude >/dev/null 2>&1; then
   skip "runtime checks: container not created yet (scripts/recovery-claude.sh up)"
 else
   bash "$SCRIPT" doctor >/dev/null 2>&1

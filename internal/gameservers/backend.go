@@ -9,7 +9,7 @@ import (
 // Backend is the transport boundary for the game operations.
 //
 // There are two implementers: a LOCAL one (calls the Manager in the same
-// process) and an HTTP one (talks to the node's lab-agent). The panel chooses by
+// process) and an HTTP one (talks to the node's node-agent). The panel chooses by
 // `Node.transport` and does not know the difference.
 //
 // THE INTERFACE IS BORN BEFORE THE IMPLEMENTATION, on purpose: both sides are

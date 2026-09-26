@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const SHELL = join(here, '..', 'internal', 'webassets', 'web', 'vendor', 'vpsm', 'app', '00-shell.js');
+const SHELL = join(here, '..', 'internal', 'webassets', 'web', 'vendor', 'panel', 'app', '00-shell.js');
 const HTML = join(here, '..', 'internal', 'webassets', 'web', 'index.html');
 const shell = readFileSync(SHELL, 'utf8');
 const html = readFileSync(HTML, 'utf8');

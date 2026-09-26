@@ -199,14 +199,14 @@ func TestFilterJQLMirrorsWebPanel(t *testing.T) {
 	cases := []struct {
 		filter, project, custom, want string
 	}{
-		{"all", "VPSM", "", "project = VPSM ORDER BY updated DESC"},
+		{"all", "PANEL", "", "project = PANEL ORDER BY updated DESC"},
 		{"all", "", "", "ORDER BY updated DESC"},
-		{"mine", "VPSM", "", "project = VPSM AND assignee = currentUser() AND statusCategory != Done ORDER BY rank ASC"},
+		{"mine", "PANEL", "", "project = PANEL AND assignee = currentUser() AND statusCategory != Done ORDER BY rank ASC"},
 		{"reported", "", "", "reporter = currentUser() ORDER BY updated DESC"},
-		{"custom", "VPSM", "labels = urgent", "labels = urgent"},
+		{"custom", "PANEL", "labels = urgent", "labels = urgent"},
 		// A filter this server does not know falls back to "all" — the app may
 		// be newer than the server.
-		{"made-up", "VPSM", "", "project = VPSM ORDER BY updated DESC"},
+		{"made-up", "PANEL", "", "project = PANEL ORDER BY updated DESC"},
 	}
 	for _, c := range cases {
 		if got := FilterJQL(c.filter, c.project, c.custom, ""); got != c.want {
@@ -219,7 +219,7 @@ func TestJQLNeverHasDanglingAND(t *testing.T) {
 	// The bug the web panel patches with a regex after assembling. Here the
 	// assembly is born right.
 	for _, f := range []string{"all", "mine", "todo", "inprogress", "last7", "reported", "other"} {
-		for _, p := range []string{"", "VPSM"} {
+		for _, p := range []string{"", "PANEL"} {
 			jql := FilterJQL(f, p, "", "")
 			if len(jql) > 0 && (containsSeq(jql, "AND ORDER") || hasPrefixSeq(jql, "AND ")) {
 				t.Errorf("filter %q/project %q generated invalid JQL: %q", f, p, jql)
@@ -298,10 +298,10 @@ func TestSplitJQLSeparatesWhereFromOrder(t *testing.T) {
 	// The column restriction goes in BEFORE the ORDER BY. Concatenating without
 	// splitting produces "... ORDER BY updated DESC AND status = X", which is invalid.
 	cases := []struct{ jql, where, order string }{
-		{"project = VPSM ORDER BY updated DESC", "project = VPSM", "ORDER BY updated DESC"},
-		{"project = VPSM order by rank ASC", "project = VPSM", "order by rank ASC"},
+		{"project = PANEL ORDER BY updated DESC", "project = PANEL", "ORDER BY updated DESC"},
+		{"project = PANEL order by rank ASC", "project = PANEL", "order by rank ASC"},
 		{"ORDER BY updated DESC", "", "ORDER BY updated DESC"},
-		{"project = VPSM", "project = VPSM", ""},
+		{"project = PANEL", "project = PANEL", ""},
 		{"", "", ""},
 	}
 	for _, c := range cases {
@@ -365,8 +365,8 @@ func TestUnrestrictableColumnReturnsEmpty(t *testing.T) {
 func TestColumnJQLWrapsFilterInPARENTHESES(t *testing.T) {
 	// Without the parentheses, a filter with an OR would bind only to the last
 	// term and the board would bring back more than it should — silent widening.
-	got := ColumnJQL(`project = VPSM OR project = TTW`, "ORDER BY updated DESC", `statusCategory = "To Do"`)
-	want := `(project = VPSM OR project = TTW) AND statusCategory = "To Do" ORDER BY updated DESC`
+	got := ColumnJQL(`project = PANEL OR project = TTW`, "ORDER BY updated DESC", `statusCategory = "To Do"`)
+	want := `(project = PANEL OR project = TTW) AND statusCategory = "To Do" ORDER BY updated DESC`
 	if got != want {
 		t.Errorf("%q\nwant %q", got, want)
 	}
@@ -395,17 +395,17 @@ func TestQuotedStatusNameDoesNotBreakWHOLEQuery(t *testing.T) {
 
 func TestOwnBoardOnlyAppearsByChoice(t *testing.T) {
 	// A configured board_jql must never replace the "All" filter.
-	if got := FilterJQL("all", "VPSM", "", "project = OTHER"); got != "project = VPSM ORDER BY updated DESC" {
+	if got := FilterJQL("all", "PANEL", "", "project = OTHER"); got != "project = PANEL ORDER BY updated DESC" {
 		t.Errorf("the operator's JQL must not hijack the 'All' filter: %q", got)
 	}
-	if got := FilterJQL("board", "VPSM", "", "project = OTHER"); got != "project = OTHER" {
+	if got := FilterJQL("board", "PANEL", "", "project = OTHER"); got != "project = OTHER" {
 		t.Errorf("chosen on purpose, it counts: %q", got)
 	}
 }
 
 func TestOwnBoardWithoutQueryFallsBackToAll(t *testing.T) {
 	// A filter with no query behind it would be a button that does nothing.
-	if got := FilterJQL("board", "VPSM", "", ""); got != "project = VPSM ORDER BY updated DESC" {
+	if got := FilterJQL("board", "PANEL", "", ""); got != "project = PANEL ORDER BY updated DESC" {
 		t.Errorf("%q", got)
 	}
 }

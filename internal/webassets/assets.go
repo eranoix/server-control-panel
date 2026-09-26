@@ -4,7 +4,7 @@
 //
 // Owns:
 //   - web/* (HTML, vendor JS, fonts, icons, tailwind.css)
-//   - buildStamp (replaces __VPSM_BUILD__ in index.html to force-purge a
+//   - buildStamp (replaces __PANEL_BUILD__ in index.html to force-purge a
 //     localStorage left incompatible by a deploy)
 //   - PWA handlers (desktop/mobile manifest, /sw.js, /icon-*.png)
 //   - index injector + in-memory cache
@@ -24,7 +24,7 @@ var FS embed.FS
 // route. It lives in a SEPARATE embed from web/* on purpose: the public
 // FileServer mounts only web/*, so this file is NEVER servable without going
 // through the mustPrimary gate. report.html is a GENERATED artifact — copied
-// from ".docs/Documentacao Tecnica - VPS Manager.html" by `make build` (the
+// from ".docs/Documentacao Tecnica - Server Control Panel.html" by `make build` (the
 // docs-embed target). Do not edit it by hand.
 //
 //go:embed docs/report.html
@@ -35,7 +35,7 @@ var docsFS embed.FS
 func DocsReport() ([]byte, error) { return docsFS.ReadFile("docs/report.html") }
 
 // BuildStamp identifies this build of the binary. Injected into the <meta
-// name="vpsm-build"> of index.html so the front-end purges a localStorage left
+// name="panel-build"> of index.html so the front-end purges a localStorage left
 // incompatible after each deploy. It is the boot time of the process — every
 // systemctl restart becomes a new stamp.
 var BuildStamp = strconv.FormatInt(time.Now().Unix(), 10)

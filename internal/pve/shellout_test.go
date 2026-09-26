@@ -326,7 +326,7 @@ func diskUsedPct(path string) (pct int, err error) { return 0, nil }`,
 			name: "legitimate exec.Command passes",
 			source: `package x
 import "os/exec"
-func f() { _ = exec.Command("systemctl", "restart", "vps-manager") }`,
+func f() { _ = exec.Command("systemctl", "restart", "server-control-panel") }`,
 			finds: false,
 		},
 	}

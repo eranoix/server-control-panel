@@ -741,7 +741,7 @@ func (p *Poller) loadSeeds() []Node {
 // nodes from the same tick advance.
 //
 // The "ssh" transport has no active poll here: there is no ssh client in this
-// package and there will not be — reach by agent is separate work (lab-agent).
+// package and there will not be — reach by agent is separate work (node-agent).
 // Pretending to support it would stamp liveness nobody observed.
 func (p *Poller) pingSeeds(ctx context.Context, seeds []Node) map[string]bool {
 	alive := map[string]bool{}

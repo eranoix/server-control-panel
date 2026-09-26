@@ -25,7 +25,7 @@ import (
 	"server-control-panel/internal/scope"
 )
 
-// agentPort is the port of the lab-agent's two listeners (see cmd/lab-agent).
+// agentPort is the port of the node-agent's two listeners (see cmd/node-agent).
 //
 // A constant of ours, not network configuration: it is neither an IP nor a CTID,
 // and the physical allocation is tracked outside this repository.
@@ -88,7 +88,7 @@ func (r *Router) nodeToken(no string) string {
 	if err != nil {
 		return ""
 	}
-	secret, ok := scope.NewUserVault(r.secrets, u).Get("lab_agent_token_" + no)
+	secret, ok := scope.NewUserVault(r.secrets, u).Get("node_agent_token_" + no)
 	if !ok {
 		return ""
 	}

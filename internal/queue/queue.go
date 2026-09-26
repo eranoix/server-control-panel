@@ -1,4 +1,4 @@
-// Package queue is the asynchronous background-job runner for vps-manager.
+// Package queue is the asynchronous background-job runner for server-control-panel.
 //
 // Operations that used to block the HTTP request (apt-upgrade, docker pull,
 // image prune, ZFS snapshot, arbitrary shell) are submitted here instead.
@@ -122,7 +122,7 @@ type Queue struct {
 	wg sync.WaitGroup
 	// detachKinds + detachLauncher: kinds in detachKinds run in a
 	// DETACHED systemd scope instead of the in-process worker pool, so a
-	// deploy/restart of vps-manager doesn't kill them. detachLauncher starts
+	// deploy/restart of server-control-panel doesn't kill them. detachLauncher starts
 	// the external process and returns its scope unit name. Both nil/empty
 	// when detach is disabled → everything runs in-process as before.
 	detachKinds    map[string]bool
@@ -350,7 +350,7 @@ func NewQueue(opts Options) (*Queue, error) {
 				}
 				// Scope dead AND no terminal result → genuinely interrupted.
 				j.Status = StatusInterrupted
-				j.Error = "interrupted: vps-manager restart"
+				j.Error = "interrupted: server-control-panel restart"
 				j.Finished = time.Now().Unix()
 				continue
 			}
@@ -360,7 +360,7 @@ func NewQueue(opts Options) (*Queue, error) {
 				q.pushPending(j.ID)
 			} else {
 				j.Status = StatusInterrupted
-				j.Error = "interrupted: vps-manager restart"
+				j.Error = "interrupted: server-control-panel restart"
 				j.Finished = time.Now().Unix()
 			}
 		}

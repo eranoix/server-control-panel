@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs /etc/logrotate.d/vps-manager: rotation of the control-plane logs.
+# Installs /etc/logrotate.d/server-control-panel: rotation of the control-plane logs.
 # Idempotent.
 #
 # Rotates:
@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-DEST=/etc/logrotate.d/vps-manager
+DEST=/etc/logrotate.d/server-control-panel
 
 cat >"$DEST" <<'CONF'
 /opt/panel/data/audit.log {

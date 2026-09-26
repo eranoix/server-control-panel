@@ -64,7 +64,7 @@ func (r *Router) handleClaudeVersions(w http.ResponseWriter, req *http.Request) 
 	// against the host's has already called a Claude NEWER than the host "outdated".
 	// Here the reference is its own installation, and Target tells the front end that this
 	// one restarts via the container — not by typing into a pane, which it does not have.
-	for _, p := range claudever.DetectExternal("VPSM_RECOVERY=1", "recovery") {
+	for _, p := range claudever.DetectExternal("PANEL_RECOVERY=1", "recovery") {
 		state.Processes = append(state.Processes, p)
 		if !p.Current {
 			state.Outdated++

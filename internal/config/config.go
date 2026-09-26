@@ -27,7 +27,7 @@ type User struct {
 	// single-admin model (only the Primary was privileged) to multiple
 	// admins. The Primary is ALWAYS an admin regardless of this flag; the flag
 	// only promotes additional users. Editable through /api/users/set-admin
-	// (gated by mustPrimary) or `vpsmctl admin add/remove`.
+	// (gated by mustPrimary) or `panelctl admin add/remove`.
 	Admin bool `json:"admin,omitempty"`
 
 	// AppOnly marks the account as EXCLUSIVE to the native Android app: it
@@ -97,7 +97,7 @@ type AIModels struct {
 //	    purposes when Username != "".
 //	1 — same as 0, just explicit (never written; reserved).
 //	2 — per-user isolation: data/users/<u>/..., vault keys are <u>:key,
-//	    /var/lib/vpsm-whatsapp/<u>/, vpsm-whatsapp@<u>.service. Top-level
+//	    /var/lib/panel-whatsapp/<u>/, panel-whatsapp@<u>.service. Top-level
 //	    Username/PasswordHash are removed; all users live in Users[].
 const CurrentSchemaVersion = 2
 
@@ -108,7 +108,7 @@ type Config struct {
 	SchemaVersion int `json:"schema_version,omitempty"`
 
 	// Primary is the user who inherits legacy untagged state — the only
-	// account that can see sessions without a "vpsm-<user>-" prefix,
+	// account that can see sessions without a "panel-<user>-" prefix,
 	// or any other resource that pre-dates per-user namespacing. Set by
 	// migrate.go on the v1→v2 upgrade ("sam" by plan) and never changed
 	// after; deleting the primary user is rejected by the user-delete
@@ -132,7 +132,7 @@ type Config struct {
 	//   - SupabaseURL: base of the Kong gateway (https://supabase.<host>) with no trailing slash
 	//   - SupabaseAnonKey: public key (apikey header). NOT to be confused with service_role.
 	//   - AuthBackend: "local" | "supabase" | "both" (default). Overriding via
-	//     the VPSM_AUTH_BACKEND env var takes precedence (a quick operational call).
+	//     the PANEL_AUTH_BACKEND env var takes precedence (a quick operational call).
 	SupabaseURL     string `json:"supabase_url,omitempty"`
 	SupabaseAnonKey string `json:"supabase_anon_key,omitempty"`
 	AuthBackend     string `json:"auth_backend,omitempty"`
@@ -145,7 +145,7 @@ type Config struct {
 	Users              []User `json:"users,omitempty"`
 	ClaudeHome         string `json:"claude_home"`
 	// AndroidPackageName is the applicationId of the native Android app
-	// (br.tech.vpsmanager.app), consumed by handleAssetLinks to build the
+	// (tech.northwind.servercontrolpanel), consumed by handleAssetLinks to build the
 	// "package_name" field of /.well-known/assetlinks.json. It is populated
 	// when the release keystore is generated — see
 	// docs/android-signing-keystore.md, section 7. Empty until then; the
@@ -180,7 +180,7 @@ type Config struct {
 	// Default in applyDefaults: http://127.0.0.1:8787.
 	PrivateAIURL string `json:"private_ai_url,omitempty"`
 	// PrivateAIAdminTokenFile is the file (dotenv/systemd EnvironmentFile
-	// format) from which VPSM reads ADMIN_TOKEN to authenticate against the
+	// format) from which PANEL reads ADMIN_TOKEN to authenticate against the
 	// private-ai-api admin API. A shared source of truth — it avoids
 	// duplicating the secret. Default in applyDefaults: /etc/private-ai-api/env.
 	PrivateAIAdminTokenFile string `json:"private_ai_admin_token_file,omitempty"`
@@ -347,7 +347,7 @@ type Config struct {
 
 	// LoadedFromBackup is true when Load() had to fall back to a .bak.<ts>
 	// because the live config.json failed to parse. Serializes as a transient
-	// field (omitempty + json:"-" on disk) — surfacing via /api/vpsm/health.
+	// field (omitempty + json:"-" on disk) — surfacing via /api/panel/health.
 	LoadedFromBackup bool   `json:"-"`
 	LoadedBackupName string `json:"-"`
 }

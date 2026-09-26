@@ -73,7 +73,7 @@ func NewTrustedDevicesStore(path string) *TrustedDevicesStore {
 }
 
 // TrustedDevicesPath returns the canonical file path given the data dir and
-// the user. Centralised to avoid drift between the handlers and vpsmctl.
+// the user. Centralised to avoid drift between the handlers and panelctl.
 func TrustedDevicesPath(dataDir, user string) string {
 	return fmt.Sprintf("%s/trusted-devices-%s.json", strings.TrimRight(dataDir, "/"), user)
 }

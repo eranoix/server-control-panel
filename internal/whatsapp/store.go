@@ -28,10 +28,10 @@ import (
 //	        ├── 2026-05.jsonl
 //	        └── 2026-04.jsonl
 //
-// MediaRoot points to /var/lib/vpsm-whatsapp/media (managed by WAHA container).
+// MediaRoot points to /var/lib/panel-whatsapp/media (managed by WAHA container).
 type Store struct {
 	Root      string // e.g. /opt/panel/data/whatsapp
-	MediaRoot string // e.g. /var/lib/vpsm-whatsapp/media
+	MediaRoot string // e.g. /var/lib/panel-whatsapp/media
 
 	mu    sync.Mutex
 	state State
@@ -333,7 +333,7 @@ func (s *Store) MergePresence(jid, presence string, lastSeen int64) error {
 // re-import from scratch. It backs up to .bak.<unix> before erasing, so
 // nothing is lost for good.
 //
-// It does NOT touch /var/lib/vpsm-whatsapp/ (the WAHA session and the media)
+// It does NOT touch /var/lib/panel-whatsapp/ (the WAHA session and the media)
 // — only our own index. The media stays reachable at its old paths.
 func (s *Store) WipeImport() error {
 	s.mu.Lock()

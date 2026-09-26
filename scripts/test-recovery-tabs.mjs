@@ -70,7 +70,7 @@ const srv = http.createServer((req, res) => {
 
 function findBrowser() {
   const c = [];
-  if (process.env.VPSM_CHROMIUM) c.push(process.env.VPSM_CHROMIUM);
+  if (process.env.PANEL_CHROMIUM) c.push(process.env.PANEL_CHROMIUM);
   const cache = '/root/.cache/ms-playwright';
   if (fs.existsSync(cache)) for (const d of fs.readdirSync(cache).filter((x) => x.startsWith('chromium-')).sort().reverse())
     c.push(path.join(cache, d, 'chrome-linux64', 'chrome'));

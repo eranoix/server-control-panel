@@ -130,7 +130,7 @@ func EnsureDirs(p Paths) error {
 	return nil
 }
 
-// EnsureWhatsappContainerDirs creates the /var/lib/vpsm-whatsapp/<user>/
+// EnsureWhatsappContainerDirs creates the /var/lib/panel-whatsapp/<user>/
 // tree the WAHA container needs. Separate from EnsureDirs because not
 // every test or non-WhatsApp boot path needs to touch /var/lib.
 //

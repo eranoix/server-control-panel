@@ -42,10 +42,10 @@
           the explicit PendingIntent that ApkInstaller creates.
         -->
         <receiver
-            android:name="com.vpsmanager.data.update.UpdateInstallReceiver"
+            android:name="dev.servercontrolpanel.data.update.UpdateInstallReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="com.vpsmanager.data.update.INSTALL_STATUS" />
+                <action android:name="dev.servercontrolpanel.data.update.INSTALL_STATUS" />
             </intent-filter>
         </receiver>
         <!--
@@ -58,7 +58,7 @@
           with INSTALL_FAILED_CONFLICTING_PROVIDER.
         -->
         <provider
-            android:name="com.vpsmanager.data.update.UpdateFileProvider"
+            android:name="dev.servercontrolpanel.data.update.UpdateFileProvider"
             android:authorities="${applicationId}.atualizacao"
             android:exported="false"
             android:grantUriPermissions="true">

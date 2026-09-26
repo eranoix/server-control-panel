@@ -127,14 +127,14 @@ func (r *Router) handleMFAEnrollStart(w http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	// Optional body: friendly_name (default "vpsmanager-v2").
+	// Optional body: friendly_name (default "servercontrolpanel-v2").
 	type enrollStartReq struct {
 		FriendlyName string `json:"friendly_name,omitempty"`
 	}
 	var body enrollStartReq
 	_ = json.NewDecoder(req.Body).Decode(&body)
 	if strings.TrimSpace(body.FriendlyName) == "" {
-		body.FriendlyName = "vpsmanager-v2"
+		body.FriendlyName = "servercontrolpanel-v2"
 	}
 
 	// IDEMPOTENCY: GoTrue rejects a second unverified factor with the same

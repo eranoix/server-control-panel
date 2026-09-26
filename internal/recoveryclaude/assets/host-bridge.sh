@@ -1,6 +1,6 @@
 #!/bin/sh
 # host-bridge: runs ON THE HOST the binary named after how this was invoked.
-# Installed as a symlink under several names (agentctl, graphify, vpsmctl,
+# Installed as a symlink under several names (agentctl, graphify, panelctl,
 # jira-api) because the project hooks call those host tools.
 #
 # In an emergency session a missing CONVENIENCE tool must never break anything,

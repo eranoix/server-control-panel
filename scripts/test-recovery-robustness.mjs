@@ -81,7 +81,7 @@ function buildCtx({ withXterm }) {
     querySelector: (sel) => (elements['sel:' + sel] ||= newEl(sel)),
     createElement: (tag) => { const e = newEl('fresh:' + tag); e.tag = tag; created.push(e); return e; },
     addEventListener: (ev, f) => { (listeners[ev] ||= []).push(f); },
-    cookie: 'vpsm_recovery_user=sam',
+    cookie: 'panel_recovery_user=sam',
     hidden: false,
     body: newEl('body'),
   };
@@ -93,7 +93,7 @@ function buildCtx({ withXterm }) {
     document: doc,
     window: { addEventListener: (ev, f) => { (listeners[ev] ||= []).push(f); } },
     navigator: { clipboard: { writeText: () => Promise.resolve() } },
-    location: { protocol: 'https:', host: 'vpsm.example', href: '' },
+    location: { protocol: 'https:', host: 'panel.example', href: '' },
     requestAnimationFrame: (f) => { setTimeout(f, 0); return 1; },
     cancelAnimationFrame: () => {},
     setTimeout, clearTimeout, setInterval, clearInterval,
@@ -149,10 +149,10 @@ function run(ctx) {
     const s = m.sockets[0]; s.open(); s.sent.length = 0;
     const inp = m.created.find((e) => e.tag === 'input');
     if (inp) {
-      inp.value = 'systemctl restart vps-manager';
+      inp.value = 'systemctl restart server-control-panel';
       inp.fire('keydown', { key: 'Enter', preventDefault() {} });
       const env = s.sent.map((x) => (x instanceof Uint8Array ? new TextDecoder().decode(x) : String(x))).join('');
-      env.includes('systemctl restart vps-manager\r')
+      env.includes('systemctl restart server-control-panel\r')
         ? ok('no xterm: Enter in the field sends the raw line to the PTY')
         : no('the line never reached the socket: ' + JSON.stringify(env));
 

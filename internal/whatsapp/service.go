@@ -33,7 +33,7 @@ type Service struct {
 	// HMACRefresh re-reads the secret from the SOURCE (the vault) and returns the
 	// current value. nil = no refresh (the old behaviour). See Service.currentHMAC.
 	HMACRefresh func() string
-	ServiceUnit string // systemd unit name, e.g. "vpsm-whatsapp.service"
+	ServiceUnit string // systemd unit name, e.g. "panel-whatsapp.service"
 	GowsDBPath  string // the user's Whatsmeow SQLite; empty = legacy gowsDBPath const
 	// ExtraWebhookURL/Events registers an additional webhook destination through
 	// the per-session config (POST /api/sessions/). Without touching the
@@ -486,14 +486,14 @@ func (s *Service) cleanupOrphanMedia() {
 // Options configures the service. Empty values fall back to safe defaults.
 type Options struct {
 	StoreRoot   string // data/whatsapp/
-	MediaRoot   string // /var/lib/vpsm-whatsapp/media/
-	GowsDBPath  string // /var/lib/vpsm-whatsapp/<user>/sessions/gows/default/gows.db; empty = legacy default
+	MediaRoot   string // /var/lib/panel-whatsapp/media/
+	GowsDBPath  string // /var/lib/panel-whatsapp/<user>/sessions/gows/default/gows.db; empty = legacy default
 	WAHABaseURL string // http://127.0.0.1:3000
 	WAHAAPIKey  string // X-Api-Key
 	HMACSecret  string // shared with WAHA's WHATSAPP_HOOK_HMAC
 	// HMACRefresh: see Service.HMACRefresh.
 	HMACRefresh func() string
-	ServiceUnit string // systemd unit to manage; defaults to vpsm-whatsapp.service
+	ServiceUnit string // systemd unit to manage; defaults to panel-whatsapp.service
 	// ExtraWebhookURL: an additional URL to register as a per-session webhook.
 	// The real use case: a v2 (port 8766) sharing WAHA containers with a v1
 	// (port 8765, via the WHATSAPP_HOOK_URL env var). Without this option the v2
@@ -519,13 +519,13 @@ func New(opts Options) (*Service, error) {
 		return nil, fmt.Errorf("whatsapp: StoreRoot required")
 	}
 	if opts.MediaRoot == "" {
-		opts.MediaRoot = "/var/lib/vpsm-whatsapp/media"
+		opts.MediaRoot = "/var/lib/panel-whatsapp/media"
 	}
 	if opts.WAHABaseURL == "" {
 		opts.WAHABaseURL = "http://127.0.0.1:3000"
 	}
 	if opts.ServiceUnit == "" {
-		opts.ServiceUnit = "vpsm-whatsapp.service"
+		opts.ServiceUnit = "panel-whatsapp.service"
 	}
 	store, err := NewStore(opts.StoreRoot, opts.MediaRoot)
 	if err != nil {

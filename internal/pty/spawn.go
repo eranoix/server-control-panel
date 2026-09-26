@@ -67,7 +67,7 @@ func SpawnClaudeSession(sessionName, resumeUUID, claudeConfigDir, model string) 
 	} else if m != "" {
 		argv = append(argv, "--model", m)
 	}
-	// VPSM Wave-3 #53: forward the session's stored permission mode (if any).
+	// PANEL Wave-3 #53: forward the session's stored permission mode (if any).
 	argv = append(argv, permModeArgs(sessionName)...)
 	if err := SessionCreateDetached(sessionName, argv, claudeConfigEnv(claudeConfigDir), ""); err != nil {
 		return "", err
@@ -141,7 +141,7 @@ func claudeConfigEnv(dir string) []string {
 // non-empty, injects it as the first prompt via bracketed paste — the assistant
 // starts already knowing the context. This is the shared "work session" spawn
 // path reused by the Jira flow (SpawnJiraWorkSession), the queue's scheduled
-// agent routines (kind agent_routine) and `vpsmctl agent-fixbuild`.
+// agent routines (kind agent_routine) and `panelctl agent-fixbuild`.
 //
 // model selects the tier; "" inherits the process default (Opus).
 // The session's stored permission mode, if any, is forwarded.

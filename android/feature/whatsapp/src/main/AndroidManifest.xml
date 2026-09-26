@@ -27,7 +27,7 @@
          through the FLAG_GRANT_READ_URI_PERMISSION Intent.ACTION_VIEW call in
          DocumentOpener.kt, never a broad, always-on grant. ${applicationId}
          is AGP's built-in manifest placeholder, resolved to the final app's
-         applicationId (com.vpsmanager.app) at merge time; this library
+         applicationId (dev.servercontrolpanel.app) at merge time; this library
          module has no other way to know that value at build time. -->
     <application>
         <provider

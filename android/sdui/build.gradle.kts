@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.vpsmanager.sdui"
+    namespace = "dev.servercontrolpanel.sdui"
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
