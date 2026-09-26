@@ -1,0 +1,215 @@
+{
+  "cols": 6,
+  "rows": 2,
+  "checks": [
+    {
+      "consumeBytes": 10,
+      "expect": {
+        "cols": 6,
+        "rows": 2,
+        "cursor": {
+          "x": 0,
+          "y": 1,
+          "visible": true
+        },
+        "rowFlags": [
+          {
+            "wrapped": false,
+            "wrapContinuation": false
+          },
+          {
+            "wrapped": false,
+            "wrapContinuation": false
+          }
+        ],
+        "grid": [
+          [
+            {
+              "cp": "e",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "X",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            }
+          ],
+          [
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            }
+          ]
+        ]
+      }
+    }
+  ],
+  "notes": "KNOWN GAP: the JNI snapshot layout (ghostty_jni.cpp, Wave 3) exposes only GHOSTTY_CELL_DATA_CODEPOINT (the base codepoint). Ghostty's C API also has a GhosttyCellContentTag.codepoint_grapheme tag for cells carrying combining marks, but Wave 3's shim does not surface the attached grapheme codepoints. This fixture therefore only asserts what the current data model can prove: the base codepoint occupies its cell and the combining mark does not consume a second cell (cursor advances by exactly one column for 'e' + U+0301). It does NOT assert that the accent itself survives in the snapshot -- verifying that would need a new grapheme accessor added to the JNI shim, out of scope for this task (Wave 3 files are frozen for this plan)."
+}

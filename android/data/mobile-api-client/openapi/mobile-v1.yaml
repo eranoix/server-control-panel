@@ -1,0 +1,5867 @@
+components:
+  schemas:
+    AlertSummary:
+      additionalProperties: false
+      properties:
+        current_value:
+          format: double
+          type: number
+        fired_since:
+          format: int64
+          type: integer
+        name:
+          type: string
+        severity:
+          type: string
+        state:
+          type: string
+        threshold:
+          format: double
+          type: number
+        unit:
+          type: string
+      required:
+        - name
+        - severity
+        - state
+        - current_value
+        - threshold
+      type: object
+    AppUpdateArtifact:
+      additionalProperties: false
+      properties:
+        sha256:
+          description: SHA-256 (hex minúsculo) do próprio arquivo .hdiff
+          type: string
+        size_bytes:
+          format: int64
+          type: integer
+        url:
+          description: Caminho absoluto da rota de bytes (aceita Range, download retomável)
+          type: string
+      required:
+        - url
+        - size_bytes
+        - sha256
+      type: object
+    AppUpdateRelease:
+      additionalProperties: false
+      properties:
+        sha256:
+          description: SHA-256 (hex minúsculo) do APK assinado desta versão
+          type: string
+        size_bytes:
+          description: Tamanho do APK assinado reconstruído, não do artefato baixado
+          format: int64
+          type: integer
+        version_code:
+          format: int64
+          type: integer
+        version_name:
+          type: string
+      required:
+        - version_name
+        - version_code
+        - sha256
+        - size_bytes
+      type: object
+    AppUpdateResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/AppUpdateResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        full:
+          $ref: "#/components/schemas/AppUpdateArtifact"
+          description: Reconstrução completa (hpatchz com base vazia); sempre disponível
+        latest:
+          $ref: "#/components/schemas/AppUpdateRelease"
+        patch:
+          $ref: "#/components/schemas/AppUpdateArtifact"
+          description: Patch incremental a partir de base_sha256; AUSENTE quando não há patch para essa base exata
+        patch_tool:
+          description: Ferramenta e opções que geraram os artefatos, para diagnóstico de incompatibilidade
+          type: string
+        up_to_date:
+          description: true quando base_sha256 já é o APK da versão mais nova
+          type: boolean
+      required:
+        - latest
+        - up_to_date
+        - full
+        - patch_tool
+      type: object
+    AssignSessionRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/AssignSessionRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          description: Nome da sessão
+          type: string
+        target:
+          description: Usuário dono, ou '*' para todos
+          type: string
+      required:
+        - name
+        - target
+      type: object
+    AssignTargetsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/AssignTargetsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        targets:
+          description: Nomes de usuário, mais "*" para todos
+          items:
+            type: string
+          nullable: true
+          type: array
+      required:
+        - targets
+      type: object
+    BackupSessionSummary:
+      additionalProperties: false
+      properties:
+        lines:
+          format: int64
+          type: integer
+        name:
+          type: string
+        summary:
+          type: string
+      required:
+        - name
+        - summary
+        - lines
+      type: object
+    BackupSummary:
+      additionalProperties: false
+      properties:
+        bytes:
+          format: int64
+          type: integer
+        created:
+          format: int64
+          type: integer
+        id:
+          type: string
+        sessions:
+          items:
+            $ref: "#/components/schemas/BackupSessionSummary"
+          nullable: true
+          type: array
+        source:
+          type: string
+      required:
+        - id
+        - created
+        - bytes
+        - sessions
+      type: object
+    CPUMetrics:
+      additionalProperties: false
+      properties:
+        cores:
+          format: int64
+          type: integer
+        iowait:
+          format: double
+          type: number
+        load1:
+          format: double
+          type: number
+        load15:
+          format: double
+          type: number
+        load5:
+          format: double
+          type: number
+        model:
+          type: string
+        steal:
+          format: double
+          type: number
+        used_percent:
+          format: double
+          type: number
+      required:
+        - cores
+        - used_percent
+        - load1
+        - load5
+        - load15
+        - steal
+        - iowait
+      type: object
+    ChatSummary:
+      additionalProperties: false
+      properties:
+        avatar_url:
+          type: string
+        is_group:
+          type: boolean
+        jid:
+          type: string
+        last_message_at:
+          format: int64
+          type: integer
+        last_message_preview:
+          type: string
+        name:
+          type: string
+        unread:
+          format: int64
+          type: integer
+      required:
+        - jid
+        - name
+        - is_group
+        - unread
+      type: object
+    CreateBackupRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/CreateBackupRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          description: Sessão a salvar; vazio = todas num pacote
+          type: string
+      type: object
+    CreateBackupResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/CreateBackupResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        count:
+          format: int64
+          type: integer
+        created:
+          format: int64
+          type: integer
+        id:
+          type: string
+      required:
+        - id
+        - created
+        - count
+      type: object
+    DeleteBackupOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/DeleteBackupOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        status:
+          type: string
+      required:
+        - status
+      type: object
+    DeployStatusOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/DeployStatusOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        error:
+          type: string
+        progress:
+          format: int64
+          type: integer
+        status:
+          type: string
+        step:
+          type: string
+      required:
+        - status
+        - progress
+      type: object
+    DiskMetrics:
+      additionalProperties: false
+      properties:
+        free:
+          format: int64
+          minimum: 0
+          type: integer
+        fstype:
+          type: string
+        mount:
+          type: string
+        total:
+          format: int64
+          minimum: 0
+          type: integer
+        total_text:
+          type: string
+        used:
+          format: int64
+          minimum: 0
+          type: integer
+        used_percent:
+          format: double
+          type: number
+        used_text:
+          type: string
+      required:
+        - mount
+        - total
+        - used
+        - free
+        - used_percent
+        - total_text
+        - used_text
+      type: object
+    ErrorDetail:
+      additionalProperties: false
+      properties:
+        location:
+          description: Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'
+          type: string
+        message:
+          description: Error message text
+          type: string
+        value:
+          description: The value at the given location
+      type: object
+    ErrorModel:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/ErrorModel.json
+          format: uri
+          readOnly: true
+          type: string
+        detail:
+          description: A human-readable explanation specific to this occurrence of the problem.
+          example: Property foo is required but is missing.
+          type: string
+        errors:
+          description: Optional list of individual error details
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+          nullable: true
+          type: array
+        instance:
+          description: A URI reference that identifies the specific occurrence of the problem.
+          example: https://example.com/error-log/abc123
+          format: uri
+          type: string
+        status:
+          description: HTTP status code
+          example: 400
+          format: int64
+          type: integer
+        title:
+          description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+          example: Bad Request
+          type: string
+        type:
+          default: about:blank
+          description: A URI reference to human-readable documentation for the error.
+          example: https://example.com/errors/example
+          format: uri
+          type: string
+      type: object
+    FileConflictResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/FileConflictResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        error:
+          type: string
+        server_content:
+          type: string
+        server_mtime:
+          format: int64
+          type: integer
+      required:
+        - error
+        - server_content
+        - server_mtime
+      type: object
+    FileEntry:
+      additionalProperties: false
+      properties:
+        is_dir:
+          type: boolean
+        is_link:
+          type: boolean
+        mode:
+          type: string
+        modified:
+          format: int64
+          type: integer
+        name:
+          type: string
+        size:
+          format: int64
+          type: integer
+        target:
+          type: string
+      required:
+        - name
+        - size
+        - modified
+        - is_dir
+      type: object
+    FileListResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/FileListResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        entries:
+          items:
+            $ref: "#/components/schemas/FileEntry"
+          nullable: true
+          type: array
+        parent:
+          type: string
+        path:
+          type: string
+      required:
+        - path
+        - parent
+        - entries
+      type: object
+    FileReadResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/FileReadResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        content:
+          type: string
+        language:
+          description: Hint de linguagem derivado da extensão, para syntax highlighting
+          type: string
+        mtime:
+          description: mtime do arquivo em disco (unix) — devolver em write.expected_mtime para detectar conflito
+          format: int64
+          type: integer
+        size:
+          format: int64
+          type: integer
+      required:
+        - content
+        - mtime
+        - language
+        - size
+      type: object
+    FileWriteRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/FileWriteRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        content:
+          type: string
+        expected_mtime:
+          description: mtime lido antes da edição; 0 ou omitido = sem leitura prévia, grava incondicionalmente
+          format: int64
+          type: integer
+        path:
+          type: string
+      required:
+        - path
+        - content
+      type: object
+    FileWriteResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/FileWriteResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        mtime:
+          description: Novo mtime do arquivo após a escrita
+          format: int64
+          type: integer
+        ok:
+          type: boolean
+      required:
+        - ok
+        - mtime
+      type: object
+    GetNotifyPrefsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/GetNotifyPrefsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        rules:
+          items:
+            $ref: "#/components/schemas/RuleSummary"
+          nullable: true
+          type: array
+      required:
+        - rules
+      type: object
+    HistoricoResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/HistoricoResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        base64:
+          description: Histórico renderizado da sessão, codificado em base64
+          type: string
+        bytes:
+          description: Quantos bytes de histórico estão nesta resposta
+          format: int64
+          type: integer
+        total:
+          description: Tamanho total do histórico disponível no servidor
+          format: int64
+          type: integer
+      required:
+        - base64
+        - bytes
+        - total
+      type: object
+    InboxResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/InboxResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        path:
+          description: Diretório onde um arquivo compartilhado por outro app pousa por padrão
+          type: string
+      required:
+        - path
+      type: object
+    JiraAssignRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraAssignRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        account_id:
+          description: accountId do responsável; vazio desatribui
+          type: string
+        key:
+          type: string
+      required:
+        - key
+        - account_id
+      type: object
+    JiraBoardCard:
+      additionalProperties: false
+      properties:
+        assignee:
+          type: string
+        assignee_id:
+          type: string
+        avatar_url:
+          type: string
+        category:
+          description: new | indeterminate | done — o identificador ESTÁVEL da categoria
+          type: string
+        due_date:
+          type: string
+        key:
+          type: string
+        labels:
+          items:
+            type: string
+          nullable: true
+          type: array
+        priority:
+          type: string
+        status:
+          type: string
+        summary:
+          type: string
+        type:
+          type: string
+        updated:
+          type: string
+      required:
+        - key
+        - summary
+        - status
+        - category
+      type: object
+    JiraBoardColumn:
+      additionalProperties: false
+      properties:
+        cards:
+          items:
+            $ref: "#/components/schemas/JiraBoardCard"
+          nullable: true
+          type: array
+        category:
+          type: string
+        fallback:
+          type: boolean
+        label:
+          type: string
+        status_names:
+          items:
+            type: string
+          nullable: true
+          type: array
+      required:
+        - label
+        - cards
+      type: object
+    JiraBoardResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraBoardResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        columns:
+          items:
+            $ref: "#/components/schemas/JiraBoardColumn"
+          nullable: true
+          type: array
+        connected:
+          type: boolean
+        error:
+          type: string
+        filter:
+          type: string
+        filters:
+          items:
+            $ref: "#/components/schemas/JiraFilterOption"
+          nullable: true
+          type: array
+        jql:
+          type: string
+        me:
+          $ref: "#/components/schemas/JiraUserRef"
+        project:
+          type: string
+        projects:
+          items:
+            $ref: "#/components/schemas/JiraProjectRef"
+          nullable: true
+          type: array
+        site:
+          type: string
+        total:
+          format: int64
+          type: integer
+      required:
+        - connected
+        - filter
+        - filters
+        - columns
+        - total
+      type: object
+    JiraBulkAssignRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraBulkAssignRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        account_id:
+          description: accountId; vazio desatribui
+          type: string
+        issue_keys:
+          items:
+            type: string
+          nullable: true
+          type: array
+      required:
+        - issue_keys
+        - account_id
+      type: object
+    JiraBulkFailure:
+      additionalProperties: false
+      properties:
+        key:
+          type: string
+        reason:
+          type: string
+      required:
+        - key
+        - reason
+      type: object
+    JiraBulkMoveRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraBulkMoveRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        column:
+          type: string
+        issue_keys:
+          items:
+            type: string
+          nullable: true
+          type: array
+      required:
+        - issue_keys
+        - column
+      type: object
+    JiraBulkResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraBulkResult.json
+          format: uri
+          readOnly: true
+          type: string
+        done:
+          items:
+            type: string
+          nullable: true
+          type: array
+        failed:
+          items:
+            $ref: "#/components/schemas/JiraBulkFailure"
+          nullable: true
+          type: array
+      required:
+        - done
+      type: object
+    JiraCommentItem:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraCommentItem.json
+          format: uri
+          readOnly: true
+          type: string
+        author:
+          type: string
+        body:
+          type: string
+        created:
+          type: string
+        id:
+          type: string
+      required:
+        - id
+        - body
+        - author
+        - created
+      type: object
+    JiraCommentRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraCommentRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        key:
+          type: string
+        text:
+          type: string
+      required:
+        - key
+        - text
+      type: object
+    JiraConnectRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraConnectRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        email:
+          type: string
+        project:
+          description: Projeto padrão (opcional)
+          type: string
+        site:
+          description: "Subdomínio ou host (ex.: suaempresa ou suaempresa.atlassian.net)"
+          type: string
+        token:
+          description: Token de API do Atlassian
+          type: string
+      required:
+        - site
+        - email
+        - token
+      type: object
+    JiraCreateRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraCreateRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        assignee_id:
+          type: string
+        description:
+          type: string
+        due_date:
+          description: AAAA-MM-DD
+          type: string
+        labels:
+          items:
+            type: string
+          nullable: true
+          type: array
+        parent_key:
+          description: Épico ou issue-mãe
+          type: string
+        priority:
+          type: string
+        project:
+          type: string
+        summary:
+          type: string
+        type:
+          type: string
+      required:
+        - project
+        - type
+        - summary
+      type: object
+    JiraCreatedResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraCreatedResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        key:
+          type: string
+      required:
+        - key
+      type: object
+    JiraFilterOption:
+      additionalProperties: false
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+      required:
+        - key
+        - label
+      type: object
+    JiraIssueLinkRef:
+      additionalProperties: false
+      properties:
+        key:
+          type: string
+        relation:
+          type: string
+        status:
+          type: string
+        summary:
+          type: string
+      required:
+        - relation
+        - key
+      type: object
+    JiraIssueResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraIssueResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        assignee:
+          $ref: "#/components/schemas/JiraUserRef"
+        category:
+          type: string
+        column:
+          type: string
+        comments:
+          items:
+            $ref: "#/components/schemas/JiraCommentItem"
+          nullable: true
+          type: array
+        created:
+          type: string
+        description:
+          type: string
+        due_date:
+          type: string
+        key:
+          type: string
+        labels:
+          items:
+            type: string
+          nullable: true
+          type: array
+        links:
+          items:
+            $ref: "#/components/schemas/JiraIssueLinkRef"
+          nullable: true
+          type: array
+        moves:
+          items:
+            $ref: "#/components/schemas/JiraMoveOption"
+          nullable: true
+          type: array
+        priority:
+          type: string
+        reporter:
+          $ref: "#/components/schemas/JiraUserRef"
+        status:
+          type: string
+        subtasks:
+          items:
+            $ref: "#/components/schemas/JiraBoardCard"
+          nullable: true
+          type: array
+        summary:
+          type: string
+        type:
+          type: string
+        updated:
+          type: string
+        web_url:
+          type: string
+      required:
+        - key
+        - summary
+        - status
+        - category
+      type: object
+    JiraMetaResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraMetaResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        issue_types:
+          items:
+            type: string
+          nullable: true
+          type: array
+        priorities:
+          items:
+            type: string
+          nullable: true
+          type: array
+      required:
+        - issue_types
+        - priorities
+      type: object
+    JiraMoveOption:
+      additionalProperties: false
+      properties:
+        column:
+          type: string
+        name:
+          description: "Nome da transição no Jira (ex.: \"Iniciar revisão\")"
+          type: string
+        status:
+          type: string
+      required:
+        - column
+        - status
+      type: object
+    JiraMoveRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraMoveRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        column:
+          description: Rótulo da coluna de destino
+          type: string
+        key:
+          description: "Chave da issue (ex.: PROJ-42)"
+          type: string
+      required:
+        - key
+        - column
+      type: object
+    JiraMoveResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraMoveResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        column:
+          type: string
+        key:
+          type: string
+        status:
+          type: string
+      required:
+        - key
+        - status
+        - column
+      type: object
+    JiraProjectRef:
+      additionalProperties: false
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+      required:
+        - key
+        - name
+      type: object
+    JiraProjectRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraProjectRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        project:
+          type: string
+      required:
+        - project
+      type: object
+    JiraUserRef:
+      additionalProperties: false
+      properties:
+        account_id:
+          type: string
+        avatar_url:
+          type: string
+        display_name:
+          type: string
+      required:
+        - account_id
+        - display_name
+      type: object
+    JiraUsersResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/JiraUsersResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        users:
+          items:
+            $ref: "#/components/schemas/JiraUserRef"
+          nullable: true
+          type: array
+      required:
+        - users
+      type: object
+    KillSessionRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/KillSessionRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          description: Nome da sessão a encerrar
+          type: string
+      required:
+        - name
+      type: object
+    MeResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/MeResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        capabilities:
+          items:
+            type: string
+          nullable: true
+          type: array
+        email:
+          type: string
+        is_admin:
+          type: boolean
+        server_time:
+          format: int64
+          type: integer
+        user:
+          type: string
+      required:
+        - user
+        - server_time
+        - is_admin
+        - capabilities
+      type: object
+    MediaView:
+      additionalProperties: false
+      properties:
+        duration:
+          format: int64
+          type: integer
+        filename:
+          type: string
+        height:
+          format: int64
+          type: integer
+        mime_type:
+          type: string
+        size:
+          format: int64
+          type: integer
+        url:
+          type: string
+        width:
+          format: int64
+          type: integer
+      required:
+        - url
+      type: object
+    MemoryMetrics:
+      additionalProperties: false
+      properties:
+        free:
+          format: int64
+          minimum: 0
+          type: integer
+        total:
+          format: int64
+          minimum: 0
+          type: integer
+        total_text:
+          type: string
+        used:
+          format: int64
+          minimum: 0
+          type: integer
+        used_percent:
+          format: double
+          type: number
+        used_text:
+          type: string
+      required:
+        - total
+        - used
+        - free
+        - used_percent
+        - total_text
+        - used_text
+      type: object
+    MessageView:
+      additionalProperties: false
+      properties:
+        ack:
+          format: int64
+          type: integer
+        chat_jid:
+          type: string
+        from_me:
+          type: boolean
+        id:
+          type: string
+        media:
+          $ref: "#/components/schemas/MediaView"
+        quoted_id:
+          type: string
+        reactions:
+          items:
+            $ref: "#/components/schemas/Reaction"
+          nullable: true
+          type: array
+        sender:
+          type: string
+        text:
+          type: string
+        ts:
+          format: int64
+          type: integer
+        type:
+          type: string
+      required:
+        - id
+        - chat_jid
+        - from_me
+        - type
+        - ts
+        - ack
+      type: object
+    MessagesResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/MessagesResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        backfilling:
+          type: boolean
+        messages:
+          items:
+            $ref: "#/components/schemas/MessageView"
+          nullable: true
+          type: array
+      required:
+        - messages
+        - backfilling
+      type: object
+    MobileLoginInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/MobileLoginInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        device_label:
+          description: "Rótulo do aparelho, usado na lista de sessões mobile (ex.: 'Pixel 8')."
+          type: string
+        password:
+          type: string
+        totp_code:
+          description: Código do segundo fator (Supabase MFA/TOTP ou backup code). Omitir na primeira tentativa.
+          type: string
+        username:
+          description: Username ou email cadastrado.
+          type: string
+      required:
+        - username
+        - password
+      type: object
+    MobileLoginOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/MobileLoginOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        access_token:
+          type: string
+        expires_in:
+          format: int64
+          type: integer
+        refresh_token:
+          type: string
+        totp_required:
+          description: Quando true, nenhum token foi emitido — reenviar com totp_code preenchido.
+          type: boolean
+      type: object
+    MobileLogoutOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/MobileLogoutOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        status:
+          type: string
+      required:
+        - status
+      type: object
+    MobileRefreshInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/MobileRefreshInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        refresh_token:
+          type: string
+      required:
+        - refresh_token
+      type: object
+    MobileRefreshOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/MobileRefreshOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        access_token:
+          type: string
+        expires_in:
+          format: int64
+          type: integer
+        refresh_token:
+          description: Novo refresh token — o anterior já foi invalidado por esta chamada.
+          type: string
+      required:
+        - access_token
+        - refresh_token
+        - expires_in
+      type: object
+    NetMetrics:
+      additionalProperties: false
+      properties:
+        bytes_recv:
+          format: int64
+          minimum: 0
+          type: integer
+        bytes_sent:
+          format: int64
+          minimum: 0
+          type: integer
+        interface:
+          type: string
+        recv_rate:
+          format: double
+          type: number
+        recv_rate_text:
+          type: string
+        sent_rate:
+          format: double
+          type: number
+        sent_rate_text:
+          type: string
+      required:
+        - interface
+        - bytes_sent
+        - bytes_recv
+      type: object
+    OpsStatus:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/OpsStatus.json
+          format: uri
+          readOnly: true
+          type: string
+        alerts:
+          items:
+            $ref: "#/components/schemas/AlertSummary"
+          nullable: true
+          type: array
+        health:
+          additionalProperties:
+            type: string
+          type: object
+        health_ok:
+          type: boolean
+        queue_queued:
+          format: int64
+          type: integer
+        queue_running:
+          format: int64
+          type: integer
+        system:
+          $ref: "#/components/schemas/SystemMetrics"
+      required:
+        - health
+        - health_ok
+        - queue_running
+        - queue_queued
+        - alerts
+      type: object
+    PairingConsumeInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/PairingConsumeInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        ticket:
+          description: Ticket de pareamento mostrado no QR code do painel desktop/web (POST /api/auth/mobile-pair, one-shot, 5min).
+          type: string
+      required:
+        - ticket
+      type: object
+    PairingConsumeOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/PairingConsumeOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        reg_token:
+          description: Token de autorização de UMA cerimônia de registro de passkey — enviar a /auth/passkey/register/begin.
+          type: string
+      required:
+        - reg_token
+      type: object
+    PasskeyLoginBeginOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/PasskeyLoginBeginOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        continuation_token:
+          description: Enviar sem alteração em /login/finish.
+          type: string
+        options:
+          description: PublicKeyCredentialRequestOptions — repassar ao autenticador.
+      required:
+        - options
+        - continuation_token
+      type: object
+    PasskeyLoginFinishInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/PasskeyLoginFinishInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        continuation_token:
+          type: string
+        credential:
+          description: Resposta bruta do autenticador (PublicKeyCredential serializado).
+      required:
+        - continuation_token
+        - credential
+      type: object
+    PasskeyLoginFinishOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/PasskeyLoginFinishOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        access_token:
+          description: JWT de sessão — presente somente quando a credencial já está aprovada.
+          type: string
+        error:
+          description: "Código de erro estável (ex.: 'pending_approval'). Ausente em caso de sucesso."
+          type: string
+        expires_in:
+          description: Validade do access_token em segundos.
+          format: int64
+          type: integer
+        message:
+          description: Mensagem legível para exibir ao usuário. Ausente em caso de sucesso.
+          type: string
+        refresh_token:
+          description: Refresh token mobile rotativo — mesma família de auth_login.go, presente junto com access_token.
+          type: string
+      type: object
+    PasskeyRegisterBeginInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/PasskeyRegisterBeginInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        reg_token:
+          description: Token de autorização de UMA cerimônia de registro, emitido pelo pareamento por QR code (03-04).
+          type: string
+      required:
+        - reg_token
+      type: object
+    PasskeyRegisterBeginOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/PasskeyRegisterBeginOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        continuation_token:
+          description: Enviar sem alteração em /register/finish.
+          type: string
+        options:
+          description: PublicKeyCredentialCreationOptions — repassar ao autenticador (navigator.credentials.create() / WebAuthn Android).
+      required:
+        - options
+        - continuation_token
+      type: object
+    PasskeyRegisterFinishInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/PasskeyRegisterFinishInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        continuation_token:
+          type: string
+        credential:
+          description: Resposta bruta do autenticador (PublicKeyCredential serializado).
+        label:
+          description: "Rótulo do dispositivo, mostrado na tela de aprovação (ex.: 'Pixel 8 — Chrome')."
+          type: string
+      required:
+        - continuation_token
+        - credential
+      type: object
+    PasskeyRegisterFinishOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/PasskeyRegisterFinishOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        status:
+          type: string
+      required:
+        - status
+      type: object
+    PutNotifyPrefsInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/PutNotifyPrefsInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        device_id:
+          type: string
+        enabled_rule_ids:
+          items:
+            type: string
+          nullable: true
+          type: array
+      required:
+        - device_id
+        - enabled_rule_ids
+      type: object
+    PutNotifyPrefsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/PutNotifyPrefsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        status:
+          type: string
+      required:
+        - status
+      type: object
+    RawLogResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/RawLogResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        base64:
+          description: Log cru da sessão, codificado em base64
+          type: string
+        bytes:
+          description: Quantos bytes de log estão nesta resposta
+          format: int64
+          type: integer
+        total:
+          description: Tamanho total do log disponível no servidor
+          format: int64
+          type: integer
+      required:
+        - base64
+        - bytes
+        - total
+      type: object
+    Reaction:
+      additionalProperties: false
+      properties:
+        emoji:
+          type: string
+        from:
+          type: string
+        ts:
+          format: int64
+          type: integer
+      required:
+        - from
+        - emoji
+        - ts
+      type: object
+    RegisterDeviceInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/RegisterDeviceInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        device_id:
+          description: "ID mintado pelo cliente (ex.: ANDROID_ID)"
+          type: string
+        fcm_token:
+          type: string
+        platform:
+          description: android hoje; aberto a mais no futuro
+          type: string
+      required:
+        - device_id
+        - fcm_token
+      type: object
+    RegisterDeviceOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/RegisterDeviceOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        status:
+          type: string
+      required:
+        - status
+      type: object
+    RenameSessionRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/RenameSessionRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+      required:
+        - from
+        - to
+      type: object
+    RestoreBackupRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/RestoreBackupRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        id:
+          type: string
+        name:
+          description: Sessão a restaurar; vazio = todas as do backup
+          type: string
+      required:
+        - id
+      type: object
+    RestoreBackupResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/RestoreBackupResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        restored:
+          format: int64
+          type: integer
+        skipped:
+          format: int64
+          type: integer
+      required:
+        - restored
+        - skipped
+      type: object
+    Room:
+      additionalProperties: false
+      properties:
+        created_at:
+          format: int64
+          type: integer
+        id:
+          type: string
+        members:
+          items:
+            type: string
+          nullable: true
+          type: array
+        name:
+          type: string
+        owner:
+          type: string
+        pin:
+          type: string
+        pin_expires_at:
+          format: int64
+          type: integer
+      required:
+        - id
+        - name
+        - owner
+        - members
+        - created_at
+      type: object
+    RuleSummary:
+      additionalProperties: false
+      properties:
+        enabled_for_device:
+          type: boolean
+        id:
+          type: string
+        min_severity:
+          type: string
+        name:
+          type: string
+        type_prefix:
+          type: string
+      required:
+        - id
+        - name
+        - enabled_for_device
+      type: object
+    ScreenSection:
+      additionalProperties: false
+      properties:
+        group:
+          description: "Grupo do seletor (ex.: Docker, Sistema, Segurança)"
+          type: string
+        id:
+          description: Id da tela, para GET /screens/{id}
+          type: string
+        label:
+          description: Rótulo em português, legível fora do grupo
+          type: string
+      required:
+        - id
+        - group
+        - label
+      type: object
+    ScreensResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/ScreensResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        sections:
+          items:
+            $ref: "#/components/schemas/ScreenSection"
+          nullable: true
+          type: array
+      required:
+        - sections
+      type: object
+    ScrollbackResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/ScrollbackResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        data:
+          type: string
+      required:
+        - data
+      type: object
+    SendMessageRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/SendMessageRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        client_msg_id:
+          type: string
+        quoted_id:
+          type: string
+        text:
+          type: string
+      required:
+        - text
+        - client_msg_id
+      type: object
+    SendMessageResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/SendMessageResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        id:
+          type: string
+      required:
+        - id
+      type: object
+    SessionPreviewResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/SessionPreviewResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        lines:
+          format: int64
+          type: integer
+        name:
+          type: string
+        text:
+          type: string
+      required:
+        - name
+        - text
+        - lines
+      type: object
+    StatusOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/StatusOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        status:
+          type: string
+      required:
+        - status
+      type: object
+    SystemMetrics:
+      additionalProperties: false
+      properties:
+        cpu:
+          $ref: "#/components/schemas/CPUMetrics"
+        disks:
+          items:
+            $ref: "#/components/schemas/DiskMetrics"
+          nullable: true
+          type: array
+        hostname:
+          type: string
+        memory:
+          $ref: "#/components/schemas/MemoryMetrics"
+        net:
+          $ref: "#/components/schemas/NetMetrics"
+        platform:
+          type: string
+        server_time:
+          type: string
+        server_time_epoch:
+          format: int64
+          type: integer
+        swap:
+          $ref: "#/components/schemas/MemoryMetrics"
+        uptime_seconds:
+          format: int64
+          minimum: 0
+          type: integer
+        uptime_text:
+          type: string
+      required:
+        - server_time
+        - server_time_epoch
+        - uptime_seconds
+        - uptime_text
+        - cpu
+        - memory
+        - swap
+        - disks
+      type: object
+    TerminalSessionSummary:
+      additionalProperties: false
+      properties:
+        attached:
+          type: boolean
+        created:
+          format: int64
+          type: integer
+        name:
+          type: string
+        tab:
+          type: string
+      required:
+        - name
+        - created
+        - attached
+      type: object
+    TriggerDeployOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/TriggerDeployOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        job_id:
+          type: string
+      required:
+        - job_id
+      type: object
+    TriggerDeployRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/TriggerDeployRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        confirm:
+          type: boolean
+      required:
+        - confirm
+      type: object
+    UnregisterDeviceOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/UnregisterDeviceOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        status:
+          type: string
+      required:
+        - status
+      type: object
+    UploadChunkResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/UploadChunkResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        received_bytes:
+          description: Total de bytes já gravados de forma durável nesta sessão
+          format: int64
+          type: integer
+      required:
+        - received_bytes
+      type: object
+    UploadCompleteRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/UploadCompleteRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        session_id:
+          type: string
+      required:
+        - session_id
+      type: object
+    UploadCompleteResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/UploadCompleteResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        ok:
+          type: boolean
+        path:
+          type: string
+      required:
+        - ok
+        - path
+      type: object
+    UploadIncompleteResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/UploadIncompleteResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        error:
+          type: string
+        received_bytes:
+          format: int64
+          type: integer
+        total_size:
+          format: int64
+          type: integer
+      required:
+        - error
+        - received_bytes
+        - total_size
+      type: object
+    UploadInitRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/UploadInitRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        dest_dir:
+          description: Diretório de destino (já existente) onde o arquivo será gravado ao completar
+          type: string
+        filename:
+          description: Nome do arquivo final; não pode conter '..' nem separador de caminho
+          type: string
+        total_size:
+          description: Tamanho total em bytes do arquivo a enviar
+          format: int64
+          type: integer
+      required:
+        - dest_dir
+        - filename
+        - total_size
+      type: object
+    UploadInitResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/UploadInitResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        session_id:
+          type: string
+      required:
+        - session_id
+      type: object
+    UploadMediaResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/UploadMediaResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        id:
+          type: string
+      required:
+        - id
+      type: object
+    WSTicketRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/WSTicketRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          type: string
+      required:
+        - name
+      type: object
+    WSTicketResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: /api/mobile/v1/schemas/WSTicketResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        expires_in:
+          format: int64
+          type: integer
+        ticket:
+          type: string
+      required:
+        - ticket
+        - expires_in
+      type: object
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: "Access token emitido por POST /auth/login (ou renovado por POST /auth/refresh), enviado como `Authorization: Bearer <token>`. Quem valida é auth.Middleware, o mesmo de toda rota autenticada do painel."
+      scheme: bearer
+      type: http
+info:
+  title: vps-manager mobile BFF
+  version: 1.0.0
+openapi: 3.0.3
+paths:
+  /actions/{action_id}:
+    post:
+      operationId: runAction
+      parameters:
+        - description: "Id da ação registrada em internal/mobilebff/sdui (ex.: scheduler.jobs.run_now)"
+          in: path
+          name: action_id
+          required: true
+          schema:
+            description: "Id da ação registrada em internal/mobilebff/sdui (ex.: scheduler.jobs.run_now)"
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Executa uma ação SDUI registrada, com confirmação destrutiva reforçada pelo servidor
+      tags:
+        - mobile
+        - sdui
+  /alerts/rules:
+    get:
+      operationId: getAlertsRuleRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas da tabela alerts.rules — somente admin
+      tags:
+        - mobile
+        - sdui
+        - alerts
+  /app/update:
+    get:
+      operationId: getAppUpdate
+      parameters:
+        - description: SHA-256 (hex) do APK instalado no aparelho; omitir devolve só o caminho completo
+          explode: false
+          in: query
+          name: base_sha256
+          schema:
+            description: SHA-256 (hex) do APK instalado no aparelho; omitir devolve só o caminho completo
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppUpdateResponse"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: "Manifesto de atualização do app: patch incremental para a base informada, ou reconstrução completa"
+      tags:
+        - mobile
+  /app/update/artifact:
+    get:
+      operationId: downloadAppUpdateArtifact
+      parameters:
+        - description: Campo 'file' do artefato, exatamente como veio no manifesto
+          explode: false
+          in: query
+          name: file
+          required: true
+          schema:
+            description: Campo 'file' do artefato, exatamente como veio no manifesto
+            type: string
+      responses:
+        "200":
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Baixa um artefato de atualização (.hdiff), com suporte a Range — download retomável
+      tags:
+        - mobile
+  /auth/login:
+    post:
+      description: Sucesso devolve access_token + refresh_token. Quando o segundo fator está enrolado e totp_code não foi enviado, devolve {"totp_required":true} sem nenhum token.
+      operationId: mobileLogin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobileLoginInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileLoginOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Login por senha + segundo fator (mesma política MFA do painel desktop)
+      tags:
+        - mobile
+        - auth
+  /auth/logout:
+    post:
+      description: "Revoga SOMENTE o jti do token usado nesta chamada (mesmo internal/sessions.Store do painel web). Idempotente: chamar de novo com um token já revogado ainda responde 200."
+      operationId: mobileLogout
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileLogoutOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Encerra a sessão do dispositivo chamador — nunca as demais sessões do usuário
+      tags:
+        - mobile
+        - auth
+  /auth/pair:
+    post:
+      description: Nunca devolve uma sessão. O reg_token só autoriza começar uma cerimônia de registro de passkey em /auth/passkey/register/begin, cujo sucesso ainda fica pendente de aprovação no painel.
+      operationId: mobilePairConsume
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PairingConsumeInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingConsumeOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Troca um ticket de pareamento por QR code por um reg_token de passkey
+      tags:
+        - mobile
+        - auth
+  /auth/passkey/login/begin:
+    post:
+      operationId: passkeyLoginBegin
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyLoginBeginOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Inicia um login sem senha (passkey discoverable)
+      tags:
+        - mobile
+        - auth
+  /auth/passkey/login/finish:
+    post:
+      description: Sucesso devolve access_token + refresh_token (mesma forma de /auth/login). 403 {"error":"pending_approval"} quando a credencial existe mas ainda não foi aprovada no painel.
+      operationId: passkeyLoginFinish
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyLoginFinishInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyLoginFinishOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Conclui o login sem senha
+      tags:
+        - mobile
+        - auth
+  /auth/passkey/register/begin:
+    post:
+      operationId: passkeyRegisterBegin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyRegisterBeginInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyRegisterBeginOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Inicia o registro de uma passkey
+      tags:
+        - mobile
+        - auth
+  /auth/passkey/register/finish:
+    post:
+      description: Sucesso aqui SEMPRE devolve {"status":"pending_approval"}. A credencial nasce inerte e só pode logar depois de aprovada a partir de uma sessão desktop já autenticada.
+      operationId: passkeyRegisterFinish
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasskeyRegisterFinishInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PasskeyRegisterFinishOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Conclui o registro de uma passkey — NUNCA autentica
+      tags:
+        - mobile
+        - auth
+  /auth/refresh:
+    post:
+      description: "Rotação obrigatória: o refresh_token enviado é invalidado por esta chamada, com sucesso ou sem. Reenviar um token já rotacionado, revogado ou nunca emitido falha da mesma forma (401)."
+      operationId: mobileRefresh
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobileRefreshInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileRefreshOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Troca um refresh token mobile por um novo par access+refresh
+      tags:
+        - mobile
+        - auth
+  /deploy/apps:
+    get:
+      operationId: getDeployAppsRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de deploy.apps
+      tags:
+        - mobile
+        - sdui
+        - misc
+  /docker/compose:
+    get:
+      operationId: getDockerComposeRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de docker.compose
+      tags:
+        - mobile
+        - sdui
+        - docker
+  /docker/containers:
+    get:
+      operationId: getDockerContainerRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de docker.containers
+      tags:
+        - mobile
+        - sdui
+        - docker
+  /docker/images:
+    get:
+      operationId: getDockerImageRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de docker.images
+      tags:
+        - mobile
+        - sdui
+        - docker
+  /docker/networks:
+    get:
+      operationId: getDockerNetworkRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de docker.networks
+      tags:
+        - mobile
+        - sdui
+        - docker
+  /docker/volumes:
+    get:
+      operationId: getDockerVolumeRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de docker.volumes
+      tags:
+        - mobile
+        - sdui
+        - docker
+  /events/ws-ticket:
+    post:
+      operationId: issueMobileEventsWSTicket
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WSTicketResponse"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Emite um ticket WS one-shot (60s) para anexar em /ws/mobile-events
+      tags:
+        - mobile
+        - events
+  /files/download:
+    get:
+      operationId: downloadFile
+      parameters:
+        - description: Caminho absoluto do arquivo a baixar
+          explode: false
+          in: query
+          name: path
+          required: true
+          schema:
+            description: Caminho absoluto do arquivo a baixar
+            type: string
+      responses:
+        "200":
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Baixa um arquivo do servidor, com suporte a Range (download parcial/retomável)
+      tags:
+        - mobile
+  /files/inbox:
+    get:
+      operationId: filesInbox
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InboxResponse"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Devolve o diretório padrão onde um arquivo compartilhado por outro app pousa
+      tags:
+        - mobile
+  /files/list:
+    get:
+      operationId: listFiles
+      parameters:
+        - description: Caminho absoluto do diretório a listar
+          explode: false
+          in: query
+          name: path
+          required: true
+          schema:
+            description: Caminho absoluto do diretório a listar
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileListResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Lista o conteúdo de um diretório do servidor
+      tags:
+        - mobile
+  /files/read:
+    get:
+      operationId: readFile
+      parameters:
+        - description: Caminho absoluto do arquivo a ler
+          explode: false
+          in: query
+          name: path
+          required: true
+          schema:
+            description: Caminho absoluto do arquivo a ler
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileReadResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unsupported Media Type
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Lê um arquivo de texto do servidor com hint de linguagem para highlight
+      tags:
+        - mobile
+  /files/upload/chunk:
+    post:
+      operationId: uploadChunk
+      parameters:
+        - explode: false
+          in: query
+          name: session_id
+          required: true
+          schema:
+            type: string
+        - description: Posição, em bytes, de onde este pedaço começa no arquivo final
+          explode: false
+          in: query
+          name: offset
+          required: true
+          schema:
+            description: Posição, em bytes, de onde este pedaço começa no arquivo final
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/octet-stream:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadChunkResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Grava um pedaço do upload na posição indicada (offset), retomável fora de ordem
+      tags:
+        - mobile
+  /files/upload/complete:
+    post:
+      operationId: completeUpload
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadCompleteRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadCompleteResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadIncompleteResponse"
+          description: "Sessão incompleta: ainda faltam bytes para completar o upload"
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Finaliza o upload, movendo o arquivo montado para o destino; 409 se ainda faltam bytes
+      tags:
+        - mobile
+  /files/upload/init:
+    post:
+      operationId: initUpload
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadInitRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadInitResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Inicia uma sessão de upload em pedaços, reservando o destino final
+      tags:
+        - mobile
+  /files/write:
+    post:
+      operationId: writeFile
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileWriteRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileWriteResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileConflictResponse"
+          description: "Conflito: o arquivo mudou em disco desde a última leitura"
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Grava um arquivo; rejeita com 409 se o arquivo mudou em disco desde a leitura
+      tags:
+        - mobile
+  /jira/board:
+    get:
+      description: Uma chamada devolve o quadro inteiro. `connected:false` é resposta normal para quem ainda não ligou a conta — o aplicativo mostra o formulário de conexão, não um erro.
+      operationId: getJiraBoard
+      parameters:
+        - description: Chave do projeto; vazio usa o projeto configurado
+          explode: false
+          in: query
+          name: project
+          schema:
+            description: Chave do projeto; vazio usa o projeto configurado
+            type: string
+        - description: "Filtro rápido: all, mine, todo, inprogress, last7, reported, custom"
+          explode: false
+          in: query
+          name: filter
+          schema:
+            default: all
+            description: "Filtro rápido: all, mine, todo, inprogress, last7, reported, custom"
+            type: string
+        - description: JQL próprio — só vale com filter=custom
+          explode: false
+          in: query
+          name: jql
+          schema:
+            description: JQL próprio — só vale com filter=custom
+            type: string
+        - description: Busca livre sobre o que o JQL trouxe
+          explode: false
+          in: query
+          name: search
+          schema:
+            description: Busca livre sobre o que o JQL trouxe
+            type: string
+        - description: campo:direção — updated:desc, key:asc, name:asc, type:asc
+          explode: false
+          in: query
+          name: sort
+          schema:
+            description: campo:direção — updated:desc, key:asc, name:asc, type:asc
+            type: string
+        - description: Esconde concluídas há mais de N dias; 0 mostra todas
+          explode: false
+          in: query
+          name: hide_done_days
+          schema:
+            description: Esconde concluídas há mais de N dias; 0 mostra todas
+            format: int64
+            type: integer
+        - description: Teto de issues buscadas
+          explode: false
+          in: query
+          name: max
+          schema:
+            default: 100
+            description: Teto de issues buscadas
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JiraBoardResponse"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: "O quadro kanban: colunas, cartões, filtros e projetos"
+      tags:
+        - mobile
+        - jira
+  /jira/board/move:
+    post:
+      description: Recebe o RÓTULO da coluna e resolve a transição do lado do servidor. Responde 409 quando o fluxo de trabalho do projeto não permite o salto — o cartão volta para a coluna de origem.
+      operationId: moveJiraIssue
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JiraMoveRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JiraMoveResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Move um cartão para uma coluna
+      tags:
+        - mobile
+        - jira
+  /jira/bulk/assign:
+    post:
+      operationId: bulkAssignJiraIssues
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JiraBulkAssignRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JiraBulkResult"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Atribui várias issues à mesma pessoa
+      tags:
+        - mobile
+        - jira
+  /jira/bulk/move:
+    post:
+      description: "O resultado é por issue: o que foi e o que não foi, com o motivo. Lote não é atômico contra o Jira."
+      operationId: bulkMoveJiraIssues
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JiraBulkMoveRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JiraBulkResult"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Move várias issues para a mesma coluna
+      tags:
+        - mobile
+        - jira
+  /jira/connect:
+    post:
+      description: As credenciais vão para o cofre POR USUÁRIO, o mesmo que o painel web usa. O token nunca volta em nenhuma resposta.
+      operationId: connectJira
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JiraConnectRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOutputBody"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Liga a conta do Jira deste usuário
+      tags:
+        - mobile
+        - jira
+  /jira/issue:
+    get:
+      operationId: getJiraIssue
+      parameters:
+        - description: Chave da issue
+          explode: false
+          in: query
+          name: key
+          required: true
+          schema:
+            description: Chave da issue
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JiraIssueResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Uma issue com comentários e destinos possíveis
+      tags:
+        - mobile
+        - jira
+  /jira/issue-detail:
+    get:
+      operationId: getJiraIssueDetail
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Detalhe da issue selecionada de jira.issues
+      tags:
+        - mobile
+        - sdui
+        - misc
+  /jira/issue-transitions:
+    get:
+      operationId: getJiraIssueTransitions
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Transições disponíveis para a issue selecionada
+      tags:
+        - mobile
+        - sdui
+        - misc
+  /jira/issue/assign:
+    post:
+      operationId: assignJiraIssue
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JiraAssignRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOutputBody"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Troca o responsável por uma issue
+      tags:
+        - mobile
+        - jira
+  /jira/issue/comment:
+    post:
+      operationId: commentJiraIssue
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JiraCommentRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JiraCommentItem"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Comenta numa issue
+      tags:
+        - mobile
+        - jira
+  /jira/issue/create:
+    post:
+      operationId: createJiraIssue
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JiraCreateRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JiraCreatedResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Cria uma issue
+      tags:
+        - mobile
+        - jira
+  /jira/issues:
+    get:
+      operationId: getJiraIssuesRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de jira.issues
+      tags:
+        - mobile
+        - sdui
+        - misc
+  /jira/meta:
+    get:
+      operationId: getJiraMeta
+      parameters:
+        - description: Chave do projeto
+          explode: false
+          in: query
+          name: project
+          required: true
+          schema:
+            description: Chave do projeto
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JiraMetaResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Tipos de issue e prioridades do projeto
+      tags:
+        - mobile
+        - jira
+  /jira/project:
+    post:
+      operationId: setJiraProject
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JiraProjectRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOutputBody"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Fixa o projeto padrão do quadro
+      tags:
+        - mobile
+        - jira
+  /jira/users:
+    get:
+      description: Existe para o aplicativo OFERECER a lista em vez de pedir que se digite um accountId — que ninguém sabe de cabeça.
+      operationId: listJiraAssignableUsers
+      parameters:
+        - description: Chave do projeto
+          explode: false
+          in: query
+          name: project
+          required: true
+          schema:
+            description: Chave do projeto
+            type: string
+        - description: Filtro por nome/e-mail
+          explode: false
+          in: query
+          name: q
+          schema:
+            description: Filtro por nome/e-mail
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JiraUsersResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: A quem uma issue deste projeto pode ser atribuída
+      tags:
+        - mobile
+        - jira
+  /me:
+    get:
+      operationId: getMe
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Identidade, sessão e capacidades do usuário autenticado
+      tags:
+        - mobile
+  /notify/devices:
+    post:
+      description: "device_id é mintado pelo próprio app (nunca pelo servidor). Upsert: chamar de novo com o mesmo device_id só atualiza o token. No primeiro registro de um device_id novo, semeia preferências default (apenas eventos críticos) em DevicePrefsStore."
+      operationId: registerPushDevice
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterDeviceInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterDeviceOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Registra (ou atualiza) o token FCM deste dispositivo
+      tags:
+        - mobile
+        - notify
+  /notify/devices/{device_id}:
+    delete:
+      operationId: unregisterPushDevice
+      parameters:
+        - in: path
+          name: device_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnregisterDeviceOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: "Remove o registro de push nativo deste dispositivo (ex.: no logout)"
+      tags:
+        - mobile
+        - notify
+  /notify/preferences:
+    get:
+      description: "Default (sem preferência gravada): apenas Rules com severidade mínima crítica chegam por push — o restante fica só no inbox do app."
+      operationId: getNotifyPreferences
+      parameters:
+        - explode: false
+          in: query
+          name: device_id
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetNotifyPrefsOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Catálogo de Rules + o que este dispositivo recebe hoje
+      tags:
+        - mobile
+        - notify
+    put:
+      operationId: putNotifyPreferences
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutNotifyPrefsInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PutNotifyPrefsOutputBody"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Define quais Rules este dispositivo recebe por push
+      tags:
+        - mobile
+        - notify
+  /ops/deploy:
+    post:
+      operationId: triggerSelfDeploy
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerDeployRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriggerDeployOutputBody"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Dispara o pipeline agentctl deploy (primary-only, confirmação obrigatória)
+      tags:
+        - mobile
+        - ops
+  /ops/deploy/{jobID}:
+    get:
+      operationId: getSelfDeployStatus
+      parameters:
+        - in: path
+          name: jobID
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployStatusOutputBody"
+          description: OK
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Status atual de um job self_deploy (paint inicial antes do WS)
+      tags:
+        - mobile
+        - ops
+  /ops/status:
+    get:
+      operationId: getOpsStatus
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsStatus"
+          description: OK
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Saúde, fila, alertas ativos e recursos do servidor em uma chamada (admin)
+      tags:
+        - mobile
+        - ops
+  /queue/jobs:
+    get:
+      operationId: getQueueJobsRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de queue.jobs
+      tags:
+        - mobile
+        - sdui
+        - misc
+  /scheduler/jobs:
+    get:
+      operationId: getSchedulerJobRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas da tabela scheduler.jobs, filtradas por RBAC para o usuário autenticado
+      tags:
+        - mobile
+        - sdui
+        - scheduler
+  /screens:
+    get:
+      operationId: listScreens
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScreensResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Seções SDUI disponíveis para o usuário autenticado, agrupadas
+      tags:
+        - mobile
+        - sdui
+  /screens/{id}:
+    get:
+      operationId: getScreen
+      parameters:
+        - description: "Id da tela registrada em internal/mobilebff/sdui (ex.: scheduler.jobs)"
+          in: path
+          name: id
+          required: true
+          schema:
+            description: "Id da tela registrada em internal/mobilebff/sdui (ex.: scheduler.jobs)"
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Descritor de tela SDUI, filtrado por RBAC para o usuário autenticado
+      tags:
+        - mobile
+        - sdui
+  /security/adguard/status:
+    get:
+      operationId: getSecurityAdGuardDetail
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Detalhe de security.adguard
+      tags:
+        - mobile
+        - sdui
+        - security
+  /security/audit:
+    get:
+      operationId: getSecurityAuditRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de security.audit
+      tags:
+        - mobile
+        - sdui
+        - security
+  /security/devices:
+    get:
+      operationId: getSecurityDeviceRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de security.devices
+      tags:
+        - mobile
+        - sdui
+        - security
+  /security/economia:
+    get:
+      operationId: getSecurityEconomiaRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de security.economia
+      tags:
+        - mobile
+        - sdui
+        - security
+  /security/secrets:
+    get:
+      operationId: getSecuritySecretRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de security.secrets
+      tags:
+        - mobile
+        - sdui
+        - security
+  /security/sessions:
+    get:
+      operationId: getSecuritySessionRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de security.sessions
+      tags:
+        - mobile
+        - sdui
+        - security
+  /security/ufw/status:
+    get:
+      operationId: getSecurityUFWDetail
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Detalhe de security.ufw
+      tags:
+        - mobile
+        - sdui
+        - security
+  /security/users:
+    get:
+      operationId: getSecurityUserRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de security.users
+      tags:
+        - mobile
+        - sdui
+        - security
+  /system/history:
+    get:
+      operationId: getSystemHistoryRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de system.history
+      tags:
+        - mobile
+        - sdui
+        - system
+  /system/metrics/cpu:
+    get:
+      operationId: getSystemMetricsCPURows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Série de system.metrics (cpu)
+      tags:
+        - mobile
+        - sdui
+        - system
+  /system/metrics/disk:
+    get:
+      operationId: getSystemMetricsDiskRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Série de system.metrics (disk)
+      tags:
+        - mobile
+        - sdui
+        - system
+  /system/metrics/mem:
+    get:
+      operationId: getSystemMetricsMemRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Série de system.metrics (mem)
+      tags:
+        - mobile
+        - sdui
+        - system
+  /system/ports:
+    get:
+      operationId: getSystemPortsRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de system.ports
+      tags:
+        - mobile
+        - sdui
+        - system
+  /system/processes:
+    get:
+      operationId: getSystemProcessesRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de system.processes
+      tags:
+        - mobile
+        - sdui
+        - system
+  /system/units:
+    get:
+      operationId: getSystemUnitsRows
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: {}
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      security:
+        - bearerAuth: []
+      summary: Linhas de system.systemd
+      tags:
+        - mobile
+        - sdui
+        - system
+  /terminal/backups:
+    get:
+      operationId: listTerminalBackups
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/BackupSummary"
+                nullable: true
+                type: array
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Backups de sessão do usuário, mais novos primeiro
+      tags:
+        - mobile
+        - terminal
+    post:
+      operationId: createTerminalBackup
+      parameters:
+        - description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+          in: header
+          name: Idempotency-Key
+          schema:
+            description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBackupRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateBackupResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Salva o estado atual de uma sessão (ou de todas)
+      tags:
+        - mobile
+        - terminal
+  /terminal/backups/restore:
+    post:
+      operationId: restoreTerminalBackup
+      parameters:
+        - description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+          in: header
+          name: Idempotency-Key
+          schema:
+            description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RestoreBackupRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestoreBackupResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Recria as sessões de um backup (pula as que já existem)
+      tags:
+        - mobile
+        - terminal
+  /terminal/backups/{id}:
+    delete:
+      operationId: deleteTerminalBackup
+      parameters:
+        - description: Id do backup
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Id do backup
+            type: string
+        - description: Remove só esta sessão do backup; vazio = o backup inteiro
+          explode: false
+          in: query
+          name: name
+          schema:
+            description: Remove só esta sessão do backup; vazio = o backup inteiro
+            type: string
+        - description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+          in: header
+          name: Idempotency-Key
+          schema:
+            description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteBackupOutputBody"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Exclui um backup, ou só uma sessão de dentro dele
+      tags:
+        - mobile
+        - terminal
+  /terminal/historico:
+    get:
+      operationId: getTerminalHistorico
+      parameters:
+        - description: Nome da sessão de terminal
+          explode: false
+          in: query
+          name: name
+          required: true
+          schema:
+            description: Nome da sessão de terminal
+            type: string
+        - description: Teto de bytes do recorte final do histórico
+          explode: false
+          in: query
+          name: bytes
+          schema:
+            default: 2097152
+            description: Teto de bytes do recorte final do histórico
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoricoResponse"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Histórico renderizado de uma sessão — o que a pessoa viu, uma vez cada
+      tags:
+        - mobile
+        - terminal
+  /terminal/log-bruto:
+    get:
+      operationId: getTerminalRawLog
+      parameters:
+        - description: Nome da sessão de terminal
+          explode: false
+          in: query
+          name: name
+          required: true
+          schema:
+            description: Nome da sessão de terminal
+            type: string
+        - description: Teto de bytes do recorte final do log
+          explode: false
+          in: query
+          name: bytes
+          schema:
+            default: 4194304
+            description: Teto de bytes do recorte final do log
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RawLogResponse"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Log cru (bytes do PTY) de uma sessão, para o app primar o próprio emulador
+      tags:
+        - mobile
+        - terminal
+  /terminal/scrollback:
+    get:
+      operationId: getTerminalScrollback
+      parameters:
+        - description: Nome da sessão de terminal
+          explode: false
+          in: query
+          name: name
+          required: true
+          schema:
+            description: Nome da sessão de terminal
+            type: string
+        - description: Quantidade máxima de linhas de histórico
+          explode: false
+          in: query
+          name: lines
+          schema:
+            default: 5000
+            description: Quantidade máxima de linhas de histórico
+            format: int64
+            type: integer
+        - description: Se true, devolve texto sem escapes ANSI (para copiar)
+          explode: false
+          in: query
+          name: plain
+          schema:
+            description: Se true, devolve texto sem escapes ANSI (para copiar)
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScrollbackResponse"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Histórico (tail) de uma sessão de terminal que o usuário possui
+      tags:
+        - mobile
+        - terminal
+  /terminal/sessions:
+    get:
+      operationId: listTerminalSessions
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/TerminalSessionSummary"
+                nullable: true
+                type: array
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Sessões de terminal visíveis ao usuário autenticado
+      tags:
+        - mobile
+        - terminal
+  /terminal/sessions/assign:
+    post:
+      operationId: assignTerminalSession
+      parameters:
+        - description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+          in: header
+          name: Idempotency-Key
+          schema:
+            description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignSessionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOutputBody"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Define para quem a sessão aparece
+      tags:
+        - mobile
+        - terminal
+  /terminal/sessions/assign-targets:
+    get:
+      description: "Só admin. Existe para o aplicativo poder OFERECER a lista em vez de pedir que se digite um nome de usuário — digitar aqui erra em silêncio: um alvo inexistente é aceito e a sessão some da lista de todo mundo."
+      operationId: listAssignTargets
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignTargetsResponse"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Para quem uma sessão PODE ser atribuída
+      tags:
+        - mobile
+        - terminal
+  /terminal/sessions/kill:
+    post:
+      operationId: killTerminalSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KillSessionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOutputBody"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Encerra uma sessão e os processos que rodam nela
+      tags:
+        - mobile
+        - terminal
+  /terminal/sessions/preview:
+    get:
+      operationId: previewTerminalSession
+      parameters:
+        - description: Nome da sessão
+          explode: false
+          in: query
+          name: name
+          required: true
+          schema:
+            description: Nome da sessão
+            type: string
+        - description: Quantas linhas do fim (1..200)
+          explode: false
+          in: query
+          name: lines
+          schema:
+            default: 20
+            description: Quantas linhas do fim (1..200)
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionPreviewResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: As últimas linhas de uma sessão, sem anexar nela
+      tags:
+        - mobile
+        - terminal
+  /terminal/sessions/rename:
+    post:
+      operationId: renameTerminalSession
+      parameters:
+        - description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+          in: header
+          name: Idempotency-Key
+          schema:
+            description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameSessionRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOutputBody"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Renomeia uma sessão, levando a posse junto
+      tags:
+        - mobile
+        - terminal
+  /terminal/ws-ticket:
+    post:
+      operationId: issueTerminalWSTicket
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WSTicketRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WSTicketResponse"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Emite um ticket WS one-shot (60s) para anexar em /ws/shell
+      tags:
+        - mobile
+        - terminal
+  /videocall/rooms:
+    get:
+      operationId: listVideocallRooms
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Room"
+                nullable: true
+                type: array
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Lista as salas de videochamada do usuário autenticado (dono ou membro)
+      tags:
+        - mobile
+        - videocall
+  /videocall/ws-ticket:
+    post:
+      operationId: issueVideocallWSTicket
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WSTicketResponse"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      security:
+        - bearerAuth: []
+      summary: Emite um ticket WS one-shot (60s) para anexar em /ws/videocall
+      tags:
+        - mobile
+        - videocall
+  /whatsapp/chats:
+    get:
+      operationId: listWhatsAppChats
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/ChatSummary"
+                nullable: true
+                type: array
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Lista de conversas do WhatsApp com preview e badge de não lidas
+      tags:
+        - mobile
+        - whatsapp
+  /whatsapp/chats/{jid}/avatar:
+    get:
+      operationId: getWhatsAppAvatar
+      parameters:
+        - in: path
+          name: jid
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Foto de perfil do contato/grupo — proxy same-origin anti-SSRF
+      tags:
+        - mobile
+        - whatsapp
+  /whatsapp/chats/{jid}/media:
+    post:
+      operationId: uploadWhatsAppMedia
+      parameters:
+        - in: path
+          name: jid
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          multipart/form-data:
+            encoding:
+              caption:
+                contentType: text/plain
+              client_msg_id:
+                contentType: text/plain
+              file:
+                contentType: application/octet-stream
+              msg_type:
+                contentType: text/plain
+              quoted_id:
+                contentType: text/plain
+            schema:
+              properties:
+                caption:
+                  description: Legenda opcional
+                  type: string
+                client_msg_id:
+                  description: ID gerado pelo cliente; reenviar com o mesmo id não duplica o envio
+                  type: string
+                file:
+                  description: Arquivo de mídia a enviar
+                  format: binary
+                  type: string
+                  x-contentEncoding: binary
+                  x-contentMediaType: application/octet-stream
+                msg_type:
+                  description: image|video|audio|document; inferido do mime/nome quando vazio
+                  type: string
+                quoted_id:
+                  description: ID da mensagem citada, se houver
+                  type: string
+              required:
+                - file
+                - client_msg_id
+              type: object
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadMediaResponse"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Envia um arquivo de mídia; idempotente por client_msg_id, teto de 100 MiB (mesmo do painel)
+      tags:
+        - mobile
+        - whatsapp
+  /whatsapp/chats/{jid}/media/{msg_id}:
+    get:
+      operationId: getWhatsAppMedia
+      parameters:
+        - in: path
+          name: jid
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: msg_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Baixa (sob demanda em cache miss) e serve os bytes de uma mídia, com suporte a Range
+      tags:
+        - mobile
+        - whatsapp
+  /whatsapp/chats/{jid}/messages:
+    get:
+      operationId: getWhatsAppMessages
+      parameters:
+        - in: path
+          name: jid
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: before
+          schema:
+            format: int64
+            type: integer
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagesResponse"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Histórico de mensagens de uma conversa, com backfill automático
+      tags:
+        - mobile
+        - whatsapp
+    post:
+      operationId: sendWhatsAppMessage
+      parameters:
+        - in: path
+          name: jid
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendMessageRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendMessageResponse"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Envia uma mensagem de texto; idempotente por client_msg_id
+      tags:
+        - mobile
+        - whatsapp
+  /whatsapp/chats/{jid}/read:
+    post:
+      operationId: markWhatsAppChatRead
+      parameters:
+        - in: path
+          name: jid
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+        - bearerAuth: []
+      summary: Marca uma conversa como lida
+      tags:
+        - mobile
+        - whatsapp
+servers:
+  - url: /api/mobile/v1

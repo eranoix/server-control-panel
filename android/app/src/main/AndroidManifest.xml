@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Requested unconditionally at first post-login onboarding (see :app's home onboarding
+         flow): minSdk 34 is already above API 33 where this was introduced, so there is no
+         version-gate anywhere around that request (STACK.md's documented gotcha). -->
+    <!--
+      O app se atualiza sozinho pelo canal incremental (patch de ~1,4 MB em vez
+      dos 31 MB do APK cru) — ver docs/android-atualizacao-incremental.md. Sem
+      esta permissão o PackageInstaller nem chega a mostrar o diálogo.
+
+      Ela é só metade da porta: o dono ainda precisa ligar "instalar apps
+      desconhecidos" para ESTE app, e a faixa de atualização leva direto ao
+      interruptor (ACTION_MANAGE_UNKNOWN_APP_SOURCES com URI package:) quando
+      canRequestPackageInstalls() é falso.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!--
+      Atualizacao sem o dialogo do sistema.
+
+      Permissao normal (concedida na instalacao, nao pergunta nada). Ela SO
+      tem efeito quando o Android sabe quem instalou este app: um app sem
+      procedencia e recusado com "Self update is blocked by unknown source
+      package". Ver ApkInstaller.origemDeInstalacaoConhecida.
+
+      O consentimento nao desaparece — ele muda de lugar. Quem autoriza e o
+      toque em "Atualizar" dentro do app; o que some e a segunda pergunta,
+      feita pelo sistema, que e justamente onde o Auto Blocker da Samsung
+      interrompe.
+    -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <!--
+      Voltar sozinho depois de se atualizar.
+
+      Atualizar mata o processo. Reabrir a propria tela a partir de um
+      receptor e um "inicio de Activity em segundo plano", que o Android
+      bloqueia — e bloqueia EM SILENCIO, sem lancar excecao.
+
+      MEDIDO no emulador do lab, nesta ordem:
+        1. startActivity direto do receptor .......... BLOQUEADO
+        2. PendingIntent com opt-in de criador E de
+           remetente (MODE_BACKGROUND_ACTIVITY_START_ALLOWED),
+           que o targetSdk 36 exige ................... BLOQUEADO
+        3. com SYSTEM_ALERT_WINDOW .................... FUNCIONOU
+
+      O log do caso (2) explica por que os dois primeiros falham:
+      `balAllowedByPiCreator: ALLOW_BAL` mas
+      `resultIfPiCreatorAllowsBal: BAL_BLOCK`, com
+      `callingUidHasVisibleActivity: false`. O opt-in apenas DECLARA a
+      intencao; o app ainda precisa se qualificar por uma das excecoes, e
+      um receptor sem janela visivel nao se qualifica. A excecao do
+      "PendingIntent enviado pelo sistema" tambem nao servia: quem enviava
+      era o proprio app (`realCallingPackage` = nos).
+
+      Esta e a unica excecao da lista oficial que um app comum alcanca.
+
+      O app FUNCIONA SEM ELA: sem a concessao, a volta acontece pela
+      notificacao de um toque, que leva a mesma tela. A permissao so troca
+      um toque por nenhum — e por isso ela e pedida com o motivo dito, e
+      nunca exigida.
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Só LEITURA do estado da rede: alimenta RedeDoAparelho, que diz na tela
+         se o dado é atual ou de cache. Não dá acesso a tráfego nenhum. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      Terminal em segundo plano. MEDIDO no emulador Android 16: quando o app
+      sai da frente, o Android bloqueia a rede do UID pela corrente de
+      firewall de segundo plano (`Background firewall chain enabled: true`) e
+      DESTRÓI os sockets ~5,7 s depois — a sessão do terminal cai a cada troca
+      de aplicativo. O `dumpsys netpolicy` mostra a diferença exata:
+
+        sem isenção: blocked_state={blocked=APP_BACKGROUND, allowed=NONE,                effective=APP_BACKGROUND}
+        com isenção: blocked_state={blocked=APP_BACKGROUND, allowed=POWER_SAVE_ALLOWLIST, effective=NONE}
+
+      Ou seja, a isenção de otimização de bateria é EXATAMENTE a saída dessa
+      corrente. Ela não compra conexão eterna: o congelador de apps em cache
+      congela o processo por volta dos 70 s e aí os sockets caem de novo (isso
+      a isenção não muda). O ganho medido é de ~6 s para ~70 s de segundo
+      plano — o suficiente para trocar de aplicativo e voltar sem reconectar.
+
+      Nunca pedida sozinha nem no primeiro boot: é um item explicado, opt-in,
+      dentro da folha de opções do terminal (ver IsencaoDeBateria.kt).
+
+      `tools:ignore="BatteryLife"`: o aviso do lint existe por causa da
+      política da Play Store, e este app não é distribuído por lá (repositório
+      F-Droid próprio) — a mesma justificativa já registrada para
+      USE_FULL_SCREEN_INTENT acima.
+    -->
+    <uses-permission
+        android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
+        tools:ignore="BatteryLife" />
+
+    <!-- Native incoming-call UI. CAMERA/RECORD_AUDIO are requested proactively
+         from the room lobby before a call is joined, not at install time (RoomLobbyScreen). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- O acompanhamento do deploy roda como worker em PRIMEIRO PLANO
+         (AcompanhaODeploy), e desde o Android 14 um serviço em primeiro plano
+         só sobe se o TIPO estiver declarado aqui E a permissão do tipo
+         concedida. O código já passava FOREGROUND_SERVICE_TYPE_DATA_SYNC no
+         ForegroundInfo; faltava a outra metade, e sem ela o sistema derruba o
+         worker com MissingForegroundServiceTypeException — no aparelho do dono
+         (Android 16) a notificação de progresso do deploy nunca apareceria. -->
+    <!-- O tipo em si é declarado por :data, que é quem roda o worker. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Registers this app's self-managed PhoneAccount with Telecom (PhoneAccountRegistrar) so
+         calls get native lock-screen UI, ringtone and DND bypass instead of a plain notification. -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <!-- Lets an incoming call ring over the lock screen. This app is not Play-Store-distributed
+         (self-hosted F-Droid repo, Decision 1 in 11-04-PLAN.md), so it is exempt from Play's
+         automated revocation of this permission; IncomingCallNotifier still surfaces a banner if
+         the user manually revokes the per-app Settings toggle. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <!-- ========================= Hardware: TUDO opcional =========================
+         Uma <uses-permission> de hardware, sozinha, é lida como se o hardware fosse
+         OBRIGATÓRIO: as lojas (Play, e o repositório F-Droid próprio) derivam a
+         feature implícita com required="true" por padrão e escondem o app de quem
+         não tem a peça. Este é um app de OPERAÇÃO DE SERVIDOR — terminal, deploys,
+         alertas, arquivos — e nada disso depende de câmera, microfone ou rádio
+         celular. Declarar cada feature com required="false" é o que mantém o app
+         instalável num tablet sem câmera, num Chromebook ou num emulador, com as
+         funções que dependem da peça degradando sozinhas em vez de sumirem.
+
+         android.hardware.camera (implicada por CAMERA) — required="false":
+         a câmera serve só ao pareamento por QR e à videochamada. O pareamento tem
+         caminho alternativo completo (configuração manual do servidor + login por
+         usuário e senha) e PairingScanScreen agora rende "aparelho sem câmera" como
+         um estado com saída. Note que esta feature significa câmera TRASEIRA; o
+         scanner cai para a frontal quando não há traseira.
+
+         android.hardware.camera.autofocus (também implicada por CAMERA) —
+         required="false": sem isto, aparelhos de foco fixo continuariam filtrados
+         mesmo com a linha acima. O zxing decodifica QR de foco fixo sem problema.
+
+         android.hardware.microphone (implicada por RECORD_AUDIO) — required="false":
+         o microfone é da videochamada. Sem ele o operador ainda entra na sala e vê
+         o vídeo dos outros; nenhuma função de servidor depende de áudio.
+
+         android.hardware.telephony — required="false": as chamadas deste app são
+         WebRTC sobre IP, e a integração com o Telecom (MANAGE_OWN_CALLS, para a UI
+         nativa de chamada) é self-managed — não passa por rádio celular. Nenhuma
+         permissão aqui implica telefonia hoje, então esta linha é declaratória: fixa
+         por escrito que um tablet só-Wi-Fi é alvo legítimo, e evita que uma
+         permissão futura reintroduza o filtro em silêncio. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+
+    <application
+        android:name=".VpsManagerApplication"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <!--
+            supportsPictureInPicture (SEM o sufixo Mode — esse e o nome da API
+            Java, isInPictureInPictureMode; o atributo do manifesto e mais
+            curto, e o AAPT recusa o outro): a chamada continua viva numa
+            janelinha
+            enquanto a pessoa usa outro app (CALL, modelo "janela flutuante").
+
+            configChanges e OBRIGATORIO junto: entrar e sair do PiP muda
+            tamanho, orientacao e densidade da tela. Sem declarar essas
+            mudancas, o Android RECRIA a Activity a cada transicao — o que
+            destruiria o NavHost, o socket do terminal e a propria chamada, ou
+            seja, exatamente o que a janela flutuante existe para preservar.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:supportsPictureInPicture="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboardHidden"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            O widget da tela inicial. exported="false": nenhum outro app tem
+            motivo para disparar a atualizacao dele, e o launcher nao precisa
+            de export para hospedar um widget — quem o instancia e o proprio
+            sistema, via APPWIDGET_UPDATE.
+        -->
+        <receiver
+            android:name=".widget.PainelNoInicioReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/painel_no_inicio_info" />
+        </receiver>
+
+        <service
+            android:name="com.vpsmanager.feature.notifications.fcm.VpsFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- BIND_TELECOM_CONNECTION_SERVICE is enforced by the system, not this app — exported
+             but only Telecom itself can bind to it (reviewed and accepted). -->
+        <service
+            android:name="com.vpsmanager.feature.videocall.call.VpsmConnectionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <!-- Not exported: only VpsmConnection (same app) ever starts/stops this service. -->
+        <service
+            android:name="com.vpsmanager.feature.videocall.call.CallForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall|camera|microphone" />
+
+        <!-- Android share target: lets another app hand vps-manager a file
+             (or several) or plain text directly through the system share sheet. `*/*`
+             is deliberate: a file manager's share target should accept arbitrary file
+             types the same way its manual upload does: narrowing the MIME type would
+             silently exclude legitimate shares (e.g. a .tar.gz) with no requirement
+             calling for that restriction. Exported unconditionally: any app's share
+             sheet must be able to launch it, the same as any other share target. -->
+        <activity
+            android:name=".share.ShareTargetActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Volta depois da atualizacao.
+
+          ACTION_MY_PACKAGE_REPLACED e entregue a ESTE app quando ele proprio e
+          substituido, entao nao e um broadcast implicito no sentido restrito
+          desde o Android 8 — funciona declarado no manifesto.
+
+          exported="false": so o SISTEMA o dispara. Outro app nao tem como
+          fingir que este aqui foi atualizado.
+        -->
+        <receiver
+            android:name=".update.VoltaDepoisDaAtualizacao"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Not exported: only this app's own notification PendingIntents ever target it
+             (a spoofed broadcast from another app cannot reach this receiver). -->
+        <receiver
+            android:name="com.vpsmanager.feature.notifications.fcm.NotificationActionReceiver"
+            android:exported="false" />
+
+    </application>
+
+</manifest>

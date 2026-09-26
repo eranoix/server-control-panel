@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Fundo do ícone adaptativo.
+
+        Não é uma cor escolhida agora: é o MESMO par que o painel já publica há
+        tempos — o favicon embutido em internal/webassets/web/index.html desenha
+        a marca em #22d3ee sobre um retângulo #020617, e icon-512-maskable.png
+        (o ícone do PWA, que passa pelo mesmo recorte de máscara que este aqui)
+        tem exatamente #020617 chapado até a borda. Herdar esse par é o que faz
+        o app, o PWA e a aba do navegador serem lidos como o mesmo produto.
+
+        O fundo do ícone adaptativo precisa ser CHAPADO até as bordas dos 108dp:
+        o lançador desloca as camadas em paralaxe e recorta em máscaras
+        diferentes, então qualquer degradê ou vinheta aparece deslocado e
+        qualquer transparência vira buraco.
+    -->
+    <color name="ic_launcher_background">#FF020617</color>
+</resources>

@@ -1,0 +1,45 @@
+{
+  "name": "YAML",
+  "scopeName": "source.yaml",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#key" },
+    { "include": "#anchorsAliases" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#constants" },
+    { "include": "#listMarker" }
+  ],
+  "repository": {
+    "comments": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.yaml"
+    },
+    "key": {
+      "match": "^\\s*(?:- )?([^\\s:#'\"][^:#]*?)\\s*(?=:(\\s|$))",
+      "name": "support.type.property-name.yaml"
+    },
+    "anchorsAliases": {
+      "match": "[&*][A-Za-z0-9_-]+",
+      "name": "variable.other.yaml"
+    },
+    "strings": {
+      "patterns": [
+        { "match": "\"(?:[^\"\\\\]|\\\\.)*\"", "name": "string.quoted.double.yaml" },
+        { "match": "'(?:[^']|'')*'", "name": "string.quoted.single.yaml" }
+      ]
+    },
+    "numbers": {
+      "match": "\\b-?\\d+(\\.\\d+)?\\b",
+      "name": "constant.numeric.yaml"
+    },
+    "constants": {
+      "match": "\\b(true|false|null|yes|no|on|off)\\b",
+      "name": "constant.language.yaml"
+    },
+    "listMarker": {
+      "match": "^\\s*-\\s",
+      "name": "punctuation.definition.block.sequence.item.yaml"
+    }
+  }
+}

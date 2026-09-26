@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Camada de PRIMEIRO PLANO do ícone adaptativo — a marca do vps-manager.
+
+    É o mesmo desenho de internal/webassets/web/logo-mark.svg ("a hexagonal
+    operator mark with a negative-space command spine"): o hexágono, a espinha
+    vertical e as duas cunhas. Não é uma marca nova; é a que o painel já usa no
+    favicon e nos ícones do PWA, para que app e painel sejam lidos como um
+    produto só.
+
+    VETOR, não PNG: o logo de origem já é vetor limpo, então rasterizar em cinco
+    densidades só acrescentaria bytes e serrilhado. Este arquivo (~1,4 KB) cobre
+    qualquer densidade com nitidez perfeita.
+
+    MÁSCARA VIRADA EM evenOdd: o SVG recorta a espinha e as cunhas com um
+    <mask>, recurso que o VectorDrawable não tem. O equivalente nativo é um
+    único <path> com android:fillType="evenOdd" — as três subformas ficam
+    INTEIRAMENTE dentro do hexágono, então a regra par/ímpar as transforma em
+    furos. Mesmo resultado visual, sem camada extra e sem alpha composto.
+
+    ZONA SEGURA (o motivo do <group>): o lançador recorta os 108dp em máscaras
+    variadas (círculo, squircle, arredondado) e só o círculo central de 66dp é
+    garantido. O logo nasce num viewport de 64 centrado em (32,32), com raio
+    circunscrito de 28 (a distância do centro até as pontas de cima e de baixo).
+    O grupo escala 30/28 e translada +22 em cada eixo: o centro vai para (54,54)
+    — o meio dos 108dp — e o raio circunscrito vira 30dp, ou seja, 60dp de ponta
+    a ponta dentro do círculo seguro de 66dp, com 3dp de folga de cada lado.
+    Sem isso as pontas do hexágono seriam decepadas pela máscara circular.
+    Manter o path data literal (em vez de já multiplicado) é deliberado: dá para
+    conferir linha a linha contra o logo-mark.svg.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:pivotX="32"
+        android:pivotY="32"
+        android:scaleX="1.0714286"
+        android:scaleY="1.0714286"
+        android:translateX="22"
+        android:translateY="22">
+        <path
+            android:fillColor="#22D3EE"
+            android:fillType="evenOdd"
+            android:pathData="M32,4 L52,15 L56,32 L52,49 L32,60 L12,49 L8,32 L12,15 Z M29,19 A3,3 0 0 1 35,19 L35,45 A3,3 0 0 1 29,45 Z M17,20 L27,20 L27,26 L21,30 L15,27 Z M47,44 L37,44 L37,38 L43,34 L49,37 Z" />
+    </group>
+</vector>

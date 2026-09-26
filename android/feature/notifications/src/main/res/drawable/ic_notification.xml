@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Ícone pequeno de notificação — o que aparece na barra de status.
+
+    DOIS CONSERTOS aqui, um de correção e um de identidade.
+
+    1) O xmlns estava escrito ".../apis/res/android" em vez de ".../apk/res/android".
+       Um caractere. O aapt2 não reclama: ele compila os atributos como sendo de
+       um namespace desconhecido qualquer, e `aapt2 dump xmltree` sobre o APK
+       mostrava TODOS eles — width, height, viewportWidth, viewportHeight,
+       pathData — fora do namespace do Android. Ou seja: o VectorDrawable chegava
+       ao inflater sem dimensão, sem viewport e sem caminho nenhum. Toda
+       notificação acionável (ActionableNotificationBuilder.setSmallIcon) apontava
+       para um recurso que não inflava. Falha silenciosa em build-time, quebra em
+       runtime — exatamente o tipo de erro que só aparece com o app na mão.
+
+    2) O desenho era um sininho genérico. O ícone da barra de status é o que
+       identifica QUEM está notificando, então ele tem que ser a marca do
+       vps-manager, a mesma de logo-mark.svg e do ícone do app — e não um
+       pictograma de "notificação", que não distingue este app de nenhum outro.
+
+    SILHUETA, obrigatoriamente: o Android descarta toda informação de cor deste
+    recurso e repinta a forma com a cor do tema (branco na barra de status,
+    a cor de destaque na gaveta). Um ícone colorido ou com fundo chapado vira um
+    quadrado cinza sem forma. Por isso só existe alpha aqui: branco opaco no
+    hexágono, transparente nos recortes (mesma máscara em evenOdd do ícone do
+    app) e transparente em volta.
+
+    O grupo escala a marca (56 unidades de altura no viewport 64 de origem) para
+    20dp de altura dentro dos 24dp canônicos, centrada em (12,12) — cerca de 2dp
+    de folga em volta, que é o respiro óptico que a barra de status espera.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+    <group
+        android:pivotX="32"
+        android:pivotY="32"
+        android:scaleX="0.3571429"
+        android:scaleY="0.3571429"
+        android:translateX="-20"
+        android:translateY="-20">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M32,4 L52,15 L56,32 L52,49 L32,60 L12,49 L8,32 L12,15 Z M29,19 A3,3 0 0 1 35,19 L35,45 A3,3 0 0 1 29,45 Z M17,20 L27,20 L27,26 L21,30 L15,27 Z M47,44 L37,44 L37,38 L43,34 L49,37 Z" />
+    </group>
+</vector>

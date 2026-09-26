@@ -1,0 +1,87 @@
+# Lista EXATA de arquivos vendorizados, na disposicao de diretorios que o
+# Android.mk do upstream espera (HDiffPatch/ com os irmaos ao lado).
+#
+# Nao foi escrita a mao nem por inspecao visual: saiu dos arquivos .d que o
+# compilador do NDK gerou (-MMD) ao construir libhpatchz.so a partir do
+# checkout completo, com os mesmos interruptores de src/main/cpp/Android.mk.
+# Ou seja: e o fecho transitivo real de #include do alvo, nao um palpite --
+# nenhum arquivo a mais entra no repositorio e nenhum a menos quebra o build.
+#
+# Para regerar depois de mexer num interruptor: vendor-hdiffpatch.sh --relist.
+HDiffPatch/_atosize.h
+HDiffPatch/_clock_for_demo.h
+HDiffPatch/builds/android_ndk_jni_mk/hpatch.c
+HDiffPatch/builds/android_ndk_jni_mk/hpatch.h
+HDiffPatch/builds/android_ndk_jni_mk/hpatch_jni.c
+HDiffPatch/checksum_plugin_demo.h
+HDiffPatch/decompress_plugin_demo.h
+HDiffPatch/dirDiffPatch/dir_patch/dir_patch.h
+HDiffPatch/dirDiffPatch/dir_patch/dir_patch_types.h
+HDiffPatch/file_for_patch.c
+HDiffPatch/file_for_patch.h
+HDiffPatch/hpatchz.c
+HDiffPatch/libHDiffPatch/HDiff/private_diff/limit_mem_diff/adler_roll.c
+HDiffPatch/libHDiffPatch/HDiff/private_diff/limit_mem_diff/adler_roll.h
+HDiffPatch/libHDiffPatch/HPatch/checksum_plugin.h
+HDiffPatch/libHDiffPatch/HPatch/hpatch_mt/_hcache_old_mt.c
+HDiffPatch/libHDiffPatch/HPatch/hpatch_mt/_hcache_old_mt.h
+HDiffPatch/libHDiffPatch/HPatch/hpatch_mt/_hcache_window_old_mt.c
+HDiffPatch/libHDiffPatch/HPatch/hpatch_mt/_hcache_window_old_mt.h
+HDiffPatch/libHDiffPatch/HPatch/hpatch_mt/_hinput_mt.c
+HDiffPatch/libHDiffPatch/HPatch/hpatch_mt/_hinput_mt.h
+HDiffPatch/libHDiffPatch/HPatch/hpatch_mt/_houtput_mt.c
+HDiffPatch/libHDiffPatch/HPatch/hpatch_mt/_houtput_mt.h
+HDiffPatch/libHDiffPatch/HPatch/hpatch_mt/_hpatch_mt.c
+HDiffPatch/libHDiffPatch/HPatch/hpatch_mt/_hpatch_mt.h
+HDiffPatch/libHDiffPatch/HPatch/hpatch_mt/_patch_private_mt.h
+HDiffPatch/libHDiffPatch/HPatch/hpatch_mt/hpatch_mt.c
+HDiffPatch/libHDiffPatch/HPatch/hpatch_mt/hpatch_mt.h
+HDiffPatch/libHDiffPatch/HPatch/patch.c
+HDiffPatch/libHDiffPatch/HPatch/patch.h
+HDiffPatch/libHDiffPatch/HPatch/patch_private.h
+HDiffPatch/libHDiffPatch/HPatch/patch_types.h
+HDiffPatch/libParallel/parallel_import_c.c
+HDiffPatch/libParallel/parallel_import_c.h
+libmd5/md5.c
+libmd5/md5.h
+lzma/Asm/arm64/7zAsm.S
+lzma/Asm/arm64/LzmaDecOpt.S
+lzma/C/7zTypes.h
+lzma/C/Compiler.h
+lzma/C/Lzma2Dec.c
+lzma/C/Lzma2Dec.h
+lzma/C/LzmaDec.c
+lzma/C/LzmaDec.h
+lzma/C/Precomp.h
+xxHash/xxh3.h
+xxHash/xxhash.h
+zstd/lib/common/allocations.h
+zstd/lib/common/bits.h
+zstd/lib/common/bitstream.h
+zstd/lib/common/compiler.h
+zstd/lib/common/cpu.h
+zstd/lib/common/debug.c
+zstd/lib/common/debug.h
+zstd/lib/common/entropy_common.c
+zstd/lib/common/error_private.c
+zstd/lib/common/error_private.h
+zstd/lib/common/fse.h
+zstd/lib/common/fse_decompress.c
+zstd/lib/common/huf.h
+zstd/lib/common/mem.h
+zstd/lib/common/portability_macros.h
+zstd/lib/common/xxhash.c
+zstd/lib/common/xxhash.h
+zstd/lib/common/zstd_common.c
+zstd/lib/common/zstd_deps.h
+zstd/lib/common/zstd_internal.h
+zstd/lib/common/zstd_trace.h
+zstd/lib/decompress/huf_decompress.c
+zstd/lib/decompress/zstd_ddict.c
+zstd/lib/decompress/zstd_ddict.h
+zstd/lib/decompress/zstd_decompress.c
+zstd/lib/decompress/zstd_decompress_block.c
+zstd/lib/decompress/zstd_decompress_block.h
+zstd/lib/decompress/zstd_decompress_internal.h
+zstd/lib/zstd.h
+zstd/lib/zstd_errors.h

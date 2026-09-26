@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Server Control Panel</string>
+    <string name="painel_no_inicio_descricao">Server summary: CPU, memory, disk and what is firing.</string>
+</resources>

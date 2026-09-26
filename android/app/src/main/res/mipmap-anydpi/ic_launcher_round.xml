@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Ícone adaptativo (AdaptiveIconDrawable): fundo e primeiro plano em camadas
+    SEPARADAS, como a plataforma exige, em vez de um PNG chapado. É o que
+    permite ao lançador recortar na máscara do aparelho (círculo, squircle,
+    arredondado, gota) e animar as camadas em paralaxe.
+
+    `anydpi` sem qualificador de versão, e sem nenhum PNG de fallback ao lado:
+    o minSdk deste app é 34 (Android 14), muito acima do API 26 que introduziu o
+    ícone adaptativo e do API 33 do `monochrome`. Não existe aparelho alvo que
+    precise da variante legada, então guardar cinco PNGs por densidade só
+    engordaria o APK.
+
+    ic_launcher e ic_launcher_round apontam para as MESMAS camadas de propósito:
+    com ícone adaptativo é o lançador que aplica a máscara, e não o app que
+    entrega duas artes diferentes. `roundIcon` continua declarado no manifesto
+    só porque lançadores antigos ainda o consultam por nome.
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>

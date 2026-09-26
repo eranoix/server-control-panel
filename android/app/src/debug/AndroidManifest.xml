@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manifesto do build de DEBUG. Ele não existe em release — o AGP só funde
+  este arquivo no variant `debug`, então nada aqui pode vazar para um APK
+  publicado.
+
+  Por que `usesCleartextTraffic`: a tela de configuração de servidor já
+  oferece a caixa "Permitir http:// (somente desenvolvimento local)", mas
+  com targetSdk 28+ o Android bloqueia texto claro por padrão — a caixa
+  existia e o tráfego morria na camada de baixo. Aqui ela passa a funcionar
+  de fato, que é o que permite apontar o app para um servidor local
+  (`http://10.0.2.2:<porta>` no emulador) e provar o fluxo de atualização
+  ponta a ponta antes de o servidor estar publicado.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application android:usesCleartextTraffic="true" />
+
+</manifest>

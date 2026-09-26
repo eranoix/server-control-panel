@@ -1,0 +1,20 @@
+{
+  "abis": {
+    "arm64-v8a": {
+      "path": "arm64-v8a/libghostty-vt.a",
+      "sha256": "3cec7a7bb39979714a01ff46f6ff4ea70d28bb6ccbb9b11709c11e6da59d59bb",
+      "size_bytes": 15681600
+    },
+    "x86_64": {
+      "path": "x86_64/libghostty-vt.a",
+      "sha256": "566f110081efa322cfe3efce4984638241c0bfa51a83a4ca881519640f41b3c6",
+      "size_bytes": 15597644
+    }
+  },
+  "build_timestamp": "2026-09-05T13:33:15Z",
+  "ghostty_commit": "b0947378349eff70f7030dda0e6d022fae1e6fbd",
+  "ghostty_repo": "https://github.com/ghostty-org/ghostty",
+  "header_sha256": "82c0733e6c3d22f08461e801e32a154c2f34a8397967842cd82746ba1b9f54f4",
+  "ndk_version": "27.3.13750724",
+  "zig_version": "0.15.2"
+}

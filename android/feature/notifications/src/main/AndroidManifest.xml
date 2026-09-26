@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Este é o módulo que POSTA notificação (VpsFirebaseMessagingService), e
+         até agora ele não declarava a permissão de que depende: quem declarava
+         eram o `:app` e o `:feature-files`. Funcionava no APK final, porque o
+         merger de manifesto faz a união — mas o módulo não era autocontido, e
+         a análise estática dele (que roda em isolamento) via um `notify()` sem
+         permissão declarada. Declarar aqui é o certo pelos dois motivos: o
+         módulo passa a carregar o que precisa, e a checagem para de acusar.
+
+         O PEDIDO em tempo de execução é outra coisa e mora em
+         `OnboardingDePush`, no momento pós-login. Declarar sem pedir foi
+         exatamente o defeito: do Android 13 em diante o sistema não entrega
+         nada sem consentimento, e nada no app chegava a solicitá-lo. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+</manifest>

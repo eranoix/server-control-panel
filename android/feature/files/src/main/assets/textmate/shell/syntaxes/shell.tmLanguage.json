@@ -1,0 +1,35 @@
+{
+  "name": "Shell",
+  "scopeName": "source.shell",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#variables" },
+    { "include": "#numbers" },
+    { "include": "#keywords" }
+  ],
+  "repository": {
+    "comments": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.shell"
+    },
+    "strings": {
+      "patterns": [
+        { "match": "\"(?:[^\"\\\\]|\\\\.)*\"", "name": "string.quoted.double.shell" },
+        { "match": "'[^']*'", "name": "string.quoted.single.shell" }
+      ]
+    },
+    "variables": {
+      "match": "\\$\\{[^}]+\\}|\\$[A-Za-z_][A-Za-z0-9_]*|\\$[0-9@#?*!$-]",
+      "name": "variable.other.shell"
+    },
+    "numbers": {
+      "match": "\\b\\d+\\b",
+      "name": "constant.numeric.shell"
+    },
+    "keywords": {
+      "match": "\\b(if|then|elif|else|fi|for|while|until|do|done|case|esac|function|return|export|local|readonly|shift|break|continue|exit|source|set|unset|trap)\\b",
+      "name": "keyword.control.shell"
+    }
+  }
+}

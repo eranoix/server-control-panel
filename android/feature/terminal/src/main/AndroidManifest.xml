@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Visibilidade de pacotes (Android 11+, e este app tem minSdk 34).
+
+      Desde o Android 11 um app não enxerga os outros instalados a menos que
+      declare o que procura. Sem este bloco,
+      `PackageManager.queryIntentActivities` para ACTION_PROCESS_TEXT volta uma
+      lista VAZIA — não um erro, uma lista vazia — e o menu de estouro da barra
+      de seleção do terminal simplesmente não teria "Traduzir", "Pesquisar" nem
+      qualquer outra ação que os apps do aparelho ofereçam sobre texto.
+
+      É exatamente o caso de uso "Show custom text selection actions" do guia
+      oficial de package visibility, e o snippet abaixo é o de lá.
+
+      Fica no manifesto DESTE módulo, e não no do :app, porque quem faz a
+      consulta é `acoesDeOutrosApps` aqui em :feature-terminal — a declaração
+      viaja junto com o código que depende dela, e o merge de manifestos a leva
+      para o APK.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
+        </intent>
+    </queries>
+
+    <!--
+      Anexo pelo terminal, origem "tirar foto agora": a câmera é OUTRO app e
+      grava NO arquivo que apontamos, então ela precisa de um `content://` com
+      permissão de escrita — um `file://` dispararia FileUriExposedException.
+
+      android:exported="false" + android:grantUriPermissions="true" significa
+      que a única forma de outro app receber uma URI deste provider é pela
+      concessão explícita que o contrato TakePicture anexa ao Intent, nunca uma
+      liberação ampla e permanente. O escopo em xml/terminal_attach_paths.xml
+      é uma subpasta do cache, não o armazenamento privado inteiro.
+
+      ${applicationId} é o placeholder do AGP, resolvido para o applicationId
+      final na fusão de manifestos — um módulo de biblioteca não tem outra
+      forma de saber esse valor em tempo de build. A autoridade tem prefixo
+      próprio (`terminalattach`) para nunca colidir com o FileProvider que
+      :feature-whatsapp já declara: duas autoridades iguais fazem a INSTALAÇÃO
+      do app falhar.
+
+      A permissão CAMERA em si já é declarada pelo :app (videochamada); aqui
+      ela não é redeclarada, só usada em tempo de execução.
+    -->
+    <application>
+        <provider
+            android:name="com.vpsmanager.feature.terminal.attach.AnexoFileProvider"
+            android:authorities="${applicationId}.terminalattach.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/terminal_attach_paths" />
+        </provider>
+    </application>
+
+</manifest>

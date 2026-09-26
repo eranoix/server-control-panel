@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- dangerous runtime permission for the voice-note recorder
+         (AttachmentPicker.kt's AudioRecorderSession). Declared here so the
+         RECORD_AUDIO request dialog can be shown at all; AttachmentBar still
+         gates the launcher on the user actually granting it at runtime. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Android 11+ (API 30+) package visibility means
+         Intent#resolveActivity() and Intent#resolveActivity(PackageManager)
+         only see apps declared here; without this, DocumentOpener.kt's
+         resolveActivity() check could return null even when a real viewer
+         is installed, wrongly reporting "no app installed" for every
+         document type. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="*/*" />
+        </intent>
+    </queries>
+
+    <!-- scoped, revocable content grant for opening a downloaded
+         document (PDF, .docx, etc.) in whatever system viewer app the user
+         has installed. android:exported="false" plus android:grantUriPermissions
+         means the only way another app ever gets a URI into this provider is
+         through the FLAG_GRANT_READ_URI_PERMISSION Intent.ACTION_VIEW call in
+         DocumentOpener.kt, never a broad, always-on grant. ${applicationId}
+         is AGP's built-in manifest placeholder, resolved to the final app's
+         applicationId (com.vpsmanager.app) at merge time; this library
+         module has no other way to know that value at build time. -->
+    <application>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.whatsappmedia.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/whatsapp_file_paths" />
+        </provider>
+    </application>
+
+</manifest>

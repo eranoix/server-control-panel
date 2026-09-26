@@ -1,0 +1,310 @@
+{
+  "cols": 6,
+  "rows": 3,
+  "checks": [
+    {
+      "consumeBytes": 37,
+      "expect": {
+        "cols": 6,
+        "rows": 3,
+        "cursor": {
+          "x": 3,
+          "y": 1,
+          "visible": true
+        },
+        "rowFlags": [
+          {
+            "wrapped": false,
+            "wrapContinuation": false
+          },
+          {
+            "wrapped": false,
+            "wrapContinuation": false
+          },
+          {
+            "wrapped": false,
+            "wrapContinuation": false
+          }
+        ],
+        "grid": [
+          [
+            {
+              "cp": "A",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "B",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "C",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            }
+          ],
+          [
+            {
+              "cp": "X",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "Y",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "Z",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            }
+          ],
+          [
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            },
+            {
+              "cp": "",
+              "fg": null,
+              "bg": null,
+              "bold": false,
+              "italic": false,
+              "faint": false,
+              "blink": false,
+              "inverse": false,
+              "invisible": false,
+              "strike": false,
+              "overline": false,
+              "underline": 0,
+              "wide": "NARROW"
+            }
+          ]
+        ]
+      }
+    }
+  ]
+}

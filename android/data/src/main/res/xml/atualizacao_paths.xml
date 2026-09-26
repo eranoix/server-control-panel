@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  O único diretório que o instalador do sistema precisa enxergar: a pasta de
+  preparo da atualização, onde o APK reconstruído fica depois de ter o SHA-256
+  conferido. Nada além dela é exposto — um FileProvider com `<root-path/>`
+  entregaria o armazenamento inteiro do app a quem receber o Uri.
+-->
+<paths>
+    <files-path name="atualizacao" path="atualizacoes/" />
+</paths>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Scopes the FileProvider grant declared in AndroidManifest.xml to exactly
+    the WhatsApp media cache subfolder (MediaCache.CACHE_SUBDIR = "whatsapp_media"
+    under getExternalFilesDir(null)), not the app's whole private external
+    storage. A path outside this subfolder cannot be turned into a content
+    grant even if a future bug in DocumentOpener passed one in.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-files-path
+        name="whatsapp_media"
+        path="whatsapp_media/" />
+</paths>

@@ -1,0 +1,38 @@
+{
+  "name": "JavaScript",
+  "scopeName": "source.js",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#constants" },
+    { "include": "#keywords" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "match": "//.*$", "name": "comment.line.double-slash.js" },
+        { "begin": "/\\*", "end": "\\*/", "name": "comment.block.js" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        { "match": "\"(?:[^\"\\\\]|\\\\.)*\"", "name": "string.quoted.double.js" },
+        { "match": "'(?:[^'\\\\]|\\\\.)*'", "name": "string.quoted.single.js" },
+        { "match": "`(?:[^`\\\\]|\\\\.)*`", "name": "string.quoted.template.js" }
+      ]
+    },
+    "numbers": {
+      "match": "\\b0[xX][0-9a-fA-F]+\\b|\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+      "name": "constant.numeric.js"
+    },
+    "constants": {
+      "match": "\\b(true|false|null|undefined|NaN)\\b",
+      "name": "constant.language.js"
+    },
+    "keywords": {
+      "match": "\\b(async|await|break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|finally|for|function|if|import|in|instanceof|let|new|of|return|static|super|switch|this|throw|try|typeof|var|void|while|with|yield)\\b",
+      "name": "keyword.control.js"
+    }
+  }
+}

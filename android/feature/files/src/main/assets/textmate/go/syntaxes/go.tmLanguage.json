@@ -1,0 +1,42 @@
+{
+  "name": "Go",
+  "scopeName": "source.go",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#constants" },
+    { "include": "#keywords" },
+    { "include": "#types" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "match": "//.*$", "name": "comment.line.double-slash.go" },
+        { "begin": "/\\*", "end": "\\*/", "name": "comment.block.go" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        { "match": "\"(?:[^\"\\\\]|\\\\.)*\"", "name": "string.quoted.double.go" },
+        { "match": "`[^`]*`", "name": "string.quoted.raw.go" }
+      ]
+    },
+    "numbers": {
+      "match": "\\b0[xX][0-9a-fA-F]+\\b|\\b\\d+(\\.\\d+)?\\b",
+      "name": "constant.numeric.go"
+    },
+    "constants": {
+      "match": "\\b(true|false|nil|iota)\\b",
+      "name": "constant.language.go"
+    },
+    "keywords": {
+      "match": "\\b(break|case|chan|const|continue|default|defer|else|fallthrough|for|func|go|goto|if|import|interface|map|package|range|return|select|struct|switch|type|var)\\b",
+      "name": "keyword.control.go"
+    },
+    "types": {
+      "match": "\\b(string|int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|float32|float64|bool|byte|rune|error|any)\\b",
+      "name": "storage.type.go"
+    }
+  }
+}

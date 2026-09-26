@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Required by PairingScanScreen's CameraX preview + QR decode; requested
+         at runtime (Manifest.permission.CAMERA) before the preview binds, with
+         a distinct "permissão negada" UI state when the user declines. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
+</manifest>

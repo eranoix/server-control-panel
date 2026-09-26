@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Escopo do FileProvider declarado no AndroidManifest.xml deste módulo:
+    exatamente a subpasta "anexos-terminal" do cache privado do app, onde
+    FolhaDeOrigemDoAnexo grava a foto recém-tirada (e a cópia da imagem vinda
+    do Seletor de Fotos). Um caminho fora daqui não vira concessão de conteúdo
+    nem que um erro futuro o passasse adiante.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path
+        name="anexos_terminal"
+        path="anexos-terminal/" />
+</paths>

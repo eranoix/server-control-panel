@@ -1,0 +1,112 @@
+package com.vpsmanager.sdui.list
+
+import android.util.Log
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.vpsmanager.core.sdui.SduiComponent
+import com.vpsmanager.sdui.data.ComponentDataState
+import com.vpsmanager.sdui.data.rememberComponentDataState
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+
+private const val TAG = "SduiListComponent"
+
+/** The closed set of card layouts a [SduiComponent.ListComponent] can request. */
+private val KNOWN_ITEM_TEMPLATES = setOf("notification_card", "default")
+
+/**
+ * Renders a [SduiComponent.ListComponent] as a `Column` of cards, one per
+ * row, laid out according to [SduiComponent.ListComponent.itemTemplate].
+ * `Column` and not `LazyColumn` because the host
+ * ([com.vpsmanager.sdui.SduiScreen]) is already a `LazyColumn` — see the
+ * comment in the body. An
+ * `item_template` outside [KNOWN_ITEM_TEMPLATES] falls back to `default`
+ * instead of failing to render — the same forward-compatibility posture as an
+ * unrecognized component `type` — and is logged once per occurrence so the
+ * fallback is never silent.
+ */
+@Composable
+fun ListComponent(component: SduiComponent.ListComponent) {
+    when (val state = rememberComponentDataState(component.rowsSource).value) {
+        is ComponentDataState.Loading -> LoadingBlock()
+        is ComponentDataState.Error -> ErrorBlock(state.reason)
+        is ComponentDataState.Empty -> EmptyBlock()
+        is ComponentDataState.Data -> {
+            val template = resolveTemplate(component.itemTemplate)
+            // Column, NEVER LazyColumn — same reason as TableComponent: this
+            // component is rendered inside an item of
+            // [com.vpsmanager.sdui.SduiScreen]'s LazyColumn, and a second
+            // nested vertical scroll is forbidden by Compose (it kills the app
+            // with an IllegalStateException about infinite maximum height). The
+            // rows already come whole in memory, so no laziness is lost.
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                state.rows.forEach { row ->
+                    when (template) {
+                        "notification_card" -> NotificationCard(row)
+                        else -> DefaultCard(row)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun resolveTemplate(itemTemplate: String): String {
+    if (itemTemplate in KNOWN_ITEM_TEMPLATES) return itemTemplate
+    Log.w(TAG, "Unrecognized item_template \"$itemTemplate\" — falling back to \"default\"")
+    return "default"
+}
+
+@Composable
+private fun NotificationCard(row: JsonObject) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(text = row.stringValue("title") ?: row.stringValue("name").orEmpty(), style = MaterialTheme.typography.bodyLarge)
+            row.stringValue("body")?.let { body ->
+                Text(text = body, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DefaultCard(row: JsonObject) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            row.entries.forEach { (key, value) ->
+                Text(text = "$key: ${value.jsonPrimitive.contentOrNull.orEmpty()}", style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
+
+private fun JsonObject.stringValue(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
+
+@Composable
+private fun LoadingBlock() {
+    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator()
+    }
+}
+
+@Composable
+private fun ErrorBlock(reason: String) {
+    Text(text = reason, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
+}
+
+@Composable
+private fun EmptyBlock() {
+    Text(text = "Nothing to show.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
+}

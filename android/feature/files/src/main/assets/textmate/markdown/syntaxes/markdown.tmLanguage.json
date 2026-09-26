@@ -1,0 +1,38 @@
+{
+  "name": "Markdown",
+  "scopeName": "text.markdown",
+  "patterns": [
+    { "include": "#heading" },
+    { "include": "#codeSpan" },
+    { "include": "#bold" },
+    { "include": "#italic" },
+    { "include": "#link" },
+    { "include": "#listMarker" }
+  ],
+  "repository": {
+    "heading": {
+      "match": "^#{1,6}\\s.*$",
+      "name": "markup.heading.markdown"
+    },
+    "codeSpan": {
+      "match": "`[^`]*`",
+      "name": "markup.inline.raw.markdown"
+    },
+    "bold": {
+      "match": "(\\*\\*[^*]+\\*\\*)|(__[^_]+__)",
+      "name": "markup.bold.markdown"
+    },
+    "italic": {
+      "match": "(\\*[^*]+\\*)|(_[^_]+_)",
+      "name": "markup.italic.markdown"
+    },
+    "link": {
+      "match": "\\[[^\\]]*\\]\\([^)]*\\)",
+      "name": "markup.underline.link.markdown"
+    },
+    "listMarker": {
+      "match": "^\\s*([-*+]|\\d+\\.)\\s",
+      "name": "punctuation.definition.list.markdown"
+    }
+  }
+}

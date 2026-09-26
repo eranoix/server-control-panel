@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- DownloadWorker/UploadWorker run as a WorkManager foreground service
+         (via `setForeground`) to show a persistent progress notification
+         while a transfer is active: required so a long transfer is not
+         killed as background work under Android's execution limits. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Android 13+ requires runtime consent to show any notification,
+         including the transfer progress notification above; requested when
+         a transfer is first started (see FileBrowserScreen), not at app
+         launch. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <!-- This project's locked minSdk (34) requires every foreground
+             service to declare its type unconditionally; `dataSync` is the
+             type Google documents for WorkManager's own foreground-service
+             notifications (androidx.work.impl.foreground.SystemForegroundService),
+             merged onto that library-owned service declaration here. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+    </application>
+
+</manifest>

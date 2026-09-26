@@ -1,0 +1,56 @@
+{
+  "name": "JSON",
+  "scopeName": "source.json",
+  "patterns": [
+    { "include": "#value" }
+  ],
+  "repository": {
+    "value": {
+      "patterns": [
+        { "include": "#object" },
+        { "include": "#array" },
+        { "include": "#string" },
+        { "include": "#number" },
+        { "include": "#constant" }
+      ]
+    },
+    "object": {
+      "begin": "\\{",
+      "beginCaptures": { "0": { "name": "punctuation.definition.dictionary.begin.json" } },
+      "end": "\\}",
+      "endCaptures": { "0": { "name": "punctuation.definition.dictionary.end.json" } },
+      "patterns": [
+        { "include": "#propertyName" },
+        { "include": "#value" },
+        { "match": ",", "name": "punctuation.separator.dictionary.pair.json" },
+        { "match": ":", "name": "punctuation.separator.dictionary.key-value.json" }
+      ]
+    },
+    "array": {
+      "begin": "\\[",
+      "beginCaptures": { "0": { "name": "punctuation.definition.array.begin.json" } },
+      "end": "\\]",
+      "endCaptures": { "0": { "name": "punctuation.definition.array.end.json" } },
+      "patterns": [
+        { "include": "#value" },
+        { "match": ",", "name": "punctuation.separator.array.json" }
+      ]
+    },
+    "propertyName": {
+      "match": "\"(?:[^\"\\\\]|\\\\.)*\"(?=\\s*:)",
+      "name": "support.type.property-name.json"
+    },
+    "string": {
+      "match": "\"(?:[^\"\\\\]|\\\\.)*\"",
+      "name": "string.quoted.double.json"
+    },
+    "number": {
+      "match": "-?\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+      "name": "constant.numeric.json"
+    },
+    "constant": {
+      "match": "\\b(true|false|null)\\b",
+      "name": "constant.language.json"
+    }
+  }
+}

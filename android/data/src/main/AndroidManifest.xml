@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manifesto do módulo :data.
+
+  Existe por um motivo só: o receptor de resultado do PackageInstaller.
+  Instalar o próprio APK MATA este processo — um receptor registrado em
+  runtime morreria junto e a mensagem de falha (EXTRA_STATUS_MESSAGE, a única
+  frase que explica um "app não instalado" para quem não tem adb) se perderia.
+  Declarado aqui, o sistema recria o processo só para entregá-la.
+
+  As permissões da atualização ficam em :app, não aqui: quem se instala é o
+  aplicativo, e REQUEST_INSTALL_PACKAGES num módulo de biblioteca a
+  espalharia para qualquer app que um dia consumisse :data.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Quem CHAMA o ConnectivityManager é este módulo (EstadoDaRede/
+      RedeDoAparelho), então a permissão é declarada aqui, onde a exigência
+      nasce. Ela já existia em :app — e é por isso que o app funciona —, mas um
+      módulo que exige permissão sem declará-la depende de todo consumidor
+      lembrar de declarar por ele. Diferente do REQUEST_INSTALL_PACKAGES
+      explicado abaixo, esta é inócua de propagar: é de leitura, não concede
+      nada além de saber se há rede.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      O acompanhamento do deploy (AcompanhaODeploy, neste módulo) roda como
+      worker em PRIMEIRO PLANO e já passa FOREGROUND_SERVICE_TYPE_DATA_SYNC no
+      ForegroundInfo. Desde o Android 14 isso só sobe se o tipo também estiver
+      DECLARADO — e faltava a declaração inteira. O sistema derrubava o worker
+      com MissingForegroundServiceTypeException: no aparelho do dono a
+      notificação de progresso do deploy simplesmente nunca apareceria, e a
+      falha acontecia longe do código que a causou.
+
+      Fica aqui, e não só em :app, porque é ESTE módulo que roda o worker —
+      quem exige declara. Era exatamente a ausência disso que deixava o gate de
+      lint vermelho desde 08/09 sem ninguém saber (a branch nunca foi pushada,
+      então o CI nunca rodou).
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <application>
+
+        <!--
+          O serviço é da própria WorkManager; aqui só se FUNDE o tipo nele.
+        -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+        <!--
+          exported="false": o único remetente legítimo é o próprio sistema,
+          respondendo ao PendingIntent explícito que ApkInstaller cria. Nada
+          de fora do aparelho, e nenhum outro app, tem como endereçá-lo.
+        -->
+        <receiver
+            android:name="com.vpsmanager.data.update.UpdateInstallReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.vpsmanager.data.update.INSTALL_STATUS" />
+            </intent-filter>
+        </receiver>
+        <!--
+          O instalador do sistema e o degrau final da escada de atualizacao:
+          quando a sessao do PackageInstaller e recusada, o APK ja baixado e
+          conferido vai para a tela padrao de instalacao por um content:// Uri.
+
+          Autoridade PROPRIA (`atualizacao`), como o AnexoFileProvider do
+          terminal e o do WhatsApp: dois FileProviders com a mesma autoridade
+          num so APK fazem a instalacao falhar com INSTALL_FAILED_CONFLICTING_PROVIDER,
+          e o erro nao diz qual dos dois.
+        -->
+        <provider
+            android:name="com.vpsmanager.data.update.AtualizacaoFileProvider"
+            android:authorities="${applicationId}.atualizacao"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/atualizacao_paths" />
+        </provider>
+    </application>
+
+</manifest>

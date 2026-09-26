@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Este módulo é o DONO dos dois serviços de chamada, então é aqui que eles são
+  declarados — não em `:app`. Antes, ambos existiam apenas no manifesto de `:app`:
+  o app publicado funcionava, mas o módulo não era autocontido (`:app` precisava
+  conhecer nomes de classe internos daqui) e, sobretudo, o APK de teste
+  instrumentado deste módulo — que só funde `src/main` + `src/androidTest`, nunca
+  o manifesto de `:app` — não tinha os componentes declarados. O sintoma medido no
+  emulador era `ActivityManager: Unable to start service Intent { ...
+  CallForegroundService } U=0: not found`: `startForegroundService()` não achava o
+  serviço, e as chamadas ficavam impossíveis de testar de verdade.
+
+  As permissões abaixo acompanham os serviços pelo mesmo motivo: quem usa a API é
+  quem declara a permissão. O merger do AGP funde estas declarações com as
+  idênticas que `:app` ainda mantém.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- CallForegroundService sobe com o tipo composto phoneCall|camera|microphone;
+         desde o Android 14 cada tipo exige a sua própria FOREGROUND_SERVICE_*. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
+    <!-- Os tipos camera/microphone exigem que CAMERA/RECORD_AUDIO já estejam
+         CONCEDIDAS em runtime no instante do startForeground(), senão o sistema
+         lança SecurityException. Pedidas proativamente no lobby (RoomLobbyScreen)
+         e reconferidas por VpsmConnection.onAnswer antes de subir o serviço. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Conta self-managed do Telecom (PhoneAccountRegistrar/VpsmConnectionService):
+         é ela que dá UI nativa de chamada, toque e bypass de DND. -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+
+    <!-- Deixa a chamada tocar por cima da tela de bloqueio; IncomingCallNotifier
+         detecta a revogação manual do toggle e mostra o banner. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <application>
+
+        <!-- BIND_TELECOM_CONNECTION_SERVICE é imposta pelo sistema, não pelo app —
+             exportado, mas só o próprio Telecom consegue fazer bind. -->
+        <service
+            android:name="com.vpsmanager.feature.videocall.call.VpsmConnectionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
+
+        <!-- Não exportado: só VpsmConnection/CallViewModel (mesmo app) sobem e param. -->
+        <service
+            android:name="com.vpsmanager.feature.videocall.call.CallForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall|camera|microphone" />
+
+    </application>
+
+</manifest>
