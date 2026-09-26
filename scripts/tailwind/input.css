@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Preflight only emits the -webkit- prefixed property, which DevTools flags
+     as unsupported in current browsers. */
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+}
+
+@layer components {
+  /* Density of the Jobs tab. .jobs-list carries fs-xs|fs-sm|fs-md and
+     everything inside scales from --jfs, so the font picker changes one
+     variable and the whole card follows. */
+  .jobs-list { font-size: var(--jfs, .78rem); }
+  .jobs-list.fs-xs { --jfs:.68rem; --jpad:.38rem .55rem; }
+  .jobs-list.fs-sm { --jfs:.78rem; --jpad:.5rem .7rem; }
+  .jobs-list.fs-md { --jfs:.9rem;  --jpad:.7rem .9rem; }
+  .jcard { padding: var(--jpad, .5rem .7rem); }
+  .jcard-title { font-size: 1.02em; line-height: 1.15; }
+  .jcard-sub   { font-size: .8em; }
+  .jcard-meta  { font-size: .82em; }
+  .jcard-icon  { font-size: 1.3em; line-height: 1; }
+  .jchip { font-size: .68em; padding: .05em .45em; border-radius: 999px; white-space: nowrap; }
+}

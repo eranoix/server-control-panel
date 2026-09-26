@@ -1,43 +1,30 @@
 #!/usr/bin/env bash
-# Regenerates the static Tailwind CSS from the classes used in the frontend.
-# Run it whenever you add or change Tailwind classes, otherwise the new class
-# will not exist in the embedded CSS.
+# Regenerates internal/webassets/web/tailwind.css from the classes used in the
+# front end. Run it (or `make tailwind`) after adding or changing Tailwind
+# classes; the CSS is committed, so a plain build does not need it.
 #
-# The TOOLCHAIN is shared, the CONTENT and OUTPUT belong to the target worktree:
-#   - The toolchain (tailwindcss binary + input.css + config) is git-ignored and
-#     lives only in the main tree, /opt/panel/scripts/.
-#   - The scanned content and the generated output come from the TARGET tree, so a
-#     build from a worktree never ships the CSS of another branch's features.
-#
-# Usage:
-#   scripts/build-tailwind.sh [<target-root>]
-#     no arg   -> root = the cwd's repo (git toplevel), where `make build` runs
-#     with arg -> root = the given path (e.g. .claude/worktrees/panel-22)
+# The compiler is the pinned Tailwind v3 standalone binary, downloaded once
+# into scripts/tailwindcss (git-ignored) and checked against its sha256.
 set -euo pipefail
 
-# Shared toolchain (not versioned, it only exists in the main tree).
-TOOLCHAIN="/opt/panel/scripts"
-# Target root = 1st arg, or the cwd's repo, or the main tree as a last fallback.
-TARGET_ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || echo /opt/panel)}"
-TARGET_ROOT="$(cd "$TARGET_ROOT" && pwd)"   # absolute, no trailing slash
+VERSION=3.4.17
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BIN="$ROOT/scripts/tailwindcss"
 
-[[ -x "$TOOLCHAIN/tailwindcss" ]] || {
-  echo "✗ Tailwind toolchain missing: $TOOLCHAIN/tailwindcss" >&2
-  echo "  (the binary and config are git-ignored and live only in the main tree)" >&2
-  exit 1
-}
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64)  ASSET=tailwindcss-linux-x64;   SHA=7d24f7fa191d2193b78cd5f5a42a6093e14409521908529f42d80b11fde1f1d4 ;;
+  Linux-aarch64) ASSET=tailwindcss-linux-arm64; SHA=69b1378b8133192d7d2feb12a116fa12d035594f58db3eff215879e4ad8cf39b ;;
+  *) echo "✗ no pinned Tailwind binary for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+esac
 
-# The config's content[] has ABSOLUTE /opt/panel/... paths; point them at the
-# target root in a temporary copy (the shared config is never mutated).
-tmpcfg="$(mktemp)"; trap 'rm -f "$tmpcfg"' EXIT
-sed "s#/opt/panel/#$TARGET_ROOT/#g" \
-  "$TOOLCHAIN/tailwind/tailwind.config.js" > "$tmpcfg"
+if ! echo "$SHA  $BIN" | sha256sum -c --quiet - 2>/dev/null; then
+  echo "Downloading Tailwind $VERSION ($ASSET)"
+  curl -fsSL -o "$BIN.tmp" "https://github.com/tailwindlabs/tailwindcss/releases/download/v$VERSION/$ASSET"
+  echo "$SHA  $BIN.tmp" | sha256sum -c --quiet - || { rm -f "$BIN.tmp"; echo "✗ checksum mismatch" >&2; exit 1; }
+  chmod +x "$BIN.tmp" && mv "$BIN.tmp" "$BIN"
+fi
 
-"$TOOLCHAIN/tailwindcss" \
-  -c "$tmpcfg" \
-  -i "$TOOLCHAIN/tailwind/input.css" \
-  -o "$TARGET_ROOT/internal/webassets/web/tailwind.css" \
-  --minify
-
-out="$TARGET_ROOT/internal/webassets/web/tailwind.css"
-echo "OK: $out regenerated ($(stat -c%s "$out") bytes) [scan: $TARGET_ROOT]"
+cd "$ROOT"
+out=internal/webassets/web/tailwind.css
+"$BIN" -c scripts/tailwind/tailwind.config.js -i scripts/tailwind/input.css -o "$out" --minify
+echo "OK: $out regenerated ($(stat -c%s "$out") bytes)"
