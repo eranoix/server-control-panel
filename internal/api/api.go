@@ -2541,7 +2541,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 		p := req.URL.Path
 		// Minified when available AND PROVABLY FRESH: `make minify` writes
 		// <x>.min.js next to <x>.js and stamps the source's sha256 into it;
-		// webassets.MinificadoDe accepts only the pair whose stamp matches the
+		// webassets.MinifiedOf accepts only the pair whose stamp matches the
 		// <x>.js from the same embed. With no minified file, no stamp, or a
 		// stale stamp, the original is served — deliberately fail-open.
 		//
@@ -2556,7 +2556,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 		// public content, just not minified.
 		if strings.HasPrefix(p, "/vendor/vpsm/app/") && strings.HasSuffix(p, ".js") &&
 			!strings.HasSuffix(p, ".min.js") && req.URL.Query().Get("raw") != "1" {
-			if mp, ok := webassets.MinificadoDe(strings.TrimPrefix(p, "/")); ok {
+			if mp, ok := webassets.MinifiedOf(strings.TrimPrefix(p, "/")); ok {
 				r2 := req.Clone(req.Context())
 				r2.URL.Path = "/" + mp
 				req = r2
@@ -2574,7 +2574,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 			// the brotli variant would revalidate against the gzip one and get a
 			// 304 for a body it cannot read.
 			etag := `"` + buildStamp + `"`
-			if webassets.AceitaBrotli(req) {
+			if webassets.AcceptsBrotli(req) {
 				etag = `"` + buildStamp + `-br"`
 			}
 			w.Header().Set("ETag", etag)
