@@ -2,12 +2,9 @@
 //
 // # Why this exists
 //
-// "Switching Claude accounts" is NOT a claude-router change. In oauth mode the
-// router is a transparent passthrough — it only fixes the Host header and
-// never injects Authorization (proxy.go:57-61). The Bearer that identifies
-// the account is minted by Claude Code itself from its *config dir*
-// (.credentials.json). So switching accounts == switching the CLAUDE_CONFIG_DIR
-// a given consumer spawns with.
+// The Bearer that identifies the account is minted by Claude Code itself from
+// its *config dir* (.credentials.json). So switching accounts == switching the
+// CLAUDE_CONFIG_DIR a given consumer spawns with.
 //
 // This package owns the registry of known accounts (compiled-in allowlist)
 // and the mutable map of consumer→account assignments (persisted in
@@ -20,7 +17,7 @@
 //	.credentials.json  → per-account (the OAuth login). NOT shared.
 //	.claude.json       → per-account (oauthAccount identity + MCP state).
 //	                     mcpServers pre-seeded so MCPs work for both accounts.
-//	settings.json      → symlink to /root/.claude (ANTHROPIC_BASE_URL=:8788). Shared.
+//	settings.json      → symlink to /root/.claude. Shared.
 //	CLAUDE.md          → symlink to /root/.claude (global rules). Shared.
 //	prompts            → internal/aiprompts, server-side, already account-agnostic.
 //

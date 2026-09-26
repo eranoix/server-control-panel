@@ -2,9 +2,9 @@
 # recovery-claude.sh: the Claude of the recovery screen.
 #
 # A dedicated container running ALONGSIDE the panel with an independent
-# connection: no claude-router in the path and its own login, so it survives
-# the situations /recovery exists for (router down, bad deploy live, broken
-# Claude install on the host).
+# connection: no custom API base URL and its own login, so it survives
+# the situations /recovery exists for (host Claude misconfigured, bad deploy
+# live, broken Claude install on the host).
 #
 # Usage:
 #   recovery-claude.sh build     # build the image
@@ -12,7 +12,7 @@
 #   recovery-claude.sh down      # stop and remove the container (the login STAYS)
 #   recovery-claude.sh status    # state, version and whether it has a login
 #   recovery-claude.sh shell     # enter the dtach session (same path as the screen)
-#   recovery-claude.sh doctor    # check the guarantees (no router, login, reach)
+#   recovery-claude.sh doctor    # check the guarantees (no base URL, login, reach)
 set -euo pipefail
 
 IMAGE="panel-recovery-claude:latest"
@@ -48,7 +48,7 @@ up() {
   # already has a root shell on the host, so this does not widen the surface.
   # --restart always makes the container independent of the panel (Docker
   # starts it at boot). There is deliberately no ANTHROPIC_BASE_URL here: its
-  # absence is what keeps this Claude off the claude-router.
+  # absence is what keeps this Claude off any proxy the host Claude uses.
   docker run -d \
     --name "$NAME" \
     --restart always \
@@ -101,16 +101,16 @@ doctor() {
   [ "$(docker container inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$NAME" 2>/dev/null)" = "always" ] \
     && check "starts on its own at boot (restart=always, independent of the panel)" ok \
     || check "starts on its own at boot" fail
-  # The central guarantee: no variable pointing Claude at the router.
+  # The central guarantee: no variable pointing Claude at a proxy.
   if docker container inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$NAME" 2>/dev/null | grep -q '^ANTHROPIC_BASE_URL='; then
-    check "no ANTHROPIC_BASE_URL (off the claude-router)" fail
+    check "no ANTHROPIC_BASE_URL (direct API connection)" fail
   else
-    check "no ANTHROPIC_BASE_URL (off the claude-router)" ok
+    check "no ANTHROPIC_BASE_URL (direct API connection)" ok
   fi
   if docker exec "$NAME" sh -c 'grep -q ANTHROPIC_BASE_URL /config/settings.json 2>/dev/null' 2>/dev/null; then
-    check "the container settings.json does not point at the router either" fail
+    check "the container settings.json does not set a base URL either" fail
   else
-    check "the container settings.json does not point at the router either" ok
+    check "the container settings.json does not set a base URL either" ok
   fi
   # The login is a MANUAL one-time step (device flow), so a missing login is
   # "not configured yet", not a broken guarantee. Exit code 2 = only the login

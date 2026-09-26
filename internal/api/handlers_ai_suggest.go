@@ -55,8 +55,8 @@ func (r *Router) handleAISuggestAlert(w http.ResponseWriter, req *http.Request) 
 	}
 
 	// This is the MOST trivial AI task in the system (naming an alert), so it
-	// routes to the cheap tier (haiku by default, proven under the Max/OAuth
-	// router). The deadline goes 25s→35s to fit the retry below without being
+	// routes to the cheap tier (haiku by default, proven on a Max/OAuth
+	// account). The deadline goes 25s→35s to fit the retry below without being
 	// swallowed — haiku is fast, two spawns fit comfortably.
 	ctx, cancel := context.WithTimeout(req.Context(), 35*time.Second)
 	defer cancel()

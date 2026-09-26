@@ -44,10 +44,9 @@ func validatedModel(model string) (string, error) {
 // detached so the websocket client can attach later via the normal HostShell
 // flow. Returns the sanitised session name on success.
 //
-// The new session inherits the system env, including whatever ANTHROPIC_BASE_URL
-// settings.json provides to Claude Code. Routing between OAuth/Proxy is governed
-// centrally by the claude-router. claudeConfigDir pins the "fork"
-// consumer's account via CLAUDE_CONFIG_DIR; "" inherits the default.
+// The new session inherits the system env and the Claude Code settings.json.
+// claudeConfigDir pins the "fork" consumer's account via CLAUDE_CONFIG_DIR; ""
+// inherits the default.
 //
 // model selects the tier; "" inherits the process default (Opus).
 func SpawnClaudeSession(sessionName, resumeUUID, claudeConfigDir, model string) (string, error) {

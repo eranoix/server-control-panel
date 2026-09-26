@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"server-control-panel/internal/auth"
-	"server-control-panel/internal/clauderouter"
 	"server-control-panel/internal/config"
 	"server-control-panel/internal/scope"
 	"server-control-panel/internal/whatsapp"
@@ -142,20 +141,6 @@ func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
 	}
 	// The ACTIVE session engine — dtach only (informational).
 	checks["session_backend"] = "dtach"
-	// 8. claude-router upstream — informational only; router mode missing is degraded.
-	cr := clauderouter.New()
-	if h := cr.Healthz(); h.Reachable {
-		checks["claude_router"] = "ok"
-	} else {
-		checks["claude_router"] = "unreachable"
-	}
-	// 8b. PROACTIVE integrity of the router's env. The router reads /etc/claude-router/env
-	// (a symlink -> users/<primary>.env) and caches BRIDGE_API_KEY in memory at boot.
-	// If the symlink becomes circular or broken (see migrate.go), the CURRENT router stays
-	// alive on the cached key, but the NEXT restart takes it down. Detecting it here fires
-	// the alert BEFORE that. Degraded by design: it NEVER sets ok=false -- otherwise a
-	// broken env would revert EVERY health-gated deploy.
-	checks["claude_router_env"] = cr.EnvIntegrity()
 	// 9. Supabase/GoTrue — the auth backend. If it goes down, login fails silently.
 	// A FAIL here TAKES overall health down (ok=false) because without auth there is no system.
 	if sb := r.auth.SupabaseClient(); sb != nil {
@@ -267,13 +252,6 @@ func (r *Router) computeHealthSubsystems() map[string]healthSubsystem {
 	out["dtach"] = measure(func() (string, error) {
 		if _, err := exec.LookPath("dtach"); err != nil {
 			return "missing", err
-		}
-		return "ok", nil
-	})
-	out["claude_router"] = measure(func() (string, error) {
-		h := clauderouter.New().Healthz()
-		if !h.Reachable {
-			return "unreachable", nil
 		}
 		return "ok", nil
 	})

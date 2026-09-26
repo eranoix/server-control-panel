@@ -68,14 +68,13 @@ var ErrConcurrentMigration = errors.New("config: concurrent migration in progres
 //  8. Re-key vault: every non-global, non-prefixed key gets "<primary>:".
 //  9. Re-Owner videocall rooms from "admin" or "" → primary.
 //  10. Move data/browser-instances.json → data/users/<primary>/browser-instances.json.
-//  11. Move /etc/claude-router/env → /etc/claude-router/users/<primary>.env.
-//  12. systemctl disable panel-whatsapp.service (legacy singleton).
-//  13. Strip admin from config: remove top-level Username/PasswordHash/TOTP
+//  11. systemctl disable panel-whatsapp.service (legacy singleton).
+//  12. Strip admin from config: remove top-level Username/PasswordHash/TOTP
 //     and any Users entry named "admin".
-//  14. Bump SchemaVersion=2; Save().
-//  15. Append audit event "migration.v2".
+//  13. Bump SchemaVersion=2; Save().
+//  14. Append audit event "migration.v2".
 //
-// On failure in steps 5-14, rollback: rm -rf <DataDir>; mv <bak> <DataDir>.
+// On failure in steps 5-13, rollback: rm -rf <DataDir>; mv <bak> <DataDir>.
 // Pre-existing files outside DataDir (vault, /var/lib, /etc) are only
 // touched after the backup so a failure leaves them untouched OR a
 // successful rollback restores DataDir to its pre-migration shape.
@@ -263,21 +262,7 @@ func MigrateV1ToV2(d MigrationDeps) error {
 		return rollback("move browser-instances.json", err)
 	}
 
-	// Step 11: claude-router env. Not under DataDir, so no rollback —
-	// failure here aborts before the Save() flips SchemaVersion. The
-	// old env file stays where it was.
-	// Step 11 relocation is delegated to migrateRouterEnv (Lstat-based,
-	// symlink-safe, idempotent) to prevent the circular-symlink landmine
-	// that renaming the env symlink over its own target used to create.
-	// Best-effort: relocating the env must NEVER abort the DataDir migration.
-	// On a host with no readable /etc/claude-router (CI), or with a broken env,
-	// it logs and moves on; the unit's ExecStartPre self-heals the env at
-	// runtime. This keeps the migration tests hermetic.
-	if err := migrateRouterEnv(d.Primary); err != nil {
-		log.Printf("migrate v1->v2: claude-router env relocation skipped: %v", err)
-	}
-
-	// Step 12: disable legacy singleton unit. Best-effort — the template
+	// Step 11: disable legacy singleton unit. Best-effort — the template
 	// unit (panel-whatsapp@.service) is installed with the server; nothing
 	// to enable here. If systemctl is missing (CI / container tests),
 	// silently skip.
@@ -288,7 +273,7 @@ func MigrateV1ToV2(d MigrationDeps) error {
 		cancel()
 	}
 
-	// Step 13: strip admin from config.
+	// Step 12: strip admin from config.
 	if d.Cfg.Username == "admin" {
 		d.Cfg.Username = ""
 		d.Cfg.PasswordHash = ""
@@ -304,7 +289,7 @@ func MigrateV1ToV2(d MigrationDeps) error {
 	}
 	d.Cfg.Users = filtered
 
-	// Step 14: bump version + persist. Primary inherits the legacy
+	// Step 13: bump version + persist. Primary inherits the legacy
 	// single-tenant state — same name the migration used to relocate
 	// vault keys + WhatsApp container dirs. The terminal handler reads
 	// Primary to widen the session ACL for untagged sessions (see
@@ -315,7 +300,7 @@ func MigrateV1ToV2(d MigrationDeps) error {
 		return rollback("Save config", err)
 	}
 
-	// Step 15: audit. Failure here is non-fatal — the migration is
+	// Step 14: audit. Failure here is non-fatal — the migration is
 	// already committed.
 	if d.Audit != nil {
 		d.Audit.Append(auth.Event{
@@ -398,71 +383,6 @@ func moveIfExists(src, dst string) error {
 		return err
 	}
 	return os.RemoveAll(src)
-}
-
-// migrateRouterEnv relocates the legacy single-tenant claude-router env to
-// the per-user path users/<primary>.env. It is idempotent and symlink-safe.
-//
-// /etc/claude-router/env is a symlink (created by the unit's ExecStartPre)
-// that points at users/<primary>.env once migrated. os.Rename would move
-// the *link inode* over its own target, creating a circular symlink
-// (sam.env -> sam.env) and destroying the real env. So we Lstat
-// (never follow) and never rename a symlink:
-//
-//   - If users/<primary>.env already exists as a real regular file we are
-//     done -- no-op -- whatever env happens to be (typically a link to it).
-//   - If env is a symlink, we resolve its content (ReadFile follows the
-//     link) and write a real file at the destination, preserving its mode;
-//     the symlink itself is never renamed.
-//   - Only when env is a genuine regular file do we move it (EXDEV-safe).
-func migrateRouterEnv(primary string) error {
-	const dir = "/etc/claude-router"
-	src := filepath.Join(dir, "env")
-	dst := filepath.Join(dir, "users", primary+".env")
-
-	li, err := os.Lstat(src)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	// 0700: env files hold per-user API tokens (Anthropic, Venice).
-	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
-		return err
-	}
-
-	// Already migrated: destination is a real regular file. Nothing to do,
-	// regardless of whether src is a symlink pointing at it.
-	if di, derr := os.Lstat(dst); derr == nil && di.Mode().IsRegular() {
-		return nil
-	}
-
-	if li.Mode()&os.ModeSymlink != 0 {
-		// src is a symlink. NEVER rename it -- that would clobber its own
-		// target. Resolve the real content via the followed path and write
-		// a real file at dst. os.ReadFile follows the link for us.
-		data, rerr := os.ReadFile(src)
-		if rerr != nil {
-			if os.IsNotExist(rerr) {
-				return nil
-			}
-			return rerr
-		}
-		mode := os.FileMode(0o640)
-		if ti, serr := os.Stat(src); serr == nil {
-			mode = ti.Mode().Perm()
-		}
-		return writeFileAtomic(dst, data, mode)
-	}
-
-	if li.Mode().IsRegular() {
-		// Genuine legacy file. Move it (rename, EXDEV-safe) to dst.
-		return moveIfExists(src, dst)
-	}
-
-	// Anything else (device, socket, dir) -- leave untouched.
-	return nil
 }
 
 // copyTree mirrors src to dst recursively, preserving permissions.

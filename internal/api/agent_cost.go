@@ -72,8 +72,8 @@ var modelPriceTable = []struct {
 	{"haiku", modelPrice{1, 5, 1.25, 2, 0.10}},
 }
 
-// defaultModelPrice is used when the model string matches nothing (the router
-// on this host runs claude-opus-5-5[1m], so default to current Opus rates).
+// defaultModelPrice is used when the model string matches nothing (the default
+// model is Opus, so default to current Opus rates).
 var defaultModelPrice = modelPrice{4, 20, 5, 8, 0.20}
 
 func priceForModel(model string) modelPrice {

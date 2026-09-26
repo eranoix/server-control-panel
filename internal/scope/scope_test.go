@@ -130,10 +130,6 @@ func TestPaths_WhatsappContainerOutsideDataDir(t *testing.T) {
 		t.Fatalf("WhatsappMedia = %q, want under %q/media",
 			p.WhatsappMedia, wantPrefix)
 	}
-	if p.AIEnv != "/etc/claude-router/users/sam.env" {
-		t.Fatalf("AIEnv = %q, want /etc/claude-router/users/sam.env",
-			p.AIEnv)
-	}
 }
 
 func TestMustNew_PanicsOnInvalid(t *testing.T) {

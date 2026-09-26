@@ -29,15 +29,15 @@ for f in "$DOCKERFILE" "$SCRIPT" "$ENTRY" "$HANDLER"; do
   [ -f "$f" ] || { no "missing file: $f"; }
 done
 
-# 1. The core guarantee: nothing points this Claude at the claude-router.
+# 1. The core guarantee: nothing points this Claude at a custom API base URL.
 if grep -q 'ANTHROPIC_BASE_URL' "$DOCKERFILE" "$ENTRY" 2>/dev/null | grep -qv '^\s*#'; then
-  no "ANTHROPIC_BASE_URL appears in the image: the container goes through the router again"
+  no "ANTHROPIC_BASE_URL appears in the image: the container no longer talks straight to the API"
 else
   # Comments explaining the absence are fine; ENV/export is not.
   if grep -E '^(ENV|export)[[:space:]]+ANTHROPIC_BASE_URL' "$DOCKERFILE" "$ENTRY" >/dev/null 2>&1; then
     no "ANTHROPIC_BASE_URL set in the image: independence is gone"
   else
-    ok "image does not set ANTHROPIC_BASE_URL (outside the claude-router)"
+    ok "image does not set ANTHROPIC_BASE_URL (direct API connection)"
   fi
 fi
 if grep -E '(^|[[:space:]])-e[[:space:]]+ANTHROPIC_BASE_URL' "$SCRIPT" >/dev/null 2>&1; then
@@ -139,7 +139,7 @@ elif ! docker inspect panel-recovery-claude >/dev/null 2>&1; then
 else
   bash "$SCRIPT" doctor >/dev/null 2>&1
   case $? in
-    0) ok "container doctor passed (no router, own login, host reach)" ;;
+    0) ok "container doctor passed (no base URL, own login, host reach)" ;;
     # 2 = structure up, only the one-time manual login is missing; that is a
     # setup step, not a regression.
     2) skip "doctor: structure up; the manual login is missing (run 'claude' in the /recovery tab)" ;;

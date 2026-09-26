@@ -3,8 +3,8 @@
 # what this environment reaches, and what to do when the login is missing.
 echo
 echo -e "\033[1;36m  Recovery Claude: independent connection\033[0m"
-echo -e "  \033[2mNo claude-router in the path and its own login: it keeps working"
-echo -e "  when the router, the panel or the host install are broken.\033[0m"
+echo -e "  \033[2mDirect API connection and its own login: it keeps working"
+echo -e "  when the host Claude setup, the panel or the host install are broken.\033[0m"
 echo
 echo -e "  \033[1mReach:\033[0m /opt/panel (read and write), the host filesystem at \033[1m/host\033[0m,"
 echo -e "  containers via \033[1mdocker\033[0m, and host commands via \033[1mhostctl\033[0m, e.g.:"

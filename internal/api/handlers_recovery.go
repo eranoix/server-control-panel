@@ -322,12 +322,11 @@ func (r *Router) handleRecoveryAction(w http.ResponseWriter, req *http.Request) 
 // ============================================================================
 // Recovery Claude — an independent connection
 //
-// On the host, every `claude` goes through claude-router (ANTHROPIC_BASE_URL
-// points at 127.0.0.1:8788). The router is one more service in the path, and
+// The host Claude may reach the API through a proxy (ANTHROPIC_BASE_URL), and
 // one more service in the path is one more thing that can be broken exactly
 // when you fall back to this screen. This Claude runs in its OWN container,
 // alongside server-control-panel, with no ANTHROPIC_BASE_URL and with a login of its
-// own: neither the router, nor the host's Claude installation, nor the
+// own: neither a proxy, nor the host's Claude installation, nor the
 // server-control-panel process is part of the equation.
 //
 // The container is brought up by Docker (restart=always), not by us — so it is

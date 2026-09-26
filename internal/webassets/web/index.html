@@ -2089,8 +2089,7 @@
       box-shadow:none !important; min-height:0 !important;
     }
     /* Compact rail: 48px. A 16px icon with an 8.5px caption underneath — a
-       little over a third of the original width (~125px, which the "Panic"
-       label forced). The captions fit in 42px of content; the longest is "Snippets". */
+       little over a third of the original width (~125px). The captions fit in 42px of content; the longest is "Snippets". */
     .term-side{
       display:flex; flex-direction:column; align-items:center; gap:1px;
       flex:0 0 48px; width:48px; padding:6px 3px; overflow-y:auto; overflow-x:hidden;
@@ -2115,7 +2114,7 @@
     .term-side .ts-btn:disabled{ opacity:.45; cursor:not-allowed; }
     .term-side .ts-btn:disabled:hover{ background:transparent; color:var(--text-muted); }
     .term-side .ts-btn svg{ width:16px; height:16px; display:block; }
-    /* Destructive actions (panic / kill session) stay red at all times. */
+    /* Destructive actions (kill session) stay red at all times. */
     .term-side .ts-btn.is-danger{ color:var(--danger); }
     .term-side .ts-btn.is-danger:hover{ background:var(--danger); color:#fff; }
     /* Typographic glyphs (A- / A+) occupy the same 16px box as the icon, so
@@ -7166,10 +7165,6 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v9"/><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/></svg>
               <span class="ts-lbl">Kill</span>
             </button>
-            <button @click="claudePanic()" :disabled="claudeBusy" class="ts-btn is-danger" title="Panic: force a clean OAuth (removes ANTHROPIC_API_KEY from settings.json, resets claude-router, restarts)" aria-label="Panic: force a clean OAuth">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
-              <span class="ts-lbl">Panic</span>
-            </button>
           </div>
           </div><!-- /term-body -->
 
@@ -9787,7 +9782,7 @@
         </section>
         </template>
 
-        <!-- AI · Routing (claude-router OAuth) + Metrics (rate limits + per-account usage) -->
+        <!-- AI · Routing (Claude accounts per consumer) + Metrics (rate limits + per-account usage) -->
         <!-- Lazy mounting. The content lives inside a <template>, so
              the browser does not build this DOM and Alpine does not scan these directives
              at boot; the _mounted latch never goes back to false, so after the
@@ -10017,34 +10012,6 @@
             <div class="text-[11px] text-muted mt-3 leading-relaxed">
               The switch applies to the <b>next</b> job or session. Terminals and forks already open keep the account until they are recreated (the env is pinned at the first attach).
             </div>
-          </div>
-
-          <!-- PANIC BUTTON (top of the page: an emergency has to be visible without scrolling) -->
-          <div class="card p-5 mb-4 border border-red-500/30 bg-red-500/5">
-            <div class="flex items-start justify-between gap-4">
-              <div class="flex-1">
-                <div class="font-semibold text-sm text-red-300">Panic button</div>
-                <p class="text-[11px] text-gray-400 mt-1 leading-relaxed">
-                  Use it if something jams (401 error, auth conflict, claude not answering).
-                  It clears <span class="mono">~/.claude/settings.json</span> (removes any ANTHROPIC_API_KEY),
-                  forces OAuth mode in the router and restarts the service.
-                  Active Claude sessions will have to reconnect.
-                </p>
-              </div>
-              <button @click="claudePanic()" :disabled="claudeBusy" class="btn btn-danger">Force a clean OAuth</button>
-            </div>
-            <template x-if="claudePanicLog">
-              <div class="mt-4 text-xs bg-[var(--surface-1)] rounded p-3 max-h-60 overflow-auto">
-                <div class="font-semibold mb-2" :class="claudePanicLog.ok?'text-emerald-400':'text-yellow-400'"
-                     x-text="(claudePanicLog.ok?'✓ Success':'⚠ Partial')+' · mode='+claudePanicLog.mode"></div>
-                <template x-for="(s,i) in (claudePanicLog.steps||[])" :key="i">
-                  <div class="text-emerald-300" x-text="'• '+s"></div>
-                </template>
-                <template x-for="(e,i) in (claudePanicLog.errors||[])" :key="'e'+i">
-                  <div class="text-red-300" x-text="'✗ '+e"></div>
-                </template>
-              </div>
-            </template>
           </div>
 
           <!-- Active sessions -->
@@ -17756,7 +17723,6 @@
           <div class="term-sheet-sec">Mode & help</div>
           <button @click="termMenuOpen=false; toggleFocusMode()">⤢ <span>Focus mode (full screen)</span></button>
           <button @click="termHelpOpen=true; termMenuOpen=false">？ <span>Help & shortcuts</span></button>
-          <button class="term-sheet-danger" @click="termMenuOpen=false; claudePanic()">🚨 <span>Panic (reset the agent's OAuth)</span></button>
         </div>
       </div>
     </div>

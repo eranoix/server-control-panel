@@ -28,7 +28,7 @@ type Tier string
 
 const (
 	// Suggest — trivial one-shot generation (an alert's name/description). Downgrades
-	// to haiku by default (proven under the Max/OAuth router in the smoke test); the
+	// to haiku by default (proven on a Max/OAuth account in the smoke test); the
 	// ai_suggest call site still passes --fallback-model sonnet.
 	Suggest Tier = "suggest"
 	// JiraAI — ticket audit/refinement in the repo. Default "" (inherits Opus) so

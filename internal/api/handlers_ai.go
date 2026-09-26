@@ -3,7 +3,7 @@ package api
 // handlers_ai.go — Claude (OAuth-only).
 //
 // Covers:
-//   - handleClaude (overview) / handleClaudeMode (GET health) / handleClaudePanic
+//   - handleClaude (overview)
 //   - handleClaudeSessionFork + handleClaudeSessionRestart
 //
 // The app was consolidated to Claude-only: the private-ai-api bridge and Venice
@@ -26,7 +26,6 @@ import (
 
 	"server-control-panel/internal/auth"
 	"server-control-panel/internal/claude"
-	"server-control-panel/internal/clauderouter"
 	"server-control-panel/internal/privateaiapi"
 	ptysvc "server-control-panel/internal/pty"
 )
@@ -40,45 +39,6 @@ func (r *Router) handleClaude(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	writeJSON(w, o)
-}
-
-// handleClaudeMode (GET-only) reports the claude-router health. An earlier
-// change consolidated the app to Claude-only (OAuth), so there is no mode —
-// the router is always an OAuth passthrough. The endpoint stays so the UI can
-// surface router reachability/latency.
-func (r *Router) handleClaudeMode(w http.ResponseWriter, req *http.Request) {
-	if auth.UserFrom(req) == "" {
-		writeErr(w, 401, "unauthorized")
-		return
-	}
-	if req.Method != http.MethodGet {
-		writeErr(w, 405, "method not allowed")
-		return
-	}
-	h := clauderouter.New().Healthz()
-	writeJSON(w, map[string]any{
-		"mode":      "oauth",
-		"health":    h,
-		"router_ok": h.Reachable,
-	})
-}
-
-// handleClaudePanic runs the full panic-reset flow: backup settings.json,
-// strip ANTHROPIC_API_KEY/AUTH_TOKEN, force state=oauth, restart router,
-// verify health. Returns a structured result with every step.
-func (r *Router) handleClaudePanic(w http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodPost {
-		writeErr(w, 405, "method not allowed")
-		return
-	}
-	user := auth.UserFrom(req)
-	if user == "" {
-		writeErr(w, 401, "unauthorized")
-		return
-	}
-	res := clauderouter.New().Panic()
-	r.auditEvent(req, user, "claude.panic", fmt.Sprintf("ok=%v steps=%d errors=%d", res.OK, len(res.Steps), len(res.Errors)))
-	writeJSON(w, res)
 }
 
 // interactiveModel resolves the model of an interactive claude panel. Interactive

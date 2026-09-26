@@ -1299,8 +1299,8 @@ function app() {
     fileBusy: false,
     fileModal: { kind:'', path:'', dest:'', mode:'0644', uid:0, gid:0, rec:false, url:'', filename:'' },
     claudeData: null, cfg: null,
-    claudeRouter: null, claudeBusy: false, claudeForkModel: '', // model chosen for a new session/restart
-    claudeTermSessions: [], claudePanicLog: null, swapAllAccountId: 'jordan',
+    claudeBusy: false, claudeForkModel: '', // model chosen for a new session/restart
+    claudeTermSessions: [], swapAllAccountId: 'jordan',
     // Claude account selector per consumer + usage metrics.
     claudeAccounts: { accounts: [], consumers: [] }, claudeAcctBusy: false,
     claudeUsage: { accounts: [] }, claudeUsageBusy: false,
@@ -4343,7 +4343,7 @@ function app() {
       if (p==='systemd')    { this.loadUnits(); this.loadSystemLogs(); this.loadUFW(); this.loadCron(); }
       if (p==='files')      this.browseFiles(this.filePath);
       if (p==='ai')         {
-        this.loadClaude(); this.loadClaudeMode(); this.loadClaudeTermSessions();
+        this.loadClaude(); this.loadClaudeTermSessions();
         this.loadClaudeAccounts();
         this.loadClaudeAccountsUsage();
         this.loadClaudeRateLimits();
@@ -4407,7 +4407,6 @@ function app() {
           });
         }
         this.terms = target;
-        this.loadClaudeMode();
         this.loadClaudeAccounts();
         this.loadClaudeTermSessions();
         if (!opts.skipTerminalBootstrap) {
@@ -8186,7 +8185,6 @@ function app() {
       console.warn('['+ns+'] load:', e);
     },
     async loadClaude()    { try{const r=await this.api('/api/claude/overview');   this.claudeData=await r.json();          }catch(e){} },
-    async loadClaudeMode(){ try{const r=await this.api('/api/claude/mode');       const d=await r.json(); this.claudeRouter=d.health;}catch(e){ this.claudeRouter={reachable:false}; } },
     async loadClaudeTermSessions(){ try{const r=await this.api('/api/terminal/sessions?all=1'); const arr=(await r.json())||[]; const seen=new Set(); this.claudeTermSessions=arr.filter(s=>{ if(!s||!s.name||seen.has(s.name)) return false; seen.add(s.name); return true; }); this._syncPaneAccountSelects();}catch(e){} },
     async loadClaudeAccounts(){
       try{
@@ -8377,24 +8375,11 @@ function app() {
       }catch(e){}
       finally{ this.claudeRatesBusy = false; }
     },
-    async claudePanic(){
-      if (!(await this.confirmAsync('FORCE A CLEAN OAUTH?\n\nThis will:\n• Clear settings.json (removes ANTHROPIC_API_KEY)\n• Reset the router to oauth\n• Restart the claude-router service\n\nActive Claude sessions will have to reconnect.\n\nContinue?'))) return;
-      this.claudeBusy = true; this.claudePanicLog = null;
-      try {
-        const r = await this.api('/api/claude/panic', {method:'POST'});
-        const d = await r.json();
-        this.claudePanicLog = d;
-        this.showToast(d.ok ? 'Recovery OK' : 'Partial recovery — see the log', d.ok ? 'ok' : 'err');
-        await this.loadClaudeMode();
-      } catch(e){ this.showToast('Panic failed: '+e.message,'err'); }
-      finally { this.claudeBusy = false; }
-    },
     // -------- AI page · private-ai-api admin proxy --------
     refreshAITab(name){
-      // Routing + Metrics (claude-router/accounts) + Tokens (private-ai-api) + AI Prompts.
+      // Routing (accounts) + Metrics (rate limits/usage) + Tokens (private-ai-api) + AI Prompts.
       if (!['routing','usage','tokens','prompts','agents'].includes(name)) name = 'routing';
       this.aiTab = name;
-      if (name==='routing'){ this.loadClaudeMode(); }
       if (name==='usage')  { this.loadClaudeRateLimits(); this.loadClaudeAccountsUsage(); }
       if (name==='tokens') { this.loadPrivateApiTokens(); this.loadPrivateApiStatus(); }
       if (name==='prompts'){ this.loadAIPrompts(); }
@@ -13012,8 +12997,7 @@ function app() {
         startupCmd: startupCmd || '',
         startupRan: false,
         // Per-pane AI provider. The backend reads ?ai= and injects the right
-        // ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY into the shell. Default: 'oauth' —
-        // Claude-only, so always oauth (the OAuth router).
+        // ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY into the shell. Default: 'oauth'.
         aiProvider: aiProvider || 'oauth',
       };
     },

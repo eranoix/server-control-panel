@@ -4,8 +4,8 @@
 # session never takes the container down.
 set -euo pipefail
 mkdir -p /config
-# Own settings.json without the router base URL: this keeps Claude off the
-# claude-router. An existing file (user edited) is left alone.
+# Own settings.json without ANTHROPIC_BASE_URL: this keeps Claude on a direct
+# API connection. An existing file (user edited) is left alone.
 if [ ! -f /config/settings.json ]; then
   cat > /config/settings.json <<'JSON'
 {

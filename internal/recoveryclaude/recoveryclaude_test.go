@@ -39,7 +39,7 @@ func TestMaterializeDeliversExecutableManager(t *testing.T) {
 // and absences disappear without anyone noticing. Here it is asserted over the
 // content the BINARY carries — not over the repository file, which may diverge
 // from what was actually embedded.
-func TestEmbeddedPayloadDoesNotPointToRouter(t *testing.T) {
+func TestEmbeddedPayloadDoesNotSetBaseURL(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Materialize(dir); err != nil {
 		t.Fatalf("materialize: %v", err)
@@ -65,7 +65,7 @@ func TestEmbeddedPayloadDoesNotPointToRouter(t *testing.T) {
 			}
 			for _, fallback := range injected {
 				if strings.Contains(cut, fallback) {
-					t.Errorf("embedded %s points Claude at the router (%s): %q", name, fallback, cut)
+					t.Errorf("embedded %s points Claude at a custom base URL (%s): %q", name, fallback, cut)
 				}
 			}
 		}

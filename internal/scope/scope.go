@@ -109,8 +109,8 @@ func (u User) Valid() bool {
 // touches. Holding them in one struct means a handler never builds a path by
 // hand — it asks for the one it needs and the layout is enforced centrally.
 //
-// All Root-relative paths live under <DataDir>/users/<User>/. The two paths
-// outside DataDir (WhatsappContainer, AIEnv) follow OS conventions and
+// All Root-relative paths live under <DataDir>/users/<User>/. The WhatsApp
+// container paths outside DataDir follow OS conventions and
 // cannot easily move.
 type Paths struct {
 	// Root is <DataDir>/users/<user>/. All app-data lives here.
@@ -139,10 +139,6 @@ type Paths struct {
 	// allocation for the per-user persistent browser session) plus
 	// anything else the browser tab persists.
 	Browser string
-
-	// AIEnv is /etc/claude-router/users/<user>.env — the ANTHROPIC_*
-	// env file claude-router reads for this user's CLI sessions.
-	AIEnv string
 }
 
 // PathsFor derives Paths from a DataDir + User. No filesystem access; pure
@@ -157,7 +153,6 @@ func PathsFor(dataDir string, u User) Paths {
 		WhatsappMedia:     filepath.Join(wac, "media"),
 		Uploads:           filepath.Join(root, "uploads"),
 		Browser:           filepath.Join(root, "browser"),
-		AIEnv:             filepath.Join("/etc/claude-router/users", u.String()+".env"),
 	}
 }
 

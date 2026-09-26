@@ -4,8 +4,7 @@ package api
 //
 // "Switching Claude accounts" = switching the CLAUDE_CONFIG_DIR each consumer
 // uses on spawn (the account is client-side, minted by Claude Code from the
-// config dir's credential; claude-router is passthrough in oauth mode and does
-// not know which account it is). This file exposes:
+// config dir's credential). This file exposes:
 //
 //   - jobsConfigDir / terminalConfigDir / forkConfigDir — nil-safe resolvers
 //     used by the 3 spawn seams (jiraai, interactive pty, fork pty).

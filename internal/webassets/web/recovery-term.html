@@ -189,8 +189,8 @@
   <h3>The recovery Claude is not running</h3>
   <p id="claude-off-txt">
     It runs in its own container (<code>panel-recovery-claude</code>), alongside
-    server-control-panel and with no claude-router in the path — so that it keeps answering when the
-    router, the host install or the panel are the problem.
+    server-control-panel, talking straight to the API with its own login, so that it keeps answering when the
+    host Claude setup, the host install or the panel are the problem.
   </p>
   <button onclick="startClaude()" id="claude-off-btn">Start the container</button>
   <p style="font-size:.72rem">
@@ -918,12 +918,12 @@ async function checkClaude() {
   if (!claudeUnlocked) {
     hint.textContent = d.exists ? 'container stopped' : 'container does not exist yet';
     document.getElementById('claude-off-txt').textContent = d.exists
-      ? 'The panel-recovery-claude container exists but is not running. It is independent of server-control-panel and of claude-router — which is why it keeps serving even when they are down.'
-      : 'The panel-recovery-claude container has not been created on this server yet. It runs alongside server-control-panel, with no claude-router in the path and with its own login.';
+      ? 'The panel-recovery-claude container exists but is not running. It is independent of server-control-panel and of the host Claude setup, which is why it keeps serving even when they are down.'
+      : 'The panel-recovery-claude container has not been created on this server yet. It runs alongside server-control-panel, talks straight to the API and has its own login.';
     return;
   }
   hint.textContent = (d.version ? d.version + ' · ' : '')
-    + (d.authenticated ? 'no router, its own login' : 'NOT authenticated yet: run `claude` once here');
+    + (d.authenticated ? 'direct API connection, its own login' : 'NOT authenticated yet: run `claude` once here');
   claude.open();
   claude.adjust(); claude.focus();
   // The status is otherwise queried only when the tab opens, so the hint would

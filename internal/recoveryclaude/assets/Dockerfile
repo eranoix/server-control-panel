@@ -1,8 +1,9 @@
 # Recovery Claude: an independent connection.
 #
-# On the host every `claude` goes through the claude-router, one more service
-# that can be broken exactly when the recovery screen is needed. This image has
-# no router variable, so the connection goes straight to the API.
+# The host Claude may be configured to reach the API through a proxy
+# (ANTHROPIC_BASE_URL), one more service that can be broken exactly when the
+# recovery screen is needed. This image sets no base URL, so the connection goes
+# straight to the API.
 #
 # The credential is independent too: the config dir is its own volume (/config)
 # with its own login. Sharing the host's .credentials.json would make both sides

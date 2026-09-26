@@ -784,9 +784,9 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	r.mux.HandleFunc("/recovery/ws/pty", r.handleRecoveryPTY)
 	r.mux.HandleFunc("/recovery/action/", r.handleRecoveryAction)
 	r.mux.HandleFunc("/recovery/logout", r.handleRecoveryLogout)
-	// A recovery Claude: its own container, running alongside the panel, with no
-	// router in the path and a login of its own — for the case where the router,
-	// the host installation or the panel itself is the problem. Same entry point
+	// A recovery Claude: its own container, running alongside the panel, talking
+	// straight to the API with a login of its own, for the case where the host
+	// Claude setup, the host installation or the panel itself is the problem. Same entry point
 	// (the recovery cookie) as the routes above.
 	r.mux.HandleFunc("/recovery/claude/status", r.handleRecoveryClaudeStatus)
 	r.mux.HandleFunc("/recovery/ws/claude", r.handleRecoveryClaudePTY)
@@ -2240,8 +2240,6 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 
 	// Claude / Config
 	protected.HandleFunc("/api/claude/overview", r.handleClaude)
-	protected.HandleFunc("/api/claude/mode", r.handleClaudeMode)
-	protected.HandleFunc("/api/claude/panic", r.handleClaudePanic)
 	protected.HandleFunc("/api/claude/session/fork", r.handleClaudeSessionFork)
 	protected.HandleFunc("/api/claude/session/restart", r.handleClaudeSessionRestart)
 	// Per-consumer Claude account selector (gated with mustPrimary in the handlers).

@@ -257,13 +257,6 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	if claudeConfigDir != "" {
 		cmd.Env = append(cmd.Env, "CLAUDE_CONFIG_DIR="+claudeConfigDir)
 	}
-	// Per-pane AI provider — ?ai=oauth|proxy|uncensored|venice. Empty/oauth
-	// leaves env untouched (router toggle applies). Other values override
-	// ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY to point at a specific upstream
-	// directly, bypassing the router. See internal/pty/aienv.go.
-	if extraEnv := loadAIEnv(user, safeAIProvider(r.URL.Query().Get("ai"))); len(extraEnv) > 0 {
-		cmd.Env = append(cmd.Env, extraEnv...)
-	}
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		conn.WriteMessage(websocket.TextMessage, []byte("failed to start pty: "+err.Error()))

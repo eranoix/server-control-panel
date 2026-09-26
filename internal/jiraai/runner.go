@@ -137,8 +137,7 @@ func (r *Runner) claudeArgs(base ...string) []string {
 // applyAccountEnv injects CLAUDE_CONFIG_DIR for the assigned jobs account.
 // An empty dir (default account "jordan") leaves cmd.Env nil, so the spawn
 // inherits os.Environ() exactly as it did before this feature existed —
-// no regression on the default path. The router (ANTHROPIC_BASE_URL in the
-// shared settings.json) is orthogonal and untouched.
+// no regression on the default path. The shared settings.json is untouched.
 func (r *Runner) applyAccountEnv(cmd *exec.Cmd) {
 	if r.accountDir == nil {
 		return
