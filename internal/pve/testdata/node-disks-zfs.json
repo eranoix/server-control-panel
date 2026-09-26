@@ -1,0 +1,22 @@
+{
+    "data": [
+        {
+            "name": "backup",
+            "free": 900975124480,
+            "size": 996432412672,
+            "health": "ONLINE",
+            "alloc": 95457288192,
+            "frag": 0,
+            "dedup": 1
+        },
+        {
+            "size": 1013612281856,
+            "name": "rpool",
+            "free": 942612635648,
+            "health": "ONLINE",
+            "alloc": 70999646208,
+            "dedup": 1,
+            "frag": 17
+        }
+    ]
+}

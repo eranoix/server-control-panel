@@ -1,0 +1,52 @@
+{
+    "data": [
+        {
+            "avail": 870105219072,
+            "storage": "backupusb",
+            "content": "backup",
+            "used_fraction": 0.0533541209062701,
+            "shared": 0,
+            "total": 919145414656,
+            "used": 49040195584,
+            "active": 1,
+            "type": "dir",
+            "enabled": 1
+        },
+        {
+            "used_fraction": 0.00119562729702459,
+            "enabled": 1,
+            "total": 912308699136,
+            "shared": 0,
+            "used": 1090781184,
+            "type": "dir",
+            "active": 1,
+            "avail": 911217917952,
+            "storage": "local",
+            "content": "vztmpl,import,backup,iso"
+        },
+        {
+            "content": "images,rootdir",
+            "avail": 911218016256,
+            "storage": "local-zfs",
+            "enabled": 1,
+            "used": 67198091264,
+            "shared": 0,
+            "total": 978416107520,
+            "type": "zfspool",
+            "active": 1,
+            "used_fraction": 0.068680483433912
+        },
+        {
+            "storage": "pbs",
+            "avail": 870105219072,
+            "content": "backup",
+            "used_fraction": 0.0505233697045147,
+            "type": "pbs",
+            "active": 1,
+            "total": 916405092352,
+            "shared": 1,
+            "used": 46299873280,
+            "enabled": 1
+        }
+    ]
+}
