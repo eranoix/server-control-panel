@@ -54,7 +54,7 @@ func openSessionLog(dataDir, user, name string) *sessionLogWriter {
 }
 
 // openWriter is openSessionLog by PATH. It exists because the rendered history
-// (`historico.go`) is another file with the same needs: append, rotation by size
+// (`history.go`) is another file with the same needs: append, rotation by size
 // and failing silently.
 func openWriter(path string) *sessionLogWriter {
 	w := &sessionLogWriter{path: path}

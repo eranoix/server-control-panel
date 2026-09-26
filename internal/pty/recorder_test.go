@@ -113,7 +113,7 @@ func TestSessionWithRecorderStillFollowsRealClient(t *testing.T) {
 // Every piece has a test of its own; this is the only one that proves they are
 // WIRED TOGETHER. It was exactly one correct piece with a cut wire (the
 // `forgetSize` whose return value nobody used) that let the original defect
-// slip through a green battery — see tamanho_da_sessao_e2e_test.go.
+// slip through a green battery — see session_size_e2e_test.go.
 func TestHistoryFlowsFromLiveSessionToPanelFetch(t *testing.T) {
 	nome := "hist-cadeia"
 	dir, dial := serverWithRecorder(t, nome)

@@ -4,7 +4,7 @@ package pty
 //
 // ⚠️ THIS HEADER DESCRIBES THE RULE AS IT WAS BEFORE per-client rendering.
 // The rule has changed: today the session sits at the LARGEST of the clients
-// that accept a rendered crop (`quadro.go`), and the minimum became a CEILING
+// that accept a rendered crop (`frame.go`), and the minimum became a CEILING
 // for the ones that do not. The text below stays here because it explains WHY
 // the minimum was the only possible answer while the server had no screen —
 // and it is that condition, not the rule, that changed. See [recalcula].
@@ -103,7 +103,7 @@ package pty
 type clientSize struct {
 	cols, rows uint16
 	// acceptsFrame: this client knows how to receive a RENDERED CROP of the
-	// session's screen (`quadro.go`) when its window is smaller than it. A client
+	// session's screen (`frame.go`) when its window is smaller than it. A client
 	// that does not only knows how to draw the raw stream, and therefore stays a
 	// CEILING on the session's size — see [recalcula].
 	acceptsFrame bool
@@ -179,7 +179,7 @@ func (c *sharedLog) registerApplier(id int64, apply func(uint16, uint16)) (uint1
 // The price was the owner of a 120-column desktop working at 53 because the
 // phone was attached.
 //
-// With a per-session emulator (`historico.go`), the server can COMPOSE what the
+// With a per-session emulator (`history.go`), the server can COMPOSE what the
 // smaller client sees: a rendered crop, diffed line by line. So the session
 // starts sitting at the LARGEST among the clients that know how to receive that
 // crop.

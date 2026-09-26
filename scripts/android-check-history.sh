@@ -1,7 +1,7 @@
 #!/bin/bash
 # Prova de que o histórico da conversa sobrevive ao "sair e voltar" da sessão.
 #
-# O que este teste tem que o `android-prova-terminal.sh` não tem: ele SAI da
+# O que este teste tem que o `android-check-terminal.sh` não tem: ele SAI da
 # tela do terminal e volta. É aí que o defeito vivia — o emulador nasce vazio,
 # o `dtach` não guarda tela, e até agora o histórico anterior simplesmente não
 # chegava. A prova é ler, depois de voltar, uma linha que só existe no COMEÇO

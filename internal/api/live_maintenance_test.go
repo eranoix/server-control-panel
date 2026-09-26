@@ -22,7 +22,7 @@ import (
 	"server-control-panel/internal/pve"
 )
 
-// live_manutencao_test.go — the LIVE proof of reboot, clone and backup.
+// live_maintenance_test.go — the LIVE proof of reboot, clone and backup.
 //
 // ────────────────────────────────────────────────────────────────────────────
 // 🔴 WHY IT EXISTS, EVEN WITH THE WHOLE PACKAGE GREEN.

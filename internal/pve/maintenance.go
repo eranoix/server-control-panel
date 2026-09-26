@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// manutencao.go — reboot, clone, and order a backup copy.
+// maintenance.go — reboot, clone, and order a backup copy.
 //
 // ────────────────────────────────────────────────────────────────────────────
 // 🔴 THE THREE DO NOT USE THE SAME CREDENTIAL, AND THAT IS DESIGN, NOT NEGLECT.

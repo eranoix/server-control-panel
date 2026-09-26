@@ -61,7 +61,7 @@ RUN printf '%s\n' '#!/bin/sh' \
 # binario original DO HOST. Se ele nao existir la (host diferente, ferramenta
 # removida), o wrapper sai 0 em silencio — um hook de conveniencia nao pode
 # derrubar a sessao de emergencia.
-COPY ponte-host.sh /usr/local/bin/ponte-host
+COPY host-bridge.sh /usr/local/bin/ponte-host
 RUN chmod +x /usr/local/bin/ponte-host \
  && mkdir -p /root/.local/bin \
  && ln -sf /usr/local/bin/ponte-host /usr/local/bin/agentctl \

@@ -1,6 +1,6 @@
 package pty
 
-// quadro.go — WHAT EACH CLIENT SEES, COMPOSED FOR IT.
+// frame.go — WHAT EACH CLIENT SEES, COMPOSED FOR IT.
 //
 // ## The problem this solves
 //
@@ -10,7 +10,7 @@ package pty
 // Earlier work made that correct and reversible; it did not make it acceptable.
 //
 // The way out is the classic multiplexer one, and it only became possible once
-// the server had a SCREEN (`historico.go`): with a live emulator per session,
+// the server had a SCREEN (`history.go`): with a live emulator per session,
 // the server can COMPOSE what each client should see instead of relaying the
 // same stream to everyone.
 //

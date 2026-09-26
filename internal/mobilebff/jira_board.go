@@ -1,6 +1,6 @@
 package mobilebff
 
-// jira_quadro.go carries the PURE logic of the kanban board: how the columns
+// jira_board.go carries the PURE logic of the kanban board: how the columns
 // are born out of the configuration, which column each issue falls into, which
 // transition takes a card to the chosen column, and which JQL each quick filter
 // means.

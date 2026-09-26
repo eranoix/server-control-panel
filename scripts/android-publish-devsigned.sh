@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# android-publicar-devsigned.sh <versionName> <versionCode> [apk] — publica uma
+# android-publish-devsigned.sh <versionName> <versionCode> [apk] — publica uma
 # release assinada com a CHAVE DE DESENVOLVIMENTO nos DOIS lugares que precisam
 # saber dela.
 #
@@ -40,8 +40,8 @@ set -euo pipefail
 
 fail_cedo() { echo "ERRO: $*" >&2; exit 1; }
 
-VERSION_NAME="${1:?uso: scripts/android-publicar-devsigned.sh <versionName> <versionCode> [apk]}"
-VERSION_CODE="${2:?uso: scripts/android-publicar-devsigned.sh <versionName> <versionCode> [apk]}"
+VERSION_NAME="${1:?uso: scripts/android-publish-devsigned.sh <versionName> <versionCode> [apk]}"
+VERSION_CODE="${2:?uso: scripts/android-publish-devsigned.sh <versionName> <versionCode> [apk]}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APK="${3:-$ROOT_DIR/android/app/build/outputs/apk/release/app-release.apk}"

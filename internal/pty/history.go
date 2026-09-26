@@ -1,10 +1,10 @@
 package pty
 
-// historico.go — THE SESSION'S TRUE HISTORY, WRITTEN AS IT HAPPENS.
+// history.go — THE SESSION'S TRUE HISTORY, WRITTEN AS IT HAPPENS.
 //
 // ## What was still wrong after the recorder
 //
-// With the recorder (`gravador.go`) the log stopped having holes, and with the
+// With the recorder (`recorder.go`) the log stopped having holes, and with the
 // primer the panel loaded history again when the session was opened on another
 // computer. But what the primer loads is the RAW BYTES, and in a program that
 // redraws those are not history — they are the record of a drawing in progress.
@@ -70,7 +70,7 @@ type sessionScreen struct {
 	nome string
 
 	// Whoever wants to know the screen changed — the connections in frame mode
-	// (`quadro.go`). `rolou` is how many lines left during the chunk: scrolling is
+	// (`frame.go`). `rolou` is how many lines left during the chunk: scrolling is
 	// handled as scrolling, not as a repaint.
 	subscribersMu sync.Mutex
 	subscribers   map[int64]func(scrolled int)

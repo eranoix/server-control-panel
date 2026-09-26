@@ -1,6 +1,6 @@
 package api
 
-// energia_test.go — the pin for the action that has no remote undo.
+// power_test.go — the pin for the action that has no remote undo.
 //
 // 🔴 This test NEVER reboots anything. It proves that the paths that should NOT
 // fire do not fire, and that the only one that does audits BEFORE. The fake

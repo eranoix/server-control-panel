@@ -403,7 +403,7 @@ download the APK by hand.
 (`data/android-updates/`, which is what the **app** queries). The script in use
 was a draft living outside the repository that only did the first.
 
-**Fix:** `scripts/android-publicar-devsigned.sh`, which does both and does not
+**Fix:** `scripts/android-publish-devsigned.sh`, which does both and does not
 exist outside the repository. Two traps found while writing it, both because
 they happened on the first run:
 
@@ -1120,7 +1120,7 @@ There is a keystore **restore drill**, tested, held to the same standard as
 | script | when |
 |---|---|
 | `scripts/android-publish.sh <versionCode>` | a real release: requires the offline-signed APK and the F-Droid index already regenerated with the repokey. Checks the fingerprint with `apksigner` before publishing. |
-| `scripts/android-publicar-devsigned.sh <versionName> <versionCode> [apk]` | a working build signed with the dev key, **from here**. Reads the real `versionName` from the APK with `aapt2` and refuses to publish if the `versionCode` does not match the one requested. |
+| `scripts/android-publish-devsigned.sh <versionName> <versionCode> [apk]` | a working build signed with the dev key, **from here**. Reads the real `versionName` from the APK with `aapt2` and refuses to publish if the `versionCode` does not match the one requested. |
 | `scripts/android-patches.sh` | generates the incremental channel. Called by both of the above. |
 
 **Publishing always happens in both places** — the F-Droid repository *and* the

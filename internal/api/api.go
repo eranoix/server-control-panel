@@ -389,7 +389,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	// has nobody recording it until someone opens a tab on it — and the hole in
 	// the log reappears exactly in the window when nobody is watching. In a
 	// goroutine because each recorder spawns a `dtach` client and boot must not
-	// wait on that. See `internal/pty/gravador.go`.
+	// wait on that. See `internal/pty/recorder.go`.
 	go ptysvc.EnsureLiveSessionRecorders(cfg.DataDir, r.sessReg, r.sessionOwn, cfg.Primary)
 	if ss, err := sessions.Open(filepath.Join(cfg.DataDir, "sessions.json")); err == nil {
 		r.auth = r.auth.WithSessions(ss)

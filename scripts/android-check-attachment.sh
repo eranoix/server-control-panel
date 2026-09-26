@@ -12,7 +12,7 @@
 # ficou aberta. Faça o login uma vez no emulador (ou no aparelho) e rode isto
 # em seguida — a sessão sobrevive a `force-stop`.
 #
-# Uso:  scripts/android-prova-anexo.sh [arquivo-de-origem]
+# Uso:  scripts/android-check-attachment.sh [arquivo-de-origem]
 set -euo pipefail
 
 A=${ADB:-/opt/android-sdk/platform-tools/adb}

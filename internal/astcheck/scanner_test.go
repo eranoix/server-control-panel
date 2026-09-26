@@ -57,9 +57,9 @@ func requireOneFinding(t *testing.T, cfg Config, wantFile string) Finding {
 
 func TestScanDetectsForbiddenBin(t *testing.T) {
 	a := requireOneFinding(t, Config{
-		Root:          fixture("bin_proibido"),
+		Root:          fixture("forbidden_bin"),
 		ForbiddenBins: hypervisorBins,
-	}, "caso.go")
+	}, "case.go")
 	if !strings.Contains(a.Reason, "pct") {
 		t.Fatalf("the reason does not name the binary: %q", a.Reason)
 	}
@@ -69,9 +69,9 @@ func TestScanResolvesVariable(t *testing.T) {
 	// The classic hole: `bin := "pct"` followed by exec.Command(bin, …). A textual
 	// search does not see it; intra-function literal resolution does.
 	a := requireOneFinding(t, Config{
-		Root:          fixture("var_resolvida"),
+		Root:          fixture("resolved_var"),
 		ForbiddenBins: hypervisorBins,
-	}, "caso.go")
+	}, "case.go")
 	if !strings.Contains(a.Reason, "pct") {
 		t.Fatalf("the reason does not name the resolved binary: %q", a.Reason)
 	}
@@ -82,7 +82,7 @@ func TestScanResolvesImportAlias(t *testing.T) {
 	requireOneFinding(t, Config{
 		Root:          fixture("alias_import"),
 		ForbiddenBins: hypervisorBins,
-	}, "caso.go")
+	}, "case.go")
 }
 
 func TestScanWatchedWrapper(t *testing.T) {
@@ -90,10 +90,10 @@ func TestScanWatchedWrapper(t *testing.T) {
 	// this is where free execution comes back under another name.
 	t.Run("unresolvable verb fails", func(t *testing.T) {
 		a := requireOneFinding(t, Config{
-			Root:               fixture("wrapper_irresoluvel"),
+			Root:               fixture("unresolvable_wrapper"),
 			WatchedWrappers:    []string{"trainerRun"},
 			RequireLiteralArgv: true,
-		}, "caso.go")
+		}, "case.go")
 		if !strings.Contains(a.Reason, "trainerRun") {
 			t.Fatalf("the reason does not name the wrapper: %q", a.Reason)
 		}
@@ -123,7 +123,7 @@ func TestScanUnlistedWrapperAlsoFails(t *testing.T) {
 	// A wrapper NOT on the list whose body calls exec.Command with an
 	// unresolvable argument fails via the exec.Command path, list or no list.
 	res, err := Scan(Config{
-		Root:               fixture("wrapper_nao_listado"),
+		Root:               fixture("unlisted_wrapper"),
 		ForbiddenBins:      hypervisorBins,
 		RequireLiteralArgv: true,
 	})
@@ -160,7 +160,7 @@ func TestScanNegativeControl(t *testing.T) {
 	// systemctl, git and docker all the time; the pin has to know how to approve.
 	t.Run("legitimate exec.Command passes", func(t *testing.T) {
 		res, err := Scan(Config{
-			Root:               fixture("neg_exec_legitimo"),
+			Root:               fixture("neg_legit_exec"),
 			ForbiddenBins:      hypervisorBins, // systemctl is NOT on the list
 			RequireLiteralArgv: true,
 		})
@@ -181,7 +181,7 @@ func TestScanEmptySweepIsError(t *testing.T) {
 	// plus a check each consumer had to remember to make; here it is API
 	// contract, so that nobody can ignore it.
 	res, err := Scan(Config{
-		Root:          fixture("sem_go"),
+		Root:          fixture("no_go"),
 		ForbiddenBins: hypervisorBins,
 	})
 	if err == nil {
@@ -222,7 +222,7 @@ func TestScanSkipsOwnTestdata(t *testing.T) {
 	}
 
 	direct, err := Scan(Config{
-		Root:          filepath.Join("testdata", "bin_proibido"),
+		Root:          filepath.Join("testdata", "forbidden_bin"),
 		ForbiddenBins: hypervisorBins,
 	})
 	if err != nil {

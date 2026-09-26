@@ -1,6 +1,6 @@
 package pty
 
-// gravador.go — THE SESSION LOG MUST NOT HAVE HOLES.
+// recorder.go — THE SESSION LOG MUST NOT HAVE HOLES.
 //
 // ## The defect
 //
@@ -30,7 +30,7 @@ package pty
 //  1. The log becomes continuous. The hole is gone.
 //
 //  2. The log gets ONE stable writer. The write lease
-//     (`sessionlog_compartilhado.go`) exists because connections came and went
+//     (`sessionlog_shared.go`) exists because connections came and went
 //     and the scribe's post changed hands — and every handover cost up to one
 //     lease window of hole. The recorder arrives first, never leaves, and never
 //     loses the post.
@@ -140,7 +140,7 @@ func openRecorder(dataDir, user, name string, reg *Registry, key string) (*recor
 	tee, session, id, release := acquireSessionLog(dataDir, user, name)
 	// The server screen: the same stream, passed through an emulator, so that the
 	// lines LEAVING it become the session's rendered history. An observer, never a
-	// middleman — see `historico.go`.
+	// middleman — see `history.go`.
 	screen := newSessionScreen(dataDir, user, name)
 	g.screen = screen
 	if session != nil {

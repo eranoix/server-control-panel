@@ -12,7 +12,7 @@ import (
 	"server-control-panel/internal/pve"
 )
 
-// handlers_manutencao.go — clone a guest, and ask for a copy to be stored.
+// handlers_maintenance.go — clone a guest, and ask for a copy to be stored.
 //
 // ────────────────────────────────────────────────────────────────────────────
 // 🔴 THESE TWO DO NOT WAIT FOR THE TASK TO FINISH, AND THE RESPONSE SAYS SO.

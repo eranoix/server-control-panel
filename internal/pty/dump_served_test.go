@@ -6,7 +6,7 @@ import (
 )
 
 // Dumps to disk EXACTLY the bytes the server delivers to the app in the primer,
-// to feed the harness in `scripts/terminal-prova/` without going through
+// to feed the harness in `scripts/terminal-check/` without going through
 // authentication or through a Python approximation. This is not a test: it is an
 // instrument.
 //

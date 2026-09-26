@@ -25,7 +25,7 @@ package mobilebff
 // # The rule lives once, and it lives here
 //
 // Column, card distribution, transition matching and filter-to-JQL
-// translation live in jira_quadro.go, in pure, tested functions. The app
+// translation live in jira_board.go, in pure, tested functions. The app
 // receives the board ready-made. Reimplementing that in Kotlin would mean
 // keeping two versions of the same rule — the silent divergence that killed
 // the previous mobile attempt.

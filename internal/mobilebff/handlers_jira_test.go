@@ -1,7 +1,7 @@
 package mobilebff
 
 // handlers_jira_test.go exercises the board over real HTTP, against a fake
-// Jira. The pure functions are already covered in jira_quadro_test.go; what
+// Jira. The pure functions are already covered in jira_board_test.go; what
 // shows up ONLY here is the end-to-end behaviour: the routing, the response
 // shape, and the two decisions the user feels in their finger — a refused
 // transition becoming a 409 with the reason, and a not-connected account

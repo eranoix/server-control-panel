@@ -200,7 +200,7 @@ func declaredRoutes(t *testing.T, file string) (map[string]int, bool) {
 }
 
 func TestNoFreeExecRoutes(t *testing.T) {
-	file := filepath.Join(repoRoot(t), "internal", "labagent", "servidor.go")
+	file := filepath.Join(repoRoot(t), "internal", "labagent", "server.go")
 	foundRoutes, hasMux := declaredRoutes(t, file)
 	if !hasMux {
 		// Scanning nothing is never approving (the same principle as
@@ -397,7 +397,7 @@ func requireFindingOnLine(t *testing.T, findings []astcheck.Finding, line int) {
 
 // M1 — a literal free-execution route. Detected by P1a.
 func TestPinBitesM1(t *testing.T) {
-	routes, _ := declaredRoutes(t, filepath.Join(fixture("m1-rota-exec"), "caso.go"))
+	routes, _ := declaredRoutes(t, filepath.Join(fixture("m1-route-exec"), "case.go"))
 	allowed := map[string]bool{}
 	for _, r := range allowedRoutes {
 		allowed[r] = true
@@ -419,7 +419,7 @@ func TestPinBitesM1(t *testing.T) {
 // M2 — the route is NOT called /exec and argv comes in through the signature.
 // It is the proof that the AST pin is what protects: a textual grep would pass.
 func TestPinBitesM2(t *testing.T) {
-	arq := filepath.Join(fixture("m2-rota-argv"), "caso.go")
+	arq := filepath.Join(fixture("m2-route-argv"), "case.go")
 
 	routes, _ := declaredRoutes(t, arq)
 	if _, has := routes["POST /run"]; !has {
@@ -449,7 +449,7 @@ func TestPinBitesM2(t *testing.T) {
 // residual risk inherited from the earlier scan.
 func TestPinBitesM3(t *testing.T) {
 	res, err := astcheck.Scan(astcheck.Config{
-		Root:               fixture("m3-wrapper-verbo"),
+		Root:               fixture("m3-wrapper-verb"),
 		WatchedWrappers:    watchedWrappers,
 		RequireLiteralArgv: true,
 	})
@@ -464,7 +464,7 @@ func TestPinBitesM3(t *testing.T) {
 
 // M4 — a loose literal key in the registry.
 func TestPinBitesM4(t *testing.T) {
-	arq := filepath.Join(fixture("m4-chave-literal"), "caso.go")
+	arq := filepath.Join(fixture("m4-literal-key"), "case.go")
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, arq, nil, parser.SkipObjectResolution)
 	if err != nil {
@@ -522,7 +522,7 @@ func TestPinBitesM4(t *testing.T) {
 // by name would pass every other test — M1 and M2 would go on failing as they
 // should, and nobody would see the false positive until it failed a deploy.
 func TestPinSparesTypeConversion(t *testing.T) {
-	arq := filepath.Join(fixture("fp1-conversao-handle"), "caso.go")
+	arq := filepath.Join(fixture("fp1-handle-conversion"), "case.go")
 	routes, hasMux := declaredRoutes(t, arq)
 	if !hasMux {
 		t.Fatalf("the fixture declares `mux *http.ServeMux`; the detector should recognize it")
@@ -540,7 +540,7 @@ func TestPinSparesTypeConversion(t *testing.T) {
 
 func TestPinSparesM5(t *testing.T) {
 	res, err := astcheck.Scan(astcheck.Config{
-		Root:               fixture("m5-op-legitima"),
+		Root:               fixture("m5-legit-op"),
 		WatchedWrappers:    watchedWrappers,
 		RequireLiteralArgv: true,
 	})
@@ -550,7 +550,7 @@ func TestPinSparesM5(t *testing.T) {
 	if len(res.Findings) != 0 {
 		t.Errorf("FALSE POSITIVE on a legitimate operation — the guard would fail the catalog's normal growth, and the next step is someone switching it off: %+v", res.Findings)
 	}
-	routes, _ := declaredRoutes(t, filepath.Join(fixture("m5-op-legitima"), "caso.go"))
+	routes, _ := declaredRoutes(t, filepath.Join(fixture("m5-legit-op"), "case.go"))
 	if len(routes) != 0 {
 		t.Errorf("a legitimate operation adds no route; got %v", sortedNames(routes))
 	}
@@ -559,7 +559,7 @@ func TestPinSparesM5(t *testing.T) {
 // TestPinSparesLegitimate — the controls inherited from the precedent.
 func TestPinSparesLegitimate(t *testing.T) {
 	res, err := astcheck.Scan(astcheck.Config{
-		Root:               fixture("neg-legitimos"),
+		Root:               fixture("neg-legit"),
 		WatchedWrappers:    watchedWrappers,
 		RequireLiteralArgv: true,
 	})
@@ -582,7 +582,7 @@ func TestPinSparesLegitimate(t *testing.T) {
 // so would open the very hole the pin exists to close.
 func TestPinBitesPackageVar(t *testing.T) {
 	res, err := astcheck.Scan(astcheck.Config{
-		Root:               fixture("neg-var-de-pacote"),
+		Root:               fixture("neg-package-var"),
 		WatchedWrappers:    watchedWrappers,
 		RequireLiteralArgv: true,
 	})

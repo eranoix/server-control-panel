@@ -60,7 +60,7 @@ type ctrlMsg struct {
 	Rows uint16 `json:"rows,omitempty"`
 	Data string `json:"data,omitempty"`
 	// X: the SESSION column where this client's crop starts, for the "pan"
-	// type. Only meaningful in frame mode — see `quadro.go`. Without it, on a
+	// type. Only meaningful in frame mode — see `frame.go`. Without it, on a
 	// client narrower than the session the right half would be unreachable.
 	X int `json:"x,omitempty"`
 }
@@ -285,10 +285,10 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		// active damage, because of two things this file now does:
 		//
 		//  1. The connection still counts as attached, so it is still the SCRIBE
-		//     for the session log (`sessionlog_compartilhado.go`) — a dead
+		//     for the session log (`sessionlog_shared.go`) — a dead
 		//     connection doing the recording.
 		//  2. Its size still counts towards the SMALLEST
-		//     (`tamanho_da_sessao.go`), and a dead connection with a small
+		//     (`session_size.go`), and a dead connection with a small
 		//     window SHRINKS EVERYONE'S SESSION, forever. There is no operator
 		//     gesture that undoes it; only restarting the server.
 		//
@@ -341,7 +341,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		connID = id
 		// The log must not stop when this tab closes: the session stays alive
 		// producing output, and without a recorder of its own none of that is
-		// written anywhere. See `gravador.go` — idempotent, best-effort, and it
+		// written anywhere. See `recorder.go` — idempotent, best-effort, and it
 		// never creates a session.
 		EnsureRecorder(dataDir, user, sessionName, reg)
 	}
@@ -395,7 +395,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 
 	// ── FRAME MODE: WHAT THIS CLIENT SEES, COMPOSED FOR IT ───────────────
 	//
-	// See `quadro.go`. In short: when this client's window is SMALLER than the
+	// See `frame.go`. In short: when this client's window is SMALLER than the
 	// session, it stops receiving the raw stream (which is drawn for the session's
 	// grid and would land entirely in the wrong place) and starts receiving a
 	// rendered crop of the server's screen, diffed line by line.
@@ -773,7 +773,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 		}
 		frameMu.Unlock()
 		// The PTY sits at the LARGEST among the clients that accept frame mode —
-		// see `tamanho_da_sessao.go`. With a single client this is the identity;
+		// see `session_size.go`. With a single client this is the identity;
 		// with two, it is the difference between converging and fighting forever.
 		if sharedSession == nil {
 			applySize(cols, rows)
@@ -830,7 +830,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	}, func(p []byte, first bool) []byte {
 		// In frame mode the raw stream does not go to this client: it is drawn for
 		// the SESSION's grid and would land entirely in the wrong place in the
-		// smaller window. What draws there is the compositor (`quadro.go`).
+		// smaller window. What draws there is the compositor (`frame.go`).
 		if inFrameMode() {
 			return nil
 		}
@@ -935,7 +935,7 @@ type resizer func(cols, rows uint16)
 // its dedup blocked the re-assertion before it reached the session. Measured end
 // to end — after the 80x24 client closed, the program kept painting 24x80 while
 // the other drew 38x110, and the 20s heartbeat never fixed it. That is exactly
-// the defect `tamanho_da_sessao.go` describes as "the loser COULD NO LONGER
+// the defect `session_size.go` describes as "the loser COULD NO LONGER
 // CORRECT ITSELF"; it had never gone away, it had merely gained a per-session
 // reconciliation in front of it.
 //
@@ -982,7 +982,7 @@ type sizeNotice struct {
 //   - the first chunk carries the "erase everything" that `dtach` sends to an
 //     arriving client, and a client that primes its own screen must not get it
 //     (it would erase what it has painted);
-//   - in frame mode (`quadro.go`) the raw stream is drawn for the SESSION's
+//   - in frame mode (`frame.go`) the raw stream is drawn for the SESSION's
 //     grid and would land entirely in the wrong place in the client's smaller
 //     window — what draws there is the compositor, not the PTY.
 type outputFilter func(p []byte, first bool) []byte

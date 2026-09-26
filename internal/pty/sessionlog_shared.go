@@ -83,13 +83,13 @@ type sharedLog struct {
 	next  int64
 
 	// The size each connection asked for, and what is actually on the PTY. See
-	// `tamanho_da_sessao.go`: the PTY sits at the SMALLEST among the clients,
+	// `session_size.go`: the PTY sits at the SMALLEST among the clients,
 	// which is the only rule that converges when there is more than one.
 	sizes       map[int64]clientSize
 	appliedCols uint16
 	appliedRows uint16
 	// How to PUT the session's effective size on each connection — its pty and,
-	// for whoever asked, the client's grid. See `tamanho_da_sessao.go`.
+	// for whoever asked, the client's grid. See `session_size.go`.
 	appliers map[int64]func(uint16, uint16)
 
 	// The write lease: who is recording now, and when it last recorded. See
