@@ -9,7 +9,6 @@ import java.io.IOException
  * The APK running right now, identified by its bytes. The incremental channel is
  * keyed by its SHA-256, never `versionCode`: two builds with the same
  * `versionCode` differ in bytes, and a wrong patch yields a corrupted file.
- * See `docs/android-atualizacao-incremental.md`.
  */
 sealed interface InstalledApkResult {
 

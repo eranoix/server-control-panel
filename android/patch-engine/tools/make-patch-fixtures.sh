@@ -43,7 +43,7 @@ if [ -z "$HDIFFZ" ] || [ ! -x "$HDIFFZ" ]; then
 fi
 if [ ! -f "$KEYSTORE" ]; then
   echo "make-patch-fixtures: development keystore missing: $KEYSTORE" >&2
-  echo "  (docs/android-chave-dev.md; this is NOT the release key, which never touches this machine)" >&2
+  echo "  (this is NOT the release key, which never touches this machine)" >&2
   exit 1
 fi
 
