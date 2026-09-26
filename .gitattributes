@@ -1,0 +1,38 @@
+# Linguagens: o que a barra do GitHub deve contar.
+#
+# O Linguist decide por heurística, e aqui ela erra nos dois sentidos: descarta
+# código nosso que mora sob um diretório chamado vendor/, e contaria arquivo
+# gerado e template de terceiros como se fossem escritos à mão.
+
+# ── Terceiros: shipado em árvore para o binário funcionar sem rede ──────────
+internal/webassets/web/vendor/**                    linguist-vendored=true
+browser/public/uv/**                                linguist-vendored=true
+android/*/vendor/**                                 linguist-vendored=true
+
+# Template do openapi-generator, copiado para acrescentar um import que falta
+# no upstream. Uma linha nossa em 53 KB deles — conta como deles.
+android/data/mobile-api-client/openapi-templates/** linguist-vendored=true
+
+# ── Nosso, e só mora sob vendor/ porque é de lá que o servidor de assets lê ──
+# Precisa vir DEPOIS da regra acima: no git, o último padrão que casa vence.
+internal/webassets/web/vendor/vpsm/**               linguist-vendored=false
+
+# ── Gerado ──────────────────────────────────────────────────────────────────
+internal/webassets/web/tailwind.css                 linguist-generated=true
+*.min.js                                            linguist-generated=true
+# Capturas de sessão VT usadas como fixture do motor de terminal — 9 MB de
+# sequência de escape, que não é linguagem nenhuma.
+*.vt                                                linguist-generated=true
+
+# ── Autoral que o Linguist classifica como `data` e por isso esconde ────────
+# Build composto de 17 módulos, com plugin de convenção e uma task de
+# verificação própria. É trabalho de build, escrito aqui.
+*.gradle.kts                                        linguist-detectable=true
+# Manifestos, temas, regras de backup e file provider do cliente Android.
+*.xml                                               linguist-detectable=true
+
+# ── Não reivindicar o que não é ─────────────────────────────────────────────
+# Regra de ProGuard. O Linguist já confundiu `.pro` com Prolog; melhor dizer
+# explicitamente que não é linguagem a reivindicar do que ganhar a barra por
+# engano.
+*.pro                                               linguist-detectable=false
