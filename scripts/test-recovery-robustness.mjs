@@ -268,7 +268,7 @@ function run(ctx) {
   const api2 = run(ctx2);
   const m2 = ctx2.__meta;
   m2.setResponse((url) => (url.includes('/recovery/renew')
-    ? { ok: true, status: 200, json: () => Promise.resolve({ ok: true, remaining_seg: 4200 }) }
+    ? { ok: true, status: 200, json: () => Promise.resolve({ ok: true, remaining_sec: 4200 }) }
     : { ok: true, status: 200, json: () => Promise.resolve({}) }));
   m2.calls.length = 0;
   ctx2.document.hidden = false;

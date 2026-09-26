@@ -33,7 +33,7 @@ func TestWSShell_TicketAuthenticatesHandshake(t *testing.T) {
 	t.Cleanup(srv.Close)
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
 
-	ticket := auth.IssueWSTicket("sam", "jti-do-app")
+	ticket := auth.IssueWSTicket("sam", "jti-of-app")
 	conn, resp, err := websocket.DefaultDialer.Dial(
 		wsURL+"/ws/shell?name=session-that-does-not-exist&attach=1&ticket="+ticket, nil)
 	if err != nil {
@@ -76,7 +76,7 @@ func TestWSShell_OtherUsersTicketCannotOpenForeignSession(t *testing.T) {
 	t.Cleanup(srv.Close)
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
 
-	ticket := auth.IssueWSTicket("beto", "jti-do-beto")
+	ticket := auth.IssueWSTicket("beto", "jti-of-beto")
 	conn, resp, err := websocket.DefaultDialer.Dial(
 		wsURL+"/ws/shell?name="+session+"&attach=1&ticket="+ticket, nil)
 	if err != nil {

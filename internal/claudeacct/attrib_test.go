@@ -235,8 +235,8 @@ func TestBlockedAccountKeepsTokens(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	writeMessages(t, repo, "sess-da-jordan", []time.Time{now.Add(-time.Hour)}, 9_000_000)
-	_ = s.RecordAttrib(AttribEntry{Ts: now.Add(-2 * time.Hour).Unix(), SessionID: "sess-da-jordan", AccountID: "jordan"})
+	writeMessages(t, repo, "sess-of-jordan", []time.Time{now.Add(-time.Hour)}, 9_000_000)
+	_ = s.RecordAttrib(AttribEntry{Ts: now.Add(-2 * time.Hour).Unix(), SessionID: "sess-of-jordan", AccountID: "jordan"})
 
 	rep := s.UsageAll()
 	var sum int64

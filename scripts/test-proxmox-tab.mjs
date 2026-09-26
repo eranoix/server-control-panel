@@ -284,7 +284,7 @@ check('🔴 41-proxmox.js does not even touch the panel JWT',
   'the session travels in the HttpOnly cookie; the module has no reason to read the token');
 check('🔴 41-proxmox.js does NOT build the "0:N:" frame (the count is in BYTES, on the server)',
   !/['"`]0:['"`]\s*\+/.test(pvxCode),
-  'data.length counts UTF-16: "é" would arrive cut in half — measured on CT 204');
+  'data.length counts UTF-16: "ü" would arrive cut in half — measured on CT 204');
 check('input goes as {type:"input"} and the translation belongs to the server',
   /type:\s*'input'/.test(pvxCode) && /type:\s*'resize'/.test(pvxCode));
 check('terminal output is written as BINARY (Uint8Array)',

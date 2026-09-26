@@ -433,11 +433,11 @@ func TestRollbackRespondsOnlyAfterWaitTask(t *testing.T) {
 		r, _ := newProxmoxRouter(t, defaultVault(), fake)
 
 		w, out := callPVX(t, r, http.MethodPost,
-			"/api/proxmox/snapshots/rollback?node=lxc/204&name=antes-do-cutover", "")
+			"/api/proxmox/snapshots/rollback?node=lxc/204&name=before-cutover", "")
 		if w.Code != 200 {
 			t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 		}
-		want := []string{"pve.snaprollback:antes-do-cutover", "pve.wait:UPID:roll"}
+		want := []string{"pve.snaprollback:before-cutover", "pve.wait:UPID:roll"}
 		if fmt.Sprint(seen) != fmt.Sprint(want) {
 			t.Fatalf("sequence = %v, want %v — the 200 came out before proof of completion", seen, want)
 		}
@@ -448,11 +448,11 @@ func TestRollbackRespondsOnlyAfterWaitTask(t *testing.T) {
 
 	t.Run("wait failure becomes 502 with the exitstatus", func(t *testing.T) {
 		fake := &fakePVE{upid: "UPID:roll", waitErr: &pve.Error{Kind: pve.KindHypervisor, Path: "/tasks",
-			Body: "snapshot 'antes-do-cutover' does not exist"}}
+			Body: "snapshot 'before-cutover' does not exist"}}
 		r, _ := newProxmoxRouter(t, defaultVault(), fake)
 
 		w, _ := callPVX(t, r, http.MethodPost,
-			"/api/proxmox/snapshots/rollback?node=lxc/204&name=antes-do-cutover", "")
+			"/api/proxmox/snapshots/rollback?node=lxc/204&name=before-cutover", "")
 		if w.Code != 502 {
 			t.Fatalf("status = %d, want 502", w.Code)
 		}
@@ -469,7 +469,7 @@ func TestRollbackUsesNodeToken(t *testing.T) {
 	r, _ := newProxmoxRouter(t, vault, &fakePVE{upid: "UPID:roll"})
 
 	w, _ := callPVX(t, r, http.MethodPost,
-		"/api/proxmox/snapshots/rollback?node=lxc/207&name=antes-do-cutover", "")
+		"/api/proxmox/snapshots/rollback?node=lxc/207&name=before-cutover", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body)
 	}
@@ -488,7 +488,7 @@ func TestRollbackOnlyAcceptsPOST(t *testing.T) {
 		var seen []string
 		fake := &fakePVE{upid: "UPID:roll", seen: &seen}
 		r, _ := newProxmoxRouter(t, defaultVault(), fake)
-		w, _ := callPVX(t, r, m, "/api/proxmox/snapshots/rollback?node=lxc/204&name=antes-do-cutover", "")
+		w, _ := callPVX(t, r, m, "/api/proxmox/snapshots/rollback?node=lxc/204&name=before-cutover", "")
 		if w.Code != 405 {
 			t.Errorf("%s: status = %d, want 405", m, w.Code)
 		}

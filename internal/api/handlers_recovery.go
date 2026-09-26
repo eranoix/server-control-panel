@@ -481,7 +481,7 @@ func (r *Router) handleRecoveryRenew(w http.ResponseWriter, req *http.Request) {
 		"ok": true,
 		// How much of the cap is left — the screen warns before it runs out,
 		// instead of letting the operator find out by being disconnected.
-		"remaining_seg": int((recoveryHardCap - time.Since(start)).Seconds()),
+		"remaining_sec": int((recoveryHardCap - time.Since(start)).Seconds()),
 	})
 }
 

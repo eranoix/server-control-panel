@@ -1509,7 +1509,7 @@
 
           // 🔴 THE INPUT GOES AS TEXT, and the byte count is the SERVER’s. Measured against
           // CT 204: termproxy reads N BYTES after "0:N:", and `data.length` here counts
-          // UTF-16 units — "é" would become half a character. Assembling the frame in the
+          // UTF-16 units — "ü" would become half a character. Assembling the frame in the
           // browser would be the bug.
           term.onData(d => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', data: d })); });
           term.onResize(({ cols, rows }) => {

@@ -62,7 +62,7 @@ class PendingTypingTest {
         assertEquals("ls", typingSummary("ls", byteArrayOf(0x1B, 'O'.code.toByte())))
     }
 
-    /** Decoding byte by byte would turn "naïve" into "naÃ¯ve". */
+    /** Decoding byte by byte would split the two UTF-8 bytes of "ï" into two wrong characters. */
     @Test
     fun `accents survive because UTF-8 is decoded whole`() {
         assertEquals("naïve", until("na", "ï", "ve"))

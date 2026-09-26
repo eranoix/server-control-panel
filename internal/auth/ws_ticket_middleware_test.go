@@ -77,7 +77,7 @@ func TestMiddleware_ValidTicketOpensWS(t *testing.T) {
 		t.Fatalf("UserFrom = %q, expected \"tester\" — the handler has to see the ticket's OWNER", vis.user)
 	}
 	if vis.jti != "jti-app" {
-		t.Fatalf("JTIFrom = %q, expected \"jti-do-app\"", vis.jti)
+		t.Fatalf("JTIFrom = %q, expected \"jti-of-app\"", vis.jti)
 	}
 }
 

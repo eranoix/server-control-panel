@@ -54,7 +54,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /** Test tag for a parent page's grid. */
-internal const val TAG_PARENT_GRID = "grade-da-mae"
+internal const val TAG_PARENT_GRID = "parent-grid"
 
 /**
  * Drives a parent page's grid. [childrenOf] is the intent; the server catalogue (`GET /screens`)

@@ -51,7 +51,7 @@ const srv = http.createServer((req, res) => {
   // answers so the pin can measure LAYOUT without renewal becoming 404 noise.
   if (u === '/recovery/renew') {
     res.setHeader('content-type', 'application/json');
-    return res.end(JSON.stringify({ ok: true, remaining_seg: 8 * 3600 }));
+    return res.end(JSON.stringify({ ok: true, remaining_sec: 8 * 3600 }));
   }
   if (u === '/recovery/term') {
     res.statusCode = 200;

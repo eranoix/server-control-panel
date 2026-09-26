@@ -1018,10 +1018,10 @@ async function renewSession() {
     if (r.ok) {
       const d = await r.json().catch(() => ({}));
       const el = document.getElementById('banner');
-      if (typeof d.remaining_seg === 'number') capAt = Date.now() + d.remaining_seg * 1000;
+      if (typeof d.remaining_sec === 'number') capAt = Date.now() + d.remaining_sec * 1000;
       // Less than 30 min of cap left: time to warn, there is still time.
-      if (typeof d.remaining_seg === 'number' && d.remaining_seg < 30 * 60) {
-        notifySession('The recovery session ends in ' + Math.max(1, Math.round(d.remaining_seg / 60)) + ' min (the cap since sign-in). Authenticate again when you can.', 'warning');
+      if (typeof d.remaining_sec === 'number' && d.remaining_sec < 30 * 60) {
+        notifySession('The recovery session ends in ' + Math.max(1, Math.round(d.remaining_sec / 60)) + ' min (the cap since sign-in). Authenticate again when you can.', 'warning');
       } else if (el && el.dataset.tom !== 'error') {
         el.hidden = true;
       }
