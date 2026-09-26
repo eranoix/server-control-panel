@@ -48,28 +48,17 @@ internal const val TAKE_PHOTO_LABEL = "Take a photo now"
 private const val PHOTOS_DIR = "anexos-terminal"
 
 /**
- * The three ways of handing a reference to the assistant on the other side of
- * the session, in the order they are actually used on a phone:
+ * The three ways to hand a reference to the agent on the other side of the session:
  *
- * - **Pick a file** (`OpenMultipleDocuments`): the system picker, which
- *   reaches any installed provider (Drive, Files, a third-party manager). It
- *   is the only path that accepts *any* type — a `.log`, a `.tar.gz` — and its
- *   grant is persistable, so it is claimed immediately (see
- *   [takePersistableRead]).
- * - **Pick an image** (`PickMultipleVisualMedia`): the system Photo Picker.
- *   Chosen over an `OpenDocument` filtered to image types because it requires
- *   NO storage permission at all — no dialog asking for access to every photo
- *   in order to send one.
- * - **Take a photo now** (`TakePicture`): the most useful of the three for
- *   "give you a reference to look at" — photographing a screen, an error on a
- *   monitor, a whiteboard. It needs a destination of its own (the camera
- *   writes INTO the file we point it at) and the runtime camera permission,
- *   because this app declares `CAMERA` in the manifest — declaring it makes
- *   the permission enforceable even for `ACTION_IMAGE_CAPTURE`, which on its
- *   own would not need it.
+ * - Pick a file (`OpenMultipleDocuments`): any provider and any type; its grant is
+ *   persistable, so it is claimed right away (see [takePersistableRead]).
+ * - Pick an image (`PickMultipleVisualMedia`): the Photo Picker, which needs no
+ *   storage permission.
+ * - Take a photo now (`TakePicture`): the camera writes into a file we provide.
+ *   Needs the runtime CAMERA permission, because declaring `CAMERA` in the
+ *   manifest makes it enforced even for `ACTION_IMAGE_CAPTURE`.
  *
- * All three accept MULTIPLE items (the camera one photo at a time, but each
- * one goes off into the queue without waiting for the previous).
+ * All accept multiple items (the camera one photo at a time, each queued at once).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,11 +77,8 @@ fun AttachmentSourceSheet(
 }
 
 /**
- * The content kept apart from the `ModalBottomSheet` wrapper: the wrapper is a
- * system window and the content is what carries the rules (which sources
- * exist, what each one fires). Separated, the content is exercisable straight
- * from a JVM test without depending on a window's animation — the same reason
- * `TerminalOptionsContent` exists apart from `TerminalOptionsSheet`.
+ * The content kept apart from the `ModalBottomSheet` wrapper so its rules can be
+ * tested on the JVM without window animations (as with `TerminalOptionsContent`).
  */
 @Composable
 internal fun SourceSheetContent(
@@ -106,10 +92,8 @@ internal fun SourceSheetContent(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
         if (uris.isNotEmpty()) {
-            // Claimed HERE, inside the callback, before any hop to the
-            // background: the grant on a picked document is transient, and the
-            // AttachmentUploadWorker may run well after this screen (and the app
-            // that supplied the file) have ceased to exist.
+            // Claim here, inside the callback: the document grant is transient and
+            // the upload worker may run after this screen and the source app are gone.
             uris.forEach { takePersistableRead(context.contentResolver, it) }
             onChoose(uris.map { resolveAttachment(context, it) })
             onClose()
@@ -120,10 +104,8 @@ internal fun SourceSheetContent(
         ActivityResultContracts.PickMultipleVisualMedia(),
     ) { uris ->
         if (uris.isNotEmpty()) {
-            // The Photo Picker's grant is NOT persistable (trying to persist
-            // it throws) — it lasts as long as this process does. That is why
-            // the copy into the app's cache happens now, rather than being
-            // left to the worker.
+            // Photo Picker grants cannot be persisted (it throws) and last only
+            // for this process, so copy into the cache now.
             onChoose(uris.map { copyToCache(context, it) })
             onClose()
         }
@@ -144,8 +126,7 @@ internal fun SourceSheetContent(
             )
             onClose()
         } else {
-            // A cancelled camera (or one that wrote nothing): the empty file
-            // already created for it must not sit there taking up cache.
+            // Camera cancelled or wrote nothing: delete the empty file.
             file?.delete()
         }
     }
@@ -202,34 +183,28 @@ private fun newPhotoFile(context: Context): File {
 }
 
 /**
- * The camera is ANOTHER app: it needs a `content://` with write permission,
- * never a `file://` (which would throw `FileUriExposedException`). The
- * `FileProvider` declared in this module's manifest is scoped to the
- * [PHOTOS_DIR] cache subfolder alone.
+ * The camera is another app, so it needs a writable `content://` URI, never a
+ * `file://` (`FileUriExposedException`). The module's `FileProvider` is scoped to
+ * the [PHOTOS_DIR] cache subfolder.
  */
 private fun contentUriFor(context: Context, file: File): Uri =
     FileProvider.getUriForFile(context, "${context.packageName}.terminalattach.fileprovider", file)
 
-// The authority above matches the one declared in this module's
-// AndroidManifest, and the provider behind it is [AttachmentFileProvider] — see
-// that class's doc for why it cannot be androidx's FileProvider directly.
+// The authority matches this module's AndroidManifest; the provider is
+// [AttachmentFileProvider] (see its doc for why it is a subclass).
 
 private fun takePersistableRead(contentResolver: ContentResolver, uri: Uri) {
     try {
         contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
     } catch (e: SecurityException) {
-        // Not every provider grants a persistable permission. Carry on with
-        // the transient one: if it does not survive until the worker runs, the
-        // upload fails VISIBLY (the attachment bar shows the reason) instead of
-        // disappearing in silence.
+        // Not every provider grants persistable access. Carry on with the
+        // transient grant; if it expires the upload fails visibly with a reason.
     }
 }
 
 /**
- * Copies the bytes into the app's cache. Only necessary for the Photo Picker,
- * whose grant is not persistable: without the copy, an upload that WorkManager
- * deferred (no network) would find an already-revoked `Uri` when it came to
- * read.
+ * Copies the bytes into the app cache. Only needed for the Photo Picker, whose
+ * grant is not persistable, so a deferred upload would find the `Uri` revoked.
  */
 private fun copyToCache(context: Context, uri: Uri): LocalAttachment {
     val metadata = resolveAttachment(context, uri)
@@ -245,9 +220,7 @@ private fun copyToCache(context: Context, uri: Uri): LocalAttachment {
             sizeBytes = destination.length(),
         )
     } catch (e: java.io.IOException) {
-        // Without the copy, the upload may still succeed through the original
-        // Uri if it survives — better to try than to discard the operator's
-        // choice.
+        // Fall back to the original Uri, which may still work.
         metadata
     } catch (e: SecurityException) {
         metadata
@@ -255,10 +228,9 @@ private fun copyToCache(context: Context, uri: Uri): LocalAttachment {
 }
 
 /**
- * Name and size as the provider reports them. Both can be missing (no provider
- * is obliged to answer those columns): the name falls back to the `Uri`'s last
- * segment and the size to `0`, which the attachment bar shows as
- * indeterminate progress rather than inventing a percentage.
+ * Name and size as the provider reports them. Either may be missing: the name
+ * falls back to the `Uri`'s last segment and the size to `0`, shown as
+ * indeterminate progress.
  */
 internal fun resolveAttachment(context: Context, uri: Uri): LocalAttachment {
     var name: String? = null
@@ -273,7 +245,7 @@ internal fun resolveAttachment(context: Context, uri: Uri): LocalAttachment {
             }
         }
     } catch (e: SecurityException) {
-        // The grant is already revoked: carry on with the fallback values.
+        // Grant already revoked: use the fallback values.
     }
     return LocalAttachment(
         uri = uri.toString(),

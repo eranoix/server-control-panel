@@ -35,10 +35,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * One attachment ready to hand to [MediaUploadWorker] -- a local, already
- * readable [file] (never a `content://` `Uri`: the generated OpenAPI
- * client's multipart operation only accepts a [java.io.File]) plus the
- * metadata [MediaUploadWorker]/the composer need before/while sending.
+ * An attachment ready for [MediaUploadWorker]: a local [file] (the generated client's multipart
+ * upload only accepts a [java.io.File], not a `content://` Uri) plus its metadata.
  */
 data class PickedAttachment(
     val file: File,
@@ -49,13 +47,9 @@ data class PickedAttachment(
 )
 
 /**
- * Filename/mime/size resolved for one attachment, plus the `image|video|
- * audio|document` classification the BFF's `msg_type` field expects. [cursor]
- * is an [OpenableColumns] query result (may be `null`/empty -- content
- * providers are not required to support either column); [mimeType] comes
- * from [ContentResolver.getType], not the cursor, matching how Android
- * itself splits that lookup. Pure and Android-framework-light on purpose so
- * it is unit-testable against a fake [Cursor] for every picker source.
+ * Filename, mime type and size of an attachment, plus the `msg_type` classification the server
+ * expects. The [OpenableColumns] cursor may be null or lack columns; the mime type comes from
+ * [ContentResolver.getType]. Kept framework-light so it is unit-testable with a fake [Cursor].
  */
 internal data class AttachmentMetadata(
     val filename: String,
@@ -80,7 +74,7 @@ internal fun resolveAttachmentMetadata(cursor: Cursor?, mimeType: String?, fallb
     return AttachmentMetadata(filename = filename, mimeType = mimeType, sizeBytes = sizeBytes, msgType = msgTypeFor(mimeType))
 }
 
-/** `image|video|audio` from the mime type's own type segment; anything else (including a null mime) is `document`. */
+/** Maps the mime type to image, video or audio; anything else, including null, is `document`. */
 internal fun msgTypeFor(mimeType: String?): String = when {
     mimeType == null -> "document"
     mimeType.startsWith("image/") -> "image"
@@ -97,13 +91,8 @@ private fun queryMetadata(contentResolver: ContentResolver, uri: Uri): Attachmen
 }
 
 /**
- * Copies [uri]'s bytes into [MediaCache.directory] under a collision-proof
- * name. Required because the generated client's multipart upload operation
- * takes a [java.io.File], never a `content://` `Uri` -- and reusing the
- * on-demand media cache directory means an about-to-be-sent file doesn't
- * need a second storage location (it is also where [MediaUploadWorker]'s
- * retry reads the same bytes back from, keyed off the message's own
- * `media.url`).
+ * Copies [uri]'s bytes into [MediaCache.directory] under a unique name, since the upload needs
+ * a [java.io.File]. Retries in [MediaUploadWorker] read the same bytes back from there.
  */
 private fun copyToLocalFile(context: Context, uri: Uri, filename: String): File {
     val dest = File(MediaCache.directory(context), "${UUID.randomUUID()}-$filename")
@@ -113,28 +102,14 @@ private fun copyToLocalFile(context: Context, uri: Uri, filename: String): File 
 }
 
 /**
- * The composer's three attach entry points:
- * - [ActivityResultContracts.PickVisualMedia] for photo/video -- the system
- *   Photo Picker needs no `READ_EXTERNAL_STORAGE` runtime prompt on a modern
- *   target SDK (matches the project's "typing/permission friction is last
- *   resort" preference), and its returned `content://` grant is *not*
- *   persistable (attempting to persist it throws) -- valid for this
- *   process's lifetime, which this function respects by copying the bytes
- *   out immediately rather than deferring.
- * - [ActivityResultContracts.OpenDocument] for arbitrary files -- this grant
- *   *is* persistable, and [android.content.ContentResolver.takePersistableUriPermission]
- *   is called synchronously inside the activity-result callback, before any
- *   suspend/background hop, because a picked document's grant is otherwise
- *   transient and the copy below may not finish before the granting
- *   activity is gone (the same precedent the file-transfer work already ran
- *   into).
- * - An in-app [MediaRecorder] voice-note toggle, recording straight to the
- *   app's private cache -- no picker, no permission concern beyond
- *   `RECORD_AUDIO` itself, since nothing is shared/external until upload.
+ * The composer's attach buttons:
+ * - Photo Picker for photo/video: no storage permission needed, but its grant is not
+ *   persistable (persisting throws), so the bytes are copied out immediately.
+ * - OpenDocument for any file: the grant is persisted synchronously in the result callback,
+ *   before any background hop, or it may expire before the copy finishes.
+ * - A [MediaRecorder] voice note recorded to the app's private cache.
  *
- * Every entry point is disabled while [enabled] is `false` -- the same
- * "only one send in flight" invariant [ConversationScreen]'s text composer
- * already relies on.
+ * All are disabled while [enabled] is false, keeping one send in flight at a time.
  */
 @Composable
 fun AttachmentBar(
@@ -186,11 +161,8 @@ fun AttachmentBar(
         if (granted) recording = AudioRecorderSession.start(context)
     }
 
-    // ACCESSIBILITY: the content of these buttons is nothing but an emoji.
-    // With no description, the screen reader announces the EMOJI'S NAME
-    // ("paperclip") or nothing at all, and not the action — three controls
-    // nobody can tell the purpose of. The description goes on the IconButton
-    // itself because that is what receives the tap.
+    // The buttons show only emoji, so each IconButton (the tap target) needs a
+    // content description or screen readers announce the emoji name.
     Row {
         IconButton(
             enabled = enabled,
@@ -232,9 +204,7 @@ fun AttachmentBar(
                     )
                 }
             },
-            // The description follows the STATE: the same button records and
-            // stops, and "Gravar audio" while recording is already under way
-            // would send a blind user back to the start instead of finishing.
+            // The same button records and stops, so the description must follow the state.
             modifier = Modifier.semantics {
                 contentDescription =
                     if (recording == null) "Record audio" else "Stop recording and attach"
@@ -246,11 +216,8 @@ fun AttachmentBar(
 }
 
 /**
- * Records a voice note straight to the app's private cache directory --
- * never shared/external storage, so no other app can read or tamper with
- * the bytes before send. [Context.startForegroundService]/notifications are
- * deliberately out of scope: recording only ever runs while this composable
- * (and the conversation screen it lives in) is foreground.
+ * Records a voice note to the app's private cache so no other app can read or alter it.
+ * No foreground service: recording only runs while the conversation screen is in front.
  */
 internal class AudioRecorderSession private constructor(private val recorder: MediaRecorder, private val file: File) {
     fun stop(): File {

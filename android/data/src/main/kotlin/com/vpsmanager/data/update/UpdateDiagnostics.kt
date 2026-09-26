@@ -5,21 +5,10 @@ import java.io.File
 import java.io.IOException
 
 /**
- * What went wrong in the update, written to disk for the Diagnostics screen.
- *
- * ### Why this exists
- * The owner of this app has neither `adb` nor logcat: when the install fails,
- * the `PackageInstaller`'s `EXTRA_STATUS_MESSAGE` is the ONLY sentence that
- * says why ("signature does not match", "downgrade", "blocked by device
- * policy"). If it stays only in `Log.e`, it does not exist. Same stance as
- * [com.vpsmanager.data.update.UpdateStaging]: the diagnostics are built in,
- * not an extra.
- *
- * ### Why a file, and not memory
- * What writes here is usually the install result `BroadcastReceiver` — which
- * may run in a freshly created process, after the app has been killed. An
- * `object` holding a list in memory would lose exactly the most important
- * message.
+ * Update failures written to disk for the Diagnostics screen. Without `adb`,
+ * `EXTRA_STATUS_MESSAGE` is the only explanation of an install failure, so it
+ * must not live only in `Log.e`. A file rather than memory because the install
+ * result receiver may run in a fresh process after the app was killed.
  */
 object UpdateDiagnostics {
 
@@ -37,7 +26,6 @@ object UpdateDiagnostics {
         } catch (e: IOException) {
             // Diagnostics that crash the app are worse than no diagnostics.
         } catch (e: SecurityException) {
-            // idem
         }
     }
 

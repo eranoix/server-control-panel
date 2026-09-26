@@ -5,27 +5,12 @@ import com.vpsmanager.data.dashboard.DashboardSnapshot
 import com.vpsmanager.data.dashboard.Severity
 
 /**
- * The summary the home screen widget shows.
+ * The summary the home screen widget shows: only what fits in a widget, not the
+ * whole `DashboardSnapshot`, since the launcher process reads it from disk.
  *
- * ## Why there is a separate summary, and not the whole snapshot
- *
- * The widget is drawn by **another process** — the launcher — from data that
- * Android loads off disk. Putting the entire `DashboardSnapshot` through there
- * would mean serialising lists of disks, alerts and scheduled jobs in order to
- * show four numbers. This cut is what fits in a widget and nothing beyond it.
- *
- * ## The field that defines the drawing: [measuredAt]
- *
- * Android **does not accept** a widget update more often than every 30 minutes
- * (`updatePeriodMillis`), and even that interval is a suggestion the system
- * postpones under battery saving. In other words: **a widget is a summary,
- * never a monitor**. The number it shows can be half an hour old.
- *
- * That makes the timestamp mandatory, not decorative. Without it the widget
- * states "disk 78%" wearing the same face as a reading taken just now — which
- * is exactly the lie the offline banner exists to prevent inside the app. A
- * widget with no time is the same failure, on the home screen, where it is
- * seen more times a day.
+ * Android updates widgets at most every 30 minutes (and postpones that under
+ * battery saving), so a widget is a summary, never a monitor. [measuredAt] is
+ * therefore mandatory: without it a stale value looks like a fresh reading.
  */
 data class ServerSummary(
     val cpu: String,
@@ -52,12 +37,9 @@ data class ServerSummary(
 }
 
 /**
- * Extracts the summary from a dashboard snapshot.
- *
- * Reuses the ALREADY JUDGED signals (`resourceSignals`, `attention`), never
- * redoes the judgement: two places deciding what counts as "disk full" diverge
- * the day only one of them is fixed — and then the widget would say green with
- * the app saying red, which is worse than having no widget at all.
+ * Extracts the summary from a dashboard snapshot. It reuses the already judged
+ * signals (`resourceSignals`, `attention`) so the widget and the app can never
+ * disagree about what counts as a problem.
  */
 fun summaryOf(snapshot: DashboardSnapshot, nowMs: Long = System.currentTimeMillis()): ServerSummary {
     val signals = snapshot.resourceSignals.associateBy { it.id }
@@ -75,13 +57,9 @@ fun summaryOf(snapshot: DashboardSnapshot, nowMs: Long = System.currentTimeMilli
 }
 
 /**
- * Where the summary lives between the app and the widget.
- *
- * `SharedPreferences` and not DataStore: the widget is drawn in a process that
- * Android may wake at any moment, including before the app has ever run.
- * Reading a small value synchronously in that context is exactly the case
- * where `SharedPreferences` is still right — DataStore would force a coroutine
- * inside the widget provider just to read four strings.
+ * Where the summary lives between the app and the widget. `SharedPreferences`
+ * rather than DataStore because the widget process may start before the app ever
+ * ran and needs a small synchronous read.
  */
 object StoredSummary {
 
@@ -117,11 +95,8 @@ object StoredSummary {
 }
 
 /**
- * How long ago the summary was measured, in words.
- *
- * "now" under a minute, then minutes, then hours. Past a day the sentence
- * becomes "more than a day ago" instead of counting: the exact number of days
- * changes no decision, and what matters is that the data is no longer good.
+ * How long ago the summary was measured, in words. Past a day it just says "over
+ * a day ago": the exact count changes no decision.
  */
 fun ageInWords(measuredAt: Long, nowMs: Long = System.currentTimeMillis()): String {
     if (measuredAt <= 0L) return "no reading yet"

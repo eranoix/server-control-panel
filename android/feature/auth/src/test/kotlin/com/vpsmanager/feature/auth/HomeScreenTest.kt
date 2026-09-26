@@ -22,13 +22,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The Home dashboard under Robolectric, in loading / error / content /
- * silence, plus the threshold behaviour and the navigation of each card.
+ * The Home dashboard under Robolectric: loading, error, content and calm
+ * states, thresholds, and each card's navigation.
  *
- * The screen is tall (six cards in a `LazyColumn`), so the test's virtual
- * screen is declared large: without it, the bottom cards simply never get
- * composed and the test would be measuring the emulator's height instead
- * of the content.
+ * The virtual screen is tall so the lower cards of the `LazyColumn` get composed.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(qualifiers = "w411dp-h2200dp")
@@ -37,22 +34,17 @@ class HomeScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    // ── states ──────────────────────────────────────────────────────────────
-
     @Test
-    fun `carregando mostra esqueleto com os titulos dos cartoes, nao tela em branco`() {
+    fun `loading shows a skeleton with card titles, not a blank screen`() {
         composeRule.dashboard(HomeUiState.Loading)
 
         composeRule.onNodeWithText("Loading the dashboard…").assertIsDisplayed()
-        // The "the skeleton has TITLES, it is not a blank screen" landmark
-        // kept moving as cards left the Home — health, resources and now the
-        // "Agora" one. "Acoes rapidas" is what is left, and it depends on no
-        // server data at all, which is exactly what makes it a good landmark.
+        // "Quick actions" needs no server data, so it is a stable landmark.
         composeRule.onNodeWithText("Quick actions").assertIsDisplayed()
     }
 
     @Test
-    fun `erro duro diz o que houve E o que fazer, e o botao recarrega`() {
+    fun `a hard error says what happened and what to do, and the button reloads`() {
         var reloaded = false
         composeRule.dashboard(
             state = HomeUiState.Error("Connection failed. Check your network and try again."),
@@ -71,7 +63,7 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `recarga que falha preserva o painel e avisa que o numero e velho`() {
+    fun `a failed reload keeps the dashboard and warns the numbers are old`() {
         composeRule.dashboard(
             HomeUiState.Success(
                 snapshot = snapshotReal(),
@@ -81,28 +73,18 @@ class HomeScreenTest {
 
         composeRule.onNodeWithText("The numbers below are from 07:08:22").assertIsDisplayed()
         composeRule.onNodeWithText("The server is unavailable right now.").assertIsDisplayed()
-        // and the old content is still there
         composeRule.onNodeWithText("Quick actions").assertIsDisplayed()
     }
 
-    // ── the test that gives the work its name ───────────────────────────────
-
     @Test
-    fun `a maquina real NAO aparece como tudo bem — swap e carga sobem para o topo`() {
+    fun `the real machine does not look all fine, swap and load rise to the top`() {
         composeRule.dashboard(HomeUiState.Success(snapshotReal()))
 
-        // The attention card exists, even with alerts empty and health_ok = true.
+        // The attention card shows even with no alerts and health_ok = true.
         composeRule.onNodeWithText("3 things need attention").assertIsDisplayed()
-        // The crossed signal appears on the attention card TOGETHER with the
-        // sentence that explains the threshold — that is where the explanation
-        // matters, once the threshold has been crossed. (It used to appear
-        // twice, because there was a resources card as well; the block grid
-        // replaced it.)
+        // The crossed signal appears with the sentence explaining its threshold.
         composeRule.onAllNodesWithText("Swap").assertCountAtLeast(1)
-        // "CPU roubada" NO LONGER appears in the attention card: it is
-        // information, not an alert, because no action is possible from inside
-        // the VM. Its number stays visible in the grid — what went away was
-        // the shouting.
+        // CPU steal is not an alert (nothing can be done inside the VM); it stays in the grid only.
         composeRule.onNodeWithText("CPU steal  37%").assertDoesNotExist()
         composeRule.onNodeWithText(
             "8.0 GiB of 8.0 GiB — no room left to page; a memory spike goes straight to the OOM killer",
@@ -110,16 +92,15 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `o valor ruim aparece com etiqueta textual, nao so com cor`() {
+    fun `a bad value has a text label, not only a color`() {
         composeRule.dashboard(HomeUiState.Success(snapshotReal()))
 
-        // Colour on its own is no use to a colour-blind eye, to sunlight on
-        // the screen, or to a screen reader.
+        // Color alone fails color-blind users, sunlight and screen readers.
         composeRule.onAllNodesWithText("WARNING").assertCountAtLeast(1)
     }
 
     @Test
-    fun `swap somado a RAM no limite vira CRITICO na tela`() {
+    fun `full swap with RAM at its limit shows as CRITICAL`() {
         val ops = opsReal(systemReal(memUsedPercent = 97.0))
         composeRule.dashboard(HomeUiState.Success(snapshotReal(ops = ops)))
 
@@ -130,43 +111,17 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `numa maquina calma o cartao de atencao SOME — sem boa noticia no lugar`() {
-        // The "good news" ("Nenhum alerta disparando") belonged to the health
-        // card, which left the Home at the owner's request. Silence becomes the
-        // good news itself: the absence of a warning is the cheapest way to say
-        // everything is fine, and it does not spend the first screen saying it.
+    fun `on a calm machine the attention card disappears, with no good-news message`() {
+        // Silence is the good news: no warning card at all.
         composeRule.dashboard(HomeUiState.Success(calmSnapshot()))
 
-        composeRule.onAllNodesWithText("Nenhum alerta disparando.").assertCountEquals(0)
+        composeRule.onAllNodesWithText("No alerts firing right now.").assertCountEquals(0)
         composeRule.onAllNodesWithText("1 thing needs attention").assertCountEquals(0)
         composeRule.onAllNodesWithText("2 things need attention").assertCountEquals(0)
     }
 
-    // ── aggregate health: LEFT THE HOME ─────────────────────────────────────
-    //
-    // The two tests that lived here covered the health card, removed from the
-    // first screen at the owner's request. The behaviour was not lost — health
-    // per subsystem still lives in its own section under Administration, and
-    // that is where it should be tested if it starts to matter again.
-
-
-
-    // ── "agora" and resources ───────────────────────────────────────────────
-
-    // THE TEST FOR THE "AGORA" CARD LEFT ALONG WITH THE CARD (at the owner's
-    // request). Queue, deploy and scheduled are still on the Home through the
-    // block grid, and that is where they are tested — see `DashboardTilesTest`
-    // and the queue tap test, just below.
-
-    // The "I could not find out" was said TWICE by the "Agora" card (deploy
-    // and scheduled), and the card is gone. The rule it protected — a failed
-    // call NEVER turns into zero, because zero is a statement — still holds and
-    // is still tested where the information now lives: `DashboardTilesTest`,
-    // which exercises deploys=null and scheduled=null straight into the
-    // blocks' constructor.
-
     @Test
-    fun `servidor sem o bloco system diz que os recursos faltam, sem inventar zero`() {
+    fun `a server without the system block says resources are missing instead of showing zero`() {
         composeRule.dashboard(HomeUiState.Success(snapshotReal(ops = opsReal(system = null))))
 
         composeRule.scrollTo("unavailable")
@@ -177,51 +132,33 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `a grade mostra os blocos iniciais quando ninguem escolheu nada ainda`() {
+    fun `the grid shows the initial tiles when nothing has been chosen yet`() {
         composeRule.dashboard(HomeUiState.Success(snapshotReal()))
 
-        // A dashboard that starts out empty forces you to assemble it before
-        // seeing any value. These four are the questions every operator asks.
-        //
-        // `onAllNodes` and not `onNode`: a signal past its threshold appears
-        // in the GRID (the number) and on the attention card (the explanation),
-        // and both occurrences are correct — the grid says what, the card says
-        // why.
+        // `onAllNodes`: a crossed signal appears both in the grid and on the attention card.
         composeRule.onNodeWithText("Dashboard").assertExists()
         composeRule.onAllNodesWithText("CPU").assertCountAtLeast(1)
         composeRule.onAllNodesWithText("MEMORY").assertCountAtLeast(1)
         composeRule.onNodeWithText("Customize").assertExists()
     }
 
-    /**
-     * THE RULE THAT MATTERS MOST IN THE GRID: a dashboard cannot hide a fire.
-     *
-     * The real machine behind this snapshot has swap with no headroom and
-     * stolen CPU — none of that is among the initial blocks. If the person's
-     * choice were absolute, the screen would stay green with two thresholds
-     * crossed, and a dashboard that can omit the one thing that is wrong is
-     * worse than no dashboard at all, because it is consulted with confidence.
-     */
+    /** The dashboard must never hide a fire: a CRITICAL tile shows even if not chosen. */
     @Test
-    fun `bloco CRITICO aparece na grade mesmo sem ter sido escolhido`() {
-        // memory at 97% makes swap CRITICAL (see swapSignal): no headroom to
-        // page out AND no RAM to allocate.
+    fun `a CRITICAL tile appears in the grid even if not chosen`() {
+        // Memory at 97% makes swap CRITICAL (see swapSignal).
         val ops = opsReal(systemReal(memUsedPercent = 97.0))
         composeRule.dashboard(HomeUiState.Success(snapshotReal(ops = ops)))
 
-        // "Swap" is not in INITIAL_TILES — if it shows up, it was the
-        // critical rule that brought it in.
+        // Swap is not in INITIAL_TILES, so only the critical rule can bring it in.
         composeRule.onAllNodesWithText("SWAP").assertCountAtLeast(1)
     }
 
-    // ── session in the footer ───────────────────────────────────────────────
-
     @Test
-    fun `identidade desceu para o rodape, com admin e uptime`() {
+    fun `the footer shows identity with admin and uptime`() {
         composeRule.dashboard(HomeUiState.Success(snapshotReal()))
 
-        composeRule.scrollTo("teste · admin")
-        composeRule.onNodeWithText("teste · admin").assertIsDisplayed()
+        composeRule.scrollTo("tester · admin")
+        composeRule.onNodeWithText("tester · admin").assertIsDisplayed()
         composeRule.onNodeWithText("test@northwind.example").assertExists()
         composeRule.onNodeWithText("host01 · ubuntu 24.04").assertExists()
         composeRule.onNodeWithText(
@@ -230,7 +167,7 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `identidade ausente nao derruba o painel — vira uma linha do rodape`() {
+    fun `a missing identity does not break the dashboard and becomes a footer line`() {
         composeRule.dashboard(HomeUiState.Success(snapshotReal(identity = null)))
 
         composeRule.scrollTo("identity unavailable")
@@ -240,7 +177,7 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `relogio do servidor fora de sincronia e denunciado`() {
+    fun `server clock drift is reported`() {
         // Device 10 minutes ahead of the server.
         val snapshot = snapshotReal(fetchedAtEpochMs = (1_788_678_502L + 600) * 1_000)
         composeRule.dashboard(HomeUiState.Success(snapshot))
@@ -249,20 +186,18 @@ class HomeScreenTest {
         composeRule.onNodeWithText("Server clock 600 s behind the device").assertExists()
     }
 
-    // ── navigation: no card is a dead end ───────────────────────────────────
-
     @Test
-    fun `tocar um sinal do topo leva a tela dele`() {
+    fun `tapping a top signal opens its screen`() {
         var target: DashboardTarget? = null
         composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { target = it })
 
-        // [0] = the attention card's row, which is the one at the top.
+        // Index 0 is the attention card's row, at the top.
         composeRule.onAllNodesWithText("Swap")[0].performClick()
         assertEquals(DashboardTarget.PROCESSES, target)
     }
 
     @Test
-    fun `tocar o deploy revertido leva a tela de deploys`() {
+    fun `tapping the rolled-back deploy opens the deploys screen`() {
         var target: DashboardTarget? = null
         composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { target = it })
 
@@ -271,21 +206,18 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `tocar a fila leva a fila de jobs`() {
+    fun `tapping the queue opens the job queue`() {
         var target: DashboardTarget? = null
         composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { target = it })
 
-        // Through the grid BLOCK, no longer through the "Agora" card's row:
-        // the card is gone, the path to the queue is not. And this is what the
-        // test protected — the destination, not the card.
-        // UPPERCASE: `TileGrid` draws `bloco.rotulo.uppercase()`.
+        // Uppercase because `TileGrid` renders labels uppercased.
         composeRule.scrollTo("QUEUE")
         composeRule.onNodeWithText("QUEUE").performClick()
         assertEquals(DashboardTarget.QUEUE, target)
     }
 
     @Test
-    fun `as acoes rapidas levam a cada destino`() {
+    fun `quick actions open each destination`() {
         val targets = mutableListOf<DashboardTarget>()
         composeRule.dashboard(HomeUiState.Success(snapshotReal()), onTarget = { targets += it })
 
@@ -306,9 +238,8 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `toda secao emitida existe no servidor — nenhum destino aponta para o vazio`() {
-        // The 25 SDUI screens served by the BFF; a destination outside this
-        // list would open "Esta seção não existe" on the phone.
+    fun `every emitted section exists on the server, no destination is dangling`() {
+        // The 25 SDUI screens served by the BFF; any other id would open a missing-section screen.
         val serverSections = setOf(
             "alerts.rules", "deploy.apps", "docker.compose", "docker.containers", "docker.images",
             "docker.networks", "docker.prune", "docker.volumes", "ai.settings", "jira.issues",
@@ -319,19 +250,16 @@ class HomeScreenTest {
         )
         DashboardTarget.entries.forEach { target ->
             val id = target.sectionId ?: return@forEach
-            assert(id in serverSections) { "destino $target aponta para a seção inexistente '$id'" }
+            assert(id in serverSections) { "target $target points at missing section '$id'" }
         }
     }
 
-    // ── wiring of the whole screen, with ViewModel ──────────────────────────
-
     @Test
-    fun `a tela inteira sobe a partir do ViewModel e chega ao painel`() {
+    fun `the whole screen starts from the ViewModel and reaches the dashboard`() {
         val vm = HomeViewModel(FakeDashboardSource { DashboardResult.Success(snapshotReal()) })
         composeRule.setContent {
             VpsManagerTheme {
-                // Auto-refresh off: an infinite `delay` in the composition never lets
-                // Compose go idle and `waitForIdle` would wait for ever.
+                // Auto-refresh off: its infinite `delay` would keep `waitForIdle` waiting forever.
                 HomeScreen(viewModel = vm, autoRefreshMillis = 0)
             }
         }
@@ -341,7 +269,7 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `a tela traduz o destino em secao e em terminal, sem conhecer rota`() {
+    fun `the screen maps targets to a section or the terminal without knowing routes`() {
         var section: String? = null
         var terminal = false
         val vm = HomeViewModel(FakeDashboardSource { DashboardResult.Success(snapshotReal()) })
@@ -366,7 +294,7 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `erro na primeira carga vira tela de erro, e nova tentativa traz o painel`() {
+    fun `a first-load error shows the error screen, and retry brings the dashboard`() {
         var attempts = 0
         val vm = HomeViewModel(
             FakeDashboardSource {
@@ -389,7 +317,7 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `carregando nao pisca vazio antes de a busca terminar`() {
+    fun `loading never flashes empty before the fetch finishes`() {
         val vm = HomeViewModel(FakeDashboardSource { awaitCancellation() })
         composeRule.setContent { VpsManagerTheme { HomeScreen(viewModel = vm, autoRefreshMillis = 0) } }
 
@@ -398,7 +326,7 @@ class HomeScreenTest {
     }
 }
 
-/** Composes the content only, without a ViewModel — every state is a parameter. */
+/** Composes the content only, without a ViewModel; every state is a parameter. */
 private fun ComposeContentTestRule.dashboard(
     state: HomeUiState,
     onRetry: () -> Unit = {},
@@ -421,5 +349,5 @@ private fun ComposeContentTestRule.scrollTo(text: String) {
 
 private fun androidx.compose.ui.test.SemanticsNodeInteractionCollection.assertCountAtLeast(min: Int) {
     val actual = fetchSemanticsNodes().size
-    assert(actual >= min) { "esperava ao menos $min nós, achei $actual" }
+    assert(actual >= min) { "expected at least $min nodes, found $actual" }
 }

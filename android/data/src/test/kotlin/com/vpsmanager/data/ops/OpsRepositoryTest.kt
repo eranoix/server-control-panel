@@ -46,7 +46,7 @@ class OpsRepositoryTest {
                       "queue_running": 1,
                       "queue_queued": 2,
                       "alerts": [
-                        {"name": "cpu-alta", "severity": "critical", "state": "firing", "current_value": 95.0, "threshold": 90.0, "unit": "%"}
+                        {"name": "cpu-high", "severity": "critical", "state": "firing", "current_value": 95.0, "threshold": 90.0, "unit": "%"}
                       ]
                     }
                     """.trimIndent(),
@@ -60,7 +60,7 @@ class OpsRepositoryTest {
         assertEquals(1L, result.snapshot.queueRunning)
         assertEquals(2L, result.snapshot.queueQueued)
         assertEquals(1, result.snapshot.alerts.size)
-        assertEquals("cpu-alta", result.snapshot.alerts[0].name)
+        assertEquals("cpu-high", result.snapshot.alerts[0].name)
 
         val recorded = server.takeRequest()
         assertEquals("GET", recorded.method)
@@ -126,7 +126,7 @@ class OpsRepositoryTest {
               "health_ok": true,
               "queue_running": 1,
               "queue_queued": 0,
-              "alerts": [{"name": "cpu-alta", "severity": "warning", "state": "firing", "current_value": 80.0, "threshold": 75.0}]
+              "alerts": [{"name": "cpu-high", "severity": "warning", "state": "firing", "current_value": 80.0, "threshold": 75.0}]
             }
             """.trimIndent(),
         )
@@ -136,12 +136,12 @@ class OpsRepositoryTest {
         check(snapshot != null)
         assertEquals(true, snapshot.healthOk)
         assertEquals(1, snapshot.alerts.size)
-        assertEquals("cpu-alta", snapshot.alerts[0].name)
+        assertEquals("cpu-high", snapshot.alerts[0].name)
     }
 
     @Test
     fun decodeOpsSnapshotReturnsNullOnMalformedPayload() {
-        val element = Json.parseToJsonElement("""{"nao":"e um ops status"}""")
+        val element = Json.parseToJsonElement("""{"not":"an ops status"}""")
 
         assertNull(decodeOpsSnapshot(element))
     }

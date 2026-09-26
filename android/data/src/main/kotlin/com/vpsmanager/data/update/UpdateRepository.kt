@@ -30,13 +30,9 @@ data class UpdateRelease(
 )
 
 /**
- * The update manifest.
- *
- * [patch] is null whenever there is no patch for the exact base given —
- * unknown base, a version outside the retention window, or no base sent at all.
- * The server NEVER approximates. [full] is always present, including alongside
- * the patch, so that a failure to apply does not require a second trip to the
- * server.
+ * The update manifest. [patch] is null whenever there is no patch for the exact
+ * base given; the server never approximates. [full] is always present, so a
+ * failed patch needs no second trip to the server.
  */
 data class UpdateManifest(
     val latest: UpdateRelease,
@@ -46,22 +42,20 @@ data class UpdateManifest(
     val patchTool: String,
 )
 
-/** Desfecho de [UpdateSource.check]. */
+/** Outcome of [UpdateSource.check]. */
 sealed interface UpdateCheckResult {
     data class Success(val manifest: UpdateManifest) : UpdateCheckResult
 
     /**
-     * 503: no release has been through the patch pipeline yet. It is SERVER
-     * state, not a wrong resource — and therefore it does not become an "error"
-     * on screen: the app simply has no incremental channel today, and keeps
-     * quiet.
+     * 503: no release has gone through the patch pipeline yet. This is server
+     * state, not an error, so the app stays quiet.
      */
     data object ChannelNotPublished : UpdateCheckResult
 
     data class Error(val reason: String) : UpdateCheckResult
 }
 
-/** Andamento de [UpdateSource.download]. */
+/** Progress of [UpdateSource.download]. */
 sealed interface ArtifactDownloadProgress {
     data class Progress(val downloadedBytes: Long, val totalBytes: Long) : ArtifactDownloadProgress
 
@@ -69,16 +63,14 @@ sealed interface ArtifactDownloadProgress {
     data class Done(val file: File) : ArtifactDownloadProgress
 
     /**
-     * [corrupt] separates "the bytes that arrived are wrong" (hash mismatch —
-     * the file was DELETED, resuming will not help, it has to be downloaded
-     * again) from "the connection dropped" (the partial file stayed on disk and
-     * the next attempt resumes where it left off). Two different reactions on
-     * the fallback ladder.
+     * [corrupt]: the hash did not match and the file was deleted, so it must be
+     * downloaded again. Otherwise the connection dropped and the partial file
+     * stays on disk for the next attempt to resume.
      */
     data class Failed(val reason: String, val corrupt: Boolean) : ArtifactDownloadProgress
 }
 
-/** The port the layers above see. It exists so ViewModel tests never touch the network. */
+/** The port the upper layers see, so ViewModel tests never touch the network. */
 interface UpdateSource {
     suspend fun check(baseSha256: String?): UpdateCheckResult
     fun download(artifact: UpdateArtifact, target: File): Flow<ArtifactDownloadProgress>
@@ -86,12 +78,8 @@ interface UpdateSource {
 
 /**
  * The single entry point into `GET /app/update` and `GET /app/update/artifact`.
- *
- * ### Why the base URL is re-derived on every call
- * Following [com.vpsmanager.data.auth.BffSessionRefresher]: the update check
- * runs long after boot (a periodic worker) and has to talk to the server
- * configured NOW, not the one that was in `System.getProperty` when the process
- * started.
+ * The base URL is re-derived on every call because the periodic check runs long
+ * after startup and must use the server configured now.
  */
 open class UpdateRepository(
     private val serverConfigRepository: ServerConfigRepository,
@@ -137,32 +125,18 @@ open class UpdateRepository(
     }
 
     /**
-     * Downloads [artifact] into [target], RESUMING where it left off.
+     * Downloads [artifact] into [target], resuming where it left off, since a
+     * download restarting from zero on a poor connection may never finish.
      *
-     * This is the point of the whole feature: the owner's connection is poor,
-     * and a 10 MB download that restarts from zero on every drop never
-     * finishes.
+     * `If-Range` with the strong ETag (the artifact SHA-256) is mandatory: if the
+     * server content changed, it answers 200 with the whole file instead of
+     * splicing different bytes onto the partial one.
+     * - 206: resume from the offset in the server's `Content-Range`, truncating there.
+     * - 200: truncate to zero and write the whole body.
+     * - 416: the disk holds more than the artifact (leftover from another version);
+     *   delete it and fail as corrupt.
      *
-     * ### The resume contract, and why `If-Range` is mandatory
-     * `Range: bytes=N-` on its own is dangerous: if the file on the server had
-     * changed between the two attempts, the bytes from N onward would belong to
-     * DIFFERENT content, silently spliced onto what is already on disk.
-     * `If-Range` with the strong ETag (which here IS the artifact's SHA-256)
-     * closes that: if the target is not byte-for-byte the same, the server
-     * answers 200 with the whole file instead of 206, and the code below
-     * truncates and starts over.
-     *
-     * The three possible responses are handled explicitly, none assumed:
-     * - **206** — resume. The offset comes from the SERVER's `Content-Range`,
-     *   not from what we asked for, and the file is truncated at that offset
-     *   before writing.
-     * - **200** — the server ignored the Range (or the `If-Range` did not
-     *   match): truncate to zero and write the whole body.
-     * - **416** — the disk holds more bytes than the entire artifact (a file
-     *   from an earlier version under the same name): delete it and ask for a
-     *   fresh attempt.
-     *
-     * The result's SHA-256 is checked before [ArtifactDownloadProgress.Done].
+     * The SHA-256 is checked before [ArtifactDownloadProgress.Done].
      */
     override fun download(artifact: UpdateArtifact, target: File): Flow<ArtifactDownloadProgress> = flow {
         val api = api()
@@ -235,16 +209,14 @@ open class UpdateRepository(
                 var written = writeFrom
                 var lastReported = writeFrom
                 RandomAccessFile(target, "rw").use { out ->
-                    // Truncate BEFORE writing: a 200 after a partial 206 has
-                    // to erase the partial rather than write over it and leave
-                    // an old tail at the end of the file.
+                    // Truncate before writing, so a 200 after a partial 206 does
+                    // not leave an old tail at the end of the file.
                     out.setLength(writeFrom)
                     out.seek(writeFrom)
                     body.byteStream().use { input ->
                         val buffer = ByteArray(DOWNLOAD_CHUNK_SIZE_BYTES)
                         while (true) {
-                            // The user cancelled: leave, keeping the partial
-                            // on disk, which is exactly what the resume wants.
+                            // On cancel, leave the partial file on disk for resuming.
                             currentCoroutineContext().ensureActive()
                             val read = input.read(buffer)
                             if (read == -1) break
@@ -279,10 +251,9 @@ open class UpdateRepository(
     }.flowOn(Dispatchers.IO)
 
     /**
-     * The barrier. A `.hdiff` with the wrong hash never becomes `hpatchz`
-     * input — and since `hpatchz` can return SUCCESS over wrong input and write
-     * a complete, wrong APK, letting one through here would mean relying on the
-     * final APK check alone. Two barriers, not one.
+     * A `.hdiff` with the wrong hash never reaches `hpatchz`, which can report
+     * success on bad input and write a complete but wrong APK. This is the first
+     * of two checks (the final APK is checked too).
      */
     private fun verify(artifact: UpdateArtifact, target: File): ArtifactDownloadProgress = try {
         val actual = sha256Of(target)
@@ -318,14 +289,9 @@ private fun com.vpsmanager.mobileapiclient.model.AppUpdateArtifact.toDomain() =
     UpdateArtifact(url = url, sizeBytes = sizeBytes, sha256 = sha256)
 
 /**
- * Resolves the path the manifest published against the client's base, and
- * REFUSES a result that changes host.
- *
- * The `url` field comes off the network. It is from our own authenticated
- * server, but blindly following a URL that arrived in a response is how an open
- * redirect becomes token exfiltration: this stack's `Authorization` interceptor
- * would attach the Bearer to whatever host showed up there. Pinning the host to
- * the configured one costs three lines and closes the whole class of bug.
+ * Resolves the manifest's artifact path against the client base and refuses any
+ * result on a different host: the auth interceptor would attach the Bearer token
+ * to whatever host appears there.
  */
 internal fun resolveArtifactUrl(baseUrl: String, artifactUrl: String): HttpUrl? {
     val base = baseUrl.toHttpUrlOrNull() ?: return null

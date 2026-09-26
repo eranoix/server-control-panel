@@ -10,13 +10,8 @@ import androidx.work.WorkManager
 import java.util.UUID
 
 /**
- * One shared notification channel and builder for both transfer directions:
- * download and upload progress notifications look and behave identically,
- * differing only in title -- so there is exactly one place wiring the
- * cancel action to `WorkManager.createCancelPendingIntent`, and one place
- * declaring the foreground-service type this project's locked minSdk 34
- * requires unconditionally (no legacy branch needed, matching every other
- * MediaStore/permission decision in this plan).
+ * Shared notification channel and builder for download and upload progress, including the
+ * cancel action and the foreground service type required on minSdk 34.
  */
 internal object TransferNotifications {
     const val CHANNEL_ID = "file_transfers"

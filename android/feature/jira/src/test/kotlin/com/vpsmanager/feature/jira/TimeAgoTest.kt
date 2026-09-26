@@ -14,18 +14,18 @@ class TimeAgoTest {
         .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ"))
 
     @Test
-    fun `o formato do Jira tem fuso SEM dois-pontos, e e este que precisa funcionar`() {
-        // "2026-09-09T09:00:00.000+0000" — time.RFC3339 on its own rejects it.
+    fun `Jira's format has an offset WITHOUT a colon, and that is the one that must work`() {
+        // Plain RFC 3339 parsing rejects an offset like +0000.
         assertEquals("3 h ago", timeAgo("2026-09-09T09:00:00.000+0000", now))
     }
 
     @Test
-    fun `o formato ISO com dois-pontos tambem passa`() {
+    fun `the ISO format with a colon also works`() {
         assertEquals("3 h ago", timeAgo("2026-09-09T09:00:00Z", now))
     }
 
     @Test
-    fun `a escala vai de minutos a anos`() {
+    fun `the scale goes from minutes to years`() {
         assertEquals("30 min ago", timeAgo(now.minusMinutes(30).toString(), now))
         assertEquals("5 h ago", timeAgo(hoursAgo(5), now))
         assertEquals("3 d ago", timeAgo(now.minusDays(3).toString(), now))
@@ -35,14 +35,14 @@ class TimeAgoTest {
     }
 
     @Test
-    fun `data ilegivel vira vazio, nunca erro — o cartao continua util`() {
-        assertEquals("", timeAgo("ontem de tarde", now))
+    fun `an unreadable date becomes empty, never an error`() {
+        assertEquals("", timeAgo("yesterday afternoon", now))
         assertEquals("", timeAgo(null, now))
         assertEquals("", timeAgo("", now))
     }
 
     @Test
-    fun `carimbo no futuro nao vira numero negativo`() {
+    fun `a future timestamp does not become a negative number`() {
         // The device's clock may be running behind the server's.
         assertEquals("now", timeAgo(now.plusHours(2).toString(), now))
     }
@@ -51,22 +51,22 @@ class TimeAgoTest {
 class InitialsTest {
 
     @Test
-    fun `duas palavras dao duas iniciais`() {
+    fun `two words give two initials`() {
         assertEquals("SR", initials("Sam Rivera"))
     }
 
     @Test
-    fun `nome do meio nao entra — o ultimo sobrenome identifica melhor`() {
+    fun `the middle name is skipped because the last name identifies better`() {
         assertEquals("SR", initials("Sam Lee Rivera"))
     }
 
     @Test
-    fun `uma palavra da uma inicial`() {
+    fun `one word gives one initial`() {
         assertEquals("S", initials("sam"))
     }
 
     @Test
-    fun `sem nome, um ponto de interrogacao — nunca um circulo vazio`() {
+    fun `no name gives a question mark, never an empty circle`() {
         assertEquals("?", initials(null))
         assertEquals("?", initials("   "))
     }
@@ -77,7 +77,7 @@ class DueLabelTest {
     private val today: LocalDate = LocalDate.of(2026, 9, 9)
 
     @Test
-    fun `vencido e diferente de vencendo, e e essa diferenca que muda o dia`() {
+    fun `overdue is distinct from due soon`() {
         assertEquals("venceu", dueLabel("2026-09-01", today))
         assertEquals("due today", dueLabel("2026-09-09", today))
         assertEquals("due tomorrow", dueLabel("2026-09-10", today))
@@ -85,8 +85,8 @@ class DueLabelTest {
     }
 
     @Test
-    fun `sem data de vencimento, o cartao nao ganha linha`() {
+    fun `without a due date, the card gets no line`() {
         assertEquals("", dueLabel(null, today))
-        assertEquals("", dueLabel("nunca", today))
+        assertEquals("", dueLabel("never", today))
     }
 }

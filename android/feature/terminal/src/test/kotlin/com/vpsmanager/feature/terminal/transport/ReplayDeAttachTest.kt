@@ -6,11 +6,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Calibration of the non-reproducible replay detector.
- *
- * The numbers in these tests are not invented: they come from counting across
- * the 30 real session logs on this machine, over the same 128 KiB window the
- * server re-emits. See the comment on [AttachReplay] for the table.
+ * Calibration of the non-reproducible replay detector. The thresholds come from
+ * 30 real session logs over the same 128 KiB window the server re-emits (see
+ * [AttachReplay]).
  */
 class AttachReplayTest {
 
@@ -19,24 +17,23 @@ class AttachReplayTest {
     private fun stream(times: Int, lines: String): ByteArray {
         val output = ArrayList<Byte>()
         repeat(times) {
-            output.addAll("texto de uma linha qualquer\r\n".toByteArray().toList())
+            output.addAll("some line of text\r\n".toByteArray().toList())
             output.addAll(cuu(lines).toList())
         }
         return output.toByteArray()
     }
 
     @Test
-    fun `saida append-only de shell nao e repintura`() {
+    fun `append-only shell output is not a repaint`() {
         val shell = "$ ls -l\r\ntotal 4\r\ndrwxr-xr-x 2 root root 4096 dir\r\n$ ".toByteArray()
         assertEquals(0, AttachReplay.countBlockCuu(shell))
         assertFalse(AttachReplay.isDiffRepaint(shell))
     }
 
     @Test
-    fun `redesenho de prompt do readline nao conta como repintura`() {
-        // `ESC[1A` and `ESC[A` are what readline emits to redraw a two-line
-        // prompt. Measured: the worst real shell on this machine had 34 of
-        // them and ZERO of two lines or more.
+    fun `a readline prompt redraw does not count as a repaint`() {
+        // readline redraws a two-line prompt with `ESC[1A` and `ESC[A`; real shells
+        // emitted up to 34 of these and none of two lines or more.
         val readline = ByteArray(0) +
             "[1A".toByteArray().let { one -> ByteArray(0) + List(40) { one.toList() }.flatten().toByteArray() } +
             "[A".toByteArray().let { one -> ByteArray(0) + List(40) { one.toList() }.flatten().toByteArray() }
@@ -45,50 +42,45 @@ class AttachReplayTest {
     }
 
     @Test
-    fun `parametro vazio ou zero vale uma linha, nao duas`() {
-        // ECMA-48: an omitted or 0 parameter takes the command's default,
-        // which for CUU is 1. Counting those as "moved up several" would
-        // classify a shell as a TUI.
+    fun `an empty or zero parameter means one line, not two`() {
+        // ECMA-48: an omitted or 0 parameter means the default, which for CUU is 1.
         assertEquals(0, AttachReplay.countBlockCuu("[A[0A[A".toByteArray()))
         assertEquals(1, AttachReplay.countBlockCuu("[2A".toByteArray()))
     }
 
     @Test
-    fun `renderizador diferencial e reconhecido`() {
-        // The real log of the "Aplicativo" session had 1354 CUU of 3+ lines
-        // in the 128 KiB re-emitted; the quietest TUI had 33. 25 already
-        // clears the limit of 20 comfortably and stays below the real worst
-        // case.
+    fun `a differential renderer is recognized`() {
+        // The quietest real TUI had 33 multi-line CUUs in 128 KiB; 25 clears the
+        // threshold of 20 and stays below that.
         val ink = stream(times = 25, lines = "7")
         assertTrue(AttachReplay.countBlockCuu(ink) >= AttachReplay.REPAINT_THRESHOLD)
         assertTrue(AttachReplay.isDiffRepaint(ink))
     }
 
     @Test
-    fun `o vao medido entre shell e TUI e respeitado dos dois lados`() {
+    fun `the measured gap between shell and TUI holds on both sides`() {
         // 11 = the worst real shell measured. 33 = the quietest real TUI measured.
         assertFalse(AttachReplay.isDiffRepaint(stream(times = 11, lines = "4")))
         assertTrue(AttachReplay.isDiffRepaint(stream(times = 33, lines = "4")))
     }
 
     @Test
-    fun `sequencia truncada no fim do bloco nao estoura`() {
-        // The server cuts the replay at 128 KiB and only aligns on the next
-        // line break — a sequence can end up truncated. Scanning that must not
-        // read past the end of the array.
-        assertEquals(0, AttachReplay.countBlockCuu("texto[12".toByteArray()))
-        assertEquals(0, AttachReplay.countBlockCuu("texto".toByteArray()))
+    fun `a sequence truncated at the end of the block does not overflow`() {
+        // The server cuts the replay at 128 KiB, so a sequence can be truncated;
+        // scanning must not read past the end of the array.
+        assertEquals(0, AttachReplay.countBlockCuu("text[12".toByteArray()))
+        assertEquals(0, AttachReplay.countBlockCuu("text".toByteArray()))
         assertEquals(0, AttachReplay.countBlockCuu(ByteArray(0)))
     }
 
     @Test
-    fun `parametro absurdamente longo satura em vez de estourar`() {
+    fun `an absurdly long parameter saturates instead of overflowing`() {
         val absurd = ("[" + "9".repeat(400) + "A").toByteArray()
         assertEquals(1, AttachReplay.countBlockCuu(absurd))
     }
 
     @Test
-    fun `outras sequencias CSI que terminam em letra diferente nao contam`() {
+    fun `other CSI sequences ending in a different letter do not count`() {
         // `ESC[2J` (clear screen), `ESC[10B` (move down), `ESC[3C` (right).
         val others = "[2J[10B[3C[5D".toByteArray()
         assertEquals(0, AttachReplay.countBlockCuu(others))

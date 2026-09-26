@@ -40,26 +40,9 @@ internal const val CHECK_UPDATE_LABEL = "Check for updates"
 internal const val CHECK_UPDATE_ICON_DESCRIPTION = "Check for app updates"
 
 /**
- * Device settings.
- *
- * ## Why it exists, and what it took out of the drawer
- *
- * The appearance and the "check for updates" lived in the drawer's footer.
- * That made sense while the drawer was a list of loose screens — the
- * footer was the only "device" place there was. With the parent pages
- * there is a right place: a setting is not a work destination, and mixing
- * it with System, Docker and Operations made the drawer answer two
- * different questions.
- *
- * Signing out STAYED in the footer, and that is deliberate: ending the
- * session has to be one tap away from any screen, without navigating
- * anywhere first.
- *
- * ## The version sits next to the button
- *
- * It is the only piece of information that makes the answer verifiable.
- * Without it, "you are already on the latest version" is a claim nobody
- * can check — and the person has just spent a tap to ask.
+ * Device settings (appearance, updates, notifications, storage). Sign out stays in the drawer
+ * footer so it is one tap away from any screen. The installed version is shown next to the
+ * update check so its answer can be verified.
  */
 @Composable
 internal fun SettingsScreen(
@@ -81,10 +64,7 @@ internal fun SettingsScreen(
             .padding(vertical = 8.dp)
             .testTag(TAG_SETTINGS),
     ) {
-        // No section title here: ThemeModeSelector already announces itself as
-        // "Appearance", and the two together put the same word on the screen
-        // twice — the screen reader read the header and repeated it on the
-        // selector.
+        // No section title: ThemeModeSelector already labels itself "Appearance".
         ThemeModeSelector(
             selected = themeMode,
             onSelect = onThemeModeChange,
@@ -115,10 +95,6 @@ internal fun SettingsScreen(
             hint = "App lock, screen protection, auto-return",
             onClick = onOpenSecurity,
         )
-        // It lives under "App", next to updates and notifications, because it
-        // belongs to the same family: things the app does on its own and that
-        // the person has a right to look at. Under "About" it would be passive
-        // reading, and here there is a button that acts.
         SettingRow(
             icon = Icons.Filled.Delete,
             iconDescription = "Storage",

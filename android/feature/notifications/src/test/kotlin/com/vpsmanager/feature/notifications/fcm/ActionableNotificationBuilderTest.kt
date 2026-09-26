@@ -14,13 +14,13 @@ import org.robolectric.Shadows.shadowOf
 class ActionableNotificationBuilderTest {
 
     @Test
-    fun `job failed payload targets the deploy channel with a Ver log action and job_id deep link`() {
+    fun `job failed payload targets the deploy channel with a View log action and job_id deep link`() {
         val context = RuntimeEnvironment.getApplication()
         val data = mapOf(
             "event_type" to "job.failed",
             "job_id" to "abc123",
-            "title" to "Deploy falhou",
-            "body" to "O deploy abc123 falhou.",
+            "title" to "Deploy failed",
+            "body" to "Deploy abc123 failed.",
         )
 
         val notification = ActionableNotificationBuilder.build(context, data).build()
@@ -40,8 +40,8 @@ class ActionableNotificationBuilderTest {
         val data = mapOf(
             "event_type" to "metric.threshold",
             "severity" to "critical",
-            "title" to "CPU critico",
-            "body" to "CPU acima do limite.",
+            "title" to "CPU critical",
+            "body" to "CPU above the threshold.",
         )
 
         val notification = ActionableNotificationBuilder.build(context, data).build()
@@ -56,8 +56,8 @@ class ActionableNotificationBuilderTest {
         val data = mapOf(
             "event_type" to "metric.threshold",
             "severity" to "warning",
-            "title" to "Disco alto",
-            "body" to "Uso de disco acima de 80 por cento.",
+            "title" to "Disk high",
+            "body" to "Disk usage above 80 percent.",
         )
 
         val notification = ActionableNotificationBuilder.build(context, data).build()

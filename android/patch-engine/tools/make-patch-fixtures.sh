@@ -1,23 +1,19 @@
 #!/usr/bin/env bash
-# Gera as fixtures do teste de CICLO REAL (ApkPatcherRealApkTest): dois APKs
-# de release assinados com a chave de desenvolvimento e o patch HDiffPatch
-# entre eles, em build/patch-fixtures/ (registrado como srcDir de assets do
-# androidTest em build.gradle.kts).
+# Generates the fixtures for the REAL CYCLE test (ApkPatcherRealApkTest): two
+# release APKs signed with the development key and the HDiffPatch patch
+# between them, in build/patch-fixtures/ (an androidTest assets srcDir in
+# build.gradle.kts).
 #
-# POR QUE ISTO NAO E VERSIONADO
-# O APK de release deste projeto tem ~33 MB. O par mais o patch daria ~66 MB
-# de binario opaco no repositorio, para sempre, para provar algo que este
-# script reproduz em ~4 minutos. Nao se paga -- ainda mais num repositorio que
-# e a ferramenta de trabalho diaria de alguem. O que fica versionado e o par
-# PEQUENO (270 KB, tools/make-smoke-fixtures.sh), que cobre carga da .so,
-# assinatura JNI e conferencia de hash num checkout limpo.
+# Not committed: the pair plus patch is about 66 MB of opaque binary, and this
+# script rebuilds it in about 4 minutes. The committed SMALL pair
+# (tools/make-smoke-fixtures.sh) covers .so loading, the JNI signature and
+# hash checking on a clean checkout.
 #
-# Consequencia honesta: sem rodar este script antes, ApkPatcherRealApkTest
-# FALHA -- nao "pula". Teste que se ausenta em silencio nao prova nada, e a
-# suite ficar verde sem a prova central seria pior que ficar vermelha.
+# Without running this script first, ApkPatcherRealApkTest FAILS rather than
+# skipping, so a green suite always includes the real-cycle proof.
 #
-# Uso:  ./tools/make-patch-fixtures.sh
-# Env:  KEYSTORE=<jks>  HDIFFZ=<binario>  ABI=<x86_64|arm64-v8a>
+# Usage: ./tools/make-patch-fixtures.sh
+# Env:   KEYSTORE=<jks>  HDIFFZ=<binary>  ABI=<x86_64|arm64-v8a>
 
 set -euo pipefail
 
@@ -27,10 +23,8 @@ ANDROID_DIR="$(dirname "$MODULE_DIR")"
 OUT_DIR="$MODULE_DIR/build/patch-fixtures/patch-fixtures"
 STAGE_DIR="$MODULE_DIR/.build/apks"
 
-# x86_64 por padrao porque o alvo de teste e o emulador do Lab
-# (docs/android-emulador-lab.md). A ENTREGA e arm64-v8a; o ciclo aqui e o
-# mesmo nas duas ABIs -- o que muda e qual .so vai dentro do APK, e o APK e
-# so um saco de bytes do ponto de vista do patcher.
+# x86_64 by default because tests run on the emulator. Releases are
+# arm64-v8a, but to the patcher an APK is just bytes, so the cycle is the same.
 ABI="${ABI:-x86_64}"
 KEYSTORE="${KEYSTORE:-/opt/panel/data/android-dev-signing/vpsmanager-DEV-NAO-E-RELEASE.jks}"
 
@@ -44,12 +38,12 @@ if [ ! -x "$HDIFFZ" ]; then
   HDIFFZ="$(command -v hdiffz || true)"
 fi
 if [ -z "$HDIFFZ" ] || [ ! -x "$HDIFFZ" ]; then
-  echo "make-patch-fixtures: hdiffz nao encontrado (ver tools/make-smoke-fixtures.sh para como construir)" >&2
+  echo "make-patch-fixtures: hdiffz not found (see tools/make-smoke-fixtures.sh for how to build it)" >&2
   exit 1
 fi
 if [ ! -f "$KEYSTORE" ]; then
-  echo "make-patch-fixtures: keystore de desenvolvimento ausente: $KEYSTORE" >&2
-  echo "  (docs/android-chave-dev.md -- NAO e a chave de release, que nunca toca esta maquina)" >&2
+  echo "make-patch-fixtures: development keystore missing: $KEYSTORE" >&2
+  echo "  (docs/android-chave-dev.md; this is NOT the release key, which never touches this machine)" >&2
   exit 1
 fi
 
@@ -69,27 +63,23 @@ build_apk() {
 build_apk "$OLD_VERSION_NAME" "$OLD_VERSION_CODE" "$STAGE_DIR/old.apk"
 build_apk "$NEW_VERSION_NAME" "$NEW_VERSION_CODE" "$STAGE_DIR/new.apk"
 
-# Mesmas opcoes do gerador do servidor. -s-4m mantem o pico de memoria do
-# PATCH baixo (modo de fluxo), que e o que importa no celular; -c-zstd e o
-# compressor padrao do hdiffz e o unico caminho que o .so deste modulo
-# realmente vai encontrar em producao.
+# Same options as the server's generator. -s-4m (stream mode) keeps the
+# patching memory peak low on the phone; -c-zstd is what production uses.
 echo "make-patch-fixtures: hdiffz -s-4m -c-zstd-21-24" >&2
 "$HDIFFZ" -s-4m -c-zstd-21-24 -f "$STAGE_DIR/old.apk" "$STAGE_DIR/new.apk" "$STAGE_DIR/update.hdiff" >/dev/null
 
 cp -f "$STAGE_DIR/old.apk"      "$OUT_DIR/base.apk"
 cp -f "$STAGE_DIR/update.hdiff" "$OUT_DIR/update.hdiff"
 
-# O APK NOVO nao e copiado para os assets de proposito: o teste nao precisa
-# dele, precisa do que ele deveria ser. Levar 33 MB a mais para dentro do APK
-# de teste so para comparar arquivo com arquivo seria desperdicio -- o
-# SHA-256 e a afirmacao inteira.
+# The NEW APK is deliberately not copied into the assets: the test only needs
+# its SHA-256 and size, not another 33 MB inside the test APK.
 NEW_SHA="$(sha256sum "$STAGE_DIR/new.apk" | cut -d' ' -f1)"
 NEW_SIZE="$(stat -c%s "$STAGE_DIR/new.apk")"
 OLD_SHA="$(sha256sum "$STAGE_DIR/old.apk" | cut -d' ' -f1)"
 
 cat > "$OUT_DIR/expected.properties" <<EOF
-# Gerado por tools/make-patch-fixtures.sh -- nao editar a mao.
-# Descreve o APK que aplicar update.hdiff sobre base.apk DEVE produzir.
+# Generated by tools/make-patch-fixtures.sh, do not edit by hand.
+# Describes the APK that applying update.hdiff to base.apk MUST produce.
 abi=$ABI
 oldVersionName=$OLD_VERSION_NAME
 oldVersionCode=$OLD_VERSION_CODE
@@ -105,4 +95,4 @@ EOF
 echo >&2
 cat "$OUT_DIR/expected.properties" >&2
 echo >&2
-echo "make-patch-fixtures: pronto em $OUT_DIR" >&2
+echo "make-patch-fixtures: done in $OUT_DIR" >&2

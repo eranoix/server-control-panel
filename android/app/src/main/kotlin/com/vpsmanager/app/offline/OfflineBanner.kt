@@ -25,33 +25,10 @@ import java.util.Locale
 internal const val OFFLINE_NO_CONTACT = "Offline — nothing has loaded yet"
 
 /**
- * The banner that stops the cache from lying.
- *
- * ## Why it is mandatory, and not decoration
- *
- * The read cache keeps the app opening without internet. On its own, it
- * creates a new problem worse than the one it solves: the screen starts
- * claiming, with its usual face, that the disk is at 78% — when that
- * number may be six hours old and the disk may have filled up since.
- * **Stale data with no label is worse than an error screen**, because an
- * error screen never stops anyone from acting.
- *
- * This banner is the label. It appears **only** when there is no validated
- * network, says how long ago the server's last response was, and
- * disappears on its own when the connection comes back — requiring no tap,
- * because there is nothing to decide.
- *
- * ## Why "the server's last response", and not "this data is from"
- *
- * The timestamp belongs to the whole app, not to this screen (see
- * [DataAge]). Saying "this data is from 11:45" would be more precise
- * than what is actually known: another screen may have talked to the
- * server since. The sentence chosen is true in every case.
- *
- * ## Why yellow, and not red
- *
- * There is no failure: the server is fine, the app is working and showing
- * what it has. Red would teach people to ignore red.
+ * Labels cached data as possibly stale, since unlabeled stale data is worse than an error.
+ * Shown only without a validated network (or with queued actions), it says how long ago the
+ * server last responded; that timestamp is app-wide ([DataAge]), so it never claims a specific
+ * screen's data age. Yellow, not red: nothing has failed.
  */
 @Composable
 fun OfflineBanner(modifier: Modifier = Modifier) {
@@ -61,10 +38,7 @@ fun OfflineBanner(modifier: Modifier = Modifier) {
     val rejected by Outbox.rejected.collectAsStateWithLifecycle()
     val warning = vpsmStatusColors.warning
 
-    // The banner also shows WITH network when there is a queued or refused
-    // action: the queue exists to carry across the return of the connection,
-    // and hiding it the instant Wi-Fi comes back would hide exactly the moment
-    // it does its work.
+    // Also shown online while actions are queued or refused, which is when the queue is flushed.
     val visible = state == NetworkState.OFFLINE || pending.isNotEmpty() || rejected.isNotEmpty()
 
     AnimatedVisibility(visible = visible, modifier = modifier) {
@@ -88,12 +62,8 @@ fun OfflineBanner(modifier: Modifier = Modifier) {
 }
 
 /**
- * The sentence, split from the drawing so it can be pinned by an ordinary
- * test.
- *
- * The unit follows the age: seconds interest nobody, and "320 minutes ago"
- * forces you to do arithmetic. Past a day the number stops being useful
- * and what matters is "this is old".
+ * The banner text, kept separate so plain tests can cover it. The unit follows the age
+ * (minutes, then hours, then "over a day").
  */
 internal fun bannerText(lastMs: Long?, nowMs: Long): String {
     if (lastMs == null) return OFFLINE_NO_CONTACT
@@ -108,15 +78,8 @@ internal fun bannerText(lastMs: Long?, nowMs: Long): String {
 }
 
 /**
- * The sentence about the QUEUE, when there is something to say about it —
- * null when there is not, and then the banner goes back to talking only
- * about the connection.
- *
- * The refusal comes first and alone because it changes what the person
- * does: a "waiting" action is going to happen, a refused one is NOT, and
- * whoever needs to redo something is whoever got refused. Before this the
- * discard was silent — the action left the queue after a 4xx and the
- * person went on believing it would happen.
+ * Text about the outbox queue, or null when there is nothing to report. Refusals come first
+ * and alone: unlike waiting actions they will not happen, and the user must redo them.
  */
 internal fun queueText(pending: Int, rejected: List<String>): String? = when {
     rejected.isNotEmpty() -> {

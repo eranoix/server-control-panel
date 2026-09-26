@@ -21,21 +21,16 @@ private const val CAPTURE_HEIGHT = 720
 private const val CAPTURE_FPS = 30
 
 /**
- * Pure W3C "perfect negotiation" politeness decision (https://w3c.github.io/webrtc-pc/#perfect-negotiation-example):
- * the side with the lexicographically smaller peer id is "polite" (rolls back its own local
- * description and accepts a colliding incoming offer), the other is "impolite" (keeps its
- * outgoing offer and ignores a colliding incoming one). Applied per [PeerConnection], not as a
- * single global flag, because a peer can be polite towards one mesh member and impolite towards
- * another in the same call.
+ * W3C "perfect negotiation" politeness: the side with the lexicographically smaller
+ * peer id is polite (rolls back and accepts a colliding offer). Decided per
+ * [PeerConnection], since a peer can be polite to one mesh member and not another.
  */
 fun isPolite(localPeerId: String, remotePeerId: String): Boolean = localPeerId < remotePeerId
 
 /**
- * One `org.webrtc.PeerConnection.IceServer` per URL in [turn] — `internal/videocall/types.go`'s
- * `TURNCredentials.URLs` is already a list because a single TURN allocation is commonly
- * advertised under both a UDP and a TCP/TLS URL. `credential` (never `password`, see
- * [TurnCredentials]) feeds `.setPassword(...)`, which is `org.webrtc`'s own builder method name
- * for that value, unrelated to the wire's field name.
+ * One `IceServer` per URL in [turn] (a TURN allocation is often advertised over
+ * both UDP and TCP/TLS). `credential` feeds `setPassword`, which is just
+ * `org.webrtc`'s builder name.
  */
 fun buildIceServers(turn: TurnCredentials): List<PeerConnection.IceServer> = turn.urls.map { url ->
     PeerConnection.IceServer.builder(url)
@@ -45,13 +40,9 @@ fun buildIceServers(turn: TurnCredentials): List<PeerConnection.IceServer> = tur
 }
 
 /**
- * Seam over a captured local track's mute state. `org.webrtc.MediaStreamTrack` (the common base
- * of `AudioTrack`/`VideoTrack`) has a native-pointer constructor and JNI-backed
- * `enabled()`/`setEnabled()` methods — it cannot be constructed or faked directly in a plain JVM
- * unit test without the native WebRTC library loaded. [WebRtcSessionManager] depends on this
- * narrow interface instead, so [WebRtcSessionManagerTest] can inject a hand-rolled fake that
- * records every call, proving mic/camera toggles reach the underlying track rather than a
- * UI-only boolean.
+ * Seam over a local track's mute state. `org.webrtc.MediaStreamTrack` is backed by
+ * JNI and cannot be faked on the JVM, so [WebRtcSessionManagerTest] injects a fake
+ * to prove mic/camera toggles reach the real track.
  */
 interface LocalMediaTrackControl {
     var enabled: Boolean
@@ -74,25 +65,21 @@ private class VideoTrackControl(private val track: VideoTrack) : LocalMediaTrack
 }
 
 /**
- * The narrow seam `CallViewModel` (`:feature-videocall`) depends on instead of the concrete
- * [WebRtcSessionManager]. Every member here requires the real native WebRTC library — and, for
- * [startLocalMedia], an actual camera/microphone — so none of it can be exercised against the
- * real implementation on the JVM. [WebRtcSessionManager] is the only production implementation;
- * `CallViewModelTest` injects a hand-rolled fake instead, mirroring [VideocallTicketSource]'s and
- * [LocalMediaTrackControl]'s existing seam pattern in this file.
+ * The seam `CallViewModel` depends on instead of [WebRtcSessionManager]. Every
+ * member needs the native WebRTC library (and a camera for [startLocalMedia]), so
+ * `CallViewModelTest` uses a fake.
  */
 interface VideoCallSessionController {
-    /** Shared EGL context every [org.webrtc.SurfaceViewRenderer] must `init` with to render
-     * hardware-captured frames from this session without a costly texture copy. */
+    /** Shared EGL context every [org.webrtc.SurfaceViewRenderer] must `init` with to avoid a texture copy. */
     val eglBaseContext: EglBase.Context
 
     /** The local camera's [VideoTrack], once [startLocalMedia] has run; `null` before that. */
     val localVideoTrack: VideoTrack?
 
-    /** The local microphone's [AudioTrack], once [startLocalMedia] has run; `null` before that.
-     * Callers add both this and [localVideoTrack] to every [PeerConnection] created via
-     * [createPeerConnectionFor] — a call with a video track but no audio track reaches other
-     * participants silently, which is not a real call. */
+    /**
+     * The local microphone's [AudioTrack] once [startLocalMedia] has run. Add it
+     * along with [localVideoTrack] to every [PeerConnection], or the call is silent.
+     */
     val localAudioTrack: AudioTrack?
 
     fun startLocalMedia()
@@ -105,18 +92,14 @@ interface VideoCallSessionController {
 }
 
 /**
- * Owns the call's `org.webrtc.PeerConnectionFactory`, the local capture pipeline (front-facing
- * camera by default, one audio track), and a `Map<peerId, PeerConnection>` for the mesh — one
- * `PeerConnection` per `peer-joined` event, torn down per `peer-left`, up to the server's
- * existing 4-peer room cap (enforced server-side on `join`, not re-enforced here).
+ * Owns the call's `PeerConnectionFactory`, the local capture pipeline (front
+ * camera by default, one audio track) and one `PeerConnection` per mesh peer,
+ * created on `peer-joined` and closed on `peer-left` (the 4-peer cap is enforced
+ * by the server).
  *
- * The factory and capture pipeline are only ever touched from [startLocalMedia] and
- * [createPeerConnectionFor], both of which require the real native WebRTC library and a device
- * camera/microphone — they cannot be exercised on the JVM and are exempt from unit testing (see
- * the plan's human-verification script for the on-device checks this manager still needs).
- * [isPolite], [setMicEnabled], [setCameraEnabled], and [switchCamera] are the testable surface:
- * [micControl]/[cameraControl]/[cameraCapturer] are `internal` precisely so
- * [WebRtcSessionManagerTest] can inject fakes for them without constructing the real factory.
+ * The factory and capture need the native library and real hardware, so they are
+ * not unit tested; [micControl], [cameraControl] and [cameraCapturer] are
+ * `internal` so [WebRtcSessionManagerTest] can inject fakes.
  */
 class WebRtcSessionManager internal constructor(
     private val context: Context,
@@ -128,21 +111,9 @@ class WebRtcSessionManager internal constructor(
         context = context.applicationContext,
         eglBaseProvider = { EglBase.create() },
         peerConnectionFactoryProvider = { eglBase ->
-            // BEFORE ANYTHING ELSE IN WEBRTC: load the native library.
-            //
-            // Without this the app DIES — `DefaultVideoEncoderFactory` builds a
-            // `SoftwareVideoEncoderFactory`, whose constructor calls straight
-            // into a native method, and the process goes down with
-            // `UnsatisfiedLinkError: No implementation found for long
-            // SoftwareVideoEncoderFactory.nativeCreateFactory()`.
-            //
-            // This NEVER existed in this code. The call was nowhere in the app
-            // — the video call had been broken since it was written, and it
-            // only stayed hidden because the factory was built only after the
-            // server answered `joined`, a path that almost never got exercised
-            // in testing. The waiting room started turning the camera on BEFORE
-            // the signal, and the latent defect became a crash in the face of
-            // whoever opened the screen.
+            // Load the native library before anything else in WebRTC, or
+            // `DefaultVideoEncoderFactory` crashes the process with
+            // `UnsatisfiedLinkError` (SoftwareVideoEncoderFactory.nativeCreateFactory).
             ensureWebRtcLoaded(context.applicationContext)
             PeerConnectionFactory.builder()
                 .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
@@ -182,10 +153,9 @@ class WebRtcSessionManager internal constructor(
         get() = localAudioTrackField
 
     /**
-     * Starts local capture: front-facing camera by default (falls back to the first available
-     * device if no front camera is reported), one [VideoTrack] and one [AudioTrack], both wired
-     * through [micControl]/[cameraControl] so [setMicEnabled]/[setCameraEnabled] work immediately.
-     * Requires the real native library and an actual camera/microphone — not unit-testable.
+     * Starts local capture: front camera (or the first available), one [VideoTrack]
+     * and one [AudioTrack], wired so [setMicEnabled]/[setCameraEnabled] work
+     * immediately. Needs real hardware, not unit-testable.
      */
     override fun startLocalMedia() {
         val enumerator = Camera2Enumerator(context)
@@ -210,10 +180,8 @@ class WebRtcSessionManager internal constructor(
     }
 
     /**
-     * Creates and registers a [PeerConnection] for [peerId], applying [turn]'s credentials as its
-     * `RTCConfiguration.iceServers` (see [buildIceServers]). Requires the real native factory —
-     * not unit-testable; the perfect-negotiation glare handling this connection's [observer] must
-     * implement is decided by calling [isPolite] with this manager's own peer id and [peerId].
+     * Creates and registers a [PeerConnection] for [peerId] with [turn] as its ICE
+     * servers. The [observer] handles glare using [isPolite]. Not unit-testable.
      */
     override fun createPeerConnectionFor(peerId: String, turn: TurnCredentials, observer: PeerConnection.Observer): PeerConnection? {
         val configuration = PeerConnection.RTCConfiguration(buildIceServers(turn)).apply {
@@ -229,12 +197,12 @@ class WebRtcSessionManager internal constructor(
         peerConnections.remove(peerId)?.close()
     }
 
-    /** Toggles the local microphone. Always available, independent of any call's connection state. */
+    /** Toggles the local microphone, independent of connection state. */
     override fun setMicEnabled(enabled: Boolean) {
         micControl?.enabled = enabled
     }
 
-    /** Toggles the local camera — distinct from ending the call. */
+    /** Toggles the local camera (distinct from ending the call). */
     override fun setCameraEnabled(enabled: Boolean) {
         cameraControl?.enabled = enabled
     }
@@ -258,23 +226,11 @@ class WebRtcSessionManager internal constructor(
 }
 
 /**
- * Loads WebRTC's native library, once per process.
+ * Loads WebRTC's native library once per process. Until it runs, any `org.webrtc`
+ * type with a native constructor call crashes the process.
  *
- * `PeerConnectionFactory.initialize` is WebRTC's `System.loadLibrary`: until it
- * runs, EVERY `org.webrtc` type with a native method in its constructor brings
- * the process down instead of throwing something you can handle. It is neither
- * optional nor an optimisation — it is the line without which no video exists
- * at all.
- *
- * Guarded by an [AtomicBoolean] and not by `lazy`: the initialisation is a
- * GLOBAL effect on the process, not the value of an object. Two instances of
- * [WebRtcSessionManager] — one from the call, another from an instrumented test
- * — have to share the same "already done", and a per-instance `lazy` would call
- * `initialize` twice.
- *
- * `compareAndSet` and not `get`-then-`set`: two screens opening at once (the
- * waiting room and an incoming call on the lock screen) would arrive here on
- * different threads, and a two-step check would let both through.
+ * A process-wide [AtomicBoolean] rather than a per-instance `lazy`, and
+ * `compareAndSet` so two screens opening on different threads cannot both initialize.
  */
 private val webRtcLoaded = java.util.concurrent.atomic.AtomicBoolean(false)
 

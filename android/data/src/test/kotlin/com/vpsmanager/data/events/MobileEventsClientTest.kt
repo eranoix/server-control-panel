@@ -8,7 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Hands out an unlimited ticket per call — MobileEventsClient's tests only care about frames, not ticket exhaustion. */
+/** Hands out a new ticket on every call; these tests only care about frames. */
 private class ClientUnlimitedTicketSource : MobileEventsTicketSource {
     private var counter = 0
     override suspend fun wsTicket(): WsTicketResult {
@@ -17,7 +17,7 @@ private class ClientUnlimitedTicketSource : MobileEventsTicketSource {
     }
 }
 
-/** No real socket — just records every frame it was asked to send. */
+/** Records every frame it was asked to send. */
 private class ClientRecordingWebSocket : MobileEventsWebSocket {
     val textFrames = mutableListOf<String>()
     override fun sendText(text: String): Boolean {
@@ -27,7 +27,7 @@ private class ClientRecordingWebSocket : MobileEventsWebSocket {
     override fun close(code: Int, reason: String): Boolean = true
 }
 
-/** No network — records every open() call and hands back a fresh [ClientRecordingWebSocket]. */
+/** Records every open() call and returns a fresh [ClientRecordingWebSocket]. */
 private class ClientFakeWebSocketFactory : MobileEventsWebSocketFactory {
     val sockets = mutableListOf<ClientRecordingWebSocket>()
     val listeners = mutableListOf<MobileEventsWebSocketListener>()
@@ -40,8 +40,6 @@ private class ClientFakeWebSocketFactory : MobileEventsWebSocketFactory {
 }
 
 class MobileEventsClientTest {
-
-    // Property 1: reference-counted subscribe — one socket, one frame per channel ---
 
     @Test
     fun `two concurrent subscribers to the same channel share one subscribe frame and unsubscribe only after both cancel`() =
@@ -89,8 +87,6 @@ class MobileEventsClientTest {
             )
         }
 
-    // Property 2: channel isolation — a subscriber on A must never see B ---
-
     @Test
     fun `subscriber on one channel never receives events published on another channel`() = runTest {
         val factory = ClientFakeWebSocketFactory()
@@ -120,10 +116,8 @@ class MobileEventsClientTest {
         assertEquals("only-b", receivedOnB[0].type)
     }
 
-    // Property 3: reconnect resubscribes active channels — the actual resume mechanism ---
-
     @Test
-    fun `reconnecting resends subscribe for every active channel — there is no cursor or sequence to resume from`() =
+    fun `reconnecting resends subscribe for every active channel since there is no cursor to resume from`() =
         runTest {
             val factory = ClientFakeWebSocketFactory()
             val socket = MobileEventsSocket(
@@ -146,9 +140,8 @@ class MobileEventsClientTest {
                 factory.sockets[0].textFrames,
             )
 
-            // Simulate a drop and successful reconnect: the socket reopens a brand-new
-            // connection (fresh ticket, new ClientRecordingWebSocket) and reaches CONNECTED again.
-            factory.listeners[0].onFailure("conexao perdida")
+            // Drop and reconnect: a fresh ticket and a new socket reach CONNECTED again.
+            factory.listeners[0].onFailure("connection lost")
             runCurrent()
             advanceTimeBy(70_000)
             runCurrent()
@@ -156,7 +149,7 @@ class MobileEventsClientTest {
             runCurrent()
 
             assertEquals(
-                "the second socket instance must see the resubscribe frame — no server-side replay to rely on",
+                "the second socket must get the resubscribe frame, the server does not replay",
                 listOf("""{"op":"subscribe","channel":"notify.inbox"}"""),
                 factory.sockets[1].textFrames,
             )

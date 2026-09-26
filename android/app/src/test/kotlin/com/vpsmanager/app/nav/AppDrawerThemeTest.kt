@@ -22,14 +22,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The appearance choice inside the drawer: reachable, highlighted and with
- * no clipped label.
- *
- * The same phone geometry as [AppDrawerTest] and for the same reason:
- * three labels side by side within the drawer's width is exactly the kind
- * of thing that fits on the developer's emulator and gets clipped on the
- * device. The layout assertion below fails if any of them wraps over two
- * lines or overflows.
+ * The appearance selector (now in Settings): reachable, highlighted and with no clipped label.
+ * Uses the same phone geometry as [AppDrawerTest], since three labels side by side are what
+ * gets clipped on a real device.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class, qualifiers = "w411dp-h891dp-xxhdpi")
@@ -44,12 +39,6 @@ class AppDrawerThemeTest {
     ) {
         composeRule.setContent {
             VpsManagerTheme(themeMode = themeMode) {
-                // The appearance choice MOVED HOUSE: it left the drawer's
-                // footer and went to Settings, along with the update check. A
-                // device setting is not a work destination, and mixed in with
-                // System/Docker/Operations it made the drawer answer two
-                // different questions. The test follows the selector to where
-                // it went.
                 SettingsScreen(
                     themeMode = themeMode,
                     onThemeModeChange = onThemeModeChange,
@@ -69,12 +58,12 @@ class AppDrawerThemeTest {
     private fun SemanticsNodeInteraction.textLayout(): TextLayoutResult {
         val results = mutableListOf<TextLayoutResult>()
         val action = fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult]
-        requireNotNull(action.action) { "nó sem GetTextLayoutResult — não é um texto?" }.invoke(results)
+        requireNotNull(action.action) { "node without GetTextLayoutResult, is it not a text?" }.invoke(results)
         return results.first()
     }
 
     @Test
-    fun `a gaveta oferece as tres aparencias sem navegar para lugar nenhum`() {
+    fun `settings offers the three appearances without navigating anywhere`() {
         renderDrawer()
 
         composeRule.onNodeWithText(THEME_SELECTOR_LABEL).assertIsDisplayed()
@@ -84,14 +73,14 @@ class AppDrawerThemeTest {
     }
 
     @Test
-    fun `o modo corrente aparece marcado`() {
+    fun `the current mode is shown selected`() {
         renderDrawer(themeMode = ThemeMode.DARK)
 
         composeRule.onNodeWithTag(themeOptionTag(ThemeMode.DARK)).assertIsSelected()
     }
 
     @Test
-    fun `tocar numa aparencia reporta a escolha`() {
+    fun `tapping an appearance reports the choice`() {
         var chosen: ThemeMode? = null
         renderDrawer(themeMode = ThemeMode.SYSTEM, onThemeModeChange = { chosen = it })
 
@@ -101,30 +90,27 @@ class AppDrawerThemeTest {
     }
 
     @Test
-    fun `nenhum rotulo do seletor quebra em duas linhas dentro da gaveta`() {
+    fun `no selector label wraps onto two lines on the real screen`() {
         renderDrawer()
 
-        // The width itself is checked in ThemeModeSelectorWidthTest, in the
-        // module that owns the component; what matters here is that the REAL
-        // drawer — with its own breathing room and the other items competing
-        // for space — makes no label wrap.
+        // ThemeModeSelectorWidthTest checks the component alone; this checks it with the
+        // real screen's padding and neighbours.
         ThemeMode.entries.forEach { mode ->
             val layout = composeRule.onNodeWithText(mode.label).textLayout()
-            assertEquals("rótulo \"${mode.label}\" quebrou em mais de uma linha", 1, layout.lineCount)
+            assertEquals("label \"${mode.label}\" wrapped onto more than one line", 1, layout.lineCount)
         }
     }
 
     @Test
-    fun `o seletor de aparencia abre a tela de Configuracoes, acima dos demais ajustes`() {
+    fun `the appearance selector opens Settings, above the other settings`() {
         renderDrawer()
 
-        // Appearance is the first thing on the screen: it is the setting
-        // touched most often, and the only one whose effect is visible at once.
-        val seletor = composeRule.onNodeWithText(THEME_SELECTOR_LABEL)
+        // Appearance comes first: it is changed most often and its effect is immediate.
+        val selector = composeRule.onNodeWithText(THEME_SELECTOR_LABEL)
             .fetchSemanticsNode().positionInRoot.y
         val update = composeRule.onNodeWithText(CHECK_UPDATE_LABEL)
             .fetchSemanticsNode().positionInRoot.y
 
-        assertTrue("o seletor de aparência caiu para baixo dos outros ajustes", seletor < update)
+        assertTrue("the appearance selector fell below the other settings", selector < update)
     }
 }

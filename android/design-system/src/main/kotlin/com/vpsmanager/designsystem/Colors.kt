@@ -5,55 +5,19 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
 /**
- * The app's colour scheme — VPS Manager's identity, not Material's factory
- * purple.
+ * The app's light color scheme, derived from the web panel's palette (cyan
+ * `#22D3EE` primary, sky `#38BDF8` tertiary, red `#EF4444` error, cool slate neutrals).
  *
- * ## Where these colours came from
- * They were not invented. The web panel already has a brand and a palette the
- * owner recognises as "the vps-manager", and this scheme derives from it:
+ * The panel hex values are not used directly: Material roles are tones with
+ * guaranteed contrast, and `#22D3EE` as `primary` would give white text at 1.9:1.
+ * The hue is kept and the tone recomputed on a CIELAB tonal palette, the same way
+ * Material Theme Builder does.
  *
- * | role | source colour | where it lives in the panel |
- * |-------|---------------|---------------------|
- * | primary | `#22D3EE` cyan | the most-used accent in `index.html` |
- * | tertiary | `#38BDF8` sky blue | the second accent |
- * | error | `#EF4444` red | the panel's failure red |
- * | neutrals | cyan at very low chroma | the panel's cool "slate" grey |
+ * Every color/on-color pair meets WCAG AA (worst: 6.43:1 light, 5.53:1 dark), and
+ * `VpsmColorsTest` enforces it on every build.
  *
- * ## Why the hex values are NOT the panel's
- * Because copying `#22D3EE` into the `primary` role would give an illegible
- * app. Material 3's roles are not "pretty colours", they are POSITIONS on a
- * tonal scale with guaranteed contrast between each (colour, on-colour) pair:
- * the light theme's `primary` is tone 40 on the scale, `onPrimary` is tone 100,
- * and it is that tonal distance that makes text legible on top of the button.
- * `#22D3EE` is roughly tone 78 — white text on it lands at 1.9:1, which on a
- * phone screen in sunlight is simply invisible.
- *
- * What is preserved from the identity is the HUE (218° in CIELAB) and the
- * saturation; what is recomputed is the tone. Every value below is the panel's
- * same cyan at a different height on the scale — that is how the brand survives
- * legibility instead of fighting it.
- *
- * ## How they were generated, and how to check
- * A tonal palette in CIELAB (HCT's tone is CIELAB's L*), with chroma clipped by
- * binary search to what fits the sRGB gamut at each tone — the same procedure
- * as the Material Theme Builder, which likewise emits static constants like
- * these rather than computing at runtime.
- *
- * **Every (colour, on-colour) pair was measured by WCAG contrast ratio**, not
- * eyeballed: the worst pair is 6.43:1 in the light theme and 5.53:1 in the
- * dark, against the AA minimum of 4.5:1 for text. `VpsmColorsTest` redoes that
- * measurement on every build — a "prettier" colour that drops a pair below AA
- * breaks the build instead of reaching the device.
- *
- * ## What does NOT go through here
- * - **The terminal grid.** Cell colours come from the VT emulator, not from
- *   Material — see `TerminalPalette` in `:feature-terminal`. An app scheme does
- *   not decide what "red" means in a command's output.
- * - **The ok/warning/critical states.** See [vpsmStatusColors]: they derive
- *   from this scheme (none has a loose colour) apart from the warning amber,
- *   which exists because Material has no semantic role for "attention". The
- *   amber was rechecked against the new surfaces: 10.0:1 on light and 10.6:1 on
- *   dark.
+ * The terminal grid (`TerminalPalette`) does not use this scheme. Status colors
+ * ([vpsmStatusColors]) derive from it except the warning amber.
  */
 internal val VpsmLightColors = lightColorScheme(
     primary = Color(0xFF006877),
@@ -94,7 +58,7 @@ internal val VpsmLightColors = lightColorScheme(
     surfaceContainerLowest = Color(0xFFFFFFFF),
 )
 
-/** The same scheme at the other end of the tonal scale — see [VpsmLightColors]. */
+/** Dark counterpart of [VpsmLightColors]. */
 internal val VpsmDarkColors = darkColorScheme(
     primary = Color(0xFF2FD9F4),
     onPrimary = Color(0xFF00363E),
@@ -135,14 +99,8 @@ internal val VpsmDarkColors = darkColorScheme(
 )
 
 /**
- * The background colour of the app's adaptive icon, for whoever assembles
- * `res/`.
- *
- * It lives here, rather than loose in an XML, because it IS the scheme: it is
- * the dark theme's `onPrimary` (cyan tone 20). The `logo-mark.svg` drawn on top
- * uses [MarkOnBackground] — which is the dark `primary`. Icon and app speaking
- * the same language is not a coincidence maintained by hand, it is the same
- * constant.
+ * Adaptive icon background. Kept here because it is the dark theme's `onPrimary`;
+ * the mark on top uses [MarkOnBackground], the dark `primary`.
  */
 val AdaptiveIconBackground: Color = Color(0xFF00363E)
 

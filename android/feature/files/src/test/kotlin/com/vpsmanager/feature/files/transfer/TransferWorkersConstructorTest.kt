@@ -7,37 +7,27 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Both transfer workers have to expose the `(Context, WorkerParameters)`
- * constructor that WorkManager's default factory looks for by REFLECTION.
- * Without it the factory throws `NoSuchMethodException`, the log records
- * "Could not create Worker" and the job goes FAILED before the first line of
- * `doWork` — downloads and uploads from the file browser (and the share
- * target) simply did not happen on the device.
- *
- * The defect went unnoticed because Kotlin parameters with default values
- * (used here to inject dependencies in tests) do NOT generate that
- * constructor, and every existing test built the workers straight from
- * Kotlin, where defaults are resolved at compile time and reflection never
- * enters. It was found by running the terminal's attachment feature on a real
- * emulator.
+ * WorkManager's default factory finds the `(Context, WorkerParameters)` constructor by
+ * reflection; without it the job fails before `doWork`. Kotlin default parameters do not
+ * generate that constructor, and direct Kotlin construction in other tests would not notice.
  */
 class TransferWorkersConstructorTest {
 
     @Test
-    fun `UploadWorker expoe o construtor que a fabrica do WorkManager procura`() {
+    fun `UploadWorker exposes the constructor the WorkManager factory looks for`() {
         val constructor = UploadWorker::class.java.getDeclaredConstructor(
             Context::class.java,
             WorkerParameters::class.java,
         )
-        assertTrue("o construtor precisa ser público", Modifier.isPublic(constructor.modifiers))
+        assertTrue("the constructor must be public", Modifier.isPublic(constructor.modifiers))
     }
 
     @Test
-    fun `DownloadWorker expoe o construtor que a fabrica do WorkManager procura`() {
+    fun `DownloadWorker exposes the constructor the WorkManager factory looks for`() {
         val constructor = DownloadWorker::class.java.getDeclaredConstructor(
             Context::class.java,
             WorkerParameters::class.java,
         )
-        assertTrue("o construtor precisa ser público", Modifier.isPublic(constructor.modifiers))
+        assertTrue("the constructor must be public", Modifier.isPublic(constructor.modifiers))
     }
 }

@@ -1,14 +1,8 @@
-// The type-resolution half of the "BFF-only network" gate. The
-// detekt rule in here (BffOnlyNetworkClientRule) sees the RESOLVED
-// type of an expression, not the source text -- and that is why it catches the class
-// of bypass the lexical Gradle plugin in :convention does not: a route
-// built by concatenation/interpolation, or a fully
-// qualified reference with no import (e.g. okhttp3.OkHttpClient() without `import okhttp3.*`).
-//
-// A pure Kotlin/JVM module, consumed by the main build as an ordinary
-// `detektPlugins` dependency (not a build plugin like :convention) -- Gradle's
-// dependency substitution for included builds resolves that
-// automatically from the group/name declared below.
+// Type-resolution half of the "BFF-only network" gate. BffOnlyNetworkClientRule
+// sees resolved types, so it catches what the lexical :convention plugin misses:
+// routes built by concatenation or interpolation, and fully qualified references
+// with no import. Consumed as a regular `detektPlugins` dependency via the
+// group/name below.
 plugins {
     id("org.jetbrains.kotlin.jvm") version "2.4.10"
 }
@@ -20,9 +14,8 @@ kotlin {
     jvmToolchain(17)
 }
 
-// Repositories come from dependencyResolutionManagement in
-// build-logic/settings.gradle.kts (FAIL_ON_PROJECT_REPOS) -- a
-// repositories{} block here conflicts with that mode and fails the build.
+// No repositories{} block: build-logic/settings.gradle.kts uses
+// FAIL_ON_PROJECT_REPOS, so one here would fail the build.
 
 val detektVersion = "1.23.8"
 

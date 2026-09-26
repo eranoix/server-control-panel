@@ -15,30 +15,25 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * The catalogue a server would return for an admin: five sections in three
- * groups, already in the grouped order the server emits.
- *
- * Note that no id here is known to the app — that is the point of the test.
- * The picker draws whatever ARRIVES, including a section this release has
- * never seen ("futuro.inventado"), which is what lets a new screen on the
- * server show up on the phone with no release.
+ * An admin's catalog: five sections in three groups, in server order. It
+ * includes a section the app has never seen ("futuro.inventado"), which must
+ * still be shown.
  */
 private val ADMIN_CATALOG = listOf(
     SduiSection("docker.containers", "Docker", "Containers"),
-    SduiSection("docker.prune", "Docker", "Limpeza do Docker"),
-    SduiSection("system.processes", "Sistema", "Processos"),
-    SduiSection("security.audit", "Segurança", "Log de auditoria"),
-    SduiSection("futuro.inventado", "Sistema", "Seção que este app nunca viu"),
+    SduiSection("docker.prune", "Docker", "Docker cleanup"),
+    SduiSection("system.processes", "System", "Processes"),
+    SduiSection("security.audit", "Security", "Audit log"),
+    SduiSection("futuro.inventado", "System", "A section this app has never seen"),
 )
 
 /**
- * The SAME server as seen by a non-admin: the administrative sections simply
- * DO NOT COME. They do not come marked unavailable — they come absent, which
- * is the BFF's anti-enumeration stance (`CatalogFor` filters by omission).
+ * The same server for a non-admin: admin sections are omitted, not marked
+ * unavailable (the BFF filters by omission to prevent enumeration).
  */
 private val NON_ADMIN_CATALOG = listOf(
     SduiSection("docker.containers", "Docker", "Containers"),
-    SduiSection("system.processes", "Sistema", "Processos"),
+    SduiSection("system.processes", "System", "Processes"),
 )
 
 private fun fixedPort(result: SduiSectionsResult) = SduiCatalogPort { result }
@@ -47,30 +42,26 @@ private fun fixedPort(result: SduiSectionsResult) = SduiCatalogPort { result }
 class AdminCatalogViewModelTest {
 
     @Test
-    fun `a lista de secoes e a que o servidor mandou, inclusive uma que este app nunca viu`() = runTest {
+    fun `the section list is what the server sent, including an unknown section`() = runTest {
         val vm = AdminCatalogViewModel(
             initialRoute = ADMIN_SECTION_AUTO,
             catalogPort = fixedPort(SduiSectionsResult.Success(ADMIN_CATALOG)),
         )
 
         val state = vm.uiState.value
-        assertTrue("estado = $state", state is AdminCatalogState.Ready)
+        assertTrue("state = $state", state is AdminCatalogState.Ready)
         val ready = state as AdminCatalogState.Ready
 
         assertEquals(ADMIN_CATALOG.map { it.id }, ready.sections.map { it.id })
         assertTrue(
-            "uma seção desconhecida do cliente precisa aparecer mesmo assim",
+            "a section unknown to the client must still appear",
             ready.sections.any { it.id == "futuro.inventado" },
         )
     }
 
-    /**
-     * The client-side proof of RBAC: what the server omitted is not invented
-     * back by the app. A non-admin's picker has no `docker.prune` and no
-     * `security.audit` — not hidden, not disabled.
-     */
+    /** The app never re-adds sections the server omitted for this user. */
     @Test
-    fun `secao sem permissao nao aparece porque o servidor nao a mandou`() = runTest {
+    fun `a section without permission is absent because the server did not send it`() = runTest {
         val vm = AdminCatalogViewModel(
             initialRoute = ADMIN_SECTION_AUTO,
             catalogPort = fixedPort(SduiSectionsResult.Success(NON_ADMIN_CATALOG)),
@@ -79,28 +70,24 @@ class AdminCatalogViewModelTest {
         val ready = vm.uiState.value as AdminCatalogState.Ready
         val ids = ready.sections.map { it.id }
         assertEquals(listOf("docker.containers", "system.processes"), ids)
-        assertTrue("docker.prune não pode aparecer para não-admin", "docker.prune" !in ids)
-        assertTrue("security.audit não pode aparecer para não-admin", "security.audit" !in ids)
+        assertTrue("docker.prune must not appear for a non-admin", "docker.prune" !in ids)
+        assertTrue("security.audit must not appear for a non-admin", "security.audit" !in ids)
     }
 
     @Test
-    fun `sem secao na rota, nenhuma secao abre — quem aparece e o lancador`() = runTest {
+    fun `with no section in the route, the launcher shows instead of a section`() = runTest {
         val vm = AdminCatalogViewModel(
             initialRoute = ADMIN_SECTION_AUTO,
             catalogPort = fixedPort(SduiSectionsResult.Success(ADMIN_CATALOG)),
         )
 
         val ready = vm.uiState.value as AdminCatalogState.Ready
-        // Opening on the first one treated the sections as if one of them
-        // were the right answer. None is: which matters depends on what is
-        // going on.
         assertNull(ready.selectedId)
-        // And the catalogue is still whole — the launcher is not an empty catalogue.
         assertEquals(ADMIN_CATALOG.size, ready.sections.size)
     }
 
     @Test
-    fun `voltar ao lancador fecha a secao e sobrevive a um recarregamento`() = runTest {
+    fun `going back to the launcher closes the section and survives a reload`() = runTest {
         val vm = AdminCatalogViewModel(
             initialRoute = ADMIN_SECTION_AUTO,
             catalogPort = fixedPort(SduiSectionsResult.Success(ADMIN_CATALOG)),
@@ -111,14 +98,13 @@ class AdminCatalogViewModelTest {
         vm.backToLauncher()
         assertNull((vm.uiState.value as AdminCatalogState.Ready).selectedId)
 
-        // Without clearing the choice, the next load would reopen the section
-        // the person has just closed.
+        // A reload must not reopen the section just closed.
         vm.load()
         assertNull((vm.uiState.value as AdminCatalogState.Ready).selectedId)
     }
 
     @Test
-    fun `a busca sobrevive a entrar numa secao e voltar`() = runTest {
+    fun `the search survives opening a section and coming back`() = runTest {
         val vm = AdminCatalogViewModel(
             initialRoute = ADMIN_SECTION_AUTO,
             catalogPort = fixedPort(SduiSectionsResult.Success(ADMIN_CATALOG)),
@@ -132,7 +118,7 @@ class AdminCatalogViewModelTest {
     }
 
     @Test
-    fun `os recentes saem na ordem de uso e nao duplicam`() = runTest {
+    fun `recents are in order of use without duplicates`() = runTest {
         val history = mutableListOf<String>()
         val vm = AdminCatalogViewModel(
             initialRoute = ADMIN_SECTION_AUTO,
@@ -154,29 +140,22 @@ class AdminCatalogViewModelTest {
         assertEquals(listOf("docker.containers", "scheduler.jobs"), ready.recentIds)
     }
 
-    /**
-     * A stored id that has left the catalogue (section removed on the server,
-     * permission revoked) must NOT become a shortcut that opens onto a 404.
-     */
+    /** A stored id no longer in the catalog must not become a shortcut to a 404. */
     @Test
-    fun `recente que saiu do catalogo some da lista em vez de virar atalho quebrado`() = runTest {
+    fun `a recent that left the catalog is dropped instead of becoming a broken shortcut`() = runTest {
         val vm = AdminCatalogViewModel(
             initialRoute = ADMIN_SECTION_AUTO,
             catalogPort = fixedPort(SduiSectionsResult.Success(ADMIN_CATALOG)),
-            readRecents = { listOf("secao.que.sumiu", "docker.containers") },
+            readRecents = { listOf("section.that.vanished", "docker.containers") },
         )
 
         val ready = vm.uiState.value as AdminCatalogState.Ready
         assertEquals(listOf("docker.containers"), ready.recents.map { it.id })
     }
 
-    /**
-     * A deep link (a notification) points at a concrete section and that choice
-     * beats the automatic one — otherwise tapping a job notification would
-     * land you in Containers.
-     */
+    /** A deep link to a concrete section (e.g. from a notification) opens that section. */
     @Test
-    fun `uma secao concreta na rota vence a escolha automatica`() = runTest {
+    fun `a concrete section in the route wins over the automatic choice`() = runTest {
         val vm = AdminCatalogViewModel(
             initialRoute = "security.audit",
             catalogPort = fixedPort(SduiSectionsResult.Success(ADMIN_CATALOG)),
@@ -186,23 +165,21 @@ class AdminCatalogViewModelTest {
     }
 
     /**
-     * The catalogue is a HINT, not a gate: a section that is not in the list is
-     * still attempted, and `/screens/{id}` is what decides. Without that, a
-     * valid deep link could be swallowed by the client over a momentarily
-     * stale catalogue.
+     * The catalog is a hint, not a gate: `/screens/{id}` decides, so a stale
+     * catalog cannot swallow a valid deep link.
      */
     @Test
-    fun `uma secao fora do catalogo ainda e tentada — quem autoriza e o fetch`() = runTest {
+    fun `a section outside the catalog is still attempted, the fetch authorizes`() = runTest {
         val vm = AdminCatalogViewModel(
-            initialRoute = "secao.que.nao.esta.no.catalogo",
+            initialRoute = "section.not.in.catalog",
             catalogPort = fixedPort(SduiSectionsResult.Success(ADMIN_CATALOG)),
         )
 
-        assertEquals("secao.que.nao.esta.no.catalogo", (vm.uiState.value as AdminCatalogState.Ready).selectedId)
+        assertEquals("section.not.in.catalog", (vm.uiState.value as AdminCatalogState.Ready).selectedId)
     }
 
     @Test
-    fun `catalogo vazio nao escolhe secao nenhuma`() = runTest {
+    fun `an empty catalog selects no section`() = runTest {
         val vm = AdminCatalogViewModel(
             initialRoute = ADMIN_SECTION_AUTO,
             catalogPort = fixedPort(SduiSectionsResult.Success(emptyList())),
@@ -212,19 +189,19 @@ class AdminCatalogViewModelTest {
     }
 
     @Test
-    fun `os grupos saem agrupados e na ordem em que o servidor os emitiu`() = runTest {
+    fun `groups come out grouped in server order`() = runTest {
         val vm = AdminCatalogViewModel(
             initialRoute = ADMIN_SECTION_AUTO,
             catalogPort = fixedPort(SduiSectionsResult.Success(ADMIN_CATALOG)),
         )
 
         val groups = (vm.uiState.value as AdminCatalogState.Ready).grouped
-        assertEquals(listOf("Docker", "Sistema", "Segurança"), groups.map { it.first })
+        assertEquals(listOf("Docker", "System", "Security"), groups.map { it.first })
         assertEquals(listOf("docker.containers", "docker.prune"), groups[0].second.map { it.id })
     }
 
     @Test
-    fun `escolher uma secao troca a selecao e preserva a lista`() = runTest {
+    fun `selecting a section changes the selection and keeps the list`() = runTest {
         val vm = AdminCatalogViewModel(
             initialRoute = ADMIN_SECTION_AUTO,
             catalogPort = fixedPort(SduiSectionsResult.Success(ADMIN_CATALOG)),
@@ -234,13 +211,12 @@ class AdminCatalogViewModelTest {
 
         val ready = vm.uiState.value as AdminCatalogState.Ready
         assertEquals("security.audit", ready.selectedId)
-        assertEquals("Log de auditoria", ready.selected?.label)
+        assertEquals("Audit log", ready.selected?.label)
         assertEquals(ADMIN_CATALOG.size, ready.sections.size)
     }
 
-    /** Reloading the catalogue must not throw the user back to the initial section. */
     @Test
-    fun `a escolha do usuario sobrevive a um recarregamento do catalogo`() = runTest {
+    fun `the user's choice survives a catalog reload`() = runTest {
         val vm = AdminCatalogViewModel(
             initialRoute = ADMIN_SECTION_AUTO,
             catalogPort = fixedPort(SduiSectionsResult.Success(ADMIN_CATALOG)),
@@ -253,24 +229,19 @@ class AdminCatalogViewModelTest {
     }
 
     @Test
-    fun `falha ao listar vira erro com nova tentativa, nunca uma tela em branco`() = runTest {
+    fun `a listing failure becomes a retryable error, never a blank screen`() = runTest {
         val vm = AdminCatalogViewModel(
             initialRoute = ADMIN_SECTION_AUTO,
-            catalogPort = fixedPort(SduiSectionsResult.Error("Falha de conexão. Verifique a rede e tente novamente.")),
+            catalogPort = fixedPort(SduiSectionsResult.Error("Connection failed. Check the network and try again.")),
         )
 
         val state = vm.uiState.value
-        assertTrue("estado = $state", state is AdminCatalogState.Error)
-        assertEquals("Falha de conexão. Verifique a rede e tente novamente.", (state as AdminCatalogState.Error).message)
+        assertTrue("state = $state", state is AdminCatalogState.Error)
+        assertEquals("Connection failed. Check the network and try again.", (state as AdminCatalogState.Error).message)
     }
 }
 
-/**
- * The launcher: the grid, the search, and the third state only the search has.
- *
- * Robolectric because this is a real Compose tree — what we want to prove is
- * what appears on screen, not what the ViewModel holds.
- */
+/** The launcher's rendered grid, search and no-results state. */
 @RunWith(RobolectricTestRunner::class)
 class AdminLauncherTest {
 
@@ -278,7 +249,7 @@ class AdminLauncherTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun `a grade mostra o que o servidor mandou, com rotulo e grupo`() {
+    fun `the grid shows what the server sent, with label and group`() {
         composeRule.setContent {
             AdminLauncher(
                 sections = ADMIN_CATALOG,
@@ -290,36 +261,30 @@ class AdminLauncherTest {
         }
 
         composeRule.onNodeWithText("Containers").assertExists()
-        composeRule.onNodeWithText("Log de auditoria").assertExists()
-        // The section this release has never seen has to appear just the same
-        // — that is what gets a new server screen here with no release.
-        composeRule.onNodeWithText("Seção que este app nunca viu").assertExists()
+        composeRule.onNodeWithText("Audit log").assertExists()
+        // A section unknown to this release must still appear.
+        composeRule.onNodeWithText("A section this app has never seen").assertExists()
     }
 
     @Test
-    fun `a busca filtra por rotulo, por grupo e por id`() {
+    fun `search filters by label, group and id`() {
         composeRule.setContent {
             AdminLauncher(
                 sections = ADMIN_CATALOG,
-                query = "seguran",
+                query = "Securit",
                 recents = emptyList(),
                 onQueryChange = {},
                 onSelect = {},
             )
         }
 
-        composeRule.onNodeWithText("Log de auditoria").assertExists()
+        composeRule.onNodeWithText("Audit log").assertExists()
         composeRule.onNodeWithText("Containers").assertDoesNotExist()
     }
 
-    /**
-     * "Searched and found nothing" is neither empty nor an error. If this
-     * screen does not state the term, it becomes indistinguishable from "the
-     * catalogue is gone" — a completely different problem, and a needlessly
-     * alarming one.
-     */
+    /** No results must state the term so it is not mistaken for a missing catalog. */
     @Test
-    fun `busca sem resultado diz o termo e quantas secoes existem`() {
+    fun `a search with no results states the term and the section count`() {
         composeRule.setContent {
             AdminLauncher(
                 sections = ADMIN_CATALOG,
@@ -337,7 +302,7 @@ class AdminLauncherTest {
     }
 
     @Test
-    fun `recentes aparecem quando nao se esta buscando`() {
+    fun `recents show when not searching`() {
         composeRule.setContent {
             AdminLauncher(
                 sections = ADMIN_CATALOG,
@@ -352,10 +317,7 @@ class AdminLauncherTest {
     }
 }
 
-/**
- * Kept apart from the test above because `setContent` may be called ONCE by
- * Compose's rule — two scenarios need two trees, not two calls.
- */
+/** Separate class because the compose rule allows only one `setContent` per test. */
 @RunWith(RobolectricTestRunner::class)
 class AdminLauncherSearchTest {
 
@@ -363,7 +325,7 @@ class AdminLauncherSearchTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun `recentes somem quando se digita`() {
+    fun `recents disappear while typing`() {
         composeRule.setContent {
             AdminLauncher(
                 sections = ADMIN_CATALOG,
@@ -374,31 +336,28 @@ class AdminLauncherSearchTest {
             )
         }
 
-        // Someone who typed has already said what they want; repeating the
-        // recents there would mix answers to two different questions.
         composeRule.onNodeWithText(ADMIN_RECENTS_LABEL).assertDoesNotExist()
     }
 }
 
 /**
- * The filter is a pure function shared by the launcher and the palette — the
- * two can never disagree about what a term finds.
+ * The filter shared by the launcher and the palette.
  */
 class SectionFilterTest {
 
     @Test
-    fun `termo vazio devolve o catalogo inteiro`() {
+    fun `a blank term returns the whole catalog`() {
         assertEquals(ADMIN_CATALOG, filterSections(ADMIN_CATALOG, "   "))
     }
 
     @Test
-    fun `casa por id, para quem chegou vindo de uma mensagem de erro`() {
+    fun `matches by id`() {
         val found = filterSections(ADMIN_CATALOG, "security.audit")
         assertEquals(listOf("security.audit"), found.map { it.id })
     }
 
     @Test
-    fun `casa por grupo, ignorando caixa`() {
+    fun `matches by group, ignoring case`() {
         val found = filterSections(ADMIN_CATALOG, "DOCKER")
         assertEquals(listOf("docker.containers", "docker.prune"), found.map { it.id })
     }

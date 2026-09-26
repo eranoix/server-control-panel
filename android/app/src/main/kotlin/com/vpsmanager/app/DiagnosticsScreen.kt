@@ -20,23 +20,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 
 /**
- * First-boot diagnostic screen.
+ * Diagnostic screen. Without adb or logcat it is the only way failure details leave the
+ * device, so it shows full, selectable stack traces.
  *
- * This app was built with no device available and the operator has only
- * the phone — no `adb`, no logcat. When something breaks during startup,
- * this screen is the only channel through which the information leaves
- * the device. That is why it shows the whole stack trace, selectable,
- * instead of "an error occurred".
- *
- * [updateFailures] brings the same channel to the other moment when
- * the app fails with no way to explain itself: installing its own update.
- * `PackageInstaller`'s `EXTRA_STATUS_MESSAGE` ("signature does not match",
- * "version downgrade", "blocked by device policy") is the only sentence
- * that tells those cases apart, and it does not fit in the banner at the
- * top — which is why the banner sends you here. Unlike the other two
- * sections, this one is reachable WITH the app working (route
- * `diagnostico`), because the owner needs it precisely when the app is up
- * and only the update failed.
+ * [updateFailures] carries `PackageInstaller`'s status message, the only text that tells update
+ * failures apart; it does not fit in the banner, so the banner links here (a route reachable
+ * while the app is running).
  */
 @Composable
 fun DiagnosticsScreen(
@@ -44,8 +33,7 @@ fun DiagnosticsScreen(
     lastCrash: String?,
     onClear: () -> Unit,
     updateFailures: String? = null,
-    // Reached through the `diagnostico` route the app is ALREADY open, and
-    // "try opening the app" there would be a meaningless sentence.
+    // Overridden when reached from inside the running app, where "try opening" makes no sense.
     clearLabel: String = "Clear and try opening the app",
 ) {
     Scaffold { insets ->
@@ -133,19 +121,10 @@ fun DiagnosticsScreen(
 }
 
 /**
- * Who Android thinks installed this app.
- *
- * ## Why this became a screen
- *
- * Updating without the system dialog — the only path Samsung's Auto
- * Blocker does not interrupt — requires Android to KNOW who installed the
- * app. An app whose provenance is null is refused with
- * `Self update is blocked by unknown source package`, and the code falls
- * back to the dialog. That is where Auto Blocker cuts in.
- *
- * That state decided the behaviour and showed up nowhere: I had been
- * inferring it from the symptom, and got it wrong twice in a row because
- * of that. Now it is readable on the device, by whoever is holding it.
+ * Who Android thinks installed this app. Silent updates (the only path Samsung's Auto Blocker
+ * does not interrupt) require a known installer; otherwise they fail with
+ * `Self update is blocked by unknown source package` and fall back to the dialog. Shown here
+ * because that state decides update behavior and is otherwise invisible.
  */
 @Composable
 private fun InstallProvenance() {

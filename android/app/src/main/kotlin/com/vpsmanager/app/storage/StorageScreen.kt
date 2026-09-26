@@ -26,29 +26,10 @@ const val TAG_STORAGE = "tela-armazenamento"
 const val TAG_FREE_SPACE = "botao-liberar-espaco"
 
 /**
- * What the app takes up, item by item, and the button that gives the space
- * back.
- *
- * ## Why this screen exists, and not just the routine
- *
- * The automatic cleanup ([MaintenanceWorker]) handles the build-up, but it
- * is invisible: nobody can tell whether it ran or what it keeps. When the
- * only visible tool is "clear storage" in Android's settings, any oddity
- * turns into wiping everything — and the preferences, the configured
- * server and the session go with it. That is how the owner once lost a
- * whole night.
- *
- * So the screen has two obligations and no decoration: say **how much** and
- * **of what**, and offer a button whose limits are clear. The line in the
- * footer is not legal boilerplate — it is the difference between this
- * button and the system's.
- *
- * ## Why the list shows even what the routine does not delete
- *
- * Cache and media prune themselves and the routine does not touch them.
- * Hiding them would make the screen's total disagree with the number
- * Android shows, and a number that does not add up destroys trust in the
- * whole screen.
+ * What the app takes up, item by item, and a button that frees the rebuildable space. It gives
+ * a safe alternative to Android's "clear storage", which also wipes preferences, the server
+ * and the session. Items the cleanup does not touch are listed too, so the total matches what
+ * Android shows.
  */
 @Composable
 internal fun StorageScreen(
@@ -108,9 +89,7 @@ internal fun StorageScreen(
             Text("Free up space now")
         }
 
-        // The result comes back in bytes, and not as "done!": whoever pressed it
-        // wants to know whether it was worth it. "0 B" is an honest and useful
-        // answer — it says the problem was not here, and saves pressing again.
+        // Report bytes, not "done": even "0 B" tells the user the space was not here.
         lastResult?.let {
             Text(
                 text = "Freed ${AppStorage.formatBytes(it.freedBytes)} " +

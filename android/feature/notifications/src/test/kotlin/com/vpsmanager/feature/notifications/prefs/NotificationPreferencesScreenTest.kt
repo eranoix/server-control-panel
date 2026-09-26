@@ -18,10 +18,8 @@ import org.robolectric.RobolectricTestRunner
 
 /**
  * Renders [NotificationPreferencesScreen] under Robolectric across every
- * [NotificationPreferencesUiState] -- never composed before this. The
- * stateless screen is driven directly with hand-built states; the optimistic
- * toggle-then-revert-on-error flow is driven end to end through the real
- * [NotificationPreferencesViewModel] and a fake [NotifyPreferencesSource].
+ * [NotificationPreferencesUiState]. The revert-on-error toggle flow runs through the real
+ * [NotificationPreferencesViewModel] with a fake [NotifyPreferencesSource].
  */
 @RunWith(RobolectricTestRunner::class)
 class NotificationPreferencesScreenTest {
@@ -50,15 +48,9 @@ class NotificationPreferencesScreenTest {
         composeRule.onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertExists()
     }
 
-    /**
-     * Notifications is a top-level destination: the header is the shell's.
-     * If anyone gives this screen a bar of its own, the app goes back to
-     * stacking two headers — and with a "Back" that leaves a navigation
-     * root, that is, that leaves nowhere. This test is the local lock; the
-     * `AppNavHostTest` pins the same thing from the shell's side.
-     */
+    /** A top-level destination uses the shell's header; its own bar would stack headers and add a dead Back. */
     @Test
-    fun `a tela nao traz cabecalho nem voltar proprios`() {
+    fun `the screen has no header or back button of its own`() {
         composeRule.setContent {
             NotificationPreferencesScreen(
                 uiState = NotificationPreferencesUiState.Success(rules = listOf(rule("deploy", "Deploys", true))),
@@ -75,13 +67,13 @@ class NotificationPreferencesScreenTest {
     fun `load error surfaces the reason with a retry action`() {
         composeRule.setContent {
             NotificationPreferencesScreen(
-                uiState = NotificationPreferencesUiState.LoadError("Não foi possível carregar as preferências."),
+                uiState = NotificationPreferencesUiState.LoadError("Could not load preferences."),
                 onRuleToggled = { _, _ -> },
                 onRetry = {},
             )
         }
 
-        composeRule.onNodeWithText("Não foi possível carregar as preferências.").assertExists()
+        composeRule.onNodeWithText("Could not load preferences.").assertExists()
         composeRule.onNodeWithText("Try again").assertExists()
     }
 
@@ -110,14 +102,14 @@ class NotificationPreferencesScreenTest {
             NotificationPreferencesScreen(
                 uiState = NotificationPreferencesUiState.Success(
                     rules = listOf(rule("deploy", "Deploys", enabled = true)),
-                    errorMessage = "Não foi possível salvar a preferência.",
+                    errorMessage = "Could not save the preference.",
                 ),
                 onRuleToggled = { _, _ -> },
                 onRetry = {},
             )
         }
 
-        composeRule.onNodeWithText("Não foi possível salvar a preferência.").assertExists()
+        composeRule.onNodeWithText("Could not save the preference.").assertExists()
         composeRule.onNodeWithText("Deploys").assertExists()
     }
 
@@ -127,7 +119,7 @@ class NotificationPreferencesScreenTest {
             override suspend fun fetch(deviceId: String) =
                 NotifyPreferencesResult.Success(listOf(rule("deploy", "Deploys", enabled = false)))
             override suspend fun update(deviceId: String, enabledRuleIds: List<String>) =
-                UpdateNotifyPreferencesResult.Error("O servidor recusou a alteração.")
+                UpdateNotifyPreferencesResult.Error("The server rejected the change.")
         }
         val viewModel = NotificationPreferencesViewModel(deviceId = "device-1", repository = source)
         composeRule.setContent {
@@ -144,6 +136,6 @@ class NotificationPreferencesScreenTest {
         viewModel.setRuleEnabled("deploy", true)
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("O servidor recusou a alteração.").assertExists()
+        composeRule.onNodeWithText("The server rejected the change.").assertExists()
     }
 }

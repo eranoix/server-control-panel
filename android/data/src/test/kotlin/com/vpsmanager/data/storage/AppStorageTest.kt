@@ -9,11 +9,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-/**
- * A sweep that deletes what it should not is worse than no sweep at all: the
- * person loses what the network will not bring back, and finds out afterwards.
- * These tests pin exactly the boundaries the policy declares.
- */
+/** Pins the boundaries of the storage sweep: deleting the wrong file is worse than no sweep. */
 class AppStorageTest {
 
     @get:Rule
@@ -31,67 +27,63 @@ class AppStorageTest {
     }
 
     @Test
-    fun `deposito auto-limitado nunca e tocado pela rotina`() {
-        // The HTTP cache and media have ceilings of their own. Deleting them
-        // here returns no space that was not already bounded, and costs network
-        // on the next opening — on bad internet that is the opposite of upkeep.
+    fun `a self-bounded store is never touched by the sweep`() {
+        // The HTTP cache and media have their own limits; deleting them only costs network later.
         val cache = tempDir.newFolder("bff-http")
-        val old = file(cache, "resposta", 1_000, ageInDays = 90)
+        val old = file(cache, "response", 1_000, ageInDays = 90)
 
         val r = AppStorage.maintenance(
             listOf(AppStorage.StorageArea("Cache", "", cache, Kind.AUTO_BOUNDED)),
             nowMs = now,
         )
 
-        assertTrue("o cache se poda sozinho; a rotina nao mexe", old.exists())
+        assertTrue("the cache prunes itself, the sweep leaves it alone", old.exists())
         assertEquals(0L, r.freedBytes)
     }
 
     @Test
-    fun `temporario velho sai, temporario recente fica`() {
-        val tmp = tempDir.newFolder("anexos")
-        val stale = file(tmp, "envio-abandonado", 4_000, ageInDays = 10)
-        val recent = file(tmp, "subindo-agora", 2_000, ageInDays = 1)
+    fun `an old temporary file is removed and a recent one stays`() {
+        val tmp = tempDir.newFolder("attachments")
+        val stale = file(tmp, "abandoned-upload", 4_000, ageInDays = 10)
+        val recent = file(tmp, "uploading-now", 2_000, ageInDays = 1)
 
         val r = AppStorage.maintenance(
-            listOf(AppStorage.StorageArea("Temporários", "", tmp, Kind.TEMPORARY)),
+            listOf(AppStorage.StorageArea("Temporary", "", tmp, Kind.TEMPORARY)),
             nowMs = now,
         )
 
-        assertFalse("um envio parado ha dez dias nao vai concluir", stale.exists())
-        assertTrue("um envio de ontem pode estar so esperando rede", recent.exists())
+        assertFalse("an upload stalled for ten days will not finish", stale.exists())
+        assertTrue("an upload from yesterday may just be waiting for network", recent.exists())
         assertEquals(4_000L, r.freedBytes)
         assertEquals(1, r.filesRemoved)
     }
 
     @Test
-    fun `atualizacao EM USO nunca e apagada, mesmo sendo a mais nova`() {
-        // Deleting a download in flight throws away what the person already
-        // paid for in network — on bad internet, the cost that hurts most.
-        val staging = tempDir.newFolder("atualizacoes")
-        val downloading = file(staging, "nova.hdiff", 9_000, ageInDays = 0)
-        val fromPreviousVersion = file(staging, "antiga.apk", 50_000, ageInDays = 0)
+    fun `an update in use is never deleted, even when newest`() {
+        // Deleting a download in flight wastes the network already spent on it.
+        val staging = tempDir.newFolder("updates")
+        val downloading = file(staging, "new.hdiff", 9_000, ageInDays = 0)
+        val fromPreviousVersion = file(staging, "old.apk", 50_000, ageInDays = 0)
 
         val r = AppStorage.maintenance(
-            listOf(AppStorage.StorageArea("Atualizações", "", staging, Kind.IN_TRANSIT)),
+            listOf(AppStorage.StorageArea("Updates", "", staging, Kind.IN_TRANSIT)),
             nowMs = now,
             inUse = setOf(downloading),
         )
 
-        assertTrue("o download em andamento tem de sobreviver", downloading.exists())
-        assertFalse("o artefato da versao ja instalada e lixo puro", fromPreviousVersion.exists())
+        assertTrue("the download in progress must survive", downloading.exists())
+        assertFalse("the artifact of the installed version is garbage", fromPreviousVersion.exists())
         assertEquals(50_000L, r.freedBytes)
     }
 
     @Test
-    fun `em transito nao espera a idade - o criterio e nao estar em uso`() {
-        // A rebuilt APK is tens of MB. Holding on for three days to something
-        // already installed would be upkeep that keeps nothing.
-        val staging = tempDir.newFolder("atualizacoes")
-        val installedToday = file(staging, "ja-instalado.apk", 60_000, ageInDays = 0)
+    fun `in-transit files are removed when unused, regardless of age`() {
+        // A rebuilt APK is tens of MB, so it is not kept once installed.
+        val staging = tempDir.newFolder("updates")
+        val installedToday = file(staging, "already-installed.apk", 60_000, ageInDays = 0)
 
         val r = AppStorage.maintenance(
-            listOf(AppStorage.StorageArea("Atualizações", "", staging, Kind.IN_TRANSIT)),
+            listOf(AppStorage.StorageArea("Updates", "", staging, Kind.IN_TRANSIT)),
             nowMs = now,
         )
 
@@ -100,41 +92,39 @@ class AppStorageTest {
     }
 
     @Test
-    fun `arquivo sem data valida nao e confundido com antigo`() {
-        // `lastModified` returns 0 when the filesystem does not know. Treating
-        // 0 as "the year 1970, therefore old" would delete precisely what is
-        // unknown — the wrong decision when the information is missing.
-        val tmp = tempDir.newFolder("anexos")
-        val noDate = file(tmp, "sem-data", 1_500, ageInDays = 0)
+    fun `a file without a valid date is not treated as old`() {
+        // `lastModified` returns 0 when unknown; that must not read as "1970, therefore old".
+        val tmp = tempDir.newFolder("attachments")
+        val noDate = file(tmp, "no-date", 1_500, ageInDays = 0)
         noDate.setLastModified(0)
 
         AppStorage.maintenance(
-            listOf(AppStorage.StorageArea("Temporários", "", tmp, Kind.TEMPORARY)),
+            listOf(AppStorage.StorageArea("Temporary", "", tmp, Kind.TEMPORARY)),
             nowMs = now,
         )
 
-        assertTrue("sem data conhecida, nao se apaga", noDate.exists())
+        assertTrue("with no known date, nothing is deleted", noDate.exists())
     }
 
     @Test
-    fun `medir soma recursivo e sobrevive a diretorio ausente`() {
-        val dir = tempDir.newFolder("midia")
+    fun `measuring sums recursively and survives a missing directory`() {
+        val dir = tempDir.newFolder("media")
         file(File(dir, "sub"), "a", 700, ageInDays = 0)
         file(dir, "b", 300, ageInDays = 0)
 
         val usages = AppStorage.measure(
             listOf(
-                AppStorage.StorageArea("Mídia", "", dir, Kind.AUTO_BOUNDED),
-                AppStorage.StorageArea("Nunca criado", "", File(dir, "inexistente"), Kind.TEMPORARY),
+                AppStorage.StorageArea("Media", "", dir, Kind.AUTO_BOUNDED),
+                AppStorage.StorageArea("Never created", "", File(dir, "missing"), Kind.TEMPORARY),
             ),
         )
 
         assertEquals(1_000L, usages[0].bytes)
-        assertEquals("diretorio que nunca existiu e zero, nao erro", 0L, usages[1].bytes)
+        assertEquals("a directory that never existed counts as zero, not an error", 0L, usages[1].bytes)
     }
 
     @Test
-    fun `formatar usa a mesma base que as telas do Android`() {
+    fun `formatting uses the same base as the Android screens`() {
         assertEquals("512 B", AppStorage.formatBytes(512))
         assertEquals("1,5 kB", AppStorage.formatBytes(1_500).replace('.', ','))
         assertEquals("24,0 MB", AppStorage.formatBytes(24_000_000).replace('.', ','))

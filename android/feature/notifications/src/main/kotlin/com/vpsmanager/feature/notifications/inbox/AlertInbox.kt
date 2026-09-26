@@ -22,30 +22,11 @@ import com.vpsmanager.data.ops.OpsAlert
 import com.vpsmanager.designsystem.vpsmStatusColors
 
 /**
- * The alerts inbox: triage, not reading.
+ * Alert triage inbox: one primary action per alert. The empty state is shown as good news, not
+ * as a grey list that looks like a failure.
  *
- * ## Why triage and not a list
- *
- * A list of alerts is read top to bottom and changes nothing. A triage inbox
- * has one question per item — *does this still matter?* — and **one** primary
- * action to answer it. Everything that is not that action stays out of the
- * way, because the moment this gets read is the worst possible moment to
- * choose between five buttons.
- *
- * ## The empty state is the most important screen in this component
- *
- * It is the state one WANTS to see. Which is why it celebrates instead of
- * merely stating: a grey "No alerts", wearing the same face as a list that
- * failed, throws away the only piece of good news an operations panel has to
- * give.
- *
- * ## The primary action is the terminal, not "acknowledge"
- *
- * Acknowledging for real is shared state, and the server has no route for it
- * (see [SeenAlerts]). What the app CAN do, and no competitor does, is take
- * the question to the place that answers any of them: the alert becomes a
- * command in the terminal. "Disk at 94%" becomes a sorted `du` on the mount
- * point — the next thing the person was going to type anyway.
+ * The primary action opens the alert as a terminal command, since a real acknowledge has no
+ * server API (see [SeenAlerts]).
  */
 @Composable
 internal fun AlertInbox(
@@ -68,9 +49,7 @@ internal fun AlertInbox(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
-            // The button only exists when something is silenced — otherwise
-            // it is a control that does nothing, and an inert control teaches
-            // people to ignore the whole bar.
+            // Only shown when something is silenced, so it is never an inert control.
             if (alerts.size > pending.size) {
                 TextButton(onClick = onUnmarkAll) { Text(text = "Show seen") }
             }
@@ -86,14 +65,7 @@ internal fun AlertInbox(
     }
 }
 
-/**
- * The empty state one wants to see.
- *
- * It tells two silences apart: *nothing fired* and *you have already looked at
- * everything*. They are different states — the second means there is something
- * pending that the person chose to silence, and hiding it would make the
- * screen lie by omission.
- */
+/** Empty state that distinguishes "nothing firing" from "everything already marked seen". */
 @Composable
 private fun AllQuiet(hadAlerts: Boolean) {
     val statusColors = vpsmStatusColors
@@ -138,9 +110,7 @@ private fun AlertRow(alert: OpsAlert, onMarkSeen: () -> Unit) {
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                // A text label alongside the colour: colour alone is no good
-                // for a colour-blind eye, for sun on the screen or for a
-                // screen reader — the same rule the Home screen already follows.
+                // Text label alongside colour, for colour blindness, glare and screen readers.
                 text = if (critical) "CRITICAL · ${alert.name}" else "WARNING · ${alert.name}",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
@@ -158,9 +128,7 @@ private fun AlertRow(alert: OpsAlert, onMarkSeen: () -> Unit) {
                     },
                 ) { Text(text = "View in terminal") }
                 TextButton(onClick = onMarkSeen) {
-                    // "Seen on this device" and never "Acknowledge":
-                    // acknowledging is shared state, and this is not. See
-                    // SeenAlerts.
+                    // Never "Acknowledge": this is local, not shared state (see SeenAlerts).
                     Text(text = "Seen on this device")
                 }
             }
@@ -171,6 +139,6 @@ private fun AlertRow(alert: OpsAlert, onMarkSeen: () -> Unit) {
 private fun suffix(alert: OpsAlert): String =
     alert.unit?.takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
 
-/** `92.0` becomes "92"; `0.5` stays "0,5". A pointless decimal zero only steals width. */
+/** Drops a pointless decimal zero (`92.0` becomes "92"); other values keep one decimal. */
 private fun number(value: Double): String =
     if (value == Math.round(value).toDouble()) Math.round(value).toString() else "%.1f".format(value)

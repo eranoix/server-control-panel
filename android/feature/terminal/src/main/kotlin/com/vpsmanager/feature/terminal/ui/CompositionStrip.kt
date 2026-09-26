@@ -18,69 +18,31 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 
-/** The node tag, for the tests that prove this strip's episodic height. */
+/** Node tag, for the tests that check the strip's height behaviour. */
 const val COMPOSITION_STRIP_TAG = "faixa-composicao"
 
 /**
- * The strip's fixed height.
- *
- * Fixed, and not measured from the text, because a variable height is
- * precisely what was corrupting the screen — see the KDoc on
- * [CompositionStrip]. It fits one monospaced `bodyMedium` line plus the 4 dp
- * of slack the strip always had.
+ * The strip's fixed height (one monospaced `bodyMedium` line plus 4 dp). Fixed
+ * rather than measured, since a variable height corrupts the screen; see
+ * [CompositionStrip].
  */
 private val BAND_HEIGHT = 28.dp
 
 /**
- * Shows the word the keyboard is composing and has not yet handed to the
- * terminal.
+ * Shows the word the keyboard is composing and has not yet handed to the terminal.
  *
- * ## Why it exists
+ * In [com.vpsmanager.feature.terminal.prefs.TypingMode.TEXT] mode autocorrect
+ * holds the text until the word ends, so the terminal has nothing to echo and the
+ * user would type blind. This is why many Android terminals disable composition
+ * (Termux uses `TYPE_NULL`); a composition line makes text mode usable.
  *
- * In [com.vpsmanager.feature.terminal.prefs.TypingMode.TEXT] mode the
- * device's autocorrect only settles on a substitution once the word ends.
- * Until then the text is HELD in the keyboard: the terminal has received no
- * bytes, so the grid has nothing to echo and the screen sits still while the
- * fingers move. It is typing blind.
- *
- * That, incidentally, is why Android terminals tend to simply switch
- * composition off (Termux declares `TYPE_NULL`, ConnectBot likewise): with no
- * place to show the text in flight, autocorrect and a terminal are
- * incompatible in practice. Giving it that place is what makes text mode
- * usable — it is the same feature Blink Shell and Termius expose as a
- * "composition line".
- *
- * ## Why it RESERVES the height instead of appearing and vanishing
- *
- * This is the fix for a measured defect, and the previous version of this
- * comment argued exactly the opposite ("0 dp of cost… a permanent strip would
- * be one more line stolen from the grid in exchange for nothing"). The
- * argument was right about the cost and wrong about the price.
- *
- * By appearing and vanishing, the strip changed the height of the grid's node
- * at every word autocorrect held and released. Measured in the server log with
- * the owner using the app: **77 resizes in 45 minutes**, oscillating between
- * 48 and 50 rows, back and forth every second.
- *
- * Every resize is a SIGWINCH. A differential renderer repaints the whole frame
- * on every SIGWINCH, and a frame taller than the screen **cannot erase
- * itself** — `ESC[nA` saturates at the first row of the SCREEN. Every repaint
- * leaves the previous copy behind, and the result on the owner's screen was
- * overlapping rows with interleaved characters, including chunks of the footer
- * inside the text.
- *
- * It is the SAME class of defect that `1880a859` fixed for the keyboard (the
- * grid shrinking with `imePadding`), arriving from a different source. The
- * lesson it leaves is as big as the class: **the grid's height cannot depend
- * on typing state**. Font, line spacing and screen size change by an explicit
- * action; a word being composed changes ten times a sentence.
- *
- * [reserveSpace] limits the cost to those who pay for it: in TERMINAL mode
- * there is no composition, the strip never appears, and nothing is reserved.
- * Switching mode with a live session produces ONE resize, not a burst.
- *
- * The text scrolls horizontally instead of wrapping onto two lines — for the
- * same reason, now made explicit: wrapping would change the height mid-typing.
+ * The strip RESERVES its height instead of appearing and vanishing: changing the
+ * grid height on every held word produced dozens of resizes (measured: 77 in 45
+ * minutes), and each SIGWINCH makes differential renderers repaint frames that
+ * leave overlapping copies. The grid height must not depend on typing state.
+ * [reserveSpace] is false in TERMINAL mode, where there is no composition, so
+ * switching mode causes a single resize. The text scrolls horizontally rather
+ * than wrapping, for the same reason.
  */
 @Composable
 fun CompositionStrip(
@@ -88,9 +50,8 @@ fun CompositionStrip(
     modifier: Modifier = Modifier,
     reserveSpace: Boolean = true,
 ) {
-    // In TERMINAL mode composition does not exist: nothing appears and
-    // nothing is reserved. It is the only case where vanishing outright is
-    // safe, because the strip will not come back until the mode changes.
+    // In TERMINAL mode there is no composition, so nothing is shown or reserved.
+    // Safe because the strip cannot return until the mode changes.
     if (text.isEmpty() && !reserveSpace) return
 
     Row(
@@ -100,7 +61,7 @@ fun CompositionStrip(
             .testTag(COMPOSITION_STRIP_TAG)
             .background(
                 if (text.isEmpty()) {
-                    // Reserved and invisible: it takes the height, it draws no strip.
+                    // Reserved but invisible: takes the height, draws nothing.
                     Color.Transparent
                 } else {
                     MaterialTheme.colorScheme.surfaceVariant
@@ -113,10 +74,8 @@ fun CompositionStrip(
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
-            // Monospaced and underlined for the same reason an IME underlines
-            // the composition: it is the universal sign for "this has not been
-            // confirmed yet". Monospaced to match the grid just above, which is
-            // where the text will come out once it is confirmed.
+            // Underlined like an IME composition ("not confirmed yet") and
+            // monospaced to match the grid where the text will appear.
             fontFamily = FontFamily.Monospace,
             textDecoration = TextDecoration.Underline,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

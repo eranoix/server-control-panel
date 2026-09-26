@@ -9,26 +9,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /**
- * The line-spacing steps on offer, as a DELTA in whole pixels over the usual
- * cell height.
+ * Line-spacing steps, as a whole-pixel DELTA over the usual cell height.
  *
- * **Why a pixel delta and not a multiplier.** A multiplier is what iTerm2
- * (0.5x to 2.0x) and WezTerm (`line_height`) expose, and it would be the
- * natural choice — but they run in desktop windows, with cells of 30 to 60 px.
- * Here a cell is ~42 px and can drop to 26 at the smallest text size; in that
- * range 0.90 and 0.95 round to the same integer, and a person sees two menu
- * items that do the same thing. A whole-pixel delta is exactly representable
- * at any font size and is what Alacritty exposes (`font.offset.y`, "extra
- * space around each character", added to the metric and truncated once).
- *
- * **Why the ladder is short.** How much room there is to take away was
- * MEASURED on the emulator: at a text size of 16 sp (a cell of 42 px) the
- * font's typographic box takes 40 px and the box-drawing ink (`█`, `│`) takes
- * 41. In other words, this terminal's grid is ALREADY tight — there was no
- * spare leading sitting there waiting to be cut. [COMPACT] takes away what
- * real slack exists without clipping a single letter (the floor is computed
- * from the measured ink, in `TerminalCellMetrics`), and the honest gain is of
- * the order of 3 extra rows per screen, not 10.
+ * A pixel delta rather than a multiplier (as in Alacritty's `font.offset.y`):
+ * cells here are only 26 to 42 px, where multipliers like 0.90 and 0.95 round to
+ * the same height. The ladder is short because the grid is already tight
+ * (measured at 16 sp: 42 px cell, 41 px box-drawing ink); [COMPACT] removes the
+ * real slack without clipping (the floor comes from `TerminalCellMetrics`),
+ * gaining about 3 rows per screen.
  */
 enum class TerminalLineSpacing(
     val label: String,
@@ -37,16 +25,16 @@ enum class TerminalLineSpacing(
     val storedName: String,
 ) {
 
-    /** The tightest that fits without clipping a letter. Wins a few rows per screen. */
+    /** The tightest that fits without clipping a letter; gains a few rows per screen. */
     COMPACT("Compact", -3, "COMPACTA"),
 
-    /** One pixel less: all but imperceptible, one row more. */
+    /** One pixel less: barely visible, one more row. */
     TIGHT("Tight", -1, "JUSTA"),
 
     /** The usual grid. */
     NORMAL("Normal", 0, "NORMAL"),
 
-    /** A little more breathing room between the rows, for long reading. */
+    /** A little more room between rows, for long reading. */
     RELAXED("Relaxed", 2, "FOLGADA"),
     ;
 
@@ -59,19 +47,10 @@ enum class TerminalLineSpacing(
 }
 
 /**
- * Persists the chosen line spacing, on the device only, by the same route and
- * for the same reason as [TerminalFontSizePreference]: it is ONE client's
- * presentation preference, not session state, and so it never goes up to the
- * server.
- *
- * Stored by the NAME of the constant, not by the delta: if the ladder ever
- * changes its values, whoever has already chosen "Compact" keeps the new
- * compact, instead of being stuck on a `-3` that no longer exists on the
- * ladder.
- *
- * [dataStore] is injectable for the same reason as in the font preference —
- * the global instance is cached per [Context] for the whole process, and a
- * test that wants isolated storage passes its own.
+ * Persists the chosen line spacing on the device only (a per-client presentation
+ * choice, like [TerminalFontSizePreference]). Stored by constant name, not delta,
+ * so a saved choice follows the ladder if its values change. [dataStore] is
+ * injectable so tests get isolated storage.
  */
 class TerminalLineSpacingPreference(
     context: Context,

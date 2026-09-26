@@ -20,7 +20,7 @@ private class FakeTicketSource(private val result: VideocallWsTicketResult) : Vi
     }
 }
 
-/** No real socket — just records every frame it was asked to send. */
+/** Records every frame it was asked to send. */
 private class RecordingWebSocket : VideocallWebSocket {
     val textFrames = mutableListOf<String>()
     var closed: Pair<Int, String>? = null
@@ -36,7 +36,7 @@ private class RecordingWebSocket : VideocallWebSocket {
     }
 }
 
-/** No network — records the URL of every open() call and hands back a [RecordingWebSocket]. */
+/** Records the URL of every open() call and returns a [RecordingWebSocket]. */
 private class FakeWebSocketFactory : VideocallWebSocketFactory {
     val openedUrls = mutableListOf<String>()
     val sockets = mutableListOf<RecordingWebSocket>()
@@ -81,14 +81,14 @@ class VideocallSignalingClientTest {
         val job = launch { client.connect("room1", "c1", resume = true).collect {} }
         advanceUntilIdle()
 
-        // internal/videocall/ws.go: r.URL.Query().Get("resume") == "1" — never "true"/"false".
+        // The server (internal/videocall/ws.go) checks resume == "1", not "true".
         assertTrue(factory.openedUrls.single().contains("resume=1"))
         job.cancel()
     }
 
     @Test
     fun ticketFailureEmitsErrorFrameAndNeverOpensSocket() = runTest {
-        val ticketSource = FakeTicketSource(VideocallWsTicketResult.Error("sem rede"))
+        val ticketSource = FakeTicketSource(VideocallWsTicketResult.Error("no network"))
         val factory = FakeWebSocketFactory()
         val client = VideocallSignalingClient(ticketSource, "ws://vps.example.com", factory)
 
@@ -99,7 +99,7 @@ class VideocallSignalingClientTest {
         assertEquals(0, factory.openedUrls.size)
         assertEquals(1, received.size)
         assertEquals("error", received.single().type)
-        assertEquals("sem rede", received.single().error)
+        assertEquals("no network", received.single().error)
 
         job.cancel()
     }

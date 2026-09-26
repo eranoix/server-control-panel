@@ -18,12 +18,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/** How far along ONE attachment is. */
+/** How far along one attachment is. */
 sealed interface AttachmentState {
-    /** `percentual == [UNKNOWN_PERCENT]` when the provider did not report the size. */
+    /** `percent == [UNKNOWN_PERCENT]` when the provider did not report the size. */
     data class Uploading(val percent: Int) : AttachmentState
 
-    /** Arrived. [path] is absolute on the server and can already be a command argument. */
+    /** Arrived. [path] is absolute on the server and ready to use as a command argument. */
     data class Ready(val path: String) : AttachmentState
 
     data class Failed(val reason: String) : AttachmentState
@@ -39,25 +39,15 @@ data class ScreenAttachment(
 )
 
 /**
- * Attachments as the terminal screen sees them: it enqueues one
- * [AttachmentUploadWorker] per chosen file, follows each of them, and keeps the
- * path that came back from the server until the operator decides to insert it
- * into the command line.
+ * Terminal screen attachments: enqueues one [AttachmentUploadWorker] per file,
+ * follows each, and keeps the returned path until the operator inserts it.
  *
- * **What this object deliberately does NOT do: type into the terminal by
- * itself.** When an upload finishes, whoever is on the other end may be
- * halfway through a command, inside `vim`, or in a full-screen program reading
- * key by key. Injecting text there, unasked, at the moment the network
- * happened to finish, would corrupt what the person was writing — and the
- * moment would be unpredictable precisely because it depends on the network.
- * So a finished attachment STAYS VISIBLE with its path and an insert button:
- * the insertion happens when the operator says it is time, in a single tap.
- * See [TerminalAttachmentViewModel.insertionText].
+ * It never types into the terminal on its own: an upload may finish while the
+ * user is mid-command or inside `vim`, so a finished attachment waits with an
+ * insert button (see [TerminalAttachmentViewModel.insertionText]).
  *
- * `AndroidViewModel` because `WorkManager.getInstance` requires an application
- * `Context` — the same precedent `TransferViewModel` (`:feature-files`) has
- * already set, without introducing new dependency injection for this single
- * use.
+ * `AndroidViewModel` because `WorkManager.getInstance` needs the application
+ * `Context` (same approach as `TransferViewModel` in `:feature-files`).
  */
 class TerminalAttachmentViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -66,20 +56,14 @@ class TerminalAttachmentViewModel(application: Application) : AndroidViewModel(a
     private val _attachments = MutableStateFlow<List<ScreenAttachment>>(emptyList())
     val attachments: StateFlow<List<ScreenAttachment>> = _attachments.asStateFlow()
 
-    /**
-     * The network is the only requirement. Without it WorkManager holds the
-     * work in the queue rather than letting it fail — which is the right
-     * behaviour for the context of use (a connection that comes and goes).
-     */
+    /** Network is the only constraint; without it WorkManager keeps the work queued instead of failing it. */
     private val requiresNetwork = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
 
     /**
-     * Enqueues one upload per item. Several at once work because each becomes
-     * a unique work of its own, named after the destination name — which
-     * already carries a timestamp and therefore never collides with another
-     * attachment.
+     * Enqueues one upload per item, each as unique work named after its
+     * timestamped destination name, so they never collide.
      */
     fun attach(items: List<LocalAttachment>, now: Instant = Instant.now()) {
         items.forEach { item ->
@@ -106,27 +90,25 @@ class TerminalAttachmentViewModel(application: Application) : AndroidViewModel(a
         }
     }
 
-    /** Cancels an upload in flight; whatever was already written on the server is swept by the 24h reaper. */
+    /** Cancels an upload in flight; partial server data is swept by the 24h reaper. */
     fun cancel(id: UUID) {
         workManager.cancelWorkById(id)
     }
 
-    /** Removes the row from the bar (an attachment already inserted, or an error already read). */
+    /** Removes the row from the bar (an inserted attachment or an error already read). */
     fun discard(id: UUID) {
         workManager.cancelWorkById(id)
         _attachments.value = _attachments.value.filterNot { it.id == id }
     }
 
     /**
-     * The exact text to paste into the command line for the attachments
-     * already finished — each path quoted if it needs to be, separated by
-     * spaces, ending in a space and NEVER in a line break (see
-     * `shellInsertionText`). Empty when nothing is ready, in which case
-     * the caller inserts nothing.
+     * The exact text to paste into the command line for finished attachments:
+     * shell-quoted paths separated by spaces, ending in a space and never a line
+     * break (see `shellInsertionText`). Empty when nothing is ready.
      */
     fun insertionText(ids: List<UUID>): String = insertionTextFrom(_attachments.value, ids)
 
-    /** All the ones that have arrived, in the order they were attached. */
+    /** All finished attachments, in the order they were attached. */
     fun readyIds(): List<UUID> = _attachments.value.filter { it.state is AttachmentState.Ready }.map { it.id }
 
     private fun observe(id: UUID) {
@@ -142,11 +124,8 @@ class TerminalAttachmentViewModel(application: Application) : AndroidViewModel(a
 }
 
 /**
- * The insertion rule, pure and outside the ViewModel so it can be exercised
- * without WorkManager: only attachments that are ALREADY FINISHED go in (an
- * upload in flight has no path to insert, and inserting the path of one that
- * failed would point at a file that does not exist), in the order they were
- * attached, each path quoted for the shell.
+ * The insertion rule, kept pure so it can be tested without WorkManager: only
+ * finished attachments, in attach order, each path quoted for the shell.
  */
 internal fun insertionTextFrom(attachments: List<ScreenAttachment>, ids: List<UUID>): String {
     val paths = attachments

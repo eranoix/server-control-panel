@@ -54,31 +54,20 @@ import com.vpsmanager.data.auth.PairingPayload
 import com.vpsmanager.data.auth.PairingRepository
 import java.util.concurrent.Executors
 
-/** Label of the shortcut to [ServerSetupScreen] — the same one throughout the screen. */
+/** Label of the shortcut to [ServerSetupScreen], used everywhere on this screen. */
 internal const val LABEL_SET_UP_MANUALLY = "Set up manually"
 
 /** Label of the shortcut to [LoginScreen] (passkey, or username and password). */
 internal const val LABEL_ALREADY_HAVE_ACCESS = "I already have access"
 
 /**
- * Scans the panel's pairing QR with CameraX on the preview/frame pipeline and
- * a pure-JVM zxing decoder — no ML Kit, no Play Services (see
- * `gradle/libs.versions.toml`). Every decoded frame goes through
- * [PairingRepository.parsePairingPayload] before anything else; frames that do
- * not look like a real pairing envelope (odd content, or an envelope version
- * this build does not understand) are ignored silently, so the scanner keeps
- * looking instead of reporting an error over, say, a QR code that is not even
- * from this app. [onPairingScanned] fires at most once per instance of the
- * screen.
+ * Scans the panel's pairing QR with CameraX and pure-JVM zxing (no ML Kit or
+ * Play Services). Decoded frames that are not a valid pairing envelope are
+ * ignored so scanning continues. [onPairingScanned] fires at most once.
  *
- * **The camera may be unavailable, and that must not take the app down.**
- * Every failure path — permission denied, permission denied permanently, a
- * device with no camera, the camera taken by another app (this app has video
- * calling), the camera disabled by policy, an unexpected provider failure —
- * becomes an [ScannerState.Degraded] that explains the cause and offers
- * the way out: [onManualSetupRequested] (configure the server by hand) and
- * [onLoginRequested] (sign in with username and password). See
- * [CameraXCheck] for the crash this replaces.
+ * Camera unavailability must never crash the app: every failure becomes
+ * [ScannerState.Degraded] with an explanation and the exits
+ * [onManualSetupRequested] and [onLoginRequested].
  */
 @Composable
 fun PairingScanScreen(
@@ -97,8 +86,8 @@ fun PairingScanScreen(
 }
 
 /**
- * [PairingScanScreen]'s body with [CameraEnvironment] exposed, which is how the
- * JVM tests reproduce each cause of failure with no hardware at all.
+ * [PairingScanScreen]'s body with [CameraEnvironment] exposed so JVM tests can
+ * inject each failure cause.
  */
 @Composable
 internal fun PairingScanContent(
@@ -110,13 +99,9 @@ internal fun PairingScanContent(
 ) {
     val context = LocalContext.current
     var state by remember { mutableStateOf<ScannerState>(ScannerState.Checking) }
-    // Each increment re-runs the check: it is both "try again" and the return
-    // from the system Settings.
+    // Each increment re-runs the check (retry, or return from Settings).
     var attempt by remember { mutableStateOf(0) }
-    // rememberSaveable so the permission request is NOT repeated on every
-    // recomposition or rotation — asking in a loop is what the system punishes
-    // by swallowing the dialog, and what leaves the user with no idea why
-    // nothing is happening.
+    // Saveable so rotation does not re-ask; repeated requests get the dialog suppressed by the system.
     var alreadyAskedPermission by rememberSaveable { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -135,8 +120,7 @@ internal fun PairingScanContent(
         state = ScannerState.Checking
         if (!environment.hasPermission(context)) {
             if (alreadyAskedPermission) {
-                // We have already asked once in this instance of the screen
-                // and still have no permission: do not ask again unprompted.
+                // Already asked once here; do not ask again unprompted.
                 state = ScannerState.Degraded(
                     permissionFailure(environment.canAskPermissionAgain(context)),
                 )
@@ -153,10 +137,8 @@ internal fun PairingScanContent(
         }
     }
 
-    // Coming back from Settings with the permission granted has to fix the
-    // screen on its own — forcing the operator to leave and come back would be
-    // leaving the job half done. It only re-checks when the permission
-    // actually changed, so there is no loop.
+    // Returning from Settings with the permission granted re-checks automatically.
+    // It only fires when the permission actually changed, so it cannot loop.
     val currentState by rememberUpdatedState(state)
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -173,9 +155,8 @@ internal fun PairingScanContent(
     }
 
     when (val current = state) {
-        // A spinner on its own is a dead end too: if the system's permission
-        // dialog is dismissed from outside, the operator is left staring at a
-        // screen with nothing to tap. The exits stay up in EVERY state.
+        // Keep the exits visible even here: a lone spinner is a dead end if the
+        // permission dialog is dismissed externally.
         ScannerState.Checking,
         ScannerState.RequestingPermission,
         -> Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -229,11 +210,9 @@ private fun QrCameraPreview(
     val currentOnPairingScanned by rememberUpdatedState(onPairingScanned)
     val currentOnFailure by rememberUpdatedState(onFailure)
     val currentOnStateFailure by rememberUpdatedState(onStateFailure)
-    // Held here (rather than created inside the factory) so the
-    // DisposableEffect below can shut it down: the previous version of this
-    // screen leaked a thread per visit to the scanner.
+    // Held here so the DisposableEffect below can shut it down; otherwise each visit leaks a thread.
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
-    val seletor = remember(useFrontCamera) {
+    val selector = remember(useFrontCamera) {
         if (useFrontCamera) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
     }
 
@@ -249,11 +228,8 @@ private fun QrCameraPreview(
                 val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
                 cameraProviderFuture.addListener(
                     {
-                        // This block runs on a Runnable of the main executor:
-                        // any exception escaping from here has NOBODY to catch
-                        // it and kills the process. That is why the try covers
-                        // the `get()` as well — that was exactly where the app
-                        // was closing.
+                        // Runs on the main executor, where an escaping exception
+                        // kills the process, so the try must also cover `get()`.
                         try {
                             val cameraProvider = cameraProviderFuture.get()
                             val preview = CameraPreview.Builder().build().also {
@@ -274,12 +250,9 @@ private fun QrCameraPreview(
                                 imageProxy.close()
                             }
                             cameraProvider.unbindAll()
-                            val camera = cameraProvider.bindToLifecycle(lifecycleOwner, seletor, preview, analysis)
-                            // The camera can fall over AFTER it has opened —
-                            // this app's own video call taking it mid-scan is
-                            // the likeliest case. That does not arrive as an
-                            // exception: CameraX reports it through this
-                            // LiveData.
+                            val camera = cameraProvider.bindToLifecycle(lifecycleOwner, selector, preview, analysis)
+                            // Losing the camera after opening (e.g. to a video call)
+                            // arrives through this LiveData, not as an exception.
                             camera.cameraInfo.cameraState.observe(lifecycleOwner) { cameraState ->
                                 cameraState.error?.let { error ->
                                     classifyCameraStateError(error.code)?.let(currentOnStateFailure)
@@ -316,12 +289,8 @@ private fun QrCameraPreview(
 }
 
 /**
- * The two shortcuts that take the operator out of QR pairing, in the top
- * corners. They live with the scanner screen rather than with its caller,
- * because only the screen knows what they are drawn on top of: over the video
- * the text has to be white; over the light background of the waiting state, it
- * must not — that is how a white button on a light card once became invisible
- * text.
+ * The two exits from QR pairing, in the top corners. White over the camera
+ * video, default color elsewhere so they stay visible on light backgrounds.
  */
 @Composable
 private fun BoxScope.PairingExits(
@@ -350,9 +319,8 @@ private fun BoxScope.PairingExits(
 
 /**
  * Decodes a single CameraX [ImageProxy] frame (YUV_420_888, luma plane
- * only) as a QR code. Returns `null` for anything that isn't a QR code in
- * frame — that is the overwhelming majority of frames while the camera is
- * still searching, not an error condition.
+ * only) as a QR code. Returns `null` when no QR code is found, which is normal
+ * for most frames.
  */
 private fun decodeQr(imageProxy: ImageProxy): String? {
     val buffer = imageProxy.planes[0].buffer
@@ -381,10 +349,8 @@ private fun decodeQr(imageProxy: ImageProxy): String? {
 }
 
 /**
- * The text of a [CameraFailure]: what happened and, above all, what to do.
- * [action] is the label of the button that attacks the cause — `null` when no
- * action would resolve it (a device with no camera), in which case only the
- * exits remain.
+ * User-facing text for a [CameraFailure]. [action] is the label of the button
+ * that addresses the cause, or `null` when none can (then only the exits remain).
  */
 internal data class FailureText(
     val title: String,
@@ -394,8 +360,7 @@ internal data class FailureText(
 )
 
 /**
- * Each cause with its own text, in the imperative: stating only what happened
- * leaves the operator stuck; what they need is the next step.
+ * Each cause gets its own text, always stating the next step.
  */
 internal fun CameraFailure.text(): FailureText = when (this) {
     CameraFailure.PermissionDenied -> FailureText(
@@ -450,10 +415,8 @@ internal fun CameraFailure.text(): FailureText = when (this) {
 }
 
 /**
- * The degraded state: it explains the cause, offers the action that attacks it
- * (when there is one) and ALWAYS the two exits from QR pairing — configure the
- * server by hand, and go to the login screen. This is what replaced the app
- * closing.
+ * The degraded state: explains the cause, offers its action when there is one,
+ * and always shows both exits (manual setup and login).
  */
 @Composable
 internal fun CameraUnavailableContent(

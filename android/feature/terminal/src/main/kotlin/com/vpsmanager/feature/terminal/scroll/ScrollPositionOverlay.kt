@@ -29,22 +29,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.vpsmanager.terminalengine.TerminalScrollState
 
-/** Test tags — the interface is checked through them, never through loose text. */
+/** Test tags: the UI is checked through them, never through loose text. */
 internal const val TAG_POSITION_BAR = "terminal-barra-posicao"
 internal const val TAG_BACK_TO_END = "terminal-voltar-ao-fim"
 
 /**
- * What the owner needs to see while reading the past: **where they are** and
- * **how to get back**.
- *
- * Scrolling blind in a terminal is disorienting — there is no section title,
- * no page number, and the content all looks alike. The bar on the right
- * answers "where am I"; the button answers "how do I get out of here"; and
- * when new output arrives while you are reading, the button says so, because
- * the screen does **not** jump to it on its own.
- *
- * Everything appears only when it makes sense: pinned to the bottom, the
- * terminal stays clean.
+ * Shows where the user is while reading history and how to get back: a position
+ * bar on the right and a "back to the end" button that also announces new output
+ * (the screen never jumps to it on its own). Hidden when pinned to the bottom.
  */
 @Composable
 internal fun ScrollPositionOverlay(
@@ -81,9 +73,8 @@ internal fun ScrollPositionOverlay(
 }
 
 /**
- * The bar on the right. It is not a control — it is an indicator: dragging is
- * the gesture on the whole grid, and a thin 4 dp handle would be a worse
- * target than the entire screen that already works.
+ * The position bar is an indicator, not a control: dragging works on the whole
+ * grid, which is a better target than a 4 dp handle.
  */
 @Composable
 private fun PositionBar(state: TerminalScrollState) {
@@ -119,10 +110,7 @@ private fun PositionBar(state: TerminalScrollState) {
     }
 }
 
-/**
- * The way back. It sits at the bottom, where the thumb reaches, and says **how
- * far** up you went — a number orients better than an arrow alone.
- */
+/** The way back, within thumb reach, showing how many lines up the user is. */
 @Composable
 private fun BackToEndButton(
     rowsBack: Long,

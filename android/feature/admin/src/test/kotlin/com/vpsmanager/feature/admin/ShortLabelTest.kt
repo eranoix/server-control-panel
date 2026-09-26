@@ -6,43 +6,40 @@ import org.junit.Test
 class ShortLabelTest {
 
     @Test
-    fun `enumeracao entre parenteses sai — era ela que ocupava duas linhas`() {
-        // The case from the owner's screenshot: "Métricas (CPU,\nmemória, dis…"
-        // ate the whole block and the cut fell on the detail, not on the name.
-        assertEquals("Métricas", shortLabel("Métricas (CPU, memória, disco)"))
+    fun `an enumeration in parentheses is dropped`() {
+        assertEquals("Metrics", shortLabel("Metrics (CPU, memory, disk)"))
     }
 
     @Test
-    fun `sigla FICA — ela e o nome pelo qual a coisa e conhecida`() {
+    fun `an acronym in parentheses is kept`() {
         assertEquals("Firewall (UFW)", shortLabel("Firewall (UFW)"))
         assertEquals("AdGuard (DNS)", shortLabel("AdGuard (DNS)"))
-        assertEquals("Modelos (IA)", shortLabel("Modelos (IA)"))
+        assertEquals("Models (AI)", shortLabel("Models (AI)"))
     }
 
     @Test
-    fun `rotulo sem parenteses passa intacto`() {
+    fun `a label without parentheses is unchanged`() {
         assertEquals("Containers", shortLabel("Containers"))
-        assertEquals("Fila de jobs", shortLabel("Fila de jobs"))
+        assertEquals("Job queue", shortLabel("Job queue"))
     }
 
     @Test
-    fun `parentese no MEIO nao deixa buraco nem espaco duplo`() {
-        assertEquals("Serviços do sistema", shortLabel("Serviços (systemd e afins) do sistema"))
+    fun `a parenthetical in the middle leaves no gap or double space`() {
+        assertEquals("System services", shortLabel("System (systemd and related) services"))
     }
 
     @Test
-    fun `se o parentese ERA o nome, o original volta`() {
-        // Cutting would leave the block with no name — worse than a cut name.
-        assertEquals("(sem rótulo definido)", shortLabel("(sem rótulo definido)"))
+    fun `if the parenthetical is the whole name, the original is returned`() {
+        assertEquals("(no label defined)", shortLabel("(no label defined)"))
     }
 
     @Test
-    fun `parentese sem fechamento nao quebra`() {
-        assertEquals("Métricas (CPU", shortLabel("Métricas (CPU"))
+    fun `an unclosed parenthesis does not break`() {
+        assertEquals("Metrics (CPU", shortLabel("Metrics (CPU"))
     }
 
     @Test
-    fun `espacos em volta somem`() {
-        assertEquals("Processos", shortLabel("  Processos  "))
+    fun `surrounding whitespace is trimmed`() {
+        assertEquals("Processes", shortLabel("  Processes  "))
     }
 }

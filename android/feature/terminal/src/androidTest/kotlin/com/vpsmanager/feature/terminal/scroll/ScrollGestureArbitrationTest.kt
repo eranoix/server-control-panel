@@ -27,13 +27,9 @@ import org.junit.runner.RunWith
 private const val LONG_PRESS_SLACK_MS = 700L
 
 /**
- * The contest of four gestures over the SAME finger, driven by real touch
- * through the actual Compose pipeline — the one path a JVM test cannot cover,
- * because `pointerInput` does not run there.
- *
- * The grid here assembles exactly the same modifier chain as `TerminalRoute`,
- * in the same order, because the order is part of the contract: the innermost
- * modifier receives the event first on the `Main` pass.
+ * Arbitration between scroll, tap, long press and drag, driven by real touch through
+ * Compose (`pointerInput` does not run on the JVM). The modifier chain matches
+ * `TerminalRoute` in the same order, since the innermost modifier sees events first.
  */
 @RunWith(AndroidJUnit4::class)
 class ScrollGestureArbitrationTest {
@@ -75,11 +71,7 @@ class ScrollGestureArbitrationTest {
         }
     }
 
-    /**
-     * The new gesture: a fast vertical drag scrolls — and does **not** raise
-     * the keyboard or start a selection. That was the entire risk of adding a
-     * fourth gesture to a finger that already had three owners.
-     */
+    /** A fast vertical drag scrolls without raising the keyboard or starting a selection. */
     @Test
     fun fastVerticalDrag_scrolls_withoutOpeningKeyboardOrSelecting() {
         val grid = Grid()
@@ -94,22 +86,19 @@ class ScrollGestureArbitrationTest {
         }
         composeTestRule.waitForIdle()
 
-        assertEquals("o arraste vertical tinha que ser reivindicado", 1, grid.scrollSpy.starts)
-        assertTrue("tinha que rolar para o passado", grid.scrollSpy.totalPx > 100f)
+        assertEquals("the vertical drag should have been claimed", 1, grid.scrollSpy.starts)
+        assertTrue("should have scrolled into the past", grid.scrollSpy.totalPx > 100f)
         assertTrue(
-            "o arraste vertical NÃO pode contar como toque (subiria o teclado)",
+            "a vertical drag must not count as a tap (it would raise the keyboard)",
             grid.taps.isEmpty(),
         )
         assertNull(
-            "o arraste vertical NÃO pode iniciar seleção",
+            "a vertical drag must not start a selection",
             grid.selection.selection,
         )
     }
 
-    /**
-     * The old gesture survives whole: press and drag selects text, and
-     * scrolling stays out of it — it bows out as soon as the long press wins.
-     */
+    /** Long press and drag still selects; scrolling backs off once the long press wins. */
     @Test
     fun longPressAndDrag_stillSelects_withoutScrolling() {
         val grid = Grid()
@@ -119,10 +108,8 @@ class ScrollGestureArbitrationTest {
             down(center)
             advanceEventTime(LONG_PRESS_SLACK_MS)
         }
-        // The long-press timer runs on the test's VIRTUAL clock; the
-        // `advanceEventTime` only stamps the MotionEvent. Without advancing the
-        // clock here, the long press never fires (see the twin note in
-        // SelectionComposeIndependenceTest).
+        // The long-press timer runs on the test's virtual clock; `advanceEventTime`
+        // only stamps the MotionEvent, so the clock must be advanced too.
         composeTestRule.mainClock.advanceTimeBy(LONG_PRESS_SLACK_MS)
 
         composeTestRule.onRoot().performTouchInput {
@@ -132,17 +119,17 @@ class ScrollGestureArbitrationTest {
         composeTestRule.waitForIdle()
 
         assertNotNull(
-            "o toque longo com arraste tinha que continuar selecionando",
+            "long press with drag should still select",
             grid.selection.selection,
         )
         assertEquals(
-            "parado além do toque longo, a rolagem tinha que ter desistido",
+            "held past the long press, scrolling should have given up",
             0,
             grid.scrollSpy.starts,
         )
     }
 
-    /** A short tap is still a tap — it is what raises the keyboard. */
+    /** A short tap is still a tap (it raises the keyboard). */
     @Test
     fun shortTap_staysATap_withoutScrolling() {
         val grid = Grid()
@@ -154,16 +141,12 @@ class ScrollGestureArbitrationTest {
         }
         composeTestRule.waitForIdle()
 
-        assertEquals("o toque curto tinha que ser entregue", listOf(1), grid.taps)
+        assertEquals("the short tap should have been delivered", listOf(1), grid.taps)
         assertEquals(0, grid.scrollSpy.starts)
         assertNull(grid.selection.selection)
     }
 
-    /**
-     * A horizontal drag is not ours. Scrolling leaves the field without
-     * consuming anything, so as not to steal a gesture from whoever may come
-     * to want it.
-     */
+    /** Scrolling does not consume horizontal drags, leaving them to other handlers. */
     @Test
     fun horizontalDrag_isNotClaimedByScroll() {
         val grid = Grid()
@@ -178,13 +161,13 @@ class ScrollGestureArbitrationTest {
         composeTestRule.waitForIdle()
 
         assertEquals(
-            "arraste horizontal não pode virar rolagem vertical",
+            "a horizontal drag must not become vertical scrolling",
             0,
             grid.scrollSpy.starts,
         )
     }
 
-    /** The gesture announces it is over — that is what resets the pixel accumulator. */
+    /** The gesture reports its end, which resets the pixel accumulator. */
     @Test
     fun verticalDrag_endsGestureOnFingerUp() {
         val grid = Grid()
@@ -202,6 +185,6 @@ class ScrollGestureArbitrationTest {
         composeTestRule.waitForIdle()
 
         assertEquals(1, grid.scrollSpy.starts)
-        assertEquals("todo gesto reivindicado tem que terminar", 1, grid.scrollSpy.ends)
+        assertEquals("every claimed gesture must end", 1, grid.scrollSpy.ends)
     }
 }

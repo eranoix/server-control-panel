@@ -13,19 +13,17 @@ class ResumePointTest {
     private val app get() = RuntimeEnvironment.getApplication()
 
     @Test
-    fun `a rota volta uma vez e some`() {
+    fun `the route comes back once and then disappears`() {
         val store = ResumePoint(app)
         store.save("deploys")
 
         assertEquals("deploys", store.consume())
-        // Second read: nothing. The route describes a RETURN, not a
-        // preference — reappearing on some future opening would take the
-        // person to a screen they never asked for.
+        // The route describes a one-time return, not a preference.
         assertNull(store.consume())
     }
 
     @Test
-    fun `rota vazia apaga em vez de gravar vazio`() {
+    fun `a blank route clears instead of saving blank`() {
         val store = ResumePoint(app)
         store.save("terminal")
         store.save("   ")
@@ -33,27 +31,27 @@ class ResumePointTest {
     }
 
     @Test
-    fun `rota velha nao sequestra uma abertura futura`() {
+    fun `a stale route does not hijack a later launch`() {
         var clock = 1_000_000L
         val store = ResumePoint(app, now = { clock })
         store.save("whatsapp")
 
-        clock += 11 * 60 * 1000L // onze minutos depois
-        assertNull("passado o prazo, a rota nao vale mais", store.consume())
+        clock += 11 * 60 * 1000L // eleven minutes later
+        assertNull("after the deadline the route is no longer valid", store.consume())
     }
 
     @Test
-    fun `dentro do prazo a rota ainda vale`() {
+    fun `within the deadline the route is still valid`() {
         var clock = 1_000_000L
         val store = ResumePoint(app, now = { clock })
         store.save("arquivos")
 
-        clock += 30_000L // trinta segundos: o tempo de uma instalacao
+        clock += 30_000L // thirty seconds, about one install
         assertEquals("arquivos", store.consume())
     }
 
     @Test
-    fun `esquecer limpa sem precisar consumir`() {
+    fun `forget clears without consuming`() {
         val store = ResumePoint(app)
         store.save("notificacoes")
         store.forget()

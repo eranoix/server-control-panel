@@ -4,11 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * What these tests protect: the pending-typing strip is the only thing that
- * answers *"I press the keys and what I typed does not show up"* when the
- * connection drops. If it shows anything different from what will be sent, it
- * is worse than not existing — the person reads one command and another gets
- * executed.
+ * The pending-typing strip shows what was typed while the connection is down. It
+ * must show exactly what will be sent, or the user reads one command and another runs.
  */
 class PendingTypingTest {
 
@@ -19,77 +16,61 @@ class PendingTypingTest {
     }
 
     @Test
-    fun `texto comum aparece como foi digitado`() {
+    fun `plain text appears as typed`() {
         assertEquals("ls -la", until("l", "s", " ", "-", "l", "a"))
     }
 
-    /**
-     * DELETE REALLY DELETES. Showing "ls -laa⌫" would be showing a command the
-     * person is not going to send — and they would decide based on it.
-     */
+    /** Backspace really deletes, so the strip never shows a command that will not be sent. */
     @Test
-    fun `backspace remove o ultimo caractere, nao vira simbolo`() {
-        val comBs = typingSummary("ls -laa", byteArrayOf(0x08))
-        assertEquals("ls -la", comBs)
+    fun `backspace removes the last character instead of becoming a symbol`() {
+        val withBackspace = typingSummary("ls -laa", byteArrayOf(0x08))
+        assertEquals("ls -la", withBackspace)
 
-        val comDel = typingSummary("ls -laa", byteArrayOf(0x7F))
-        assertEquals("ls -la", comDel)
+        val withDelete = typingSummary("ls -laa", byteArrayOf(0x7F))
+        assertEquals("ls -la", withDelete)
     }
 
     @Test
-    fun `backspace no vazio nao quebra`() {
+    fun `backspace on empty text does not break`() {
         assertEquals("", typingSummary("", byteArrayOf(0x08)))
     }
 
     /** The strip is one line; a real newline would push the grid upwards. */
     @Test
-    fun `enter vira um simbolo e nao quebra a linha`() {
+    fun `enter becomes a symbol and does not break the line`() {
         val r = typingSummary("ls", byteArrayOf(0x0D))
         assertEquals("ls⏎", r)
         assertEquals(false, r.contains('\n'))
     }
 
-    /**
-     * A `^C` in the queue changes what will happen on reconnect — it is exactly
-     * the information the person needs to see before typing any more.
-     */
+    /** A queued `^C` changes what happens on reconnect, so the user must see it. */
     @Test
-    fun `controle vira a forma que todo terminal ja usa`() {
+    fun `control characters use the usual caret notation`() {
         assertEquals("^C", typingSummary("", byteArrayOf(0x03)))
         assertEquals("^D", typingSummary("", byteArrayOf(0x04)))
     }
 
-    /**
-     * An arrow key produces `ESC [ A` — three bytes that would be garbage on
-     * screen. They DO go up to the server; what does not go up to the strip is
-     * their rendering.
-     */
+    /** Escape sequences (e.g. arrow keys) are still sent, but are not rendered in the strip. */
     @Test
-    fun `sequencia de escape nao vira lixo na faixa`() {
+    fun `an escape sequence does not become garbage in the strip`() {
         val arrowUp = byteArrayOf(0x1B, '['.code.toByte(), 'A'.code.toByte())
         assertEquals("ls", typingSummary("ls", arrowUp))
     }
 
     @Test
-    fun `escape sozinho tambem some`() {
+    fun `a lone escape also disappears`() {
         assertEquals("ls", typingSummary("ls", byteArrayOf(0x1B, 'O'.code.toByte())))
     }
 
-    /**
-     * Byte by byte, a multibyte character would become one replacement
-     * character per byte — "não" would appear as "nÃ£o".
-     */
+    /** Decoding byte by byte would turn "não" into "nÃ£o". */
     @Test
-    fun `acento sobrevive — UTF-8 e decodificado inteiro`() {
+    fun `accents survive because UTF-8 is decoded whole`() {
         assertEquals("não", until("n", "ã", "o"))
     }
 
-    /**
-     * What matters is the END, which is where the cursor is. Trimming from the
-     * front preserves what the person has just typed.
-     */
+    /** The end is where the cursor is, so long text is trimmed from the front. */
     @Test
-    fun `texto longo e cortado pela frente, com reticencia`() {
+    fun `long text is trimmed from the front with an ellipsis`() {
         val long = "x".repeat(200)
         val r = typingSummary("", long.toByteArray())
 

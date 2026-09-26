@@ -29,19 +29,12 @@ import com.vpsmanager.core.model.WhatsAppMessage
 import kotlinx.coroutines.launch
 
 /**
- * Dispatches a [WhatsAppMessage] with non-null `media` to the right
- * rendering per [WhatsAppMessage.type] -- the four categories the BFF already
- * emits (`image`/`video`/`audio`/`document`, mirroring
- * `internal/whatsapp`'s `guessMsgType`). Replaces the earlier
- * `"[mídia]"` placeholder row.
+ * Renders a media [WhatsAppMessage] by type: image, video, audio or document, as the server
+ * classifies them.
  *
- * [imageLoader] and [dataSourceFactory] are built once per conversation
- * screen (see `ConversationScreen`'s `remember`) and threaded down here
- * rather than re-resolved per row -- both own real resources (an HTTP
- * connection pool, a disk-cache file lock) that must not be recreated per
- * bubble. [sharedPlayer] is the single [ExoPlayer] every [AudioPlayerBar] in
- * this conversation shares, so starting one voice note stops whichever one
- * was already playing.
+ * [imageLoader] and [dataSourceFactory] own real resources and are built once per screen, not
+ * per row. [sharedPlayer] is shared by every [AudioPlayerBar], so starting one voice note stops
+ * the other.
  */
 @Composable
 fun MediaMessageRow(
@@ -89,11 +82,7 @@ fun MediaMessageRow(
 
 @Composable
 private fun ImageThumbnail(url: String, imageLoader: ImageLoader, onClick: () -> Unit) {
-    // SubcomposeAsyncImage (not AsyncImage) so the first, not-yet-cached
-    // request shows a spinner instead of a blank box while Coil fetches the
-    // bytes over the network -- the whole point of this row is showing real
-    // media in place of the old "[mídia]" text, so a silent blank area during
-    // that first download would look like nothing happened.
+    // SubcomposeAsyncImage so the first uncached download shows a spinner, not a blank box.
     SubcomposeAsyncImage(
         model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
             .data(url)

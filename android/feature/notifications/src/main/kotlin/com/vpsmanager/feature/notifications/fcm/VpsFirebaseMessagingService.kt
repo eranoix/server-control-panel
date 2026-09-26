@@ -22,27 +22,15 @@ private const val TYPE_INCOMING_CALL = "incoming-call"
 private const val TYPE_CALL_ENDED = "call-ended"
 
 /**
- * Receives every push this app is sent — deploy/job outcomes and metric alerts, and videocall
- * ring/hangup events — as a data-only FCM message (never a notification-payload message: for
- * the ops-alert path this class must build and post the [android.app.Notification] itself via
- * [ActionableNotificationBuilder], so the exact same code path runs whether the process was
- * already alive or FCM cold-started it, and works identically with the app fully force-stopped;
- * the call path hands off to Telecom instead — see below).
+ * Receives every push (job outcomes, metric alerts, call ring/hangup) as a data-only FCM
+ * message, so this class builds the notification itself and behaves the same whether the
+ * process was alive, cold-started or force-stopped.
  *
- * An app may register only one `FirebaseMessagingService` (a second `<service>` declaration
- * would silently shadow this one) — `type=incoming-call`/`type=call-ended` payloads are
- * therefore branched on here, not in a second messaging service, and handed off to
- * [IncomingCallDispatcher]'s registered [com.vpsmanager.data.videocall.IncomingCallHandler]
- * (`:feature-videocall`'s Telecom integration) instead of being treated as an ops alert.
- * `type` is untrusted input from the caller's own FCM payload — matched by exact equality
- * only, and any other/missing value falls straight through to the existing ops-alert path
- * unchanged, never a fallback "ring anyway".
+ * An app can have only one `FirebaseMessagingService`, so call payloads are branched here and
+ * handed to [IncomingCallDispatcher]. `type` is untrusted and matched by exact equality; any
+ * other value falls through to the ops-alert path, never a fallback ring.
  *
- * `google-services.json` is not provisioned in this repo yet (see `gradle/libs.versions.toml`'s
- * `firebaseBom` comment) — until a human adds it, `FirebaseMessaging`/this service's own
- * lifecycle callbacks never fire because no default `FirebaseApp` exists to bind them to. The
- * class itself compiles and is fully wired regardless, so no code changes are needed once the
- * project is provisioned — only the manifest/`google-services.json` addition.
+ * Without `google-services.json` no default `FirebaseApp` exists and these callbacks never fire.
  */
 class VpsFirebaseMessagingService : FirebaseMessagingService() {
 
@@ -71,16 +59,9 @@ class VpsFirebaseMessagingService : FirebaseMessagingService() {
 
         val manager = NotificationManagerCompat.from(applicationContext)
 
-        // A messaging service has no screen: from here there is no way to
-        // REQUEST the permission, only to note that it is missing. The one
-        // that asks is [PushOnboarding], at the post-login moment. Without
-        // this check the `notify` was swallowed by the system with no
-        // exception and no trace — and for a good while the permission was
-        // always missing, because nothing in the app ever got round to
-        // requesting `POST_NOTIFICATIONS`.
-        // The check is INLINE, and not via the helper function: lint does not
-        // follow a method call to recognise the guard, and a guard it cannot
-        // see comes back as a build error.
+        // A service cannot request the permission ([PushOnboarding] does after login), only log
+        // that it is missing; otherwise `notify` is silently dropped. The check is inline
+        // because lint does not recognise a guard hidden behind a helper call.
         val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(
                 applicationContext,
@@ -89,19 +70,16 @@ class VpsFirebaseMessagingService : FirebaseMessagingService() {
         if (!allowed) {
             Log.w(
                 TAG,
-                "notificação descartada: POST_NOTIFICATIONS não concedida " +
-                    "(event_type=${data["event_type"]}). O pedido acontece no login.",
+                "notification dropped: POST_NOTIFICATIONS not granted " +
+                    "(event_type=${data["event_type"]}). It is requested at login.",
             )
             return
         }
         if (!manager.areNotificationsEnabled()) {
-            // Permission granted but notifications switched off in the
-            // system settings, or the channel silenced. There is nothing to be
-            // done from here either — but it vanishes in silence if nobody
-            // logs it.
+            // Notifications are off in system settings; log it so the drop is not silent.
             Log.w(
                 TAG,
-                "notificação descartada: notificações desativadas nas configurações " +
+                "notification dropped: notifications disabled in settings " +
                     "(event_type=${data["event_type"]})",
             )
             return
@@ -117,16 +95,9 @@ class VpsFirebaseMessagingService : FirebaseMessagingService() {
 
 
     /**
-     * Hands a ring event off to [IncomingCallDispatcher]'s registered handler
-     * (`:feature-videocall`'s Telecom integration builds the actual native call UI from here —
-     * this class never builds a notification for it). A payload missing any required field is
-     * logged and dropped rather than partially handled — `internal/videocall/ring.go`'s
-     * `announceJoin` always sends all four, so a missing one means either a stale server build
-     * or a malformed/spoofed message, neither of which this device should ring for.
-     *
-     * Reads `caller_name`, not `from`: the FCM SDK reserves the `from` key for the message's
-     * sender and strips it out of [RemoteMessage.getData] on this exact device — a server
-     * payload keyed `from` would silently never reach here, so `ring.go` sends `caller_name`.
+     * Hands a ring event to [IncomingCallDispatcher]'s handler (Telecom builds the call UI).
+     * The server always sends all four fields, so a payload missing one is stale or spoofed
+     * and is dropped. Uses `caller_name` because FCM strips the reserved `from` key.
      */
     private fun dispatchIncomingCall(data: Map<String, String>) {
         val roomId = data["room_id"]
@@ -134,44 +105,33 @@ class VpsFirebaseMessagingService : FirebaseMessagingService() {
         val from = data["caller_name"]
         val callId = data["call_id"]
         if (roomId == null || roomName == null || from == null || callId == null) {
-            Log.w(TAG, "payload de incoming-call incompleto, ignorado: $data")
+            Log.w(TAG, "incomplete incoming-call payload, ignored: $data")
             return
         }
         val handler = IncomingCallDispatcher.handler
         if (handler == null) {
-            Log.w(TAG, "IncomingCallDispatcher sem handler registrado — chamada de $from ignorada")
+            Log.w(TAG, "IncomingCallDispatcher has no registered handler; call from $from ignored")
             return
         }
         handler.onIncomingCall(roomId = roomId, roomName = roomName, from = from, callId = callId)
     }
 
-    /**
-     * Hands a `call-ended` event off to [IncomingCallDispatcher]'s registered handler so a
-     * still-ringing (or already-active) call on this device is dismissed the moment the other
-     * side hangs up, instead of only clearing once the original ring message's own TTL/
-     * collapse-key expires.
-     */
+    /** Dismisses a ringing or active call as soon as the other side hangs up. */
     private fun dispatchCallEnded(data: Map<String, String>) {
         val callId = data["call_id"]
         if (callId == null) {
-            Log.w(TAG, "payload de call-ended sem call_id, ignorado: $data")
+            Log.w(TAG, "call-ended payload without call_id, ignored: $data")
             return
         }
         val handler = IncomingCallDispatcher.handler
         if (handler == null) {
-            Log.w(TAG, "IncomingCallDispatcher sem handler registrado — call-ended de $callId ignorado")
+            Log.w(TAG, "IncomingCallDispatcher has no registered handler; call-ended for $callId ignored")
             return
         }
         handler.onCallEnded(callId)
     }
 
-    /**
-     * Registers this device's current FCM token against the real
-     * `POST /api/mobile/v1/notify/devices` endpoint — called from [onNewToken] and, once per
-     * process lifetime, right after login (see the post-login onboarding flow in `:app`) so a
-     * device that already has a token when the user first logs in still gets registered even if
-     * `onNewToken` never fires again for it.
-     */
+    /** Registers this device's FCM token with `POST /api/mobile/v1/notify/devices`. */
     fun registerToken(token: String) {
         val deviceId = DeviceIdProvider(applicationContext).deviceId()
         scope.launch {
@@ -183,24 +143,13 @@ class VpsFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     companion object {
-        /**
-         * PROCESS scope, and not an instance's: the caller of
-         * [registerTokenDetached] is the app's boot, which has no service in
-         * hand. A scope created per call would be discarded before the request
-         * finished.
-         */
+        /** Process-wide scope: callers have no service instance, and a per-call scope could be dropped mid-request. */
         private val detachedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         /**
-         * Registers the token when it arrived from outside the service's
-         * lifecycle — today, from [FirebaseBootstrap], which asks for the
-         * token on the first run.
-         *
-         * It exists because `onNewToken` only fires when FCM ISSUES a new
-         * token: on a device that already had one, it may never fire again,
-         * and the device would go for ever without registering with the
-         * server. Same path and same repository as [registerToken] — no second
-         * way of registering.
+         * Registers a token obtained outside the service (from [FirebaseBootstrap]).
+         * Needed because `onNewToken` only fires when FCM issues a new token, so a device
+         * that already has one would otherwise never register.
          */
         fun registerTokenDetached(context: Context, token: String) {
             val app = context.applicationContext

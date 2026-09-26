@@ -49,7 +49,7 @@ import com.vpsmanager.data.dashboard.Severity
 import com.vpsmanager.designsystem.StatusColorPair
 import com.vpsmanager.designsystem.vpsmStatusColors
 
-/** The theme colours for one severity. */
+/** The theme colors for one severity. */
 @Composable
 internal fun colorsFor(severity: Severity): StatusColorPair {
     val colors = vpsmStatusColors
@@ -61,11 +61,7 @@ internal fun colorsFor(severity: Severity): StatusColorPair {
 }
 
 /**
- * The severity label in TEXT, alongside the colour.
- *
- * Colour on its own is not accessible information — colour blindness, a screen
- * in the sun, a screen reader. The word carries the same meaning without
- * depending on the pigment.
+ * The severity as text alongside the color, since color alone is not accessible.
  */
 internal fun labelFor(severity: Severity): String = when (severity) {
     Severity.OK -> "ok"
@@ -74,13 +70,8 @@ internal fun labelFor(severity: Severity): String = when (severity) {
 }
 
 /**
- * The envelope of every card on the dashboard.
- *
- * Elevation by TONE, not by shadow: with six cards stacked up, a shadow on all
- * of them becomes noise, and Material 3 reserves shadow for "protection against
- * the background or encouragement to interact". The card that asks for
- * attention gets its own coloured container, and it is the only one that stands
- * out from the rest.
+ * The container for every dashboard card. Uses tonal elevation, not shadows;
+ * only the attention card gets its own colored container.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -120,12 +111,7 @@ internal fun DashboardCard(
 }
 
 /**
- * A row that leads somewhere.
- *
- * Every row of the dashboard is navigable on purpose: a dashboard that only
- * informs forces the person to go hunting once they have found out. The chevron
- * on the right is the only ornament, and it is there to say "this is a route,
- * not a label".
+ * A navigable dashboard row; the trailing chevron marks it as a link.
  */
 @Composable
 internal fun NavigableRow(
@@ -151,17 +137,9 @@ internal fun NavigableRow(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 1. NEEDS ATTENTION — the only card that DISAPPEARS when it is empty
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
- * What is broken, worst first.
- *
- * It gathers into a single list the alerts the SERVER raised and the resource
- * thresholds the app crossed — because, for somebody opening the app in a
- * hurry, the question is "did something break?", and the answer does not change
- * according to who noticed.
+ * What is broken, worst first: server alerts and crossed resource thresholds in
+ * one list. The only card that disappears when empty.
  */
 @Composable
 internal fun AttentionCard(
@@ -252,17 +230,9 @@ private fun SeverityTag(severity: Severity) {
     )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 2. HEALTH — an aggregated rollup, not a sea of dots
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
- * The subsystems, aggregated.
- *
- * Nine green rows train the eye to skip the whole area — and on the day one of
- * them turns red it disappears along with the others. Hence: one summary
- * ("9 subsystems · all ok"), the ones that deviated always visible, and the
- * healthy ones behind a button that has to be asked for.
+ * Subsystem health as one summary line, with unhealthy ones always visible and
+ * healthy ones behind a toggle, so a red row is never lost among green ones.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -343,40 +313,11 @@ internal fun HealthCard(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 3. THE "NOW" CARD IS GONE — at the owner's request
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// It showed the queue, the last deploy and the next scheduled one. The problem
-// was not the content, it was the placement: three rows of permanent height on
-// the FIRST screen to say, almost always, "queue idle" and "no deploy on
-// record" — a fixed frame around the absence of news.
-//
-// Nothing lost any reach. The three destinations are still one tap away by two
-// routes: the block grid on this very screen (`BlocosDoPainel` wires up QUEUE,
-// DEPLOYS and SCHEDULED) and the child pages of Operations ("Job queue",
-// "Scheduler", "Deploy").
-//
-// It is the same yardstick that earlier took the health card and the resources
-// card out of here, and it is written just below, in `HomeScreen`: if this ever
-// comes back, it has to come back as an EXCEPTION — showing up only when there
-// is something happening, never as a permanent frame.
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 4. RESOURCES — saturation, AFTER whatever broke
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
  * CPU, memory, swap, disks and network.
  *
- * It comes fourth on purpose, against the instinct of every VPS dashboard:
- * saturation is a DEBUGGING metric, not an alerting one — it explains *why*
- * after something has already fired. Putting these numbers at the top trains
- * the operator to look at numbers instead of looking at problems.
- *
- * What rises to the top is not the number: it is the fact that it crossed a
- * threshold. When that happens, the same signal appears on card no. 1 (as an
- * alert) AND here (as a number) — the two roles it plays.
+ * Placed below the problems on purpose: saturation explains why after something
+ * fired. A crossed threshold also appears on the attention card.
  */
 @Composable
 internal fun ResourcesCard(
@@ -412,10 +353,7 @@ private fun ResourceRow(signal: ResourceSignal, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // The bar on the left gives the peripheral reading: even without
-        // reading, you can see how many rows are out of line. It is decoration
-        // over information that is already in text — which is why it does not
-        // speak to the screen reader.
+        // Decorative severity bar; the same information is in the text, so screen readers skip it.
         Box(
             modifier = Modifier
                 .width(3.dp)
@@ -445,9 +383,7 @@ private fun ResourceRow(signal: ResourceSignal, onClick: () -> Unit) {
                 color = if (highlight) colors.content else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        // A signal with no single value (the network, whose value is a pair)
-        // does not reserve the right-hand column: it disappears and the detail
-        // uses the full width.
+        // Signals without a single value (network) let the detail use the full width.
         if (signal.headline.isNotBlank()) {
             Text(
                 text = signal.headline,
@@ -459,10 +395,6 @@ private fun ResourceRow(signal: ResourceSignal, onClick: () -> Unit) {
         }
     }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 5. QUICK ACTIONS — the "and then?" of every glance
-// ─────────────────────────────────────────────────────────────────────────────
 
 /** The four destinations the operator opens after looking at the dashboard. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -484,17 +416,9 @@ internal fun QuickActionsCard(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 6. SESSION — identity last
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
- * Who I am and against which machine.
- *
- * It moved down to the footer because it is identity, not operations — the
- * operator does not open the app in a hurry to find out their own e-mail
- * address. What gained weight here is the server clock: a divergence between it
- * and the phone's explains half of the "but I just ran that".
+ * Session footer: who is signed in and to which machine, plus the server clock,
+ * whose drift from the phone explains confusing timestamps.
  */
 @Composable
 internal fun SessionCard(
@@ -541,19 +465,13 @@ internal fun SessionCard(
                 color = vpsmStatusColors.warning.accent,
             )
         }
-        // DEVICE security sits next to this device's identity, which is what
-        // this card is about. The label says what is to be found inside —
-        // "Security" on its own does not distinguish the server's security from
-        // the security of whoever is holding the phone.
+        // Device security belongs with this device's identity; the label says
+        // "device" to distinguish it from server security.
         Row {
             TextButton(onClick = onOpenSecurity) {
                 Text("Lock and screenshots")
             }
-            // The diagnostics used to live ONLY behind an update failure —
-            // and, in the failure that matters most (installation blocked),
-            // the strip offers the browser rather than the diagnostics. That
-            // is: the more they were needed, the less they were reachable.
-            // Here they have a door of their own.
+            // Diagnostics get their own entry point, reachable even when an update is blocked.
             TextButton(onClick = onOpenDiagnostics) {
                 Text("Diagnostics")
             }

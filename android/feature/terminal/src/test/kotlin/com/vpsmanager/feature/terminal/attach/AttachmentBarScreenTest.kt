@@ -17,14 +17,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * The attachment bar rendered for real under Robolectric — with no emulator
- * and no device.
- *
- * The ZERO HEIGHT assertion is first class, not cosmetic: this bar sits
- * between the grid and the key bar, and the terminal screen has already paid
- * the price of permanent chrome once (160.8 dp of episodic controls that were
- * moved into the options sheet). If it costs height when there is no
- * attachment at all, it is a regression, however pretty it may look.
+ * The attachment bar rendered under Robolectric. It sits between the grid and the
+ * key bar, so with no attachments it must take zero height.
  */
 @RunWith(RobolectricTestRunner::class)
 class AttachmentBarScreenTest {
@@ -32,7 +26,7 @@ class AttachmentBarScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun attachment(state: AttachmentState, name: String = "foto.jpg") =
+    private fun attachment(state: AttachmentState, name: String = "photo.jpg") =
         ScreenAttachment(id = UUID.randomUUID(), name = name, state = state)
 
     private fun build(
@@ -54,30 +48,30 @@ class AttachmentBarScreenTest {
     }
 
     @Test
-    fun `sem anexo a barra nao existe na composicao`() {
+    fun `with no attachment the bar is not in the composition`() {
         build(emptyList())
         composeRule.onNodeWithTag(ATTACHMENT_BAR_TAG).assertDoesNotExist()
     }
 
     @Test
-    fun `envio em andamento mostra o percentual e oferece cancelar`() {
+    fun `an upload in progress shows the percentage and offers cancel`() {
         build(listOf(attachment(AttachmentState.Uploading(40))))
 
-        composeRule.onNodeWithText("foto.jpg").assertExists()
+        composeRule.onNodeWithText("photo.jpg").assertExists()
         composeRule.onNodeWithText("Uploading 40%").assertExists()
         composeRule.onNodeWithText("Cancel").assertExists()
     }
 
     @Test
-    fun `anexo pronto mostra o caminho no servidor e o botao de inserir`() {
-        build(listOf(attachment(AttachmentState.Ready("/opt/panel/data/mobile-inbox/foto.jpg"))))
+    fun `a ready attachment shows the server path and the insert button`() {
+        build(listOf(attachment(AttachmentState.Ready("/opt/panel/data/mobile-inbox/photo.jpg"))))
 
-        composeRule.onNodeWithText("/opt/panel/data/mobile-inbox/foto.jpg").assertExists()
+        composeRule.onNodeWithText("/opt/panel/data/mobile-inbox/photo.jpg").assertExists()
         composeRule.onNodeWithText(INSERT_LABEL).assertExists()
     }
 
     @Test
-    fun `tocar em inserir devolve o id daquele anexo`() {
+    fun `tapping insert returns that attachment's id`() {
         val ready = attachment(AttachmentState.Ready("/srv/inbox/a.png"))
         var inserted: List<UUID>? = null
         build(listOf(ready), onInsert = { inserted = it })
@@ -88,16 +82,16 @@ class AttachmentBarScreenTest {
     }
 
     @Test
-    fun `erro mostra o motivo por extenso, nao um falhou generico`() {
-        build(listOf(attachment(AttachmentState.Failed("O servidor está sem espaço em disco. Libere espaço e envie de novo."))))
+    fun `an error shows the full reason, not a generic failure`() {
+        build(listOf(attachment(AttachmentState.Failed("The server is out of disk space. Free some space and upload again."))))
 
         composeRule.onNodeWithText(
-            "O servidor está sem espaço em disco. Libere espaço e envie de novo.",
+            "The server is out of disk space. Free some space and upload again.",
         ).assertExists()
     }
 
     @Test
-    fun `com dois prontos aparece inserir todos`() {
+    fun `with two ready attachments insert all appears`() {
         val a = attachment(AttachmentState.Ready("/srv/inbox/a.png"), name = "a.png")
         val b = attachment(AttachmentState.Ready("/srv/inbox/b.png"), name = "b.png")
         var inserted: List<UUID>? = null
@@ -109,13 +103,13 @@ class AttachmentBarScreenTest {
     }
 
     @Test
-    fun `com um unico pronto NAO aparece inserir todos`() {
+    fun `with a single ready attachment insert all does not appear`() {
         build(listOf(attachment(AttachmentState.Ready("/srv/inbox/a.png"))))
         composeRule.onNodeWithText("$INSERT_ALL_LABEL (1)").assertDoesNotExist()
     }
 
     @Test
-    fun `cancelar um envio devolve o id daquele anexo`() {
+    fun `cancelling an upload returns that attachment's id`() {
         val sending = attachment(AttachmentState.Uploading(10))
         var cancelled: UUID? = null
         build(listOf(sending), onCancel = { cancelled = it })
@@ -126,7 +120,7 @@ class AttachmentBarScreenTest {
     }
 
     @Test
-    fun `a folha de origem oferece as tres origens`() {
+    fun `the source sheet offers the three sources`() {
         composeRule.setContent {
             SourceSheetContent(onChoose = {}, onClose = {})
         }

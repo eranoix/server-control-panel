@@ -15,16 +15,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Renders [TransferScreen] under Robolectric -- never composed before this.
- *
- * Only the empty state is exercised directly: [TransferViewModel]'s
- * `transfers` map is populated exclusively from real `WorkInfo` updates
- * inside a private `observe()` this class doesn't expose a seam for (unlike
- * [com.vpsmanager.feature.files.browse.FileBrowserViewModel] or
- * [com.vpsmanager.feature.files.share.ShareDestinationViewModel]'s
- * repositories), so driving `InProgress`/`Completed`/`Failed`/`Cancelled`
- * rows here would mean running a real Download/UploadWorker end to end --
- * out of scope for this pass. See the render-coverage report for the gap.
+ * Renders [TransferScreen] under Robolectric. Only the empty state is covered: transfer rows
+ * come only from real `WorkInfo` updates, which have no test seam.
  */
 @RunWith(RobolectricTestRunner::class)
 class TransferScreenTest {
@@ -42,18 +34,14 @@ class TransferScreenTest {
     @Test
     fun `with no transfers in flight, the screen renders nothing instead of an empty card`() {
         val application = ApplicationProvider.getApplicationContext<android.app.Application>()
-        // Built OUTSIDE setContent: the content lambda recomposes, and
-        // building it in there would give a new ViewModel on every
-        // recomposition.
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm = TransferViewModel(application)
         composeRule.setContent {
             TransferScreen(viewModel = vm)
         }
         composeRule.waitForIdle()
 
-        // TransferScreen's own contract is an early `return` on an empty
-        // map -- assert the composed tree really is empty, not merely that
-        // no particular text is missing.
+        // TransferScreen returns early on an empty map, so nothing should be composed.
         val tree = composeRule.onRoot().printToString()
         assertFalse(tree.contains("Transferência em andamento"))
         assertFalse(tree.contains("Cancelar"))

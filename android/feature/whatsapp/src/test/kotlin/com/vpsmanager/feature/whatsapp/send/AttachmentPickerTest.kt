@@ -19,9 +19,9 @@ class AttachmentPickerTest {
 
     @Test
     fun `photo metadata reports image msgType from mime type`() {
-        val result = resolveAttachmentMetadata(cursorWith("praia.jpg", 204_800L), "image/jpeg", "fallback")
+        val result = resolveAttachmentMetadata(cursorWith("beach.jpg", 204_800L), "image/jpeg", "fallback")
 
-        assertEquals("praia.jpg", result.filename)
+        assertEquals("beach.jpg", result.filename)
         assertEquals("image/jpeg", result.mimeType)
         assertEquals(204_800L, result.sizeBytes)
         assertEquals("image", result.msgType)
@@ -29,23 +29,23 @@ class AttachmentPickerTest {
 
     @Test
     fun `video metadata reports video msgType from mime type`() {
-        val result = resolveAttachmentMetadata(cursorWith("clipe.mp4", 5_000_000L), "video/mp4", "fallback")
+        val result = resolveAttachmentMetadata(cursorWith("clip.mp4", 5_000_000L), "video/mp4", "fallback")
 
-        assertEquals("clipe.mp4", result.filename)
+        assertEquals("clip.mp4", result.filename)
         assertEquals("video", result.msgType)
     }
 
     @Test
     fun `document metadata reports document msgType for a non-media mime type`() {
-        val result = resolveAttachmentMetadata(cursorWith("relatorio.pdf", 10_240L), "application/pdf", "fallback")
+        val result = resolveAttachmentMetadata(cursorWith("report.pdf", 10_240L), "application/pdf", "fallback")
 
-        assertEquals("relatorio.pdf", result.filename)
+        assertEquals("report.pdf", result.filename)
         assertEquals("document", result.msgType)
     }
 
     @Test
     fun `a null mime type resolves to document`() {
-        val result = resolveAttachmentMetadata(cursorWith("arquivo", 1L), null, "fallback")
+        val result = resolveAttachmentMetadata(cursorWith("file", 1L), null, "fallback")
 
         assertEquals("document", result.msgType)
     }
@@ -71,11 +71,11 @@ class AttachmentPickerTest {
     @Test
     fun `a missing size column leaves sizeBytes null`() {
         val cursor = MatrixCursor(arrayOf(OpenableColumns.DISPLAY_NAME))
-        cursor.addRow(arrayOf("nota.txt"))
+        cursor.addRow(arrayOf("note.txt"))
 
         val result = resolveAttachmentMetadata(cursor, "text/plain", "fallback")
 
-        assertEquals("nota.txt", result.filename)
+        assertEquals("note.txt", result.filename)
         assertNull(result.sizeBytes)
         assertEquals("document", result.msgType)
     }

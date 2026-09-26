@@ -21,32 +21,13 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * The app icon — the one piece of the product the owner sees BEFORE opening
- * the app, and the one that turns up in the most places: launcher, install
- * screen, notification, recents screen.
+ * The adaptive app icon. The launcher decides the crop shape, and the platform only guarantees
+ * that the central 66dp circle survives every mask; the hexagon mark's points are what a
+ * circular mask cuts first. Checking that no mark pixel leaves that circle covers all masks.
  *
- * This test exists because of a risk specific to adaptive icons: the app
- * hands over 108dp of artwork, but WHO DECIDES the crop is the device's
- * launcher, and each one crops to a different shape (circle, squircle,
- * rounded rectangle, teardrop). The platform contract guarantees exactly one
- * thing: the central 66dp circle survives any mask. Artwork that goes beyond
- * it is cut — and the vps-manager mark is a HEXAGON, whose top and bottom
- * points are exactly what a circular mask lops off first.
- *
- * A human eye on a screenshot proves ONE mask, the one on the device that
- * took the screenshot. The central assertion here is stronger: no pixel of
- * the mark falls outside the safe 66dp circle — which holds for ALL possible
- * masks at once, including the ones that do not exist yet.
- *
- * Runs with `@GraphicsMode(NATIVE)`: real Skia rasterises the really
- * compiled VectorDrawable, and it is the platform's own AdaptiveIconDrawable
- * that positions the layers — nothing here reimplements the very thing being
- * verified.
- *
- * As a bonus, the test writes one PNG per mask into
- * `build/reports/icone-mascaras/`. It is not decoration: whoever touches the
- * icon does not necessarily have a device in hand, and a green `assertTrue`
- * does not show that the mark came out crooked or too small. The images do.
+ * Runs with `@GraphicsMode(NATIVE)` so real Skia rasterises the compiled VectorDrawable and the
+ * platform's AdaptiveIconDrawable positions the layers. It also writes one PNG per mask into
+ * `build/reports/icone-mascaras/` for visual review without a device.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class)
@@ -54,10 +35,8 @@ import org.robolectric.annotation.GraphicsMode
 class AppIconTest {
 
     /**
-     * Side, in pixels, of the icon's VISIBLE area — the 72dp left of the 108dp
-     * after the inset AdaptiveIconDrawable applies to the layers. Ten pixels
-     * per dp give the safe-zone measurement a resolution of a tenth of a dp
-     * instead of "roughly".
+     * Side in pixels of the visible area (the 72dp left of 108dp after AdaptiveIconDrawable's
+     * inset). Ten pixels per dp gives a tenth of a dp resolution.
      */
     private val visiblePx = 720
 
@@ -69,25 +48,19 @@ class AppIconTest {
     private fun adaptiveIcon(): AdaptiveIconDrawable {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val drawable = context.getDrawable(R.mipmap.ic_launcher)
-        assertNotNull("R.mipmap.ic_launcher não resolveu para nenhum drawable", drawable)
+        assertNotNull("R.mipmap.ic_launcher did not resolve to any drawable", drawable)
         assertTrue(
-            "O ícone do lançador precisa ser um AdaptiveIconDrawable (camadas de fundo e " +
-                "primeiro plano separadas), e não um bitmap chapado — sem isso o lançador não " +
-                "consegue mascarar nem animar em paralaxe. Veio: ${drawable!!.javaClass.name}",
+            "The launcher icon must be an AdaptiveIconDrawable (separate background and " +
+                "foreground layers), not a flat bitmap, or the launcher cannot mask it or " +
+                "animate parallax. Got: ${drawable!!.javaClass.name}",
             drawable is AdaptiveIconDrawable,
         )
         return drawable as AdaptiveIconDrawable
     }
 
     /**
-     * The RAW 108dp artwork, with no mask at all.
-     *
-     * `AdaptiveIconDrawable.draw()` is no use here: it already crops to the
-     * device's own mask, and on an already-cropped result there is no way to
-     * demonstrate that the artwork survives OTHER masks. The layers are drawn
-     * one by one, at the positions AdaptiveIconDrawable itself gave them when it
-     * received the bounds — the inset arithmetic (108/72) is its, not this
-     * test's.
+     * The raw 108dp artwork with no mask. `AdaptiveIconDrawable.draw()` already applies the
+     * device mask, so the layers are drawn one by one at the positions it assigned.
      *
      * @param withBackground `false` isolates the foreground layer over transparency,
      *   which is how the monochrome layer needs to be measured.
@@ -104,14 +77,12 @@ class AppIconTest {
         return bitmap
     }
 
-    /** The centre of the 108dp, in pixels of the raw artwork. */
+    /** The center of the 108dp, in pixels of the raw artwork. */
     private fun center(bitmap: Bitmap) = bitmap.width / 2f
 
     /**
-     * Pixels of the MARK (the cyan), separated from the background. The two
-     * tones sit at opposite ends of the green channel (#22d3ee has 211, #020617
-     * has 6), so a cut in the middle tells them apart without depending on how
-     * the antialiasing fell.
+     * Pixels of the cyan mark. Mark and background sit at opposite ends of the green channel
+     * (211 vs 6), so a midpoint threshold separates them regardless of antialiasing.
      */
     private fun markPixels(bitmap: Bitmap): Set<Pair<Int, Int>> =
         pixelsWhere(bitmap) { Color.green(it) > 128 && Color.alpha(it) > 128 }
@@ -132,32 +103,30 @@ class AppIconTest {
     }
 
     @Test
-    fun `a marca inteira cabe no circulo seguro de 66dp`() {
+    fun `the whole mark fits in the 66dp safe circle`() {
         val artwork = rawArtwork()
         val mark = markPixels(artwork)
-        assertTrue("Nenhum pixel da marca foi encontrado — o ícone renderizou vazio.", mark.isNotEmpty())
+        assertTrue("No mark pixel was found, the icon rendered empty.", mark.isNotEmpty())
 
         val farthest = maxDistanceFromCenter(artwork, mark)
         assertTrue(
-            "A marca escapa da zona segura: o ponto mais distante do centro está a %.2f dp e o "
+            "The mark leaves the safe zone: its farthest point is %.2f dp from the center and the "
                 .format(farthest / pxPerDp) +
-                "círculo garantido tem raio de 33 dp. Numa máscara circular as pontas do " +
-                "hexágono apareceriam decepadas. Reduza o scaleX/scaleY do <group> em " +
+                "guaranteed circle has a 33 dp radius. A circular mask would cut the " +
+                "hexagon's points. Reduce scaleX/scaleY of the <group> in " +
                 "res/drawable/ic_launcher_foreground.xml.",
             farthest <= safeRadiusPx,
         )
     }
 
     @Test
-    fun `a marca ocupa a moldura em vez de flutuar perdida no meio`() {
-        // The other side of the same mistake: a mark that is too small is not cut by
-        // any mask, but gets lost in a dark frame and disappears among the other
-        // icons in the launcher. The floor of 80% of the safe circle is what keeps
-        // the optical presence of Material's icons.
+    fun `the mark fills the frame instead of floating in the middle`() {
+        // A mark that is too small gets lost among other launcher icons; 80% of the safe
+        // circle keeps the optical size of Material icons.
         val artwork = rawArtwork()
         val farthest = maxDistanceFromCenter(artwork, markPixels(artwork))
         assertTrue(
-            "A marca está pequena demais para a moldura: ocupa %.0f%% do círculo seguro.".format(
+            "The mark is too small for the frame: it fills %.0f%% of the safe circle.".format(
                 100f * farthest / safeRadiusPx,
             ),
             farthest >= safeRadiusPx * 0.80f,
@@ -165,19 +134,16 @@ class AppIconTest {
     }
 
     @Test
-    fun `a camada monocromatica respeita a mesma zona segura`() {
-        // Without `monochrome` the icon is left OUT of Android 13+'s themed icons:
-        // on a whole screen repainted in the wallpaper's colours, vps-manager would
-        // be the only one still in its dark blue.
+    fun `the monochrome layer respects the same safe zone`() {
+        // Without `monochrome` the icon is excluded from Android 13+ themed icons.
         val monochrome: Drawable? = adaptiveIcon().monochrome
         assertNotNull(
-            "O <adaptive-icon> precisa declarar <monochrome> — a marca é desenhada em " +
-                "currentColor, então a camada sai de graça.",
+            "The <adaptive-icon> must declare <monochrome>; the mark is drawn in " +
+                "currentColor, so the layer comes for free.",
             monochrome,
         )
 
-        // And it is cropped by the same mask as the rest: declaring the layer is no
-        // use if its artwork overflows the safe zone.
+        // It is cropped by the same mask, so it must also stay inside the safe zone.
         val icon = adaptiveIcon()
         icon.setBounds(0, 0, visiblePx, visiblePx)
         val extent = icon.foreground.bounds
@@ -187,21 +153,18 @@ class AppIconTest {
             icon.monochrome!!.draw(this)
         }
         val drawing = pixelsWhere(bitmap) { Color.alpha(it) > 128 }
-        assertTrue("A camada monocromática renderizou vazia.", drawing.isNotEmpty())
+        assertTrue("The monochrome layer rendered empty.", drawing.isNotEmpty())
         assertTrue(
-            "A camada monocromática escapa da zona segura (%.2f dp do centro, limite 33 dp)."
+            "The monochrome layer leaves the safe zone (%.2f dp from the center, limit 33 dp)."
                 .format(maxDistanceFromCenter(bitmap, drawing) / pxPerDp),
             maxDistanceFromCenter(bitmap, drawing) <= safeRadiusPx,
         )
     }
 
     @Test
-    fun `nao ha buraco transparente dentro de nenhuma mascara`() {
-        // The launcher shifts the layers in parallax and crops to the device's mask.
-        // Any transparent pixel inside the mask becomes a hole — the wallpaper
-        // showing through the icon. Opacity is only demanded INSIDE the masks:
-        // outside them transparency is what is expected, because that piece of the
-        // artwork is never drawn.
+    fun `there is no transparent hole inside any mask`() {
+        // A transparent pixel inside the mask shows the wallpaper through the icon.
+        // Outside the masks transparency is fine, since that part is never drawn.
         val artwork = rawArtwork()
         for ((name, mask) in launcherMasks(artwork)) {
             val inner = Bitmap.createBitmap(artwork.width, artwork.height, Bitmap.Config.ARGB_8888)
@@ -210,8 +173,8 @@ class AppIconTest {
                 for (x in 0 until artwork.width) {
                     if (Color.alpha(inner.getPixel(x, y)) < 255) continue
                     assertEquals(
-                        "Buraco transparente em ($x,$y), dentro da máscara '$name' — a camada " +
-                            "de fundo precisa ser chapada até a borda dos 108dp.",
+                        "Transparent hole at ($x,$y), inside mask '$name'. The background " +
+                            "layer must be opaque up to the 108dp edge.",
                         255,
                         Color.alpha(artwork.getPixel(x, y)),
                     )
@@ -221,7 +184,7 @@ class AppIconTest {
     }
 
     @Test
-    fun `sobrevive intacta a todas as mascaras que os lancadores usam`() {
+    fun `the mark survives every mask launchers use`() {
         val artwork = rawArtwork()
         val unmaskedMark = markPixels(artwork)
 
@@ -242,18 +205,16 @@ class AppIconTest {
 
             val lost = unmaskedMark - markPixels(clipped)
             assertTrue(
-                "A máscara '$name' cortou ${lost.size} pixels da marca. O desenho precisa " +
-                    "caber no círculo de 66dp, que é o único pedaço que TODA máscara preserva.",
+                "Mask '$name' cut ${lost.size} pixels of the mark. The artwork must " +
+                    "fit in the 66dp circle, the only area every mask preserves.",
                 lost.isEmpty(),
             )
         }
     }
 
     /**
-     * The four shapes real launchers use to crop the adaptive icon, in the
-     * 100x100 space in which Android describes `config_icon_mask`, positioned
-     * over the central 72dp of the 108dp artwork — which is the area the mask
-     * occupies.
+     * The four shapes real launchers use, in the 100x100 space of `config_icon_mask`,
+     * placed over the central 72dp of the 108dp artwork where the mask applies.
      */
     private fun launcherMasks(artwork: Bitmap): List<Pair<String, Path>> {
         val scale = visiblePx / 100f
@@ -270,10 +231,9 @@ class AppIconTest {
             return name to positioned
         }
         return listOf(
-            // Circle — the Pixel Launcher default, and the mask that punishes a hexagon
-            // the most (it cuts the four corners and threatens the two points).
+            // Circle: Pixel Launcher default, and the harshest mask for a hexagon.
             build("01-circulo") { addCircle(50f, 50f, 50f, Path.Direction.CW) },
-            // Squircle — Samsung One UI and a good share of the Chinese launchers.
+            // Squircle: Samsung One UI and many other launchers.
             build("02-squircle") {
                 moveTo(50f, 0f)
                 cubicTo(10f, 0f, 0f, 10f, 0f, 50f)
@@ -282,13 +242,12 @@ class AppIconTest {
                 cubicTo(100f, 10f, 90f, 0f, 50f, 0f)
                 close()
             },
-            // Rounded rectangle — the default on several skins (MIUI, ColorOS).
+            // Rounded rectangle: default on several skins (MIUI, ColorOS).
             build("03-retangulo-arredondado") {
                 addRoundRect(RectF(0f, 0f, 100f, 100f), 20f, 20f, Path.Direction.CW)
             },
-            // Teardrop — the circle with the bottom-right corner squared off, as in
-            // AOSP's icon-shape overlay. Asymmetric on purpose: it catches a centring
-            // error that a symmetric mask would hide.
+            // Teardrop (AOSP icon-shape overlay). Asymmetric on purpose, to catch centring
+            // errors a symmetric mask would hide.
             build("04-gota") {
                 moveTo(50f, 0f)
                 cubicTo(77.6f, 0f, 100f, 22.4f, 100f, 50f)

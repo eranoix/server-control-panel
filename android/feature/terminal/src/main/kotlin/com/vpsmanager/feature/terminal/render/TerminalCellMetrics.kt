@@ -6,46 +6,28 @@ import android.graphics.Typeface
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
-/**
- * The line spacing the grid always had: cell height equal to the font size,
- * with nothing added or taken away. It is made explicit so that "normal" is a
- * value with a name, and not the bare `0` of someone who forgot the argument.
- */
+/** The default line spacing: cell height equal to the font size, nothing added or removed. */
 const val NORMAL_LINE_SPACING_PX: Int = 0
 
 /**
- * Ratio between the cell height and the font size. It used to live duplicated
- * in [GlyphAtlas] (`cellHeightPx * 0.8f`) and in the screen's metrics
- * calculation; the two MUST use the same number, otherwise the cell width the
- * screen uses to place the columns is measured at a different font size from
- * the one the atlas rasterises the glyphs at — and then no column lands where
- * it should.
+ * Ratio between font size and text size. [GlyphAtlas] and the screen metrics
+ * MUST share it, or columns are measured at a different size than glyphs are
+ * rasterised.
  */
 const val GLYPH_TEXT_SIZE_RATIO: Float = 0.8f
 
 /**
- * Sample used to measure the cell advance. In a genuinely monospaced font all
- * of these characters have the SAME advance, so the `max` below amounts to
- * measuring any one of them. The sample exists for the degenerate case: if the
- * resolved face should ever not be monospaced (exactly what happened when
- * [GlyphAtlas] silently fell back to Roboto), the `max` guarantees the cell
- * still holds the widest glyph — the text ends up loosely spaced, but stays on
- * the grid and NO glyph is clipped. Measuring a single character ("W") does
- * not have that property.
+ * Sample used to measure the cell advance. In a true monospace font all have the
+ * same advance; if the resolved face is not monospace, `max` keeps the widest
+ * glyph inside the cell so nothing is clipped.
  */
 private const val ADVANCE_SAMPLE = "WMm@#gilt1023"
 
 /**
- * Metrics of one terminal cell, in WHOLE pixels.
- *
- * Whole is the point: the terminal draws each glyph into an atlas slot of
- * `cellWidthPx x cellHeightPx` pixels and then copies that slot to
- * `column * cellWidthPx`. If the cell width were fractional (it was: the raw
- * font advance, e.g. 20.16px), each column's destination rectangle would be
- * rounded differently — columns alternating 20 and 21px wide, with the glyph
- * bitmap stretched unevenly from column to column. With a whole pixel, the
- * atlas slot and the destination are exactly the same size: the copy is 1:1,
- * with no rescaling, and column N always lands at exactly `N * cellWidthPx`.
+ * Metrics of one terminal cell, in WHOLE pixels, so the atlas slot and the
+ * destination rectangle have the same size: the copy is 1:1 and column N always
+ * lands at exactly `N * cellWidthPx` (fractional widths made columns alternate
+ * between 20 and 21 px).
  */
 data class TerminalCellMetrics(
     val cellWidthPx: Int,
@@ -54,31 +36,19 @@ data class TerminalCellMetrics(
 )
 
 /**
- * The one place that turns a font size into cell dimensions.
- *
- * [fontSizePx] is the size already converted from `sp` to pixels by the
- * screen's density (the conversion belongs to whoever holds the `Density`, not
- * here — that way this function stays pure enough to be measured in a JVM
- * test).
- *
- * The advance is measured with the SAME `Typeface` and the SAME `textSize`
- * that [GlyphAtlas] uses to rasterise, otherwise the screen's grid and the
- * atlas's glyphs disagree on scale.
+ * The one place that turns a font size into cell dimensions. [fontSizePx] is
+ * already converted from `sp` by the caller, keeping this JVM-testable. The
+ * advance is measured with the same `Typeface` and `textSize` [GlyphAtlas] uses.
  */
 fun computeTerminalCellMetrics(
     fontSizePx: Float,
     lineSpacingPx: Int = NORMAL_LINE_SPACING_PX,
     typeface: Typeface = Typeface.MONOSPACE,
 ): TerminalCellMetrics {
-    // The "full body" height: what the cell measured before line spacing
-    // existed, and what it still measures at [ENTRELINHA_NORMAL].
+    // The body height: the cell height at [NORMAL_LINE_SPACING_PX].
     val bodyHeight = fontSizePx.roundToInt().coerceAtLeast(1)
-    // THE LETTER SIZE DOES NOT DEPEND ON THE LINE SPACING. Before this,
-    // `textSizePx` was derived from `cellHeightPx`; had it stayed that way,
-    // tightening the line spacing would shrink the glyph along with it — which
-    // is exactly what the app's owner did NOT ask for ("less spacing", not
-    // "smaller letters"). Now both come from the font size, and only the cell
-    // height responds to the line spacing.
+    // The text size derives from the body, not the cell height, so tighter
+    // spacing does not shrink the letters.
     val textSizePx = bodyHeight * GLYPH_TEXT_SIZE_RATIO
     val paint = Paint().apply {
         this.typeface = typeface
@@ -87,15 +57,8 @@ fun computeTerminalCellMetrics(
     val advance = ADVANCE_SAMPLE.maxOf { paint.measureText(it.toString()) }
     return TerminalCellMetrics(
         cellWidthPx = advance.roundToInt().coerceAtLeast(1),
-        // **A delta in WHOLE pixels, not a fractional factor.** The cell
-        // height has to be a whole number (that is the condition for the 1:1
-        // blit — see the comment on [TerminalCellMetrics]), and `bodyHeight`
-        // is already whole, so adding a whole number never comes near a
-        // rounding. A factor such as 0.95 would look more natural and would be
-        // worse: at a 14 px body, 0.90 and 0.95 round to the SAME 13 px — two
-        // menu items with the same effect, which is how a preference earns a
-        // reputation for being broken. It is the same choice Alacritty makes,
-        // whose `font.offset.y` is a whole-pixel delta.
+        // A whole-pixel delta keeps the height whole for the 1:1 blit; a factor
+        // like 0.90 vs 0.95 would round to the same height at small sizes.
         cellHeightPx = (bodyHeight + lineSpacingPx)
             .coerceAtLeast(minCellHeightPx(paint)),
         textSizePx = textSizePx,
@@ -103,45 +66,22 @@ fun computeTerminalCellMetrics(
 }
 
 /**
- * The ink sample used to find the cell's floor: the letters that REALLY cannot
- * be clipped — tall stems, Portuguese accents and the legs that drop below the
- * baseline.
+ * Ink sample for the cell floor: tall stems, accents and descenders that must
+ * never be clipped.
  *
- * **What is left out, and why.** The box-drawing characters (`─│┌┘█`) are
- * designed on purpose to fill the whole cell, top to bottom, so that they tile
- * seamlessly between neighbouring rows. Measuring them would give a floor EQUAL
- * to the cell height that already exists (measured on the emulator: maximum ink
- * 41 px in a 42 px cell) and the compact line spacing would have nowhere to go.
- * They are left out, and the consequence is accepted and stated in the
- * interface: tighten the line spacing and the box-drawing characters may show a
- * hairline gap between rows. It is the same trade-off `kitty` documents under
- * `modify_font cell_height` ("decreasing the cell size might cause rendering
- * artifacts, so use with care") and that iTerm2 allows all the way down to
- * 0.5x. **No letter is clipped at any step** — that is what this floor
- * guarantees.
+ * Box-drawing characters are excluded: they are designed to fill the whole cell
+ * (41 px ink in a 42 px cell), which would leave no room for compact spacing.
+ * The accepted cost is a hairline gap between box rows at tight spacing, as
+ * `kitty` documents for `modify_font cell_height`. No letter is ever clipped.
  */
 private const val INK_SAMPLE = "ÂÊÍÕÜWMbdfhklt gjpqy ç,;_"
 
 /**
- * The floor for the cell height, MEASURED on the font — not guessed.
- *
- * [GlyphAtlas] centres the baseline by the font's box
- * (`baselineY = top + (height - ascent - descent) / 2`), so what decides
- * whether a glyph fits is the height of its INK against the height of the
- * cell. Below the largest value in [INK_SAMPLE] the centring starts to
- * produce a rectangle smaller than the ink, and the letter is clipped at the
- * top and the bottom at once.
- *
- * `getTextBounds`, not `descent - ascent`: the font's typographic box carries
- * the slack the designer reserved for accents this face may not even have, and
- * using it as the floor would leave the compact line spacing with no room at
- * all (measured: a 40 px box in a 42 px cell). The real ink is what the person
- * sees.
- *
- * `ceil`, not `round`: rounding down would return a floor that already clips
- * half a pixel. The value comes from the `Paint` the atlas uses to rasterise,
- * with the same `textSize` and the same `Typeface` — measuring on another one
- * would be measuring another font.
+ * The minimum cell height, measured on the font. [GlyphAtlas] centres the
+ * baseline by the font box, so what matters is ink height against cell height.
+ * Uses `getTextBounds` (real ink) rather than the typographic box, which carries
+ * slack and would leave no room for compact spacing, and `ceil` so the floor never
+ * clips half a pixel. Measures with the same `Paint` the atlas uses.
  */
 private fun minCellHeightPx(paint: Paint): Int {
     val inbox = Rect()
@@ -149,24 +89,20 @@ private fun minCellHeightPx(paint: Paint): Int {
     var inkBelow = 0f // how far the lowest glyph drops below it
     for (c in INK_SAMPLE) {
         paint.getTextBounds(c.toString(), 0, 1, inbox)
-        // A text `Rect` is relative to the baseline: `top` is negative above
-        // it, `bottom` positive below.
+        // Text bounds are relative to the baseline: `top` is negative above it.
         if (-inbox.top > inkAbove) inkAbove = -inbox.top.toFloat()
         if (inbox.bottom > inkBelow) inkBelow = inbox.bottom.toFloat()
     }
-    // Solves the SAME sum [GlyphAtlas] uses to place the baseline:
+    // Solve the placement [GlyphAtlas] uses:
     //
     //     base = (h - ascent - descent) / 2          (ascent < 0 < descent)
     //
-    // The ink may not run past either edge of the cell:
+    // The ink must not cross either edge:
     //
-    //     base - inkAbove  >= 0   ⇒  h >= 2·inkAbove + ascent + descent
-    //     base + inkBelow <= h   ⇒  h >= 2·inkBelow - ascent - descent
+    //     base - inkAbove >= 0  =>  h >= 2*inkAbove + ascent + descent
+    //     base + inkBelow <= h  =>  h >= 2*inkBelow - ascent - descent
     //
-    // This is exact, not a safety margin: it is the height at which the most
-    // extreme letter in the sample touches the edge without crossing it. Note
-    // that the baseline is placed by the FONT's metrics while the constraint
-    // is on the INK — which is why the two quantities appear together.
+    // This is exact: the height where the most extreme glyph touches the edge.
     val fm = paint.fontMetrics
     val overTop = 2f * inkAbove + fm.ascent + fm.descent
     val underBottom = 2f * inkBelow - fm.ascent - fm.descent

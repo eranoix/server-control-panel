@@ -15,14 +15,9 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Proves, against a real HTTP server, that the token REACHES the request and
- * that a 401 leads to a renewal — and not to a wall.
- *
- * The renewal is the part that only exists here. The generated `ApiClient` now
- * builds `Authorization: Bearer` by itself (the BFF spec declares
- * `securitySchemes`), but it reads the token ONCE and hands the 401 back as it
- * is — it neither renews nor replays. That is the behaviour this test proves,
- * and it is what disappears if the interceptor goes.
+ * Against a real HTTP server: the token reaches the request and a 401 leads to a renewal and
+ * replay. The generated `ApiClient` adds the Bearer header but never renews, so this is the
+ * interceptor's job.
  */
 class AuthTokenInterceptorTest {
 
@@ -55,8 +50,7 @@ class AuthTokenInterceptorTest {
         ),
         refresher = refresher,
         now = { clock },
-        // Does not write to the ApiClient's global companion: this test is about
-        // the header that goes out on the wire, not the mirror (covered in SessionManagerTest).
+        // Leaves the global ApiClient token alone; the mirror is covered in SessionManagerTest.
         publishAccessToken = {},
     )
 
@@ -67,7 +61,7 @@ class AuthTokenInterceptorTest {
         client.newCall(Request.Builder().url(server.url(path)).build()).execute()
 
     @Test
-    fun `toda requisicao autenticada sai com Bearer`() {
+    fun `every authenticated request carries a Bearer token`() {
         server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
         val session = sessionWith(StubRefresher(RefreshOutcome.Unavailable))
 
@@ -77,7 +71,7 @@ class AuthTokenInterceptorTest {
     }
 
     @Test
-    fun `um 401 renova a sessao e repete a requisicao com o token novo`() {
+    fun `a 401 renews the session and replays the request with the new token`() {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse =
                 if (request.getHeader("Authorization") == "Bearer novo") {
@@ -98,10 +92,8 @@ class AuthTokenInterceptorTest {
     }
 
     @Test
-    fun `renovacao recusada devolve o 401 e derruba a sessao — e o caminho que leva ao login`() {
-        // Before this, a 401 became a "Try again" card that was never going to
-        // work. Now it ends in SignedOut, which is what MainActivity observes
-        // in order to show the login screen.
+    fun `a rejected renewal returns the 401 and ends the session, leading to login`() {
+        // SignedOut is what MainActivity observes to show the login screen.
         server.enqueue(MockResponse().setResponseCode(401))
         val refresher = StubRefresher(RefreshOutcome.Rejected)
         val session = sessionWith(refresher)
@@ -109,12 +101,12 @@ class AuthTokenInterceptorTest {
         get(clientFor(session), "/api/mobile/v1/me").use { assertEquals(401, it.code) }
 
         assertEquals(1, refresher.calls.get())
-        assertEquals("uma tentativa de renovacao, nunca um laco", 1, server.requestCount)
+        assertEquals("one renewal attempt, never a loop", 1, server.requestCount)
         assertEquals(SessionState.SignedOut, session.state.value)
     }
 
     @Test
-    fun `renovacao indisponivel devolve o 401 sem derrubar a sessao`() {
+    fun `an unavailable renewal returns the 401 without ending the session`() {
         server.enqueue(MockResponse().setResponseCode(401))
         val session = sessionWith(StubRefresher(RefreshOutcome.Unavailable))
 
@@ -124,9 +116,8 @@ class AuthTokenInterceptorTest {
     }
 
     @Test
-    fun `varias chamadas concorrentes tomando 401 disparam UMA renovacao`() {
-        // The end-to-end proof of the single queue, with real threads from
-        // OkHttp's dispatcher -- not the virtual scheduler of runTest.
+    fun `concurrent calls getting 401 trigger a single renewal`() {
+        // Uses real OkHttp dispatcher threads, not the runTest virtual scheduler.
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse =
                 if (request.getHeader("Authorization") == "Bearer novo") {
@@ -146,17 +137,16 @@ class AuthTokenInterceptorTest {
         threads.forEach { it.join() }
 
         assertEquals(
-            "N chamadas tomando 401 ao mesmo tempo nao podem virar N refreshes — o refresh do " +
-                "BFF e rotativo e a segunda renovacao mataria a sessao",
+            "N concurrent 401 responses must not cause N refreshes, the " +
+                "BFF rotates refresh tokens and a second renewal would kill the session",
             1,
             refresher.calls.get(),
         )
     }
 
     @Test
-    fun `a rota de renovacao nao passa pelo tratamento de 401 — sem recursao`() {
-        // If /auth/refresh entered the retry path, a dead refresh token would
-        // fire a renewal to fix the renewal, forever.
+    fun `the refresh route skips 401 handling to avoid recursion`() {
+        // Otherwise a dead refresh token would trigger renewals of the renewal forever.
         server.enqueue(MockResponse().setResponseCode(401))
         val refresher = StubRefresher(RefreshOutcome.Renewed("novo", "r2", 900))
         val session = sessionWith(refresher)
@@ -165,11 +155,11 @@ class AuthTokenInterceptorTest {
 
         assertEquals(0, refresher.calls.get())
         assertEquals(1, server.requestCount)
-        assertNull("rota publica nao leva Bearer", server.takeRequest().getHeader("Authorization"))
+        assertNull("a public route carries no Bearer", server.takeRequest().getHeader("Authorization"))
     }
 
     @Test
-    fun `as demais rotas publicas de auth tambem saem sem Bearer`() {
+    fun `the other public auth routes also go without Bearer`() {
         listOf(
             "/api/mobile/v1/auth/login",
             "/api/mobile/v1/auth/pair",
@@ -178,7 +168,7 @@ class AuthTokenInterceptorTest {
             "/api/mobile/v1/auth/passkey/register/begin",
             "/api/mobile/v1/auth/passkey/register/finish",
         ).forEach { path ->
-            assertTrue("$path deveria ser publica", isPublicAuthPath(path))
+            assertTrue("$path should be public", isPublicAuthPath(path))
         }
         // /auth/logout is protected: it needs the Bearer to revoke its own jti.
         assertTrue(!isPublicAuthPath("/api/mobile/v1/auth/logout"))

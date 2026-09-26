@@ -7,91 +7,84 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 /**
- * The test that matters here is [caminhoComEspacoChegaInteiroNoShell] and its
- * neighbours: they do not compare the STRING the app produces, they run a real
- * `/bin/sh` and check how many arguments the shell handed to the program. It is
- * the only way to prove the property that matters — "the path arrives whole, as
- * ONE argument" — because the only authority on that is a POSIX shell, not our
- * expectation of what the escaping ought to look like.
+ * The key tests run a real `/bin/sh` and count the arguments it received,
+ * since only a POSIX shell can prove a path arrives whole as one argument.
  */
 class ShellQuotingTest {
 
     @Test
-    fun `caminho simples nao ganha aspas`() {
-        assertEquals("/opt/panel/data/mobile-inbox/foto.jpg", shellQuoted("/opt/panel/data/mobile-inbox/foto.jpg"))
+    fun `a plain path gets no quotes`() {
+        assertEquals("/opt/panel/data/mobile-inbox/photo.jpg", shellQuoted("/opt/panel/data/mobile-inbox/photo.jpg"))
     }
 
     @Test
-    fun `caminho com espaco ganha aspas simples`() {
-        assertEquals("'/tmp/Captura de tela.png'", shellQuoted("/tmp/Captura de tela.png"))
+    fun `a path with a space gets single quotes`() {
+        assertEquals("'/tmp/Screen shot.png'", shellQuoted("/tmp/Screen shot.png"))
     }
 
     @Test
-    fun `aspa simples no nome e fechada escapada e reaberta`() {
-        assertEquals("""'/tmp/joao'\''s foto.jpg'""", shellQuoted("/tmp/joao's foto.jpg"))
+    fun `a single quote in the name is closed, escaped and reopened`() {
+        assertEquals("""'/tmp/john'\''s photo.jpg'""", shellQuoted("/tmp/john's photo.jpg"))
     }
 
     @Test
-    fun `texto vazio vira argumento vazio explicito`() {
+    fun `empty text becomes an explicit empty argument`() {
         assertEquals("''", shellQuoted(""))
     }
 
     @Test
-    fun `metacaracteres perigosos sao neutralizados`() {
-        // Cada um destes, cru, faria o shell EXECUTAR algo em vez de tratar o
-        // texto como nome de arquivo.
+    fun `dangerous metacharacters are neutralized`() {
+        // Unquoted, each of these would make the shell execute something.
         listOf("/tmp/a;rm -rf b", "/tmp/\$(id)", "/tmp/`id`", "/tmp/a|b", "/tmp/a&b", "/tmp/a\nb", "/tmp/a*b").forEach { raw ->
             val quoted = shellQuoted(raw)
-            assertTrue("deveria ter aspas: $raw -> $quoted", quoted.startsWith("'") && quoted.endsWith("'"))
+            assertTrue("should be quoted: $raw -> $quoted", quoted.startsWith("'") && quoted.endsWith("'"))
         }
     }
 
     @Test
-    fun `insercao de varios caminhos separa por espaco e termina com espaco`() {
+    fun `inserting several paths separates them with spaces and ends with a space`() {
         val text = shellInsertionText(listOf("/tmp/a.png", "/tmp/b c.png"))
         assertEquals("/tmp/a.png '/tmp/b c.png' ", text)
     }
 
     @Test
-    fun `insercao nunca termina em quebra de linha`() {
-        // A newline here would EXECUTE the operator's command line.
+    fun `insertion never ends with a newline`() {
+        // A newline would execute the operator's command line.
         val text = shellInsertionText(listOf("/tmp/a.png", "/tmp/b.png"))
         assertTrue(!text.contains('\n'))
         assertTrue(text.endsWith(" "))
     }
 
     @Test
-    fun `lista vazia nao insere nada`() {
+    fun `an empty list inserts nothing`() {
         assertEquals("", shellInsertionText(emptyList()))
     }
 
     @Test
-    fun `caminhoComEspacoChegaInteiroNoShell`() {
-        assertEquals(listOf("/tmp/Captura de tela.png"), argsSeenByShell("/tmp/Captura de tela.png"))
+    fun `a path with a space reaches the shell whole`() {
+        assertEquals(listOf("/tmp/Screen shot.png"), argsSeenByShell("/tmp/Screen shot.png"))
     }
 
     @Test
-    fun `nome com aspa simples chega inteiro no shell`() {
-        assertEquals(listOf("/tmp/joao's foto.jpg"), argsSeenByShell("/tmp/joao's foto.jpg"))
+    fun `a name with a single quote reaches the shell whole`() {
+        assertEquals(listOf("/tmp/john's photo.jpg"), argsSeenByShell("/tmp/john's photo.jpg"))
     }
 
     @Test
-    fun `nome com substituicao de comando nao executa nada no shell`() {
-        // Se o escape falhasse, o shell rodaria `id` e o argumento voltaria
-        // como "uid=0(root)..." em vez do texto literal.
+    fun `a name with command substitution executes nothing`() {
+        // If escaping failed, the shell would run `id` and return its output instead.
         assertEquals(listOf("/tmp/\$(id).png"), argsSeenByShell("/tmp/\$(id).png"))
     }
 
     @Test
-    fun `dois caminhos inseridos juntos chegam como dois argumentos`() {
-        val seen = argsSeenByShell("/tmp/um dois.png", "/tmp/tres;quatro.png")
-        assertEquals(listOf("/tmp/um dois.png", "/tmp/tres;quatro.png"), seen)
+    fun `two inserted paths arrive as two arguments`() {
+        val seen = argsSeenByShell("/tmp/one two.png", "/tmp/three;four.png")
+        assertEquals(listOf("/tmp/one two.png", "/tmp/three;four.png"), seen)
     }
 
     /**
-     * Runs `sh -c 'printf "%s\n" <insertion>'` and returns what the shell
-     * understood as the arguments. `printf %s\n` is the most faithful echo
-     * possible: one argument per line, interpreting nothing of the content.
+     * Runs `printf '%s\n'` through `sh -c` and returns the arguments the shell
+     * passed, one per line with nothing interpreted.
      */
     private fun argsSeenByShell(vararg paths: String): List<String> {
         assumeTrue(File("/bin/sh").exists())

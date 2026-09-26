@@ -54,14 +54,14 @@ class NotificationPreferencesViewModelTest {
 
     private val deployFailed = NotifyRule(
         id = "deploy-failed",
-        name = "Deploy falhou",
+        name = "Deploy failed",
         minSeverity = "critical",
         typePrefix = "job.",
         enabledForDevice = true,
     )
     private val deployDone = NotifyRule(
         id = "deploy-done",
-        name = "Deploy concluído",
+        name = "Deploy finished",
         minSeverity = "info",
         typePrefix = "job.",
         enabledForDevice = false,
@@ -81,12 +81,12 @@ class NotificationPreferencesViewModelTest {
 
     @Test
     fun `a fetch failure surfaces LoadError`() = runTest {
-        val source = FakeNotifyPreferencesSource(NotifyPreferencesResult.Error("falhou"))
+        val source = FakeNotifyPreferencesSource(NotifyPreferencesResult.Error("failed"))
         val viewModel = NotificationPreferencesViewModel(deviceId = "device-123", repository = source)
 
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(NotificationPreferencesUiState.LoadError("falhou"), viewModel.uiState.value)
+        assertEquals(NotificationPreferencesUiState.LoadError("failed"), viewModel.uiState.value)
     }
 
     @Test
@@ -110,7 +110,7 @@ class NotificationPreferencesViewModelTest {
     fun `a failed PUT reverts the toggle and surfaces an error`() = runTest {
         val source = FakeNotifyPreferencesSource(
             fetchResult = NotifyPreferencesResult.Success(listOf(deployFailed, deployDone)),
-            updateResult = UpdateNotifyPreferencesResult.Error("falha de rede"),
+            updateResult = UpdateNotifyPreferencesResult.Error("network failure"),
         )
         val viewModel = NotificationPreferencesViewModel(deviceId = "device-123", repository = source)
         dispatcher.scheduler.advanceUntilIdle()
@@ -120,7 +120,7 @@ class NotificationPreferencesViewModelTest {
 
         val state = viewModel.uiState.value
         check(state is NotificationPreferencesUiState.Success)
-        assertEquals("falha de rede", state.errorMessage)
+        assertEquals("network failure", state.errorMessage)
         assertTrue(!state.rules.first { it.id == "deploy-done" }.enabledForDevice)
     }
 }

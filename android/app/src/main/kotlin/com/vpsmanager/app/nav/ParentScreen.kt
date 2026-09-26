@@ -57,19 +57,9 @@ import kotlinx.coroutines.launch
 internal const val TAG_PARENT_GRID = "grade-da-mae"
 
 /**
- * Drives a parent page's grid.
- *
- * ## Why it needs the server's catalogue
- *
- * The children declared in [childrenOf] are the intent; the catalogue (`GET
- * /screens`) is what EXISTS for this user on this server version. A
- * section the server does not offer — by permission or because its version
- * is older — must not appear in the grid and lead to an empty screen.
- *
- * And the converse too: a section the server offers and this app has never
- * heard of shows up all the same, under the parent the id's prefix points
- * at ([parentOfSection]). It is the whole SDUI promise — a new screen with no
- * new version — and it would die if the grid were a fixed list.
+ * Drives a parent page's grid. [childrenOf] is the intent; the server catalogue (`GET /screens`)
+ * is what exists for this user. Sections the server does not offer are hidden, and sections the
+ * app does not know are still shown under their prefix's parent ([parentOfSection]).
  */
 internal class ParentViewModel(
     private val parent: ParentPage,
@@ -82,13 +72,8 @@ internal class ParentViewModel(
     val children: StateFlow<List<ChildPage>?> = _children.asStateFlow()
 
     /**
-     * ALL the panel's screens, from every parent — what the search sweeps.
-     *
-     * The search is global on purpose: whoever types "secrets" remembers the
-     * screen's NAME, not that it belongs to Security. A search that only
-     * looked at the open parent would fail exactly for whoever needs it most
-     * — and that was the one thing the thirty-block grid did better than the
-     * parents.
+     * All the panel's screens from every parent, for search. Search is global because users
+     * remember a screen's name, not which parent it belongs to.
      */
     private val _all = MutableStateFlow<List<ChildPage>>(emptyList())
     val all: StateFlow<List<ChildPage>> = _all.asStateFlow()
@@ -102,9 +87,7 @@ internal class ParentViewModel(
             val declared = childrenOf(parent)
             val available = when (val r = catalog.sections()) {
                 is SduiSectionsResult.Success -> r.sections
-                // An unavailable catalogue does NOT empty the grid: this parent's
-                // native screens stay reachable, which is better than a blank page
-                // because of one call that failed.
+                // A failed catalogue call still leaves the native screens reachable.
                 is SduiSectionsResult.Error -> emptyList()
             }
             val availableIds = available.map { it.id }.toSet()
@@ -132,9 +115,7 @@ internal class ParentViewModel(
 
             _children.value = existing + unknown
 
-            // The complete map: the declared children of EVERY parent that the
-            // server actually offers, plus what it offers and this app does not
-            // know by name.
+            // Full map: declared children of every parent the server offers, plus unknown sections.
             val declaredInAll = ParentPage.entries.flatMap { childrenOf(it) }
             val declaredIds = declaredInAll.mapNotNull {
                 (it.destination as? ChildDestination.Sdui)?.sectionId
@@ -158,12 +139,8 @@ internal class ParentViewModel(
 }
 
 /**
- * A parent page's grid of icons.
- *
- * It is what the owner asked for: tapping the parent shows the children's
- * icons, and tapping a child goes in. The grid is adaptive (a minimum of
- * 104 dp per block) so it fits four columns on a wide phone and three on a
- * narrow one, without any label having to be abbreviated.
+ * A parent page's grid of child icons. Adaptive columns (104 dp minimum) fit four on a wide
+ * phone and three on a narrow one without abbreviating labels.
  */
 @Composable
 internal fun ParentScreen(
@@ -194,9 +171,7 @@ internal fun ParentScreen(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
         )
 
-        // While searching, the grid stops being "this parent's children" and
-        // becomes "the screens that match" — from any parent. It is what replaces
-        // the search of the thirty-block grid that went away.
+        // While searching, the grid shows matching screens from any parent.
         val searching = query.isNotBlank()
         val result = if (searching) filterScreens(all, query) else children
 
@@ -248,13 +223,8 @@ internal fun ParentScreen(
 }
 
 /**
- * Filters screens by title and by section id.
- *
- * Both, because each is how a different person remembers the same screen:
- * by the name that shows ("Vault") or by the id they saw in a log
- * (`security.secrets`). Ignoring the id would make the search fail exactly
- * for whoever arrived from an error message — the case where it is worth
- * the most.
+ * Filters screens by title ("Vault") and by section id (`security.secrets`), since users may
+ * know either one, for example from an error message.
  */
 internal fun filterScreens(screens: List<ChildPage>, query: String): List<ChildPage> {
     val term = query.trim().lowercase()
@@ -269,13 +239,8 @@ internal fun filterScreens(screens: List<ChildPage>, query: String): List<ChildP
 internal const val SEARCH_SCREEN_LABEL = "Search screens"
 
 /**
- * The family's colour, so the block is not just another grey square.
- *
- * The same rule Administration's grid already followed: the colour is
- * **taxonomic**, it says which family the screen belongs to — and that is
- * why none of them is the green or the red of STATE. A red block because
- * it belongs to Security, next to a red alert because the disk filled up,
- * would destroy the only language the app has for saying urgency.
+ * The family's color. It is taxonomic only, so none is the green or red reserved for state and
+ * urgency.
  */
 @Composable
 private fun parentColor(parent: ParentPage): Color = when (parent) {
@@ -302,8 +267,7 @@ private fun ChildTile(
             .height(104.dp)
             .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            // A single target for the screen reader: without this it would read
-            // the icon and the label as two separate nodes.
+            // One screen reader target instead of separate icon and label nodes.
             .semantics(mergeDescendants = true) { contentDescription = child.title },
     ) {
         Column(

@@ -33,13 +33,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Captures the screen FOR REAL — real engine, real renderer, real overlay — in
- * each state the owner needs to recognise at a glance.
- *
- * It exists because visual proof is not decoration: an indicator that appears
- * in the wrong place, or disappears when it should stay, is a defect no
- * assertion test catches. The PNGs land in the test package's files directory,
- * ready for `adb pull`.
+ * Captures real screenshots (engine, renderer and overlay) of each scroll state, since
+ * a misplaced or missing indicator is not caught by assertions. PNGs are written to
+ * the test package's external files directory for `adb pull`.
  */
 @RunWith(AndroidJUnit4::class)
 class ScrollCaptureTest {
@@ -47,10 +43,8 @@ class ScrollCaptureTest {
     @get:Rule
     val rule = createAndroidComposeRule<ComponentActivity>()
 
-    // Geometry chosen to FILL the emulator's screen (1080x2400), as the real
-    // grid does: TerminalRoute computes rows and columns from the measured
-    // size. A grid smaller than the screen would leave the capture with a
-    // black band that does not exist in the app.
+    // Fills the emulator's 1080x2400 screen like the real grid, so the capture has
+    // no black band that the app would not show.
     private val cols = 76
     private val lines = 79
     private val cellWidth = 14
@@ -68,19 +62,15 @@ class ScrollCaptureTest {
         try {
             val file = File(outputDir(), name)
             FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            assertTrue("captura vazia: $name", file.length() > 0)
+            assertTrue("empty capture: $name", file.length() > 0)
         } finally {
-            // Each capture of this screen is about 10 MB (1080x2400 ARGB).
-            // Holding six of them until the GC decided took down the whole
-            // test PROCESS — the suite aborted in the FOLLOWING class, with
-            // "Process crashed" and no assertion to explain it. Returning the
-            // pixels immediately is the fix; holding onto screen bitmaps is
-            // not optional.
+            // Each capture is about 10 MB; keeping several until GC crashes the test
+            // process, so recycle immediately.
             bitmap.recycle()
         }
     }
 
-    /** A long listing, in the shape of an `ls -la /usr/bin`. */
+    /** A long listing shaped like `ls -la /usr/bin`. */
     private fun longListing(engine: TerminalEngine, count: Int) {
         val names = listOf(
             "apt", "awk", "base64", "bash", "cat", "chmod", "curl", "dash", "date",
@@ -90,13 +80,13 @@ class ScrollCaptureTest {
             "tail", "tar", "tee", "top", "tr", "uniq", "vim", "wc", "wget", "zip",
         )
         val sb = StringBuilder()
-        sb.append("teste@vpsm:~$ ls -la /usr/bin\r\n")
+        sb.append("test@vpsm:~$ ls -la /usr/bin\r\n")
         sb.append("total ").append(count * 4).append("\r\n")
         for (i in 0 until count) {
             val name = names[i % names.size]
             sb.append("-rwxr-xr-x 1 root root ")
             sb.append(String.format("%7d", 10240 + i * 37))
-            sb.append(" set  6 19:0")
+            sb.append(" Sep  6 19:0")
             sb.append(i % 10)
             sb.append(' ')
             sb.append(name)
@@ -104,13 +94,11 @@ class ScrollCaptureTest {
             sb.append(i)
             sb.append("\r\n")
         }
-        sb.append("teste@vpsm:~$ ")
+        sb.append("test@vpsm:~$ ")
         engine.write(sb.toString().toByteArray(Charsets.UTF_8))
     }
 
-    // A single setContent per test (Compose allows only one), with the
-    // content driven by state: each capture swaps the state and waits for the
-    // frame.
+    // Compose allows one setContent per test, so captures are driven by state.
     private val currentSnapshot = mutableStateOf<CellSnapshot?>(null)
     private val currentScroll = mutableStateOf(TerminalScrollState.AT_END)
     private val currentNewOutput = mutableStateOf(false)
@@ -120,9 +108,8 @@ class ScrollCaptureTest {
         rule.setContent {
             val light = currentLightTheme.value
             val palette = if (light) LightTerminalPalette else DarkTerminalPalette
-            // One atlas for the life of the test: the cell size does not
-            // depend on the theme, and one atlas per theme left the previous
-            // one's bitmaps with no owner.
+            // One atlas for the whole test: cell size does not depend on the theme, and
+            // an atlas per theme would leak the previous one's bitmaps.
             val atlas = remember { GlyphAtlas(cellWidthPx = cellWidth, cellHeightPx = cellHeight) }
             MaterialTheme(colorScheme = if (light) lightColorScheme() else darkColorScheme()) {
                 Box(
@@ -161,9 +148,7 @@ class ScrollCaptureTest {
             currentLightTheme.value = light
         }
         rule.waitForIdle()
-        // The overlay fades in and out: without advancing the clock, the
-        // capture catches the animation mid-way and the indicator comes out
-        // translucent.
+        // Let the overlay fade finish so the indicator is not captured translucent.
         rule.mainClock.advanceTimeBy(1_000L)
         rule.waitForIdle()
     }
@@ -175,31 +160,28 @@ class ScrollCaptureTest {
             longListing(engine, 300)
             buildOnce()
 
-            // 1. Pinned to the bottom: the grid stays CLEAN, with no
-            //    indicator at all.
+            // 1. Pinned to the bottom: no indicator at all.
             show(engine)
             save("01-no-fim-sem-indicador.png")
 
-            // 2. Scrolled into the middle of the history: the position bar on
-            //    the right and "Back to the end" with the distance travelled.
+            // 2. Mid-history: position bar and "Back to the end" with the distance.
             engine.scrollViewport(-120)
             show(engine)
             save("02-rolado-para-cima.png")
 
-            // 3. At the top of the history: the bar touches the top.
+            // 3. Top of history: the bar touches the top.
             engine.scrollToTop()
             show(engine)
             save("03-no-topo-do-historico.png")
 
-            // 4. New output arrived while reading: the screen did NOT jump,
-            //    and the button starts announcing the news.
+            // 4. New output while reading: the screen does not jump and the button
+            //    announces it.
             engine.scrollViewport(60)
-            engine.write("comando-novo-chegou-agora\r\n".toByteArray(Charsets.UTF_8))
+            engine.write("new-command-just-arrived\r\n".toByteArray(Charsets.UTF_8))
             show(engine, hasNewOutput = true)
             save("04-saida-nova-sem-saltar.png")
 
-            // 5. The same state in the light theme — the overlay follows the
-            //    theme.
+            // 5. Same state in the light theme.
             show(engine, light = true)
             save("05-tema-claro.png")
         } finally {
@@ -208,9 +190,8 @@ class ScrollCaptureTest {
     }
 
     /**
-     * The alternate screen (`htop`, `vim`): there is no history to navigate, so
-     * NO indicator may appear — neither bar nor button. The gesture there
-     * becomes a wheel or an arrow for the program, not a local scroll.
+     * The alternate screen (`htop`, `vim`) has no history to navigate, so no indicator
+     * may appear; gestures go to the program instead.
      */
     @Test
     fun capture_altScreenShowsNoIndicator() {
@@ -218,26 +199,24 @@ class ScrollCaptureTest {
         try {
             longListing(engine, 300)
             engine.write("\u001b[?1049h\u001b[H".toByteArray(Charsets.UTF_8))
-            // `htop` asks for the mouse: with that, a vertical drag becomes a
-            // WHEEL for it rather than a local scroll — and that is why there
-            // is nothing to indicate.
+            // Like `htop`, request the mouse so drags become wheel events.
             engine.write("\u001b[?1000h".toByteArray(Charsets.UTF_8))
             val sb = StringBuilder()
             sb.append("  PID USER      PRI  NI  VIRT   RES   SHR S CPU% MEM%\r\n")
             for (i in 1..14) {
-                sb.append(String.format("%5d teste      20   0  %5dM %4dM %4dM S %4.1f %4.1f\r\n",
+                sb.append(String.format("%5d test       20   0  %5dM %4dM %4dM S %4.1f %4.1f\r\n",
                     1000 + i, 100 + i, 30 + i, 10 + i, (i * 3.1), (i * 0.7)))
             }
             engine.write(sb.toString().toByteArray(Charsets.UTF_8))
 
-            // Try to scroll: the library pins the viewport to the active area.
+            // The library pins the viewport to the active area on the alternate screen.
             engine.scrollViewport(-100)
 
             buildOnce()
             show(engine)
             save("06-tela-alternativa-htop.png")
 
-            assertTrue("na tela alternativa o viewport fica preso", engine.scrollState().atEnd)
+            assertTrue("on the alternate screen the viewport stays pinned", engine.scrollState().atEnd)
         } finally {
             engine.close()
         }

@@ -15,14 +15,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/**
- * A fake at the [FilesRepository] seam -- mirrors
- * [com.vpsmanager.feature.files.browse.FileBrowserViewModelTest]'s
- * `FakeFilesRepository` precedent. Never touches the generated
- * mobile-api-client; that mapping is `FilesRepositoryTest`'s job against a
- * real `MockWebServer`. This only exercises the ViewModel's own state
- * machine given repository outcomes.
- */
+/** Fake [FilesRepository] that records writes, for exercising the ViewModel's state machine. */
 private class FakeFilesRepository(
     private val onRead: suspend (String) -> FileReadResult = { FileReadResult.Error("not stubbed") },
     private val onWrite: suspend (String, String, Long) -> FileWriteResult = { _, _, _ -> FileWriteResult.Error("not stubbed") },
@@ -78,12 +71,12 @@ class FileEditorViewModelTest {
 
     @Test
     fun `reaches Error when the repository reports a read failure`() = runTest {
-        val repository = FakeFilesRepository(onRead = { FileReadResult.Error("Arquivo não encontrado.") })
+        val repository = FakeFilesRepository(onRead = { FileReadResult.Error("File not found.") })
         val viewModel = FileEditorViewModel("/srv/gone.go", repository)
 
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(FileEditorUiState.Error("Arquivo não encontrado."), viewModel.uiState.value)
+        assertEquals(FileEditorUiState.Error("File not found."), viewModel.uiState.value)
     }
 
     @Test

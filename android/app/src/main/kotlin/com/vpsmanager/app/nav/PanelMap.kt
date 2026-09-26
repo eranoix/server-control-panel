@@ -15,30 +15,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.vpsmanager.designsystem.VpsmIcons
 
 /**
- * The panel's map: the parent pages and each one's children.
- *
- * ## Why it exists, and why it copies the web literally
- *
- * The drawer listed EIGHT loose screens and Administration dumped thirty
- * blocks into a single grid — two different taxonomies for the same
- * product, and neither of them matching the web panel's. The result was
- * Jira showing up in two places (a "Jira · Integrations" block in the grid
- * and a "Jira" destination in the drawer), which is the underlying
- * symptom: without a single taxonomy, every new screen picks its own home.
- *
- * The taxonomy here is the SAME as the web panel's, taken from `PAGE_REMAP`
- * (`00-shell.js`): seven parent pages — Home, System, Docker, Dev,
- * Security, Apps, Operations — plus Settings. Whoever uses both finds the
- * same thing in the same place, and whoever writes a new screen does not
- * have to invent: there is already a parent for it.
- *
- * ## Where Jira lives, and why the duplicate went away
- *
- * On the web, the Jira board is `operations/tarefas`. Here too: it is a
- * child of Operations, and points at the NATIVE screen. The SDUI section
- * `jira.issues` (the old table) stops being offered by
- * [HIDDEN_SDUI_CHILDREN] — the server keeps serving it to the apps that do
- * not have the native board, and this one simply does not list it.
+ * The panel's map: the parent pages and their children. It copies the web panel's taxonomy
+ * (`PAGE_REMAP` in `00-shell.js`) so both find things in the same place and every new screen
+ * has an obvious parent. The Jira board is a native child of Operations, as on the web.
  */
 internal enum class ParentPage(
     val id: String,
@@ -57,13 +36,8 @@ internal enum class ParentPage(
 }
 
 /**
- * A child: where it leads.
- *
- * [Native] is a screen of this app (an [AppNavHost] route); [Sdui] is a
- * section described by the server. The distinction exists in the
- * destination, never in the design — whoever looks at the grid sees
- * identical blocks, because to whoever operates it makes no difference at
- * all on which side the screen was written.
+ * Where a child leads: [Native] is an [AppNavHost] route, [Sdui] a server-described section.
+ * Both look identical in the grid.
  */
 internal sealed interface ChildDestination {
     data class Native(val route: String) : ChildDestination
@@ -78,28 +52,15 @@ internal data class ChildPage(
 )
 
 /**
- * SDUI sections the app does NOT list, because it has a screen of its own
- * for them.
- *
- * `jira.issues` is the issue table the server serves to app versions older
- * than the native board. Keeping it on offer here would put two Jiras side
- * by side — a good one and a threadbare one — and the person would
- * discover the difference by trial and error.
+ * SDUI sections the app does not list because it has its own screen for them. `jira.issues`
+ * is still served for older app versions without the native board.
  */
 internal val HIDDEN_SDUI_CHILDREN = setOf("jira.issues")
 
 /**
- * The children of each parent, in the order they appear.
- *
- * The order within a group is the web panel's, and not alphabetical: the
- * first of each parent is its most used one, which is the one the thumb
- * reaches first.
- *
- * An SDUI child the server does not offer (by permission or by version)
- * disappears from the grid — whoever builds the screen crosses this list
- * with the real catalogue. That way a new section on the server does NOT
- * require a new app version to be reachable: it shows up under the parent
- * whose prefix it carries.
+ * The children of each parent, in the web panel's order (most used first, not alphabetical).
+ * The screen crosses this list with the server catalogue, so SDUI children the server does not
+ * offer disappear, and new server sections appear under their prefix's parent.
  */
 internal fun childrenOf(parent: ParentPage): List<ChildPage> = when (parent) {
     ParentPage.Home, ParentPage.Settings -> emptyList()
@@ -147,8 +108,7 @@ internal fun childrenOf(parent: ParentPage): List<ChildPage> = when (parent) {
     )
 
     ParentPage.Operations -> listOf(
-        // On the web this is called "Tasks", and it is the Jira board. The name
-        // that shows is the web's; the destination is the native screen.
+        // Named "Tasks" as on the web; it opens the native Jira board.
         ChildPage("Tasks", VpsmIcons.Board, ChildDestination.Native(ROUTE_JIRA)),
         ChildPage("Job queue", Icons.Filled.List, ChildDestination.Sdui("queue.jobs")),
         ChildPage("Scheduler", Icons.Filled.DateRange, ChildDestination.Sdui("scheduler.jobs")),
@@ -157,13 +117,8 @@ internal fun childrenOf(parent: ParentPage): List<ChildPage> = when (parent) {
 }
 
 /**
- * The parent an SDUI section belongs to, by the PREFIX of its id.
- *
- * This is what makes a new section from the server show up with no new app
- * version — the whole SDUI promise. `docker.anything_at_all` lands in
- * Docker even if this version has never heard of it; whatever matches no
- * known prefix lands in Operations, which is where the long tail of
- * administration lives.
+ * The parent an SDUI section belongs to, by its id prefix, so unknown new sections still land
+ * in the right place. Unknown prefixes go to Operations.
  */
 internal fun parentOfSection(sectionId: String): ParentPage = when (sectionId.substringBefore('.')) {
     "system", "alerts" -> ParentPage.System

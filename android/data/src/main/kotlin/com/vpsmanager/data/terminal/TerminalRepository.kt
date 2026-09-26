@@ -27,11 +27,8 @@ sealed interface TerminalSessionsResult {
 }
 
 /**
- * The narrow slice of [TerminalRepository] that `:feature-terminal`'s
- * `SessionListViewModel` depends on — mirrors [TerminalTicketSource]'s shape
- * exactly, and for the same reason: `:feature-terminal` has no compile-time
- * visibility of [MobileApi], so its tests fake this interface
- * directly instead of the generated client.
+ * The slice of [TerminalRepository] that `SessionListViewModel` depends on.
+ * `:feature-terminal` cannot see [MobileApi], so its tests fake this interface.
  */
 interface TerminalSessionsSource {
     suspend fun sessions(): TerminalSessionsResult
@@ -44,12 +41,8 @@ sealed interface ScrollbackResult {
 }
 
 /**
- * A session's RAW log: the bytes the PTY wrote, escapes and all.
- *
- * [total] is the size of the whole log on the server; [bytes] is what came back
- * in this response. When `total > bytes.size`, there is older history that did
- * not fit the request — the app needs to know that so it does not claim this is
- * all there ever was.
+ * A session's RAW log: the bytes the PTY wrote, escapes included. [total] is the
+ * server-side log size; when `total > bytes.size` older history did not fit.
  */
 sealed interface RawLogResult {
     data class Success(val bytes: ByteArray, val total: Int) : RawLogResult
@@ -57,55 +50,40 @@ sealed interface RawLogResult {
 }
 
 /**
- * Fetches the raw log so the app can prime its OWN emulator on attach.
- *
- * Kept separate from [TerminalScrollbackSource] on purpose: that one returns
- * text to be READ (copied, summarised), this one returns a terminal stream to
- * be REPLAYED. The difference is not one of format but of destination — and
- * conflating the two was exactly the defect this fixes. See `RawLogResponse` on
- * the Go side.
+ * Fetches the raw log so the app can prime its own emulator on attach. Separate
+ * from [TerminalScrollbackSource], which returns text to be read rather than a
+ * stream to be replayed. See `RawLogResponse` on the Go side.
  */
 interface TerminalRawLogSource {
     suspend fun rawLog(name: String, bytes: Int): RawLogResult
 
     /**
-     * The RENDERED history: the lines that have already scrolled off the
-     * screen, as append-only text.
+     * The rendered history: lines already scrolled off the screen, as
+     * append-only text. Preferred for the primer, because replaying the raw log
+     * duplicates lines (see `AttachReplay`); the server builds it with a live
+     * emulator on the session grid. Measured: 4096 KiB of raw log become 360 KiB
+     * of history.
      *
-     * It is the PREFERRED source for the primer, and the reason is in
-     * `AttachReplay`'s KDoc: replaying the raw log duplicates, because the
-     * `ESC[nA` of a repainting program saturates at the top of the SCREEN and
-     * never reaches the scrollback. That text concludes there is no fix — and
-     * there is none on the READING side. The server started fixing it on the
-     * WRITING side, keeping a live emulator on the session's grid and pouring
-     * the departing lines into it. Measured: 4096 KiB of raw log become 360 KiB
-     * of history, 11.4x more conversation for the same network budget.
-     *
-     * Empty is a legitimate answer (a new session, or one that has not scrolled
-     * a single line off yet) — the primer then falls back to [rawLog].
+     * Empty is valid (new session, nothing scrolled yet); the primer then falls
+     * back to [rawLog].
      */
     suspend fun history(name: String, bytes: Int): RawLogResult
 }
 
-/** Mirrors [TerminalSessionsSource]'s shape/reason — the "load older" seam `TerminalViewModel` tests fake. */
+/** The "load older" seam that `TerminalViewModel` tests fake. */
 interface TerminalScrollbackSource {
     suspend fun scrollback(name: String, lines: Int = 5000, plain: Boolean = false): ScrollbackResult
 }
 
 /**
- * The single call site into the generated mobile BFF client
- * (`:data:mobile-api-client`) for terminal session listing, WS ticket
- * issuance and scrollback — mirrors [com.vpsmanager.data.session.SessionRepository]'s
- * shape exactly. No other module may reference [MobileApi] or its generated
- * model types directly; callers only ever see the sealed results here (or,
- * for the ticket half, the narrower [TerminalTicketSource] interface this
- * class also implements).
+ * The single call site into the generated BFF client for terminal sessions, WS
+ * tickets, history and backups. No other module may reference [MobileApi] or its
+ * model types; callers only see the sealed results here.
  */
 class TerminalRepository(
     private val mobileApi: MobileApi = MobileApi(),
-    // The three session routes (kill, assign, peek) were born under the BFF's
-    // `terminal` tag, so the generator put them in another class. Same base and
-    // same authentication — just a different generated file.
+    // Kill, assign and peek live under the BFF's `terminal` tag, so the generator
+    // put them in a separate class (same base URL and auth).
     private val terminalApi: TerminalApi = TerminalApi(),
 ) : TerminalTicketSource,
     TerminalSessionsSource,
@@ -172,9 +150,8 @@ class TerminalRepository(
 
     override suspend fun history(name: String, bytes: Int): RawLogResult = try {
         val response = mobileApi.getTerminalHistorico(name = name, bytes = bytes.toLong())
-        // The same hop off the caller's dispatcher that rawLog makes, and
-        // for the same reason: decoding a few MiB of base64 on the main thread
-        // is a visible freeze.
+        // Decode off the caller's dispatcher: a few MiB of base64 on the main
+        // thread is a visible freeze.
         withContext(Dispatchers.Default) {
             RawLogResult.Success(
                 bytes = java.util.Base64.getDecoder().decode(response.base64),
@@ -195,15 +172,12 @@ class TerminalRepository(
 
     override suspend fun rawLog(name: String, bytes: Int): RawLogResult = try {
         val response = mobileApi.getTerminalRawLog(name = name, bytes = bytes.toLong())
-        // The generated client already switches to IO for the call, but comes
-        // back to the caller's dispatcher BEFORE decoding — and here the
-        // decoding is not cheap: up to 16 MiB of log becomes ~22 MiB of base64.
-        // On the main thread that is a visible freeze of the screen. Move off.
+        // The generated client returns to the caller's dispatcher before
+        // decoding, and up to ~22 MiB of base64 would freeze the main thread.
         withContext(Dispatchers.Default) {
             RawLogResult.Success(
-                // java.util's Base64 (not android.util's): minSdk 34
-                // guarantees it on the device AND it exists on the JVM, so the
-                // same path runs in unit tests, with no platform stand-in.
+                // java.util's Base64 works on the device (minSdk 34) and on the
+                // JVM, so unit tests run the same path.
                 bytes = java.util.Base64.getDecoder().decode(response.base64),
                 total = response.total.toInt(),
             )
@@ -215,7 +189,7 @@ class TerminalRepository(
     } catch (e: IOException) {
         RawLogResult.Error("Connection failed while loading the history.")
     } catch (e: IllegalArgumentException) {
-        // corrupt base64: better to open without history than to bring the screen down.
+        // Corrupt base64: better to open without history than crash the screen.
         RawLogResult.Error("The history arrived corrupted from the server.")
     } catch (e: IllegalStateException) {
         RawLogResult.Error("Configuration error while loading the history.")
@@ -266,10 +240,8 @@ class TerminalRepository(
         val r = mobileApi.restoreTerminalBackup(RestoreBackupRequest(id = id, name = session))
         val done = r.restored.toInt()
         val skipped = r.skipped.toInt()
-        // "Skipped" almost always means "that name is already live", which is
-        // the right behaviour (restoring does not overwrite a session in use).
-        // Saying only "restored" would hide that, and the person would go
-        // looking for what did not come back.
+        // "Skipped" almost always means the name is already live (restore never
+        // overwrites a session in use), so say it explicitly.
         val text = when {
             done == 0 && skipped > 0 -> "Nothing restored — $skipped already existed or were over the limit."
             skipped > 0 -> "$done restored; $skipped skipped because they already exist."
@@ -330,9 +302,7 @@ class TerminalRepository(
 
     override suspend fun assignSession(name: String, target: String): ActionResult = try {
         terminalApi.assignTerminalSession(AssignSessionRequest(name = name, target = target))
-        // The sentence states the RESULT, not the action: whoever chose
-        // "Everyone" needs to read that everyone can now see it, not
-        // "assigned successfully".
+        // State the result ("everyone can now see it"), not the action.
         val who = if (target == TARGET_ALL) "everyone" else target
         ActionResult.Ok("$name is now visible to $who.")
     } catch (e: IOException) {
@@ -348,10 +318,8 @@ class TerminalRepository(
     }
 
     override suspend fun assignmentTargets(): TargetsResult = try {
-        // The generator marks the list as nullable (the field is not required
-        // in the schema). An absent list and an empty one amount to the same
-        // thing for whoever is choosing: there is no target to offer, and the
-        // screen disables the option instead of opening an empty sheet.
+        // The generated list is nullable; absent and empty both mean "no targets",
+        // and the screen disables the option.
         TargetsResult.Success(terminalApi.listAssignTargets().targets.orEmpty())
     } catch (e: Exception) {
         TargetsResult.Error(reasonOf(e, "list who the session can be shown to"))
@@ -366,17 +334,12 @@ class TerminalRepository(
 }
 
 /**
- * Stores the action for when the network comes back, or returns the usual error
- * if the queue cannot accept it (not installed, or at its ceiling).
+ * Queues the action for when the network comes back, or returns the usual error
+ * if the queue refuses it. Only called from `catch (IOException)`: 4xx and 5xx
+ * mean the server heard and stay immediate errors.
  *
- * Only called from `catch (IOException)`: 4xx and 5xx remain immediate errors.
- * A queued 4xx would be repeated forever without changing its outcome, and a
- * 5xx is the server saying it heard — the queue is for those who were NOT
- * heard.
- *
- * The proof is [IdempotencyProof.KEY_IN_HEADER]: the five routes used
- * here declare `Idempotency-Key` on the BFF, and it is that table which
- * guarantees the retry does not execute twice.
+ * Uses [IdempotencyProof.KEY_IN_HEADER]: the five routes used here declare
+ * `Idempotency-Key` on the BFF.
  */
 private fun enqueue(
     method: String,
@@ -400,13 +363,9 @@ private fun enqueue(
 }
 
 /**
- * The body assembled by hand, as in the WhatsApp send and for the same reason:
- * the queue stores TEXT that has to survive closing the app, and the generated
- * client's object is neither serializable nor stable across OpenAPI
- * regenerations.
- *
- * A null field is OMITTED, never an explicit `null` — to the Go decoder on the
- * other side, an absent field and a `null` are not the same thing.
+ * Builds the body by hand because the queue stores text that must survive app
+ * restarts, and generated model objects are not stable across regenerations.
+ * Null fields are omitted, since Go treats an absent field differently from `null`.
  */
 private fun bodyJson(vararg fields: Pair<String, String?>): String =
     kotlinx.serialization.json.JsonObject(
@@ -420,14 +379,9 @@ private fun urlEncode(v: String): String = java.net.URLEncoder.encode(v, "UTF-8"
 const val TARGET_ALL: String = "*"
 
 /**
- * The same exception ladder the other methods in this file repeat by hand, in
- * one place.
- *
- * Each type becomes a different sentence on purpose: "no network" and "server
- * down" lead the person to opposite actions, and a generic "it did not work"
- * would make the two look the same. The [action] goes into the sentence ("could
- * not restore the backup") because the message appears far from the button that
- * caused it.
+ * Maps an exception to a user-facing sentence. Each type gets a distinct message
+ * because "no network" and "server down" call for opposite actions, and
+ * [action] names what failed since the message may appear far from its button.
  */
 private fun reasonOf(e: Exception, action: String): String = when (e) {
     is ClientException -> when (e.statusCode) {

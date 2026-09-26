@@ -12,20 +12,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * This app was built with no device and no emulator available -- 412 unit tests green, zero
- * real execution. [Bootstrap] exists so a first boot on a real phone can report its own failure
- * instead of dying mute. These tests pin the two guarantees the operator's phone actually
- * needed: a throwing step never stops the ones after it, and an uncaught exception is persisted
- * readably before the process dies, without swallowing whatever crash handler was already
- * installed.
+ * [Bootstrap] guarantees: a throwing step never stops the ones after it, and an uncaught
+ * exception is persisted readably before the process dies while still reaching the previously
+ * installed handler.
  *
- * Uses the plain framework [android.app.Application], not [VpsManagerApplication]: Robolectric
- * instantiates and runs `onCreate()` on whatever Application the manifest declares for every
- * test in this module, and [VpsManagerApplication.onCreate] launches a background `appScope`
- * coroutine that touches `WorkManager.getInstance()` (unavailable under Robolectric without
- * [androidx.work.testing.WorkManagerTestInitHelper]) -- left on the real Application, that
- * stray coroutine intermittently writes into the very [Bootstrap.initFailures] list these tests
- * assert on. These tests exercise [Bootstrap] directly and never needed the real app's wiring.
+ * Uses the plain [android.app.Application]: [VpsManagerApplication.onCreate] starts a
+ * background coroutine touching WorkManager, which fails under Robolectric and would write into
+ * the same [Bootstrap.initFailures] these tests assert on.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class)
@@ -45,8 +38,8 @@ class BootstrapTest {
     fun `a throwing step does not prevent the steps after it from running`() {
         var laterStepRan = false
 
-        Bootstrap.step("etapa que falha") { throw IllegalStateException("keystore corrompido") }
-        Bootstrap.step("etapa seguinte") { laterStepRan = true }
+        Bootstrap.step("failing step") { throw IllegalStateException("corrupted keystore") }
+        Bootstrap.step("next step") { laterStepRan = true }
 
         assertTrue("a later step must still run after an earlier one throws", laterStepRan)
     }
@@ -64,7 +57,7 @@ class BootstrapTest {
 
     @Test
     fun `a step that does not throw never touches initFailures`() {
-        Bootstrap.step("etapa ok") { /* no-op */ }
+        Bootstrap.step("ok step") { /* no-op */ }
 
         assertTrue(Bootstrap.initFailures.isEmpty())
     }
@@ -92,7 +85,7 @@ class BootstrapTest {
         }
 
         Bootstrap.installCrashReporter(context)
-        Bootstrap.step("etapa que sera reportada mas nao falha") { /* ok, just populates initFailures with nothing */ }
+        Bootstrap.step("step that is reported but does not fail") { /* ok, just populates initFailures with nothing */ }
         val crashError = IllegalStateException("EncryptedSharedPreferences.create falhou apos rotacao de chave")
         Thread.getDefaultUncaughtExceptionHandler()!!.uncaughtException(Thread.currentThread(), crashError)
 
@@ -113,10 +106,10 @@ class BootstrapTest {
         Thread.setDefaultUncaughtExceptionHandler(null)
 
         Bootstrap.installCrashReporter(context)
-        Bootstrap.step("canais de notificacao") { throw RuntimeException("canal recusado pelo fabricante") }
+        Bootstrap.step("canais de notificacao") { throw RuntimeException("channel refused by the manufacturer") }
         Thread.getDefaultUncaughtExceptionHandler()!!.uncaughtException(
             Thread.currentThread(),
-            RuntimeException("crash fatal"),
+            RuntimeException("fatal crash"),
         )
 
         val persisted = Bootstrap.lastCrash(context)

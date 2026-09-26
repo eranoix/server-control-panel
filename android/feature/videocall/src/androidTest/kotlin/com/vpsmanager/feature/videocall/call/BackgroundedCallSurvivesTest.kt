@@ -41,13 +41,7 @@ import org.webrtc.VideoTrack
 private val testJson = Json { ignoreUnknownKeys = true }
 private const val ROOM_ID = "sala-bg"
 
-/**
- * Never touches a real socket — same seam pattern as [com.vpsmanager.feature.videocall.CallViewModelTest]'s
- * `FakeSignaling`. Reused here (not imported from the `test` source set, which androidTest cannot
- * see) because a real `VideocallSignalingClient` would require a live server and TURN
- * credentials this instrumented run does not have, and because a test double must never reach
- * the real signaling server.
- */
+/** Fake signaling with no socket; duplicated because androidTest cannot see the `test` source set. */
 private class FakeSignaling : VideocallSignaling {
     private val inbound = MutableSharedFlow<SignalingMessage>(extraBufferCapacity = 16)
 
@@ -61,13 +55,8 @@ private class FakeSignaling : VideocallSignaling {
 }
 
 /**
- * Records whether anything tore the call down. A real [org.webrtc.PeerConnection] needs the
- * native WebRTC library plus a live signaling/TURN round-trip — outside what an instrumented
- * test can set up without a second physical client (that gap is exactly what the
- * human-verification checkpoint covers). What this fake CAN prove, running on the real Android
- * runtime, is that backgrounding/screen-off never reaches this class's [dispose] or
- * [closePeerConnectionFor] — i.e. nothing in [CallViewModel] or [CallForegroundService] wires a
- * lifecycle/screen event to a teardown call.
+ * Records teardown calls. A real peer connection needs a second client, but this proves that
+ * backgrounding or screen-off never reaches [dispose] or [closePeerConnectionFor].
  */
 private class FakeSessionController : VideoCallSessionController {
     override val eglBaseContext: EglBase.Context = object : EglBase.Context {
@@ -100,7 +89,7 @@ private fun joinedMessage() = SignalingMessage(
     payload = jsonPayload(
         com.vpsmanager.data.videocall.JoinResponse(
             peerId = "self-1",
-            room = RoomInfo(id = ROOM_ID, name = "Sala BG", owner = "admin", members = emptyList(), createdAt = 0L),
+            room = RoomInfo(id = ROOM_ID, name = "Room BG", owner = "admin", members = emptyList(), createdAt = 0L),
             peers = emptyList<PeerInfo>(),
             turn = TurnCredentials(urls = listOf("turn:example.org"), username = "u", credential = "c", ttl = 60L),
             politenessSeed = "self-1",
@@ -109,43 +98,20 @@ private fun joinedMessage() = SignalingMessage(
 )
 
 /**
- * The requirement under test: a call, once joined, must keep [CallForegroundService] alive when
- * the app is backgrounded or the screen turns off — Telecom/the OS must never treat either
- * event as a hangup signal.
+ * A joined call must keep [CallForegroundService] alive when the app is backgrounded or the
+ * screen turns off.
  *
- * Deviation from the specification's literal `<behavior>` text (documented here, not silently
- * substituted):
- * - The specification describes driving `ActivityScenario` through `Lifecycle.State.CREATED` for
- *   a "call screen Activity/host". `:feature-videocall` is a library module with no Activity of
- *   its own (`CallScreen` is a Composable hosted by `:app`'s single `MainActivity`, which this
- *   module cannot depend on — see `VpsmConnection`'s own doc comment on that same boundary).
- *   There is therefore no Activity class this module's androidTest can launch via
- *   `ActivityScenario`. [CallForegroundService] is a plain `Service`, independent of any
- *   Activity's lifecycle by design (that independence is the entire mechanism) — so this test
- *   instead drives the REAL equivalent of backgrounding, [UiDevice.pressHome], which moves the
- *   whole instrumented process out of the foreground exactly as a user tapping Home would, and
- *   asserts against the real [CallForegroundService.isRunning] flag rather than a
- *   lifecycle-state mock.
- * - The second specified test names `Intent.ACTION_SCREEN_OFF` as the simulated event. That is a
- *   protected system broadcast (`android.permission.BROADCAST_SCREEN_OFF` is signature-only) —
- *   an app process calling `sendBroadcast(Intent(ACTION_SCREEN_OFF))` gets a `SecurityException`,
- *   not a delivered broadcast. [UiDevice.sleep]/[UiDevice.wakeUp] (`androidx.test.uiautomator`)
- *   is the standard, permission-safe way to simulate a real screen-off/on cycle in an
- *   instrumented test, so this test uses that instead.
+ * This library module has no Activity, so backgrounding is driven with [UiDevice.pressHome].
+ * `ACTION_SCREEN_OFF` is a protected broadcast apps cannot send, so screen-off uses
+ * [UiDevice.sleep] and [UiDevice.wakeUp].
  */
 @RunWith(AndroidJUnit4::class)
 @OptIn(ExperimentalCoroutinesApi::class)
 class BackgroundedCallSurvivesTest {
 
     /**
-     * CAMERA/RECORD_AUDIO must be GRANTED before `startForeground()`, because
-     * [CallForegroundService] comes up with the composite type `phoneCall|camera|microphone`.
-     * Without them the system returns `SecurityException: Starting FGS with type microphone ...
-     * requires ... RECORD_AUDIO` — measured on this emulator — and the service dies in
-     * `onStartCommand`. This is not test slack: it is exactly the precondition
-     * [VpsmConnection.onAnswer] checks in production before bringing the service up, and that
-     * [com.vpsmanager.feature.videocall.RoomLobbyScreen] asks for proactively. The operator's
-     * device needs those same two permissions granted.
+     * The camera and microphone service types require CAMERA and RECORD_AUDIO before
+     * `startForeground()`, or it throws `SecurityException`; production checks the same thing.
      */
     @get:Rule
     val grantCameraAndMic: GrantPermissionRule =
@@ -162,9 +128,7 @@ class BackgroundedCallSurvivesTest {
 
     @After
     fun tearDown() {
-        // Symmetric with every test's own cleanup below — never leaves a real Service running
-        // for a later test in this class (or a later class in the same instrumentation run) to
-        // trip over.
+        // Never leave the real service running for later tests.
         CallForegroundService.stop(context)
         waitUntil(timeoutMs = 5_000) { !CallForegroundService.isRunning }
         Dispatchers.resetMain()
@@ -186,8 +150,7 @@ class BackgroundedCallSurvivesTest {
         signaling.push(joinedMessage())
         dispatcher.scheduler.advanceUntilIdle()
 
-        // startForegroundService() dispatches onStartCommand() asynchronously on the real
-        // Service's own thread — poll instead of asserting immediately after the call returns.
+        // onStartCommand() runs asynchronously, so poll.
         assertTrue(
             "CallForegroundService never reported running after join",
             waitUntil(timeoutMs = 5_000) { CallForegroundService.isRunning },

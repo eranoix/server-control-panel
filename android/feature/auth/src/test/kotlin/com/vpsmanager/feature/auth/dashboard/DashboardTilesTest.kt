@@ -7,10 +7,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * What these tests protect: the grid is the first thing a person looks at
- * when they open the app in a hurry. Two of its guarantees cannot be just a
- * sentence in the KDoc — that it **does not hide a fire**, and that it does
- * not scramble the alignment of the columns.
+ * Guards two grid guarantees: it never hides a critical tile, and it keeps
+ * columns aligned.
  */
 class DashboardTilesTest {
 
@@ -28,16 +26,9 @@ class DashboardTilesTest {
         wide = wide,
     )
 
-    // ── the rule that matters most ──────────────────────────────────────────
-
-    /**
-     * The real case: the person assembles the dashboard on a good day with CPU
-     * and memory, the disk fills up, and the disk was not on the list. A
-     * dashboard that stays green in that scenario is worse than none at all,
-     * because it is consulted with confidence.
-     */
+    /** A disk that fills up must show even if the user never chose its tile. */
     @Test
-    fun `bloco CRITICO entra na grade mesmo sem ter sido escolhido`() {
+    fun `a CRITICAL tile joins the grid even if not chosen`() {
         val catalog = listOf(
             tile("cpu"),
             tile("memoria"),
@@ -46,12 +37,12 @@ class DashboardTilesTest {
 
         val visible = visibleTiles(catalog, chosen = listOf("cpu", "memoria"))
 
-        assertTrue("o disco crítico tem de aparecer", visible.any { it.id == "disco" })
+        assertTrue("the critical disk must appear", visible.any { it.id == "disco" })
     }
 
-    /** And it goes in FIRST: a fire at the foot of a scrollable dashboard is unseen. */
+    /** It goes first, since a problem at the bottom of a scrolled grid goes unseen. */
     @Test
-    fun `o critico vai para a frente da grade`() {
+    fun `a critical tile goes to the front of the grid`() {
         val catalog = listOf(
             tile("cpu"),
             tile("memoria"),
@@ -63,9 +54,8 @@ class DashboardTilesTest {
         assertEquals("disco", visible.first().id)
     }
 
-    /** A critical one that was ALSO chosen must not show up twice. */
     @Test
-    fun `critico escolhido aparece uma vez so`() {
+    fun `a chosen critical tile appears only once`() {
         val catalog = listOf(tile("cpu", severity = Severity.CRITICAL), tile("memoria"))
 
         val visible = visibleTiles(catalog, chosen = listOf("cpu", "memoria"))
@@ -73,15 +63,9 @@ class DashboardTilesTest {
         assertEquals(listOf("cpu", "memoria"), visible.map { it.id })
     }
 
-    /**
-     * ATTENTION does not force its way in. The distinction is the same as that
-     * of the two threshold bands: "look today" fits within the person's
-     * choice, "look now" does not. Without this, a machine with a long uptime
-     * (swap in attention the whole time) would clog the dashboard with blocks
-     * nobody asked for.
-     */
+    /** WARNING is not forced in, or long-lived warnings would clutter the grid. */
     @Test
-    fun `ATENCAO nao força entrada na grade`() {
+    fun `WARNING does not force a tile into the grid`() {
         val catalog = listOf(tile("cpu"), tile("swap", severity = Severity.WARNING))
 
         val visible = visibleTiles(catalog, chosen = listOf("cpu"))
@@ -89,19 +73,17 @@ class DashboardTilesTest {
         assertEquals(listOf("cpu"), visible.map { it.id })
     }
 
-    /** A stored id that vanished from the catalogue leaves no tombstone on screen. */
     @Test
-    fun `id que nao existe mais no catalogo simplesmente some`() {
+    fun `an id no longer in the catalog is simply dropped`() {
         val catalog = listOf(tile("cpu"))
 
-        val visible = visibleTiles(catalog, chosen = listOf("cpu", "disco:/antigo"))
+        val visible = visibleTiles(catalog, chosen = listOf("cpu", "disco:/old"))
 
         assertEquals(listOf("cpu"), visible.map { it.id })
     }
 
-    /** The order of the choice IS the choice — it is what puts what matters on top. */
     @Test
-    fun `a ordem escolhida e preservada`() {
+    fun `the chosen order is preserved`() {
         val catalog = listOf(tile("a"), tile("b"), tile("c"))
 
         val visible = visibleTiles(catalog, chosen = listOf("c", "a", "b"))
@@ -109,33 +91,26 @@ class DashboardTilesTest {
         assertEquals(listOf("c", "a", "b"), visible.map { it.id })
     }
 
-    // ── the alignment of the columns ────────────────────────────────────────
-
     @Test
-    fun `dois estreitos por linha`() {
+    fun `two narrow tiles per row`() {
         val lines = gridRows(listOf(tile("a"), tile("b"), tile("c")))
 
         assertEquals(2, lines[0].size)
         assertEquals(1, lines[1].size)
     }
 
-    /**
-     * A wide block CLOSES the row in progress before going in. Without that, a
-     * wide one after a narrow one would produce a row of three weights and the
-     * grid would lose its vertical alignment — which is precisely what lets
-     * you compare two numbers at a glance.
-     */
+    /** A wide tile closes the current row first, keeping columns aligned. */
     @Test
-    fun `o largo nunca divide linha com um estreito`() {
-        val lines = gridRows(listOf(tile("a"), tile("largo", wide = true), tile("b")))
+    fun `a wide tile never shares a row with a narrow one`() {
+        val lines = gridRows(listOf(tile("a"), tile("wide", wide = true), tile("b")))
 
         assertEquals(listOf("a"), lines[0].map { it.id })
-        assertEquals(listOf("largo"), lines[1].map { it.id })
+        assertEquals(listOf("wide"), lines[1].map { it.id })
         assertEquals(listOf("b"), lines[2].map { it.id })
     }
 
     @Test
-    fun `grade vazia nao produz linha vazia`() {
+    fun `an empty grid produces no empty row`() {
         assertTrue(gridRows(emptyList()).isEmpty())
     }
 }

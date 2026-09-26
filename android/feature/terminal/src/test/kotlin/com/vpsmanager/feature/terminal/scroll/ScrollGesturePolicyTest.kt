@@ -23,8 +23,8 @@ class ScrollGesturePolicyTest {
     /** `htop`, `vim` with mouse, `less`: the gesture belongs to the program, not to us. */
     @Test
     fun programAskedForMouse_becomesWheel_evenOnNormalScreen() {
-        val comMouse = shell.copy(mouseTracking = true)
-        assertEquals(ScrollAction.Wheel(-3), decideScroll(comMouse, -3))
+        val withMouse = shell.copy(mouseTracking = true)
+        assertEquals(ScrollAction.Wheel(-3), decideScroll(withMouse, -3))
     }
 
     @Test

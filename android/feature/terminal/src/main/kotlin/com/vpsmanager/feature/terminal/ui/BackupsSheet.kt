@@ -54,26 +54,11 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * The session backups sheet.
+ * The session backups sheet. A sheet rather than a screen: a backup is an
+ * operation on the session list, which stays visible behind it.
  *
- * ## Why a sheet, and not a screen
- * A backup is an operation ON the session list, not a place you go to. The
- * sheet keeps the list visible behind it, which is the context for "restore
- * what, and where to" — and leaving it is a gesture, not a navigation with a
- * back stack.
- *
- * ## What each card shows
- * ```
- * ┌───────────────────────────────────────────────┐
- * │ 07/09 20:14 · automatic      1.2 MB   ↺   🗑  │
- * │ [Servidor] [Aplicativo] [tt]                   │
- * │ Servidor — build passed, pushing the deploy    │
- * └───────────────────────────────────────────────┘
- * ```
- * Date, origin, size, which sessions are inside, and one line saying what the
- * first of them was about. The summary is what tells two backups from the same
- * afternoon apart — without it, choosing which one to restore means choosing
- * by timestamp.
+ * Backups are grouped by session; each version shows date, origin, size and a
+ * one-line summary, which is what tells two backups from the same afternoon apart.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,14 +67,11 @@ fun BackupsSheet(viewModel: SessionListViewModel, onClose: () -> Unit) {
     val busySession by viewModel.busySession.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var confirmingDelete by remember { mutableStateOf<VersionToDelete?>(null) }
-    // Which groups are open. All closed by default: the sheet opens showing
-    // the SESSION LIST, which is the question ("which session?"), not a wall
-    // of dates. Opening everything up front would hand the problem back.
+    // Open groups; all closed by default so the sheet first answers "which session?".
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
 
-    // Load on opening, not in the ViewModel's `init`: listing backups reads
-    // every one of the user's files, and that read must not happen every time
-    // the sessions screen appears.
+    // Load when the sheet opens, not in the ViewModel's `init`: listing backups
+    // reads all the user's files and should not run every time the screen appears.
     LaunchedEffect(Unit) { viewModel.loadBackups() }
 
     ModalBottomSheet(onDismissRequest = onClose, sheetState = sheetState) {
@@ -164,11 +146,8 @@ fun BackupsSheet(viewModel: SessionListViewModel, onClose: () -> Unit) {
             onDismissRequest = { confirmingDelete = null },
             title = { Text(text = "Delete this version?") },
             text = {
-                // The wording names the SESSION and the DATE, not "this
-                // backup": what is deleted here is one version of one
-                // session. When the snapshot holds other sessions, they stay
-                // — and not saying so would make a person think they are
-                // deleting the whole backup.
+                // Name the session and date: only this session's version is
+                // deleted, and other sessions in the same backup are kept.
                 Text(
                     text = buildString {
                         append("\"${target.session}\" from ${readableDate(target.version.createdAt)}.")
@@ -201,19 +180,9 @@ fun BackupsSheet(viewModel: SessionListViewModel, onClose: () -> Unit) {
 private data class VersionToDelete(val session: String, val version: BackupVersion)
 
 /**
- * One group: the session, and its versions once open.
- *
- * ## Why closed by default
- *
- * Once open, this sheet answers "which session?"; the date only matters after
- * that question has been answered. Eight expanded groups would hand back the
- * wall of repeated dates that motivated the grouping in the first place.
- *
- * ## Why the count sits in the header
- *
- * "3 versions · most recent 09/09 08:40" answers, without expanding, the two
- * things that decide whether expanding is worth it: whether there is anything
- * to choose from, and whether the latest one is recent enough.
+ * One group: the session, and its versions once expanded. Closed by default,
+ * since the date matters only after the session is chosen. The header count
+ * ("3 versions, latest 09/09 08:40") tells whether expanding is worth it.
  */
 @Composable
 private fun SessionGroup(
@@ -256,9 +225,8 @@ private fun SessionGroup(
             }
 
             if (!isOpen && group.summary.isNotBlank()) {
-                // The collapsed summary is the clue to WHICH session this is
-                // when the name does not say (`tt`, `proxy`). It goes away on
-                // expanding: there the versions already have the attention.
+                // The collapsed summary identifies sessions with unhelpful names;
+                // hidden once expanded, where the versions take over.
                 Text(
                     text = group.summary,
                     style = MaterialTheme.typography.bodySmall,
@@ -297,10 +265,8 @@ private fun VersionRow(
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
         Text(text = readableDate(version.createdAt), style = MaterialTheme.typography.bodyMedium)
         Text(
-            // THE SIZE IS THAT OF THE WHOLE FILE, and the wording says so
-            // when it holds more than one session. "89 kB" beside the name of
-            // ONE session implies that this session takes 89 kB, which is
-            // false in a backup of eight.
+            // The size is the whole file's; say so when it holds several
+            // sessions, or it would look like this session's size.
             text = buildString {
                 append(readableOrigin(version.origin))
                 append(" · ")
@@ -325,9 +291,8 @@ private fun VersionRow(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             TextButton(onClick = onRestore, enabled = !busy) { Text(text = "Restore") }
-            // "Restore the snapshot" only appears when there is a snapshot
-            // to restore: in a backup of a single session it would do exactly
-            // the same as the button next to it, under another name.
+            // Only offered when there is more than one session; otherwise it
+            // would duplicate the button next to it.
             if (version.sessionsInBackup > 1) {
                 TextButton(onClick = onRestoreAll, enabled = !busy) {
                     Text(text = "All ${version.sessionsInBackup}")
@@ -395,9 +360,7 @@ private fun BackupCard(
                 }
             }
 
-            // Tapping a chip restores ONLY that session. That is the truly
-            // common case: one almost never wants the whole bundle back, one
-            // wants the session that was lost.
+            // Tapping a chip restores only that session, the common case.
             SessionChips(
                 names = backup.sessions.map { it.name },
                 onTap = { if (!busy) onRestoreSession(it) },
@@ -424,9 +387,8 @@ private fun BackupCard(
 }
 
 /**
- * Short date and time. No year: a terminal session backup lives for days, not
- * years — pruning keeps ten — and the year would spend the width that the
- * session names need.
+ * Short date and time, without the year: backups live for days (pruning keeps
+ * ten) and the width is needed for session names.
  */
 private fun readableDate(seconds: Long): String {
     if (seconds <= 0L) return "—"
@@ -434,9 +396,8 @@ private fun readableDate(seconds: Long): String {
 }
 
 /**
- * The origin, spelled out in Portuguese. It matters because it changes the
- * expectation: an automatic one disappears by itself on pruning, a manual one
- * belongs to the user, a scheduled one has a retention of its own.
+ * The origin in words. It changes expectations: automatic backups are pruned,
+ * manual ones belong to the user, scheduled ones have their own retention.
  */
 private fun readableOrigin(origin: String?): String = when (origin) {
     "manual" -> "manual"

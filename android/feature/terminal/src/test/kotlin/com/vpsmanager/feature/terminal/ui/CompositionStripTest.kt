@@ -19,10 +19,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * The composition band is what makes text mode usable — and it is also more
- * chrome between the grid and the keyboard, which is exactly what the operator
- * has already complained about. These tests pin down both halves: it appears
- * when there is a word in flight, and it **does not exist** when there is not.
+ * The composition strip makes text mode usable but adds chrome between the grid and
+ * the keyboard: it must appear with a word in flight and keep a stable height.
  */
 @RunWith(RobolectricTestRunner::class)
 class CompositionStripTest {
@@ -31,10 +29,8 @@ class CompositionStripTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun `no modo terminal, sem composicao, a faixa nao emite no nenhum`() {
-        // Here disappearing entirely is still safe: with no composition, the
-        // band will never come back until the mode changes — so no flicker is
-        // possible.
+    fun `in terminal mode with no composition the strip emits no node`() {
+        // Disappearing is safe here: the strip cannot come back until the mode changes.
         composeRule.setContent {
             Column(modifier = Modifier.fillMaxSize()) {
                 CompositionStrip(text = "", reserveSpace = false)
@@ -45,23 +41,13 @@ class CompositionStripTest {
     }
 
     /**
-     * THE HEIGHT MUST NOT CHANGE BETWEEN COMPOSING AND NOT COMPOSING.
-     *
-     * It was that height changing that resized the grid on every word the
-     * corrector held and released: 77 resizes in 45 minutes, oscillating
-     * between 48 and 50 rows, measured in the server's log with the owner
-     * using the app. Each resize is a SIGWINCH, each SIGWINCH is a whole
-     * repaint, and a frame taller than the screen cannot erase itself — the
-     * screen ended up with its rows overlaid and the characters interleaved.
-     *
-     * This test compares the two heights directly. If anyone gives the band
-     * back its "0 dp cost", they fall over here and not on the owner's device.
+     * The height must not change between composing and not composing: each change
+     * resizes the grid, sends a SIGWINCH and forces a full repaint that can garble
+     * the screen.
      */
     @Test
-    fun `no modo texto a altura e a MESMA compondo ou nao`() {
-        // ONE composition, with the text changing — which is what really
-        // happens: the band alternates inside the same live screen, and it was
-        // that alternation that resized the grid.
+    fun `in text mode the height is the same whether composing or not`() {
+        // One composition with changing text, as happens on a live screen.
         var text by mutableStateOf("")
         composeRule.setContent {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -71,48 +57,44 @@ class CompositionStripTest {
 
         val emptyHeight = composeRule.onNodeWithTag(COMPOSITION_STRIP_TAG)
             .fetchSemanticsNode().size.height
-        assertTrue("a faixa reservada tem que ocupar altura de verdade", emptyHeight > 0)
+        assertTrue("the reserved strip must take up real height", emptyHeight > 0)
 
-        text = "comecando"
+        text = "starting"
         composeRule.waitForIdle()
         val composingHeight = composeRule.onNodeWithTag(COMPOSITION_STRIP_TAG)
             .fetchSemanticsNode().size.height
 
         assertEquals(
-            "a altura mudou entre compor e nao compor — e isso redimensiona a grade",
+            "the height changed between composing and not composing, which resizes the grid",
             emptyHeight,
             composingHeight,
         )
 
-        // And back again: releasing the word must not move the height either.
+        // Releasing the word must not change the height either.
         text = ""
         composeRule.waitForIdle()
         assertEquals(
-            "soltar a palavra devolveu a altura antiga — a oscilacao voltou",
+            "releasing the word changed the height back, so the oscillation is back",
             emptyHeight,
             composeRule.onNodeWithTag(COMPOSITION_STRIP_TAG).fetchSemanticsNode().size.height,
         )
     }
 
     @Test
-    fun `com palavra em voo a faixa mostra exatamente o que o teclado esta segurando`() {
+    fun `with a word in flight the strip shows exactly what the keyboard is holding`() {
         composeRule.setContent {
-            Column(modifier = Modifier.fillMaxSize()) { CompositionStrip(text = "comec") }
+            Column(modifier = Modifier.fillMaxSize()) { CompositionStrip(text = "star") }
         }
 
         composeRule.onNodeWithTag(COMPOSITION_STRIP_TAG).assertExists()
-        composeRule.onNodeWithText("comec").assertExists()
+        composeRule.onNodeWithText("star").assertExists()
     }
 
     @Test
-    fun `a faixa ocupa uma linha so, independente do tamanho da palavra`() {
-        // A long word must not wrap onto two lines: wrapping would change the
-        // height mid-typing and push the grid up on every word. Hence
-        // `maxLines = 1` and horizontal scrolling.
-        // The text changes WITHIN the same composition, as it really does
-        // while typing — and not through two `setContent` calls, which the
-        // test rule does not even allow.
-        var text by mutableStateOf("oi")
+    fun `the strip takes one line regardless of word length`() {
+        // A long word must not wrap, since wrapping changes the height mid-typing
+        // (hence `maxLines = 1` and horizontal scrolling).
+        var text by mutableStateOf("hi")
         composeRule.setContent {
             Column(modifier = Modifier.fillMaxSize()) { CompositionStrip(text = text) }
         }
@@ -122,7 +104,7 @@ class CompositionStripTest {
                 .fetchSemanticsNode().size.height.toDp()
         }
 
-        text = "supercalifragilisticexpialidocious-e-mais-um-tanto-para-estourar-a-largura"
+        text = "supercalifragilisticexpialidocious-and-then-some-more-to-overflow-the-width"
         composeRule.waitForIdle()
 
         composeRule.onNodeWithTag(COMPOSITION_STRIP_TAG).assertHeightIsEqualTo(shortHeight)

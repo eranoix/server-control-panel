@@ -5,11 +5,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Aggregation, health rollup and the list on card number one. */
+/** Aggregation, health rollup and the attention list on the first card. */
 class DashboardSnapshotTest {
 
     @Test
-    fun `oito subsistemas ok NAO viram oito linhas — o cartao agrega`() {
+    fun `eight healthy subsystems are aggregated by the card`() {
         val snapshot = snapshotReal()
         assertEquals(8, snapshot.health.size)
         assertTrue(snapshot.health.all { it.severity == Severity.OK })
@@ -17,19 +17,19 @@ class DashboardSnapshotTest {
     }
 
     @Test
-    fun `connected conta como saudavel — e o valor que o BFF emite para o whatsapp`() {
+    fun `connected counts as healthy because the BFF emits it for whatsapp`() {
         assertEquals(Severity.OK, classifyHealth("connected"))
         assertEquals(Severity.OK, classifyHealth("ok"))
     }
 
     @Test
-    fun `um estado novo inventado no servidor aparece como desvio, nao some como verde`() {
+    fun `an unknown new server state shows as a deviation, not as green`() {
         assertEquals(Severity.CRITICAL, classifyHealth("kaput"))
         assertEquals(Severity.WARNING, classifyHealth("degraded"))
     }
 
     @Test
-    fun `o pior subsistema manda no grupo inteiro`() {
+    fun `the worst subsystem decides the whole group`() {
         val ops = opsReal().copy(health = opsReal().health + ("whatsapp" to "disconnected"))
         val snapshot = snapshotReal(ops = ops)
         assertEquals(Severity.CRITICAL, snapshot.healthSeverity)
@@ -37,13 +37,13 @@ class DashboardSnapshotTest {
     }
 
     @Test
-    fun `health_ok false com tudo verde e contradicao — o painel acredita no pior`() {
+    fun `health_ok false with everything green is a contradiction and the worst is assumed`() {
         val snapshot = snapshotReal(ops = opsReal().copy(healthOk = false))
         assertEquals(Severity.WARNING, snapshot.healthSeverity)
     }
 
     @Test
-    fun `a contradicao do health_ok chega ao cartao de atencao, nao so ao rollup`() {
+    fun `the health_ok contradiction reaches the attention card, not only the rollup`() {
         val snapshot = snapshotReal(ops = opsReal().copy(healthOk = false))
         val signal = snapshot.attention.firstOrNull { it.id == "saude:health_ok" }
         assertEquals(Severity.WARNING, signal?.severity)
@@ -54,7 +54,7 @@ class DashboardSnapshotTest {
     }
 
     @Test
-    fun `com um subsistema ja acusando, a linha generica de health_ok nao se repete`() {
+    fun `when a subsystem already reports it, the generic health_ok line is not repeated`() {
         val ops = opsReal().copy(
             healthOk = false,
             health = opsReal().health + ("whatsapp" to "disconnected"),
@@ -65,7 +65,7 @@ class DashboardSnapshotTest {
     }
 
     @Test
-    fun `o deploy revertido de verdade aparece na lista de atencao`() {
+    fun `the real rolled back deploy appears in the attention list`() {
         val snapshot = snapshotReal()
         val deploy = snapshot.attention.firstOrNull { it.id == "deploy:hello" }
         assertEquals(Severity.WARNING, deploy?.severity)
@@ -73,7 +73,7 @@ class DashboardSnapshotTest {
     }
 
     @Test
-    fun `rollback e atencao e falha e critico — a maquina que se salvou nao e incidente em curso`() {
+    fun `rollback is a warning and failure is critical`() {
         assertEquals(Severity.WARNING, classifyDeploy("rolled_back"))
         assertEquals(Severity.CRITICAL, classifyDeploy("failed"))
         assertEquals(Severity.OK, classifyDeploy("ok"))
@@ -81,13 +81,13 @@ class DashboardSnapshotTest {
     }
 
     @Test
-    fun `os cinco agendados reais estao ok e nenhum sobe para o topo`() {
+    fun `the five real scheduled jobs are ok and none is promoted`() {
         val snapshot = snapshotReal()
         assertTrue(snapshot.brokenScheduled.isEmpty())
     }
 
     @Test
-    fun `um agendado que falhou sobe, um agendado desligado nao`() {
+    fun `a failed scheduled job is promoted, a disabled one is not`() {
         val withFailure = realisticScheduled().toMutableList().also {
             it[0] = it[0].copy(lastStatus = "error")
             it[1] = it[1].copy(lastStatus = "error", enabled = false)
@@ -98,7 +98,7 @@ class DashboardSnapshotTest {
     }
 
     @Test
-    fun `alertas do servidor e limiares locais convivem, ordenados pela mesma regua`() {
+    fun `server alerts and local thresholds coexist, sorted by the same scale`() {
         val ops = opsReal().copy(
             alerts = listOf(OpsAlert("disk_root", "critical", "firing", 92.0, 85.0, "%")),
         )
@@ -107,20 +107,18 @@ class DashboardSnapshotTest {
         assertEquals(Severity.CRITICAL, warning.first().severity)
         assertEquals("alerta:disk_root", warning.first().id)
         assertTrue(
-            "os sinais derivados têm que continuar na lista: ${warning.map { it.id }}",
+            "derived signals must stay in the list: ${warning.map { it.id }}",
             warning.any { it.id == "swap" } && warning.any { it.id == "cpu" },
         )
-        // `steal` left this list on purpose in 0.1.30: it is information, not
-        // an alert, because there is no action possible from inside the VM.
-        // See stealSignal in ResourceSignals.kt.
+        // Steal is information, not an alert: nothing inside the VM can fix it (see stealSignal).
         assertTrue(
-            "steal nao pode voltar para o cartao de atencao",
+            "steal must not return to the attention card",
             warning.none { it.id == "steal" },
         )
     }
 
     @Test
-    fun `numa maquina calma a lista de atencao fica vazia — silencio e a boa noticia`() {
+    fun `on a calm machine the attention list is empty`() {
         val calmOps = opsReal(
             system = productionLike(swapUsedPercent = 10.0, steal = 0.0, load1 = 1.0, rootUsedPercent = 20.0),
         )
@@ -128,11 +126,11 @@ class DashboardSnapshotTest {
             ops = calmOps,
             deploys = listOf(DeploySummary("hello", "ok", "2026-07-19 13:17 UTC")),
         )
-        assertTrue("veio: ${snapshot.attention}", snapshot.attention.isEmpty())
+        assertTrue("got: ${snapshot.attention}", snapshot.attention.isEmpty())
     }
 
     @Test
-    fun `chamada que falhou vira nulo, nunca lista vazia — nao sei e diferente de nao ha`() {
+    fun `a failed call becomes null, never an empty list, since unknown differs from none`() {
         val snapshot = snapshotReal(deploys = null, scheduled = null)
         assertEquals(null, snapshot.deploys)
         assertTrue(snapshot.brokenDeploys.isEmpty())

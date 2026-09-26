@@ -13,43 +13,24 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.IntSize
 import com.vpsmanager.data.jira.JiraCard
 
-/**
- * The screen edge the finger is resting on during a drag.
- *
- * It exists because on a board with more columns than fit the screen,
- * dragging without it only reaches the neighbouring column: the destination
- * stays out of sight, and the thumb has no way to bring it in. Touching the
- * edge turns the board.
- */
+/** Screen edge under the finger during a drag; touching it scrolls boards wider than the screen. */
 internal enum class DragEdge { Left, Right }
 
 /**
- * The card currently being carried by the finger.
+ * The card being dragged.
  *
- * ## Why a LONG press, and never an immediate drag
- *
- * The column scrolls vertically and the board turns horizontally. A card that
- * starts moving at the first millimetre of finger travel steals both gestures:
- * the column locks up and the board will not turn. The long press separates
- * "I am reading" from "I am moving" with no ambiguity, and it is the same
- * contract every reorderable list on Android uses.
- *
- * ## Why the position is kept in ROOT coordinates
- *
- * The floating card is drawn over everything, outside the column it came
- * from — were it inside, it would vanish the moment it crossed the column's
- * bounds, which is exactly the movement that matters. Drawing on top requires
- * knowing where the card was on the whole screen, not where it was inside the
- * list.
+ * Dragging starts only after a long press so it does not steal the column's vertical scroll or
+ * the board's horizontal scroll. Positions are in root coordinates because the floating card is
+ * drawn above everything, outside its column's clip.
  */
 @Stable
 internal class DragState {
 
-    /** The card in flight, or null when nobody is dragging anything. */
+    /** The card being dragged, or null. */
     var card by mutableStateOf<JiraCard?>(null)
         private set
 
-    /** Which column it left — so undo knows the way back. */
+    /** Column the card came from, so undo can put it back. */
     var sourceColumn by mutableStateOf<String?>(null)
         private set
 
@@ -57,24 +38,20 @@ internal class DragState {
     var originInRoot by mutableStateOf(Offset.Zero)
         private set
 
-    /** How far the finger has travelled since it picked the card up. */
+    /** Finger travel since the card was picked up. */
     var offset by mutableStateOf(Offset.Zero)
         private set
 
-    /** Size of the original card — the floating one matches it. */
+    /** Size of the original card, matched by the floating one. */
     var size by mutableStateOf(IntSize.Zero)
         private set
 
-    /** Width of the board area, so we know what counts as an "edge". */
+    /** Width of the board area, used to compute the edges. */
     var rootWidth by mutableStateOf(0)
 
     /**
-     * Where each column starts and ends, in root coordinates.
-     *
-     * This is what makes the drag target OBVIOUS: with the three columns on
-     * screen at the same time, the destination column is simply the one under
-     * the finger. It is deliberately not an observable state map — what is
-     * observed is [offset], and [targetColumn] recomputes from it.
+     * Horizontal extent of each column in root coordinates. Deliberately not observable:
+     * [targetColumn] recomputes from the observable [offset].
      */
     private val bands = LinkedHashMap<String, ClosedFloatingPointRange<Float>>()
 
@@ -85,12 +62,8 @@ internal class DragState {
     val dragging: Boolean get() = card != null
 
     /**
-     * The column under the finger right now, or null if it is outside them
-     * all.
-     *
-     * It reads [offset], which is observable state — so whoever calls
-     * this inside a composition recomposes on every movement of the finger,
-     * which is exactly what makes the column highlight follow the gesture.
+     * The column under the finger, or null. Reads the observable [offset], so callers in
+     * composition recompose as the finger moves and the highlight follows.
      */
     fun targetColumn(): String? {
         if (!dragging) return null
@@ -121,11 +94,8 @@ internal class DragState {
     val centerX: Float get() = originInRoot.x + offset.x + size.width / 2f
 
     /**
-     * Which edge the card is on, if it is on one at all.
-     *
-     * The band is 18% of the width on each side. Any narrower and the thumb
-     * needs precision it does not have while holding a card; any wider and the
-     * board turns by itself in the middle of a vertical movement.
+     * The edge the card is on, if any. The 18% band balances thumb precision against the board
+     * scrolling on its own during a vertical move.
      */
     fun edge(): DragEdge? {
         if (!dragging || rootWidth <= 0) return null
@@ -139,19 +109,11 @@ internal class DragState {
 }
 
 /**
- * Makes a card pickable by long press.
+ * Makes a card draggable after a long press.
  *
- * [onPick] fires the instant the card is lifted — that is where the haptic
- * happens, because without it there is no way to know the card has been picked
- * up before moving the finger, and the person drags through thin air thinking
- * they are dragging.
- *
- * [onDrop] receives the card and decides where it goes; the screen answers
- * with whichever column is in view at the moment the finger lifts.
- *
- * A false [enabled] turns the whole gesture off — which is what happens
- * during multiple selection in marking mode, where the touch has another
- * owner.
+ * [onPick] fires when the card lifts (for haptic feedback confirming the pickup). [onDrop]
+ * receives the card when the finger lifts. A false [enabled] disables the gesture, as in
+ * multi-select mode.
  */
 internal fun Modifier.draggable(
     state: DragState,
@@ -184,10 +146,7 @@ internal fun Modifier.draggable(
                     state.drop()
                     if (picked != null) onDrop(picked)
                 },
-                // A cancellation moves NOTHING: the system took the
-                // gesture out of our hands (an incoming call, the app going to
-                // the background), and moving in that case would mean acting
-                // on a gesture that never finished.
+                // A system cancellation (incoming call, backgrounding) moves nothing.
                 onDragCancel = { state.drop() },
             )
         }

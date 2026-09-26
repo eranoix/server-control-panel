@@ -18,15 +18,9 @@ const val BATTERY_EXEMPTION_TAG = "botao-isencao-bateria"
 const val BATTERY_EXEMPTION_DIALOG_TAG = "dialogo-isencao-bateria"
 
 /**
- * The text the operator reads BEFORE the system asks anything.
- *
- * It is deliberately honest about its reach. The exemption does NOT keep the
- * connection alive indefinitely: measured on an Android 16 emulator, it takes
- * background survival from about 6 s to about 70 s, and past those 70 s what
- * kills it is the cached-app freezer, which the exemption does not turn off.
- * Promising "keeps your connection alive" would be selling what Android does
- * not deliver — and the person would discover the lie over their first
- * ten-minute coffee.
+ * The text shown BEFORE the system prompt. Honest about its reach: measured on an
+ * Android 16 emulator, the exemption extends background survival from about 6 s
+ * to about 70 s; past that the cached-app freezer still kills the connection.
  */
 const val BATTERY_EXEMPTION_EXPLANATION: String =
     "When you leave the app, Android cuts its network within a few seconds and the " +
@@ -45,17 +39,12 @@ fun isBatteryOptimizationExempt(context: Context): Boolean {
 }
 
 /**
- * Opens the SYSTEM's request (`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`).
+ * Opens the system request (`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`). Call
+ * it only after [BATTERY_EXEMPTION_EXPLANATION] was read: a context-free dialog is
+ * denied by reflex and not offered again.
  *
- * It should only be called after [BATTERY_EXEMPTION_EXPLANATION] has been read: a
- * system dialog with no context is denied by reflex, and once denied it is
- * never offered again on its own.
- *
- * Falls back to the list screen
- * (`ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS`) when the direct request does
- * not exist on the device — some OEMs remove the direct action. Returns
- * `false` when neither opened, so the caller can say something instead of
- * flickering to no effect.
+ * Falls back to the settings list when an OEM removed the direct action. Returns
+ * `false` when neither opened, so the caller can say so.
  */
 fun openBatteryExemptionRequest(context: Context): Boolean {
     val directRequest = Intent(
@@ -67,9 +56,8 @@ fun openBatteryExemptionRequest(context: Context): Boolean {
 }
 
 private fun start(context: Context, intent: Intent): Boolean {
-    // FLAG_ACTIVITY_NEW_TASK only when the context is not an Activity: inside
-    // an Activity the flag is unnecessary and gets in the way of coming back
-    // to the screen.
+    // FLAG_ACTIVITY_NEW_TASK only outside an Activity; inside one it gets in the
+    // way of returning to the screen.
     if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     return runCatching { context.startActivity(intent) }.isSuccess
 }

@@ -29,20 +29,11 @@ import androidx.compose.ui.unit.dp
 internal const val TAG_CONNECTION = "jira-conexao"
 
 /**
- * Connecting the Jira account.
+ * Jira account connection form. Not an error screen: the server returns `connected:false` with
+ * HTTP 200 for the normal initial state.
  *
- * ## Why this is not an error screen
- *
- * Never having connected is everybody's initial state, not a failure. The server
- * returns `connected:false` with HTTP 200 precisely so the application can show
- * THIS form instead of "the board could not be loaded" with a try-again button
- * that will never work.
- *
- * ## Where the token ends up
- *
- * Straight into the server's per-user vault — the SAME one the web panel uses.
- * Connecting here connects there, and the token never comes back in any
- * response, nor is it kept on the device.
+ * The token goes to the server's per-user vault (shared with the web panel); it is never
+ * returned in a response or stored on the device.
  */
 @Composable
 internal fun ConnectionScreen(

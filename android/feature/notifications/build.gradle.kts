@@ -1,4 +1,4 @@
-// :feature-notifications — caixa de entrada de notificacoes, canal push.
+// :feature-notifications: notification inbox and push channel.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
@@ -18,13 +18,9 @@ android {
 }
 
 dependencies {
-    // :core brings the bridge to the terminal — the primary action of every
-    // alert in the inbox is to take it to the place that answers any
-    // question (BridgeCommands).
+    // :core provides the terminal bridge used by each alert's primary action.
     implementation(project(":core"))
-    // :design-system: the state colours (ok/warning/critical) come from ONE
-    // place only. Two different reds on the same screen teach the eye that
-    // red does not mean anything.
+    // :design-system is the single source of the ok/warning/critical colours.
     implementation(project(":design-system"))
     implementation(project(":data"))
     implementation(platform(libs.compose.bom))
@@ -35,20 +31,13 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.core.ktx)
-    // PushOnboarding asks for POST_NOTIFICATIONS through the activity result
-    // contract — without this the app declares the permission and never
-    // requests it, which was the defect.
+    // PushOnboarding requests POST_NOTIFICATIONS through the activity result contract.
     implementation(libs.androidx.activity.compose)
     implementation(libs.kotlinx.coroutines.core)
-    // WorkManager: following a ten-minute deploy has to survive closing the
-    // app. It is also what promotes the work to the foreground, which is the
-    // only use of a foreground service that Android 13/14/15 still accept
-    // willingly: a start, visible progress and an end.
+    // WorkManager: following a long deploy must survive closing the app, as a foreground
+    // job with a start, visible progress and an end.
     implementation(libs.androidx.work.runtime.ktx)
-    // VpsFirebaseMessagingService receives the data-only FCM message —
-    // this is the one module in the app allowed to touch com.google.firebase.*,
-    // mirroring how :data is the one module allowed to touch okhttp3/retrofit2
-    // (the boundary covers HTTP only, not the separate FCM transport).
+    // The only module allowed to use com.google.firebase.*, as :data is for HTTP.
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
 

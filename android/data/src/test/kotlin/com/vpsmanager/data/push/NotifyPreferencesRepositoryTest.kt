@@ -40,8 +40,8 @@ class NotifyPreferencesRepositoryTest {
                     """
                     {
                       "rules": [
-                        {"id": "deploy-failed", "name": "Deploy falhou", "min_severity": "critical", "type_prefix": "job.", "enabled_for_device": true},
-                        {"id": "deploy-done", "name": "Deploy concluido", "min_severity": "info", "type_prefix": "job.", "enabled_for_device": false}
+                        {"id": "deploy-failed", "name": "Deploy failed", "min_severity": "critical", "type_prefix": "job.", "enabled_for_device": true},
+                        {"id": "deploy-done", "name": "Deploy done", "min_severity": "info", "type_prefix": "job.", "enabled_for_device": false}
                       ]
                     }
                     """.trimIndent(),

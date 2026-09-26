@@ -33,49 +33,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vpsmanager.data.sdui.SduiSection
 
-/** Label of the search field. Both the UI and the test read it from here. */
+/** Label of the search field, shared by the UI and its test. */
 internal const val ADMIN_SEARCH_LABEL = "Search sections"
 
 /** Header of the recents strip. */
 internal const val ADMIN_RECENTS_LABEL = "Recent"
 
 /**
- * The Administration launcher: **search on top, a grid of sections below**.
+ * The Administration launcher: a search field on top filtering a grid of sections.
  *
- * ## Why Administration now opens here, and not on a section
+ * The grid serves recognition and search serves recall; with this many sections
+ * neither alone is enough. Notification deep links bypass the launcher and open
+ * their section directly. "No results" is its own state ([NoResults]).
  *
- * Before, opening "Admin" landed straight on the first section in the
- * catalogue. That treats the 25 sections as if one of them were the right
- * answer — and none is: which one matters depends on what is going on. Opening
- * the launcher swaps a choice made by the app for a choice made by the person
- * who knows.
- *
- * The direct route still exists and does not come through here: a notification
- * deep link carries the concrete section id and opens on it, because there the
- * question has already been answered by whoever sent the notification.
- *
- * ## Why search AND grid, rather than one of the two
- *
- * They serve opposite situations, which is why both ways into the catalogue
- * fit together:
- *
- * - The **grid** serves recognition: a glance finds it by shape and position,
- *   without reading. It works up to about 12 targets.
- * - **Search** serves recall: you know the name, not where it lives. It is the
- *   only model that IMPROVES as the catalogue grows.
- *
- * With 25 sections the app sits exactly in the band where neither one alone is
- * enough. And they do not fight for space: the field takes one row and filters
- * the grid below it, instead of replacing it with another screen.
- *
- * ## The third state only search has
- *
- * "Searched and found nothing" is neither empty nor an error, and it has to say
- * so with the term on screen — otherwise it looks as though the catalogue has
- * vanished. See [NoResults].
- *
- * The grid knows NO section name at all: label, group and order come whole from
- * `GET /screens`, already filtered by RBAC on the server.
+ * Labels, groups and order come from `GET /screens`, already RBAC-filtered by the server.
  */
 @Composable
 internal fun AdminLauncher(
@@ -114,9 +85,7 @@ internal fun AdminLauncher(
         }
 
         LazyVerticalGrid(
-            // Adaptive, rather than a fixed number of columns: the same
-            // launcher runs on a narrow phone and on a tablet, and 112dp is the
-            // width at which a two-word label still fits on two lines.
+            // Adaptive for phones and tablets; 112dp still fits a two-word label on two lines.
             columns = GridCells.Adaptive(minSize = 112.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 start = 12.dp, end = 12.dp, bottom = 24.dp,
@@ -125,10 +94,7 @@ internal fun AdminLauncher(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            // Recents only appear when you are NOT searching: someone who has
-            // typed has already said what they want, and repeating the recents
-            // in the middle of the results would mix two answers to two
-            // different questions.
+            // Recents are hidden while searching so they do not mix with results.
             if (!searching && recents.isNotEmpty()) {
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                     GroupHeader(ADMIN_RECENTS_LABEL)
@@ -149,13 +115,7 @@ internal fun AdminLauncher(
 }
 
 /**
- * Filters by label, group AND id.
- *
- * All three, because each is how a different person remembers the same screen:
- * by the name shown ("Containers"), by the family it belongs to ("Docker") or
- * by the id they saw in a log (`docker.containers`). Ignoring the id would make
- * search fail precisely for the person who arrived from an error message — the
- * case where it is worth the most.
+ * Filters by label, group and id (the id matters when coming from a log or error message).
  */
 internal fun filterSections(sections: List<SduiSection>, query: String): List<SduiSection> {
     val term = query.trim()
@@ -178,34 +138,20 @@ private fun GroupHeader(text: String) {
 }
 
 /**
- * A target in the grid.
- *
- * The "icon" is the initial of the GROUP, not a drawing: `material-icons-core`
- * has no symbol for "Docker" or "Scheduler", and mapping section id to icon on
- * the client would reintroduce exactly the coupling that SDUI exists to remove
- * — a new section on the server would once again need a release. The initial
- * gives the same recognition cue (sections of the same group end up with the
- * same mark) without the app knowing a single name.
+ * A section tile: icon ([sectionIcon]) tinted with its group color ([groupColor]),
+ * short label and group name.
  */
 @Composable
 private fun SectionCard(section: SduiSection, onClick: () -> Unit) {
-    // The colour of the FAMILY. See CorDoGrupo: in a grid of thirty identical
-    // blocks the eye cannot jump to "the Docker part" — the group label is
-    // there, but reading thirty labels is the work the colour does for free.
     val color = groupColor(section.group)
     Card(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            // The BACKGROUND stays neutral, on purpose. Thirty fully coloured
-            // blocks would fight one another and none would stand out; colour
-            // comes in as an ACCENT — on the symbol and on the bar — which is
-            // enough to group without turning into a carnival.
+            // Neutral background; the group color is only an accent.
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        // 128dp and not 108: two double-line labels plus the group did not fit
-        // in 108, and the group line was cut in half — visible on "Docker
-        // images" and "Services (systemd)". See the header of this file.
+        // 128dp fits a two-line label plus the group line.
         modifier = Modifier.height(128.dp),
     ) {
         Column(
@@ -217,26 +163,13 @@ private fun SectionCard(section: SduiSection, onClick: () -> Unit) {
         ) {
             Surface(
                 shape = CircleShape,
-                // 18% of the accent: a chip visible in both themes without
-                // competing with the symbol it carries.
+                // 18% alpha: visible in both themes without competing with the icon.
                 color = color.copy(alpha = 0.18f),
                 modifier = Modifier.size(40.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
-                    // An ICON, rather than the group initial.
-                    //
-                    // The initial gave visual rhythm and ZERO identity — the
-                    // owner sent a photo: five Docker sections became five
-                    // "D"s, and `Sistema` and `Segurança`, the two families it
-                    // matters most to tell apart on a control panel, were both
-                    // "S". A symbol that does not distinguish is worse than no
-                    // symbol, because it occupies the place where the eye looks
-                    // for the difference.
-                    //
-                    // The description is deliberately NULL: the section label
-                    // sits right below it, on the same card, and the whole card
-                    // is a single target. Repeating "Docker" on the icon would
-                    // make the screen reader say the same word twice.
+                    // No content description: the label below is on the same
+                    // tap target, so a screen reader would repeat it.
                     Icon(
                         imageVector = sectionIcon(section.id),
                         contentDescription = null,
@@ -246,10 +179,6 @@ private fun SectionCard(section: SduiSection, onClick: () -> Unit) {
                 }
             }
             Text(
-                // The label arrives SHORTENED. See shortLabel: "Metrics (CPU,
-                // memory, dis…" took two lines to say nothing — what sat inside
-                // the parentheses was detail, and it was the part surviving the
-                // cut.
                 text = shortLabel(section.label),
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
@@ -257,9 +186,7 @@ private fun SectionCard(section: SduiSection, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 6.dp),
             )
-            // The group name takes the colour of the family: it is the legend
-            // for the colour itself, stated once per block. Without it, the
-            // colour would be a code nobody was given.
+            // The group name in its color acts as the legend for that color.
             Text(
                 text = section.group,
                 style = MaterialTheme.typography.labelSmall,
@@ -272,11 +199,8 @@ private fun SectionCard(section: SduiSection, onClick: () -> Unit) {
 }
 
 /**
- * "Searched and found nothing" — the third state.
- *
- * It states the term searched for and how many sections exist in total. Without
- * both, this screen is indistinguishable from "the catalogue has vanished",
- * which is a completely different problem and frightens people for no reason.
+ * No search results. Shows the term and the total section count so it is not
+ * mistaken for an empty catalog.
  */
 @Composable
 private fun NoResults(term: String, total: Int, onClear: () -> Unit) {
@@ -318,15 +242,9 @@ private fun NoResults(term: String, total: Int, onClear: () -> Unit) {
 }
 
 /**
- * What appears when the server offers this user NO section at all.
- *
- * This is neither an error nor a network failure: it is a user without
- * administrative permission, and the text says exactly that instead of leaving
- * a blank page that looks like a defect.
- *
- * It is also the state that must NOT be confused with the launcher emptied by a
- * search: here there is nothing to search, and so there is no field. Collapsing
- * the two would show a filter over a list that will never have items.
+ * Shown when the server offers this user no sections at all (no admin
+ * permission). Not an error, and distinct from an empty search: there is no
+ * search field here.
  */
 @Composable
 internal fun AdminCatalogEmpty(modifier: Modifier = Modifier) {

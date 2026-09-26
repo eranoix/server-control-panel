@@ -33,43 +33,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vpsmanager.data.sdui.SduiSection
 
-/** Label of the palette's field. Both the UI and the test read it from here. */
+/** Placeholder of the palette's field, shared by the UI and its test. */
 internal const val PALETTE_PLACEHOLDER = "Go to…"
 
 /** Description of the button that opens the palette, for screen readers. */
 internal const val PALETTE_OPEN_DESCRIPTION = "Open the command palette"
 
 /**
- * The command palette: type and go.
+ * Command palette: type a section name and jump to it from anywhere.
  *
- * ## Why it exists alongside the launcher, and not instead of it
+ * It has a visible button (not only Ctrl+K) and, with an empty field, lists
+ * recents and then the whole catalog so users see what it accepts. A bottom
+ * sheet keeps it next to the keyboard; a centered dialog would be pushed up by the IME.
  *
- * The launcher and its search solve "I am in Administration and I want another
- * section". The palette solves something else: **getting there without being
- * there**. It opens on top of whatever is on screen, takes the name, and takes
- * you — without going through the launcher, and without losing your place if
- * you change your mind.
- *
- * It is the pattern that gains the most from 25 sections and the one fewest
- * people discover on their own, and that asymmetry dictates two decisions:
- *
- * 1. There is a **visible button** in the bar, not just the keyboard shortcut.
- *    A palette that only opens with Ctrl+K is a feature only those who already
- *    know about it use — and those who already know were never the problem.
- * 2. With the field **empty**, it lists the recents and then the whole
- *    catalogue. A palette that starts blank waiting for typing does not teach
- *    what it accepts, and the first impression is that it did nothing.
- *
- * ## Why a bottom sheet, and not a dialog
- *
- * The keyboard comes up as soon as it opens, and a bottom sheet is the only
- * Material container that is born anchored at the bottom — close to the thumb
- * and to the keyboard. A centred dialog would be pushed upwards by the IME and
- * would fight the list for space.
- *
- * It **knows no section name at all**: it receives the catalogue ready-made and
- * uses the launcher's own [filterSections], so that the two never disagree about
- * what "docker" finds.
+ * Uses the launcher's [filterSections] so both searches always agree.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,9 +61,7 @@ internal fun CommandPalette(
     val focus = remember { FocusRequester() }
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // The keyboard opens along with the sheet. That is the whole gesture:
-    // whoever taps the palette is about to type — asking for a second tap on
-    // the field would charge twice for the same intent.
+    // Focus the field immediately so the keyboard opens with the sheet.
     LaunchedEffect(Unit) { focus.requestFocus() }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, modifier = modifier) {
@@ -105,9 +80,7 @@ internal fun CommandPalette(
                 .focusRequester(focus),
         )
 
-        // Height ceiling: without it the sheet grows until 25 rows cover the
-        // whole screen, and the sense of where you were disappears — which is
-        // half of what a palette is worth.
+        // Cap the height so the sheet never covers the whole screen.
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
@@ -152,11 +125,8 @@ private fun Header(text: String) {
 }
 
 /**
- * One row of the palette: label on the left, group on the right.
- *
- * The group is shown because two sections can have similar labels in different
- * families ("Images" under Docker and under Files), and picking the wrong one
- * costs a whole navigation back.
+ * A palette row: label on the left, group on the right, since similar labels can
+ * exist in different groups.
  */
 @Composable
 private fun PaletteRow(section: SduiSection, onClick: () -> Unit) {
@@ -186,5 +156,5 @@ private fun PaletteRow(section: SduiSection, onClick: () -> Unit) {
     )
 }
 
-/** `clickable` over the whole row as the target, and not just the text. */
+/** Makes the whole row the tap target, not just the text. */
 private fun Modifier.clickableRow(onClick: () -> Unit): Modifier = this.clickable(onClick = onClick)

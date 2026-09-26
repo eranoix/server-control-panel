@@ -15,18 +15,8 @@ private fun grid(
     narrowCell(if (col < text.length) text[col].code else 0)
 }
 
-/**
- * Double-tap (word) and triple-tap (line) selection — the idiom every Android
- * text field speaks and the app's terminal did not.
- *
- * Before this, the only way to select was a long press followed by a drag,
- * cell by cell: to copy a filename the operator had to aim at the first letter
- * and drag to the last, with no highlight on screen to check against (the
- * `TerminalCanvas` never drew a selection).
- */
+/** Double-tap (word), triple-tap (line) and select-all, as in Android text fields. */
 class WordSelectionTest {
-
-    // ---- Word ---------------------------------------------------------
 
     @Test
     fun tapInMiddleOfWord_selectsWholeWord() {
@@ -50,9 +40,7 @@ class WordSelectionTest {
 
     @Test
     fun underscoreIsPartOfWord_butHyphenIsNot() {
-        // A `_` in the middle of an identifier is content; a `-` separates a
-        // flag from its name, and breaking there is what makes the double tap
-        // useful on `--amend`.
+        // `_` is part of identifiers; `-` separates a flag from its name.
         val snapshot = grid(cols = 32, rows = 1, lines = arrayOf("VPS_MANAGER_HOME --dry-run"))
 
         assertEquals("VPS_MANAGER_HOME", extractSelectedText(snapshot, selectWord(snapshot, 0, 5)))
@@ -61,8 +49,7 @@ class WordSelectionTest {
 
     @Test
     fun punctuationGroupsWithPunctuation() {
-        // `--` is a single block: two characters of the same class. Without
-        // this, double-tapping a `--` would select a lone dash.
+        // `--` is one run of the same character class, not a lone dash.
         val snapshot = grid(cols = 16, rows = 1, lines = arrayOf("ls --all"))
 
         assertEquals("--", extractSelectedText(snapshot, selectWord(snapshot, 0, 3)))
@@ -70,8 +57,7 @@ class WordSelectionTest {
 
     @Test
     fun tapOnSpace_selectsSpaceRun_notNothing() {
-        // One pixel beside the word must not turn the gesture into nothing:
-        // that would be a double tap that "sometimes doesn't work".
+        // Tapping just beside a word must still select something.
         val snapshot = grid(cols = 16, rows = 1, lines = arrayOf("ab    cd"))
 
         val selection = selectWord(snapshot, row = 0, col = 3)
@@ -87,14 +73,13 @@ class WordSelectionTest {
         val selection = selectWord(snapshot, row = 0, col = 7)
 
         assertEquals(GridSelection(0, 2, 0, 9), selection)
-        assertEquals("o padding não vira texto ao ser copiado", "", extractSelectedText(snapshot, selection))
+        assertEquals("padding does not become text when copied", "", extractSelectedText(snapshot, selection))
     }
 
     @Test
     fun wideChar_doesNotSplitWord() {
-        // A CJK character occupies two cells: the second is SPACER_TAIL and
-        // has no codepoint of its own. Classifying it in isolation would split
-        // the word.
+        // A CJK character's second cell is SPACER_TAIL with no codepoint; classifying
+        // it alone would split the word.
         val snapshot = buildSnapshot(cols = 6, rows = 1) { _, col ->
             when (col) {
                 0 -> wideCell('世'.code)
@@ -111,36 +96,33 @@ class WordSelectionTest {
         assertEquals("世界", extractSelectedText(snapshot, selection))
     }
 
-    // ---- Line -----------------------------------------------------------
-
     @Test
     fun tripleTap_selectsLineUpToLastWrittenChar() {
-        val snapshot = grid(cols = 20, rows = 2, lines = arrayOf("primeira", "segunda"))
+        val snapshot = grid(cols = 20, rows = 2, lines = arrayOf("first", "another"))
 
         val selection = selectLine(snapshot, row = 1)
 
         assertEquals(GridSelection(1, 0, 1, 6), selection)
-        assertEquals("segunda", extractSelectedText(snapshot, selection))
+        assertEquals("another", extractSelectedText(snapshot, selection))
     }
 
     @Test
     fun tripleTap_takesWholeLogicalLineWhenTerminalWrappedText() {
-        // A long line that did not fit the grid's width occupies three SCREEN
-        // rows. Selecting only the visible run would hand back a path cut in
-        // half — the classic defect of copying from a terminal.
+        // A soft-wrapped line spans three screen rows; selecting only one would cut
+        // the path in pieces.
         val flags = byteArrayOf(0x01, 0x03, 0x02, 0x00)
         val snapshot = grid(
             cols = 8,
             rows = 4,
             rowFlags = flags,
-            lines = arrayOf("/opt/pan", "el/tools", "/bin", "outra"),
+            lines = arrayOf("/opt/pan", "el/tools", "/bin", "other"),
         )
 
         val selection = selectLine(snapshot, row = 1)
 
         assertEquals(GridSelection(0, 0, 2, 3), selection)
         assertEquals(
-            "a quebra suave não pode virar quebra de linha no texto copiado",
+            "a soft wrap must not become a line break in the copied text",
             "/opt/panel/tools/bin",
             extractSelectedText(snapshot, selection),
         )
@@ -148,7 +130,7 @@ class WordSelectionTest {
 
     @Test
     fun blankLine_givesValidEmptySelection() {
-        val snapshot = grid(cols = 8, rows = 2, lines = arrayOf("algo", ""))
+        val snapshot = grid(cols = 8, rows = 2, lines = arrayOf("text", ""))
 
         val selection = selectLine(snapshot, row = 1)
 
@@ -156,15 +138,13 @@ class WordSelectionTest {
         assertEquals("", extractSelectedText(snapshot, selection))
     }
 
-    // ---- Select all -------------------------------------------------
-
     @Test
     fun selectAll_coversWholeGrid() {
-        val snapshot = grid(cols = 6, rows = 3, lines = arrayOf("um", "dois", "tres"))
+        val snapshot = grid(cols = 6, rows = 3, lines = arrayOf("one", "two", "three"))
 
         val selection = selectAll(snapshot)
 
         assertEquals(GridSelection(0, 0, 2, 5), selection)
-        assertEquals("um\ndois\ntres", extractSelectedText(snapshot, selection))
+        assertEquals("one\ntwo\nthree", extractSelectedText(snapshot, selection))
     }
 }

@@ -9,13 +9,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * JVM (host) tests of the logic around the native call: missing inputs, disk
- * space, error-code translation and — most important — what happens when the
- * native side says "ok" and hands back the wrong bytes.
+ * Host JVM tests of the logic around the native call: missing inputs, disk
+ * space, error-code translation and, most importantly, the native side
+ * reporting success with the wrong bytes.
  *
- * The `.so` is bionic: it does not load on a host JVM, nor under Robolectric.
- * That is why [NativePatcher] exists as a seam. The real native path is proven
- * in `ApkPatcherSmokeTest` and `ApkPatcherRealApkTest` (instrumented).
+ * The bionic `.so` does not load on a host JVM or Robolectric, hence the
+ * [NativePatcher] seam. The real native path is covered by the instrumented
+ * `ApkPatcherSmokeTest` and `ApkPatcherRealApkTest`.
  */
 class ApkPatcherTest {
 
@@ -36,7 +36,7 @@ class ApkPatcherTest {
         returns
     }
 
-    private val newBytes = "conteudo novo".toByteArray()
+    private val newBytes = "new content".toByteArray()
     private val newSha = ApkPatcher.sha256Of(File(tempDir, "seed").apply { writeBytes(newBytes) })
     private val expected get() = ExpectedApk(sha256 = newSha, sizeBytes = newBytes.size.toLong())
 
@@ -47,7 +47,7 @@ class ApkPatcherTest {
 
         val result = patcher.apply(file("base.apk", byteArrayOf(1)), file("p.hdiff", byteArrayOf(2)), out, expected)
 
-        assertTrue("esperava Applied, veio $result", result is PatchResult.Applied)
+        assertTrue("expected Applied, got $result", result is PatchResult.Applied)
         result as PatchResult.Applied
         assertEquals(out, result.newFile)
         assertEquals(newSha, result.sha256)
@@ -56,19 +56,17 @@ class ApkPatcherTest {
 
     @Test
     fun apply_whenNativeSaysOkButBytesAreWrong_failsAndDeletesOutput() {
-        // This is the scenario that justifies verification living in this
-        // module: it was MEASURED on the host's hpatchz that applying a patch
-        // over a wrong base of the same size returns 0 and writes a whole,
-        // wrong file.
-        val patcher = ApkPatcher(fakeNative(returns = 0, produces = "outra coisa".toByteArray()))
+        // Measured with real hpatchz: a wrong base of the same size returns 0
+        // and writes a complete but wrong file.
+        val patcher = ApkPatcher(fakeNative(returns = 0, produces = "something else".toByteArray()))
         val out = File(tempDir, "out.apk")
 
         val result = patcher.apply(file("base.apk", byteArrayOf(1)), file("p.hdiff", byteArrayOf(2)), out, expected)
 
-        assertTrue("esperava IntegrityMismatch, veio $result", result is PatchResult.IntegrityMismatch)
+        assertTrue("expected IntegrityMismatch, got $result", result is PatchResult.IntegrityMismatch)
         result as PatchResult.IntegrityMismatch
         assertEquals(newSha, result.expectedSha256)
-        assertFalse("o arquivo errado nao pode sobreviver ao resultado", out.exists())
+        assertFalse("the wrong file must not survive the result", out.exists())
     }
 
     @Test
@@ -83,7 +81,7 @@ class ApkPatcherTest {
             ExpectedApk(sha256 = newSha.uppercase(), sizeBytes = newBytes.size.toLong()),
         )
 
-        assertTrue("hash e hexadecimal, caixa nao deveria importar; veio $result", result is PatchResult.Applied)
+        assertTrue("the hash is hex, case should not matter; got $result", result is PatchResult.Applied)
     }
 
     @Test
@@ -92,17 +90,17 @@ class ApkPatcherTest {
         val patcher = ApkPatcher(NativePatcher { _, _, _, _, _, _ -> called = true; 0 })
 
         val result = patcher.apply(
-            File(tempDir, "nao-existe.apk"),
+            File(tempDir, "missing.apk"),
             file("p.hdiff", byteArrayOf(2)),
             File(tempDir, "out.apk"),
             expected,
         )
 
         assertEquals(
-            PatchResult.InputMissing(PatchResult.InputRole.BASE_APK, File(tempDir, "nao-existe.apk").path),
+            PatchResult.InputMissing(PatchResult.InputRole.BASE_APK, File(tempDir, "missing.apk").path),
             result,
         )
-        assertFalse("nao faz sentido entrar no JNI sem os arquivos", called)
+        assertFalse("no point entering JNI without the files", called)
     }
 
     @Test
@@ -111,7 +109,7 @@ class ApkPatcherTest {
 
         val result = patcher.apply(
             file("base.apk", byteArrayOf(1)),
-            File(tempDir, "nao-existe.hdiff"),
+            File(tempDir, "missing.hdiff"),
             File(tempDir, "out.apk"),
             expected,
         )
@@ -133,9 +131,8 @@ class ApkPatcherTest {
 
     @Test
     fun apply_diskFullMidWrite_becomesInsufficientStorageNotNativeCode() {
-        // 24 = HPATCH_FILEWRITE_NO_SPACE_ERROR. The caller reacts to this
-        // differently (asking to free up space), and should not have to know
-        // the native enum to find out.
+        // 24 = HPATCH_FILEWRITE_NO_SPACE_ERROR; the caller should not need the
+        // native enum to ask the user to free up space.
         val patcher = ApkPatcher(fakeNative(returns = 24))
 
         val result = patcher.apply(
@@ -145,7 +142,7 @@ class ApkPatcherTest {
             expected,
         )
 
-        assertTrue("esperava InsufficientStorage, veio $result", result is PatchResult.InsufficientStorage)
+        assertTrue("expected InsufficientStorage, got $result", result is PatchResult.InsufficientStorage)
         assertEquals(newBytes.size.toLong(), (result as PatchResult.InsufficientStorage).requiredBytes)
     }
 
@@ -162,13 +159,13 @@ class ApkPatcherTest {
             expected,
         )
 
-        assertTrue("esperava EngineUnavailable, veio $result", result is PatchResult.EngineUnavailable)
+        assertTrue("expected EngineUnavailable, got $result", result is PatchResult.EngineUnavailable)
     }
 
     @Test
     fun apply_deletesLeftoverFromPreviousRunBeforeCallingNative() {
         val out = File(tempDir, "out.apk")
-        out.writeBytes("apk pela metade de uma tentativa que falhou".toByteArray())
+        out.writeBytes("half-written apk from a failed attempt".toByteArray())
 
         var sawLeftover = true
         val patcher = ApkPatcher(
@@ -181,7 +178,7 @@ class ApkPatcherTest {
 
         val result = patcher.apply(file("base.apk", byteArrayOf(1)), file("p.hdiff", byteArrayOf(2)), out, expected)
 
-        assertFalse("o nativo nao pode encontrar resto de tentativa anterior", sawLeftover)
+        assertFalse("native code must not find leftovers from a previous attempt", sawLeftover)
         assertTrue(result is PatchResult.Applied)
     }
 
@@ -202,10 +199,8 @@ class ApkPatcherTest {
 
         patcher.apply(file("base.apk", byteArrayOf(1)), file("p.hdiff", byteArrayOf(2)), File(tempDir, "out.apk"), expected)
 
-        // 4 MiB is not a decorative number: with _IS_NEED_CACHE_OLD_ALL=1 in
-        // Android.mk, a cacheMemory >= the size of the old APK makes the
-        // patcher load the whole APK into memory. If someone "optimizes" this
-        // default upwards, this test is the warning.
+        // With _IS_NEED_CACHE_OLD_ALL=1 in Android.mk, a cacheMemory >= the old
+        // APK size loads the whole APK into memory; this guards the default.
         assertEquals(4L * 1024 * 1024, seenCache)
         assertEquals(4L * 1024 * 1024, ApkPatcher.DEFAULT_CACHE_MEMORY_BYTES)
         assertEquals(1, seenThreads)
@@ -225,7 +220,7 @@ class ApkPatcherTest {
     fun sha256Of_fileLargerThanReadBuffer() {
         // 64 KiB is the size of the internal buffer; going past it exercises the loop.
         val bytes = ByteArray(200_000) { (it % 251).toByte() }
-        val f = File(tempDir, "grande.bin").apply { writeBytes(bytes) }
+        val f = File(tempDir, "large.bin").apply { writeBytes(bytes) }
 
         val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
         val hex = digest.joinToString("") { "%02x".format(it) }

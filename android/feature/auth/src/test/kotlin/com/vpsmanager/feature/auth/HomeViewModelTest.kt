@@ -15,8 +15,8 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * The Home screen's state transitions: first load, a reload that preserves the
- * current picture, and the automatic loop that does nothing when it should not.
+ * Home state transitions: first load, a failed reload that keeps the current
+ * data, and auto-refresh that stays idle when it should.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModelTest {
@@ -28,19 +28,19 @@ class HomeViewModelTest {
     @After fun tearDown() = Dispatchers.resetMain()
 
     @Test
-    fun `primeira carga sai de Loading para o painel`() = runTest(dispatcher) {
+    fun `first load goes from Loading to the dashboard`() = runTest(dispatcher) {
         val vm = HomeViewModel(FakeDashboardSource { DashboardResult.Success(snapshotReal()) })
 
         assertEquals(HomeUiState.Loading, vm.uiState.value)
         advanceUntilIdle()
 
         val state = vm.uiState.value as HomeUiState.Success
-        assertEquals("teste", state.snapshot.identity?.user)
+        assertEquals("tester", state.snapshot.identity?.user)
         assertEquals(null, state.staleError)
     }
 
     @Test
-    fun `recarga que falha PRESERVA o painel e carimba o aviso`() = runTest(dispatcher) {
+    fun `a failed reload keeps the dashboard and flags it stale`() = runTest(dispatcher) {
         var calls = 0
         val vm = HomeViewModel(
             FakeDashboardSource {
@@ -48,7 +48,7 @@ class HomeViewModelTest {
                 if (calls == 1) {
                     DashboardResult.Success(snapshotReal())
                 } else {
-                    DashboardResult.Error("O servidor está indisponível no momento.")
+                    DashboardResult.Error("The server is unavailable right now.")
                 }
             },
         )
@@ -58,27 +58,26 @@ class HomeViewModelTest {
         advanceUntilIdle()
 
         val state = vm.uiState.value as HomeUiState.Success
-        assertEquals("O servidor está indisponível no momento.", state.staleError)
+        assertEquals("The server is unavailable right now.", state.staleError)
         assertEquals(false, state.refreshing)
-        // the previous picture stays intact
         assertTrue(state.snapshot.resourceSignals.isNotEmpty())
     }
 
     @Test
-    fun `falha na PRIMEIRA carga vira erro duro — nao ha quadro a preservar`() = runTest(dispatcher) {
-        val vm = HomeViewModel(FakeDashboardSource { DashboardResult.Error("Falha de conexão.") })
+    fun `a failed first load becomes a hard error, with nothing to keep`() = runTest(dispatcher) {
+        val vm = HomeViewModel(FakeDashboardSource { DashboardResult.Error("Connection failed.") })
         advanceUntilIdle()
 
-        assertEquals(HomeUiState.Error("Falha de conexão."), vm.uiState.value)
+        assertEquals(HomeUiState.Error("Connection failed."), vm.uiState.value)
     }
 
     @Test
-    fun `tentar novamente volta ao esqueleto e depois ao painel`() = runTest(dispatcher) {
+    fun `retry goes back to the skeleton and then to the dashboard`() = runTest(dispatcher) {
         var calls = 0
         val vm = HomeViewModel(
             FakeDashboardSource {
                 calls += 1
-                if (calls == 1) DashboardResult.Error("caiu") else DashboardResult.Success(snapshotReal())
+                if (calls == 1) DashboardResult.Error("down") else DashboardResult.Success(snapshotReal())
             },
         )
         advanceUntilIdle()
@@ -91,12 +90,12 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `atualizacao automatica nao roda por cima de uma tela de erro`() = runTest(dispatcher) {
+    fun `auto-refresh does not run over an error screen`() = runTest(dispatcher) {
         var calls = 0
         val vm = HomeViewModel(
             FakeDashboardSource {
                 calls += 1
-                DashboardResult.Error("caiu")
+                DashboardResult.Error("down")
             },
         )
         advanceUntilIdle()
@@ -105,14 +104,12 @@ class HomeViewModelTest {
         vm.autoRefresh()
         advanceUntilIdle()
 
-        // A loop every 5 s on top of an error message would only make the
-        // message flicker; the operator is the one who decides to leave that
-        // state.
+        // Polling over an error would only make it flicker; the user decides to retry.
         assertEquals(afterFirst, calls)
     }
 
     @Test
-    fun `atualizacao automatica e silenciosa — nao acende o indicador de recarga`() = runTest(dispatcher) {
+    fun `auto-refresh is silent and does not show the refresh indicator`() = runTest(dispatcher) {
         val vm = HomeViewModel(FakeDashboardSource { DashboardResult.Success(snapshotReal()) })
         advanceUntilIdle()
 
@@ -121,7 +118,7 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `puxar para atualizar acende o indicador ate a resposta chegar`() = runTest(dispatcher) {
+    fun `pull to refresh shows the indicator until the response arrives`() = runTest(dispatcher) {
         val vm = HomeViewModel(FakeDashboardSource { DashboardResult.Success(snapshotReal()) })
         advanceUntilIdle()
 
@@ -133,18 +130,18 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `uma recarga bem-sucedida limpa o aviso de quadro velho`() = runTest(dispatcher) {
+    fun `a successful reload clears the stale warning`() = runTest(dispatcher) {
         var calls = 0
         val vm = HomeViewModel(
             FakeDashboardSource {
                 calls += 1
-                if (calls == 2) DashboardResult.Error("caiu") else DashboardResult.Success(snapshotReal())
+                if (calls == 2) DashboardResult.Error("down") else DashboardResult.Success(snapshotReal())
             },
         )
         advanceUntilIdle()
         vm.refresh()
         advanceUntilIdle()
-        assertEquals("caiu", (vm.uiState.value as HomeUiState.Success).staleError)
+        assertEquals("down", (vm.uiState.value as HomeUiState.Success).staleError)
 
         vm.refresh()
         advanceUntilIdle()

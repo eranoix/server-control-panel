@@ -23,25 +23,13 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.roundToLong
 
 /**
- * Measures Compose `TerminalCanvas` against `TerminalSurfaceGrid` under the
- * same >=8MB synthetic byte stream (`assets/throughput/throughput.vt`),
- * using in-SDK [FrameMetrics] rather than a new benchmark dependency, so
- * this stays inside the existing dependency set instead of adding a library
- * that would first have to be vetted to come in at all.
+ * Compares Compose `TerminalCanvas` with `TerminalSurfaceGrid` on the same
+ * 8MB+ synthetic stream, using SDK [FrameMetrics] (no benchmark library).
  *
- * Requires a real attached `Window` -- `Window.addOnFrameMetricsAvailableListener`
- * has no meaningful shadow, so this class is instrumented-only and cannot be
- * run on the host JVM. It is what the Canvas-versus-SurfaceView rendering
- * verdict rests on.
+ * Instrumented only: frame metrics need a real attached `Window`.
  *
- * The load is DELIVERED AT FRAME PACE ([CHUNKS_PER_FRAME] chunks per
- * `postOnAnimation`), not in a tight loop. The tight loop was the original
- * design and it measured nothing: the fixture's ~2300 chunks all went in
- * inside the same `onActivity`, with the main thread blocked end to end, and
- * [FrameMetrics] saw ONE frame of 2.3 s. "1 frame, 100% dropped" is not a
- * result about the renderer — it is a measurement of the blocking. At frame
- * pace, each pass writes into the engine and draws the whole grid once, which
- * is exactly the cost in question.
+ * Input is fed at frame pace ([CHUNKS_PER_FRAME] chunks per `postOnAnimation`);
+ * a tight loop would block the main thread and produce a single huge frame.
  */
 @RunWith(AndroidJUnit4::class)
 class GridThroughputBenchmark {
@@ -80,11 +68,8 @@ class GridThroughputBenchmark {
             val listener = Window.OnFrameMetricsAvailableListener { _, frameMetrics, _ ->
                 synchronized(frameDurationsNanos) {
                     frameDurationsNanos += frameMetrics.getMetric(FrameMetrics.TOTAL_DURATION)
-                    // TOTAL_DURATION includes waiting for vsync: on an emulator
-                    // stuck at 30 Hz it sits glued to 33 ms even with the thread
-                    // idle, and does not answer "how much does drawing cost".
-                    // DRAW_DURATION is only the time spent recording the draw
-                    // operations — the whole-frame cost that is in question.
+                    // TOTAL_DURATION includes vsync waits (33 ms on a 30 Hz emulator);
+                    // DRAW_DURATION isolates the drawing cost being measured.
                     drawDurationsNanos += frameMetrics.getMetric(FrameMetrics.DRAW_DURATION)
                 }
             }
@@ -123,9 +108,7 @@ class GridThroughputBenchmark {
         }
 
         doneLatch.await(SETTLE_MILLIS + 30_000, TimeUnit.MILLISECONDS)
-        // Listener removal intentionally omitted: the Activity (and its
-        // Window) is destroyed immediately below by ActivityScenario.close(),
-        // which is the documented way to stop metric delivery.
+        // No listener removal needed: close() destroys the Window, stopping delivery.
         scenario.close()
         metricsThread.quitSafely()
         engine.close()
@@ -137,10 +120,8 @@ class GridThroughputBenchmark {
     }
 
     /**
-     * Delivers the fixture at frame pace: [CHUNKS_PER_FRAME] chunks per
-     * `postOnAnimation`, handing the thread back between batches so that the
-     * frame is actually drawn and MEASURED. [onFinished] runs after the last
-     * batch.
+     * Feeds [CHUNKS_PER_FRAME] chunks per `postOnAnimation`, yielding between
+     * batches so each frame is drawn and measured. [onFinished] runs after the last batch.
      */
     private fun feedPaced(
         host: android.view.View,
@@ -170,7 +151,7 @@ class GridThroughputBenchmark {
         return context.assets.open("throughput/throughput.vt").use { it.readBytes() }
     }
 
-    /** Peak resident set size in KB, from `/proc/self/status` `VmHWM` -- a genuine host-side, no-new-dependency proxy for peak memory. */
+    /** Peak resident set size in KB, from `VmHWM` in `/proc/self/status`. */
     private fun readVmHwmKb(): Long {
         return try {
             File("/proc/self/status").bufferedReader().use { reader: BufferedReader ->
@@ -239,11 +220,8 @@ class GridThroughputBenchmark {
         const val SETTLE_MILLIS = 2_000L
 
         /**
-         * 4 KB chunks written into the engine per frame. With the fixture's
-         * ~2300 chunks, 8 per frame give ~288 measured frames (~4.8 s at
-         * 60 Hz): a sample large enough for p95/p99 to mean something, and
-         * 32 KB of output per frame is a throughput well above what any real
-         * command produces.
+         * 4 KB chunks per frame. 8 gives about 288 measured frames, enough for
+         * meaningful p95/p99, and 32 KB per frame exceeds any real command's output.
          */
         const val CHUNKS_PER_FRAME = 8
     }

@@ -30,15 +30,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * The requirement of this delivery is, literally, height: giving the screen
- * back to the terminal. This file turns that into an assertion — it measures
- * the chrome in dp instead of describing it with an adjective.
- *
- * Three proofs, in the order of the three complaints:
- *  1. the connection banner costs 0 dp when everything is fine;
- *  2. the episodic controls cost 0 dp with the sheet closed;
- *  3. the whole terminal column, in steady state, spends only the key bar
- *     below the grid.
+ * Measures the terminal chrome in dp: the connection banner costs 0 dp when healthy,
+ * occasional controls cost 0 dp with the sheet closed, and in steady state only the
+ * key bar sits below the grid.
  */
 @RunWith(RobolectricTestRunner::class)
 class TerminalChromeHeightTest {
@@ -50,20 +44,19 @@ class TerminalChromeHeightTest {
     private val gridTag = "grade-terminal"
 
     @Test
-    fun `conectado e estavel a faixa de conexao nao ocupa altura nenhuma`() {
+    fun `connected and stable the connection banner takes no height`() {
         composeRule.setContent {
             Box(modifier = Modifier.testTag(bannerTag)) {
                 ConnectionBanner(state = ConnectionState.Live, isStalled = false)
             }
         }
 
-        // "Connected" is not news: only reconnecting, disconnected, stalled
-        // and ended earn a banner.
+        // Only reconnecting, disconnected, stalled and ended states show a banner.
         composeRule.onNodeWithTag(bannerTag).assertHeightIsEqualTo(0.dp)
     }
 
     @Test
-    fun `reconectando a faixa aparece`() {
+    fun `reconnecting shows the banner`() {
         composeRule.setContent {
             Box(modifier = Modifier.testTag(bannerTag)) {
                 ConnectionBanner(state = ConnectionState.Reconnecting(attempt = 2), isStalled = false)
@@ -74,7 +67,7 @@ class TerminalChromeHeightTest {
     }
 
     @Test
-    fun `conectado mas travado a faixa aparece`() {
+    fun `connected but stalled shows the banner`() {
         composeRule.setContent {
             Box(modifier = Modifier.testTag(bannerTag)) {
                 ConnectionBanner(state = ConnectionState.Live, isStalled = true)
@@ -85,60 +78,43 @@ class TerminalChromeHeightTest {
     }
 
     @Test
-    fun `com a folha fechada nenhum controle episodico existe na tela`() {
+    fun `with the sheet closed no occasional control is on screen`() {
         composeRule.setContent { TerminalColumn(optionsOpen = false) }
 
-        // The three that used to be a permanent row above the grid.
         composeRule.onNodeWithText("Font size").assertDoesNotExist()
         composeRule.onNodeWithText("When the program asks for mouse").assertDoesNotExist()
         composeRule.onNodeWithText("Visible lines").assertDoesNotExist()
-        // And the label that took a whole row just to announce another row.
         composeRule.onNodeWithText("Hide keys ▾").assertDoesNotExist()
     }
 
     @Test
-    fun `com a folha aberta os tres controles episodicos aparecem`() {
+    fun `with the sheet open the occasional controls appear`() {
         composeRule.setContent { TerminalColumn(optionsOpen = true) }
 
         composeRule.onNodeWithText("Font size").assertExists()
-        // "When the program asks for the mouse" lived here and LEFT together
-        // with the mouse preference; the line spacing took its place in the sheet.
         composeRule.onNodeWithText("Line spacing").assertExists()
-        // "Load earlier history" is NO longer here, on purpose: the history
-        // is the conversation itself, scrolled with a finger. A text pane
-        // inside the menu was a second place to read the same thing, and the
-        // owner pointed out it was the wrong place.
+        // History is read by scrolling the terminal itself, not from the sheet.
         composeRule.onNodeWithText("Load earlier history").assertDoesNotExist()
         composeRule.onNodeWithText("current grid: 54 columns × 46 rows").assertExists()
-        // The control that replaces it: how many lines fit on screen.
         composeRule.onNodeWithText("Visible lines").assertExists()
-        // The keyboard switch (Terminal x Text) lives in the sheet for the
-        // same reason as the others: it is an episodic decision, not a
-        // permanent row.
         composeRule.onNodeWithText("Keyboard").assertExists()
         composeRule.onNodeWithText("Scrollback").assertExists()
     }
 
     @Test
-    fun `em regime o unico cromo abaixo da grade e a barra de 40 dp`() {
+    fun `in steady state the only chrome below the grid is the 40 dp bar`() {
         composeRule.setContent { TerminalColumn(optionsOpen = false) }
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(40.dp)
-        // The grid takes ALL the rest: `weight(1f)`, not `fillMaxSize()` --
-        // with `fillMaxSize()` the grid ate the entire space and the key bar
-        // was measured at 0 dp, existing in the composition without showing up
-        // in a single pixel.
+        // The grid uses `weight(1f)`, not `fillMaxSize()`, which would squeeze the key
+        // bar to 0 dp.
         val grid = composeRule.onNodeWithTag(gridTag).fetchSemanticsNode().size.height
-        assert(grid > 0) { "a grade tem que sobrar com altura" }
+        assert(grid > 0) { "the grid must keep some height" }
     }
 
     /**
-     * The same column `TerminalRoute` composes, minus the ViewModel/socket:
-     * the order and the heights are what is under test, not the link to the
-     * server. The sheet comes in through its content
-     * ([TerminalOptionsContent]) and not through the `ModalBottomSheet`
-     * wrapper, which is a system window and adds nothing to what is to be
-     * proved here.
+     * The column `TerminalRoute` composes, without the ViewModel or socket. The sheet is
+     * its [TerminalOptionsContent], without the `ModalBottomSheet` window around it.
      */
     @androidx.compose.runtime.Composable
     private fun TerminalColumn(optionsOpen: Boolean) {

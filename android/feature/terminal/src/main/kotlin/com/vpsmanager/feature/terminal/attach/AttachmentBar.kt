@@ -29,22 +29,10 @@ const val INSERT_LABEL = "Insert"
 const val INSERT_ALL_LABEL = "Insert all"
 
 /**
- * The attachments strip, between the grid and the key bar.
- *
- * **Closed, it does not exist.** With no attachment in progress or ready, this
- * function emits no node at all: zero cost in height, exactly the criterion
- * `TerminalRoute` applies to every piece of chrome on this screen (it was by
- * failing to respect it that three occasional controls cost a permanent 160.8 dp
- * before moving into the options sheet). It appears when it has something to
- * say, like the connection banner.
- *
- * **It sits ABOVE the key bar, flush against it**, and not at the top of the
- * screen: that is the corner the thumb reaches, and it is where the eye already
- * is while typing the command the path is going into.
- *
- * Every row states its status in words, not just in colour — "Uploading 40%",
- * "Ready", the reason for an error spelled out — because the information has to
- * survive a screen reader and a screen in sunlight.
+ * The attachments strip, flush above the key bar where the thumb and eye already
+ * are. With no attachment it emits no node, so it costs no height (the rule
+ * `TerminalRoute` applies to all chrome). Each row states its status in words,
+ * not just colour, for screen readers and bright sunlight.
  */
 @Composable
 fun AttachmentBar(
@@ -74,9 +62,7 @@ fun AttachmentBar(
                 onDiscard = { onDiscard(attachment.id) },
             )
         }
-        // Offering "all" only makes sense when there is more than one; with a
-        // single attachment, the button on its own row is already the shortest
-        // route.
+        // "All" only when there is more than one; otherwise the row button suffices.
         if (readyIds.size > 1) {
             TextButton(onClick = { onInsert(readyIds) }) { Text(text = "$INSERT_ALL_LABEL (${readyIds.size})") }
         }
@@ -129,10 +115,9 @@ private fun AttachmentRow(
 }
 
 /**
- * The status in words. An error shows the reason COMING FROM THE SERVER (already
- * turned into an actionable sentence by `transferErrorFor`, in `:data`), never a
- * generic "failed": "no disk space left" and "file too large" call for opposite
- * actions from whoever is reading.
+ * The status in words. Errors show the server's reason (made actionable by
+ * `transferErrorFor` in `:data`), never a generic "failed": "no disk space" and
+ * "file too large" call for opposite actions.
  */
 internal fun stateDescription(state: AttachmentState): String = when (state) {
     is AttachmentState.Uploading ->

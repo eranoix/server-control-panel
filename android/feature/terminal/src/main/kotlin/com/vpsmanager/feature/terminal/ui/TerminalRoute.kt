@@ -124,10 +124,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Screen-reader description for the detail bar's back arrow. It is the only
- * bar in the app that has one — a top-level destination carries the shell's
- * hamburger there instead — so the shell test reads it from here to tell the
- * two headers apart without depending on a loose literal.
+ * Screen-reader description of the back arrow. Only this detail bar has one (top
+ * level destinations show the shell's menu button there), so the shell test reads
+ * it from here to tell the headers apart.
  */
 const val BACK_DESCRIPTION = "Back"
 
@@ -138,46 +137,29 @@ const val SESSIONS_TAG = "sessoes-terminal"
 const val LABEL_SESSIONS = "Session"
 
 /**
- * What shows up when "Paste" is tapped with nothing copied. The item is
- * pinned to the bar (the app owner asked for that), so it has to say why
- * nothing happened rather than simply doing nothing — see `PasteAction`.
+ * Shown when "Paste" is tapped with nothing copied. The item is always on the
+ * toolbar, so it must say why nothing happened; see `PasteAction`.
  */
 const val NOTICE_NOTHING_TO_PASTE = "There is nothing copied to paste"
 
 
 /**
- * The live terminal screen. [TerminalViewModel] is constructed from
- * `createSavedStateHandle()` so a process-death relaunch reconstructs the
- * same session name from the restored back-stack entry — see the ViewModel's
- * own doc comment for why that, not a plain constructor argument, is what
- * survives the app being killed.
+ * The live terminal screen. [TerminalViewModel] is built from
+ * `createSavedStateHandle()` so a relaunch after process death restores the same
+ * session name (see the ViewModel's KDoc).
  *
- * **This screen's column is deliberately very short: top bar, grid, key bar.
- * Nothing else.** It used to be
- * `TopAppBar + ConnectionBanner + MouseReportingToggleRow + FontSizeControlRow
- * + ScrollbackPanel + grid + "Hide keys" + keys` — 224.8 dp of chrome above
- * the grid on a 914 dp device (measured on the emulator at 420 dpi), 160.8 dp
- * of which were three EPISODIC controls given PERMANENT height. All three
- * moved to [TerminalOptionsSheet], which costs 0 dp while closed; the
- * connection banner already appeared only when it had something to say and
- * still does; and the "Hide keys" label on a row of its own became the handle
- * inside [ExtraKeysBar] itself. **The "Copy/Paste" row the app drew is gone
- * too** — the ones offering those actions now are the SYSTEM's floating bar
- * ([TerminalActionMode]), which appears glued to the selection and dismisses
- * itself.
+ * The column is deliberately short: top bar, grid, key bar. Episodic controls
+ * live in [TerminalOptionsSheet] (0 dp while closed), the connection banner only
+ * appears when it has something to say, the key bar's toggle is a handle inside
+ * [ExtraKeysBar], and copy/paste use the system floating toolbar
+ * ([TerminalActionMode]).
  *
- * The grid uses `weight(1f)`, not `fillMaxSize()`. That is not a styling
- * detail: with `fillMaxSize()` inside a `Column`, the grid consumed ALL the
- * remaining space and the key bar was measured with 0 dp of height left — it
- * existed in the composition and showed up in not a single pixel. That was
- * the reason the extra keys were unreachable on the device.
+ * The grid uses `weight(1f)`, not `fillMaxSize()`: inside a `Column` the latter
+ * takes all remaining space and leaves the key bar with zero height.
  *
- * IME/edge-to-edge insets: this composable applies NEITHER `imePadding()` nor
- * a second `consumeWindowInsets` call. `AppNavHost`'s `NavHost` modifier
- * already applies both exactly once, wrapping every destination including
- * this one — adding a second consumption point here would double-apply the
- * inset (the same reasoning [TerminalCanvas]'s own doc comment gives for
- * never touching insets itself).
+ * No `imePadding()` or `consumeWindowInsets` here: `AppNavHost`'s `NavHost`
+ * applies both once for every destination, and a second consumer would apply the
+ * inset twice.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -192,9 +174,8 @@ fun TerminalRoute(
         },
     )
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
-    // The BANNER reads the delayed state (a 1.5 s grace period), the LOGIC
-    // reads the real state just above. A reconnection that settles in ~1 s —
-    // the normal case of coming back to the app — never lights a banner at all.
+    // The banner reads the delayed state (1.5 s grace); the logic reads the real
+    // state above. A reconnect that settles in about 1 s never lights the banner.
     val bannerState by viewModel.bannerState.collectAsStateWithLifecycle()
     val bridgeOrigin by viewModel.bridgeCommandOrigin.collectAsStateWithLifecycle()
     val pendingTyping by viewModel.pendingTyping.collectAsStateWithLifecycle()
@@ -206,33 +187,20 @@ fun TerminalRoute(
     val coroutineScope = rememberCoroutineScope()
 
     var sessionsOpen by remember { mutableStateOf(false) }
-    // The session list comes from the SAME place the list screen uses
-    // ([SessionListViewModel] over `TerminalSessionsSource`). There is no
-    // second source of truth about sessions — what there is is a second
-    // surface showing the first.
+    // Sessions come from the same source as the list screen
+    // ([SessionListViewModel]); this is a second view, not a second truth.
     val sessionsViewModel: SessionListViewModel = viewModel()
     val sessionsState by sessionsViewModel.uiState.collectAsStateWithLifecycle()
 
     var batteryExempt by remember { mutableStateOf(isBatteryOptimizationExempt(context)) }
     var exemptionDialogOpen by remember { mutableStateOf(false) }
 
-    // One observer, two DIFFERENT events — and the difference matters:
-    //
-    // ON_START → RECONNECT. It was measured that Android 15+ blocks the app's
-    //   network ~5.7 s after it leaves the foreground and tears its sockets
-    //   down; once blocked, the reconnection loop does not even get to emit a
-    //   SYN. On the way back, then, what exists is always a dead connection
-    //   and a loop sleeping off its backoff — waiting for a heartbeat to fail
-    //   would only postpone the inevitable. ON_START is the right event
-    //   because it only fires when the screen really was invisible, not on
-    //   every dialog that opens over it.
-    //
-    // ON_RESUME → RE-READ the battery exemption. It has to be here, and this
-    //   was found out by testing on the emulator: the SYSTEM dialog that
-    //   grants the exemption never STOPS this screen (it is a translucent
-    //   activity on top), so ON_START does not fire on the way back from it.
-    //   With the refresh only on ON_START, the sheet went on offering an
-    //   exemption the person had just granted.
+    // One observer, two events:
+    // ON_START: reconnect. Android 15+ kills background sockets within seconds,
+    //   so on return the connection is always dead; ON_START only fires when the
+    //   screen was really invisible.
+    // ON_RESUME: re-read the battery exemption. The system dialog that grants it
+    //   is translucent and never stops this screen, so ON_START would not fire.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -245,46 +213,32 @@ fun TerminalRoute(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    // Font size persisted purely on-device (see
-    // TerminalFontSizePreference's own doc comment on why this never touches
-    // the server); `remember(fontSizeSp)` below is what turns a change here
-    // into a rebuilt GlyphAtlas and recomputed cell metrics.
+    // Font size, stored on the device only (see TerminalFontSizePreference);
+    // a change rebuilds the GlyphAtlas and cell metrics below.
     val fontSizePreference = remember { TerminalFontSizePreference(context) }
     val fontSizeSp by fontSizePreference.fontSizeSp.collectAsStateWithLifecycle(
         initialValue = TerminalFontSizePreference.DEFAULT_FONT_SIZE_SP,
     )
-    // Line spacing: same discipline as the font — a presentation preference,
-    // device-only. It goes into the metrics `remember` alongside the font
-    // size because it changes the cell height, hence the GRID (number of
-    // rows), hence the resize that goes to the server.
+    // Line spacing: also device-only. It changes the cell height, hence the row
+    // count, hence the resize sent to the server.
     val lineSpacingPreference = remember { TerminalLineSpacingPreference(context) }
     val lineSpacing by lineSpacingPreference.lineSpacing.collectAsStateWithLifecycle(
         initialValue = TerminalLineSpacing.DEFAULT,
     )
-    // Typing mode: defines the contract the view declares to the device
-    // keyboard. It does not enter the metrics — it touches no cell — but it
-    // changes the `inputType`, so swapping the value restarts IME input
-    // (see TerminalInputView.typingMode).
-    // Conversation history: read here and handed to the ViewModel, which uses
-    // it at the moment the engine is CREATED (scrollback size is fixed at
-    // creation) and to decide how much log to fetch from the server.
-    //
-    // The STEP, and not the stored integer, is what travels down from here: a
-    // value from an older ladder (200 thousand) would reserve a capacity the
-    // fetch would never fill, and would leave the options sheet with no step
-    // lit. `byRows` snaps it; the rest of the flow only ever sees steps.
+    // Typing mode: changes the view's `inputType`, so a switch restarts IME
+    // input (see TerminalInputView.typingMode). It does not affect metrics.
+    // Scrollback: handed to the ViewModel, which uses it when creating the engine
+    // and to size the history fetch. `byRows` snaps values from older ladders to
+    // a current step.
     val scrollbackPreference = remember { TerminalScrollbackPreference(context) }
     val savedScrollback by scrollbackPreference.lines.collectAsStateWithLifecycle(
         initialValue = TerminalScrollback.DEFAULT.lines,
     )
     val scrollbackLines = TerminalScrollback.byRows(savedScrollback).lines
-    // It arrives from the DataStore after the ViewModel is constructed; the
-    // engine is only born once the grid has been measured, so handing the
-    // value over here is in time.
+    // Arrives from DataStore after the ViewModel is built; the engine is only
+    // created once the grid is measured, so this is in time.
     viewModel.scrollbackLines = scrollbackLines
-    // How many rows fit on screen. Unlike the font size, this is the number
-    // the person actually has in mind ("I want to see the whole `docker ps`");
-    // the type size becomes a consequence. See [VisibleRows].
+    // Rows on screen: when pinned, the font size is derived from it. See [VisibleRows].
     val visibleRowsPreference = remember { VisibleRowsPreference(context) }
     val visibleRowsValue by visibleRowsPreference.lines.collectAsStateWithLifecycle(
         initialValue = VisibleRows.DEFAULT.lines,
@@ -295,19 +249,13 @@ fun TerminalRoute(
     val currentTypingMode by typingModePreference.mode.collectAsStateWithLifecycle(
         initialValue = TypingMode.DEFAULT,
     )
-    // The word the keyboard is composing and has not yet handed to the
-    // terminal. It only exists in TEXT mode; empty, the strip emits no node.
+    // The word the keyboard is composing (TEXT mode only).
     var pendingComposition by remember { mutableStateOf("") }
-    // The current theme's grid colours (background, default text, cursor and
-    // the light theme's legibility guard). Read up here because a change of
-    // theme has to repaint the grid in the same recomposition that repaints
-    // the rest.
+    // Theme colours for the grid, read here so a theme change repaints the grid
+    // in the same recomposition as the rest.
     val terminalPalette = currentTerminalPalette
-    // The AVAILABLE HEIGHT, used to derive the type size when the number of
-    // rows is fixed. It starts at zero and arrives with the first
-    // measurement; until then the chosen size stands, and the first
-    // composition already draws something legible instead of waiting on a
-    // measure.
+    // Available height, used to derive the font size when the row count is
+    // pinned. Zero until the first measurement; the chosen size is used meanwhile.
     var heightForRowsPx by remember { mutableStateOf(0) }
 
     val metrics = remember(density, fontSizeSp, lineSpacing, visibleRows, heightForRowsPx) {
@@ -329,11 +277,8 @@ fun TerminalRoute(
             textSizePx = metrics.textSizePx,
         )
     }
-    // GlyphAtlas is a fixed-size Bitmap pair rebuilt (not resized) on every
-    // font-size change -- without this, the OLD atlas's two Bitmaps would
-    // never be reclaimed and total atlas memory would grow unbounded across
-    // repeated font-size changes instead of staying at "exactly one atlas's
-    // worth" at a time.
+    // The atlas is rebuilt, not resized, on every metrics change; recycle the old
+    // bitmaps so memory stays at one atlas.
     DisposableEffect(glyphAtlas) {
         onDispose {
             glyphAtlas.narrowBitmap.recycle()
@@ -341,34 +286,28 @@ fun TerminalRoute(
         }
     }
     val snapshotState = remember { mutableStateOf<CellSnapshot?>(null) }
-    // Sticky Ctrl/Alt state shared between ExtraKeysBar's own chip taps and
-    // HardwareKeyHandler, so a modifier armed from the on-screen row applies
-    // equally to the row's other keys and to a physical keystroke.
+    // Sticky Ctrl/Alt shared between the on-screen row and HardwareKeyHandler, so
+    // an armed modifier applies to both.
     val pendingModifiers = remember { PendingModifiers() }
     val hardwareKeyHandler = remember(viewModel) {
         HardwareKeyHandler(viewModel.byteSink, pendingModifiers = pendingModifiers)
     }
 
-    // Grid selection is deliberately its own holder + polled state, not a
-    // StateFlow the ViewModel owns -- selection is pure canvas gesture UI
-    // state, never written from anywhere IME/composition-related (see
-    // GridSelection's own doc comment on the independence invariant
-    // SelectionComposeIndependenceTest proves).
+    // Selection is its own holder plus polled state, not ViewModel state: it is
+    // pure canvas gesture UI, never written from IME code (see GridSelection and
+    // SelectionComposeIndependenceTest).
     val selectionHolder = remember { GridSelectionHolder() }
     val selectionState = remember { mutableStateOf<GridSelection?>(null) }
     var gridCols by remember { mutableStateOf(1) }
     var gridRows by remember { mutableStateOf(1) }
 
-    // The two insets the grid's arithmetic needs. Read here as OBJECTS and
-    // queried down below inside the `Modifier.layout`: reading `getBottom`
-    // during measurement is a LAYOUT-PHASE state read, so the grid remeasures
-    // itself while the keyboard slides, without recomposing this whole
-    // function on every frame of the animation. It is the same mechanism
-    // `imePadding()` uses internally.
+    // Insets read as objects and queried inside `Modifier.layout`: reading them
+    // during measurement is a layout-phase read, so the grid remeasures while the
+    // keyboard slides without recomposing this function (as `imePadding()` does).
     val keyboardInsets = WindowInsets.ime
     val navBarInsets = WindowInsets.navigationBars
 
-    /** The height the grid has with the keyboard closed. For the options sheet only. */
+    /** The grid height with the keyboard closed; for the options sheet only. */
     var heightWithoutKeyboardPx by remember { mutableStateOf(0) }
 
     val hitTesterProvider: () -> CellHitTester = remember(metrics) {
@@ -378,44 +317,36 @@ fun TerminalRoute(
                 cellHeightPx = metrics.cellHeightPx.toFloat(),
                 cols = gridCols,
                 rows = gridRows,
-                // No `originY`: the grid is OFFSET during placement, and
-                // the pointer coordinates that arrive here already come in
-                // the offset space. Correcting again would count the offset
-                // twice. See the grid box's `Modifier.layout`.
+                // No `originY`: the grid is offset during placement, so pointer
+                // coordinates already include it. See the grid's `Modifier.layout`.
             )
         }
     }
 
-    // The modes the REMOTE PROGRAM turned on. Re-read every frame, together
-    // with the snapshot: an `htop` that opens turns mouse reporting on and one
-    // that closes turns it off, without telling anyone — the app has to ask,
-    // not remember.
+    // Modes the remote program enabled, re-read every frame: programs toggle mouse
+    // reporting without telling anyone.
     var terminalModes by remember { mutableStateOf(TerminalModes.NONE) }
 
-    // The system's floating bar. It is born together with the
-    // `TerminalInputView` (that view is what hosts the `ActionMode`), down
-    // below in the `AndroidView`.
+    // The system floating toolbar, created with the `TerminalInputView` that hosts
+    // its `ActionMode` (in the `AndroidView` below).
     val selectionBar = remember { mutableStateOf<TerminalActionMode?>(null) }
 
     val selectionController = remember(hitTesterProvider, selectionHolder) {
         SelectionGestureController(hitTesterProvider, selectionHolder) { selection ->
-            // Android is what draws the bar, and it has to be CALLED —
-            // nothing observes this holder on its own.
+            // Nothing observes the holder; the toolbar must be called explicitly.
             val bar = selectionBar.value
             if (selection == null) bar?.hide() else bar?.show()
         }
     }
 
-    // No state and no preference: who owns the gesture is decided, gesture
-    // by gesture, by the mode the REMOTE PROGRAM turned on. See
-    // [TouchRouting].
+    // No preference: each gesture's owner follows the mode the remote program
+    // enabled. See [TouchRouting].
     val touchRouting = remember(viewModel) {
         TouchRouting { viewModel.currentModes().mouseTracking }
     }
 
-    // The encoding itself belongs to the VT emulator — it knows the mode and
-    // the format the program asked for. This lambda only hands over the grid's
-    // geometry.
+    // The VT emulator does the encoding (it knows the mode and format); this only
+    // supplies the grid geometry.
     val mouseEncoder = remember(viewModel, metrics) {
         MouseEventEncoder { action, position, button, anyButtonPressed ->
             viewModel.encodeMouse(
@@ -440,10 +371,8 @@ fun TerminalRoute(
         routeCanvasDrag(touchRouting, selectionController, mouseReportController)
     }
 
-    // The fourth gesture: a vertical drag scrolls the history. Where it
-    // scrolls to is NOT the app's choice — it comes from the emulator's real
-    // state, the same discipline as the mouse and the paste. See
-    // [decideScroll].
+    // Vertical drag scrolls history; where it scrolls follows the emulator's real
+    // state, as with mouse and paste. See [decideScroll].
     val scrollTarget = remember(viewModel, metrics) {
         ScrollbackGestureController(
             modes = { viewModel.currentModes() },
@@ -456,9 +385,7 @@ fun TerminalRoute(
                 )
             },
             scrollViewport = viewModel::scrollViewport,
-            // After scrolling, is there anywhere left to go? This is what
-            // makes the fling stop at the top of the history instead of
-            // grinding against it.
+            // Whether there is room left, so the fling stops at the top of the history.
             canScrollViewport = { lines ->
                 val state = viewModel.currentScrollState()
                 if (lines < 0) state.offset > 0 else !state.atEnd
@@ -476,19 +403,15 @@ fun TerminalRoute(
             },
         )
     }
-    // The input view is created by the `AndroidView` down below; holding on
-    // to it here is what allows the keyboard to be ASKED FOR from outside it
-    // (a tap on the grid, a button on the options sheet) — the request has to
-    // leave from the view that owns the terminal's InputConnection, see
-    // TerminalInputView.showKeyboard().
+    // Held so the keyboard can be requested from outside (grid tap, options
+    // sheet); the request must come from the view that owns the InputConnection.
+    // See TerminalInputView.showKeyboard().
     val inputView = remember { mutableStateOf<TerminalInputView?>(null) }
     val requestKeyboard: () -> Unit = { inputView.value?.showKeyboard() }
 
     /**
-     * The tap on the grid when the gesture belongs to the app. One tap raises
-     * the keyboard, two select the word, three select the logical line — the
-     * language every Android text field already speaks, and that was missing
-     * here.
+     * A grid tap when the app owns the gesture: one tap raises the keyboard, two
+     * select the word, three the logical line, as in any Android text field.
      */
     val tapKeyboardTarget = remember(selectionController, viewModel, hitTesterProvider) {
         CanvasTapTarget { position, taps ->
@@ -498,10 +421,8 @@ fun TerminalRoute(
                 inputView.value?.showKeyboard()
                 return@CanvasTapTarget
             }
-            // The measured grid and the snapshot can disagree for a frame
-            // during a resize; the cell is clamped to the snapshot's bounds,
-            // since the snapshot is the source of the text about to be
-            // selected.
+            // Grid and snapshot may disagree for a frame during a resize; clamp
+            // to the snapshot, which is the source of the text.
             val cell = hitTesterProvider().hitTest(position)
             val line = cell.row.coerceIn(0, snapshot.rows - 1)
             val column = cell.col.coerceIn(0, snapshot.cols - 1)
@@ -529,18 +450,16 @@ fun TerminalRoute(
         PasteAction(
             clipboardRead = { clipboardManager.getText()?.text },
             sendPaste = viewModel::sendPaste,
-            // "Paste" is pinned to the bar, so it is the only item that
-            // may have nothing to do. A Toast, and not a Snackbar: the
-            // floating bar lives in a window of its own, above this one — a
-            // Snackbar anchored to the Scaffold would appear BEHIND it.
+            // "Paste" is always on the toolbar, so it may have nothing to do. A
+            // Toast, not a Snackbar: the toolbar is a separate window above, and a
+            // Snackbar would appear behind it.
             onContentMissing = {
                 Toast.makeText(context, NOTICE_NOTHING_TO_PASTE, Toast.LENGTH_SHORT).show()
             },
         )
     }
-    // The text under the selection, read at the instant of the click — the
-    // source for the two overflow-menu actions that consume the selection
-    // without going through the clipboard.
+    // The selected text, read at click time, for the overflow actions that
+    // bypass the clipboard.
     val selectedText = remember(selectionHolder, viewModel) {
         SelectedText(
             snapshotProvider = viewModel::currentSnapshot,
@@ -550,18 +469,13 @@ fun TerminalRoute(
     val share: () -> Unit = remember(selectedText, context) {
         { selectedText.use { text -> shareText(context, text) } }
     }
-    // Sending the selection back to the remote program goes through the SAME
-    // `sendPaste` as a paste — it is the VT emulator that decides whether to
-    // wrap it in `ESC[200~`/`ESC[201~`, according to the mode the program
-    // asked for (see `PasteAction`). Pushing the bytes out around this path
-    // would reintroduce the two defects that path exists to avoid.
+    // Sending the selection back goes through the same `sendPaste`, so the
+    // emulator decides on bracketed-paste wrapping (see `PasteAction`).
     val sendToTerminal: () -> Unit = remember(selectedText, viewModel) {
         { selectedText.use(viewModel::sendPaste) }
     }
-    // "Translate", "Search", "Read aloud" — what the device's apps offer over
-    // plain text. The one enumerating them is the bar, as it opens, and not
-    // this composition: that way installing or removing an app is reflected
-    // without recreating the screen.
+    // Other apps' text actions ("Translate", "Search") are enumerated by the
+    // toolbar when it opens, so app installs are reflected without recreation.
     val openInOtherApp = remember(selectedText, context) {
         { action: OtherAppAction ->
             selectedText.use { text ->
@@ -570,32 +484,22 @@ fun TerminalRoute(
         }
     }
 
-    // A PHYSICAL keyboard is attached: `hardKeyboardHidden ==
-    // HARDKEYBOARDHIDDEN_NO` is the reading the framework exposes, and it
-    // reacts to a Bluetooth one being connected/disconnected in real time
-    // (the Configuration changes, the composition re-reads).
+    // A physical keyboard is attached (`HARDKEYBOARDHIDDEN_NO`); updates live when
+    // a Bluetooth keyboard connects or disconnects.
     val configuration = LocalConfiguration.current
     val hasHardwareKeyboard = configuration.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
     var keysBarState by remember { mutableStateOf(ExtraKeysBarState.ONE_ROW) }
     var optionsOpen by remember { mutableStateOf(false) }
-    // Session attachment (file/image/photo): only the sheet's switch lives
-    // here; the rest (upload, progress, inserting the path) sits entirely in
-    // TerminalAttachment, so this function does not swell again.
+    // Only the attachment sheet toggle lives here; upload, progress and path
+    // insertion live in TerminalAttachment.
     var attachmentOpen by remember { mutableStateOf(false) }
 
-    // Renderer polling loop, deliberately decoupled from onBytes cadence (a
-    // throughput finding): this reads a plain poll method, not a per-write
-    // StateFlow, so redraw rate tracks device frame cadence rather than
-    // server write volume. Selection is polled the same way, from the same
-    // holder [SelectionGestureController] writes to on every drag event.
-    // Scroll position, re-read in the same frame as the snapshot:
-    // libghostty-vt warns, explicitly, that there is NO notification of a
-    // scroll change — whoever draws the position asks for it.
+    // Renderer polling, decoupled from byte arrival so redraws follow the frame
+    // rate, not server write volume. Selection and scroll position are polled in
+    // the same frame (libghostty-vt does not notify scroll changes).
     var scrollState by remember { mutableStateOf(TerminalScrollState.AT_END) }
-    // How much history there was at the instant the owner left the bottom.
-    // If the total grows after that, new output arrived while they were
-    // reading — and the screen did NOT jump to show it, so it has to say that
-    // it exists.
+    // History size when the user left the bottom; growth after that means new
+    // output arrived off screen, which the UI must announce.
     var totalWhenLeftEnd by remember { mutableStateOf(0L) }
     var hasNewOutput by remember { mutableStateOf(false) }
 
@@ -608,7 +512,7 @@ fun TerminalRoute(
 
                 val now = viewModel.currentScrollState()
                 if (now.atEnd) {
-                    // Back at the bottom: there is nothing "new" out of sight.
+                    // Back at the bottom: nothing new is out of sight.
                     totalWhenLeftEnd = now.total
                     hasNewOutput = false
                 } else {
@@ -624,20 +528,11 @@ fun TerminalRoute(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                // HALF the default height (64dp), at the owner's request.
-                // On this screen the bar is a frame: what matters is the
-                // terminal grid, and every dp the header gives back is one
-                // more line of output visible on a phone.
-                //
-                // THE FONT DOES NOT CHANGE — that was asked for explicitly.
-                // Only the space around it shrinks.
+                // Half the default height (64 dp): every dp is another line of
+                // output. The font size is unchanged.
                 expandedHeight = 32.dp,
                 title = { Text(text = viewModel.sessionName) },
-                // A DETAIL screen: a real back arrow — it leaves the
-                // session and hands you back to the list. A top-level
-                // destination has no such arrow (there the spot belongs to
-                // the shell's hamburger), and it is the arrow that tells the
-                // two headers apart at a glance.
+                // A detail screen, so a real back arrow to the list.
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -647,12 +542,8 @@ fun TerminalRoute(
                     }
                 },
                 actions = {
-                    // The drag-mode echo ("Selection") used to live here,
-                    // and lost its reason to exist along with the mouse
-                    // preference. The space is worth more as a SESSION
-                    // SWITCH: there are 20+ sessions, and until now switching
-                    // meant going back to the list, which throws the grid away
-                    // and redoes the attach.
+                    // Session switcher: switching here keeps the grid, while going
+                    // back to the list would drop it and redo the attach.
                     TextButton(
                         onClick = { sessionsOpen = true },
                         modifier = Modifier.testTag(SESSIONS_TAG),
@@ -681,40 +572,17 @@ fun TerminalRoute(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    // THE BACKGROUND BELONGS TO THE TERMINAL, and it
-                    // paints the WHOLE area.
-                    //
-                    // The grid can be placed lower than the top (see
-                    // ScreenAnchor): whatever is left above it is drawn by
-                    // nobody, and showed up in the application's surface
-                    // colour — a grey band in a black terminal, which reads as
-                    // a defect and not as a blank line. Painting here costs
-                    // one rectangle per frame and makes the whole area,
-                    // visually, terminal.
+                    // The terminal background paints the whole area, since the
+                    // grid may be placed below the top (see ScreenAnchor).
                     .background(Color(0xFF000000 or terminalPalette.defaultBg.toLong()))
-                    // CLIP BEFORE the `layout`: the node reports the
-                    // visible height, so the clip confines the part that
-                    // spills upwards instead of letting it paint over the
-                    // title bar.
+                    // Clip before `layout`, so the part lifted upwards does not
+                    // paint over the top bar.
                     .clipToBounds()
-                    // ── THE GRID DOES NOT SHRINK WITH THE KEYBOARD ──────
-                    //
-                    // It is MEASURED at the height it would have with the
-                    // keyboard closed and PLACED shifted upwards, showing the
-                    // last lines. To the parent, the node still has the
-                    // visible height — nothing else on screen moves.
-                    //
-                    // That way the number of rows does not change when the
-                    // keyboard comes up, and it is the change in the number of
-                    // rows that used to duplicate the history (see
-                    // GridGeometry). There is no heuristic and no memory:
-                    // what `imePadding()` took away is added back by the exact
-                    // value, frame by frame.
-                    //
-                    // Shifting during PLACEMENT and not while drawing is what
-                    // makes touch, selection and the `TerminalInputView` come
-                    // along with no correction of their own: pointer
-                    // coordinates follow placement.
+                    // The grid does not shrink with the keyboard: it is measured at
+                    // the keyboard-closed height and placed shifted up. The row
+                    // count stays constant, which avoids resize-driven duplication
+                    // (see GridGeometry). Shifting during placement keeps touch,
+                    // selection and the input view aligned without corrections.
                     .layout { measurable, constraints ->
                         val covered = GridGeometry.coveredByKeyboard(
                             imePx = keyboardInsets.getBottom(this),
@@ -725,68 +593,14 @@ fun TerminalRoute(
                             constraints.copy(minHeight = fullHeight, maxHeight = fullHeight),
                         )
                         layout(placed.width, constraints.maxHeight) {
-                            // ── WHAT HAS TO STAY VISIBLE IS THE CURSOR ───
-                            //
-                            // The temptation is to anchor to the bottom —
-                            // always show the last lines that fit. It is
-                            // wrong, and the mistake is easy to miss: in a
-                            // freshly opened session the content lives at the
-                            // TOP of an almost empty grid, and anchoring to
-                            // the bottom shows the last 27 lines, which are 27
-                            // blank lines. The whole screen goes away with the
-                            // history intact, and that was exactly the report:
-                            // "nothing shows up for me any more".
-                            //
-                            // What the keyboard must not cover is the line
-                            // being typed on. So the offset is the MINIMUM
-                            // that brings the cursor inside the visible area,
-                            // and zero when it is already there. A terminal
-                            // behaves like a text field: it scrolls to the
-                            // insertion point, not to the end of the document.
-                            //
-                            // The snapshot is read HERE, during placement, and
-                            // not during measurement: moving the cursor
-                            // re-PLACES the grid, without re-measuring
-                            // anything. Measuring on every key would drag the
-                            // `TerminalInputView` and the overlays along, on
-                            // every key.
-                            // ── THE MARGIN BELOW THE CURSOR ──────────────────
-                            //
-                            // Aligning the BOTTOM of the cursor's line with
-                            // the lower edge looks right and cuts the screen
-                            // off: in a TUI there is almost always content
-                            // AFTER the cursor. In Claude Code, the input box
-                            // is drawn over three lines — top border, text,
-                            // bottom border — and the cursor sits on the
-                            // middle one. Butting the cursor against the edge
-                            // ate the box's bottom line, which was the report:
-                            // "the keyboard is cutting off the writing
-                            // window".
-                            //
-                            // Two lines cover the bottom border plus one hint
-                            // line, which is what these programs draw there.
-                            // When there is nothing below — cursor on the
-                            // grid's last line — `coerceIn` saturates at
-                            // `tapado` and the margin simply costs nothing:
-                            // the end of the frame is already on show.
-                            // ── AND THE SAME RULE THE OTHER WAY ──────────────
-                            //
-                            // The remote program's frame is as tall as IT
-                            // likes. Claude Code's writing box, with its
-                            // footer, takes some twenty lines; the grid has
-                            // fifty-two. The remaining thirty-two sat blank
-                            // BELOW, and the box stopped in the top third of
-                            // the screen — far from the thumb and from the
-                            // keyboard. The owner's report: "the writing
-                            // window has to always stay at the bottom".
-                            //
-                            // A desktop terminal never shows this because it
-                            // is never taller than the content already
-                            // scrolled. Here the grid is born large and filled
-                            // by a replay, so the condition exists and the
-                            // answer is ours: a single rule, both ways — the
-                            // bottom of the CONTENT meets the bottom of the
-                            // VISIBLE AREA. See [ScreenAnchor].
+                            // Offset: the minimum that keeps the cursor visible,
+                            // plus [ROWS_BELOW_CURSOR] for TUI content below it (an
+                            // input box's bottom border). Anchoring to the bottom
+                            // instead would show blank rows of a fresh session.
+                            // Conversely, a frame shorter than the grid is moved
+                            // down so the content bottom meets the visible bottom.
+                            // See [ScreenAnchor]. The snapshot is read during
+                            // placement, so cursor moves only re-place the grid.
                             val board = snapshotState.value
                             val lastWithContent = board?.let { q ->
                                 ScreenAnchor.lastRowWithContent(q.cols, q.rows) { x, y ->
@@ -811,11 +625,8 @@ fun TerminalRoute(
                         }
                     }
                     .onSizeChanged { size ->
-                        // `size` IS ALREADY the full height: the
-                        // `Modifier.layout` above measured the box as if the
-                        // keyboard were closed. Which is why there is no
-                        // correction at all to make here — and that is the
-                        // point of the whole fix.
+                        // `size` is already the full height: the `layout` above
+                        // measured as if the keyboard were closed.
                         val cols = GridGeometry.columns(size.width, metrics.cellWidthPx)
                         val rows = GridGeometry.lines(size.height, metrics.cellHeightPx)
                         gridCols = cols
@@ -823,20 +634,17 @@ fun TerminalRoute(
                         heightWithoutKeyboardPx = size.height
                         heightForRowsPx = size.height
                         TerminalDiag.log(
-                            "MEDIDA cheia=${size.width}x${size.height}px " +
-                                "celula=${metrics.cellWidthPx}x${metrics.cellHeightPx} " +
-                                "grade=${cols}x$rows",
+                            "MEASURED full=${size.width}x${size.height}px " +
+                                "cell=${metrics.cellWidthPx}x${metrics.cellHeightPx} " +
+                                "grid=${cols}x$rows",
                         )
                         viewModel.onGridSizeChanged(cols, rows)
                     }
                     .canvasDragGestures(canvasDragTarget)
                     .canvasTapGesture(canvasTapTarget)
-                    // LAST in the chain on purpose: the innermost
-                    // modifier gets the event first on the Main pass, and that
-                    // is how the vertical drag manages to claim the gesture
-                    // before the other two recognisers decide. The three still
-                    // coexist by giving way — this one only consumes once it
-                    // is sure the gesture is its own.
+                    // Last in the chain on purpose: the innermost modifier sees the
+                    // event first, so the vertical drag can claim it before the
+                    // others decide; it only consumes once sure.
                     .canvasScrollGesture(scrollTarget),
             ) {
                 TerminalCanvas(
@@ -845,13 +653,8 @@ fun TerminalRoute(
                     cellHeightPx = metrics.cellHeightPx.toFloat(),
                     glyphAtlas = glyphAtlas,
                     modifier = Modifier.fillMaxSize(),
-                    // The grid follows the chosen theme. WITHOUT this
-                    // line the `TerminalCanvas` falls back to the dark default
-                    // and the grid turns black inside a light app — which is
-                    // exactly what the emulator capture showed when this line
-                    // was lost in a merge. See [currentTerminalPalette] on why
-                    // the palette comes from the colour scheme and not from
-                    // the system mode.
+                    // Follow the chosen theme; without this the canvas falls back
+                    // to the dark palette. See [currentTerminalPalette].
                     palette = terminalPalette,
                 )
                 AndroidView(
@@ -861,24 +664,15 @@ fun TerminalRoute(
                             byteSink = viewModel.byteSink
                             typingMode = currentTypingMode
                             onCompositionChange = { text -> pendingComposition = text }
-                            // Hardware (Bluetooth/USB) keyboard events travel
-                            // through `dispatchKeyEvent`/`setOnKeyListener`,
-                            // never through `sendKeyEvent` on the
-                            // InputConnection this view returns -- so this
-                            // listener and TerminalInputConnection's own
-                            // IME-commit dedup guard never see the same byte
-                            // twice: hardware key -> HardwareKeyHandler
-                            // (here), IME commit/synthesized key ->
-                            // TerminalInputConnection, with no overlap.
+                            // Hardware keys arrive via `setOnKeyListener`, never
+                            // through the InputConnection's `sendKeyEvent`, so this
+                            // handler and the IME dedup guard never see the same byte.
                             setOnKeyListener { _, _, event -> hardwareKeyHandler.onKeyEvent(event) }
                             requestFocus()
                         }.also { view ->
                             inputView.value = view
-                            // The floating bar needs a View to host the
-                            // `ActionMode`, and this one covers exactly the
-                            // grid's area — which is why the selection
-                            // rectangle can go straight through, with no
-                            // coordinate-space conversion.
+                            // The view covers exactly the grid, so the selection
+                            // rectangle needs no coordinate conversion.
                             selectionBar.value = TerminalActionMode(
                                 host = view,
                                 onCopy = copyAction::copy,
@@ -903,17 +697,13 @@ fun TerminalRoute(
                     },
                     update = { view ->
                         view.byteSink = viewModel.byteSink
-                        // The setter only acts when the value really
-                        // changes, and it is what restarts IME input — which
-                        // is why a change of mode from the options sheet
-                        // reaches a keyboard that is already open, instead of
-                        // waiting for it to close and reopen.
+                        // The setter acts only on change and restarts IME input,
+                        // so a mode switch reaches an already open keyboard.
                         view.typingMode = currentTypingMode
                     },
                 )
-                // ABOVE the input view, on purpose: the handles have to
-                // get the touch before the grid, and Compose delivers the
-                // event to the topmost node first.
+                // Above the input view: handles must get the touch first, and
+                // Compose delivers to the topmost node first.
                 SelectionOverlay(
                     selectionState = selectionState,
                     hitTesterProvider = hitTesterProvider,
@@ -921,40 +711,28 @@ fun TerminalRoute(
                     onHandleDragEnd = { selectionBar.value?.show() },
                     modifier = Modifier.fillMaxSize(),
                 )
-                // Where they are in the history and how to get back. It
-                // only appears once they have left the bottom — pinned at the
-                // bottom, the grid stays clean.
+                // Position in history and the way back; only after leaving the bottom.
                 ScrollPositionOverlay(
                     state = scrollState,
                     hasNewOutput = hasNewOutput,
                     onBackToEnd = viewModel::scrollToBottom,
                 )
             }
-            // Between the grid and the keys: where the thumb already is
-            // and where the eye already looks while assembling the command the
-            // path will go into. With no attachment it emits no node — 0 dp of
-            // cost (see AttachmentBar).
+            // Between the grid and the keys, where thumb and eye already are. No
+            // node when there is no attachment (see AttachmentBar).
             TerminalAttachment(
                 sheetOpen = attachmentOpen,
                 onCloseSheet = { attachmentOpen = false },
-                // Inserting the path leaves through the SAME sendPaste as
-                // a paste: it is what decides, from the remote program's real
-                // mode, whether the text goes wrapped in bracketed paste.
+                // Inserting the path uses the same `sendPaste`, so bracketed-paste
+                // wrapping follows the program's mode.
                 onInsertText = viewModel::sendPaste,
-                // With the connection down, `TerminalSocketClient.send`
-                // drops the bytes silently — the attachment cannot vanish
-                // because of that. See NOTICE_TERMINAL_OFFLINE.
+                // While offline, `TerminalSocketClient.send` may drop bytes, so
+                // insertion waits for the connection. See NOTICE_TERMINAL_OFFLINE.
                 terminalReady = connectionState == ConnectionState.Live,
             )
-            // The word held back by the keyboard's autocorrect, just above
-            // the keys and just below the grid — between what has already
-            // reached the terminal and what is still being typed, which is
-            // where the eye already is.
-            //
-            // The height is RESERVED in text mode: it was this strip appearing
-            // and disappearing that resized the grid on every word (77 resizes
-            // in 45 min, measured) and made the screen duplicate. See the
-            // strip's own KDoc.
+            // The word held by autocorrect, between grid and keys. Its height is
+            // reserved in TEXT mode, since toggling it resized the grid on every
+            // word. See the strip's KDoc.
             CompositionStrip(
                 text = pendingComposition,
                 reserveSpace = currentTypingMode == TypingMode.TEXT,
@@ -965,12 +743,9 @@ fun TerminalRoute(
                 state = keysBarState,
                 onStateChange = { keysBarState = it },
                 hasHardwareKeyboard = hasHardwareKeyboard,
-                // The paperclip opens the SAME source sheet the options
-                // sheet already opened (`AttachmentSourceSheet`) — file, image
-                // or take a photo. What was missing was not the feature: it
-                // was a short path to it, from inside the keyboard, which is
-                // where attaching is thought of. The upload, the progress and
-                // inserting the path all still live in `TerminalAttachment`.
+                // The paperclip opens the same source sheet as the options sheet,
+                // a shorter path from the keyboard. Upload and insertion stay in
+                // `TerminalAttachment`.
                 onAttach = { attachmentOpen = true },
             )
         }
@@ -985,10 +760,8 @@ fun TerminalRoute(
                 },
                 onCreateSession = { name ->
                     sessionsOpen = false
-                    // Creating and attaching are the SAME operation on
-                    // this server: the backend opens the session on the first
-                    // attach. Reusing the switch path instead of inventing an
-                    // endpoint keeps a single way into the terminal.
+                    // Creating and attaching are the same operation: the backend
+                    // opens the session on first attach.
                     onSwitchSession(name)
                 },
                 onDetach = {
@@ -1029,24 +802,22 @@ fun TerminalRoute(
                     optionsOpen = false
                     pasteAction.paste()
                 },
-                // Close this sheet before opening the source one: two
-                // stacked ModalBottomSheets fight over the same window focus.
+                // Close this sheet first: two stacked ModalBottomSheets fight over
+                // window focus.
                 onAttach = {
                     optionsOpen = false
                     attachmentOpen = true
                 },
-                // Ask for the keyboard while the sheet is still up: it is
-                // TerminalInputView.showKeyboard() that holds the request back
-                // until the sheet's window hands focus over — `showSoftInput`
-                // on an unfocused window is silently ignored.
+                // Request the keyboard while the sheet is still up;
+                // showKeyboard() waits for window focus, since `showSoftInput` on
+                // an unfocused window is silently ignored.
                 onShowKeyboard = {
                     optionsOpen = false
                     requestKeyboard()
                 },
                 batteryExempt = batteryExempt,
-                // Explain BEFORE the system asks. A system dialog with no
-                // context is denied by reflex — and once denied, it is not
-                // offered again on its own.
+                // Explain before the system asks: an unexplained system dialog is
+                // denied by reflex and not offered again.
                 onRequestBatteryExemption = {
                     optionsOpen = false
                     exemptionDialogOpen = true
@@ -1074,10 +845,8 @@ fun TerminalRoute(
                         },
                     ) { Text(text = "Continue") }
                 },
-                // "Not now" and not "Cancel": refusing here closes no
-                // door — the app goes on working the same, just reconnecting
-                // more often, and the item stays on the sheet for whenever
-                // they want it.
+                // "Not now", not "Cancel": declining closes no door, and the item
+                // stays in the sheet.
                 dismissButton = {
                     TextButton(onClick = { exemptionDialogOpen = false }) {
                         Text(text = "Not now")
@@ -1089,12 +858,9 @@ fun TerminalRoute(
 }
 
 /**
- * Converts the chosen font size (in `sp`) into cell dimensions in pixels. The
- * `sp -> px` conversion lives here because only this layer has the [Density];
- * the measurement itself lives in `computeTerminalCellMetrics`, next to the
- * [GlyphAtlas] that rasterises with the SAME typeface and the SAME `textSize`
- * — the grid this screen places and the glyphs the atlas draws have to agree
- * on scale, and that is only guaranteed by measuring in one single place.
+ * Converts the font size in `sp` to cell dimensions in pixels. Only this layer has
+ * the [Density]; the measurement itself is in `computeTerminalCellMetrics`, next to
+ * [GlyphAtlas], so grid and glyphs agree on scale.
  */
 private fun computeCellMetrics(
     density: Density,
@@ -1106,34 +872,20 @@ private fun computeCellMetrics(
 )
 
 /**
- * How many lines to keep visible BELOW the cursor when the keyboard comes up.
- *
- * It is not aesthetic slack: it is the bottom border of the input box of the
- * programs used here. With zero, the keyboard cut off exactly that line.
+ * Lines kept visible below the cursor when the keyboard is up: the bottom border
+ * of TUI input boxes, which the keyboard would otherwise cover.
  */
 private const val ROWS_BELOW_CURSOR = 2
 
-/** The space codepoint — a cell holding it draws nothing. */
+/** The space codepoint; a cell holding it draws nothing. */
 private const val SPACE = 32
 
 /**
- * The largest type size that still makes [lines] lines fit in [heightPx].
- *
- * ## Why a search and not a division
- *
- * Cell height is not a linear function of the font size: it goes through
- * rounding to a whole pixel (the condition for the renderer's 1:1 blit) and
- * adds the line spacing as an integer delta. Inverting that analytically would
- * give a formula that is off by a pixel now and then — and one extra pixel per
- * line, over 45 lines, is a whole line lost.
- *
- * The search costs a few dozen text measurements, once per change of size or
- * preference, and is right by construction: it returns the first size, from
- * largest to smallest, whose grid REALLY fits.
- *
- * The 6 sp floor exists for the degenerate case (a tiny window, 60 lines asked
- * for): better to hand back small, illegible type than a division by zero or a
- * one-line grid.
+ * The largest font size that fits [lines] lines in [heightPx]. A search rather
+ * than a division: cell height involves whole-pixel rounding and an integer
+ * spacing delta, so an analytic inverse would sometimes be off by a pixel per
+ * line. Runs once per size or preference change. The 6 sp floor handles
+ * degenerate cases (tiny window, many lines).
  */
 private fun bodyThatFits(
     lines: Int,

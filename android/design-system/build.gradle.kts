@@ -1,5 +1,4 @@
-// :design-system — tema Compose compartilhado e widgets pequenos (nao um
-// sprawl estilo Now in Android).
+// Shared Compose theme and small widgets.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
@@ -24,10 +23,8 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
-    // WindowCompat/WindowInsetsControllerCompat: o tema poe os icones da barra
-    // de status e de navegacao no contraste do modo escolhido (ver Theme.kt).
+    // WindowCompat: the theme sets system bar icon contrast for the chosen mode (see Theme.kt).
     implementation(libs.androidx.core.ktx)
-    // StateFlow da preferencia de aparencia (ThemePreference).
     implementation(libs.kotlinx.coroutines.core)
 
     testImplementation(libs.junit)

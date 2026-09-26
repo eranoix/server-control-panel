@@ -10,18 +10,13 @@ import com.vpsmanager.data.videocall.IncomingCallHandler
 
 private const val TAG = "TelecomIncomingCall"
 
-/** Extras keys [VpsmConnectionService.onCreateIncomingConnection] reads off the request Telecom
- * hands back — set here, consumed there, never guessed at a distance. */
+/** Extras keys set here and read by [VpsmConnectionService.onCreateIncomingConnection]. */
 const val EXTRA_ROOM_ID = "com.vpsmanager.feature.videocall.EXTRA_ROOM_ID"
 const val EXTRA_ROOM_NAME = "com.vpsmanager.feature.videocall.EXTRA_ROOM_NAME"
 const val EXTRA_CALLER_NAME = "com.vpsmanager.feature.videocall.EXTRA_CALLER_NAME"
 const val EXTRA_CALL_ID = "com.vpsmanager.feature.videocall.EXTRA_CALL_ID"
 
-/**
- * Narrow seam over the one `TelecomManager` member [TelecomIncomingCallHandler] needs —
- * matches [TelecomAccountPort]'s pattern so this class stays testable on the plain JVM under
- * Robolectric without a real Telecom binder.
- */
+/** The one `TelecomManager` call [TelecomIncomingCallHandler] needs, abstracted for tests. */
 interface TelecomCallPort {
     fun addNewIncomingCall(phoneAccountHandle: PhoneAccountHandle, extras: Bundle)
 }
@@ -33,12 +28,9 @@ private class RealTelecomCallPort(private val telecomManager: TelecomManager) : 
 }
 
 /**
- * The one production [IncomingCallHandler], registered against
- * [com.vpsmanager.data.videocall.IncomingCallDispatcher] in `VpsManagerApplication.onCreate()`.
- * Turns an FCM ring event into a real Telecom call (so the OS renders its own lock-screen UI —
- * see [VpsmConnectionService]) and a `call-ended` push into a lookup against
- * [ActiveCallRegistry] so a still-ringing/active call on this device is torn down without
- * waiting out the ring message's own TTL.
+ * Production [IncomingCallHandler], registered at app start. Turns an FCM ring into a Telecom call
+ * (the OS renders the lock-screen UI) and a `call-ended` push into ending the call via
+ * [ActiveCallRegistry].
  */
 class TelecomIncomingCallHandler(
     private val registrar: PhoneAccountRegistrar,
@@ -51,8 +43,7 @@ class TelecomIncomingCallHandler(
     )
 
     override fun onIncomingCall(roomId: String, roomName: String, from: String, callId: String) {
-        // Re-checked on every ring, not just at app startup — see PhoneAccountRegistrar's own
-        // doc for why a previously-registered account can be silently revoked later.
+        // Re-checked on every ring because a registered account can be revoked later.
         registrar.ensureRegistered()
         val extras = Bundle().apply {
             putString(EXTRA_ROOM_ID, roomId)
@@ -63,11 +54,9 @@ class TelecomIncomingCallHandler(
         try {
             port.addNewIncomingCall(registrar.phoneAccountHandle, extras)
         } catch (e: SecurityException) {
-            // The account Telecom now reports as "registered" can still reject a specific call
-            // (e.g. a real cellular call already occupying the self-managed slot on some OEMs,
-            // or the account having just been disabled between ensureRegistered() and this call)
-            // — this device silently misses the ring rather than crashing the FCM-delivery path.
-            Log.w(TAG, "addNewIncomingCall recusado pelo Telecom para call=$callId", e)
+            // Telecom can still reject a call (cellular call active, account just disabled);
+            // miss the ring rather than crash the FCM path.
+            Log.w(TAG, "addNewIncomingCall rejected by Telecom for call=$callId", e)
         }
     }
 

@@ -9,10 +9,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Renders [DiagnosticsScreen] under Robolectric across every reachable
- * combination of `initFailures`/`lastCrash` -- never composed before this.
- * Stateless (no ViewModel), so every case is driven directly with hand-built
- * parameters.
+ * Renders the stateless [DiagnosticsScreen] for every combination of `initFailures` and
+ * `lastCrash`.
  */
 @RunWith(RobolectricTestRunner::class)
 class DiagnosticsScreenTest {
@@ -29,27 +27,27 @@ class DiagnosticsScreenTest {
 
         composeRule.onNodeWithText("Startup diagnostics").assertExists()
         composeRule.onNodeWithText("Clear and try opening the app").performClick()
-        assert(cleared) { "expected onLimpar to fire" }
+        assert(cleared) { "expected onClear to fire" }
     }
 
     @Test
     fun `init failures are listed one per line`() {
         composeRule.setContent {
             DiagnosticsScreen(
-                initFailures = listOf("ServerConfigStore: falha ao decifrar", "PhoneAccountRegistrar: permissão negada"),
+                initFailures = listOf("ServerConfigStore: decryption failed", "PhoneAccountRegistrar: permission denied"),
                 lastCrash = null,
                 onClear = {},
             )
         }
 
         composeRule.onNodeWithText("Failed steps").assertExists()
-        composeRule.onNodeWithText("• ServerConfigStore: falha ao decifrar").assertExists()
-        composeRule.onNodeWithText("• PhoneAccountRegistrar: permissão negada").assertExists()
+        composeRule.onNodeWithText("• ServerConfigStore: decryption failed").assertExists()
+        composeRule.onNodeWithText("• PhoneAccountRegistrar: permission denied").assertExists()
     }
 
     @Test
     fun `a previous crash renders its full stack trace selectably`() {
-        val stackTrace = "java.lang.IllegalStateException: bootstrap falhou\n\tat com.vpsmanager.app.Bootstrap.run(Bootstrap.kt:42)"
+        val stackTrace = "java.lang.IllegalStateException: bootstrap failed\n\tat com.vpsmanager.app.Bootstrap.run(Bootstrap.kt:42)"
         composeRule.setContent {
             DiagnosticsScreen(initFailures = emptyList(), lastCrash = stackTrace, onClear = {})
         }

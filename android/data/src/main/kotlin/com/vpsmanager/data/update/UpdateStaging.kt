@@ -5,23 +5,18 @@ import android.os.storage.StorageManager
 import java.io.File
 import java.io.IOException
 
-/** Desfecho de [UpdateStaging.reserve]. */
+/** Outcome of [UpdateStaging.reserve]. */
 sealed interface StorageReservation {
 
-    /** There is space (and it was reserved with the system, where the OS allowed it). */
+    /** There is space, reserved with the system where the OS allowed it. */
     data object Reserved : StorageReservation
 
-    /**
-     * It does not fit. [missingBytes] is what is short — the only piece of
-     * information the device's owner can act on, so it reaches the screen in MB.
-     */
+    /** It does not fit. [missingBytes] is shown on screen in MB, since the owner can act on it. */
     data class NotEnoughSpace(val missingBytes: Long) : StorageReservation
 
     /**
-     * The space query failed (a volume with no UUID, the OS refused). We carry
-     * on deliberately: refusing a perfectly good update because a READ did not
-     * work would be trading a real problem for an invented one. A genuinely
-     * full disk is still caught by `hpatchz` and by the installer.
+     * The space query failed (volume without UUID, OS refused). We carry on: a
+     * genuinely full disk is still caught by `hpatchz` and the installer.
      */
     data class Unknown(val reason: String) : StorageReservation
 }
@@ -29,30 +24,19 @@ sealed interface StorageReservation {
 /**
  * The place on disk where the update is assembled.
  *
- * ### `filesDir`, NEVER `cacheDir`
- * Three forces erase `cacheDir` without warning: the system's cleanup under
- * space pressure, app hibernation (which zeroes the cache of unused apps), and
- * — the most treacherous — `PackageInstaller`'s own pre-allocation, which frees
- * space by evicting app caches BEFORE opening the session. In other words:
- * downloading 10 MB into `cacheDir` and then asking the installer for space can
- * delete precisely the file just downloaded. `filesDir` is subject to none of
- * the three.
+ * Uses `filesDir`, NEVER `cacheDir`: cache can be wiped by low-space cleanup,
+ * app hibernation, and `PackageInstaller`'s own pre-allocation, which may evict
+ * the very file just downloaded.
  *
- * `open` (like `TransferRepository`) so a test can make [reserve] answer "out
- * of space" without having to fill the CI machine's disk.
- *
- * ### Names derived from content
- * The artifact and the rebuilt APK are named by their own SHA-256. Two good
- * consequences come free: an interrupted download is found again by name on the
- * next attempt (which is what makes resuming possible after the process dies),
- * and an artifact from an earlier version is never confused with the current
- * one.
+ * Files are named by their SHA-256, so an interrupted download is found again on
+ * the next attempt (resume after process death) and an artifact from another
+ * version is never mistaken for the current one. `open` so tests can fake [reserve].
  */
 open class UpdateStaging(context: Context) {
 
     private val appContext = context.applicationContext
 
-    /** `filesDir/atualizacoes`. Criado sob demanda. */
+    /** `filesDir/atualizacoes`, created on demand. */
     val dir: File
         get() = File(appContext.filesDir, DIR_NAME).also { if (!it.isDirectory) it.mkdirs() }
 
@@ -63,9 +47,8 @@ open class UpdateStaging(context: Context) {
     fun rebuiltApkFile(apkSha256: String): File = File(dir, "$apkSha256.apk")
 
     /**
-     * An empty base for the full path. The "full" artifact is a `.hdiff` too
-     * (`hdiffz` against an empty base), so the device has just ONE code path:
-     * always `hpatchz`, changing only which file goes in as the base.
+     * An empty base for the full path. The full artifact is also a `.hdiff`
+     * (against an empty base), so the device has one code path: always `hpatchz`.
      */
     fun emptyBaseFile(): File = File(dir, EMPTY_BASE_NAME).also {
         if (!it.isFile || it.length() != 0L) {
@@ -75,14 +58,10 @@ open class UpdateStaging(context: Context) {
     }
 
     /**
-     * Asks the system for [bytes] on [dir]'s volume BEFORE starting the
-     * download.
-     *
-     * `getAllocatableBytes` is larger than the naive "free space": it counts
-     * what the system could free by evicting other apps' caches. And
-     * `allocateBytes` actually performs that eviction and reserves the quota,
-     * so the download does not die half-way because another app filled the
-     * disk.
+     * Asks the system for [bytes] on [dir]'s volume BEFORE the download.
+     * `getAllocatableBytes` includes cache the system could evict, and
+     * `allocateBytes` performs that eviction and reserves the space so the
+     * download does not die half-way.
      */
     open fun reserve(bytes: Long): StorageReservation {
         if (bytes <= 0) return StorageReservation.Reserved
@@ -108,11 +87,9 @@ open class UpdateStaging(context: Context) {
     }
 
     /**
-     * Deletes everything in [dir] that is not in [keep].
-     *
-     * Called when the target changes (a new release came out mid-way) and after
-     * installing. It is NOT called when a download fails: the partial file is
-     * precisely what the next attempt resumes from.
+     * Deletes everything in [dir] that is not in [keep]. Called when the target
+     * changes and after installing, never after a failed download, since the
+     * partial file is what the next attempt resumes from.
      */
     fun sweep(keep: Set<File>) {
         val keepPaths = keep.map { it.absolutePath }.toSet()

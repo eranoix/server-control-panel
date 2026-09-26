@@ -76,7 +76,7 @@ import com.vpsmanager.data.jira.JiraColumn
 import com.vpsmanager.data.jira.JiraBoard
 import kotlinx.coroutines.delay
 
-/** Test tags — the UI and the test both read from here, never duplicated literals. */
+/** Test tags shared by the UI and the tests. */
 internal const val TAG_BOARD = "jira-quadro"
 internal const val TAG_DRAGGING = "jira-cartao-arrastando"
 
@@ -86,33 +86,11 @@ private const val VISIBLE_COLUMNS = 3
 /**
  * The Jira kanban board.
  *
- * ## Three columns on screen, and why that changes everything
+ * Three narrow columns are shown at once (about 125 dp each on a 411 dp screen) so the board
+ * shows where work piles up; hence the compact [BoardCard]. While dragging, the drop target is
+ * the highlighted column under the finger; edge scrolling only matters with more than three.
  *
- * The first version showed ONE column per page, with the next one peeking at
- * the edge — which is, incidentally, what Trello, official Jira and most
- * kanban apps do on a phone. And it is bad: a board exists to show WHERE the
- * work has piled up, and one column at a time is a list with tabs.
- *
- * The alternative products reach for when they want the whole board is to zoom
- * out: narrow column, compact card. That is the path taken here. On a 411 dp
- * screen, three columns give about 125 dp each — and that is why the card lost
- * its labels, its priority and its spelled-out status (see [BoardCard]).
- * Less per card, more cards in view.
- *
- * ## And dragging becomes trivial
- *
- * With every column on screen, the destination is **the column under the
- * finger** — no paging, no edge timer, no guessing where the board was about
- * to turn. The column beneath the card is highlighted while it is in the air,
- * so dropping is never a bet. Edge scrolling still exists, but it only serves
- * boards with MORE than three columns.
- *
- * ## Why there is no pull-to-refresh
- *
- * Pulling down at the top of the list would compete with the vertical drag of
- * a card that has just been picked up. Refreshing is rare enough to live in a
- * button, and an ambiguous gesture on a board where the other gesture MOVES
- * real work would be expensive the day the tie-break got it wrong.
+ * There is no pull-to-refresh because it would compete with dragging a card vertically.
  */
 @Composable
 fun JiraBoardRoute(
@@ -213,10 +191,7 @@ private fun Board(
     val scroll = rememberScrollState()
     val haptics = LocalHapticFeedback.current
 
-    // Edge scrolling only makes sense when there are MORE columns than fit.
-    // With three on a three-column board the finger already reaches everything,
-    // and a board that slides by itself mid-drag would be motion nobody asked
-    // for.
+    // Edge scrolling only when there are more columns than fit on screen.
     val edge = if (columns.size > VISIBLE_COLUMNS) dragState.edge() else null
     LaunchedEffect(edge) {
         if (edge == null) return@LaunchedEffect
@@ -252,9 +227,7 @@ private fun Board(
             }
 
             board.rejection?.let { reason ->
-                // Jira's refusal takes the place of the cards, not of the
-                // whole screen: the controls stay up so the filter that caused
-                // the refusal can be changed.
+                // The controls stay visible so the filter that caused the refusal can be changed.
                 Text(
                     text = reason,
                     style = MaterialTheme.typography.bodySmall,
@@ -276,9 +249,7 @@ private fun Board(
             val target = dragState.targetColumn()
 
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                // The column width is whatever the screen has left, divided
-                // by three. It is not an aesthetic choice: it is the sum that
-                // makes "see all three at once" fit.
+                // Width is sized so exactly three columns fit on screen.
                 val gap = 6.dp
                 val margin = 8.dp
                 val width = (maxWidth - margin * 2 - gap * (VISIBLE_COLUMNS - 1)) / VISIBLE_COLUMNS
@@ -302,10 +273,7 @@ private fun Board(
                             onSelect = vm::toggleSelection,
                             onPick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
                             onDrop = { card ->
-                                // The destination is the column under the
-                                // finger AT THE MOMENT it lifts. Dropping
-                                // outside all of them moves nothing — that is
-                                // "I changed my mind".
+                                // Target is the column under the finger on release; outside all columns, nothing moves.
                                 dragState.targetColumn()?.let { vm.move(card.key, it) }
                             },
                         )
@@ -314,9 +282,7 @@ private fun Board(
             }
         }
 
-        // The floating card lives at the ROOT, above everything: inside the
-        // column it would be clipped at the column's bounds — precisely the
-        // bounds the gesture exists to cross.
+        // The floating card is drawn at the root; inside a column it would be clipped to its bounds.
         dragState.card?.let { card ->
             val density = LocalDensity.current
             BoardCard(
@@ -326,9 +292,6 @@ private fun Board(
                     .graphicsLayer {
                         translationX = dragState.originInRoot.x + dragState.offset.x
                         translationY = dragState.originInRoot.y + dragState.offset.y
-                        // Lifted off the board: slightly larger and with a
-                        // shadow, so it is not confused with the stationary
-                        // cards underneath it.
                         scaleX = 1.06f
                         scaleY = 1.06f
                         shadowElevation = 18f
@@ -341,11 +304,8 @@ private fun Board(
 }
 
 /**
- * One column: a header with a label and a count, and the list of cards.
- *
- * [highlighted] is the column under the finger during a drag. The outline exists
- * because dropping without it would be a bet — at 125 dp wide, the difference
- * between "I am over the second" and "I am over the third" is millimetres.
+ * One column: header with label and count, then the cards. [highlighted] marks the drop
+ * target during a drag, since narrow columns make the target hard to judge.
  */
 @Composable
 private fun BoardColumn(
@@ -428,15 +388,13 @@ private fun BoardColumn(
                     selected = card.key in selection,
                     onSelect = { onSelect(card.key) },
                     modifier = Modifier
-                        // The original card stays faded in place while the
-                        // clone travels: removing it would make the column
-                        // shrink and the cards below jump mid-gesture.
+                        // Keep the original faded in place so the column does not reflow mid-drag.
                         .alpha(if (shown) 0.25f else 1f)
                         .draggable(
                             state = dragState,
                             card = card,
                             column = column.label,
-                            // While multi-select is on, the tap has another owner.
+                            // In multi-select, taps select instead of dragging.
                             enabled = !selecting,
                             onPick = onPick,
                             onDrop = onDrop,
@@ -500,17 +458,8 @@ private fun ControlsBar(
                 }
             }
 
-            // The filters come from the SERVER, labels and all. A fixed list
-            // here would go stale on its own the day the panel gained a new
-            // filter — which is exactly how the two surfaces diverged last
-            // time.
-            //
-            // They sit on the SAME line as the project and the buttons: the
-            // previous version spent two bands of height on rows of similar
-            // pills — one of filters, one of columns — which together ate a
-            // fifth of the screen and were mistaken for each other. The column
-            // row is gone because the columns are now in plain sight; this one
-            // moved down here.
+            // Filters and their labels come from the server so they stay in sync with the web
+            // panel. They share the project row to save vertical space.
             Row(
                 modifier = Modifier
                     .weight(1f)

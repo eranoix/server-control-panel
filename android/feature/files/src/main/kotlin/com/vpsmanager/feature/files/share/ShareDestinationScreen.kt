@@ -31,16 +31,10 @@ import com.vpsmanager.feature.files.transfer.PERCENT_UNKNOWN
 import com.vpsmanager.feature.files.transfer.TransferViewModel
 
 /**
- * The screen `ShareTargetActivity` hosts: shows what another app
- * just shared, offers "Enviar para a pasta padrão" (the inbox, zero extra
- * taps) or "Escolher pasta" (this same module's `FileBrowserScreen` reused in
- * `pickMode`), then renders per-item upload progress and, on completion, the
- * exact server path each item landed at -- never a generic "concluído".
+ * Hosted by `ShareTargetActivity`: shows the shared items, lets the user upload to the inbox
+ * or pick a folder, then shows per-item progress and the exact server path each item landed at.
  *
- * Uploads are enqueued exclusively through [TransferViewModel.startUpload],
- * the same engine and entry point built for the file browser's manual
- * "Enviar" action -- this screen never talks to `UploadWorker`/
- * `TransferRepository` directly, only decides which `destDir` to pass.
+ * Uploads go only through [TransferViewModel.startUpload]; this screen just chooses `destDir`.
  */
 @Composable
 fun ShareDestinationScreen(
@@ -51,9 +45,7 @@ fun ShareDestinationScreen(
     transferViewModel: TransferViewModel = viewModel(),
 ) {
     val step by viewModel.step.collectAsStateWithLifecycle()
-    // Disambiguated once here so the list's display name, its LazyColumn key,
-    // the upload filename and the per-item WorkManager query all agree on the
-    // same already-unique name -- see disambiguateSharedItems's own doc.
+    // Disambiguated once so the list key, upload filename and WorkManager query share one unique name.
     val items = remember(sharedItems) { disambiguateSharedItems(sharedItems) }
 
     when (val currentStep = step) {
@@ -137,11 +129,7 @@ private fun UploadingContent(
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Enqueues once per (destDir, item set) -- WorkManager's own
-    // ExistingWorkPolicy.KEEP inside TransferViewModel.startUpload already
-    // makes a repeat call for the same destDir/filename a no-op, but keying
-    // this LaunchedEffect on destDir avoids re-issuing the calls on every
-    // recomposition regardless.
+    // Keyed on destDir so recomposition does not re-issue the uploads (KEEP policy also dedupes).
     LaunchedEffect(destDir) {
         items.forEach { item ->
             transferViewModel.startUpload(

@@ -15,83 +15,45 @@ robolectric = "4.16.1"
 androidxTestCore = "1.7.0"
 androidxTestRunner = "1.7.0"
 androidxTestExtJunit = "1.3.0"
-# Confirmado no maven-metadata.xml de dl.google.com em 2026-09-05 (mesmo trem
-# de release de androidx.test:core/runner acima).
 androidxTestRules = "1.7.0"
 androidxTestUiautomator = "2.4.0"
 coil = "2.7.0"
-# leitor de video/audio das mensagens do WhatsApp. 1.11.0 e a ultima
-# estavel (verificado no maven-metadata.xml do dl.google.com em 2026-09-05) --
-# media3-exoplayer, media3-ui e media3-datasource-okhttp compartilham essa
-# mesma versao.
+# WhatsApp video/audio playback; exoplayer, ui and datasource-okhttp share this version.
 media3 = "1.11.0"
-# io.github.rosemoe (LGPL-2.1-or-later) -- NAO usar o grupo antigo
-# io.github.Rosemoe.sora-editor (congelado em 0.23.6, sem mais correcoes).
+# Group io.github.rosemoe. Do not use the old io.github.Rosemoe.sora-editor group (frozen at 0.23.6).
 soraEditor = "0.24.4"
-# Fixado em 1.23.8 (grupo io.gitlab.arturbosch.detekt) -- API estavel que
-# BffOnlyNetworkClientRule usa (requiresTypeResolution/BindingContext). O
-# grupo mais novo dev.detekt (2.x, K2) tem API diferente/instavel.
+# Pinned to the io.gitlab.arturbosch.detekt group: BffOnlyNetworkClientRule
+# relies on its type-resolution API, which differs in the newer dev.detekt 2.x.
 detekt = "1.23.8"
 compileSdk = "37"
 targetSdk = "36"
-# Frota confirmada 100% Android 14+ (~20 aparelhos admin, pareados por QR) — sem
-# ganho de compatibilidade em baixar o piso e custo real em mantê-lo baixo.
-# Decisão travada, não rederivar.
+# The whole device fleet runs Android 14+, so a lower floor buys nothing. Settled decision.
 minSdk = "34"
-# NDK r27d — Zig and the pinned Ghostty commit live in
-# android/terminal-engine/toolchain.properties (version catalogs cannot
-# express a git sha or a non-Maven toolchain version).
+# NDK r27d. Zig and the pinned Ghostty commit live in
+# android/terminal-engine/toolchain.properties (catalogs cannot express them).
 ndk = "27.3.13750724"
-# minSdk 34 ja tem o provider nativo de Credential Manager no framework —
-# nao precisa de androidx.credentials:credentials-play-services-auth (esse
-# artefato so importa para repor o provider em API < 28/34 via Play
-# Services, que nao existe piso aqui).
+# minSdk 34 has the framework Credential Manager provider, so
+# credentials-play-services-auth is not needed.
 androidxCredentials = "1.6.0"
-# CameraX (nao ML Kit) para o scanner de QR do pareamento: decodifica com
-# zxing-core puro-JVM em vez de com.google.mlkit:barcode-scanning para nao
-# trazer Play Services como dependencia transitiva so para ler um QR code.
+# Pairing QR scanner uses CameraX plus pure-JVM zxing instead of ML Kit, to avoid Play Services.
 cameraX = "1.6.2"
 zxingCore = "3.5.4"
-# EncryptedSharedPreferences (Keystore AES256_GCM) para ServerConfigStore —
-# mesmo mecanismo ja designado para o futuro TokenStore (03-07), pra o
-# endereco do servidor nunca ser menos durável/protegido que as credenciais
-# que serao enviadas pra ele.
+# EncryptedSharedPreferences for ServerConfigStore, so the server address is
+# protected as well as the credentials sent to it.
 securityCrypto = "1.1.0"
-# androidx.work para o motor de transferencia (download/upload resumavel):
-# execucao durável em background que sobrevive a morte de processo, com
-# retry/cancel nativos -- unico mecanismo desse tipo no app ate aqui.
+# WorkManager for resumable downloads/uploads that survive process death.
 androidxWork = "2.11.2"
 androidxGlance = "1.1.1"
-# FCM data-message receipt. No `google-services` plugin is applied
-# anywhere in this build (no `google-services.json` exists yet — see
-# 06-04-SUMMARY.md's provisioning gap, mirroring the server's own unset
-# `fcm_service_account` vault secret): the SDK compiles and the receiver
-# class is fully wired, but `FirebaseMessaging.getInstance()` cannot obtain a
-# default `FirebaseApp` until a human provisions the Firebase project and
-# either adds `google-services.json` + the plugin, or the app is changed to
-# call `FirebaseApp.initializeApp(context, FirebaseOptions...)` explicitly.
+# FCM data messages. No google-services plugin or google-services.json yet, so
+# FirebaseMessaging.getInstance() has no default FirebaseApp until the Firebase
+# project is provisioned (or FirebaseApp.initializeApp is called explicitly).
 firebaseBom = "34.4.0"
-# io.getstream:stream-webrtc-android — fork mantido do WebRTC oficial do
-# Google (org.webrtc.*), publicado pela GetStream a partir do AOSP upstream
-# em vez do artefato non-official do JitPack que a maioria dos tutoriais usa.
-# 1.3.10 verificado em 2026-09-05 no Maven Central (repo1.maven.org): POM
-# aponta group io.getstream, o AAR baixado e inspecionado (unzip -l +
-# classes.jar via javap) contem as 429 classes esperadas sob org.webrtc/
-# org.webrtc.audio/org.webrtc.voiceengine (PeerConnectionFactory,
-# Camera2Capturer, DefaultVideoEncoderFactory/DecoderFactory etc.) e as .so
-# nativas das 4 ABIs (arm64-v8a, armeabi-v7a, x86, x86_64). Só a variante
-# `-ktx` (extensions Kotlin sobre a mesma factory) é consumida por este
-# módulo; `-compose` é declarada para 11-03/11-04 (composables de tile/PiP)
-# mas não referenciada em nenhum build.gradle.kts ainda.
+# GetStream's maintained build of Google's WebRTC (org.webrtc.*), not the
+# unofficial JitPack artifact. Only the -ktx variant is consumed so far.
 streamWebrtc = "1.3.10"
-# androidx.datastore:datastore-preferences para o tamanho de fonte do
-# terminal: 1.2.1 verificado em 2026-09-05 como a ultima estavel no
-# maven-metadata.xml de dl.google.com/dl/android/maven2 (1.3.0-alpha10 e a
-# pre-release mais nova). Preferencia puramente local, sem chamada de rede.
+# Terminal font size preference (local only).
 datastore = "1.2.1"
-# androidx.biometric para o bloqueio do app (PreferenciasDeSeguranca).
-# 1.1.0 e a ultima estavel; as 1.2.0-alpha nao entram porque este e o
-# caminho que decide se a pessoa entra na propria ferramenta de trabalho.
+# App lock. Stay on stable: this gates access to the app, so no alpha releases.
 biometric = "1.1.0"
 
 [libraries]
@@ -108,17 +70,9 @@ compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview"
 compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 compose-foundation = { module = "androidx.compose.foundation:foundation" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
-# Icones da gaveta de navegacao (VpsmIcons/AppDrawer). SOMENTE o conjunto
-# "core" (~48 icones, 823 KB de aar) -- material-icons-extended pesa 35,7 MB.
-# O release agora liga R8 (app/build.gradle.kts), que removeria os icones nao
-# referenciados do conjunto estendido; ainda assim o "core" continua sendo a
-# escolha certa, porque cada icone e um objeto com ImageVector construido em
-# funcao de nivel superior -- o shrinker preserva o grafo inteiro de qualquer
-# um que seja alcancado, e trocar por "extended" so acrescentaria 35 MB de
-# risco para nao ganhar nada. Os glifos que o core nao tem sao desenhados em
-# :design-system a partir dos mesmos path data oficiais do Material -- ver
-# VpsmIcons.kt.
-# Sem version.ref de proposito: a versao vem do compose-bom.
+# Core icon set only (823 KB); material-icons-extended is 35.7 MB. Missing
+# glyphs are drawn in :design-system from the official Material paths (VpsmIcons.kt).
+# No version.ref on purpose: the version comes from compose-bom.
 compose-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
@@ -133,22 +87,17 @@ robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectr
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
 androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestExtJunit" }
-# GrantPermissionRule (11-05: LockScreenAnswerDeclineTest grants CAMERA/RECORD_AUDIO so
-# VpsmConnection.onAnswer's real permission check passes deterministically on device).
+# GrantPermissionRule, so on-device tests pass the real CAMERA/RECORD_AUDIO checks deterministically.
 androidx-test-rules = { module = "androidx.test:rules", version.ref = "androidxTestRules" }
-# UiDevice.sleep()/wakeUp() -- the only way an app under test can simulate a real screen-off/on
-# cycle (Intent.ACTION_SCREEN_OFF is a protected broadcast; sendBroadcast on it throws
-# SecurityException). Used by 11-05's BackgroundedCallSurvivesTest.
+# UiDevice.sleep()/wakeUp(): the only way to simulate screen off/on in a test
+# (ACTION_SCREEN_OFF is a protected broadcast).
 androidx-test-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "androidxTestUiautomator" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
-# coil-video (nao coil-compose) -- so :data a usa, para o VideoFrameDecoder
-# do ImageLoader autenticado (com.vpsmanager.data.media). Traz coil-base
-# transitivamente, sem trazer Compose.
+# Used only by :data for the authenticated ImageLoader's VideoFrameDecoder; pulls coil-base without Compose.
 coil-video = { module = "io.coil-kt:coil-video", version.ref = "coil" }
 media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
 media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
-# So :data referencia este modulo (constroi o okhttp3.Call.Factory do
-# OkHttpDataSource ali dentro, atras de com.vpsmanager.data.media).
+# Referenced only by :data (com.vpsmanager.data.media).
 media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3" }
 sora-editor-bom = { group = "io.github.rosemoe", name = "editor-bom", version.ref = "soraEditor" }
 sora-editor = { group = "io.github.rosemoe", name = "editor" }
@@ -161,21 +110,16 @@ androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxingCore" }
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "androidxWork" }
-# Glance: o widget da tela inicial. Compose para RemoteViews — sem ele, um
-# widget e XML + RemoteViews a mao, que e outra linguagem de UI para
-# manter em paralelo com o resto do app.
+# Glance: the home screen widget, written in Compose instead of hand-built RemoteViews.
 androidx-glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "androidxGlance" }
 androidx-glance-material3 = { module = "androidx.glance:glance-material3", version.ref = "androidxGlance" }
-# work-testing: WorkManagerTestInitHelper para Robolectric — sem executor real
-# de background, um TransferViewModel/ShareDestinationViewModel construído em
-# teste teria WorkManager.getInstance() lançando (não inicializado).
+# WorkManagerTestInitHelper for Robolectric; without it WorkManager.getInstance() throws in tests.
 androidx-work-testing = { module = "androidx.work:work-testing", version.ref = "androidxWork" }
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 stream-webrtc-android = { module = "io.getstream:stream-webrtc-android", version.ref = "streamWebrtc" }
 stream-webrtc-android-ktx = { module = "io.getstream:stream-webrtc-android-ktx", version.ref = "streamWebrtc" }
-# Declarada, não consumida por nenhum módulo ainda — reservada para
-# 11-03/11-04 (tiles/PiP em Compose). Ver nota de verificação acima.
+# Declared but not used by any module yet.
 stream-webrtc-android-compose = { module = "io.getstream:stream-webrtc-android-compose", version.ref = "streamWebrtc" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "biometric" }

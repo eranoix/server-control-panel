@@ -38,24 +38,11 @@ import com.vpsmanager.data.jira.NewIssue
 internal const val TAG_CREATION_SHEET = "jira-folha-criacao"
 
 /**
- * Creating an issue.
+ * Issue creation sheet for quick capture.
  *
- * ## Everything that can be listed is listed
- *
- * Type, priority and assignee come from the server as a LIST — none of them is
- * a text field. A typed type gets the accent wrong, the capital wrong, and the
- * name of something that project does not have, and the mistake only shows on
- * submit, after filling in the rest. It is the same rule the rest of the
- * application follows: typing is the last resort.
- *
- * ## What is left out, and why
- *
- * Parent epic, components, versions and story points exist on the web panel
- * and are not here. It is not an oversight: they are refinement fields, done
- * in a planning session with a whole keyboard at hand. Creating from the phone
- * is recording what has just come up before it is forgotten — summary, type
- * and who for. Stuffing eight optional fields into this sheet would make quick
- * capture cost as much as refinement.
+ * Type, priority and assignee are picked from server-provided lists, never typed, so invalid
+ * values cannot be entered. Refinement fields (epic, components, versions, points) are
+ * intentionally left to the web panel.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,9 +60,7 @@ internal fun CreationSheet(
     var assignee by remember { mutableStateOf<com.vpsmanager.data.jira.JiraPerson?>(null) }
     var peopleMenu by remember { mutableStateOf(false) }
 
-    // The first type the project offers comes pre-selected: a form that
-    // opens with the mandatory field empty makes everybody tap twice in the
-    // same place before typing anything at all.
+    // Pre-select the first type so the required field is never empty on open.
     if (type.isBlank() && state.meta.types.isNotEmpty()) {
         type = state.meta.types.first()
     }

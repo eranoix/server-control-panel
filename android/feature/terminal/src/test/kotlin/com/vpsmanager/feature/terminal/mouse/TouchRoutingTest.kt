@@ -19,14 +19,9 @@ private class RecordingSink : ByteSink {
 }
 
 /**
- * A fake encoder that behaves like the real one: it returns `null` for as long
- * as the "remote program" has not asked for mouse tracking.
- *
- * That is the rule the app was violating. The real encoder
- * (`TerminalEngine.encodeMouse`) returns zero bytes when no tracking is
- * active, and the proof against the real libghostty-vt lives in
- * `:terminal-engine`'s `MousePasteEncodingTest` — what is pinned down here is
- * the CONTROLLER's behaviour in the face of those two answers.
+ * Fake encoder that, like the real one, returns `null` until the remote program asks
+ * for mouse tracking. The real encoder is covered by `MousePasteEncodingTest` in
+ * `:terminal-engine`; this tests the controller's reaction.
  */
 private class FakeEncoder(var wantsMouse: Boolean) : MouseEventEncoder {
     val actions = mutableListOf<MouseAction>()
@@ -49,28 +44,18 @@ private class FakeEncoder(var wantsMouse: Boolean) : MouseEventEncoder {
 }
 
 /**
- * The defect the app's owner reported: *"the mouse feature is producing crazy
- * text in the terminal"*.
- *
- * The cause was a MANUAL switch: set to "Mouse", the app emitted mouse
- * sequences into the stream whether or not anything was there to interpret
- * them. Since a terminal application has to ASK for tracking (DECSET
- * 1000/1002/1003) and a `bash` prompt never does, the bytes reached the shell
- * as TEXT and appeared typed on the command line.
- *
- * These tests pin down both sides: nothing goes out when nobody asked, and
- * what does go out when they did is what the program expects.
+ * Mouse reports go out only when the remote program asked for tracking (DECSET
+ * 1000/1002/1003); otherwise they reach the shell as garbage text. When requested,
+ * the bytes must be what the program expects.
  */
 class TouchRoutingTest {
-
-    // ---- Routing: the state in charge is the terminal's, not the app's ----
 
     @Test
     fun noProgramAskingForMouse_gestureAlwaysBelongsToApp() {
         val routing = TouchRouting { false }
 
-        assertFalse("não há mouse pra relatar", routing.programWantsMouse())
-        assertTrue("o gesto é do app: seleção e teclado", routing.tapBelongsToApp())
+        assertFalse("there is no mouse to report", routing.programWantsMouse())
+        assertTrue("the gesture belongs to the app (selection and keyboard)", routing.tapBelongsToApp())
     }
 
     @Test
@@ -78,30 +63,19 @@ class TouchRoutingTest {
         val routing = TouchRouting { true }
 
         assertTrue(routing.programWantsMouse())
-        assertFalse("dentro de um htop o toque é clique, não seleção", routing.tapBelongsToApp())
+        assertFalse("inside htop a tap is a click, not a selection", routing.tapBelongsToApp())
     }
 
     @Test
     fun noPreferenceCanOverrideRemoteProgram() {
-        // This is the assertion that pins down the REMOVAL the app's owner
-        // asked for.
-        //
-        // There used to be a two-position `MouseTouchPreference` here, heir to
-        // the manual mouse switch. It forced people to understand DECSET
-        // 1000/1002/1003 in order to decide a rare case, and it is gone. What
-        // must not come back is the possibility of the app CONTRADICTING the
-        // remote program: if the program asked for the mouse, the touch is
-        // its; if it did not, the touch is the app's. No third option, no
-        // stored state, nothing to toggle.
-        //
-        // The way to select inside a full-screen program still exists and does
-        // not come through here: it is the LONG PRESS, which anchors the
-        // selection ahead of any routing.
+        // Ownership depends only on whether the remote program asked for the mouse;
+        // no app preference may contradict it. Selecting inside a full-screen
+        // program uses a long press, which is handled before routing.
         val requesting = TouchRouting { true }
         val notRequesting = TouchRouting { false }
 
         assertEquals(
-            "o dono do gesto é função APENAS do estado do emulador",
+            "the gesture owner depends only on the emulator state",
             listOf(false, true),
             listOf(requesting.tapBelongsToApp(), notRequesting.tapBelongsToApp()),
         )
@@ -109,19 +83,16 @@ class TouchRoutingTest {
 
     @Test
     fun stateIsReadOnEachQuery_notRemembered() {
-        // An `htop` opening turns tracking on; one closing turns it off.
-        // Nobody tells the app — it has to re-read.
+        // Programs toggle tracking without notifying the app, so it must re-read.
         var requesting = false
         val routing = TouchRouting { requesting }
 
         assertTrue(routing.tapBelongsToApp())
         requesting = true
-        assertFalse("abriu o htop: o toque passa a ser dele", routing.tapBelongsToApp())
+        assertFalse("htop opened, so the tap belongs to it", routing.tapBelongsToApp())
         requesting = false
-        assertTrue("saiu do htop: o toque volta a ser do app", routing.tapBelongsToApp())
+        assertTrue("htop exited, so the tap belongs to the app again", routing.tapBelongsToApp())
     }
-
-    // ---- The controller: nothing goes out when the encoder says "nothing" ----
 
     @Test
     fun trackingOff_noBytesSent() {
@@ -135,10 +106,10 @@ class TouchRoutingTest {
         controller.onDrag(Offset(35f, 45f), DragPhase.END)
 
         assertTrue(
-            "sem rastreamento ativo nenhum byte pode chegar ao PTY — era exatamente esse lixo que aparecia na linha de comando",
+            "with no active tracking no bytes may reach the PTY (they would show as garbage on the command line)",
             sink.sent.isEmpty(),
         )
-        assertFalse("mas o codificador foi consultado: quem decide é ele", encoder.actions.isEmpty())
+        assertFalse("but the encoder was consulted, since it decides", encoder.actions.isEmpty())
     }
 
     @Test
@@ -149,7 +120,7 @@ class TouchRoutingTest {
 
         controller.onTap(Offset(15f, 25f), taps = 1)
 
-        assertEquals("um clique é pressiona + solta", 2, sink.sent.size)
+        assertEquals("a click is press plus release", 2, sink.sent.size)
         assertEquals(listOf(MouseAction.PRESS, MouseAction.RELEASE), encoder.actions)
         assertArrayEquals("\u001b[<0;1;1M".toByteArray(Charsets.US_ASCII), sink.sent[0])
         assertArrayEquals("\u001b[<0;1;1m".toByteArray(Charsets.US_ASCII), sink.sent[1])
@@ -174,9 +145,8 @@ class TouchRoutingTest {
 
     @Test
     fun doubleTapInMouseMode_isTwoClicks_notWordSelection() {
-        // Double-tap selection is the APP's gesture. When the program owns
-        // the touch, two quick taps are two clicks — which is what an `htop`
-        // or a text-mode file manager expects.
+        // When the program owns the touch, two quick taps are two clicks, not a word
+        // selection.
         val encoder = FakeEncoder(wantsMouse = true)
         val sink = RecordingSink()
         val controller = MouseReportGestureController(encoder, sink)
@@ -193,9 +163,8 @@ class TouchRoutingTest {
 
     @Test
     fun encoderReturningEmptyArray_producesNoFrame() {
-        // Movement within the same cell: the native encoder returns zero
-        // bytes. Sending an empty frame to the PTY is not harmless — it is
-        // network noise per pixel of drag.
+        // The native encoder returns zero bytes for movement within a cell; sending
+        // empty frames would be network noise.
         val sink = RecordingSink()
         val controller = MouseReportGestureController(
             { _, _, _, _ -> ByteArray(0) },
@@ -209,14 +178,8 @@ class TouchRoutingTest {
 
     @Test
     fun moveWithinSameCell_doesNotRepeatReport() {
-        // A dragging finger produces one touch event per frame — dozens of
-        // them within the same cell. Without deduplication each would become a
-        // WebSocket frame and a PTY write, and the repeated report says
-        // nothing new: the program already knows where the pointer is.
-        //
-        // libghostty-vt does NOT do that suppression in mode 1002 even with
-        // `TRACK_LAST_CELL` on — measured on the emulator, see
-        // `MousePasteEncodingTest.encoderDoesNotDedupMovesInMode1002`.
+        // Deduplicate moves within a cell ourselves: libghostty-vt does not in mode
+        // 1002 (see `MousePasteEncodingTest.encoderDoesNotDedupMovesInMode1002`).
         val encoder = FakeEncoder(wantsMouse = true)
         val sink = RecordingSink()
         val controller = MouseReportGestureController(encoder, sink)
@@ -227,7 +190,7 @@ class TouchRoutingTest {
         controller.onDrag(Offset(18f, 26f), DragPhase.MOVE)
 
         assertEquals(
-            "pressiona + UM movimento, por mais que o dedo ande dentro da célula",
+            "press plus one move, however far the finger moves within the cell",
             2,
             sink.sent.size,
         )
@@ -249,8 +212,7 @@ class TouchRoutingTest {
 
     @Test
     fun newDrag_doesNotInheritPreviousMemory() {
-        // Without this reset, dragging twice in a row to the same cell would
-        // make the second drag lose its first movement.
+        // Without a reset, a second drag to the same cell would lose its first move.
         val encoder = FakeEncoder(wantsMouse = true)
         val sink = RecordingSink()
         val controller = MouseReportGestureController(encoder, sink)
@@ -263,6 +225,6 @@ class TouchRoutingTest {
         controller.onDrag(Offset(10f, 20f), DragPhase.START)
         controller.onDrag(Offset(12f, 22f), DragPhase.MOVE)
 
-        assertEquals("o movimento do novo arraste tem que sair", 2, sink.sent.size)
+        assertEquals("the new drag's move must be sent", 2, sink.sent.size)
     }
 }

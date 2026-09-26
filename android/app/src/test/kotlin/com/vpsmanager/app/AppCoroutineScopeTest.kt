@@ -18,25 +18,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * A sibling audit flagged that [VpsManagerApplication.sweepAbandonedTransfers] runs on
- * `Dispatchers.IO` inside `appScope`, and `appScope` had no [kotlinx.coroutines.CoroutineExceptionHandler].
- * Confirmed real: [Bootstrap.step]'s try/catch only wraps the synchronous `launch()` call itself
- * (which never throws), not the coroutine body -- so a throw inside that body used to escape
- * straight to the thread's uncaught-exception handler, exactly like an unguarded crash, unlike
- * every OTHER `Bootstrap.step` failure which degrades silently. These tests pin [appCoroutineScope]
- * as the fix: it gives this scope the same isolation contract as [Bootstrap.step].
+ * [appCoroutineScope] gives background coroutines the same isolation as [Bootstrap.step]:
+ * [Bootstrap.step] only wraps the synchronous `launch()`, so without a
+ * [kotlinx.coroutines.CoroutineExceptionHandler] a throw in the coroutine body would crash the app.
  *
- * Uses the plain framework [android.app.Application], not [VpsManagerApplication], on purpose:
- * these tests pin [appCoroutineScope] and [Bootstrap.initFailures] in isolation, not the real
- * app's `onCreate()` wiring -- Robolectric instantiates and calls `onCreate()` on whatever
- * Application the manifest declares for every single test in this module regardless of whether
- * the test asks for it, and [VpsManagerApplication.onCreate] itself launches a background
- * `appScope` coroutine (`sweepAbandonedTransfers`) that touches `WorkManager.getInstance()` --
- * unavailable under Robolectric without [androidx.work.testing.WorkManagerTestInitHelper]. Left
- * on the real Application, that stray coroutine intermittently writes into the very
- * [Bootstrap.initFailures] list these tests assert on, racing the test body. Swapping to the
- * bare Application removes the real app's `onCreate()` (and that race) without touching any
- * production wiring.
+ * Uses the plain [android.app.Application]: [VpsManagerApplication.onCreate] starts a
+ * background coroutine touching WorkManager, which fails under Robolectric and would race
+ * these tests on [Bootstrap.initFailures].
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class)
@@ -60,7 +48,7 @@ class AppCoroutineScopeTest {
         try {
             val scope = appCoroutineScope()
             val job = scope.launch(Dispatchers.IO) {
-                throw IllegalStateException("falha simulada na faxina de transferencias")
+                throw IllegalStateException("simulated failure in the transfer sweep")
             }
             runBlocking { job.join() }
 
@@ -77,7 +65,7 @@ class AppCoroutineScopeTest {
     fun `a coroutine that throws on appCoroutineScope is recorded in Bootstrap initFailures`() {
         val scope = appCoroutineScope()
         val job = scope.launch(Dispatchers.IO) {
-            throw IllegalStateException("EncryptedSharedPreferences indisponivel")
+            throw IllegalStateException("EncryptedSharedPreferences unavailable")
         }
         runBlocking { job.join() }
 
@@ -91,7 +79,7 @@ class AppCoroutineScopeTest {
         val scope = appCoroutineScope()
         var siblingRan = false
 
-        val failing = scope.launch(Dispatchers.IO) { throw RuntimeException("falha um") }
+        val failing = scope.launch(Dispatchers.IO) { throw RuntimeException("failure one") }
         val sibling = scope.launch(Dispatchers.IO) { siblingRan = true }
         runBlocking {
             failing.join()
@@ -111,39 +99,17 @@ class AppCoroutineScopeTest {
     }
 
     /**
-     * Shape of the regression: a `CoroutineScope` with a `SupervisorJob` and
-     * NO `CoroutineExceptionHandler` — the exact construction `appScope` used
-     * before this fix — has nowhere to send the exception, and it escapes to
-     * the thread's default handler.
-     *
-     * ## Why this test NO longer produces a real leak
-     *
-     * It used to: it launched a coroutine that really did blow up. Except
-     * that `kotlinx-coroutines-test`, merely by being on the classpath,
-     * CAPTURES uncaught exceptions globally and reports them on the NEXT
-     * `runTest` as `UncaughtExceptionsBeforeTest`. The result was a suite that
-     * failed on a different test every run — never on this one, always on its
-     * neighbour, with the message "simulated failure" turning up in a test
-     * that has nothing to do with it.
-     *
-     * Restoring `Thread.setDefaultUncaughtExceptionHandler` in the `finally`,
-     * as used to be done, does not solve it: coroutines-test takes another
-     * path.
-     *
-     * The property that matters is still proved, and with no side effect: the
-     * raw scope does NOT have a `CoroutineExceptionHandler` in its context,
-     * and that — and only that — is what the leak follows from. That a
-     * coroutine with no handler escapes to the default handler is the
-     * library's own guarantee, not this project's; what this project has to
-     * guarantee is that its scope HAS a handler, and that is what the
-     * neighbouring test proves.
+     * A plain `SupervisorJob` scope has no `CoroutineExceptionHandler`, so exceptions escape to
+     * the thread's default handler. This checks the context instead of throwing for real,
+     * because `kotlinx-coroutines-test` captures uncaught exceptions globally and would fail
+     * an unrelated later test.
      */
     @Test
-    fun `a construcao pre-correcao nao tem handler nenhum — e por isso vazava`() {
+    fun `a raw supervisor scope has no exception handler, so exceptions escape`() {
         val rawScope = kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.Default)
         assertNull(
-            "um escopo sem CoroutineExceptionHandler nao tem para onde mandar a " +
-                "excecao: ela escapa para o handler padrao da thread",
+            "a scope without a CoroutineExceptionHandler has nowhere to send the " +
+                "exception: it escapes to the thread's default handler",
             rawScope.coroutineContext[kotlinx.coroutines.CoroutineExceptionHandler],
         )
         rawScope.cancel()

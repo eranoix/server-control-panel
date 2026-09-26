@@ -6,51 +6,26 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 
 /**
- * The colour of a family of sections.
+ * The color of a section group, so the grid groups families visually.
  *
- * ## Why the grid needed this
- *
- * The owner sent a photo of thirty blocks: all with the same background, the
- * same circle, the same colour. A grid like that has no **relief** — the eye
- * cannot jump to "the Docker part" or "the Security part", because nothing
- * groups visually what the text already groups in words.
- *
- * The group label was there, written under each block in tiny type. But
- * reading thirty labels to find a family is exactly the work colour does for
- * free.
- *
- * ## The colour belongs to the GROUP, never to the state
- *
- * A rule that cannot be broken: here the colour is **taxonomic** — it says
- * which family the section belongs to. It may not mean "this is fine" or "this
- * has a problem", which is why none of these is the green or the red of state
- * (`vpsmStatusColors`). A red block because it is Security, beside a red block
- * because the disk filled up, would destroy the only language the panel has
- * for saying urgency.
- *
- * ## An unknown group does not invent a colour
- *
- * The server may bring a new group tomorrow — that is the promise of SDUI. A
- * group this map does not know falls back to the theme's neutral, and stays
- * legible. Adding hash-generated colours would give a random palette whose
- * meaning shifts with every new section.
+ * Colors are taxonomic only and must never look like status colors
+ * (`vpsmStatusColors`): red and bright green are reserved for urgency and health.
+ * Unknown groups fall back to the theme primary rather than a generated color.
  */
 @Composable
 @ReadOnlyComposable
 internal fun groupColor(group: String): Color {
     val scheme = MaterialTheme.colorScheme
     return when (group.lowercase().trim()) {
-        // Blue: the machine underneath — what it is and how it is doing.
+        // Blue: the machine itself.
         "system", "sistema" -> Color(0xFF4F8FD9)
-        // Cyan: what runs ON TOP of the machine.
+        // Cyan: what runs on the machine.
         "docker" -> Color(0xFF3BA9B4)
-        // Amber: who gets in, what is kept, what is audited. Amber and not
-        // red on purpose — see the KDoc: red is urgency, not family.
+        // Amber, not red: red means urgency.
         "security", "segurança", "seguranca" -> Color(0xFFC98A2E)
-        // Violet: what happens on its own.
+        // Violet: things that run on their own.
         "automation", "automação", "automacao" -> Color(0xFF8B72D0)
-        // Moss green: what talks to the outside. Desaturated so it is not
-        // mistaken for the green of "everything is fine".
+        // Desaturated green, so it is not read as "healthy".
         "integrations", "integrações", "integracoes" -> Color(0xFF5E9E76)
         else -> scheme.primary
     }

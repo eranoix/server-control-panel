@@ -9,25 +9,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /**
- * How many terminal rows fit on screen.
- *
- * ## Why this exists, when there is already a font size and a line height
- *
- * Because the question people ask is the other one. Nobody opens the terminal on
- * their phone thinking "I want 13 sp type": they think "I want to see the whole
- * output of `docker ps`", which is a count of ROWS. With only a font size,
- * arriving at a number of rows is trial and error — change the size, count the
- * rows, change it again.
- *
- * Here the direction is reversed: you choose the number of rows and the app
- * derives the type size that makes exactly that fit. It is the same move as
- * "fit to page" in a PDF reader.
- *
- * ## [AUTOMATIC] is not "no value"
- *
- * It is the old behaviour, and it remains the default: the font size rules and
- * the number of rows follows from it. Anyone who likes choosing the type loses
- * nothing; anyone who wants to count rows gains direct control.
+ * How many terminal rows fit on screen. The user picks a row count (e.g. to see
+ * all of `docker ps`) and the app derives the font size that fits it, like
+ * "fit to page" in a PDF reader. [AUTOMATIC], the default, keeps the font size
+ * in charge.
  */
 enum class VisibleRows(val lines: Int, val label: String) {
     AUTOMATIC(0, "auto"),
@@ -47,9 +32,8 @@ enum class VisibleRows(val lines: Int, val label: String) {
 }
 
 /**
- * Persisted as an INTEGER, and not by the enum name: here the number IS the
- * meaning. A stored value that stops existing in the list falls back to
- * [VisibleRows.DEFAULT] instead of bringing the screen down.
+ * Persisted as the integer row count, not the enum name. A stored value no longer
+ * in the list falls back to [VisibleRows.DEFAULT].
  */
 class VisibleRowsPreference(
     context: Context,

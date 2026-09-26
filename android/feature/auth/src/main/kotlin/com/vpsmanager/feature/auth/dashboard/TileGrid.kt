@@ -33,30 +33,14 @@ import com.vpsmanager.data.dashboard.Severity
 import com.vpsmanager.designsystem.vpsmStatusColors
 
 /**
- * The dashboard grid: the blocks the person has assembled.
+ * The dashboard grid of chosen tiles.
  *
- * ## Two columns, and not an adaptive grid
+ * Fixed two columns (not adaptive) so numbers stay readable at arm's length;
+ * wide tiles take a full row.
  *
- * The Administração screen uses `GridCells.Adaptive` because there the cards
- * are labels and more of them fit on a wide screen. Here every block is a
- * NUMBER that has to be read at a glance, at arm's length — three columns on
- * a phone would shrink the number to a size that forces you to bring the
- * device closer, which is exactly the gesture a dashboard exists to avoid.
- *
- * ## The wide block takes the whole row
- *
- * A block turns wide when its phrase does not fit in half a screen: a
- * reverted deploy says `hello: rolled_back`, and cut down to `hello: rolle…`
- * it tells you less than not existing at all.
- *
- * ## Why it is NOT a lazy grid
- *
- * This grid lives inside Início's `LazyColumn`. A `LazyVerticalGrid` nested
- * in a `LazyColumn` is handed an infinite maximum height and **breaks at
- * run time** — a classic Compose mistake, not a matter of taste. And there
- * would be no gain here at all: the dashboard is capped at twelve blocks
- * ([ChosenTiles.MAX]), so composing them all at once is cheap and
- * laziness would bring nothing but the defect.
+ * Not a lazy grid: it sits inside Home's `LazyColumn`, where a nested lazy grid
+ * gets infinite height and crashes. With at most [ChosenTiles.MAX] tiles,
+ * composing them all is cheap.
  */
 @Composable
 internal fun TileGrid(
@@ -86,9 +70,7 @@ internal fun TileGrid(
                         )
                     }
                 }
-                // A row with a single narrow block on it (an odd number of
-                // blocks) needs a gap of the same weight, or that block
-                // stretches to the full width and pretends to be a wide one.
+                // Pad a lone narrow tile so it does not stretch to full width.
                 if (line.size == 1 && !line.first().wide) {
                     Box(modifier = Modifier.weight(1f))
                 }
@@ -99,13 +81,8 @@ internal fun TileGrid(
 }
 
 /**
- * Lays the blocks out in rows of two columns, honouring the wide ones.
- *
- * A wide block takes the whole row, so it closes the row in progress before
- * joining. Without that, a wide block after a narrow one would produce a row
- * three columns' worth of weight and the grid would lose its vertical
- * alignment — and the alignment is precisely what lets two numbers be
- * compared at a glance.
+ * Splits tiles into rows of two. A wide tile closes the current row and takes
+ * its own, keeping columns aligned.
  */
 internal fun gridRows(tiles: List<DashboardTile>): List<List<DashboardTile>> {
     val lines = mutableListOf<List<DashboardTile>>()
@@ -130,11 +107,7 @@ internal fun gridRows(tiles: List<DashboardTile>): List<List<DashboardTile>> {
 }
 
 /**
- * One block.
- *
- * The colour comes from the same judgement the rest of the dashboard uses
- * (`vpsmStatusColors`), never from a palette of its own here — two different
- * reds on the same screen teach the eye that red means nothing.
+ * One tile, colored with the shared `vpsmStatusColors` (never a local palette).
  */
 @Composable
 private fun Tile(
@@ -144,11 +117,8 @@ private fun Tile(
     onRemove: () -> Unit,
 ) {
     val statusColors = vpsmStatusColors
-    // The pair comes whole from the design system: background and ink are
-    // chosen together over there so that they have contrast in both themes.
-    // Mixing one pair's container with the theme's `onSurfaceVariant` — which
-    // was the first reflex here — produces exactly the illegible text that
-    // file exists to prevent.
+    // Use container and content from the same pair; mixing in other theme
+    // colors breaks the guaranteed contrast.
     val par = when (tile.severity) {
         Severity.OK -> statusColors.ok
         Severity.WARNING -> statusColors.warning
@@ -160,19 +130,13 @@ private fun Tile(
         colors = CardDefaults.cardColors(containerColor = background, contentColor = ink),
         modifier = Modifier
             .fillMaxWidth()
-            // A minimum height and not a fixed one: the wide block with a
-            // two-line phrase needs room to grow, and a number block needs
-            // not to shrink below what is read at a glance.
+            // Minimum, not fixed, height so two-line text can grow.
             .heightIn(min = 92.dp)
             .clickable(enabled = !editing, onClick = onTap),
     ) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // The icon comes BEFORE the label and is recognised before
-                // it is read — it is what turns the grid into a dashboard
-                // rather than a list with big numbers. No description: the
-                // label is right beside it and that is what the screen reader
-                // should announce.
+                // No content description: the label beside it is what gets announced.
                 Icon(
                     imageVector = tileIcon(tile.id),
                     contentDescription = null,
@@ -189,9 +153,7 @@ private fun Tile(
                     modifier = Modifier.weight(1f),
                 )
                 if (editing) {
-                    // "Tirar" and not an X: an X beside a number on a server
-                    // dashboard is ambiguous enough to be frightening — the
-                    // word says it removes the BLOCK, not what it measures.
+                    // A word, not an X, to make clear it removes the tile, not the resource.
                     TextButton(onClick = onRemove, contentPadding = androidx.compose.foundation.layout.PaddingValues(4.dp)) {
                         Text(text = "Remove", style = MaterialTheme.typography.labelSmall)
                     }
@@ -231,14 +193,8 @@ private fun AddTile(onRequestCatalog: () -> Unit) {
 }
 
 /**
- * The catalogue: everything the server offers today, with whatever is already
- * on the dashboard marked.
- *
- * It shows the ALREADY CHOSEN blocks alongside the rest, disabled, instead of
- * hiding them. A list that vanishes as you pick from it forces you to
- * remember what you have already picked in order to understand why an item
- * went missing — and the answer "because it is already there" is only obvious
- * to whoever wrote the screen.
+ * The tile catalog from the server. Tiles already on the dashboard stay listed
+ * but disabled, so items never seem to vanish.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

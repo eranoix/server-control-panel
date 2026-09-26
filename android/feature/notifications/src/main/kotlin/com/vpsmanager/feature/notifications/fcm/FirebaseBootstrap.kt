@@ -9,79 +9,47 @@ import org.json.JSONObject
 
 private const val TAG_BOOT = "VpsFirebaseBoot"
 
-/** Where the owner drops the file the Firebase console hands over. */
+/** Asset file name the Firebase console config is placed under. */
 internal const val GOOGLE_SERVICES_FILE = "google-services.json"
 
 /**
- * Brings Firebase up from the `google-services.json` placed in
- * `app/src/main/assets/` — and does nothing at all when it is not there.
+ * Initialises Firebase at runtime from `app/src/main/assets/google-services.json`, and does
+ * nothing when the file is absent.
  *
- * ## Why read the file instead of applying the plugin
- *
- * The usual Android route is the `com.google.gms.google-services` plugin,
- * which reads the same file at BUILD time and generates resources. That would
- * be expensive here: the plugin becomes part of everyone's Gradle graph — CI,
- * the emulator, the machine of someone who only wants to compile — and a build
- * that is green today would start depending on downloading and resolving one
- * more plugin. Worse: without the file present, the plugin FAILS the build
- * rather than degrading.
- *
- * Read at runtime, the app keeps compiling and running exactly as it does
- * today for as long as the Firebase project does not exist, and lights up by
- * itself the minute the file appears — without touching any build.
- *
- * ## What happens without the file
- *
- * Nothing, and on purpose: no default `FirebaseApp` is born, and
- * `FirebaseMessaging`/[VpsFirebaseMessagingService] are simply never called by
- * the system. It is the SAME clean degradation as on the server side, where a
- * missing `fcm_service_account` switches sending off and logs the exact
- * instruction instead of bringing the process down. Native push is one extra
- * feature; its absence cannot stop the app.
- *
- * ## The four fields
- *
- * They are the ones `FirebaseOptions` requires for Cloud Messaging, and all of
- * them are in the console's JSON — none is a secret (the client `api_key` is
- * public by design; what authorises SENDING is the service account, which
- * lives only in the server's vault).
+ * Runtime parsing is used instead of the google-services Gradle plugin because the plugin
+ * fails the build when the file is missing; this way push is an optional feature.
+ * None of the four fields is secret: the client `api_key` is public by design, and sending
+ * is authorised by the server's service account.
  */
 object FirebaseBootstrap {
 
-    /**
-     * Returns `true` if Firebase came up. Called once at app boot; it is safe
-     * to call again (the SDK returns the app that already exists).
-     */
+    /** Returns `true` if Firebase started. Safe to call more than once. */
     fun install(context: Context): Boolean {
         val raw = readAsset(context) ?: run {
             Log.i(
                 TAG_BOOT,
-                "push nativo desligado: ponha o $GOOGLE_SERVICES_FILE do console do " +
-                    "Firebase em app/src/main/assets/ (o projeto precisa do pacote " +
+                "native push disabled: put the $GOOGLE_SERVICES_FILE from the Firebase " +
+                    "console in app/src/main/assets/ (the project needs the package " +
                     "tech.northwind.vpsm.app)",
             )
             return false
         }
         val options = optionsFrom(raw, context.packageName) ?: run {
-            // A file that is present and useless is worse than an absent
-            // one: somebody believes they configured it. Which is why this
-            // branch shouts instead of whispering.
-            Log.e(TAG_BOOT, "$GOOGLE_SERVICES_FILE presente mas sem os campos do pacote ${context.packageName}")
+            // A present but unusable file means someone thinks push is configured, so log an error.
+            Log.e(TAG_BOOT, "$GOOGLE_SERVICES_FILE present but has no fields for package ${context.packageName}")
             return false
         }
         return runCatching {
             if (FirebaseApp.getApps(context).isEmpty()) {
                 FirebaseApp.initializeApp(context, options)
             }
-            // Asking for the token NOW is what fires `onNewToken` on the
-            // first run; without this the device would only register itself on
-            // the day FCM decided to rotate the key on its own.
+            // Fetch the token now so the device registers on first run, not only when FCM rotates it.
             FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
                 VpsFirebaseMessagingService.registerTokenDetached(context, token)
             }
             true
         }.getOrElse { e ->
-            Log.e(TAG_BOOT, "Firebase não subiu: ${e.message}")
+            Log.e(TAG_BOOT, "Firebase failed to start: ${e.message}")
             false
         }
     }
@@ -91,13 +59,8 @@ object FirebaseBootstrap {
     }.getOrNull()
 
     /**
-     * Extracts the options from the console's JSON, picking the client whose
-     * `package_name` matches the app's.
-     *
-     * Matching the package is not fussiness: the console file may describe
-     * SEVERAL apps from the same project, and taking the first one would
-     * register the device under the wrong identity — the push would go out and
-     * never arrive.
+     * Extracts options from the console JSON for the client whose `package_name` matches.
+     * The file may list several apps; picking the wrong one means pushes never arrive.
      */
     internal fun optionsFrom(json: String, packageName: String): FirebaseOptions? = runCatching {
         val root = JSONObject(json)

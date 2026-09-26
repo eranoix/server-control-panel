@@ -16,20 +16,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * `bindErrors` is the form-error requirement --
- * JVM-testable without any Compose test infrastructure. `confirmationFor` is
- * Task 1's pure index, re-verified here against a screen shaped like Task
- * 2's Test 5: a standalone `confirm_destructive` plus a table whose
- * `row_actions` names the same `action_id`.
+ * Pure JVM tests for `bindErrors` (form error binding) and `confirmationFor`
+ * (lookup of a `confirm_destructive` by `action_id`).
  */
 class ValidationBindingTest {
 
     private fun jobForm() = SduiComponent.Form(
         id = "job-form",
         fields = listOf(
-            SduiFormField(key = "name", label = "Nome", kind = "text", required = true),
-            SduiFormField(key = "schedule", label = "Agenda", kind = "text", required = true),
-            SduiFormField(key = "kind", label = "Tipo", kind = "select"),
+            SduiFormField(key = "name", label = "Name", kind = "text", required = true),
+            SduiFormField(key = "schedule", label = "Schedule", kind = "text", required = true),
+            SduiFormField(key = "kind", label = "Type", kind = "select"),
         ),
         submitAction = SduiActionRef(actionId = "scheduler.jobs.create"),
     )
@@ -50,18 +47,18 @@ class ValidationBindingTest {
 
     @Test
     fun `an error keyed _confirmation is routed to the confirmation slot, never to an input`() {
-        val bound = bindErrors(jobForm(), mapOf(ConfirmationFieldKey to listOf("confirmação obrigatória")))
+        val bound = bindErrors(jobForm(), mapOf(ConfirmationFieldKey to listOf("confirmation required")))
 
-        assertEquals(listOf("confirmação obrigatória"), bound.confirmation)
+        assertEquals(listOf("confirmation required"), bound.confirmation)
         assertTrue(bound.fieldErrors.isEmpty())
         assertTrue(bound.formLevel.isEmpty())
     }
 
     @Test
     fun `an error keyed to a field the form does not declare is kept, not dropped`() {
-        val bound = bindErrors(jobForm(), mapOf("foo" to listOf("campo desconhecido")))
+        val bound = bindErrors(jobForm(), mapOf("foo" to listOf("unknown field")))
 
-        assertEquals(listOf("campo desconhecido"), bound.formLevel)
+        assertEquals(listOf("unknown field"), bound.formLevel)
         assertTrue(bound.fieldErrors.isEmpty())
         assertTrue(bound.confirmation.isEmpty())
     }
@@ -84,7 +81,7 @@ class ValidationBindingTest {
         val confirmDeclaration = SduiComponent.ConfirmDestructive(
             id = "confirm-delete",
             actionId = "x.delete",
-            message = "Tem certeza?",
+            message = "Are you sure?",
         )
         val table = SduiComponent.Table(
             id = "jobs-table",

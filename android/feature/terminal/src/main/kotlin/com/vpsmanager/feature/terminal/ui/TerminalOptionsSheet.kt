@@ -45,7 +45,7 @@ import com.vpsmanager.feature.terminal.prefs.TypingMode
 import com.vpsmanager.feature.terminal.prefs.TerminalScrollback
 import com.vpsmanager.feature.terminal.prefs.TerminalFontSizePreference
 
-/** Test tag for the options sheet — the requirement is that it costs no height while closed. */
+/** Test tag for the options sheet, which must cost no height while closed. */
 const val OPTIONS_SHEET_TAG = "folha-opcoes-terminal"
 
 /** Label of the button that opens the sheet, on the top bar. */
@@ -57,29 +57,14 @@ const val SHOW_KEYBOARD_LABEL = "Show keyboard"
 /** Test tag for the sheet's keyboard button. */
 const val SHOW_KEYBOARD_TAG = "botao-mostrar-teclado"
 
-/** Label of the sheet's paste button — the path to pasting that does not depend on a selection existing. */
+/** Label of the sheet's paste button, the paste path that needs no selection. */
 const val PASTE_LABEL = "Paste"
 
 /** Test tag for the sheet's paste button. */
 const val PASTE_TAG = "botao-colar"
 
-// THE "CLEAR HISTORY" BUTTON IS GONE, and not as tidying up.
-//
-// It was born as a remedy for damage that was OURS: the session log was being
-// written twice over, with `dtach`'s screen clear inside it, and the replay
-// reproduced that. "Clear history" was how a person escaped it.
-//
-// With the causes fixed — one scribe per session, and the attach clear kept
-// out of the log — the button had nothing left to do. And the owner was
-// explicit: "I need my history live (...) I am never going to want to erase
-// it."
-//
-// He is right, and the lesson outlives this button: offering "erase
-// everything" as the way out of a defect transfers the cost of our mistake to
-// the person, and charges them the highest price available — their own work.
-// If this ever comes back, it has to come back for a reason of theirs, never
-// one of ours.
-
+// There is deliberately no "clear history" button: erasing the user's history
+// is never an acceptable way out of a display defect.
 /** Test tag for each line-spacing step. */
 fun lineSpacingTag(step: TerminalLineSpacing): String = "entrelinha-${step.name}"
 
@@ -91,18 +76,9 @@ fun scrollbackTag(step: TerminalScrollback): String = "scrollback-${step.name}"
 
 
 /**
- * A section header: icon plus title on one line, caption just below.
- *
- * **Why this exists.** Each section of this sheet used to be a
- * `Text(titleMedium)` followed by the controls and a three-line paragraph of
- * explanation. Added up, the paragraphs cost more height than all the controls
- * together, and the whole sheet did not fit on one screen — changing the line
- * spacing meant scrolling past explanations already read a thousand times.
- *
- * The icon does the work the paragraph did: it gives the category at a glance,
- * without spending a line. The caption still exists — information is not noise
- * — but in `bodySmall`, in a secondary colour and kept lean, rather than as a
- * block of text competing with the control.
+ * A section header: icon and title on one line, a short caption below. The icon
+ * gives the category at a glance, keeping explanations short enough for the whole
+ * sheet to fit on one screen.
  */
 @Composable
 private fun SectionHeader(icon: ImageVector, title: String, caption: String? = null) {
@@ -128,12 +104,8 @@ private fun SectionHeader(icon: ImageVector, title: String, caption: String? = n
 }
 
 /**
- * The chips of one choice, in a `FlowRow`.
- *
- * A plain `Row` was the defect visible in the operator's screenshot: with four
- * line-spacing steps the last one ("Loose") did not fit and broke IN THE
- * MIDDLE OF THE WORD, becoming "Loo / se". `FlowRow` moves the whole chip to
- * the line below instead of splitting the word.
+ * The chips of one choice, in a `FlowRow`, so a chip that does not fit moves
+ * whole to the next line instead of breaking mid-word.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -160,28 +132,10 @@ private fun <T> ChipLadder(
 }
 
 /**
- * Where the three EPISODIC controls went — the ones that used to live on
- * permanent rows above the grid: font size, drag mode and session history.
- *
- * There is a single criterion: **someone reading command output does not need
- * them on screen**. Font size and line spacing are adjusted once in the app's
- * lifetime; history is pulled when context is missing. Neither is looked at
- * while reading an `ls -l` — and together the three cost 160.8 dp permanently
- * (measured on the emulator at 420 dpi), nearly four lines of shell.
- *
- * A bottom sheet, and not a dropdown on the top bar, for two reasons: it is
- * the surface a thumb reaches on a device held one-handed, and the loaded
- * history needs a LOT of scrollable room — a dropdown cannot hold a block of
- * session text, a sheet can.
- *
- * The mouse selector ("when the program asks for mouse") used to be here and
- * is GONE: it was a preference about a rare case that forced people to
- * understand the terminal's mouse model in order to decide. Today the gesture's
- * owner is derived from the emulator's real state (see `TouchRouting`),
- * and anyone who needs to select inside an `htop` uses long-press. Line
- * spacing took its place.
- *
- * Closed, the sheet does not exist in the composition: height cost = 0 dp.
+ * Holds the episodic controls (font size, line spacing, typing mode, scrollback,
+ * paste, attach) that are not needed while reading output; kept on the screen
+ * they cost about 160 dp of permanent height. A bottom sheet, within thumb reach,
+ * with room to scroll. Closed, it is not in the composition at all.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -238,11 +192,8 @@ fun TerminalOptionsSheet(
 }
 
 /**
- * The sheet's content, kept apart from the `ModalBottomSheet` wrapper: the
- * wrapper is a system dialog window and the content is what carries the
- * business rules (which controls exist, what each one fires). Separated, the
- * content is exercisable straight from a JVM test without depending on a
- * window's animation.
+ * The sheet content, kept apart from the `ModalBottomSheet` dialog window so its
+ * rules can be tested on the JVM without window animations.
  */
 @Composable
 internal fun TerminalOptionsContent(
@@ -277,9 +228,8 @@ internal fun TerminalOptionsContent(
         Text(text = "Font size", style = MaterialTheme.typography.titleMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
-                // With "visible lines" pinned, the type size is DERIVED:
-                // showing the hand-picked value here would be a lie, and the
-                // A−/A+ buttons would move a number that is not in use.
+                // With visible lines pinned, the size is derived, so show that
+                // instead of the hand-picked value.
                 Text(
                     text = if (visibleRows == VisibleRows.AUTOMATIC) {
                         "${fontSizeSp.toInt()}sp"
@@ -287,16 +237,12 @@ internal fun TerminalOptionsContent(
                         "derived from ${visibleRows.lines} lines"
                     },
                 )
-                // The resulting grid in numbers: this is what you choose the
-                // font size by. "Does an `ls -l` fit without wrapping?" is a
-                // question about COLUMNS, and before this it had no visible
-                // answer anywhere in the app.
+                // The resulting grid in numbers: whether `ls -l` fits is a
+                // question about columns.
                 Text(
                     text = "current grid: $gridCols columns × $gridRows rows" +
-                        // The reference height only differs from the visible
-                        // one when something is covering the grid — keyboard,
-                        // connection banner, attachment bar. See
-                        // [GridGeometry].
+                        // Reference and visible heights differ only when something
+                        // covers the grid (keyboard, banner, attachment bar). See [GridGeometry].
                         if (referenceHeightPx != visibleHeightPx) {
                             "  ·  ${visibleHeightPx}px of ${referenceHeightPx}px"
                         } else {
@@ -350,11 +296,8 @@ internal fun TerminalOptionsContent(
 
         HorizontalDivider()
 
-        // Autocorrect and a terminal want incompatible things, and the choice
-        // belongs to the moment, not to the app: a shell command needs every
-        // keystroke as typed; writing prose for the agent gains a great deal
-        // from the device's corrector. That is why it is a switch and not a
-        // decision locked in. See TypingMode for the defect this fixes.
+        // A switch rather than a fixed choice: shell commands need every key as
+        // typed, while prose for the agent benefits from autocorrect. See TypingMode.
         SectionHeader(
             icon = Icons.Filled.Edit,
             title = "Keyboard",
@@ -370,15 +313,8 @@ internal fun TerminalOptionsContent(
 
         HorizontalDivider()
 
-        // How much of the past can be read back. It sits with the keyboard
-        // and the line spacing because it is of the same family: how the
-        // terminal behaves on this device, not what the session is.
-        //
-        // The caption says "scroll back and reread", not "keep": this number
-        // governs both the emulator's capacity and how much log the app
-        // fetches from the server when opening the session. While it was only
-        // capacity, it reserved room that was never filled — and promising
-        // history that does not arrive is worse than not promising it.
+        // Scrollback sets both the emulator capacity and how much log is fetched
+        // when the session opens, hence "scroll back and reread".
         SectionHeader(
             icon = Icons.Filled.Refresh,
             title = "Scrollback",
@@ -397,52 +333,29 @@ internal fun TerminalOptionsContent(
 
         HorizontalDivider()
 
-        // The keyboard button had to sit next to the old mouse selector (that
-        // selector was what took away the grid's job of raising the keyboard).
-        // The selector is gone — a tap only goes to the program when the
-        // PROGRAM ITSELF asks for the mouse, and that is nobody's preference
-        // any more — but the button stays: it is the escape hatch for someone
-        // who closed the keyboard and does not want to tap the grid to bring
-        // it back, and the only route to the keyboard inside an `htop`, where
-        // a tap on the grid belongs to the program.
+        // Escape hatch to raise the keyboard without tapping the grid, and the
+        // only route to it when the program (e.g. `htop`) owns grid taps.
         OutlinedButton(onClick = onShowKeyboard, modifier = Modifier.testTag(SHOW_KEYBOARD_TAG)) {
             Text(text = SHOW_KEYBOARD_LABEL)
         }
 
-        // Copy lives on the system's floating bar, which only exists while
-        // there is a selection. Paste depends on no selection at all, so it
-        // needs a path that always exists — this one.
+        // Copy lives on the floating toolbar, which needs a selection; paste
+        // needs an always-available path.
         OutlinedButton(onClick = onPaste, modifier = Modifier.testTag(PASTE_TAG)) {
             Text(text = PASTE_LABEL)
         }
 
-        // Attach sits RIGHT NEXT to Paste because, seen from a distance, it
-        // is the same action: putting a reference to something outside the
-        // terminal onto the command line. Paste brings it from the clipboard;
-        // attach brings it from the device, by way of the server first (the
-        // file has to EXIST there for the program on the other side to open it
-        // — that is what "give you a reference to look at" demands, and it is
-        // what a clipboard cannot solve).
-        //
-        // And it lives in the SHEET, not on the top bar, by the criterion this
-        // sheet already applies: the top bar is for what you look at while
-        // reading command output (only the touch mode, which is modal).
-        // Attaching is episodic — it happens when you want to show something —
-        // and episodic does not pay for permanent height. The sheet is
-        // reachable without leaving the session, with a thumb, two taps away;
-        // the upload's progress, on the other hand, shows up on the attachment
-        // bar glued to the key row, with nothing to reopen.
+        // Next to Paste because both put a reference to something outside the
+        // terminal onto the command line; attach uploads it to the server first
+        // so the remote program can open it. Episodic, so it lives in the sheet;
+        // upload progress shows on the attachment bar.
         OutlinedButton(onClick = onAttach, modifier = Modifier.testTag(ATTACH_TAG)) {
             Text(text = ATTACH_LABEL)
         }
 
 
-        // The session in the background. The item only exists while the
-        // exemption has NOT been granted: once granted it disappears — no
-        // going on offering what has already been given. And because it lives
-        // in here, behind an explicit tap, the app never asks for anything on
-        // its own: whoever declined (or never opened the sheet) simply is not
-        // asked again, which is the rule about not nagging.
+        // Shown only while the exemption is not granted, and only behind an
+        // explicit tap: the app never asks on its own.
         if (!batteryExempt) {
             HorizontalDivider()
 

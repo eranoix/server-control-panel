@@ -46,65 +46,19 @@ fun sessionTag(name: String): String = "sessao-$name"
 /**
  * The session-switching sheet, opened by the "Session" button in the top bar.
  *
- * ## Why a bottom sheet, and not a drawer, tabs or a menu
+ * A bottom sheet rather than tabs (20+ sessions do not fit a phone tab strip), a
+ * dropdown (no room for each session's state) or a side drawer (edge swipes clash
+ * with predictive back and the grid's gestures): it is anchored to an explicit
+ * button, within thumb reach, scrolls, and gives full width to each row.
  *
- * The app's owner has 20+ sessions (`Aplicativo`, `Main`, `Servidor`, `Vpsm`,
- * `proxy`, `tt`…), and the decision was taken by looking at what mobile
- * terminal apps chose:
+ * Borrowed from Termux: the `[n]` index for muscle memory, a filter for long
+ * lists, "New session" pinned to the footer (a first-row action would scroll away
+ * and sit where the thumb reaches for session 1), and instant switching with no
+ * grid animation.
  *
- * - **A tab strip is out.** Blink Shell, which is the app with the model
- *   closest to tabs (`UIPageViewController`, one tab per shell), draws NO tab
- *   strip at all on the phone: it exposes switching by side swipe and by
- *   `Cmd+number`. Twenty tabs on a 6" screen show four at a time, and every
- *   switch becomes a horizontal hunt.
- * - **A dropdown menu is out.** A Material 3 menu is for a short list of
- *   options; 20 items anchored to the top bar become a column with no room
- *   for each session's state (attached / not attached), which is precisely
- *   what Termux proves to be necessary (it strikes through the row of a dead
- *   session and paints in red the one that exited with an error).
- * - **A side drawer is what Termux does** (a 240 dp `DrawerLayout`, opened by
- *   swiping from the left edge). It works there, but here the edge swipe
- *   competes with Android's predictive back and with the grid's own gestures
- *   — and 240 dp give each row less width than a full-width sheet.
- * - **A bottom sheet wins in this app**: it is anchored to an explicit button
- *   (no gesture to be discovered), it sits within thumb reach on a tall
- *   phone, it scrolls naturally, it gives full width to `[n] name + state`
- *   and it accommodates an action pinned to the footer.
- *
- * ## Details copied from those who solved it already
- *
- * - **The `[n]` index at the start of the row**, as in Termux
- *   (`TermuxSessionsListViewController.getView`): it is what sustains muscle
- *   memory and, later on, a numeric shortcut.
- * - **A filter field at the top.** Termux never needed one (it caps at
- *   `MAX_SESSIONS = 8`); with 20+ sessions, a list with no filter is a list
- *   you scroll through with your thumb.
- * - **"New session" PINNED TO THE FOOTER**, not as the first row of the list.
- *   It is literally what `activity_termux.xml` does: the `ListView` takes
- *   `layout_weight="1"` and the button sits in a `buttonBarStyle` BELOW it.
- *   With 20+ sessions, a create action placed as the first row scrolls off
- *   the screen and sits exactly where the thumb lands when reaching for
- *   session number 1.
- * - **Instant switching, with no animation on the grid.** Termux switches in
- *   `setCurrentSession` → `attachSession`, with no transition, and announces
- *   by toast which session came in. Blink animates because ITS switch is
- *   literally a page turn. Here the grid is a blit of cells: cross-fading
- *   between two buffers would fight the rasteriser and read as slowness. It
- *   is the SHEET's closing that is animated, never the grid.
- *
- * ## What this sheet does NOT do, and why
- *
- * **Rename and kill were left out.** Not by design: the mobile BFF today
- * exposes only `GET /terminal/sessions`
- * (`internal/mobilebff/handlers_terminal.go`) — there is no kill or rename
- * route. Putting them in the sheet now would mean drawing buttons that answer
- * 404 on the device. Killing is destructive and cannot be a button that
- * "sometimes works".
- *
- * **Detach is here** because it needs no route at all: the session lives on
- * the server, under `dtach`; leaving the screen ALREADY is detaching. The item
- * exists to say so in words — the doubt "if I leave, do I lose what is
- * running?" is the reason someone never leaves.
+ * Detach needs no server route: the session lives under `dtach`, so leaving the
+ * screen already detaches. The item says so in words, because fear of losing a
+ * running process is why people never leave.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -133,10 +87,8 @@ fun SessionSwitcherSheet(
 }
 
 /**
- * The sheet's content, split from the wrapper for the same reason as in
- * [TerminalOptionsSheet]: the wrapper is a system window, the content is what
- * has rules and can be exercised in a JVM test without waiting on a window
- * animation.
+ * The sheet content, split from the system-window wrapper (as in
+ * [TerminalOptionsSheet]) so its rules can be tested without window animations.
  */
 @Composable
 internal fun SessionSwitcherContent(
@@ -176,9 +128,7 @@ internal fun SessionSwitcherContent(
                 val visible = state.sessions.filter {
                     filter.isBlank() || it.name.contains(filter, ignoreCase = true)
                 }
-                // The filter only appears once there is list enough to
-                // justify it: on a handful of sessions it is one more field
-                // between the thumb and the target.
+                // The filter only appears when the list is long enough to need it.
                 if (state.sessions.size > FILTER_THRESHOLD) {
                     OutlinedTextField(
                         value = filter,
@@ -188,9 +138,8 @@ internal fun SessionSwitcherContent(
                         modifier = Modifier.fillMaxWidth().testTag(SESSIONS_FILTER_TAG),
                     )
                 }
-                // `heightIn` with a cap: the list scrolls INSIDE the sheet,
-                // and the create footer never leaves the screen — which is
-                // the whole property of a pinned footer.
+                // Capped height: the list scrolls inside the sheet and the create
+                // footer always stays on screen.
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().heightIn(max = MAX_LIST_HEIGHT),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -230,9 +179,8 @@ internal fun SessionSwitcherContent(
             ) { Text(text = "Create") }
         }
 
-        // Detach says what the back arrow already does, spelled out in full:
-        // the session stays alive on the server. It is the answer to the doubt
-        // that makes someone never leave the screen.
+        // Spells out what the back arrow already does: the session stays alive
+        // on the server.
         OutlinedButton(onClick = onDetach, modifier = Modifier.fillMaxWidth()) {
             Text(text = "Detach (the session keeps running on the server)")
         }
@@ -269,7 +217,7 @@ private fun SessionRow(
     }
 }
 
-/** Above this the list stops being thumb-scrollable and gains a filter. */
+/** Above this many sessions the list gains a filter. */
 private const val FILTER_THRESHOLD = 8
 
 private val MAX_LIST_HEIGHT = 340.dp

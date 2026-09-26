@@ -1,4 +1,4 @@
-// :feature-files — navegador/editor de arquivos remoto.
+// :feature-files: remote file browser and editor.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
@@ -10,19 +10,13 @@ android {
 
     defaultConfig {
         minSdk = libs.versions.minSdk.get().toInt()
-        // LGPL-2.1 obligation (sora-editor, io.github.rosemoe): a consumer's
-        // R8 pass must never obfuscate/strip this library, so a user could
-        // relink a modified copy of it. Declared here (the module that
-        // actually depends on sora-editor) so it auto-merges into :app's
-        // R8 config whenever minification is enabled there, present or future.
+        // LGPL-2.1 (sora-editor): R8 must not obfuscate or strip it, so users can relink a
+        // modified copy. Declared here so it merges into :app's R8 config automatically.
         consumerProguardFiles("consumer-rules.pro")
     }
 
-    // sora-editor's own artifacts ship JVM-17-targeted bytecode with inline
-    // functions (e.g. CodeEditor.subscribeAlways); Kotlin cannot inline
-    // JVM-17 bytecode into a module compiling at a lower target, so this
-    // module must compile at the same target (same pattern as :data, which
-    // hit the identical error inlining :data:mobile-api-client).
+    // sora-editor ships JVM 17 bytecode with inline functions, which Kotlin cannot inline
+    // into a lower target, so this module must also target JVM 17.
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -42,31 +36,25 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
-    // Icons from the "core" set (823 KB) -- only the back arrow on the detail
-    // bar. See the note in libs.versions.toml about not using the extended set.
+    // Core icon set only (823 KB); the extended set is deliberately excluded.
     implementation(libs.compose.material.icons.core)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.kotlinx.coroutines.core)
 
-    // WorkManager: the transfer engine (download/upload) — durable background
-    // execution that survives process death, with native progress/cancel via
-    // WorkInfo.
+    // WorkManager: transfer engine that survives process death, with progress and cancel.
     implementation(libs.androidx.work.runtime.ktx)
 
-    // sora-editor (LGPL-2.1-or-later, io.github.rosemoe) -- consumed
-    // exclusively via its Maven Central coordinates through the BOM, never
-    // vendored/forked into this repository. See OssLicensesScreen (:app)
-    // for the in-app attribution this obligates.
+    // sora-editor (LGPL-2.1-or-later): used only from Maven Central, never vendored.
+    // Attribution is in OssLicensesScreen (:app).
     implementation(platform(libs.sora.editor.bom))
     implementation(libs.sora.editor)
     implementation(libs.sora.editor.language.textmate)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
-    // Renders this module's Compose screens under Robolectric (no emulator or
-    // device available in this environment) — never exercised before.
+    // Renders the Compose screens under Robolectric, without an emulator.
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(platform(libs.compose.bom))

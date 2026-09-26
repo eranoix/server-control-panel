@@ -7,16 +7,8 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * The draggable handles — what the terminal's selection was missing to feel
- * like that of an Android text field.
- *
- * Before there was only one gesture: long press, drag, release. Missed the end
- * by one cell? Start over from scratch. With handles, adjusting means grabbing
- * the wrong end and moving it — and the text that gets copied is the one
- * highlighted, not the one you remember having dragged.
- *
- * All the geometry comes from the SAME [CellHitTester] that maps a touch onto
- * a cell: one rounding convention only, there and back.
+ * Draggable selection handles, as in Android text fields. All geometry comes from the
+ * same [CellHitTester] that maps touches to cells, so there is one rounding convention.
  */
 class SelectionHandlesTest {
 
@@ -24,9 +16,8 @@ class SelectionHandlesTest {
 
     @Test
     fun anchors_hangFromBottomEdgesOfFirstAndLastCell() {
-        // The Android convention: the left handle hangs from the bottom LEFT
-        // edge of the first character, the right one from the bottom RIGHT of
-        // the last — that is what makes each "point at" what it delimits.
+        // Android convention: the start handle hangs from the bottom-left of the first
+        // cell, the end handle from the bottom-right of the last.
         val selection = GridSelection(startRow = 1, startCol = 2, endRow = 1, endCol = 4)
 
         val anchors = handleAnchors(selection, hitTester)
@@ -37,9 +28,8 @@ class SelectionHandlesTest {
 
     @Test
     fun anchors_doNotSwapSidesWhenDraggedBackToFront() {
-        // Dragging right to left produces an "inverted" selection. If the
-        // start handle jumped to the other side mid-gesture, it would run away
-        // from the finger.
+        // An inverted (right-to-left) selection must not make the handles swap sides
+        // mid-gesture.
         val forward = GridSelection(startRow = 0, startCol = 1, endRow = 0, endCol = 5)
         val backward = GridSelection(startRow = 0, startCol = 5, endRow = 0, endCol = 1)
 
@@ -65,8 +55,7 @@ class SelectionHandlesTest {
 
     @Test
     fun withBothInReach_nearestWins() {
-        // A single-cell selection: the two anchors sit 20 px apart, inside
-        // the same 48 dp target.
+        // Single-cell selection: both anchors are 20 px apart, inside one 48 dp target.
         val selection = GridSelection(0, 0, 0, 0)
         val anchors = handleAnchors(selection, hitTester)
 
@@ -103,13 +92,12 @@ class SelectionHandlesTest {
         val controller = SelectionGestureController({ hitTester }, holder)
         controller.setSelection(GridSelection(0, 2, 0, 5))
 
-        // Drag the START handle past the end — a legitimate gesture in any
-        // Android text field.
+        // Dragging the start handle past the end is a legitimate gesture.
         controller.dragHandle(SelectionHandle.START, Offset(170f, 10f))
 
         val crossed = holder.selection!!
         assertEquals(GridSelection(0, 8, 0, 5), crossed)
-        // Crossed in the data, ordered when it comes to measuring and drawing.
+        // Crossed in the data, but ordered for measuring and drawing.
         assertEquals(Rect(100f, 0f, 180f, 40f), selectionBounds(crossed, hitTester))
     }
 
@@ -125,9 +113,7 @@ class SelectionHandlesTest {
 
     @Test
     fun selectionRectIsWhatFloatingBarUsesToPosition() {
-        // Without this rectangle the system would use the bounds of the whole
-        // view and the bar would land at the top of the screen, far from what
-        // was selected.
+        // Without this rect the system would position the bar using the whole view.
         val selection = GridSelection(startRow = 1, startCol = 2, endRow = 1, endCol = 4)
 
         assertEquals(Rect(40f, 40f, 100f, 80f), selectionBounds(selection, hitTester))
@@ -147,9 +133,7 @@ class SelectionHandlesTest {
 
     @Test
     fun selectionChangeNotifiesBarDrawer() {
-        // The floating bar belongs to the system: nothing observes the holder
-        // on its own, it has to be CALLED. Without this notice the selection
-        // would exist with no bar.
+        // The system floating bar does not observe the holder, so it must be notified.
         val notices = mutableListOf<GridSelection?>()
         val holder = GridSelectionHolder()
         val controller = SelectionGestureController({ hitTester }, holder) { notices += it }
@@ -159,13 +143,12 @@ class SelectionHandlesTest {
         controller.clearSelection()
 
         assertEquals(3, notices.size)
-        assertNull("o último aviso é o de que não há mais seleção", notices.last())
+        assertNull("the last notice says there is no selection anymore", notices.last())
     }
 
     @Test
     fun clearingMissingSelection_doesNotNotifyAgain() {
-        // Closing the bar clears the selection, and clearing the selection
-        // closes the bar. Without this guard the pair would loop.
+        // Closing the bar clears the selection and vice versa; this guard prevents a loop.
         val notices = mutableListOf<GridSelection?>()
         val holder = GridSelectionHolder()
         val controller = SelectionGestureController({ hitTester }, holder) { notices += it }

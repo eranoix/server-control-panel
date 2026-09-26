@@ -12,12 +12,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Renders [MediaMessageRow] directly under Robolectric for the `document`
- * and unrecognized-type branches -- never composed before this. `image`/
- * `video` route through Coil's `SubcomposeAsyncImage`, which starts a real
- * network fetch on composition; exercising those two branches is left to a
- * real device rather than risking a hang against Robolectric's fake network
- * stack (same call made in `ConversationScreenTest`).
+ * Renders [MediaMessageRow] under Robolectric for the document and unknown-type branches.
+ * Image and video start a real network fetch on composition, so they are left to a device.
  */
 @RunWith(RobolectricTestRunner::class)
 class MediaMessageRowTest {
@@ -48,9 +44,9 @@ class MediaMessageRowTest {
                 message = message(
                     type = "document",
                     media = WhatsAppMedia(
-                        url = "/media/contrato.pdf",
+                        url = "/media/contract.pdf",
                         mimeType = "application/pdf",
-                        filename = "contrato.pdf",
+                        filename = "contract.pdf",
                         size = 1_572_864L,
                         duration = null,
                         width = null,
@@ -66,7 +62,7 @@ class MediaMessageRowTest {
             )
         }
 
-        composeRule.onNodeWithText("contrato.pdf").assertExists()
+        composeRule.onNodeWithText("contract.pdf").assertExists()
         composeRule.onNodeWithText("1.5 MB").assertExists()
         player.release()
     }

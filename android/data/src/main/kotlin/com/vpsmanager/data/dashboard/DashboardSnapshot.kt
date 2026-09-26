@@ -9,14 +9,14 @@ data class DashboardIdentity(
     val isAdmin: Boolean,
 )
 
-/** Uma linha de `GET /deploy/apps`. */
+/** One row of `GET /deploy/apps`. */
 data class DeploySummary(
     val name: String,
     val lastStatus: String,
     val updated: String,
 )
 
-/** Uma linha de `GET /scheduler/jobs`. */
+/** One row of `GET /scheduler/jobs`. */
 data class ScheduledSummary(
     val name: String,
     val lastStatus: String,
@@ -35,14 +35,9 @@ data class HealthEntry(
 /**
  * The whole Home screen state in a single object.
  *
- * The optional fields ([deploys], [scheduled]) are NULL when the call failed —
- * never an empty list. The difference matters: an empty list means "there are
- * no deploys", null means "I could not find out", and the dashboard says one or
- * the other instead of showing zero, which would be a lie.
- *
- * [fetchedAtEpochMs] comes from the DEVICE clock, and it is what stamps
- * "updated at HH:MM". Without that stamp, "nothing changed" and "the fetch
- * hung" look identical on screen.
+ * The optional fields ([deploys], [scheduled]) are null when the call failed,
+ * never an empty list: empty means "there are none", null means "could not find
+ * out". [fetchedAtEpochMs] uses the DEVICE clock and stamps "updated at HH:MM".
  */
 data class DashboardSnapshot(
     val ops: OpsSnapshot,
@@ -56,19 +51,15 @@ data class DashboardSnapshot(
     val resourceSignals: List<ResourceSignal>
         get() = ops.system?.let(::gradeResources).orEmpty()
 
-    /** Subsistemas classificados, os que desviaram primeiro. */
+    /** Classified subsystems, the ones off their healthy state first. */
     val health: List<HealthEntry>
         get() = ops.health.entries
             .map { (name, status) -> HealthEntry(name, status, classifyHealth(status)) }
             .sortedWith(compareByDescending<HealthEntry> { it.severity }.thenBy { it.name })
 
     /**
-     * The severity of the health group — "the worst component wins", which is
-     * the standard status-page rollup.
-     *
-     * `health_ok = false` with every component looking healthy is the server
-     * contradicting itself, and the dashboard would rather believe the worse of
-     * the two: it escalates to WARNING instead of showing all green.
+     * The health group severity: the worst component wins. `health_ok = false`
+     * with every component healthy escalates to WARNING rather than showing all green.
      */
     val healthSeverity: Severity
         get() {
@@ -85,23 +76,16 @@ data class DashboardSnapshot(
         get() = scheduled.orEmpty().filter { it.enabled && classifyScheduled(it.lastStatus) != Severity.OK }
 
     /**
-     * Everything that needs attention NOW, worst first: the alerts the server
-     * raised, the resource thresholds that were crossed, the degraded
-     * subsystems and the deploys/scheduled jobs that ended badly.
-     *
-     * It is card number one on the screen, and the only one that disappears
-     * entirely when empty — silence here is the good news, and taking up space
-     * to say "nothing" would push down what matters.
+     * Everything that needs attention now, worst first: server alerts, crossed
+     * resource thresholds, degraded subsystems and failed deploys/scheduled jobs.
+     * The card is hidden entirely when this is empty.
      */
     val attention: List<ResourceSignal>
         get() = buildList {
             ops.alerts.forEach { add(it.toSignal()) }
             addAll(attentionSignals(resourceSignals))
             // The server contradicting itself: `health_ok = false` with every
-            // component green. Without this line the dashboard would print
-            // "9 subsystems · all ok" while the server itself says it is not
-            // ok — exactly the kind of lie this card exists in order not to
-            // tell.
+            // component green. Report it rather than printing "all ok".
             if (!ops.healthOk && health.all { it.severity == Severity.OK }) {
                 add(
                     ResourceSignal(
@@ -150,21 +134,15 @@ data class DashboardSnapshot(
                     ),
                 )
             }
-            // STABLE sort: within the same severity the order in which the list
-            // was assembled survives — server alerts, resource thresholds,
-            // subsystems, deploys, scheduled jobs. It is an order that means
-            // something; breaking ties by id would sort alphabetically.
+            // Stable sort: within a severity, keep the assembly order (alerts,
+            // resources, subsystems, deploys, scheduled jobs).
         }.sortedByDescending { it.severity }
 }
 
 /**
- * The BFF health vocabulary. `ok` and `connected` are the two values
- * `internal/mobilebff/ops_health.go` emits for "all good"; any other word is a
- * deviation.
- *
- * The list holds the HEALTHY values, not the bad ones, and that is deliberate:
- * a new state invented on the server tomorrow shows up as a deviation (visible,
- * investigable) instead of passing as green by omission.
+ * The BFF health values meaning "all good" (see `internal/mobilebff/ops_health.go`).
+ * The list holds the healthy values on purpose, so any new server state shows up
+ * as a deviation instead of passing as green.
  */
 private val HEALTHY_STATES = setOf("ok", "connected", "running", "healthy", "ativo")
 
@@ -179,10 +157,8 @@ internal fun classifyHealth(status: String): Severity = when (status.trim().lowe
 
 internal fun classifyDeploy(status: String): Severity = when (status.trim().lowercase()) {
     "ok", "success", "succeeded", "done", "deployed" -> Severity.OK
-    // Rollback is the interesting case: the machine saved itself, so it is not
-    // an ongoing incident — but it does mean the version that is live is NOT
-    // the one meant to go live, and nobody finds that out without looking.
-    // A warning, not a critical.
+    // Rollback: the machine recovered, but the live version is not the intended
+    // one, and nobody notices without looking. A warning, not critical.
     "rolled_back", "rolledback", "rollback" -> Severity.WARNING
     "failed", "error", "erro" -> Severity.CRITICAL
     // A deploy in flight is not a failure; it is movement, and the "Now" card already reports it.

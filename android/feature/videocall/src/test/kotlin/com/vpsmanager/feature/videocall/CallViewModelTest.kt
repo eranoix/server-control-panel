@@ -34,11 +34,7 @@ private inline fun <reified T> jsonPayload(value: T): JsonElement = testJson.enc
 
 private const val ROOM_ID = "sala-1"
 
-/**
- * Drives [CallViewModel] with a scriptable inbound message stream, never a real socket —
- * mirrors [com.vpsmanager.feature.whatsapp.ConversationViewModelTest]'s `FakeWhatsAppEventSource`
- * seam pattern.
- */
+/** Scriptable signaling stream for [CallViewModel], with no real socket. */
 private class FakeSignaling : VideocallSignaling {
     private val inbound = MutableSharedFlow<SignalingMessage>(extraBufferCapacity = 16)
     var connectCalls = 0
@@ -65,10 +61,8 @@ private class FakeSignaling : VideocallSignaling {
 }
 
 /**
- * Records every call instead of touching the native factory — [createPeerConnectionFor] always
- * returns `null` (a real [PeerConnection] requires the native library), which is exactly what
- * [CallViewModel.registerPeer]'s doc comment says a test fake produces: the tile is added to
- * [CallUiState.InCall.remoteTracks] without ever needing a live connection object.
+ * Records calls without the native library; [createPeerConnectionFor] returns `null`, so tiles
+ * are added to [CallUiState.InCall.remoteTracks] without a live connection.
  */
 private class FakeSessionController : VideoCallSessionController {
     override val eglBaseContext: EglBase.Context = object : EglBase.Context {
@@ -135,7 +129,7 @@ private fun joinedMessage(peers: List<PeerInfo> = emptyList()) = SignalingMessag
     payload = jsonPayload(
         com.vpsmanager.data.videocall.JoinResponse(
             peerId = "self-1",
-            room = RoomInfo(id = ROOM_ID, name = "Sala 1", owner = "admin", members = emptyList(), createdAt = 0L),
+            room = RoomInfo(id = ROOM_ID, name = "Room 1", owner = "admin", members = emptyList(), createdAt = 0L),
             peers = peers,
             turn = TurnCredentials(urls = listOf("turn:example.org"), username = "u", credential = "c", ttl = 60L),
             politenessSeed = "self-1",

@@ -36,17 +36,9 @@ import java.time.LocalDate
 import java.time.OffsetDateTime
 
 /**
- * The colour of a card's edge band, taken from the status CATEGORY.
- *
- * Category and not status name: there are three values Jira guarantees
- * (`new`/`indeterminate`/`done`), while the name itself changes from project
- * to project. One colour per name would hand every workflow a new palette.
- *
- * None of them is the panel's green or red for STATE (`vpsmStatusColors`), and
- * that is a rule: here the colour says "what stage this is at", not "this is
- * fine or broken". A red card because it is in review, sitting beside a red
- * alert because the disk filled up, would destroy the only language the app
- * has for saying urgency.
+ * Card edge colour from the status category (`new`, `indeterminate`, `done`), which Jira
+ * guarantees, unlike status names. Deliberately avoids the health colours of
+ * `vpsmStatusColors`, so stage is never confused with urgency.
  */
 @Composable
 internal fun categoryColor(category: String): Color = when (category) {
@@ -57,28 +49,11 @@ internal fun categoryColor(category: String): Color = when (category) {
 }
 
 /**
- * A board card — in the version that fits a third of the screen.
+ * Compact board card sized for about 125 dp columns: key, summary, assignee initials and age.
+ * Other fields live on the issue sheet.
  *
- * ## Why it shrank
- *
- * The requirement is seeing all three columns at once, and on a 411 dp phone
- * that leaves **about 125 dp per column**. It is not a matter of taste: it is
- * what is left. At that width, "Medium · a11y · frontend · +2 · Sam Rivera ·
- * Backlog" is not information, it is a stack of two-word fragments.
- *
- * So the card answers only what you actually ask while LOOKING at the board:
- * **which one** (the key), **what it is** (three lines of summary), **whose it
- * is** (the initials) and **how long it has been sitting**. Priority, labels,
- * type, the spelled-out status, the due date and the assignee's full name all
- * still exist — on the detail sheet, one tap away. It is the same trade any
- * board makes when it zooms out: less per card, more cards in view.
- *
- * ## A single description, for the screen reader
- *
- * The card is one target, and TalkBack reads the whole of it at once. And here
- * the description is deliberately RICHER than what is visible: someone
- * listening does not lose what the width took from the eye — the sentence
- * carries priority, type and state, which the compact card does not show.
+ * The card is a single accessibility target whose description is richer than what is shown,
+ * including priority, type and status.
  */
 @Composable
 internal fun BoardCard(
@@ -109,9 +84,8 @@ internal fun BoardCard(
     ) {
         Column(
             modifier = Modifier
-                // The band is drawn, not a sibling Box: a Box with a height
-                // of its own would demand `IntrinsicSize.Min` on the row, which
-                // remeasures the subtree on every frame of the drag animation.
+                // Drawn instead of a sibling Box, which would need IntrinsicSize.Min and
+                // remeasure on every drag frame.
                 .drawBehind { drawRect(color = band, size = Size(3.dp.toPx(), size.height)) }
                 .padding(start = 10.dp, top = 8.dp, end = 8.dp, bottom = 8.dp)
                 .fillMaxWidth(),
@@ -128,16 +102,14 @@ internal fun BoardCard(
                 )
                 Spacer(Modifier.weight(1f))
                 if (selecting) {
-                    // The checkbox gives way to the age instead of
-                    // squeezing both: at this width, together they push the key.
+                    // Checkbox and overdue badge never share the row; together they push the key.
                     Checkbox(
                         checked = selected,
                         onCheckedChange = { onSelect() },
                         modifier = Modifier.size(20.dp),
                     )
                 } else if (due == "venceu") {
-                    // Overdue is the ONLY badge that survived the cut:
-                    // it is the one that changes what you do with the card today.
+                    // Overdue is the only badge kept on the compact card.
                     Text(
                         text = "!",
                         style = MaterialTheme.typography.labelMedium,
@@ -150,8 +122,7 @@ internal fun BoardCard(
             Spacer(Modifier.height(4.dp))
             Text(
                 text = card.summary,
-                // 12sp and not the theme's bodyMedium: at 125 dp the default
-                // body fits four words per line and the summary becomes ellipsis.
+                // 12sp: bodyMedium fits too few words per line at this width.
                 fontSize = 12.sp,
                 lineHeight = 15.sp,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -197,14 +168,7 @@ internal fun BoardCard(
     }
 }
 
-/**
- * The sentence the screen reader speaks in place of the card.
- *
- * Assembled in the order the information is looked for: what it is, what state
- * it is in, who has it, and how long it has been sitting. It carries what the
- * compact card had to take away from the eye — a listener does not pay the
- * price of the column's width.
- */
+/** Screen reader description of a card, including the details the compact card hides. */
 internal fun cardDescription(card: JiraCard, age: String, due: String): String = buildString {
     append(card.key)
     append(", ")

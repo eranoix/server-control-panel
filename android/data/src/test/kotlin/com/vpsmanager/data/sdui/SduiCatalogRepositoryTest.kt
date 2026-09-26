@@ -10,9 +10,8 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * The HTTP -> [SduiSectionsResult] translation of the section catalogue. Here,
- * in `:data`, is where a `MockWebServer` is legitimate (the gate forbids it
- * outside this module), so here is where the shape on the wire is pinned.
+ * The HTTP to [SduiSectionsResult] translation of the section catalogue. `MockWebServer` is only
+ * allowed in `:data`, so the wire shape is pinned here.
  */
 class SduiCatalogRepositoryTest {
 
@@ -41,14 +40,14 @@ class SduiCatalogRepositoryTest {
     }
 
     @Test
-    fun `le id, grupo e rotulo preservando a ordem agrupada do servidor`() = runTest {
+    fun `reads id, group and label keeping the server's grouped order`() = runTest {
         respond(
             200,
             """
             {"sections":[
               {"id":"docker.containers","group":"Docker","label":"Containers"},
-              {"id":"docker.prune","group":"Docker","label":"Limpeza do Docker"},
-              {"id":"system.processes","group":"Sistema","label":"Processos"}
+              {"id":"docker.prune","group":"Docker","label":"Docker cleanup"},
+              {"id":"system.processes","group":"System","label":"Processes"}
             ]}
             """.trimIndent(),
         )
@@ -61,23 +60,19 @@ class SduiCatalogRepositoryTest {
             listOf("docker.containers", "docker.prune", "system.processes"),
             sections.map { it.id },
         )
-        assertEquals(SduiSection("docker.prune", "Docker", "Limpeza do Docker"), sections[1])
+        assertEquals(SduiSection("docker.prune", "Docker", "Docker cleanup"), sections[1])
 
         val request = server.takeRequest()
         assertEquals("/api/mobile/v1/screens", request.path)
         assertEquals("GET", request.method)
     }
 
-    /**
-     * Tolerance of a newer server: a field this release does not know about is
-     * ignored, and the section stays usable. A client that broke here would
-     * defeat the whole reason SDUI exists.
-     */
+    /** A field from a newer server is ignored and the section stays usable. */
     @Test
-    fun `campo desconhecido do servidor e ignorado, nunca fatal`() = runTest {
+    fun `an unknown server field is ignored, never fatal`() = runTest {
         respond(
             200,
-            """{"sections":[{"id":"system.ports","group":"Sistema","label":"Portas em escuta",
+            """{"sections":[{"id":"system.ports","group":"System","label":"Listening ports",
                "icone":"radar","badge_count":7,"novidade":{"desde":"2026-09"}}]}""",
         )
 
@@ -88,19 +83,16 @@ class SduiCatalogRepositoryTest {
         assertEquals("system.ports", sections.single().id)
     }
 
-    /**
-     * A broken entry takes down the ENTRY, not the list: losing one malformed
-     * section is far better than leaving the operator with no selector at all.
-     */
+    /** A malformed entry is skipped without losing the rest of the list. */
     @Test
-    fun `entrada sem id ou sem rotulo e pulada, o resto da lista sobrevive`() = runTest {
+    fun `an entry without id or label is skipped and the rest survives`() = runTest {
         respond(
             200,
             """
             {"sections":[
-              {"group":"Docker","label":"Sem id"},
-              {"id":"sem.label","group":"Docker"},
-              {"id":"docker.images","group":"Docker","label":"Imagens do Docker"}
+              {"group":"Docker","label":"No id"},
+              {"id":"no.label","group":"Docker"},
+              {"id":"docker.images","group":"Docker","label":"Docker images"}
             ]}
             """.trimIndent(),
         )
@@ -112,18 +104,18 @@ class SduiCatalogRepositoryTest {
 
     /** A JSON `null` in the label must never become a section called "null". */
     @Test
-    fun `rotulo nulo e tratado como ausente, nao como o texto null`() = runTest {
+    fun `a null label is treated as missing, not as the text null`() = runTest {
         respond(200, """{"sections":[{"id":"a.b","group":"Docker","label":null}]}""")
 
         val sections = (repositoryFor().sections() as SduiSectionsResult.Success).sections
 
-        assertTrue("uma seção com rótulo null tem que ser pulada: $sections", sections.isEmpty())
+        assertTrue("a section with a null label must be skipped: $sections", sections.isEmpty())
     }
 
-    /** A missing group becomes a neutral header — cosmetic, never loses the section. */
+    /** A missing group becomes a neutral header instead of losing the section. */
     @Test
-    fun `grupo ausente cai em Outros em vez de derrubar a secao`() = runTest {
-        respond(200, """{"sections":[{"id":"a.b","label":"Alguma coisa"}]}""")
+    fun `a missing group falls back to Other instead of dropping the section`() = runTest {
+        respond(200, """{"sections":[{"id":"a.b","label":"Something"}]}""")
 
         val sections = (repositoryFor().sections() as SduiSectionsResult.Success).sections
 
@@ -131,13 +123,11 @@ class SduiCatalogRepositoryTest {
     }
 
     /**
-     * A user with no permissions at all gets a 200 with an EMPTY list, never a
-     * 403 — the server filters by omission. The data layer has to hand that
-     * back as an empty success so the screen shows the state that teaches, and
-     * not an error message.
+     * A user without permissions gets 200 with an empty list (the server filters by omission),
+     * which must be an empty success, not an error.
      */
     @Test
-    fun `lista vazia e sucesso vazio, nunca erro`() = runTest {
+    fun `an empty list is an empty success, never an error`() = runTest {
         respond(200, """{"sections":[]}""")
 
         val result = repositoryFor().sections()
@@ -146,12 +136,9 @@ class SduiCatalogRepositoryTest {
         assertTrue((result as SduiSectionsResult.Success).sections.isEmpty())
     }
 
-    /**
-     * An old server, without the catalogue endpoint: the message says so,
-     * instead of accusing the user of asking for something that does not exist.
-     */
+    /** An old server without the catalogue endpoint gets a message about the server, not the user. */
     @Test
-    fun `404 no catalogo vira mensagem sobre o servidor, nao sobre o usuario`() = runTest {
+    fun `a catalogue 404 becomes a message about the server, not the user`() = runTest {
         respond(404, """{"error":"not_found"}""")
 
         val result = repositoryFor().sections()
@@ -164,7 +151,7 @@ class SduiCatalogRepositoryTest {
     }
 
     @Test
-    fun `500 vira mensagem de servidor indisponivel`() = runTest {
+    fun `a 500 becomes a server unavailable message`() = runTest {
         respond(500, """{"error":"internal_error"}""")
 
         val result = repositoryFor().sections()

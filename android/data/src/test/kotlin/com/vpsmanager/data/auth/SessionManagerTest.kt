@@ -14,9 +14,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Pins the session behaviour EVERY screen of the app depends on: storing the
- * token pair, renewing through a single queue, and tearing the session down
- * when there is no longer any way to renew.
+ * Pins the session behaviour every screen depends on: storing the token pair, renewing
+ * through a single queue, and tearing the session down when renewal is impossible.
  */
 class SessionManagerTest {
 
@@ -57,7 +56,7 @@ class SessionManagerTest {
     }
 
     @Test
-    fun `um login estabelece a sessao e publica o access token`() {
+    fun `a login establishes the session and publishes the access token`() {
         val published = mutableListOf<String?>()
         val store = InMemoryTokenStore()
         val manager = manager(store, CountingRefresher({ RefreshOutcome.Unavailable }), published)
@@ -71,7 +70,7 @@ class SessionManagerTest {
     }
 
     @Test
-    fun `a sessao gravada e adotada na construcao — o app reabre logado`() {
+    fun `a stored session is adopted on construction so the app reopens signed in`() {
         val manager = manager(InMemoryTokenStore(tokens()), CountingRefresher({ RefreshOutcome.Unavailable }))
 
         assertEquals("a1", manager.currentAccessToken())
@@ -79,7 +78,7 @@ class SessionManagerTest {
     }
 
     @Test
-    fun `sem guarda persistente o app abre deslogado — o fail-closed do KeystoreTokenStore`() {
+    fun `without persistent storage the app opens signed out, the KeystoreTokenStore fail-closed case`() {
         val manager = manager(InMemoryTokenStore(), CountingRefresher({ RefreshOutcome.Unavailable }))
 
         assertEquals(SessionState.SignedOut, manager.state.value)
@@ -87,53 +86,44 @@ class SessionManagerTest {
     }
 
     @Test
-    fun `varias chamadas tomando 401 ao mesmo tempo disparam UMA unica renovacao`() = runTest {
-        // The central point. The BFF refresh is rotating (auth_login.go): the
-        // first renewal invalidates the refresh token the others have just
-        // sent. N concurrent renewals would not be "waste", they would be the
-        // session torn down.
-        //
-        // The gate holds the first renewal until ALL the concurrent ones have
-        // arrived -- without it, the first could finish before the others
-        // started and the test would pass even with an implementation that has
-        // no queue at all.
+    fun `concurrent 401 responses trigger a single renewal`() = runTest {
+        // The BFF rotates refresh tokens, so concurrent renewals would kill the session.
+        // The gate holds the first renewal until all callers arrive, otherwise the test
+        // would pass even without a queue.
         val gate = CompletableDeferred<Unit>()
         val refresher = CountingRefresher(
-            outcome = { n -> RefreshOutcome.Renewed("a-novo-$n", "r-novo-$n", 900) },
+            outcome = { n -> RefreshOutcome.Renewed("a-new-$n", "r-new-$n", 900) },
             gate = gate,
         )
         val manager = manager(InMemoryTokenStore(tokens()), refresher)
 
         val requests = List(8) { async { manager.refreshAfterUnauthorized("a1") } }
-        // Runs all 8 until every one of them is blocked: one on the gate
-        // (already inside the refresher) and seven on the mutex queue. It is at
-        // this point -- all in flight, none finished -- that the count proves
-        // the single queue.
+        // All 8 are now blocked (one on the gate, seven on the mutex), none finished.
         advanceUntilIdle()
-        assertEquals("uma renovacao por vencimento, nunca uma por chamada", 1, refresher.calls.get())
+        assertEquals("one renewal per expiry, never one per call", 1, refresher.calls.get())
 
         gate.complete(Unit)
         val results = requests.awaitAll()
 
-        assertEquals("nenhuma renovacao extra depois que a fila destravou", 1, refresher.calls.get())
-        assertEquals(List(8) { "a-novo-1" }, results)
-        assertEquals("a-novo-1", manager.currentAccessToken())
+        assertEquals("no extra renewal after the queue was released", 1, refresher.calls.get())
+        assertEquals(List(8) { "a-new-1" }, results)
+        assertEquals("a-new-1", manager.currentAccessToken())
     }
 
     @Test
-    fun `quem chega depois da renovacao reaproveita o token novo sem renovar de novo`() = runTest {
-        val refresher = CountingRefresher({ n -> RefreshOutcome.Renewed("a-novo-$n", "r-novo-$n", 900) })
+    fun `a late caller reuses the new token without renewing again`() = runTest {
+        val refresher = CountingRefresher({ n -> RefreshOutcome.Renewed("a-new-$n", "r-new-$n", 900) })
         val manager = manager(InMemoryTokenStore(tokens()), refresher)
 
-        assertEquals("a-novo-1", manager.refreshAfterUnauthorized("a1"))
-        // Chegou atrasada, ainda apresentando o token velho.
-        assertEquals("a-novo-1", manager.refreshAfterUnauthorized("a1"))
+        assertEquals("a-new-1", manager.refreshAfterUnauthorized("a1"))
+        // A late call still presenting the old token.
+        assertEquals("a-new-1", manager.refreshAfterUnauthorized("a1"))
 
         assertEquals(1, refresher.calls.get())
     }
 
     @Test
-    fun `renovacao recusada derruba a sessao e limpa a guarda — o app volta ao login`() = runTest {
+    fun `a rejected renewal ends the session and clears storage`() = runTest {
         val store = InMemoryTokenStore(tokens())
         val manager = manager(store, CountingRefresher({ RefreshOutcome.Rejected }))
 
@@ -141,13 +131,12 @@ class SessionManagerTest {
 
         assertNull(result)
         assertEquals(SessionState.SignedOut, manager.state.value)
-        assertNull("o par morto nao pode continuar gravado", store.load())
+        assertNull("the dead token pair must not stay stored", store.load())
     }
 
     @Test
-    fun `falha transitoria de rede nao derruba a sessao`() = runTest {
-        // Wi-Fi dropping for three seconds must not cost a login: Unavailable
-        // is deliberately different from Rejected.
+    fun `a transient network failure does not end the session`() = runTest {
+        // A brief network drop must not cost a login: Unavailable differs from Rejected.
         val store = InMemoryTokenStore(tokens())
         val manager = manager(store, CountingRefresher({ RefreshOutcome.Unavailable }))
 
@@ -158,9 +147,9 @@ class SessionManagerTest {
     }
 
     @Test
-    fun `um token vencendo e renovado ANTES de sair a requisicao`() = runTest {
+    fun `an expiring token is renewed before the request goes out`() = runTest {
         val refresher = CountingRefresher({ RefreshOutcome.Renewed("a2", "r2", 900) })
-        // 30s de validade: dentro da margem de EXPIRY_SKEW_MILLIS (60s).
+        // 30s of validity is inside the EXPIRY_SKEW_MILLIS margin (60s).
         val manager = manager(InMemoryTokenStore(tokens(ttlSeconds = 30)), refresher)
 
         assertEquals("a2", manager.accessTokenForRequest())
@@ -168,7 +157,7 @@ class SessionManagerTest {
     }
 
     @Test
-    fun `um token com folga nao dispara renovacao nenhuma`() = runTest {
+    fun `a token with time left triggers no renewal`() = runTest {
         val refresher = CountingRefresher({ RefreshOutcome.Renewed("a2", "r2", 900) })
         val manager = manager(InMemoryTokenStore(tokens(ttlSeconds = 900)), refresher)
 
@@ -177,7 +166,7 @@ class SessionManagerTest {
     }
 
     @Test
-    fun `sem sessao nao ha o que renovar`() = runTest {
+    fun `without a session there is nothing to renew`() = runTest {
         val refresher = CountingRefresher({ RefreshOutcome.Renewed("a2", "r2", 900) })
         val manager = manager(InMemoryTokenStore(), refresher)
 
@@ -187,7 +176,7 @@ class SessionManagerTest {
     }
 
     @Test
-    fun `signOut apaga a guarda e o token publicado`() {
+    fun `signOut clears storage and the published token`() {
         val published = mutableListOf<String?>()
         val store = InMemoryTokenStore(tokens())
         val manager = manager(store, CountingRefresher({ RefreshOutcome.Unavailable }), published)
@@ -201,19 +190,16 @@ class SessionManagerTest {
     }
 
     @Test
-    fun `por padrao o access token e espelhado em ApiClient — o canal que midia e o socket do WhatsApp leem`() {
-        // Without this mirror, MediaNetwork and OkHttpWhatsAppWsFactory would
-        // go on reading null and sending requests with no credential -- which
-        // was exactly the previous state (the comments in those files admitted
-        // as much in writing).
+    fun `by default the access token is mirrored to ApiClient for media and the WhatsApp socket`() {
+        // MediaNetwork and OkHttpWhatsAppWsFactory read the token from ApiClient.
         val manager = SessionManager(
             tokenStore = InMemoryTokenStore(),
             refresher = CountingRefresher({ RefreshOutcome.Unavailable }),
             now = { clock },
         )
 
-        manager.establish("token-de-sessao", "r1", 900)
-        assertEquals("token-de-sessao", ApiClient.accessToken)
+        manager.establish("session-token", "r1", 900)
+        assertEquals("session-token", ApiClient.accessToken)
 
         manager.signOut()
         assertNull(ApiClient.accessToken)

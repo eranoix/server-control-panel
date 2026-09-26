@@ -14,14 +14,8 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * What these tests prove, and why it matters: without them, "the app works
- * offline" would be a claim about library configuration, and HTTP cache
- * configuration fails silently — one missing header and the cache exists,
- * takes up disk and never serves anything.
- *
- * That is why the server is really BROUGHT DOWN in the middle of the test,
- * instead of a stand-in that pretends to fail: the path exercised is the same
- * `IOException` a device with no network produces.
+ * Proves the offline read cache actually serves responses, since HTTP cache misconfiguration fails
+ * silently. The server is really shut down mid-test to produce the same `IOException` as no network.
  */
 class ReadCacheTest {
 
@@ -33,7 +27,7 @@ class ReadCacheTest {
     fun build() {
         server = MockWebServer()
         server.start()
-        dir = Files.createTempDirectory("cache-de-leitura").toFile()
+        dir = Files.createTempDirectory("read-cache").toFile()
         client = OkHttpClient.Builder()
             .cache(Cache(dir, 4L * 1024 * 1024))
             .addNetworkInterceptor(ReadCache.MakeCacheable)
@@ -51,57 +45,48 @@ class ReadCacheTest {
         client.newCall(Request.Builder().url(server.url(path)).build()).execute()
 
     @Test
-    fun `com o servidor fora do ar a resposta anterior continua sendo servida`() {
+    fun `with the server down the previous response is still served`() {
         server.enqueue(MockResponse().setBody("""{"cpu":21}"""))
         get("/ops/status").use { assertEquals("""{"cpu":21}""", it.body?.string()) }
 
-        // The internet really drops — not a stand-in pretending.
+        // The server really goes away.
         server.shutdown()
 
         get("/ops/status").use { response ->
             assertEquals(200, response.code)
             assertEquals("""{"cpu":21}""", response.body?.string())
-            assertTrue("a resposta tem de vir do cache", response.networkResponse == null)
+            assertTrue("the response must come from the cache", response.networkResponse == null)
         }
     }
 
-    /**
-     * A route never seen cannot pretend it loaded: OkHttp returns a 504
-     * "Unsatisfiable Request", which the caller maps to the usual error.
-     */
+    /** A route never fetched gets OkHttp's 504 "Unsatisfiable Request", which the caller maps to the usual error. */
     @Test
-    fun `rota nunca vista sem rede devolve 504, nao um corpo inventado`() {
+    fun `an unseen route without network returns 504, not a made-up body`() {
         server.shutdown()
 
-        get("/nunca-visitada").use { response ->
+        get("/never-visited").use { response ->
             assertEquals(504, response.code)
         }
     }
 
-    /**
-     * The server's `no-store` wins. If the BFF marks a route as not storable,
-     * it has a reason the network layer does not know about.
-     */
+    /** The server's `no-store` always wins. */
     @Test
-    fun `no-store do servidor e respeitado e nada e guardado`() {
+    fun `server no-store is honoured and nothing is stored`() {
         server.enqueue(
-            MockResponse().setBody("segredo").addHeader("Cache-Control", "no-store"),
+            MockResponse().setBody("secret").addHeader("Cache-Control", "no-store"),
         )
         get("/security/secrets").use { it.body?.string() }
 
         server.shutdown()
 
         get("/security/secrets").use { response ->
-            assertEquals("nada marcado como no-store pode sobreviver a queda", 504, response.code)
+            assertEquals("nothing marked no-store may survive the outage", 504, response.code)
         }
     }
 
-    /**
-     * WITH network, always revalidate: on a screen whose purpose is to say what
-     * is happening right now, serving 30 seconds of cache is showing a wrong number.
-     */
+    /** With network, always revalidate: these screens show live state. */
     @Test
-    fun `com rede a resposta e sempre a nova, nunca a guardada`() {
+    fun `with network the response is always fresh, never cached`() {
         server.enqueue(MockResponse().setBody("""{"cpu":21}"""))
         get("/ops/status").use { it.body?.string() }
 

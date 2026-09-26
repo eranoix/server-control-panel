@@ -7,17 +7,11 @@ import android.content.pm.PackageInstaller
 import android.util.Log
 
 /**
- * Receives the `PackageInstaller` results.
- *
- * ### Why it is declared in the manifest and not registered at runtime
- * Installing our own APK kills this process. A receiver registered at runtime
- * would die with it and the failure message — the only thing that explains an
- * "app not installed" to someone without `adb` — would be lost. Declared in
- * the manifest, the system recreates the process just to deliver it, and
- * [UpdateDiagnostics] writes it to disk before any screen has to exist.
- *
- * It is not exported: only the system, answering the explicit `PendingIntent`
- * we created ourselves, gets here.
+ * Receives `PackageInstaller` results. Declared in the manifest because
+ * installing our own APK kills this process: a runtime receiver would die with it
+ * and lose the failure message, while the system recreates the process to
+ * deliver a manifest receiver's broadcast and [UpdateDiagnostics] writes it to
+ * disk. Not exported: only the system, answering our explicit `PendingIntent`, gets here.
  */
 class UpdateInstallReceiver : BroadcastReceiver() {
 
@@ -30,9 +24,8 @@ class UpdateInstallReceiver : BroadcastReceiver() {
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
 
         if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-            // The system wants to show the confirmation dialog and handed us
-            // the Intent that opens it. It is NOT an outcome: the real result
-            // arrives in a second broadcast, so nothing goes on the bus.
+            // The system wants to show its confirmation dialog. Not an outcome:
+            // the real result comes in a second broadcast, so nothing goes on the bus.
             val confirmation = confirmationIntent(intent)
             if (confirmation == null) {
                 UpdateDiagnostics.record(
@@ -62,7 +55,7 @@ class UpdateInstallReceiver : BroadcastReceiver() {
                     }
                 },
             )
-            Log.w(TAG, "instalacao falhou: fase=$phase status=$status msg=$message")
+            Log.w(TAG, "install failed: phase=$phase status=$status msg=$message")
         }
 
         InstallStatusBus.publish(
@@ -72,10 +65,8 @@ class UpdateInstallReceiver : BroadcastReceiver() {
 
     @Suppress("DEPRECATION")
     private fun confirmationIntent(intent: Intent): Intent? =
-        // getParcelableExtra(String, Class) only exists from API 33 on and the
-        // minSdk is 34, but the extra arrives typed as an Intent from the
-        // system; the typed form is used and the @Suppress covers the old
-        // signature that lint still sees in some compile SDKs.
+        // The @Suppress covers the deprecated signature some compile SDKs still
+        // flag; minSdk 34 has the typed overload.
         intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
 
     companion object {

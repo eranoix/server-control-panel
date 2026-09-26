@@ -14,14 +14,14 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The four calls joined together, and what happens when each one falls over. */
+/** The four calls joined together, and what happens when each one fails. */
 class DashboardRepositoryTest {
 
     @Test
-    fun `junta ops, identidade, deploys e agendados num snapshot so`() = runTest {
+    fun `joins ops, identity, deploys and scheduled jobs into one snapshot`() = runTest {
         val repo = DashboardRepository(
             ops = FakeOps(OpsStatusResult.Success(opsReal())),
-            session = FakeSession(SessionResult.Success("teste", "test@northwind.example", isAdmin = true)),
+            session = FakeSession(SessionResult.Success("tester", "test@northwind.example", isAdmin = true)),
             rows = FakeRows(
                 mapOf(
                     "/api/mobile/v1/deploy/apps" to lines(
@@ -37,7 +37,7 @@ class DashboardRepositoryTest {
 
         val snapshot = (repo.load() as DashboardResult.Success).snapshot
 
-        assertEquals("teste", snapshot.identity?.user)
+        assertEquals("tester", snapshot.identity?.user)
         assertEquals(true, snapshot.identity?.isAdmin)
         assertEquals("rolled_back", snapshot.deploys?.single()?.lastStatus)
         assertEquals("Backup", snapshot.scheduled?.single()?.name)
@@ -46,41 +46,41 @@ class DashboardRepositoryTest {
     }
 
     @Test
-    fun `ops fora do ar derruba o painel com o que fazer — e a unica chamada indispensavel`() = runTest {
+    fun `ops being down fails the dashboard because it is the only required call`() = runTest {
         val repo = DashboardRepository(
-            ops = FakeOps(OpsStatusResult.Error("Falha de conexão. Verifique a rede e tente novamente.")),
-            session = FakeSession(SessionResult.Success("teste", "t@t", isAdmin = true)),
+            ops = FakeOps(OpsStatusResult.Error("Connection failed. Check the network and try again.")),
+            session = FakeSession(SessionResult.Success("tester", "t@t", isAdmin = true)),
             rows = FakeRows(emptyMap()),
         )
 
         val result = repo.load()
         assertTrue(result is DashboardResult.Error)
         assertEquals(
-            "Falha de conexão. Verifique a rede e tente novamente.",
+            "Connection failed. Check the network and try again.",
             (result as DashboardResult.Error).reason,
         )
     }
 
     @Test
-    fun `deploy fora do ar deixa aquele pedaco nulo e NAO derruba o painel`() = runTest {
+    fun `deploys being down leaves that part null without failing the dashboard`() = runTest {
         val repo = DashboardRepository(
             ops = FakeOps(OpsStatusResult.Success(opsReal())),
-            session = FakeSession(SessionResult.Success("teste", "t@t", isAdmin = true)),
-            rows = FakeRows(emptyMap()), // toda busca de linha devolve null
+            session = FakeSession(SessionResult.Success("tester", "t@t", isAdmin = true)),
+            rows = FakeRows(emptyMap()), // every row fetch returns null
         )
 
         val snapshot = (repo.load() as DashboardResult.Success).snapshot
         assertNull(snapshot.deploys)
         assertNull(snapshot.scheduled)
-        // and the rest stays standing, with the resources judged
+        // the rest still loads, with resources graded
         assertTrue(snapshot.resourceSignals.isNotEmpty())
     }
 
     @Test
-    fun `identidade fora do ar vira rodape sem nome, nao tela de erro`() = runTest {
+    fun `identity being down leaves a nameless footer, not an error screen`() = runTest {
         val repo = DashboardRepository(
             ops = FakeOps(OpsStatusResult.Success(opsReal())),
-            session = FakeSession(SessionResult.Error("O servidor está indisponível no momento.")),
+            session = FakeSession(SessionResult.Error("The server is unavailable right now.")),
             rows = FakeRows(emptyMap()),
         )
 
@@ -90,7 +90,7 @@ class DashboardRepositoryTest {
     }
 
     @Test
-    fun `linha sem nome cai para o id em vez de virar rotulo vazio`() = runTest {
+    fun `a row without a name falls back to its id instead of an empty label`() = runTest {
         val repo = DashboardRepository(
             ops = FakeOps(OpsStatusResult.Success(opsReal())),
             session = FakeSession(SessionResult.Empty),
@@ -111,8 +111,8 @@ private fun lines(vararg json: String): List<JsonObject> =
 
 private class FakeOps(private val result: OpsStatusResult) : OpsSource {
     override suspend fun fetchStatus() = result
-    override suspend fun triggerDeploy() = TriggerDeployResult.Error("não usado")
-    override suspend fun fetchDeployStatus(jobId: String) = DeployStatusResult.Error("não usado")
+    override suspend fun triggerDeploy() = TriggerDeployResult.Error("unused")
+    override suspend fun fetchDeployStatus(jobId: String) = DeployStatusResult.Error("unused")
 }
 
 private class FakeSession(private val result: SessionResult) : SessionSource {

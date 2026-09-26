@@ -1,33 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Camada de PRIMEIRO PLANO do ícone adaptativo — a marca do vps-manager.
+    Foreground layer of the adaptive icon: the same mark as
+    internal/webassets/web/logo-mark.svg, so the app and the web panel read as one product.
 
-    É o mesmo desenho de internal/webassets/web/logo-mark.svg ("a hexagonal
-    operator mark with a negative-space command spine"): o hexágono, a espinha
-    vertical e as duas cunhas. Não é uma marca nova; é a que o painel já usa no
-    favicon e nos ícones do PWA, para que app e painel sejam lidos como um
-    produto só.
+    The SVG cuts the spine and wedges with a <mask>, which VectorDrawable lacks; a single
+    path with fillType="evenOdd" gives the same holes because the subshapes lie fully inside
+    the hexagon.
 
-    VETOR, não PNG: o logo de origem já é vetor limpo, então rasterizar em cinco
-    densidades só acrescentaria bytes e serrilhado. Este arquivo (~1,4 KB) cobre
-    qualquer densidade com nitidez perfeita.
-
-    MÁSCARA VIRADA EM evenOdd: o SVG recorta a espinha e as cunhas com um
-    <mask>, recurso que o VectorDrawable não tem. O equivalente nativo é um
-    único <path> com android:fillType="evenOdd" — as três subformas ficam
-    INTEIRAMENTE dentro do hexágono, então a regra par/ímpar as transforma em
-    furos. Mesmo resultado visual, sem camada extra e sem alpha composto.
-
-    ZONA SEGURA (o motivo do <group>): o lançador recorta os 108dp em máscaras
-    variadas (círculo, squircle, arredondado) e só o círculo central de 66dp é
-    garantido. O logo nasce num viewport de 64 centrado em (32,32), com raio
-    circunscrito de 28 (a distância do centro até as pontas de cima e de baixo).
-    O grupo escala 30/28 e translada +22 em cada eixo: o centro vai para (54,54)
-    — o meio dos 108dp — e o raio circunscrito vira 30dp, ou seja, 60dp de ponta
-    a ponta dentro do círculo seguro de 66dp, com 3dp de folga de cada lado.
-    Sem isso as pontas do hexágono seriam decepadas pela máscara circular.
-    Manter o path data literal (em vez de já multiplicado) é deliberado: dá para
-    conferir linha a linha contra o logo-mark.svg.
+    Safe zone: only the central 66dp circle survives every launcher mask. The logo lives in a
+    64 viewport centered at (32,32) with a circumradius of 28; the group scales by 30/28 and
+    translates by 22, centering it at (54,54) with a 30dp radius (3dp margin each side).
+    The path data is kept literal so it can be compared line by line with logo-mark.svg.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"

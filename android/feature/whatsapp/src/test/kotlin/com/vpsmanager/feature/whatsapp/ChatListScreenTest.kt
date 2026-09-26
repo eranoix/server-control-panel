@@ -13,10 +13,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders [ChatListScreen] under Robolectric in every [ChatListUiState] --
- * never composed before this.
- */
+/** Renders [ChatListScreen] under Robolectric in every [ChatListUiState]. */
 @RunWith(RobolectricTestRunner::class)
 class ChatListScreenTest {
 
@@ -26,8 +23,7 @@ class ChatListScreenTest {
     @Test
     fun `loading state shows a spinner, not a blank screen`() {
         val repository = ChatListScreenFakeWhatsAppRepository { awaitCancellation() }
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = ChatListViewModel(repository)
         composeRule.setContent {
             ChatListScreen(viewModel = viewModel)
@@ -38,36 +34,30 @@ class ChatListScreenTest {
 
     @Test
     fun `error state surfaces the reason and offers retry`() {
-        val repository = ChatListScreenFakeWhatsAppRepository { ChatsResult.Error("O servidor está indisponível no momento.") }
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        val repository = ChatListScreenFakeWhatsAppRepository { ChatsResult.Error("The server is unavailable right now.") }
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = ChatListViewModel(repository)
         composeRule.setContent {
             ChatListScreen(viewModel = viewModel)
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("O servidor está indisponível no momento.").assertExists()
+        composeRule.onNodeWithText("The server is unavailable right now.").assertExists()
         composeRule.onNodeWithText("Try again").assertExists()
     }
 
     @Test
     fun `empty inbox renders the empty message, not a stuck spinner`() {
         val repository = ChatListScreenFakeWhatsAppRepository { ChatsResult.Empty }
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = ChatListViewModel(repository)
         composeRule.setContent {
             ChatListScreen(viewModel = viewModel)
         }
         composeRule.waitForIdle()
 
-        // THE WORDING CHANGED ON PURPOSE. "Nenhuma conversa ainda" is an
-        // ASSERTION about the inbox, and this screen has already printed it
-        // with the WhatsApp bridge DOWN on the server — what there was was an
-        // absence of an answer about the inbox, not an empty inbox. From here
-        // the app cannot tell the two apart, so it says both instead of
-        // picking the wrong one.
+        // The app cannot tell an empty inbox from a disconnected WhatsApp bridge,
+        // so the message covers both instead of asserting the inbox is empty.
         composeRule.onNodeWithText("No chats").assertExists()
         composeRule.onNodeWithText(
             "The server returned no chats. If you expected " +
@@ -81,18 +71,17 @@ class ChatListScreenTest {
         val chats = listOf(
             WhatsAppChat(
                 jid = "5511999990000@s.whatsapp.net",
-                name = "Suporte",
+                name = "Support",
                 isGroup = false,
                 unread = 3,
                 avatarUrl = null,
                 lastMessageAt = 1L,
-                lastMessagePreview = "Olá, tudo bem?",
+                lastMessagePreview = "Hello, how are you?",
             ),
-            // No preview text and zero unread -- both nullable/branching
-            // paths ChatRow has to handle without crashing or leaving a gap.
+            // No preview and zero unread: ChatRow must handle both without crashing or a gap.
             WhatsAppChat(
                 jid = "120363000000000000@g.us",
-                name = "Equipe",
+                name = "Team",
                 isGroup = true,
                 unread = 0,
                 avatarUrl = null,
@@ -102,20 +91,19 @@ class ChatListScreenTest {
         )
         val repository = ChatListScreenFakeWhatsAppRepository { ChatsResult.Success(chats) }
         var opened: WhatsAppChat? = null
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = ChatListViewModel(repository)
         composeRule.setContent {
             ChatListScreen(viewModel = viewModel, onOpenChat = { opened = it })
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Suporte").assertExists()
-        composeRule.onNodeWithText("Olá, tudo bem?").assertExists()
+        composeRule.onNodeWithText("Support").assertExists()
+        composeRule.onNodeWithText("Hello, how are you?").assertExists()
         composeRule.onNodeWithText("3").assertExists()
-        composeRule.onNodeWithText("Equipe").assertExists()
+        composeRule.onNodeWithText("Team").assertExists()
 
-        composeRule.onNodeWithText("Suporte").performClick()
+        composeRule.onNodeWithText("Support").performClick()
         assert(opened?.jid == "5511999990000@s.whatsapp.net") { "expected onOpenChat with the clicked chat, got $opened" }
     }
 }

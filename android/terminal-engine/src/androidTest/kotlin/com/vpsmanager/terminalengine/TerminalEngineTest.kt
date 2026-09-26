@@ -13,7 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Instrumented — requires the real `libterminal_engine_jni.so` loaded on a
+ * Instrumented: requires the real `libterminal_engine_jni.so` loaded on a
  * device or emulator (Robolectric cannot load a bionic-ABI `.so` on a host
  * JVM). Feeds bytes through [TerminalEngine] and asserts on [CellSnapshot];
  * no rendering, no UI.
@@ -279,12 +279,8 @@ class TerminalEngineTest {
                 val random = Random(7)
                 while (running.get()) {
                     val gen = generation.incrementAndGet()
-                    // The tag HAS to fit in 6 digits, because the reader checks
-                    // the line in chunks of 6. Past 999_999 it would become 7
-                    // characters, the chunks would come out misaligned and the
-                    // check would report "mixed generations" on a line that
-                    // belongs to a single generation — on a fast emulator the
-                    // counter passes 1e6 well before the 60 seconds are up.
+                    // The tag MUST fit in 6 digits because the reader checks
+                    // 6-char chunks; a fast emulator passes 1e6 within 60 s.
                     val tag = (gen % 1_000_000).toString().padStart(6, '0')
                     val fill = tag.repeat((cols / tag.length) + 1).take(cols)
                     val colorCode = 30 + (gen % 8)
@@ -293,18 +289,10 @@ class TerminalEngineTest {
                     sb.append("[").append(colorCode).append('m')
                     sb.append(fill)
                     if (injectSleepInCopyWindow && gen % 37 == 0) {
-                        // Widens the window in which the writer is mid-operation
-                        // while the reader copies. The cut falls at the end of
-                        // the control prefix (cursor home + SGR), never in the
-                        // middle of the text: cut mid-text, the GRID itself ends
-                        // up with half the new generation and half the previous
-                        // one, and that is a state any correct snapshot is
-                        // obliged to report — a split write is legitimate (see
-                        // splitWriteInvariance), and no engine design may hide
-                        // it. Cutting here, every intermediate state of the grid
-                        // stays self-consistent and the assertion goes back to
-                        // measuring what it promises: the snapshot, not the
-                        // writer's slice.
+                        // Widens the race window. Split only after the control
+                        // prefix (cursor home + SGR), never mid-text: a mid-text
+                        // split legitimately leaves a mixed grid, so the
+                        // assertion would test the writer instead of the snapshot.
                         val controlPrefix = sb.length - fill.length
                         engine.write(sb.substring(0, controlPrefix).toByteArray(Charsets.US_ASCII))
                         Thread.sleep(1)

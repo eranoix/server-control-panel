@@ -48,31 +48,14 @@ import com.vpsmanager.feature.files.transfer.TransferScreen
 import com.vpsmanager.feature.files.transfer.TransferViewModel
 
 /**
- * Remote directory browser: renders [FileBrowserUiState] as it comes back
- * from [FileBrowserViewModel], which in turn calls the generated mobile BFF
- * client via `FilesRepository.list()`. Every state below is real, distinct
- * UI -- a failed listing, a permission error and an empty directory never
- * look the same as each other or as a blank screen.
+ * Remote directory browser for [FileBrowserUiState]. Loading, error and empty states each
+ * render distinctly, never as a blank screen.
  *
- * [onOpenFile] receives the tapped file's full server path (via
- * [FileBrowserViewModel.pathFor], since [FileEntry] itself carries no path)
- * -- the editor screen is the destination `AppNavHost` wires it to.
+ * [onOpenFile] receives the tapped file's full server path. Upload and download actions go
+ * through [TransferViewModel], with progress shown inline by [TransferScreen].
  *
- * Each file row also carries a "Baixar" action and the header an "Enviar"
- * action that hands off to [TransferViewModel], which enqueues the actual
- * [com.vpsmanager.feature.files.transfer.DownloadWorker]/
- * [com.vpsmanager.feature.files.transfer.UploadWorker] job -- transfers are
- * a secondary affordance of this screen, not a new `AppNavHost` destination,
- * so their progress renders inline via [TransferScreen].
- *
- * [pickMode] turns this same screen into a folder picker: directory rows
- * still navigate deeper on tap, but also gain a "Selecionar" action, and the
- * header gains a "Selecionar esta pasta" action for the directory currently
- * open -- both report the chosen path via [onFolderPicked] instead of
- * opening a file or starting a manual transfer. This is purely additive:
- * with [pickMode] at its default (`false`), every existing affordance
- * (upload, download, open-in-editor, inline transfer progress) behaves
- * exactly as before.
+ * With [pickMode] the screen becomes a folder picker: folders and the current directory get a
+ * Select action that reports the path via [onFolderPicked] instead of opening or transferring.
  */
 @Composable
 fun FileBrowserScreen(
@@ -105,10 +88,7 @@ fun FileBrowserScreen(
     ) { pickedUri: Uri? ->
         if (pickedUri != null) {
             ensureNotificationPermission()
-            // UploadWorker may resume long after this picker call returns
-            // (retry, process death) -- without a persistable grant, the
-            // one-shot read permission `OpenDocument` hands back would not
-            // survive that, and re-opening the source file would fail.
+            // UploadWorker may run after a retry or process death, so the one-shot read grant must be persisted.
             context.contentResolver.takePersistableUriPermission(
                 pickedUri,
                 android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
@@ -147,11 +127,7 @@ fun FileBrowserScreen(
                 is FileBrowserUiState.Error -> ErrorContent(
                     message = current.message,
                     onRetry = viewModel::retry,
-                    // On an error, reloading retries exactly what has just
-                    // failed. Going up one level usually WORKS (the parent
-                    // folder exists and is readable), which is why it is
-                    // offered alongside — the breadcrumb above stays tappable
-                    // for the same reason.
+                    // Going up usually works when a retry would not (the parent is readable).
                     onUpOneLevel = viewModel::navigateUp.takeIf { viewModel.currentPath != ROOT_PATH },
                 )
                 is FileBrowserUiState.Empty -> EmptyContent()
@@ -163,8 +139,7 @@ fun FileBrowserScreen(
                         when {
                             entry.isDir -> viewModel.navigateInto(entry)
                             !pickMode -> onOpenFile(viewModel.pathFor(entry))
-                            // A file row is not a valid folder pick -- tapping it in
-                            // pickMode is a no-op, it neither navigates nor opens.
+                            // In pickMode tapping a file does nothing.
                         }
                     },
                     onDownloadClick = { entry ->
@@ -195,11 +170,7 @@ private fun FileBrowserHeader(
 ) {
     Surface(tonalElevation = 2.dp) {
         Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-            // THE BREADCRUMB COMES FIRST, alone on its line. It is this
-            // screen's primary information (see PathBreadcrumb), and sharing
-            // the width with two action buttons would squeeze it to three
-            // characters on a deep path — which is exactly when it is most
-            // useful.
+            // The breadcrumb gets its own line so buttons do not squeeze it on deep paths.
             PathBreadcrumb(
                 path = currentPath,
                 onTapSegment = onGoToPath,
@@ -213,19 +184,12 @@ private fun FileBrowserHeader(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 if (canNavigateUp) {
-                    // "Folder up", not "Back": this button goes up one level in
-                    // the FILE TREE, not in the navigation stack. Files is a
-                    // top-level destination (it carries the shell's hamburger, not
-                    // a back arrow), so labelling this "Back" next to the hamburger
-                    // promised a navigation it does not perform.
+                    // Not labelled "Back": it moves up the file tree, not the navigation stack.
                     TextButton(onClick = onNavigateUp) { Text(text = "Up one folder") }
                 }
                 Spacer(modifier = Modifier.weight(1f))
                 if (!pickMode) {
-                    // "In the terminal": opens the CURRENT folder in an
-                    // `ls -la`. It is the way out of every question this
-                    // browser does not answer — permissions, owner, symlink,
-                    // the real size of a directory.
+                    // Runs `ls -la` on the current folder for details this browser does not show.
                     TextButton(
                         onClick = {
                             val cmd = BridgeCommands.listDir(currentPath)
@@ -280,12 +244,7 @@ private fun ErrorContent(message: String, onRetry: () -> Unit, onUpOneLevel: (()
                 Button(onClick = onRetry) {
                     Text(text = "Try again")
                 }
-                // Going up a level usually works when reloading will not:
-                // the commonest cause of failure here is a permission on the
-                // CURRENT folder, and the parent is almost always readable.
-                // Without this exit, a folder you cannot read becomes a dead
-                // end — the only alternative being to reopen the whole screen
-                // and navigate again from the root.
+                // Failures are usually a permission on the current folder, so going up avoids a dead end.
                 onUpOneLevel?.let {
                     TextButton(onClick = it) { Text(text = "Up one folder") }
                 }
@@ -361,11 +320,7 @@ private fun FileRow(
             when {
                 pickMode && entry.isDir -> TextButton(onClick = onSelectFolderClick) { Text(text = "Select") }
                 !pickMode && !entry.isDir -> Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // "View" sends `cat <file>` to the terminal. It is the
-                    // answer for a file the editor does not open well:
-                    // binary, enormous, or a log you want to follow with
-                    // `tail -f` straight afterwards — the command arrives
-                    // editable.
+                    // Sends an editable `cat <file>` to the terminal, for files the editor handles badly.
                     TextButton(
                         onClick = {
                             val cmd = BridgeCommands.viewFile(fullPath)
@@ -392,7 +347,7 @@ private fun mimeTypeFor(filename: String): String {
         ?: "application/octet-stream"
 }
 
-/** `null` name/zero size are both legitimate misses (a provider that doesn't answer these columns). */
+/** Returns a null name or zero size when the provider does not report those columns. */
 private fun queryDisplayNameAndSize(context: android.content.Context, uri: Uri): Pair<String?, Long> {
     var name: String? = null
     var size = 0L

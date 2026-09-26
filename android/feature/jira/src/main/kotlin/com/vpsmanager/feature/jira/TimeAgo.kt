@@ -6,21 +6,10 @@ import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * How long ago, in one or two words.
+ * Relative age in one or two words, since the card line answers "is this stalled?".
  *
- * ## Why relative, and not the date
- *
- * The card has room for one line, and the question that line answers is "is
- * this stalled?" — not "on what day did this move". "3 w ago" answers straight
- * away; "12/06/2026" makes the person work out the difference in their head,
- * every time, for every card in the column.
- *
- * ## Why an unreadable date becomes empty, and not an error
- *
- * Jira's timestamp comes in RFC 3339 with a colon-less offset
- * (`2026-09-09T12:00:00.000-0300`), which Java's standard formats refuse. A
- * card without the age is still a useful card; a card that does not render
- * because a date did not fit a format is invisible work.
+ * Jira sends offsets without a colon (`-0300`), which Java's standard formats reject. An
+ * unreadable date yields an empty string rather than an error, so the card still renders.
  */
 internal fun timeAgo(timestamp: String?, now: OffsetDateTime): String {
     val whenText = parseTimestamp(timestamp) ?: return ""
@@ -38,7 +27,7 @@ internal fun timeAgo(timestamp: String?, now: OffsetDateTime): String {
     }
 }
 
-/** The formats Jira sends dates in, in the order they turn up. */
+/** Jira's date formats, most common first. */
 private val FORMATS = listOf(
     DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ"),
     DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZ"),
@@ -64,14 +53,8 @@ internal fun parseTimestamp(timestamp: String?): OffsetDateTime? {
 }
 
 /**
- * The initials of whoever is assigned.
- *
- * Initials and not the photo: Jira's photos live on an Atlassian domain, and
- * fetching them from the app would mean either sending this server's
- * authentication header to a third party, or opening a proxy route in the BFF
- * just for that. The web panel uses initials when there is no photo for the
- * same reason — and on a 40 dp card an initial identifies just as well as the
- * photo.
+ * Assignee initials. Avatars are not fetched because they live on an Atlassian domain, which
+ * would mean leaking our auth header to a third party or adding a proxy route.
  */
 internal fun initials(name: String?): String {
     val parts = name?.trim()?.split(Regex("\\s+")).orEmpty().filter { it.isNotBlank() }
@@ -81,13 +64,7 @@ internal fun initials(name: String?): String {
     return "$first${parts.last().first().uppercaseChar()}"
 }
 
-/**
- * The due date as it appears on the card, or empty.
- *
- * A due date already past becomes "overdue": the difference between "due in
- * 2 d" and "overdue by 2 d" is the only thing that changes what you do with the
- * card today.
- */
+/** Due-date label for the card, or empty; a past date is shown as overdue. */
 internal fun dueLabel(timestamp: String?, today: LocalDate): String {
     val data = parseTimestamp(timestamp)?.toLocalDate() ?: return ""
     val days = java.time.temporal.ChronoUnit.DAYS.between(today, data)

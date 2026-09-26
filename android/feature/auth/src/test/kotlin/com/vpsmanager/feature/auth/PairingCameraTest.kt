@@ -12,15 +12,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Classifying a camera failure is deliberately pure — no Compose, no
- * Robolectric and no hardware — precisely because it is the piece that has to
- * be right cause by cause: the action the screen offers (ask for permission,
- * open Settings, try again, give up on the camera) comes from here.
+ * Pure tests of camera failure classification, which decides the action the
+ * screen offers (ask permission, open Settings, retry, skip the camera).
  *
- * The exceptions assembled here reproduce CameraX's REAL wrapping: the
- * `ListenableFuture` fails with an `ExecutionException` wrapping an
- * `InitializationException`, which in turn wraps the
- * `CameraUnavailableException` carrying the reason.
+ * Exceptions mimic CameraX's real wrapping: `ExecutionException` around
+ * `InitializationException` around the `CameraUnavailableException` with the reason.
  */
 class PairingCameraTest {
 
@@ -28,10 +24,8 @@ class PairingCameraTest {
         ExecutionException(InitializationException(cause))
 
     @Test
-    fun `emulador sem camera - a falha real que fechava o app vira SemCamera`() {
-        // The message is the one CameraX emits when a device advertises the
-        // camera feature but exposes none; it is what took the app down in the
-        // lab.
+    fun `an emulator without a camera is classified as NoCamera`() {
+        // CameraX's message when a device advertises a camera but exposes none.
         val error = asCameraXDelivers(
             CameraUnavailableException(
                 CameraUnavailableException.CAMERA_ERROR,
@@ -43,28 +37,28 @@ class PairingCameraTest {
     }
 
     @Test
-    fun `camera tomada por outro app vira CameraOcupada`() {
+    fun `a camera taken by another app is CameraInUse`() {
         val error = asCameraXDelivers(CameraUnavailableException(CameraUnavailableException.CAMERA_IN_USE))
 
         assertEquals(CameraFailure.CameraInUse, classifyCameraFailure(error, deviceCameras = 2))
     }
 
     @Test
-    fun `limite de camaras abertas tambem e disputa, nao falha inesperada`() {
+    fun `the open-camera limit is also contention, not an unexpected failure`() {
         val error = asCameraXDelivers(CameraUnavailableException(CameraUnavailableException.CAMERA_MAX_IN_USE))
 
         assertEquals(CameraFailure.CameraInUse, classifyCameraFailure(error, deviceCameras = 2))
     }
 
     @Test
-    fun `camera desconectada e tratada como disputa - a acao do usuario e a mesma`() {
+    fun `a disconnected camera is treated as contention since the user action is the same`() {
         val error = asCameraXDelivers(CameraUnavailableException(CameraUnavailableException.CAMERA_DISCONNECTED))
 
         assertEquals(CameraFailure.CameraInUse, classifyCameraFailure(error, deviceCameras = 1))
     }
 
     @Test
-    fun `camera desligada por politica do aparelho tem causa propria`() {
+    fun `a camera disabled by device policy has its own cause`() {
         val error = asCameraXDelivers(CameraUnavailableException(CameraUnavailableException.CAMERA_DISABLED))
 
         assertEquals(
@@ -74,7 +68,7 @@ class PairingCameraTest {
     }
 
     @Test
-    fun `nao perturbe tambem e bloqueio do sistema`() {
+    fun `do not disturb is also a system block`() {
         val error = asCameraXDelivers(
             CameraUnavailableException(CameraUnavailableException.CAMERA_UNAVAILABLE_DO_NOT_DISTURB),
         )
@@ -86,40 +80,40 @@ class PairingCameraTest {
     }
 
     @Test
-    fun `permissao revogada com a tela aberta aparece como SecurityException no fundo da pilha`() {
+    fun `permission revoked while open shows up as a nested SecurityException`() {
         val error = asCameraXDelivers(SecurityException("Lacking privileges to access camera service"))
 
         assertEquals(CameraFailure.PermissionDenied, classifyCameraFailure(error, deviceCameras = 2))
     }
 
     @Test
-    fun `causa desconhecida nao e colapsada - vira FalhaInesperada com o detalhe tecnico`() {
+    fun `an unknown cause is not collapsed and becomes UnexpectedFailure with detail`() {
         val error = asCameraXDelivers(IOException("HAL fora do ar"))
 
         val failure = classifyCameraFailure(error, deviceCameras = 2)
 
-        assertTrue("esperava FalhaInesperada, veio $failure", failure is CameraFailure.UnexpectedFailure)
+        assertTrue("expected UnexpectedFailure, got $failure", failure is CameraFailure.UnexpectedFailure)
         val detail = (failure as CameraFailure.UnexpectedFailure).detail
-        assertTrue("detalhe deve nomear a causa raiz: $detail", detail.contains("IOException"))
-        assertTrue("detalhe deve trazer a mensagem: $detail", detail.contains("HAL fora do ar"))
+        assertTrue("detail must name the root cause: $detail", detail.contains("IOException"))
+        assertTrue("detail must include the message: $detail", detail.contains("HAL fora do ar"))
     }
 
     @Test
-    fun `contagem desconhecida (-1) nunca vira SemCamera`() {
-        val error = asCameraXDelivers(IOException("qualquer coisa"))
+    fun `an unknown camera count (-1) is never NoCamera`() {
+        val error = asCameraXDelivers(IOException("anything"))
 
         assertTrue(classifyCameraFailure(error, deviceCameras = -1) is CameraFailure.UnexpectedFailure)
     }
 
     @Test
-    fun `zero cameras vence qualquer outro motivo - insistir nao resolve`() {
+    fun `zero cameras beats any other reason since retrying cannot help`() {
         val error = asCameraXDelivers(CameraUnavailableException(CameraUnavailableException.CAMERA_IN_USE))
 
         assertEquals(CameraFailure.NoCamera, classifyCameraFailure(error, deviceCameras = 0))
     }
 
     @Test
-    fun `ciclo na cadeia de causas nao trava a classificacao`() {
+    fun `a cycle in the cause chain does not hang classification`() {
         val a = RuntimeException("a")
         val b = RuntimeException("b", a)
         a.initCause(b)
@@ -127,10 +121,10 @@ class PairingCameraTest {
         assertTrue(classifyCameraFailure(a, deviceCameras = 1) is CameraFailure.UnexpectedFailure)
     }
 
-    // --- a camera that FALLS OVER after opening (CameraState, not an exception) ---
+    // Failures after the camera opened arrive as CameraState errors, not exceptions.
 
     @Test
-    fun `outro app toma a camera com o scanner aberto - vira CameraOcupada`() {
+    fun `another app taking the camera while scanning is CameraInUse`() {
         assertEquals(
             CameraFailure.CameraInUse,
             classifyCameraStateError(CameraState.ERROR_CAMERA_IN_USE),
@@ -142,7 +136,7 @@ class PairingCameraTest {
     }
 
     @Test
-    fun `camera desligada pelo sistema com o scanner aberto tem causa propria`() {
+    fun `the system disabling the camera while scanning has its own cause`() {
         assertEquals(
             CameraFailure.CameraBlockedBySystem,
             classifyCameraStateError(CameraState.ERROR_CAMERA_DISABLED),
@@ -154,12 +148,12 @@ class PairingCameraTest {
     }
 
     @Test
-    fun `erro recuperavel nao troca a tela - o CameraX reabre sozinho`() {
+    fun `a recoverable error keeps the screen since CameraX reopens by itself`() {
         assertNull(classifyCameraStateError(CameraState.ERROR_OTHER_RECOVERABLE_ERROR))
     }
 
     @Test
-    fun `erro fatal da camera degrada com detalhe, sem inventar causa`() {
+    fun `a fatal camera error degrades with detail, without inventing a cause`() {
         val failure = classifyCameraStateError(CameraState.ERROR_CAMERA_FATAL_ERROR)
 
         assertTrue(failure is CameraFailure.UnexpectedFailure)
@@ -167,13 +161,13 @@ class PairingCameraTest {
     }
 
     @Test
-    fun `negativa de permissao distingue pedir de novo de ir para as configuracoes`() {
+    fun `a permission denial distinguishes asking again from going to Settings`() {
         assertEquals(CameraFailure.PermissionDenied, permissionFailure(canAskAgain = true))
         assertEquals(CameraFailure.PermissionBlocked, permissionFailure(canAskAgain = false))
     }
 
     @Test
-    fun `cada causa tem texto proprio - nada de mensagem unica de erro generico`() {
+    fun `each cause has its own text, no single generic error message`() {
         val causes = listOf(
             CameraFailure.PermissionDenied,
             CameraFailure.PermissionBlocked,
@@ -184,29 +178,27 @@ class PairingCameraTest {
         )
 
         val titles = causes.map { it.text().title }
-        assertEquals("cada causa precisa de um título próprio", causes.size, titles.toSet().size)
+        assertEquals("each cause needs its own title", causes.size, titles.toSet().size)
         causes.forEach { cause ->
             val text = cause.text()
-            // Every piece of text has to point to a way out: either the action
-            // that attacks the cause, or the alternative path (manual server
-            // plus username and password).
+            // Each text must offer a way out: an action, or the manual server plus password path.
             assertTrue(
-                "a explicação de $cause precisa dizer o que fazer: ${text.explanation}",
+                "the explanation for $cause must say what to do: ${text.explanation}",
                 text.action != null || text.explanation.contains("manually"),
             )
         }
     }
 
     @Test
-    fun `sem camera nao oferece acao de retentar - so as saidas`() {
+    fun `no camera offers no retry action, only the alternatives`() {
         assertNull(CameraFailure.NoCamera.text().action)
     }
 
     @Test
-    fun `falha inesperada carrega o detalhe tecnico para o dono relatar sem adb`() {
-        val text = CameraFailure.UnexpectedFailure("IOException: HAL fora do ar").text()
+    fun `an unexpected failure carries technical detail to report without adb`() {
+        val text = CameraFailure.UnexpectedFailure("IOException: HAL down").text()
 
         assertNotNull(text.technicalDetail)
-        assertEquals("IOException: HAL fora do ar", text.technicalDetail)
+        assertEquals("IOException: HAL down", text.technicalDetail)
     }
 }

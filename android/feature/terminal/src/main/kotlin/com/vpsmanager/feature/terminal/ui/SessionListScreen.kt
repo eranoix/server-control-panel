@@ -66,17 +66,7 @@ import com.vpsmanager.designsystem.VpsmIcons
 import com.vpsmanager.designsystem.vpsmStatusColors
 
 /**
- * The terminal sessions screen.
- *
- * ## What it shows, and why it shows it this way
- *
- * The previous version was one `ListItem` per session with the name on top and
- * the words "Not attached" underneath. Seven sessions filled the screen
- * repeating the same phrase six times, with no icon, no state visible at a
- * glance, not a single action. The operator called it threadbare, and the
- * diagnosis is information density: ~110 px of row to say one name.
- *
- * The new design puts, in the SAME height as before:
+ * The terminal sessions screen. Each row packs, in one compact card:
  *
  * ```
  * ┌──────────────────────────────────────────────┐
@@ -85,19 +75,10 @@ import com.vpsmanager.designsystem.vpsmStatusColors
  * └──────────────────────────────────────────────┘
  * ```
  *
- * — icon (category at a glance), name in monospace (it is a session name, not
- * a sentence), state badge on the scanning axis, meta on a single line, and a
- * menu with what can be done to that session. The badge sits on the right
- * because the question you ask while scanning the list is "which one is
- * active?", and the answer has to be in a column, not in the middle of the
- * text.
- *
- * ## Backups
- *
- * They have always existed on the server — an automatic collector every 6 h,
- * plus the button in the web panel — and the app could not see them. Now the
- * summary bar leads to the sheet ([BackupsSheet]) and each session can be saved
- * on its own from its menu.
+ * an icon, the name in monospace, an "active" badge in a column on the right
+ * (the question while scanning is "which one is active?"), a one-line meta row
+ * and a menu of actions. The summary bar leads to the backups sheet
+ * ([BackupsSheet]), and each session can be saved from its menu.
  */
 @Composable
 fun SessionListScreen(
@@ -115,13 +96,12 @@ fun SessionListScreen(
     var ending by remember { mutableStateOf<String?>(null) }
     var assigning by remember { mutableStateOf<String?>(null) }
 
-    // The assignment targets are requested when the screen appears, not in the
-    // ViewModel's constructor — whoever constructs it controls what starts.
+    // Assignment targets load when the screen appears, not in the ViewModel's
+    // constructor, so whoever constructs it controls what starts.
     LaunchedEffect(Unit) { viewModel.loadTargets() }
 
     Column(modifier = modifier.fillMaxSize()) {
-        // The message takes up height only when there is one: a permanent empty
-        // strip would cost 40 dp on the screen where the list needs them.
+        // The notice takes height only when there is one.
         notice?.let { text ->
             OperationNotice(text = text, onClose = viewModel::clearNotice)
         }
@@ -146,9 +126,8 @@ fun SessionListScreen(
                 onSaveSession = { viewModel.saveBackup(it) },
                 onRename = { renaming = it },
                 previews = previews,
-                // The list comes back empty for anyone who is not an admin (the
-                // route returns 404), so the option does not even appear —
-                // rather than appearing and failing.
+                // Non-admins get an empty list (the route returns 404), so the
+                // option is hidden rather than shown and failing.
                 canAssign = !targets.isNullOrEmpty(),
                 onPeek = { viewModel.togglePreview(it) },
                 onAssign = { assigning = it },
@@ -200,11 +179,8 @@ fun SessionListScreen(
 }
 
 /**
- * The sentence reporting back on the last operation.
- *
- * Deliberately not a `Snackbar`: a snackbar vanishes on its own after 4 s, and
- * the answer that matters here ("3 restored, 2 skipped as already present") is
- * precisely the one you want to read twice. This strip stays until it is
+ * The result of the last operation. Not a `Snackbar`, which vanishes after 4 s:
+ * answers like "3 restored, 2 skipped" deserve a second read, so this stays until
  * dismissed.
  */
 @Composable
@@ -257,11 +233,8 @@ private fun ErrorContent(message: String, onRetry: () -> Unit) {
 }
 
 /**
- * No sessions, but possibly WITH backups — and that is the case the previous
- * version had no way of telling. After the machine restarts the list is empty
- * and the whole history is stored away; offering only "type a name" would send
- * the person back to square one on top of a backup they do not even know is
- * there.
+ * No sessions, but possibly with backups (e.g. after the machine restarts), so
+ * restoring is offered next to creating a new session.
  */
 @Composable
 private fun EmptyContent(onAttach: (String) -> Unit, onOpenBackups: () -> Unit) {
@@ -344,9 +317,8 @@ private fun SessionList(
 }
 
 /**
- * The top row: how many sessions, how many active, and the two actions that
- * apply to the set. It lives outside the `LazyColumn` because it is an anchor,
- * not content — scrolling the list must not carry away access to the backups.
+ * The top row: session count, active count and the two actions for the whole
+ * set. Outside the `LazyColumn` so scrolling never hides access to backups.
  */
 @Composable
 private fun SummaryBar(
@@ -422,9 +394,7 @@ private fun SessionRow(
                 Text(
                     text = session.name,
                     style = MaterialTheme.typography.titleSmall,
-                    // Monospace: this is a terminal session name, and reading
-                    // `web-2` without mistaking the `2` for a `z` matters more
-                    // here than the elegance of a proportional face.
+                    // Monospace, so `web-2` is not misread in a session name.
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -439,10 +409,8 @@ private fun SessionRow(
                 )
             }
             if (session.attached) {
-                // Only the ACTIVE state earns a badge. Marking the inactive one
-                // too would make seven badges in a list of seven, and seven
-                // badges distinguish nothing — that was exactly the repeated
-                // "Not attached" of the previous version.
+                // Only active sessions get a badge; a badge on every row would
+                // distinguish nothing.
                 ActiveBadge(color = statusColors.ok.accent)
                 Spacer(modifier = Modifier.width(4.dp))
             }
@@ -474,8 +442,7 @@ private fun SessionRow(
                             onClick = { menuOpen = false; onRename() },
                         )
                         DropdownMenuItem(
-                            // The label follows the STATE, not the action:
-                            // whoever has the preview open reads "Close preview".
+                            // The label follows the state: "Close preview" when open.
                             text = { Text(if (previewOpen) "Close preview" else "Peek") },
                             onClick = { menuOpen = false; onPeek() },
                         )
@@ -487,8 +454,8 @@ private fun SessionRow(
                         }
                         HorizontalDivider()
                         DropdownMenuItem(
-                            // Set apart by a divider and painted in the error
-                            // colour: it is the only one here with no way back.
+                            // Set apart and in the error colour: the only
+                            // irreversible action here.
                             text = {
                                 Text(
                                     text = "End…",
@@ -508,15 +475,9 @@ private fun SessionRow(
 }
 
 /**
- * The session's portrait, inside the row's own card.
- *
- * It stays ANCHORED to the session instead of opening a sheet over the top: the
- * question the preview answers is "which of these do I want to open?", and a
- * modal sheet hides precisely the other options being compared.
- *
- * Monospace and horizontally scrollable because it is terminal output —
- * wrapping lines here would throw off tables, progress bars and directory
- * trees, which are half of what you are trying to recognise at a glance.
+ * The session preview, inside the row's own card rather than a sheet, so the
+ * other sessions being compared stay visible. Monospace and horizontally
+ * scrollable, since wrapping would break tables, progress bars and trees.
  */
 @Composable
 private fun PreviewCard(preview: PreviewUiState) {
@@ -534,9 +495,8 @@ private fun PreviewCard(preview: PreviewUiState) {
                 }
 
                 is PreviewUiState.Empty -> Text(
-                    // "Empty" is information, not failure: a freshly created
-                    // session has not written anything yet, and saying so keeps it
-                    // from looking like an error.
+                    // Empty is information, not failure: a new session has not
+                    // written anything yet.
                     text = "The session has not written anything yet.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -562,15 +522,9 @@ private fun PreviewCard(preview: PreviewUiState) {
 
 
 /**
- * Confirmation before killing a session.
- *
- * It states the NAME and it states the CONSEQUENCE, because both are what the
- * person needs in order to decide: killing it kills whatever is running inside
- * — a build, a migration, an agent halfway through a task — and none of it
- * comes back.
- *
- * The confirm button carries the verb ("Kill"), not "OK". An "OK" forces you to
- * re-read the question to know what you are confirming.
+ * Confirmation before ending a session. It names the session and the consequence
+ * (everything running inside ends and does not come back), and the confirm button
+ * carries the verb rather than "OK".
  */
 @Composable
 private fun EndDialog(
@@ -599,15 +553,9 @@ private fun EndDialog(
 }
 
 /**
- * Choice of audience: who the session shows up for.
- *
- * It is a LIST and not a text field — a project rule, and one with teeth here:
- * the server accepts any target, so a name with one character wrong would make
- * the session vanish from everybody's list, with no error at all.
- *
- * "Everyone" comes last and with its explanation attached: it is the option
- * that changes the outcome the most, and "*" says nothing to anyone who does
- * not know the convention.
+ * Who the session shows up for, chosen from a list: the server accepts any
+ * target, so a mistyped name would silently hide the session from everyone.
+ * "Everyone" is explained, since "*" means nothing to most people.
  */
 @Composable
 private fun AssignSheet(
@@ -664,19 +612,13 @@ private fun ActiveBadge(color: Color) {
 }
 
 /**
- * The meta row: the session's age and the originating tab, where there is one.
- *
- * The age is what answers "is this yesterday's or just now?" in a list of
- * similar names, and it is the only temporal information the server sends
- * today — `created` exists in the BFF's session summary, "last activity" does
- * not.
+ * The meta row: the session's age and its originating tab, if any. Age is the
+ * only time information the server sends (`created`, not last activity).
  */
 private fun sessionMeta(session: TerminalSession): String {
     val parts = mutableListOf(readableAge(session.created))
-    // The tab only goes in when it says something the name does not. On the
-    // server it is filled with the session's own name in most cases, and
-    // repeating "pouco1 · pouco1" spends the entire meta row to convey nothing —
-    // which is exactly how the first version of this screen turned out.
+    // The tab only when it differs from the name; the server usually fills it
+    // with the session name, and repeating it conveys nothing.
     session.tab
         ?.takeIf { it.isNotBlank() && !it.equals(session.name, ignoreCase = true) }
         ?.let { parts += it }
@@ -684,9 +626,8 @@ private fun sessionMeta(session: TerminalSession): String {
 }
 
 /**
- * "3 h ago", "2 d ago". Seconds become "now": a terminal opened 40 s ago and one
- * opened 55 s ago are the same thing to somebody choosing which to open, and a
- * clock ticking in the list would only draw attention to what does not matter.
+ * "3 h ago", "2 d ago". Under a minute is "now": a ticking clock in the list would
+ * only draw attention to what does not matter.
  */
 internal fun readableAge(createdAtSeconds: Long, nowSeconds: Long = System.currentTimeMillis() / 1000): String {
     val delta = (nowSeconds - createdAtSeconds).coerceAtLeast(0)
@@ -700,7 +641,7 @@ internal fun readableAge(createdAtSeconds: Long, nowSeconds: Long = System.curre
     }
 }
 
-/** At the end of the list, not at the top: what you do here 9 times out of 10 is open a session that already exists. */
+/** At the end of the list: most of the time the user opens an existing session. */
 @Composable
 private fun NewSessionCard(onAttach: (String) -> Unit) {
     Card(
@@ -775,10 +716,7 @@ private fun RenameDialog(currentName: String, onConfirm: (String) -> Unit, onCan
     )
 }
 
-/**
- * The session chips inside a backup, used by the sheet. It lives here because
- * it shares the list's visual language.
- */
+/** The session chips inside a backup, used by the backups sheet; shares the list's visual language. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SessionChips(names: List<String>, onTap: (String) -> Unit) {

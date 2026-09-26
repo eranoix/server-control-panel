@@ -21,14 +21,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * The fallback ladder, rung by rung.
- *
- * What each test here defends is not "the code runs": it is that NO path ends
- * with the app stuck without an update and without an explanation, and — the
- * inviolable rule — that an APK whose SHA-256 does not match NEVER reaches the
- * installer. That last one is [apkComHashDivergenteNuncaChegaAoInstalador], and
- * it exists because `hpatchz` applied over the wrong base RETURNS SUCCESS and
- * writes a complete, wrong file: its exit code is evidence of nothing.
+ * The fallback ladder, rung by rung: no path may leave the app stuck without an
+ * update and without an explanation, and an APK whose SHA-256 does not match must
+ * never reach the installer (`hpatchz` over the wrong base exits with success and
+ * writes a complete, wrong file).
  */
 @RunWith(RobolectricTestRunner::class)
 class UpdateCoordinatorTest {
@@ -36,11 +32,8 @@ class UpdateCoordinatorTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     /**
-     * The "rebuilt" APK in this test is 4 KiB, not 31 MB — and
-     * [newApkSha] is the REAL SHA-256 of those bytes, computed here. That
-     * matters: the coordinator re-reads the hash of the APK on disk (with the
-     * real `ApkPatcher.sha256Of`) to decide whether it can skip the rebuild on
-     * a retry, and a made-up hash would leave that decision never exercised.
+     * [newApkSha] is the real SHA-256 of these bytes: the coordinator re-hashes the
+     * APK on disk to decide whether a retry can skip the rebuild.
      */
     private val newApkContent = ByteArray(4096) { (it % 97).toByte() }
     private val newApkSha = sha256(newApkContent)
@@ -51,7 +44,7 @@ class UpdateCoordinatorTest {
     private val patch = UpdateArtifact(url = "/x?file=p", sizeBytes = 1_400_329, sha256 = patchSha)
     private val full = UpdateArtifact(url = "/x?file=f", sizeBytes = 10_029_237, sha256 = fullSha)
 
-    private fun manifest(comPatch: Boolean = true, versionCode: Long = 7, upToDate: Boolean = false) = UpdateManifest(
+    private fun manifest(withPatch: Boolean = true, versionCode: Long = 7, upToDate: Boolean = false) = UpdateManifest(
         latest = UpdateRelease(
             versionName = "0.1.7",
             versionCode = versionCode,
@@ -59,17 +52,13 @@ class UpdateCoordinatorTest {
             apkSizeBytes = newApkContent.size.toLong(),
         ),
         upToDate = upToDate,
-        patch = if (comPatch) patch else null,
+        patch = if (withPatch) patch else null,
         full = full,
         patchTool = "HDiffPatch::hdiffz v5.1.3 -SD -c-lzma2-9-64m",
     )
 
-    // ------------------------------------------------------------------
-    // Degrau 0 — o que vira banner
-    // ------------------------------------------------------------------
-
     @Test
-    fun `versao nova com patch anuncia o tamanho do PATCH, nao o do APK`() {
+    fun `a new version with a patch announces the patch size, not the APK size`() {
         val state = decideAvailability(manifest(), installedVersionCode = 6)
 
         check(state is UpdateState.Available)
@@ -78,8 +67,8 @@ class UpdateCoordinatorTest {
     }
 
     @Test
-    fun `base desconhecida anuncia o completo — 10 MB, nao os 31 do APK cru`() {
-        val state = decideAvailability(manifest(comPatch = false), installedVersionCode = 6)
+    fun `an unknown base announces the full artifact size, not the raw APK size`() {
+        val state = decideAvailability(manifest(withPatch = false), installedVersionCode = 6)
 
         check(state is UpdateState.Available)
         assertEquals(10_029_237L, state.downloadBytes)
@@ -87,27 +76,21 @@ class UpdateCoordinatorTest {
     }
 
     @Test
-    fun `quem ja esta na ultima versao nao ve banner`() {
+    fun `no banner when already on the latest version`() {
         assertEquals(UpdateState.Idle, decideAvailability(manifest(upToDate = true), installedVersionCode = 7))
     }
 
     /**
-     * A development build has an unknown hash (so `up_to_date` is false) and a
-     * higher `versionCode`. Without this guard it would be offered an OLDER
-     * version to install — which Android refuses with
-     * `INSTALL_FAILED_VERSION_DOWNGRADE`, after spending the whole download.
+     * A development build has an unknown hash (`up_to_date` is false) and a higher
+     * `versionCode`; offering it the older release would end in `INSTALL_FAILED_VERSION_DOWNGRADE`.
      */
     @Test
-    fun `nunca oferece downgrade para um build mais novo que o publicado`() {
+    fun `never offers a downgrade to a build newer than the published one`() {
         assertEquals(UpdateState.Idle, decideAvailability(manifest(versionCode = 7), installedVersionCode = 9))
     }
 
-    // ------------------------------------------------------------------
-    // Degrau 1 — caminho feliz
-    // ------------------------------------------------------------------
-
     @Test
-    fun `patch aplicado e conferido chega ao instalador`() = withCoordinator { lab ->
+    fun `an applied and verified patch reaches the installer`() = withCoordinator { lab ->
         lab.coordinator.check()
         lab.coordinator.start()
         lab.advance()
@@ -117,15 +100,11 @@ class UpdateCoordinatorTest {
         assertEquals(newApkSha, lab.patcher.expectedReceived?.sha256)
     }
 
-    // ------------------------------------------------------------------
-    // Rung 2 — patch with the wrong SHA-256: demote once, then the full APK
-    // ------------------------------------------------------------------
-
     @Test
-    fun `patch corrompido e rebaixado UMA vez e so entao cai para o completo`() = withCoordinator(
+    fun `a corrupt patch is retried once before falling back to the full APK`() = withCoordinator(
         downloads = { artifact ->
             if (artifact.sha256 == patchSha) {
-                ArtifactDownloadProgress.Failed("corrompido", corrupt = true)
+                ArtifactDownloadProgress.Failed("corrupted", corrupt = true)
             } else {
                 null
             }
@@ -135,15 +114,15 @@ class UpdateCoordinatorTest {
         lab.coordinator.start()
         lab.advance()
 
-        // Two patch attempts (the second is the "demote once"), then the full APK.
+        // Two patch attempts, then the full APK.
         assertEquals(listOf(patchSha, patchSha, fullSha), lab.source.downloaded)
         assertEquals(1, lab.installer.commits.size)
     }
 
-    /** A dropped connection does NOT spend the attempt or skip to the full APK: the partial stays and resuming is what fixes it. */
+    /** A dropped connection does not skip to the full APK: the partial file stays so the download can resume. */
     @Test
-    fun `queda de conexao nao derruba para o completo — o parcial fica para retomar`() = withCoordinator(
-        downloads = { ArtifactDownloadProgress.Failed("Falha de conexão.", corrupt = false) },
+    fun `a dropped connection keeps the partial download instead of falling back to the full APK`() = withCoordinator(
+        downloads = { ArtifactDownloadProgress.Failed("Connection failed.", corrupt = false) },
     ) { lab ->
         lab.coordinator.check()
         lab.coordinator.start()
@@ -156,12 +135,8 @@ class UpdateCoordinatorTest {
         assertEquals(0, lab.installer.commits.size)
     }
 
-    // ------------------------------------------------------------------
-    // Rung 3 — rebuilt APK with a different hash (the central finding)
-    // ------------------------------------------------------------------
-
     @Test
-    fun `APK reconstruido com hash diferente e descartado e o hash da base vai para o diagnostico`() = withCoordinator(
+    fun `a rebuilt APK with a different hash is discarded and the base hash is logged`() = withCoordinator(
         patches = { base, _ ->
             if (base.length() > 0) {
                 PatchResult.IntegrityMismatch(expectedSha256 = newApkSha, actualSha256 = "e".repeat(64))
@@ -177,38 +152,33 @@ class UpdateCoordinatorTest {
         assertEquals(listOf(patchSha, fullSha), lab.source.downloaded)
         assertEquals(1, lab.installer.commits.size)
         val diagnostic = lab.diagnostics.joinToString("\n")
-        assertTrue("o hash da base tem que ficar registrado:\n$diagnostic", diagnostic.contains(baseSha))
+        assertTrue("the base hash must be recorded:\n$diagnostic", diagnostic.contains(baseSha))
         assertTrue(diagnostic.contains("e".repeat(64)))
-        assertTrue("a ferramenta que gerou o patch é o que permite achar a incompatibilidade", diagnostic.contains("hdiffz"))
+        assertTrue("the tool that built the patch is what reveals the incompatibility", diagnostic.contains("hdiffz"))
     }
 
     /**
-     * THE INVIOLABLE RULE. If neither the patch nor the full download produces
-     * an APK whose hash matches, nothing is installed — and the screen points
-     * at the server's install page instead of going on offering "try again".
+     * If neither the patch nor the full download produces an APK with a matching
+     * hash, nothing is installed and the screen points at the server's install page.
      */
     @Test
-    fun `apkComHashDivergenteNuncaChegaAoInstalador`() = withCoordinator(
+    fun `an APK with a mismatching hash never reaches the installer`() = withCoordinator(
         patches = { _, _ -> PatchResult.IntegrityMismatch(expectedSha256 = newApkSha, actualSha256 = "f".repeat(64)) },
     ) { lab ->
         lab.coordinator.check()
         lab.coordinator.start()
         lab.advance()
 
-        assertEquals("NENHUM commit pode ter acontecido", 0, lab.installer.commits.size)
+        assertEquals("no commit may have happened", 0, lab.installer.commits.size)
         val state = lab.coordinator.state.value
         check(state is UpdateState.Failed)
         assertEquals(UpdateRecovery.USE_BROWSER, state.recovery)
         assertTrue(state.message.contains("/android/install"))
-        assertTrue("a sessão de instalação tem que ser abandonada", lab.installer.abandoned.isNotEmpty())
+        assertTrue("the install session must be abandoned", lab.installer.abandoned.isNotEmpty())
     }
 
-    // ------------------------------------------------------------------
-    // Rung 4 — patcher error
-    // ------------------------------------------------------------------
-
     @Test
-    fun `erro do hpatchz no patch cai para o completo`() = withCoordinator(
+    fun `an hpatchz error falls back to the full APK`() = withCoordinator(
         patches = { base, _ ->
             if (base.length() > 0) PatchResult.NativeFailure(HPatchCode.HPATCH_ERROR, 11) else null
         },
@@ -222,9 +192,9 @@ class UpdateCoordinatorTest {
     }
 
     @Test
-    fun `motor nativo ausente cai para o completo em vez de travar`() = withCoordinator(
+    fun `a missing native engine falls back to the full APK instead of hanging`() = withCoordinator(
         patches = { base, _ ->
-            if (base.length() > 0) PatchResult.EngineUnavailable("sem libhpatchz.so para esta ABI") else null
+            if (base.length() > 0) PatchResult.EngineUnavailable("no libhpatchz.so for this ABI") else null
         },
     ) { lab ->
         lab.coordinator.check()
@@ -234,29 +204,25 @@ class UpdateCoordinatorTest {
         assertEquals(1, lab.installer.commits.size)
     }
 
-    // ------------------------------------------------------------------
-    // Rung 5 — not enough space
-    // ------------------------------------------------------------------
-
     @Test
-    fun `sem espaco diz quantos MB faltam e nao comeca a baixar`() = withCoordinator(
+    fun `not enough space reports the missing MB and does not start downloading`() = withCoordinator(
         reservation = { StorageReservation.NotEnoughSpace(missingBytes = 5_500_000) },
     ) { lab ->
         lab.coordinator.check()
         lab.coordinator.start()
         lab.advance()
 
-        assertEquals("nada pode ter sido baixado", emptyList<String>(), lab.source.downloaded)
+        assertEquals("nothing may have been downloaded", emptyList<String>(), lab.source.downloaded)
         val state = lab.coordinator.state.value
         check(state is UpdateState.Failed)
         assertEquals(UpdateRecovery.FREE_SPACE, state.recovery)
-        assertTrue("a mensagem tem que dizer o número: ${state.message}", state.message.contains("5,5"))
+        assertTrue("the message must state the number: ${state.message}", state.message.contains("5,5"))
     }
 
     /** Failing to QUERY free space must not block a perfectly good update. */
     @Test
-    fun `consulta de espaco indisponivel nao impede a atualizacao`() = withCoordinator(
-        reservation = { StorageReservation.Unknown("volume sem UUID") },
+    fun `an unavailable free-space query does not block the update`() = withCoordinator(
+        reservation = { StorageReservation.Unknown("volume without UUID") },
     ) { lab ->
         lab.coordinator.check()
         lab.coordinator.start()
@@ -266,7 +232,7 @@ class UpdateCoordinatorTest {
     }
 
     @Test
-    fun `disco cheio detectado pelo patcher tambem diz quantos MB faltam`() = withCoordinator(
+    fun `a full disk detected by the patcher also reports the missing MB`() = withCoordinator(
         patches = { _, _ -> PatchResult.InsufficientStorage(requiredBytes = 31_135_416, usableBytes = 20_000_000) },
     ) { lab ->
         lab.coordinator.check()
@@ -279,12 +245,8 @@ class UpdateCoordinatorTest {
         assertEquals(0, lab.installer.commits.size)
     }
 
-    // ------------------------------------------------------------------
-    // Rung 6 — installation
-    // ------------------------------------------------------------------
-
     @Test
-    fun `instalacao falhada guarda o APK e manda a mensagem do sistema para o diagnostico`() = withCoordinator(
+    fun `a failed install keeps the APK and logs the system message`() = withCoordinator(
         installation = { InstallOutcome.Failed("INSTALL_FAILED_UPDATE_INCOMPATIBLE: assinaturas não conferem", blocked = false) },
     ) { lab ->
         lab.coordinator.check()
@@ -296,13 +258,13 @@ class UpdateCoordinatorTest {
         assertTrue(state.canRetry)
         assertEquals(UpdateRecovery.SHOW_DIAGNOSTICS, state.recovery)
         assertTrue(state.message.contains("assinaturas não conferem"))
-        assertTrue("o APK tem que ficar guardado para retentar", lab.staging.rebuiltApkFile(newApkSha).isFile)
+        assertTrue("the APK must be kept for a retry", lab.staging.rebuiltApkFile(newApkSha).isFile)
     }
 
     /** Retrying after a failed install demotes nothing: the intact APK is already on disk. */
     @Test
-    fun `retentar apos falha de instalacao nao rebaixa o artefato`() = withCoordinator(
-        installation = { InstallOutcome.Failed("erro qualquer", blocked = false) },
+    fun `retrying after a failed install does not demote the artifact`() = withCoordinator(
+        installation = { InstallOutcome.Failed("some error", blocked = false) },
     ) { lab ->
         lab.coordinator.check()
         lab.coordinator.start()
@@ -312,12 +274,12 @@ class UpdateCoordinatorTest {
         lab.coordinator.start()
         lab.advance()
 
-        assertEquals("a segunda tentativa não pode gastar internet", downloadedOnFirst, lab.source.downloaded.size)
+        assertEquals("the second attempt must not download again", downloadedOnFirst, lab.source.downloaded.size)
         assertEquals(2, lab.installer.commits.size)
     }
 
     @Test
-    fun `fontes desconhecidas negada aponta para o interruptor e nao abre sessao`() = withCoordinator(
+    fun `denied unknown sources points to the toggle and opens no session`() = withCoordinator(
         canInstall = false,
     ) { lab ->
         lab.coordinator.check()
@@ -331,10 +293,10 @@ class UpdateCoordinatorTest {
         assertEquals(emptyList<String>(), lab.source.downloaded)
     }
 
-    /** Android 16 Advanced Protection and enterprise policy: retrying does not help, and the screen must not pretend it does. */
+    /** Android 16 Advanced Protection and enterprise policy block sideloading, so retrying cannot help. */
     @Test
-    fun `aparelho que bloqueia sideload aponta para a pagina de instalacao`() = withCoordinator(
-        installation = { InstallOutcome.Failed("Instalação bloqueada pela política do dispositivo", blocked = true) },
+    fun `a device that blocks sideloading points to the install page`() = withCoordinator(
+        installation = { InstallOutcome.Failed("Installation blocked by device policy", blocked = true) },
     ) { lab ->
         lab.coordinator.check()
         lab.coordinator.start()
@@ -342,27 +304,15 @@ class UpdateCoordinatorTest {
 
         val state = lab.coordinator.state.value
         check(state is UpdateState.Failed)
-        assertFalse("oferecer retentar num muro é empurrar o dono para o mesmo muro", state.canRetry)
+        assertFalse("offering a retry here would only fail again", state.canRetry)
         assertEquals(UpdateRecovery.USE_BROWSER, state.recovery)
         assertTrue(state.message.contains("https://vpsm.exemplo.com/android/install"))
     }
 
-    // ------------------------------------------------------------------
-    // Pre-approval
-    // ------------------------------------------------------------------
-
-
-
-
-
-    /**
-     * Safety net: an exception that NO typed result anticipated must not leave
-     * the banner stuck on an eternal "Installing…" — which is indistinguishable
-     * from working and leaves no way to retry.
-     */
+    /** An unexpected exception must not leave the banner stuck on "Installing" with no way to retry. */
     @Test
-    fun `falha inesperada vira estado de erro, nunca um banner preso`() = withCoordinator(
-        installation = { throw IllegalStateException("sessão já não existe") },
+    fun `an unexpected failure becomes an error state, never a stuck banner`() = withCoordinator(
+        installation = { throw IllegalStateException("session no longer exists") },
     ) { lab ->
         lab.coordinator.check()
         lab.coordinator.start()
@@ -375,25 +325,13 @@ class UpdateCoordinatorTest {
         assertTrue(lab.diagnostics.joinToString("\n").contains("IllegalStateException"))
     }
 
-    // ------------------------------------------------------------------
-    // Origem de instalacao desconhecida (APK baixado a mao)
-    // ------------------------------------------------------------------
-
     /**
-     * THE DEFECT, reported with eight attempts in a row on the owner's device:
-     *
-     * ```
-     * INSTALL_FAILED_ABORTED: Self update is blocked by unknown source package
-     * ```
-     *
-     * The message names both conditions. One of them — the app having been
-     * sideloaded, with no installer on record — has no fix on the app side
-     * (setting the installer requires `INSTALL_PACKAGES`, a privileged
-     * permission). The other one does: stop declaring the session as an update
-     * of our own package. This test guards exactly that decision.
+     * A sideloaded app (no installer on record) gets `INSTALL_FAILED_ABORTED: Self update
+     * is blocked by unknown source package` when the session declares our own package,
+     * so it must not declare it.
      */
     @Test
-    fun `com origem desconhecida a sessao nao se declara como do proprio pacote`() = withCoordinator(
+    fun `with an unknown source the session does not declare its own package`() = withCoordinator(
         knownSource = false,
     ) { lab ->
         lab.coordinator.check()
@@ -403,13 +341,9 @@ class UpdateCoordinatorTest {
         assertEquals(listOf(false), lab.installer.declared)
     }
 
-    /**
-     * Pre-approval REQUIRES the declared session, so without a known origin it
-     * cannot even be attempted — asking for it would destroy the session and
-     * the download would start over from zero.
-     */
+    /** Pre-approval requires a declared session, so without a known source it is never requested. */
     @Test
-    fun `com origem desconhecida a preaprovacao nem e pedida`() = withCoordinator(
+    fun `with an unknown source pre-approval is not requested`() = withCoordinator(
         knownSource = false,
     ) { lab ->
         lab.coordinator.check()
@@ -420,32 +354,21 @@ class UpdateCoordinatorTest {
     }
 
     /**
-     * THE NEW RULE, and the defect it closes.
-     *
-     * Pre-approval ("ask before the download") and installing with no user
-     * action ("do not ask anything") are MUTUALLY EXCLUSIVE. Both depended on
-     * the same condition, and once the install provenance became known both
-     * turned on together: the session declared that there would be no prompt
-     * and, on the next line, asked for approval. The system abandoned the
-     * session, with `INSTALL_FAILED_ABORTED: Session was abandoned` on the
-     * owner's device.
-     *
-     * Pre-approval is now asked for on no path at all — neither with a known
-     * origin (the session is silent) nor without one (pre-approval requires a
-     * declared session). This test locks both halves.
+     * Pre-approval and installing without user action are mutually exclusive: asking for
+     * both makes the system abandon the session, so pre-approval is never requested.
      */
     @Test
-    fun `pre-aprovacao nunca e pedida — ela colide com a instalacao sem dialogo`() = withCoordinator { lab ->
+    fun `pre-approval is never requested because it conflicts with a silent install`() = withCoordinator { lab ->
         lab.coordinator.check()
         lab.coordinator.start()
         lab.advance()
 
-        assertEquals("com origem CONHECIDA nao se pede aprovacao previa", null, lab.installer.requestedLabel)
+        assertEquals("with a known source no pre-approval is requested", null, lab.installer.requestedLabel)
     }
 
-    /** Com origem conhecida a sessao continua declarada — e agora tambem silenciosa. */
+    /** With a known source the session is still declared (and silent). */
     @Test
-    fun `com origem conhecida a sessao continua declarada`() = withCoordinator { lab ->
+    fun `with a known source the session is still declared`() = withCoordinator { lab ->
         lab.coordinator.check()
         lab.coordinator.start()
         lab.advance()
@@ -453,13 +376,9 @@ class UpdateCoordinatorTest {
         assertEquals(listOf(true), lab.installer.declared)
     }
 
-    /**
-     * The last rung of the ladder. Without it, a refused session turns into a
-     * "try again" loop that never goes anywhere — which is what the owner
-     * lived through.
-     */
+    /** Last rung: a refused session hands the APK to the system installer instead of looping on retry. */
     @Test
-    fun `sessao recusada cai para o instalador do sistema`() = withCoordinator(
+    fun `a refused session falls back to the system installer`() = withCoordinator(
         installation = { InstallOutcome.Failed("Self update is blocked by unknown source package", blocked = false) },
         systemAccepts = true,
     ) { lab ->
@@ -471,13 +390,9 @@ class UpdateCoordinatorTest {
         assertTrue(lab.coordinator.state.value is UpdateState.Installing)
     }
 
-    /**
-     * If not even the system installer accepts it, the error has to surface
-     * carrying the SYSTEM's own wording. "Installation cancelled" hid the one
-     * clue to why eight attempts had failed.
-     */
+    /** If the system installer also refuses, the error must carry the system's own wording. */
     @Test
-    fun `sem instalador do sistema o erro mostra a frase do sistema`() = withCoordinator(
+    fun `without a system installer the error shows the system message`() = withCoordinator(
         installation = { InstallOutcome.Failed("Self update is blocked by unknown source package", blocked = false) },
         systemAccepts = false,
     ) { lab ->
@@ -491,12 +406,8 @@ class UpdateCoordinatorTest {
         assertTrue(state.canRetry)
     }
 
-    // ------------------------------------------------------------------
-    // Canal / cancelamento
-    // ------------------------------------------------------------------
-
     @Test
-    fun `canal ainda nao publicado fica quieto em vez de mostrar erro`() = withCoordinator(
+    fun `an unpublished channel stays idle instead of showing an error`() = withCoordinator(
         check = UpdateCheckResult.ChannelNotPublished,
     ) { lab ->
         lab.coordinator.check()
@@ -505,8 +416,8 @@ class UpdateCoordinatorTest {
     }
 
     @Test
-    fun `erro de rede ao verificar nao vira banner`() = withCoordinator(
-        check = UpdateCheckResult.Error("Falha de conexão."),
+    fun `a network error while checking does not show a banner`() = withCoordinator(
+        check = UpdateCheckResult.Error("Connection failed."),
     ) { lab ->
         lab.coordinator.check()
 
@@ -514,8 +425,8 @@ class UpdateCoordinatorTest {
     }
 
     @Test
-    fun `cancelar volta a oferecer a atualizacao em vez de sumir`() = withCoordinator(
-        downloads = { ArtifactDownloadProgress.Failed("Falha de conexão.", corrupt = false) },
+    fun `cancelling offers the update again instead of hiding it`() = withCoordinator(
+        downloads = { ArtifactDownloadProgress.Failed("Connection failed.", corrupt = false) },
     ) { lab ->
         lab.coordinator.check()
         lab.coordinator.start()
@@ -528,10 +439,6 @@ class UpdateCoordinatorTest {
         assertEquals("0.1.7", state.versionName)
     }
 
-    // ------------------------------------------------------------------
-    // Harness
-    // ------------------------------------------------------------------
-
     private class Lab(
         val coordinator: UpdateCoordinator,
         val source: FakeSource,
@@ -543,11 +450,8 @@ class UpdateCoordinatorTest {
     )
 
     /**
-     * Wires the coordinator up with fakes and runs [tile].
-     *
-     * Each parameter is a rung of the ladder the test wants to force. The
-     * default is the happy path — which makes every test state, in its own
-     * signature, exactly which failure it is proving.
+     * Wires the coordinator up with fakes and runs [tile]. Each parameter forces one
+     * failure rung; the defaults are the happy path.
      */
     private fun withCoordinator(
         check: UpdateCheckResult? = null,
@@ -662,11 +566,8 @@ class UpdateCoordinatorTest {
     }
 
     /**
-     * Mimics `:patch-engine`, including in the part that matters most: it only
-     * returns [PatchResult.Applied] after WRITING a file whose SHA-256 is the
-     * declared one. A fake that returned `Applied` without producing bytes
-     * would silently let through a coordinator that installs a file that is
-     * not there.
+     * Mimics `:patch-engine`: it returns [PatchResult.Applied] only after writing a file
+     * with the declared SHA-256, so a coordinator installing a missing file would fail.
      */
     private class FakePatcher(
         private val script: (File, File) -> PatchResult?,
@@ -677,9 +578,7 @@ class UpdateCoordinatorTest {
         override fun apply(baseApk: File, patch: File, outputApk: File, expected: ExpectedApk): PatchResult {
             expectedReceived = expected
             script(baseApk, patch)?.let {
-                // The real :patch-engine DELETES the file before returning
-                // IntegrityMismatch. A fake that left the wrong file on disk
-                // would hide a coordinator that went on to install it.
+                // The real engine deletes the output before returning IntegrityMismatch.
                 if (it is PatchResult.IntegrityMismatch) outputApk.delete()
                 return it
             }

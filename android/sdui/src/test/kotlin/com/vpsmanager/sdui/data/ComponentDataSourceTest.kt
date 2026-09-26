@@ -8,17 +8,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * [toComponentDataState] is the pure mapping the four read components rely
- * on to decide Loading/Error/Empty/Data — exercised directly here, with no
- * Compose test infrastructure needed.
+ * Tests [toComponentDataState], the pure mapping read components use to pick
+ * Loading, Error, Empty or Data.
  */
 class ComponentDataSourceTest {
 
     @Test
     fun `Error result maps to Error with the same reason`() {
-        val state = toComponentDataState(SduiDataResult.Error("falhou"))
+        val state = toComponentDataState(SduiDataResult.Error("failed"))
 
-        assertEquals(ComponentDataState.Error("falhou"), state)
+        assertEquals(ComponentDataState.Error("failed"), state)
     }
 
     @Test
@@ -69,7 +68,7 @@ class ComponentDataSourceTest {
     }
 
     @Test
-    fun `a rows-wrapped body -- the shape TestSchedulerRows_WireShape pins server-side -- maps to Data`() {
+    fun `a rows-wrapped body (the server wire shape) maps to Data`() {
         val body = Json.parseToJsonElement("""{"rows":[{"id":"job-1"},{"id":"job-2"}]}""")
 
         val state = toComponentDataState(SduiDataResult.Success(body))

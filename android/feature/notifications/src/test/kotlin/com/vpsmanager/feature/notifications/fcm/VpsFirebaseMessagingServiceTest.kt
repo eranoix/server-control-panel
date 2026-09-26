@@ -39,9 +39,7 @@ private fun remoteMessageWithData(data: Map<String, String>): RemoteMessage =
 @RunWith(RobolectricTestRunner::class)
 class VpsFirebaseMessagingServiceTest {
 
-    // Robolectric.setupService (not a bare constructor call) attaches a real Context — needed
-    // even for the branches that never touch it directly, since onMessageReceived's ops-alert
-    // fallthrough (existing behavior) reads applicationContext.
+    // setupService attaches a real Context, which the ops-alert fallthrough reads.
     private val service = Robolectric.setupService(VpsFirebaseMessagingService::class.java)
 
     @After
@@ -59,7 +57,7 @@ class VpsFirebaseMessagingServiceTest {
                 mapOf(
                     "type" to "incoming-call",
                     "room_id" to "r1",
-                    "room_name" to "Sala",
+                    "room_name" to "Room",
                     "caller_name" to "alice",
                     "call_id" to "c1",
                     "ts" to "1234567890",
@@ -68,7 +66,7 @@ class VpsFirebaseMessagingServiceTest {
         )
 
         assertEquals(1, fake.incomingCalls.size)
-        assertEquals(FakeIncomingCallHandler.IncomingCall("r1", "Sala", "alice", "c1"), fake.incomingCalls[0])
+        assertEquals(FakeIncomingCallHandler.IncomingCall("r1", "Room", "alice", "c1"), fake.incomingCalls[0])
     }
 
     @Test
@@ -103,7 +101,7 @@ class VpsFirebaseMessagingServiceTest {
         // Must not throw even though nothing is registered to receive it.
         service.onMessageReceived(
             remoteMessageWithData(
-                mapOf("type" to "incoming-call", "room_id" to "r1", "room_name" to "Sala", "caller_name" to "alice", "call_id" to "c1"),
+                mapOf("type" to "incoming-call", "room_id" to "r1", "room_name" to "Room", "caller_name" to "alice", "call_id" to "c1"),
             ),
         )
     }
@@ -126,9 +124,7 @@ class VpsFirebaseMessagingServiceTest {
         IncomingCallDispatcher.handler = fake
         val context = RuntimeEnvironment.getApplication()
 
-        // Not calling the service's own onMessageReceived here (it would post a system
-        // notification); asserting instead — as ActionableNotificationBuilderTest already
-        // does — that the existing ops-alert builder is unaffected by the new type branch.
+        // Calls the builder directly instead of onMessageReceived, which would post a real notification.
         val notification = ActionableNotificationBuilder.build(
             context,
             mapOf("event_type" to "job.failed", "job_id" to "abc123"),
@@ -139,13 +135,8 @@ class VpsFirebaseMessagingServiceTest {
     }
 
     @Test
-    fun `sem POST_NOTIFICATIONS a notificacao e descartada, nao postada`() {
-        // The defect this test pins down: the app declared the permission in
-        // the manifest and NEVER asked for it (nothing triggered the runtime
-        // request outside the file browser), so on a fresh install `notify`
-        // was swallowed by the system with no exception and no trace. Today
-        // the path is explicit and logged — and what asks for it is
-        // `PushOnboarding`, at login.
+    fun `without POST_NOTIFICATIONS the notification is dropped, not posted`() {
+        // Without the permission `notify` is silently swallowed, so the service must check and log.
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).denyPermissions(Manifest.permission.POST_NOTIFICATIONS)
         val service = Robolectric.setupService(VpsFirebaseMessagingService::class.java)
@@ -155,14 +146,14 @@ class VpsFirebaseMessagingServiceTest {
         )
 
         assertTrue(
-            "nada pode ser postado sem permissao",
+            "nothing may be posted without permission",
             shadowOf(app.getSystemService(NotificationManager::class.java))
                 .allNotifications.isEmpty(),
         )
     }
 
     @Test
-    fun `com POST_NOTIFICATIONS concedida a notificacao e postada`() {
+    fun `with POST_NOTIFICATIONS granted the notification is posted`() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         NotificationChannels.ensureChannels(app)

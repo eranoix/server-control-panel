@@ -14,12 +14,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 
-/**
- * A fake at the [WhatsAppRepository] seam -- never touches the generated
- * mobile-api-client (that mapping is [com.vpsmanager.data.whatsapp.WhatsAppRepositoryTest]'s
- * job against a real `MockWebServer`); this only exercises the ViewModel's
- * own state machine given a repository outcome.
- */
+/** Fake [WhatsAppRepository] for exercising the ViewModel's state machine. */
 private class FakeWhatsAppRepository(
     private val onChats: suspend () -> ChatsResult = { ChatsResult.Empty },
 ) : WhatsAppRepository() {
@@ -51,7 +46,7 @@ class ChatListViewModelTest {
                 unread = 2,
                 avatarUrl = null,
                 lastMessageAt = 100,
-                lastMessagePreview = "oi",
+                lastMessagePreview = "hi",
             ),
             WhatsAppChat(
                 jid = "5511888@s.whatsapp.net",
@@ -60,7 +55,7 @@ class ChatListViewModelTest {
                 unread = 0,
                 avatarUrl = "https://example/a.jpg",
                 lastMessageAt = 50,
-                lastMessagePreview = "tchau",
+                lastMessagePreview = "bye",
             ),
         )
         val repository = FakeWhatsAppRepository(onChats = { ChatsResult.Success(chats) })
@@ -85,12 +80,12 @@ class ChatListViewModelTest {
 
     @Test
     fun `reaches Error when the repository reports a failure`() = runTest {
-        val repository = FakeWhatsAppRepository(onChats = { ChatsResult.Error("O servidor está indisponível no momento.") })
+        val repository = FakeWhatsAppRepository(onChats = { ChatsResult.Error("The server is unavailable right now.") })
         val viewModel = ChatListViewModel(repository)
 
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(ChatListUiState.Error("O servidor está indisponível no momento."), viewModel.uiState.value)
+        assertEquals(ChatListUiState.Error("The server is unavailable right now."), viewModel.uiState.value)
     }
 
     @Test
@@ -99,12 +94,12 @@ class ChatListViewModelTest {
         val repository = FakeWhatsAppRepository(
             onChats = {
                 calls += 1
-                if (calls == 1) ChatsResult.Error("falha") else ChatsResult.Empty
+                if (calls == 1) ChatsResult.Error("failed") else ChatsResult.Empty
             },
         )
         val viewModel = ChatListViewModel(repository)
         dispatcher.scheduler.advanceUntilIdle()
-        assertEquals(ChatListUiState.Error("falha"), viewModel.uiState.value)
+        assertEquals(ChatListUiState.Error("failed"), viewModel.uiState.value)
 
         viewModel.retry()
 

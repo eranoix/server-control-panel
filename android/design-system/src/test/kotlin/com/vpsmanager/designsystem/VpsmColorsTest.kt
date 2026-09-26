@@ -7,17 +7,8 @@ import org.junit.Test
 import kotlin.math.pow
 
 /**
- * The brand's colour scheme stays LEGIBLE.
- *
- * A palette is the easiest thing to break without noticing: someone nudges a
- * hex because "it looked nicer" and a button's text falls to 3:1, which on a
- * phone screen in the sun — which is where this app is used — stops being
- * readable. This test is the ruler: it measures the WCAG contrast ratio of
- * every (colour, on-colour) pair Material 3 promises is legible, in BOTH
- * themes, and fails if any of them drops below AA.
- *
- * It is a pure JVM test, no Robolectric: `Color` is a `value class` over a
- * `ULong` and the channels come out of it without touching the framework.
+ * Checks that every Material color/on-color pair in both themes meets WCAG AA
+ * contrast. Pure JVM test: `Color` channels need no framework.
  */
 class VpsmColorsTest {
 
@@ -38,11 +29,7 @@ class VpsmColorsTest {
         return (maxOf(la, lb) + 0.05) / (minOf(la, lb) + 0.05)
     }
 
-    /**
-     * The pairs Material 3 promises are legible. An `onX` role exists exactly
-     * to be drawn over `X` — if the pair does not pass, the promise is false
-     * and some screen of the app has text that disappears.
-     */
+    /** Pairs Material 3 draws on top of each other (`onX` over `X`). */
     private fun pairs(e: ColorScheme): List<Triple<String, Color, Color>> = listOf(
         Triple("primary/onPrimary", e.primary, e.onPrimary),
         Triple("primaryContainer/on", e.primaryContainer, e.onPrimaryContainer),
@@ -66,83 +53,73 @@ class VpsmColorsTest {
         pairs(scheme).forEach { (role, background, foreground) ->
             val ratio = contrast(background, foreground)
             assertTrue(
-                "[$name] $role ficou em ${"%.2f".format(ratio)}:1 — abaixo do mínimo AA de $minimumAA:1",
+                "[$name] $role is ${"%.2f".format(ratio)}:1, below the AA minimum of $minimumAA:1",
                 ratio >= minimumAA,
             )
         }
     }
 
     @Test
-    fun `todo par cor sobre-cor passa em AA no tema claro`() {
-        checkScheme("claro", VpsmLightColors)
+    fun `every color pair passes AA in the light theme`() {
+        checkScheme("light", VpsmLightColors)
     }
 
     @Test
-    fun `todo par cor sobre-cor passa em AA no tema escuro`() {
-        checkScheme("escuro", VpsmDarkColors)
+    fun `every color pair passes AA in the dark theme`() {
+        checkScheme("dark", VpsmDarkColors)
     }
 
     @Test
-    fun `o app nao esta mais vestindo o roxo de fabrica do Material`() {
-        // The regression this test guards against is literal: a
-        // `lightColorScheme()` with no arguments returns the baseline purple
-        // (#6750A4 / #D0BCFF) and the app goes back to looking like a demo.
+    fun `the app no longer uses Material's default purple`() {
+        // A no-argument lightColorScheme() falls back to the baseline purple.
         val baselinePurpleLight = Color(0xFF6750A4)
         val baselinePurpleDark = Color(0xFFD0BCFF)
-        assertTrue("tema claro voltou ao roxo baseline", VpsmLightColors.primary != baselinePurpleLight)
-        assertTrue("tema escuro voltou ao roxo baseline", VpsmDarkColors.primary != baselinePurpleDark)
+        assertTrue("light theme fell back to the baseline purple", VpsmLightColors.primary != baselinePurpleLight)
+        assertTrue("dark theme fell back to the baseline purple", VpsmDarkColors.primary != baselinePurpleDark)
     }
 
     @Test
-    fun `os dois temas sao mesmo claro e escuro`() {
-        // Deliberately silly guard: a copy-paste that left both surfaces on
-        // the same side of the scale would pass every contrast test above and
-        // still produce a white "dark theme".
-        assertTrue("a superfície clara deveria ser clara", luminance(VpsmLightColors.surface) > 0.5)
-        assertTrue("a superfície escura deveria ser escura", luminance(VpsmDarkColors.surface) < 0.1)
+    fun `the two themes really are light and dark`() {
+        // Both surfaces on the same side of the scale would still pass the contrast tests.
+        assertTrue("the light surface should be light", luminance(VpsmLightColors.surface) > 0.5)
+        assertTrue("the dark surface should be dark", luminance(VpsmDarkColors.surface) < 0.1)
     }
 
     @Test
-    fun `o ambar de atencao continua visivel sobre as superficies novas`() {
-        // The new palette must NOT wash the warning out — this is the case the
-        // brief calls "a pretty palette worse than the factory purple". The
-        // amber does not derive from the scheme (Material has no role for
-        // "warning"), so it is precisely the one a swap of neutrals could
-        // leave without contrast against the surface the card is drawn on.
+    fun `the warning amber stays visible on the surfaces`() {
+        // The amber is not derived from the scheme, so changing neutrals could
+        // leave it without contrast against the card's surface.
         val warningLightBackground = Color(0xFFFFEBB8)
         val warningLightText = Color(0xFF4A3400)
         val warningDarkBackground = Color(0xFF3E2D00)
         val warningDarkText = Color(0xFFFFE2A6)
 
         assertTrue(
-            "texto do aviso claro ilegível no próprio cartão",
+            "light warning text is illegible on its card",
             contrast(warningLightBackground, warningLightText) >= minimumAA,
         )
         assertTrue(
-            "texto do aviso escuro ilegível no próprio cartão",
+            "dark warning text is illegible on its card",
             contrast(warningDarkBackground, warningDarkText) >= minimumAA,
         )
-        // And the card has to STAND OUT from the surface: an amber that became
-        // the same colour as the background would warn about nothing.
+        // The card must also stand out from the surface.
         assertTrue(
-            "o cartão de aviso claro sumiu na superfície",
+            "light warning card blends into the surface",
             contrast(warningLightBackground, VpsmLightColors.surface) >= 1.08,
         )
         assertTrue(
-            "o cartão de aviso escuro sumiu na superfície",
+            "dark warning card blends into the surface",
             contrast(warningDarkBackground, VpsmDarkColors.surface) >= 1.08,
         )
     }
 
     @Test
-    fun `a cor do icone adaptativo e a mesma do esquema, nao uma cor solta`() {
-        // Another agent builds the icon's `res/` from these constants. If
-        // someone changes the scheme and forgets the icon, the icon stops
-        // belonging to the same family — this test ties the two together.
+    fun `the adaptive icon colors come from the scheme`() {
+        // Keeps the launcher icon in sync with the theme.
         assertTrue(AdaptiveIconBackground == VpsmDarkColors.onPrimary)
         assertTrue(MarkOnBackground == VpsmDarkColors.primary)
         assertTrue(
-            "a marca precisa ser legível sobre o fundo do ícone",
+            "the mark must be legible on the icon background",
             contrast(AdaptiveIconBackground, MarkOnBackground) >= minimumAA,
         )
     }

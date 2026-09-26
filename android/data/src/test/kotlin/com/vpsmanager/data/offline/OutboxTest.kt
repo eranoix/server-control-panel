@@ -11,10 +11,8 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * What these tests protect: the queue is the only place in the app that accepts
- * an action WITHOUT being sure it is going to happen. Every guarantee it makes
- * — ordering, persistence, tolerance of a corrupted file — has to be
- * verifiable, or "saved" becomes a word with nothing behind it.
+ * The outbox accepts actions that have not happened yet, so its guarantees (ordering,
+ * persistence, tolerance of a corrupted file) must be verified.
  */
 class OutboxTest {
 
@@ -23,8 +21,8 @@ class OutboxTest {
 
     @Before
     fun build() {
-        dir = Files.createTempDirectory("fila-de-envio").toFile()
-        file = File(dir, "fila.json")
+        dir = Files.createTempDirectory("outbox").toFile()
+        file = File(dir, "outbox.json")
         Outbox.resetForTest(file)
     }
 
@@ -42,7 +40,7 @@ class OutboxTest {
                 path = "/whatsapp/chats/x/messages",
                 bodyJson = """{"client_msg_id":"id-$it"}""",
                 createdAt = it.toLong(),
-                description = "mensagem $it",
+                description = "message $it",
             )
         }
         file.writeText(Json.encodeToString(ListSerializer(PendingSend.serializer()), list))
@@ -50,7 +48,7 @@ class OutboxTest {
     }
 
     @Test
-    fun `a fila sobrevive ao processo morrer`() {
+    fun `the queue survives process death`() {
         write(3)
 
         assertEquals(3, Outbox.pending.value.size)
@@ -58,7 +56,7 @@ class OutboxTest {
     }
 
     @Test
-    fun `a ordem e FIFO — duas acoes sobre o mesmo recurso fora de ordem dao outro estado`() {
+    fun `the order is FIFO because reordering actions on one resource changes the result`() {
         write(3)
 
         Outbox.completeFirst()
@@ -68,7 +66,7 @@ class OutboxTest {
     }
 
     @Test
-    fun `concluir grava no disco — reiniciar nao ressuscita o que ja saiu`() {
+    fun `completing persists so a restart does not resurrect sent items`() {
         write(2)
         Outbox.completeFirst()
 
@@ -78,28 +76,21 @@ class OutboxTest {
         assertEquals("id-2", Outbox.first()?.id)
     }
 
-    /**
-     * Whoever discards has to be able to SAY on screen what was lost: an action
-     * that vanishes without warning is worse than one that fails in plain sight.
-     */
+    /** Discarding returns the item so the screen can say what was lost. */
     @Test
-    fun `descartar devolve o item para quem precisa contar o que se perdeu`() {
+    fun `discarding returns the item so the caller can report what was lost`() {
         write(2)
 
         val discarded = Outbox.dropFirst()
 
         assertEquals("id-1", discarded?.id)
-        assertEquals("mensagem 1", discarded?.description)
+        assertEquals("message 1", discarded?.description)
     }
 
-    /**
-     * A corrupted file is a real case: the process can die in the middle of a
-     * write. A queue that comes up empty loses actions — opening the app with
-     * an exception loses the whole app.
-     */
+    /** The process can die mid-write; a corrupted file must yield an empty queue, not a crash. */
     @Test
-    fun `arquivo corrompido nao derruba o app — a fila nasce vazia`() {
-        file.writeText("isto não é json")
+    fun `a corrupted file does not crash the app and the queue starts empty`() {
+        file.writeText("this is not json")
 
         Outbox.resetForTest(file)
 
@@ -107,14 +98,7 @@ class OutboxTest {
     }
 }
 
-/**
- * What these tests protect: the decision to ACCEPT or REFUSE an action, and
- * what the person gets told about it afterwards.
- *
- * Neither had any coverage before — the old suite exercised only persistence,
- * with the queue seeded straight into the file. It was through a gap exactly
- * like that one that the queue shipped complete and without a single caller.
- */
+/** The decision to accept or refuse an action, and what the user is told afterwards. */
 class OutboxAcceptanceTest {
 
     private lateinit var dir: File
@@ -122,8 +106,8 @@ class OutboxAcceptanceTest {
 
     @Before
     fun build() {
-        dir = Files.createTempDirectory("fila-aceite").toFile()
-        file = File(dir, "fila.json")
+        dir = Files.createTempDirectory("outbox-acceptance").toFile()
+        file = File(dir, "outbox.json")
         Outbox.resetForTest(file)
     }
 
@@ -134,28 +118,23 @@ class OutboxAcceptanceTest {
     }
 
     @Test
-    fun `sem fila instalada a acao e recusada, nunca engolida`() {
-        // The overload without a Context is the one the repositories use (they
-        // do not have one). Without `instalar()` it has nowhere to write — and
-        // refusing by returning `false` is what lets the caller show the usual
-        // connection error. An optimistic `true` would promise an action that
-        // is stored nowhere at all.
+    fun `without an installed queue the action is refused, never swallowed`() {
+        // Without `install()` the Context-free overload has nowhere to write; returning
+        // `false` lets the caller show the usual connection error instead of a false promise.
         Outbox.resetForTest(null)
         val accepted = Outbox.enqueue(
             method = "POST",
             path = "/terminal/sessions/rename",
             bodyJson = """{"from":"dev","to":"prod"}""",
-            description = "renomear dev para prod",
+            description = "rename dev to prod",
             proof = IdempotencyProof.KEY_IN_HEADER,
         )
         assertEquals(false, accepted)
     }
 
     @Test
-    fun `a recusa do servidor deixa de sumir em silencio`() {
-        // A 4xx takes the action out of the queue for good. Before, that
-        // happened with nothing showing up: the person had read "queued" and
-        // would never learn it was not going to happen.
+    fun `a server rejection is recorded instead of vanishing silently`() {
+        // A 4xx removes the action for good, so it must be reported to the user.
         val list = listOf(
             PendingSend(
                 id = "id-1",
@@ -163,7 +142,7 @@ class OutboxAcceptanceTest {
                 path = "/terminal/sessions/rename",
                 bodyJson = """{"from":"dev","to":"prod"}""",
                 createdAt = 1,
-                description = "renomear dev para prod",
+                description = "rename dev to prod",
             ),
         )
         file.writeText(Json.encodeToString(ListSerializer(PendingSend.serializer()), list))
@@ -171,23 +150,21 @@ class OutboxAcceptanceTest {
 
         Outbox.recordRejection()
 
-        assertTrue("a ação tinha que sair da fila", Outbox.pending.value.isEmpty())
+        assertTrue("the action must leave the queue", Outbox.pending.value.isEmpty())
         assertEquals(1, Outbox.rejected.value.size)
-        assertEquals("renomear dev para prod", Outbox.rejected.value.first().description)
+        assertEquals("rename dev to prod", Outbox.rejected.value.first().description)
 
         Outbox.forgetRejections()
-        assertTrue("o aviso é para ler uma vez", Outbox.rejected.value.isEmpty())
+        assertTrue("the notice is shown once", Outbox.rejected.value.isEmpty())
     }
 
     @Test
-    fun `a chave de idempotencia e o id do item, e ela nao muda`() {
-        // This is what keeps the retry from executing twice on the other side:
-        // the id is born once, is written together with the action and survives
-        // closing the app. An id drawn at send time would be a new key on every
-        // attempt — which is to say, no key at all.
+    fun `the idempotency key is the item id and it does not change`() {
+        // The id is persisted with the action, so retries reuse the same key and the
+        // server never executes it twice.
         val list = listOf(
             PendingSend(
-                id = "chave-fixa",
+                id = "fixed-key",
                 method = "POST",
                 path = "/terminal/backups",
                 bodyJson = "{}",
@@ -197,12 +174,12 @@ class OutboxAcceptanceTest {
         )
         file.writeText(Json.encodeToString(ListSerializer(PendingSend.serializer()), list))
         Outbox.resetForTest(file)
-        assertEquals("chave-fixa", Outbox.first()?.id)
+        assertEquals("fixed-key", Outbox.first()?.id)
 
         Outbox.resetForTest(file)
         assertEquals(
-            "reiniciar o app não pode trocar a chave",
-            "chave-fixa",
+            "restarting the app must not change the key",
+            "fixed-key",
             Outbox.first()?.id,
         )
     }

@@ -15,31 +15,14 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The memory gate: drives [TerminalEngine] + the same glyph-atlas
- * rasterization path [com.vpsmanager.feature.terminal.render.TerminalCanvas]
- * and [com.vpsmanager.feature.terminal.render.TerminalSurfaceGrid] both use,
- * continuously, for the duration named by the `soak.hours` instrumentation
- * argument (`-Psoak.hours=N` -> `feature/terminal/build.gradle.kts` forwards
- * it as a `testInstrumentationRunnerArguments` entry).
+ * Memory soak: drives [TerminalEngine] and the glyph-atlas rasterization path used by
+ * [com.vpsmanager.feature.terminal.render.TerminalCanvas] and
+ * [com.vpsmanager.feature.terminal.render.TerminalSurfaceGrid] for `-Psoak.hours=N`.
  *
- * This class does not, and cannot, decide pass/fail for a native-heap leak
- * by itself: JNI gives the JVM/instrumentation process no visibility into
- * `malloc`, so the actual measurement is `dumpsys meminfo`/`/proc/<pid>/status`
- * sampled from the host every 60s while this test runs, and the linear
- * regression over that CSV (see `run-soak.sh` and the soak report beside it).
- * What this class DOES assert, in-process, is: the run completes without an
- * exception/native abort surfacing through JNI (CheckJNI, enabled host-side
- * before the run starts, aborts the process on a real ABI violation, which
- * would fail this test), and the glyph atlas -- the one memory structure this
- * process can inspect directly -- never exceeds its fixed byte budget no
- * matter how many distinct glyphs the multi-hour content stream produces.
- *
- * Without `-Psoak.hours=N`, this runs a short smoke pass only (see
- * [DEFAULT_SMOKE_HOURS]) that proves the harness compiles and the engine
- * survives the full content rotation at least once -- it does NOT satisfy
- * the >=4h / <1MB-per-hour gate. Only an explicit `-Psoak.hours=4` (or more)
- * run, on real hardware, with CheckJNI verified on and the host-side CSV
- * sampler running, closes that gate.
+ * Native leaks cannot be seen from the JVM, so they are measured host-side
+ * (`run-soak.sh` samples meminfo). In-process this only asserts that the run finishes
+ * without a JNI abort (CheckJNI on) and that the atlas stays within its fixed budget.
+ * Without the argument it is a short smoke pass ([DEFAULT_SMOKE_HOURS]), not the 4h gate.
  */
 @RunWith(AndroidJUnit4::class)
 class SoakTest {
@@ -59,10 +42,7 @@ class SoakTest {
         val initialAtlasBytes = atlas.byteSize()
         val atlasCapacity = ATLAS_NARROW_CAPACITY + ATLAS_WIDE_CAPACITY
 
-        // Sized for the larger of the two alternating geometries; rendering
-        // into a bitmap that is momentarily "too small" for the other
-        // geometry just clips silently (android.graphics.Canvas behavior),
-        // it never crashes, so one bitmap covers both.
+        // Sized for the larger geometry; Canvas clips silently, so one bitmap covers both.
         val canvasBitmap = Bitmap.createBitmap(
             geometryB.first * cellWidthPx,
             geometryB.second * cellHeightPx,
@@ -122,12 +102,8 @@ class SoakTest {
                 }
             }
 
-            // The one memory structure this in-process assertion can speak
-            // to directly: the LRU-bounded atlas must still be exactly the
-            // fixed size it started at, and its resident-glyph count must
-            // never have exceeded its fixed capacity, regardless of how many
-            // distinct (codepoint, color, bold, italic, wide) combinations
-            // the multi-hour content rotation produced.
+            // The LRU atlas must keep its initial byte size and never exceed its capacity,
+            // however many distinct glyph combinations were produced.
             assertEquals(
                 "glyph atlas byte size must never change after construction",
                 initialAtlasBytes,
@@ -166,7 +142,7 @@ class SoakTest {
         }
     }
 
-    /** A 5 MB write in one go, split into sub-chunks purely to avoid one oversized array allocation. */
+    /** A 5 MB write, split into sub-chunks only to avoid one oversized allocation. */
     private fun burst(engine: TerminalEngine, seq: Long) {
         var remaining = BURST_TOTAL_BYTES
         var n = seq
@@ -193,13 +169,8 @@ class SoakTest {
     }
 
     /**
-     * Deterministic generator for synthetic PTY-style output exercising every
-     * allocation path the soak's action prose calls out: 16/256/truecolor SGR
-     * (color-combination churn in the glyph atlas), text attributes, wide
-     * (CJK/emoji) glyphs, a scroll-region + erase burst, an alt-screen
-     * enter/leave pair, and plain filler text -- cycled by [chunk]'s caller
-     * incrementing `seq` so the same generator is reused for both the
-     * sustained-rate stream and the periodic 5 MB burst.
+     * Deterministic synthetic PTY output covering SGR colors (atlas churn), attributes,
+     * wide glyphs, scroll regions, erases and the alternate screen, cycled by `seq`.
      */
     private object SoakContent {
         private val WIDE_CODEPOINTS = intArrayOf(0x4E2D, 0x6587, 0x1F600, 0x1F680)
@@ -272,12 +243,7 @@ class SoakTest {
         const val TAG = "SoakTest"
         const val SOAK_HOURS_ARG = "soak.hours"
 
-        /**
-         * Smoke default when `-Psoak.hours` is not passed: proves the
-         * harness compiles, runs the full content rotation, resizes and
-         * bursts at least once, and shuts down cleanly. Deliberately far
-         * short of the >=4h gate.
-         */
+        /** Smoke-run default when `-Psoak.hours` is not passed. */
         const val DEFAULT_SMOKE_HOURS = 0.02 // ~72s
 
         const val NANOS_PER_HOUR = 3_600_000_000_000.0

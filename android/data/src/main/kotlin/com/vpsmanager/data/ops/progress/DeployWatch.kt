@@ -18,38 +18,14 @@ import com.vpsmanager.data.ops.OpsRepository
 import kotlinx.coroutines.delay
 
 /**
- * Follows a deploy through to the end and shows its progress in a notification.
+ * Follows a deploy to the end and shows its progress in a notification, since
+ * leaving the app kills the socket and Android 15 cuts background network after
+ * a few seconds.
  *
- * ## The debt this pays
- *
- * Triggering a deploy from the phone left the person **with no signal at all
- * for up to ten minutes**: the screen showed "sent" and then nothing, because
- * leaving the app kills the socket and Android 15 cuts the process's network in
- * the background after ~5.7 s. Whoever triggers a deploy from a phone almost
- * always triggers it and puts the phone away — which is exactly the gesture the
- * app did not cover.
- *
- * ## Why a notification and not a screen
- *
- * The value of a long deploy is in **not having to watch**. A screen that has
- * to stay open to follow along follows nothing — it holds the person captive. A
- * progress notification is the opposite: it seeks the person out when the state
- * changes, and disappears by itself when it is over.
- *
- * ## Why this is the foreground-service use that survived
- *
- * Android 13/14/15 closed almost every door to background work; `dataSync` with
- * a foreground service is capped at 6 h a day on Android 15 and is being
- * deprecated. A deploy lasts minutes and has a **beginning, visible progress
- * and an end** — it is the case the platform still accepts readily, and
- * `WorkManager` handles the promotion to the foreground by itself.
- *
- * ## The end is always stated
- *
- * Success, failure and "I gave up asking" produce different notifications. A
- * progress bar that simply disappears is indistinguishable from an app that
- * died — and after a deploy, "I don't know what happened" is the worst possible
- * state.
+ * A deploy lasts minutes and has a visible beginning, progress and end, which is
+ * the foreground work Android still accepts; `WorkManager` handles the promotion
+ * to the foreground. Success, failure and lost contact each produce a distinct
+ * final notification, since a bar that just disappears looks like a dead app.
  */
 class DeployWatchWorker(
     context: Context,
@@ -87,10 +63,8 @@ class DeployWatchWorker(
                     )
                 }
                 is DeployStatusResult.Error -> {
-                    // A READ failure is not a deploy failure: the device's
-                    // network may have blinked while the server carries on
-                    // working. Giving up on the first one would report the
-                    // wrong news about the most expensive thing on the screen.
+                    // A read failure is not a deploy failure: the device network
+                    // may have blinked while the server keeps working.
                     attemptsWithoutResponse++
                     if (attemptsWithoutResponse >= FAILED_READS_BEFORE_GIVING_UP) {
                         notifyLostContact(applicationContext, app)
@@ -110,13 +84,10 @@ class DeployWatchWorker(
         const val KEY_JOB = "job_id"
         const val KEY_APP = "app"
 
-        /**
-         * 3 s. It is the same interval as the server's `/ops/status` cache:
-         * asking faster brings back no new number, it only burns radio.
-         */
+        /** 3 s, the same as the server's `/ops/status` cache; polling faster gains nothing. */
         private const val INTERVAL_MS = 3_000L
 
-        /** ~15 min of following along. A deploy longer than that is news in itself. */
+        /** About 15 min of following. A longer deploy is news in itself. */
         private const val MAX_READS = 300
 
         /** Three failures in a row (~9 s) is no longer a network blink. */
@@ -125,11 +96,8 @@ class DeployWatchWorker(
         private const val WORK_NAME = "acompanha-deploy"
 
         /**
-         * Starts following [jobId].
-         *
-         * `REPLACE` and not `APPEND`: two deploys followed at once would
-         * produce two progress bars competing for the same row of the shade,
-         * and the second is always the one that matters.
+         * Starts following [jobId]. `REPLACE`, not `APPEND`: two deploys followed at
+         * once would compete for the same notification, and the latest is the one that matters.
          */
         fun track(context: Context, jobId: String, app: String) {
             val request = OneTimeWorkRequestBuilder<DeployWatchWorker>()
@@ -144,12 +112,8 @@ class DeployWatchWorker(
             workDataOf(KEY_JOB to jobId, KEY_APP to app)
 
         /**
-         * Whether this state is final.
-         *
-         * An ALLOW LIST of terminal states, with everything else being "still
-         * running". The opposite — listing the in-flight states — would make a
-         * new server state (`verifying`, say) read as an ending, and the
-         * notification would announce a finished deploy that is still mid-way.
+         * Whether this state is final. An allow list of terminal states, so an
+         * unknown new server state reads as "still running" rather than finished.
          */
         fun finished(state: String): Boolean =
             state.lowercase() in setOf("ok", "success", "succeeded", "done", "failed", "error", "rolled_back", "cancelled", "canceled")
@@ -159,18 +123,13 @@ class DeployWatchWorker(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// The notifications
-// ─────────────────────────────────────────────────────────────────────────────
-
 private const val CHANNEL = "vpsm_progresso"
 private const val END_ID = 0x0DEB
 
 private fun ensureChannel(context: Context) {
     val manager = context.getSystemService(NotificationManager::class.java) ?: return
     manager.createNotificationChannel(
-        // IMPORTANCE_LOW: progress neither rings nor vibrates. A ten-minute
-        // deploy that beeped at every step would be uninstalled on day two.
+        // IMPORTANCE_LOW: progress neither rings nor vibrates.
         NotificationChannel(CHANNEL, "Task progress", NotificationManager.IMPORTANCE_LOW),
     )
 }
@@ -190,9 +149,7 @@ private fun progressInfo(
         .setOnlyAlertOnce(true)
     if (percent != null && percent in 0..100) {
         b.setProgress(100, percent, false)
-        // The STEP is worth more than the number. "78%" does not tell you
-        // whether you can breathe; "restarting the service" does. The
-        // percentage goes alongside it, never alone.
+        // The step says more than the number, so the percentage goes alongside it.
         b.setContentText(step?.takeIf { it.isNotBlank() }?.let { "$it · $percent%" } ?: "$percent%")
     } else {
         b.setProgress(0, 0, true)
@@ -218,20 +175,15 @@ private fun notifyFinish(context: Context, app: String, state: String, error: St
             )
             .setSmallIcon(android.R.drawable.stat_sys_upload_done)
             .setAutoCancel(true)
-            // THE END ALERTS, the progress does not. It is the only news in
-            // this series that changes what the person does next.
+            // The end alerts, unlike the progress: it is the only news that changes what the user does next.
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .build(),
     )
 }
 
 /**
- * The most important case of all: the app lost contact and **does not know**
- * how the deploy ended.
- *
- * Saying so is mandatory. A bar that vanishes in silence is read as "it
- * finished fine" — and announcing a success you did not verify is the worst
- * thing a deploy notification can do.
+ * The app lost contact and does not know how the deploy ended. It must say so:
+ * a bar that silently vanishes reads as success.
  */
 private fun notifyLostContact(context: Context, app: String) {
     ensureChannel(context)

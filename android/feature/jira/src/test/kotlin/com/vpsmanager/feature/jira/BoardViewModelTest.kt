@@ -34,7 +34,7 @@ class BoardViewModelTest {
         columns(vm).first { it.label == label }.cards.map { it.key }
 
     @Test
-    fun `sem conta ligada a tela e o formulario de conexao, nao um erro`() = runTest(dispatcher) {
+    fun `without a linked account the screen is the connection form, not an error`() = runTest(dispatcher) {
         val source = FakeSource(
             JiraResult.Ok(testBoard().copy(connected = false)),
         )
@@ -45,30 +45,27 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun `o cartao muda de coluna ANTES da resposta do servidor`() = runTest(dispatcher) {
-        // Without this, the card would sit pinned under the finger for a
-        // whole network round trip — hundreds of milliseconds in which the
-        // screen contradicts the gesture.
+    fun `the card changes column BEFORE the server responds`() = runTest(dispatcher) {
+        // Otherwise the screen contradicts the gesture for a whole network round trip.
         val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
         vm.move("TASK-1", "Em andamento")
-        // Without advancing the dispatcher: the state has to have changed already.
+        // No dispatcher advance: the state must already have changed.
         assertEquals(listOf("TASK-1"), keysIn(vm, "Em andamento"))
         assertTrue(keysIn(vm, "A fazer").isEmpty())
     }
 
     @Test
-    fun `recusa do fluxo de trabalho devolve o cartao para a coluna e a POSICAO de origem`() =
+    fun `a workflow refusal puts the card back in its original column and POSITION`() =
         runTest(dispatcher) {
-            // The position matters: putting it back at the end of a long
-            // column would make the card "disappear" even though it returned.
+            // Putting it back at the end of a long column would make the card seem to disappear.
             val source = FakeSource(
                 board = JiraResult.Ok(
                     testBoard(toDo = listOf(card("TASK-1"), card("TASK-2"), card("TASK-3"))),
                 ),
-                onMove = { _, _ -> JiraResult.Rejected("o fluxo não leva TASK-2 para \"Concluído\"") },
+                onMove = { _, _ -> JiraResult.Rejected("the workflow does not take TASK-2 to \"Done\"") },
             )
             val vm = BoardViewModel(source)
             advanceUntilIdle()
@@ -81,10 +78,9 @@ class BoardViewModelTest {
         }
 
     @Test
-    fun `a recusa vira recado com o motivo do SERVIDOR, nao uma frase generica`() = runTest(dispatcher) {
-        // The server's message is the only one that says where you CAN go
-        // from there — and that is what turns the refusal into a next step.
-        val reason = "o fluxo de trabalho não leva TASK-1 para \"Concluído\"; daqui só dá para ir a: Em Progresso"
+    fun `a refusal becomes a notice with the SERVER's reason, not a generic sentence`() = runTest(dispatcher) {
+        // Only the server's message says where the card CAN go next.
+        val reason = "the workflow does not take TASK-1 to \"Done\"; from here it can only go to: In Progress"
         val source = FakeSource(
             board = JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))),
             onMove = { _, _ -> JiraResult.Rejected(reason) },
@@ -99,10 +95,10 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun `falha de rede tambem devolve o cartao`() = runTest(dispatcher) {
+    fun `a network failure also puts the card back`() = runTest(dispatcher) {
         val source = FakeSource(
             board = JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))),
-            onMove = { _, _ -> JiraResult.Error("Falha de conexão.") },
+            onMove = { _, _ -> JiraResult.Error("Connection failed.") },
         )
         val vm = BoardViewModel(source)
         advanceUntilIdle()
@@ -114,10 +110,8 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun `soltar na coluna onde o cartao ja esta nao chama o servidor`() = runTest(dispatcher) {
-        // It happens all the time: pick the card up, change your mind, drop it
-        // where it was. A real transition there would be a change nobody asked
-        // for.
+    fun `dropping on the card's current column does not call the server`() = runTest(dispatcher) {
+        // Picking a card up and dropping it back is common; a transition there would be unasked for.
         val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
@@ -125,11 +119,11 @@ class BoardViewModelTest {
         vm.move("TASK-1", "A fazer")
         advanceUntilIdle()
 
-        assertTrue("nao podia ter chamado o servidor: ${source.moves}", source.moves.isEmpty())
+        assertTrue("should not have called the server: ${source.moves}", source.moves.isEmpty())
     }
 
     @Test
-    fun `mover manda o ROTULO da coluna, nunca um id de transicao`() = runTest(dispatcher) {
+    fun `moving sends the column LABEL, never a transition id`() = runTest(dispatcher) {
         val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
@@ -141,7 +135,7 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun `mover um cartao que nao esta no quadro nao faz nada`() = runTest(dispatcher) {
+    fun `moving a card that is not on the board does nothing`() = runTest(dispatcher) {
         val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
@@ -154,9 +148,8 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun `trocar de projeto FIXA a escolha no servidor`() = runTest(dispatcher) {
-        // It is the same preference the web panel uses: changing it here
-        // changes it there, and the choice survives the app's next launch.
+    fun `switching project PINS the choice on the server`() = runTest(dispatcher) {
+        // Same preference the web panel uses, so it syncs and survives an app restart.
         val source = FakeSource()
         val vm = BoardViewModel(source)
         advanceUntilIdle()
@@ -168,7 +161,7 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun `a selecao e podada quando o filtro tira as issues do quadro`() = runTest(dispatcher) {
+    fun `the selection is pruned when the filter removes issues from the board`() = runTest(dispatcher) {
         // Without pruning, the counter would say "2 ticked" with none on screen.
         val source = FakeSource(
             JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1"), card("TASK-2")))),
@@ -188,7 +181,7 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun `sair do modo de selecao limpa o que estava marcado`() = runTest(dispatcher) {
+    fun `leaving selection mode clears what was ticked`() = runTest(dispatcher) {
         val vm = BoardViewModel(FakeSource())
         advanceUntilIdle()
 
@@ -200,7 +193,7 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun `atribuir a mim usa o accountId que o SERVIDOR disse ser meu`() = runTest(dispatcher) {
+    fun `assign to me uses the accountId the SERVER said is mine`() = runTest(dispatcher) {
         val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
@@ -212,9 +205,8 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun `sem saber quem eu sou, atribuir a mim avisa em vez de mandar vazio`() = runTest(dispatcher) {
-        // Sending an empty accountId would UNASSIGN — the exact opposite of
-        // what was asked.
+    fun `without knowing who I am, assign to me warns instead of sending empty`() = runTest(dispatcher) {
+        // An empty accountId would UNASSIGN, the opposite of what was asked.
         val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")), me = null)))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
@@ -227,7 +219,7 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun `mover em lote sem nada marcado nao chama o servidor`() = runTest(dispatcher) {
+    fun `bulk move with nothing ticked does not call the server`() = runTest(dispatcher) {
         val source = FakeSource()
         val vm = BoardViewModel(source)
         advanceUntilIdle()
@@ -239,22 +231,21 @@ class BoardViewModelTest {
     }
 
     @Test
-    fun `recarregar nao volta para Carregando quando ja ha quadro na tela`() = runTest(dispatcher) {
-        // Replacing the board with a spinner on every filter makes the screen
-        // flash white and loses the scroll position.
+    fun `reloading does not go back to Loading when a board is already on screen`() = runTest(dispatcher) {
+        // A spinner on every filter change flashes the screen and loses the scroll position.
         val vm = BoardViewModel(FakeSource())
         advanceUntilIdle()
         assertTrue(vm.state.value is BoardState.Ready)
 
         vm.switchFilter("mine")
         assertTrue(
-            "durante a recarga o quadro tem que continuar na tela",
+            "the board must stay on screen while reloading",
             vm.state.value is BoardState.Ready,
         )
     }
 
     @Test
-    fun `o recado e consumido uma vez so`() = runTest(dispatcher) {
+    fun `the notice is consumed only once`() = runTest(dispatcher) {
         val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
@@ -271,34 +262,33 @@ class BoardViewModelTest {
 class BulkSummaryTest {
 
     @Test
-    fun `lote inteiro certo diz so quantas`() {
+    fun `an all-successful batch only says how many`() {
         assertEquals("3 moved", bulkSummary(3, emptyList()))
     }
 
     @Test
-    fun `uma falha sozinha traz o motivo inteiro`() {
+    fun `a single failure carries the full reason`() {
         assertEquals(
-            "TASK-2: sem transição",
-            bulkSummary(0, listOf(BulkFailure("TASK-2", "sem transição"))),
+            "TASK-2: no transition",
+            bulkSummary(0, listOf(BulkFailure("TASK-2", "no transition"))),
         )
     }
 
     @Test
-    fun `falhas sao NOMEADAS — sao elas que exigem acao`() {
-        // A bare "2 failed" would force you to compare the board before with
-        // the board after to work out which.
+    fun `failures are NAMED because they need action`() {
+        // A bare "2 failed" would force a before/after board comparison to find which.
         val sentence = bulkSummary(
             1,
-            listOf(BulkFailure("TASK-2", "sem transição"), BulkFailure("TASK-3", "sem transição")),
+            listOf(BulkFailure("TASK-2", "no transition"), BulkFailure("TASK-3", "no transition")),
         )
         assertTrue(sentence, sentence.contains("TASK-2") && sentence.contains("TASK-3"))
     }
 
     @Test
-    fun `acima de tres, a frase ainda cabe numa tarja`() {
-        val failures = (1..6).map { BulkFailure("VPSM-$it", "sem transição") }
+    fun `above three, the sentence still fits in a banner`() {
+        val failures = (1..6).map { BulkFailure("VPSM-$it", "no transition") }
         val sentence = bulkSummary(0, failures)
         assertTrue(sentence, sentence.contains("and 3 more"))
-        assertTrue("a frase ficou longa demais: $sentence", sentence.length < 120)
+        assertTrue("the sentence got too long: $sentence", sentence.length < 120)
     }
 }

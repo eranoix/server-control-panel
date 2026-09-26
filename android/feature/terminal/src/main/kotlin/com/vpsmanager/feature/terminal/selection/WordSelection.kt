@@ -3,24 +3,17 @@ package com.vpsmanager.feature.terminal.selection
 import com.vpsmanager.terminalengine.CellSnapshot
 
 /**
- * The three character classes that define where a word starts and ends. It is
- * the classic terminal split (xterm, Termux, iTerm): running over
- * `git commit --amend` and double-tapping `commit` selects `commit`, not the
- * whole line and not a single letter.
+ * The character classes that define word boundaries, the classic terminal split
+ * (xterm, Termux, iTerm): double-tapping `commit` in `git commit --amend` selects `commit`.
  */
 private enum class CharClass { SPACE, WORD, OTHER }
 
 /**
- * `_` counts as WORD because file names, environment variables and code
- * identifiers use it mid-word — breaking there would make the double tap
- * useless on precisely the text most often copied out of a terminal. `-`, `.`
- * and `/` stay OUT: paths and flags are compound structures, and someone
- * double-tapping `/etc/nginx/nginx.conf` almost always wants one segment, not
- * the whole path (for the whole path there is the triple tap).
+ * `_` is WORD because identifiers and variables use it mid-word. `-`, `.` and `/`
+ * are not, so a double tap on a path selects one segment (triple tap takes the line).
  */
 private fun classify(codepoint: Int): CharClass = when {
-    // A cell never written by the renderer (the same convention as
-    // `buildRowDrawOps`) counts as a space, not as content.
+    // A never-written cell (same convention as `buildRowDrawOps`) counts as space.
     codepoint == 0 -> CharClass.SPACE
     Character.isWhitespace(codepoint) -> CharClass.SPACE
     codepoint == '_'.code -> CharClass.WORD
@@ -29,9 +22,8 @@ private fun classify(codepoint: Int): CharClass = when {
 }
 
 /**
- * The class of cell [col] on row [row]. The tail of a wide character
- * (`SPACER_TAIL`) has no codepoint of its own — it belongs to the character to
- * its left, and classifying it in isolation would cut a CJK word in half.
+ * The class of cell [col] on [row]. A wide character's tail (`SPACER_TAIL`)
+ * belongs to the character on its left, so CJK words are not cut in half.
  */
 private fun cellClass(snapshot: CellSnapshot, row: Int, col: Int): CharClass {
     val cell = snapshot.cellAt(col, row)
@@ -42,17 +34,13 @@ private fun cellClass(snapshot: CellSnapshot, row: Int, col: Int): CharClass {
 }
 
 /**
- * The word under the tapped cell — the double-tap gesture, which is the
- * language every Android text field already speaks.
- *
- * The selection extends both ways for as long as the character class does not
- * change. Double-tapping a space selects the run of spaces, and not nothing:
- * it is xterm's behaviour, and it keeps the double tap from becoming a dead
- * gesture when the finger lands a pixel to the side of the word.
+ * The word under the tapped cell (double tap). Extends both ways while the
+ * character class stays the same; tapping a space selects the run of spaces, as
+ * in xterm, so a slightly missed tap is not a dead gesture.
  */
 fun selectWord(snapshot: CellSnapshot, row: Int, col: Int): GridSelection {
-    require(row in 0 until snapshot.rows) { "linha $row fora da grade de ${snapshot.rows}" }
-    require(col in 0 until snapshot.cols) { "coluna $col fora da grade de ${snapshot.cols}" }
+    require(row in 0 until snapshot.rows) { "row $row outside the grid of ${snapshot.rows}" }
+    require(col in 0 until snapshot.cols) { "column $col outside the grid of ${snapshot.cols}" }
 
     val className = cellClass(snapshot, row, col)
     var start = col
@@ -64,21 +52,13 @@ fun selectWord(snapshot: CellSnapshot, row: Int, col: Int): GridSelection {
 }
 
 /**
- * The LOGICAL line running through [row] — the triple-tap gesture.
- *
- * "Logical", not "on screen": a long line the terminal wrapped to fit the
- * grid's width occupies several screen rows, and selecting only the visible
- * stretch would hand over a path or a URL cut in half. The snapshot's own soft
- * wrap marks ([CellSnapshot.isWrapped] / [CellSnapshot.isWrapContinuation])
- * are what tell the two cases apart — the same ones [extractSelectedText] uses
- * so as not to insert a `\n` where the terminal merely folded the text.
- *
- * The selection ends at the last column with content, not at the grid's width:
- * dragging the highlight across a desert of never-written cells would be
- * visual noise, and the copied text is the same either way.
+ * The logical line through [row] (triple tap). A wrapped line spans several
+ * screen rows, and the soft-wrap marks ([CellSnapshot.isWrapped] /
+ * [CellSnapshot.isWrapContinuation]) join them, as in [extractSelectedText], so a
+ * path or URL is not cut in half. Ends at the last column with content.
  */
 fun selectLine(snapshot: CellSnapshot, row: Int): GridSelection {
-    require(row in 0 until snapshot.rows) { "linha $row fora da grade de ${snapshot.rows}" }
+    require(row in 0 until snapshot.rows) { "row $row outside the grid of ${snapshot.rows}" }
 
     var first = row
     while (first > 0 && snapshot.isWrapContinuation(first)) first--
@@ -93,7 +73,7 @@ fun selectLine(snapshot: CellSnapshot, row: Int): GridSelection {
     )
 }
 
-/** The whole grid — the system floating bar's "Select all". */
+/** The whole grid (the floating toolbar's "Select all"). */
 fun selectAll(snapshot: CellSnapshot): GridSelection = GridSelection(
     startRow = 0,
     startCol = 0,

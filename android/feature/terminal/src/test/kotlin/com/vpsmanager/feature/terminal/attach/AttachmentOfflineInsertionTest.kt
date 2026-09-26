@@ -11,18 +11,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * The guard that stops an attachment from vanishing when the session is down.
- *
- * `TerminalSocketClient.send` is literally `socket?.sendBytes(bytes)`: with no
- * socket, the bytes are DISCARDED silently, with no exception and no return
- * value. The first version of this screen inserted anyway and removed the row
- * from the bar — the path evaporated: nothing on the command line, nothing in
- * the bar, nothing explaining it. Reproduced on the emulator right after
- * reinstalling the APK, with the session still reconnecting.
- *
- * The test exercises the [AttachmentBar] pair plus the insertion decision
- * through the SAME path the screen uses, with the connection in each of the
- * two states.
+ * An attachment must not vanish when the session is down: `TerminalSocketClient.send`
+ * silently drops bytes when there is no socket, so the row may only leave the bar
+ * after a successful insert. Exercises [AttachmentBar] with the connection up and down.
  */
 @RunWith(RobolectricTestRunner::class)
 class AttachmentOfflineInsertionTest {
@@ -31,9 +22,8 @@ class AttachmentOfflineInsertionTest {
     val composeRule = createComposeRule()
 
     /**
-     * Reproduces the rule of [TerminalAttachment] without the ViewModel (which
-     * requires WorkManager): given the finished text, insert only when the
-     * terminal is up, and only then discard.
+     * Mirrors the screen's insertion rule without the ViewModel (which needs
+     * WorkManager): insert only when the terminal is up, and only then discard.
      */
     private fun build(
         terminalReady: Boolean,
@@ -59,12 +49,12 @@ class AttachmentOfflineInsertionTest {
 
     private fun readyAttachment() = ScreenAttachment(
         id = java.util.UUID.randomUUID(),
-        name = "foto.jpg",
-        state = AttachmentState.Ready("/srv/inbox/foto.jpg"),
+        name = "photo.jpg",
+        state = AttachmentState.Ready("/srv/inbox/photo.jpg"),
     )
 
     @Test
-    fun `com a sessao no ar o caminho e inserido e a linha sai da barra`() {
+    fun `with the session up the path is inserted and the row leaves the bar`() {
         val attachment = readyAttachment()
         var inserted: String? = null
         var discarded: java.util.UUID? = null
@@ -72,12 +62,12 @@ class AttachmentOfflineInsertionTest {
 
         composeRule.onNodeWithText(INSERT_LABEL).performClick()
 
-        assertEquals("/srv/inbox/foto.jpg ", inserted)
+        assertEquals("/srv/inbox/photo.jpg ", inserted)
         assertEquals(attachment.id, discarded)
     }
 
     @Test
-    fun `com a sessao fora do ar NADA e inserido e o anexo NAO e descartado`() {
+    fun `with the session down nothing is inserted and the attachment is not discarded`() {
         val attachment = readyAttachment()
         var inserted: String? = null
         var discarded: java.util.UUID? = null
@@ -85,11 +75,9 @@ class AttachmentOfflineInsertionTest {
 
         composeRule.onNodeWithText(INSERT_LABEL).performClick()
 
-        // The point of the test: the attachment stays in the bar. Discarding
-        // it here would lose the path forever, because the send never reached
-        // the PTY.
+        // The attachment must stay in the bar: the send never reached the PTY.
         assertNull(inserted)
         assertNull(discarded)
-        composeRule.onNodeWithText("/srv/inbox/foto.jpg").assertExists()
+        composeRule.onNodeWithText("/srv/inbox/photo.jpg").assertExists()
     }
 }

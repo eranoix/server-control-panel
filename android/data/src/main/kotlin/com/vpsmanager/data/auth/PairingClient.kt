@@ -11,23 +11,15 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
 /**
- * A pairing ticket is single-use and expires in minutes (see
- * `auth.IssuePairingTicket`, `internal/auth/tokens.go`): 24 random bytes,
- * hex-encoded, so exactly 48 lowercase hex characters. This regex is the
- * client-side half of the malformed-QR denial-of-service defence: a QR code
- * is attacker-controlled camera input, so [PairingClient.parsePairingPayload]
- * rejects anything that cannot possibly be a real ticket — arbitrary length
- * text, URLs, binary garbage — before a single byte of it reaches the
- * network.
+ * A pairing ticket is single use and expires in minutes: 24 random bytes as 48
+ * lowercase hex characters (`internal/auth/tokens.go`). A QR code is
+ * attacker-controlled input, so anything else is rejected before touching the network.
  */
 private val PAIRING_TICKET_SHAPE = Regex("^[0-9a-f]{48}$")
 
 /**
- * Envelope version this build understands. The desktop panel
- * (`auth.PairingEnvelopeVersion`, `internal/auth/tokens.go`) is the source
- * of truth this must track; a mismatch means either an old app scanning a
- * new panel's QR or vice-versa, and this client fails closed (rejects the
- * payload) rather than guessing at a shape it has never seen.
+ * Envelope version this build understands; must track `auth.PairingEnvelopeVersion`
+ * (`internal/auth/tokens.go`). A mismatch fails closed.
  */
 private const val SUPPORTED_PAIRING_ENVELOPE_VERSION = 1
 
@@ -35,13 +27,11 @@ private const val SUPPORTED_PAIRING_ENVELOPE_VERSION = 1
 private const val MAX_PAYLOAD_LENGTH = 4096
 
 /**
- * The exact JSON envelope a pairing QR code encodes (`handleMobilePairStart`,
- * `internal/api/handlers_auth.go`) — ticket plus the server this device
- * should talk to, so the person pairing a phone never types a hostname by
- * hand. [serverUrl] alone never authorizes anything: it only becomes the
- * app's configured server through [com.vpsmanager.data.config.ServerConfigRepository.configure],
- * which refuses to silently repoint an already-paired device (see that
- * class's `RepointBlocked` doc).
+ * The JSON envelope a pairing QR code encodes (`handleMobilePairStart`,
+ * `internal/api/handlers_auth.go`): the ticket plus the server URL, so the user
+ * never types a hostname. [serverUrl] authorizes nothing by itself;
+ * [com.vpsmanager.data.config.ServerConfigRepository.configure] refuses to
+ * silently repoint an already paired device.
  */
 @Serializable
 private data class PairingQrEnvelope(
@@ -53,22 +43,16 @@ private data class PairingQrEnvelope(
 private val pairingJson = Json { ignoreUnknownKeys = true }
 
 /**
- * A decoded, shape-validated pairing QR payload — the only form a caller
- * outside [PairingClient] ever sees. [ticket] still matches
- * [PAIRING_TICKET_SHAPE]; [serverUrl] is passed through as-is and is NOT
- * yet validated as a real URL — that is
- * [com.vpsmanager.data.config.ServerConfigRepository.configure]'s job
- * (via `validateServerUrl`), so there is exactly one URL validator in the
- * app, not two.
+ * A decoded, shape-validated pairing payload. [serverUrl] is not validated here:
+ * [com.vpsmanager.data.config.ServerConfigRepository.configure] does that, so the
+ * app has a single URL validator.
  */
 data class PairingPayload(val ticket: String, val serverUrl: String)
 
 /**
- * Outcome of exchanging a scanned pairing ticket for a passkey-registration
- * authorization. [Authorized.regToken] only authorizes ONE subsequent call
- * to `POST /auth/passkey/register/begin` ([PasskeyClient.register]) — it is
- * never itself a credential, never a session, and scanning a QR code alone
- * never grants access to anything (`auth_pairing.go`).
+ * Outcome of exchanging a pairing ticket. [Authorized.regToken] only authorizes
+ * one `POST /auth/passkey/register/begin` ([PasskeyClient.register]); it is never
+ * a credential or a session.
  */
 sealed interface PairingResult {
     data class Authorized(val regToken: String) : PairingResult
@@ -76,28 +60,17 @@ sealed interface PairingResult {
 }
 
 /**
- * The single call site into the generated mobile BFF client
- * (`:data:mobile-api-client`) for `POST /api/mobile/v1/auth/pair`. No other
- * module may reference [AuthApi] or its generated model types directly for
- * pairing — callers only ever see [PairingResult]. Pairs with
- * [PasskeyClient], which owns everything from `regToken` onward.
+ * The single call site into the generated client for `POST /api/mobile/v1/auth/pair`;
+ * callers only see [PairingResult]. [PasskeyClient] owns everything from `regToken` on.
  */
 open class PairingClient(
     private val authApi: AuthApi = AuthApi(),
 ) {
 
     /**
-     * Decodes [qrPayload] — the raw text read from the scanned QR code — as
-     * the versioned envelope `handleMobilePairStart` mints
-     * (`internal/api/handlers_auth.go`). Returns `null` for anything that is
-     * not a well-formed envelope THIS BUILD understands: not JSON, an
-     * unrecognized `v`, a `ticket` that does not match
-     * [PAIRING_TICKET_SHAPE], or a blank `server_url`. Rejecting rather than
-     * best-effort-parsing an envelope this client cannot fully validate is
-     * deliberate (the payload is attacker-controlled camera input)
-     * — the caller treats `null` exactly like "not a QR code we recognize"
-     * and keeps scanning instead of forwarding partially-understood data
-     * anywhere.
+     * Decodes the raw QR text as the versioned envelope. Returns `null` for anything
+     * this build cannot fully validate (not JSON, unknown `v`, malformed `ticket`,
+     * blank `server_url`); the caller then keeps scanning.
      */
     fun parsePairingPayload(qrPayload: String): PairingPayload? {
         val candidate = qrPayload.trim()
@@ -117,12 +90,9 @@ open class PairingClient(
     }
 
     /**
-     * Consumes [ticket] via `POST /auth/pair`. Success only ever yields a
-     * `reg_token` for one registration ceremony — never an access or refresh
-     * token (see [PairingResult.Authorized] doc). An expired, already-used,
-     * or never-issued ticket all fail identically server-side
-     * (`ErrPairingTicketInvalid`): this client does not attempt to
-     * distinguish them either, to avoid leaking which case occurred.
+     * Consumes [ticket] via `POST /auth/pair`, yielding only a one-time `reg_token`.
+     * Expired, used and unknown tickets fail identically on the server, and this
+     * client does not try to tell them apart either.
      */
     suspend fun consume(ticket: String): PairingResult = try {
         val response = authApi.mobilePairConsume(PairingConsumeInputBody(ticket = ticket))

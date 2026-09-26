@@ -1,17 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    updatePeriodMillis = 1800000 (30 min) e o MINIMO que o Android aceita.
-    Pedir menos nao acelera nada: o sistema silenciosamente arredonda para
-    cima. E mesmo 30 min e uma sugestao — sob economia de bateria o sistema
-    adia. Por isso o widget carimba a HORA do dado em vez de fingir que o
-    numero e de agora (ver PainelNoInicio).
-
-    resizeMode horizontal|vertical porque o operador escolhe onde ele cabe na
-    tela dele, e o conteudo (tres numeros e uma linha) se acomoda nos dois
-    sentidos sem quebrar.
-
-    minWidth/minHeight em multiplos de 70dp - 30dp, que e a formula da grade
-    de icones do launcher: 2 celulas de largura, 1 de altura.
+    updatePeriodMillis = 1800000 (30 min) is the minimum Android accepts; lower values are
+    rounded up, and battery saver can defer it further. That is why the widget shows the
+    time of its data instead of implying it is current.
+    Resizable in both directions: the content (three numbers and a line) fits either way.
+    minWidth/minHeight follow the launcher grid formula (70dp * n - 30dp): 2 cells wide, 1 tall.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="180dp"

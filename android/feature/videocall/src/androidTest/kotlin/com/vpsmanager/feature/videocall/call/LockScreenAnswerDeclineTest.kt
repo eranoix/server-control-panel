@@ -19,43 +19,18 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Answering or declining from the lock screen must reach the right side effects —
- * `onAnswer()` starts [CallForegroundService] and hands off to the app's own UI; `onReject()`
- * tears everything down without ever doing either.
+ * Answering from the lock screen starts [CallForegroundService] and opens the app with the room
+ * id; declining does neither and unregisters the call from [ActiveCallRegistry].
  *
- * Deviation from the literal `<behavior>` text originally specified (documented here, not
- * silently substituted, and repeated in the delivery summary):
- * - The specification asks for "Telecom's test connection APIs" or a fake
- *   `Connection.Listener`, with a fallback to constructing [VpsmConnection] directly.
- *   `VpsmConnectionService` already constructs [VpsmConnection] directly with no Telecom
- *   round-trip needed to reach it (see its `onCreateIncomingConnection`), and
- *   [android.telecom.Connection]'s own state/`setActive`/`setDisconnected` methods work
- *   standalone (no bound `ConnectionService` required to observe them) — Robolectric's shadow
- *   of this exact class is the one that was explicitly distrusted here (see this class's own
- *   package doc comments), which is why this is a real `androidTest`, not a `Robolectric`
- *   unit test. So this test constructs [VpsmConnection] directly, on the real
- *   `android.telecom.Connection` runtime, exactly the fallback path the `<action>` describes.
- * - The specification says `onAnswer()` should reach "the shared join use-case" and
- *   `onReject()` should call "`WebRtcSessionManager.leave()`/cleanup". The actual, shipped
- *   design (see [VpsmConnection]'s class doc) never calls a join use-case or
- *   `WebRtcSessionManager` directly from either method — join is deliberately deferred to
- *   [CallViewModel.joinRoom] once `launchHostActivity` foregrounds the app's own `CallScreen`
- *   (a second Telecom round-trip would duplicate, not converge with, that one join path).
- *   This test therefore asserts the real observable contract instead: `onAnswer()` starts
- *   [CallForegroundService] and invokes the injected `launchHostActivity` with the ringing
- *   room's ID; `onReject()` invokes neither and leaves the call unregistered in
- *   [ActiveCallRegistry].
+ * Runs on a device rather than Robolectric because the shadow of `android.telecom.Connection`
+ * is not trusted; [VpsmConnection] is constructed directly, as `VpsmConnectionService` does.
  */
 @RunWith(AndroidJUnit4::class)
 class LockScreenAnswerDeclineTest {
 
     /**
-     * `onAnswer()` only starts [CallForegroundService] after checking CAMERA+RECORD_AUDIO, and
-     * `startForeground()` itself with the `camera|microphone` types requires both to be granted
-     * ALREADY (otherwise: `SecurityException: Starting FGS with type microphone ... requires ...
-     * RECORD_AUDIO`). Granting them here reproduces the real state of a user who has already
-     * been through the lobby's proactive request — the denied path stays covered by the
-     * injectable `permissionChecker`, with no dependency on `pm revoke`.
+     * `startForeground()` with camera and microphone types throws `SecurityException` unless both
+     * are granted. The denied path is covered through the injectable `permissionChecker`.
      */
     @get:Rule
     val grantCameraAndMic: GrantPermissionRule =
@@ -65,8 +40,7 @@ class LockScreenAnswerDeclineTest {
 
     @Before
     fun setUp() {
-        // Isolates this class from whatever state a previous instrumented test class in the
-        // same run left CallForegroundService in.
+        // Isolates this class from service state left by earlier instrumented tests.
         CallForegroundService.stop(context)
         waitUntil(timeoutMs = 5_000) { !CallForegroundService.isRunning }
     }
@@ -84,7 +58,7 @@ class LockScreenAnswerDeclineTest {
         val connection = VpsmConnection(
             context = context,
             callId = callId,
-            roomId = "sala-lock-answer",
+            roomId = "room-lock-answer",
             permissionChecker = CallPermissionChecker { emptyList() },
             launchHostActivity = { _, roomId -> launchedRoomId = roomId },
         )
@@ -95,11 +69,10 @@ class LockScreenAnswerDeclineTest {
             "CallForegroundService never reported running after onAnswer()",
             waitUntil(timeoutMs = 5_000) { CallForegroundService.isRunning },
         )
-        assertEquals("sala-lock-answer", launchedRoomId)
+        assertEquals("room-lock-answer", launchedRoomId)
         assertEquals(Connection.STATE_ACTIVE, connection.state)
 
-        // Cleanup mirrors what a real call end does — proves onDisconnect() also stops the
-        // service it started, not just onReject()'s path.
+        // onDisconnect() must also stop the service it started.
         connection.onDisconnect()
         assertTrue(
             "CallForegroundService did not stop after onDisconnect()",
@@ -118,7 +91,7 @@ class LockScreenAnswerDeclineTest {
         val connection = VpsmConnection(
             context = context,
             callId = callId,
-            roomId = "sala-lock-reject",
+            roomId = "room-lock-reject",
             permissionChecker = CallPermissionChecker { emptyList() },
             launchHostActivity = { _, roomId -> launchedRoomId = roomId },
         )

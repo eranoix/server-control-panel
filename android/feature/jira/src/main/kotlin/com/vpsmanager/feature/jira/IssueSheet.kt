@@ -44,26 +44,10 @@ import androidx.compose.ui.unit.dp
 internal const val TAG_ISSUE_SHEET = "jira-folha-issue"
 
 /**
- * The open issue, on a sheet that rises over the board.
+ * The open issue on a bottom sheet, so the board stays in context behind it.
  *
- * ## Why a sheet, and not a detail screen
- *
- * The board is the context: the person opened that card BECAUSE they were
- * looking at that column. A whole navigation would push a destination, take
- * the board off the screen and force them to go back to carry on where they
- * left off. The sheet keeps the board behind it, and closing is a downward
- * gesture.
- *
- * ## The "move to…" lives here, and it is not redundant with the drag
- *
- * A screen reader does not drag. Without this list, moving an issue would be
- * an inaccessible function — and it is the board's main function. The same
- * list serves whoever has only one hand free, and whoever wants to move to a
- * distant column without dragging a finger across the whole board.
- *
- * The destinations come from the server ALREADY translated into the columns'
- * vocabulary: whoever sees "Em andamento" on the board picks "Em andamento"
- * here, even if Jira calls that state "EM REVISÃO".
+ * The "Move to" list is the accessible alternative to dragging (screen readers cannot drag).
+ * Destinations arrive from the server already named after the board's columns.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -166,7 +150,6 @@ private fun IssueBody(
             }
         }
 
-        // --- move to… ------------------------------------------------------
         if (issue.destinations.isNotEmpty()) {
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
             Text("Move to", style = MaterialTheme.typography.labelLarge)
@@ -175,9 +158,7 @@ private fun IssueBody(
                 modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // Repeated destinations do happen: two different transitions
-                // can land on the same column, and offering the column twice
-                // would make the person choose between two identical buttons.
+                // Two transitions can land on the same column; show it once.
                 issue.destinations.distinctBy { it.column }.forEach { destination ->
                     SuggestionChip(
                         onClick = { onMove(issue.key, destination.column) },
@@ -230,7 +211,6 @@ private fun IssueBody(
             }
         }
 
-        // --- comments ------------------------------------------------------
         HorizontalDivider(Modifier.padding(vertical = 12.dp))
         Text(
             text = if (issue.comments.isEmpty()) "Comments" else "Comments (${issue.comments.size})",

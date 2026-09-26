@@ -13,18 +13,9 @@ import com.vpsmanager.feature.videocall.CallPermissionChecker
 private const val TAG = "VpsmConnection"
 
 /**
- * Launches this app's own launcher activity with [EXTRA_ROOM_ID] set, so the in-app UI (not
- * Telecom, which only ever renders the system call screen) can pick the call up once
- * foregrounded. `:feature-videocall` cannot import `:app`'s `MainActivity` directly (feature
- * modules are dependency-free siblings of `:app`, never the reverse), so this goes through the
- * package's own launch intent instead of a concrete Activity class reference — the same
- * seam every other cross-module "open the app" call site in this codebase would need.
- *
- * `MainActivity.consumeDeepLink` reads [EXTRA_ROOM_ID] off this exact Intent and resolves it to
- * `AppNavHost`'s real `chamada/{roomId}` destination (`CallScreen`), through the same
- * single-consumption `pendingDeepLinkRoute` path a tapped notification's route uses —
- * answering a call from the lock screen now lands the user on the actual call screen, not a
- * placeholder.
+ * Opens the app's launch activity with [EXTRA_ROOM_ID] so the in-app call screen can take over.
+ * Uses the package launch intent because feature modules cannot depend on `:app`'s MainActivity;
+ * `MainActivity.consumeDeepLink` routes the extra to the call screen.
  */
 private fun launchHostActivity(context: Context, roomId: String) {
     val intent = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return
@@ -34,29 +25,20 @@ private fun launchHostActivity(context: Context, roomId: String) {
 }
 
 /**
- * One self-managed Telecom call (`PROPERTY_SELF_MANAGED`) — Telecom itself renders the
- * lock-screen/ringtone/DND-bypass UI for it (CallStyle is applied automatically to self-managed
- * connections on API 31+), so [onShowIncomingCallUi] is intentionally a no-op: building a second,
- * competing UI here would fight the OS's own rendering instead of relying on it.
+ * One self-managed Telecom call. Telecom renders the ringing UI itself, so
+ * [onShowIncomingCallUi] is a no-op to avoid a competing UI.
  *
- * [onAnswer] deliberately does NOT re-run WebRTC join/negotiation itself —
- * [com.vpsmanager.feature.videocall.CallViewModel.joinRoom] remains the one join use-case,
- * converged rather than duplicated (this plan's own key_links requirement). Instead it: confirms
- * CAMERA+RECORD_AUDIO are already granted (required before [CallForegroundService] can start
- * with the camera/microphone FGS types — `startForeground()` throws `SecurityException`
- * otherwise), starts [CallForegroundService], marks the Telecom call `setActive()`, and launches
- * this app's own UI via [launchHostActivity] so it can complete the join once foregrounded.
+ * [onAnswer] does not join WebRTC itself ([com.vpsmanager.feature.videocall.CallViewModel.joinRoom]
+ * is the only join path). It checks CAMERA and RECORD_AUDIO (otherwise `startForeground()` throws
+ * `SecurityException`), starts [CallForegroundService], marks the call active and opens the app.
  *
- * Implements [RingingCallHandle] so [ActiveCallRegistry] can end this exact call when a
- * `call-ended` FCM push arrives while it is still ringing or active on this device.
+ * As a [RingingCallHandle], [ActiveCallRegistry] can end it when a `call-ended` push arrives.
  */
 class VpsmConnection(
     private val context: Context,
     private val callId: String,
     private val roomId: String,
-    // Overridable seam (mirrors CallViewModel's own constructor pattern) so
-    // LockScreenAnswerDeclineTest can drive both the granted and denied branch deterministically
-    // instead of depending on real runtime grant state / adb shell pm revoke from inside a test.
+    // Injectable so tests can drive the granted and denied branches deterministically.
     private val permissionChecker: CallPermissionChecker = AndroidCallPermissionChecker(context),
     private val launchHostActivity: (Context, String) -> Unit = ::launchHostActivity,
 ) : Connection(), RingingCallHandle {
@@ -70,10 +52,8 @@ class VpsmConnection(
     override fun onAnswer() {
         val missing = permissionChecker.missingPermissions()
         if (missing.isNotEmpty()) {
-            // The lobby's proactive permission request is meant to prevent this, but a user
-            // can always revoke CAMERA/RECORD_AUDIO afterward under system Settings — a
-            // ring-time denial here is a real, reachable state, not a theoretical one.
-            Log.w(TAG, "resposta recusada, permissao ausente: $missing")
+            // The user can revoke permissions in Settings after the lobby granted them.
+            Log.w(TAG, "answer refused, missing permission: $missing")
             teardown(DisconnectCause(DisconnectCause.ERROR, "missing_permission"))
             return
         }
@@ -91,10 +71,10 @@ class VpsmConnection(
     }
 
     override fun onShowIncomingCallUi() {
-        // Intentional no-op — see class doc: Telecom already renders the call UI itself.
+        // No-op: Telecom renders the call UI.
     }
 
-    /** [ActiveCallRegistry]'s callback for a `call-ended` push arriving before/during this call. */
+    /** Called by [ActiveCallRegistry] when a `call-ended` push arrives. */
     override fun endCall() {
         teardown(DisconnectCause(DisconnectCause.REMOTE))
     }

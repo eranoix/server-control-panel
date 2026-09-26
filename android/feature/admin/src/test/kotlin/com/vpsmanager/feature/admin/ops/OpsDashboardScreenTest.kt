@@ -11,9 +11,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Renders [OpsDashboardScreen] under Robolectric in every [OpsDashboardUiState]
- * -- never composed before this. Stateless (every dependency is a parameter),
- * so no ViewModel/repository fake is needed.
+ * Renders the stateless [OpsDashboardScreen] under Robolectric in every [OpsDashboardUiState].
  */
 @RunWith(RobolectricTestRunner::class)
 class OpsDashboardScreenTest {
@@ -35,13 +33,13 @@ class OpsDashboardScreenTest {
         var retried = false
         composeRule.setContent {
             OpsDashboardScreen(
-                uiState = OpsDashboardUiState.LoadError("O servidor está indisponível no momento."),
+                uiState = OpsDashboardUiState.LoadError("The server is unavailable right now."),
                 onBack = {},
                 onRetry = { retried = true },
             )
         }
 
-        composeRule.onNodeWithText("O servidor está indisponível no momento.").assertExists()
+        composeRule.onNodeWithText("The server is unavailable right now.").assertExists()
         composeRule.onNodeWithText("Try again").performClick()
         assert(retried) { "expected onRetry to fire" }
     }
@@ -62,9 +60,8 @@ class OpsDashboardScreenTest {
         composeRule.onNodeWithText("Health checks (all ok)").assertExists()
         composeRule.onNodeWithText("docker").assertExists()
 
-        // The alerts section starts collapsed when there are no alerts
-        // (`initiallyExpanded = snapshot.alerts.isNotEmpty()`), so its empty
-        // message is not rendered until expanded.
+        // With no alerts the section starts collapsed, so the empty message
+        // appears only after expanding it.
         composeRule.onNodeWithText("Active alerts (0)").assertExists()
         composeRule.onNodeWithText("No alerts firing right now.").assertDoesNotExist()
         composeRule.onNodeWithText("Active alerts (0)").performClick()

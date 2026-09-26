@@ -14,12 +14,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
 
-/**
- * A fake at the [FilesRepository] seam -- never touches the generated
- * mobile-api-client (that mapping is [com.vpsmanager.data.files.FilesRepositoryTest]'s
- * job against a real `MockWebServer`); this only exercises the ViewModel's
- * own state machine given a repository outcome.
- */
+/** Fake [FilesRepository] for exercising the ViewModel's state machine. */
 private class FakeFilesRepository(private val onList: suspend (String) -> FileListResult) : FilesRepository() {
     override suspend fun list(path: String): FileListResult = onList(path)
 }
@@ -75,13 +70,13 @@ class FileBrowserViewModelTest {
 
     @Test
     fun `reaches Error when the repository reports a failure`() = runTest {
-        val repository = FakeFilesRepository { FileListResult.Error("O servidor está indisponível no momento.") }
+        val repository = FakeFilesRepository { FileListResult.Error("The server is unavailable right now.") }
         val viewModel = FileBrowserViewModel(repository)
 
         dispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(
-            FileBrowserUiState.Error("O servidor está indisponível no momento."),
+            FileBrowserUiState.Error("The server is unavailable right now."),
             viewModel.uiState.value,
         )
     }
@@ -92,11 +87,9 @@ class FileBrowserViewModelTest {
         val repository = FakeFilesRepository { path ->
             when (path) {
                 "/" -> FileListResult.Success(path = "/", parent = "/", entries = listOf(childEntry))
-                // Empty, not Success(entries = emptyList()) -- the real FilesRepository never
-                // emits the latter (that shape is exactly what Empty replaces), so the fake
-                // has to preserve the same contract for the ViewModel test to mean anything.
+                // Empty, not an empty Success: the real repository never emits the latter.
                 "/app" -> FileListResult.Empty
-                else -> FileListResult.Error("caminho inesperado: $path")
+                else -> FileListResult.Error("unexpected path: $path")
             }
         }
         val viewModel = FileBrowserViewModel(repository)
@@ -119,7 +112,7 @@ class FileBrowserViewModelTest {
             when (path) {
                 "/" -> FileListResult.Success(path = "/", parent = "/", entries = listOf(childEntry))
                 "/app" -> FileListResult.Empty
-                else -> FileListResult.Error("caminho inesperado: $path")
+                else -> FileListResult.Error("unexpected path: $path")
             }
         }
         val viewModel = FileBrowserViewModel(repository)

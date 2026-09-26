@@ -4,16 +4,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * What these tests protect: the breadcrumb is the one piece of information on
- * this screen with no empty state — it answers "where am I" even in a folder
- * with nothing in it and even when the listing failed. A step that points at
- * the wrong path takes the next action to the wrong folder, and the next
- * action in a file browser tends to be destructive.
+ * The breadcrumb always answers "where am I"; a step pointing at the wrong path sends the
+ * next (possibly destructive) action to the wrong folder.
  */
 class PathBreadcrumbTest {
 
     @Test
-    fun `a raiz e um degrau, nao um rotulo vazio`() {
+    fun `the root is a step, not an empty label`() {
         val crumbs = pathCrumbs("/")
 
         assertEquals(1, crumbs.size)
@@ -22,7 +19,7 @@ class PathBreadcrumbTest {
     }
 
     @Test
-    fun `cada degrau aponta para o proprio nivel, acumulado desde a raiz`() {
+    fun `each step points at its own level, accumulated from the root`() {
         val crumbs = pathCrumbs("/opt/panel/data")
 
         assertEquals(listOf("/", "opt", "panel", "data"), crumbs.map { it.label })
@@ -34,20 +31,16 @@ class PathBreadcrumbTest {
 
     /** A trailing slash is cosmetic in a path and must not become an empty step. */
     @Test
-    fun `barra no fim nao cria degrau fantasma`() {
+    fun `a trailing slash does not create a phantom step`() {
         assertEquals(
             pathCrumbs("/opt/data").map { it.path },
             pathCrumbs("/opt/data/").map { it.path },
         )
     }
 
-    /**
-     * `//opt///data` is a valid path to the kernel. Without discarding the
-     * empty segments it would produce invisible steps — touch targets nobody
-     * can see that navigate to a truncated path.
-     */
+    /** `//opt///data` is a valid path; empty segments must not become invisible steps. */
     @Test
-    fun `barras repetidas nao produzem degraus invisiveis`() {
+    fun `repeated slashes do not produce invisible steps`() {
         val crumbs = pathCrumbs("//opt///data")
 
         assertEquals(listOf("/", "opt", "data"), crumbs.map { it.label })

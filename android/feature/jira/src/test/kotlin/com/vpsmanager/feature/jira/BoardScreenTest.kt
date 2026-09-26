@@ -1,10 +1,6 @@
-// The `ViewModelConstructorInComposable` check exists for a PRODUCTION
-// hazard: a ViewModel constructed inside a composable is reborn on every
-// recomposition, losing state and leaking scope. In a Compose test that
-// renders ONCE with a fake ViewModel injected, that does not happen — and
-// injecting the fake into `setContent` is precisely the seam the test exists
-// to exercise. The suppression belongs to the TEST FILE, and to it alone;
-// production code stays subject to the rule.
+// ViewModelConstructorInComposable guards a production hazard (recreation on
+// recomposition). These tests render once with an injected fake, so the rule is
+// suppressed for this test file only.
 @file:Suppress("ViewModelConstructorInComposable")
 
 package com.vpsmanager.feature.jira
@@ -30,13 +26,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * Renders the real board under Robolectric.
- *
- * There is no emulator in this environment, and a board screen without a
- * render test is exactly the kind of piece that compiles and arrives crooked
- * on the device — that is how a whole screen once shipped here with no caller.
- */
+/** Renders the real board under Robolectric. */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -51,22 +41,15 @@ class BoardScreenTest {
     @After
     fun resetMain() = Dispatchers.resetMain()
 
-    /**
-     * The owner's requirement, in the form of a test: all THREE columns on
-     * screen at once, with cards from more than one visible together.
-     *
-     * The previous version showed one column per page — which is what Trello
-     * and the official Jira do on mobile, and which turns a board into a list
-     * with tabs. This test fails if anyone goes back to the pager.
-     */
+    /** Requirement: all THREE columns on screen at once; fails if the board becomes a pager. */
     @Test
-    fun `as tres colunas aparecem AO MESMO TEMPO, com os cartoes de cada uma`() {
+    fun `the three columns appear AT THE SAME TIME, each with its cards`() {
         val source = FakeSource(
             JiraResult.Ok(
                 testBoard(
                     toDo = listOf(card("TASK-1"), card("TASK-2")),
-                    inProgress = listOf(card("TASK-3", "Em Progresso", "indeterminate")),
-                    done = listOf(card("TASK-4", "Pronto", "done")),
+                    inProgress = listOf(card("TASK-3", "In Progress", "indeterminate")),
+                    done = listOf(card("TASK-4", "Done", "done")),
                 ),
             ),
         )
@@ -77,15 +60,14 @@ class BoardScreenTest {
         compose.onNodeWithText("Em andamento").assertIsDisplayed()
         compose.onNodeWithText("Concluído").assertIsDisplayed()
 
-        // Cards from THREE different columns, all drawn at once — this is
-        // what a pager cannot do.
+        // Cards from three different columns drawn at once, which a pager cannot do.
         compose.onNodeWithText("TASK-1").assertIsDisplayed()
         compose.onNodeWithText("TASK-3").assertIsDisplayed()
         compose.onNodeWithText("TASK-4").assertIsDisplayed()
     }
 
     @Test
-    fun `cada coluna mostra quantos cartoes tem`() {
+    fun `each column shows how many cards it has`() {
         val source = FakeSource(
             JiraResult.Ok(
                 testBoard(toDo = listOf(card("TASK-1"), card("TASK-2"))),
@@ -97,29 +79,27 @@ class BoardScreenTest {
     }
 
     @Test
-    fun `a primeira coluna aparece com os cartoes dela`() {
+    fun `the first column appears with its cards`() {
         val source = FakeSource(
             JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))),
         )
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 
         compose.onNodeWithText("TASK-1").assertIsDisplayed()
-        compose.onNodeWithText("resumo de TASK-1").assertIsDisplayed()
+        compose.onNodeWithText("summary of TASK-1").assertIsDisplayed()
     }
 
     @Test
-    fun `coluna vazia diz o que esta vazio, e nao so um espaco em branco`() {
+    fun `an empty column says it is empty, not just blank space`() {
         val source = FakeSource(JiraResult.Ok(testBoard()))
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 
-        // A 125 dp column has no room for a sentence; it has room for the
-        // word that answers the question ("is there anything here?"). The
-        // detail lives in the sheet, one tap away.
+        // A 125 dp column only has room for one word, not a sentence.
         compose.onAllNodesWithText("empty").assertCountEquals(3)
     }
 
     @Test
-    fun `sem conta ligada, a tela e o formulario de conexao`() {
+    fun `without a linked account, the screen is the connection form`() {
         val source = FakeSource(JiraResult.Ok(testBoard().copy(connected = false)))
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 
@@ -128,24 +108,21 @@ class BoardScreenTest {
     }
 
     @Test
-    fun `a recusa do Jira aparece SEM apagar os controles`() {
-        // A malformed JQL must not cost the project selector and the filters
-        // — they are what lets you undo the narrowing that caused the refusal.
+    fun `a Jira refusal shows WITHOUT hiding the controls`() {
+        // The project selector and filters are what let you undo the query that caused the refusal.
         val source = FakeSource(
-            JiraResult.Ok(testBoard(rejection = "JQL inválido perto de 'ORDER'")),
+            JiraResult.Ok(testBoard(rejection = "invalid JQL near 'ORDER'")),
         )
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 
-        compose.onNodeWithText("JQL inválido perto de 'ORDER'").assertIsDisplayed()
+        compose.onNodeWithText("invalid JQL near 'ORDER'").assertIsDisplayed()
         compose.onNodeWithText("VPSM").assertIsDisplayed()
         compose.onNodeWithText("Todas").assertIsDisplayed()
     }
 
     @Test
-    fun `os filtros desenhados sao os que o SERVIDOR mandou`() {
-        // A list hard-coded in the client would go stale on its own the day
-        // the panel gained a new filter — that is how the two surfaces
-        // diverged last time.
+    fun `the filters drawn are the ones the SERVER sent`() {
+        // A hard-coded client list would go stale when the panel gains a filter.
         val source = FakeSource(JiraResult.Ok(testBoard()))
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 
@@ -154,7 +131,7 @@ class BoardScreenTest {
     }
 
     @Test
-    fun `tocar num filtro recarrega o quadro com ele`() {
+    fun `tapping a filter reloads the board with it`() {
         val source = FakeSource(JiraResult.Ok(testBoard()))
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
         val before = source.boardsRequested
@@ -162,26 +139,26 @@ class BoardScreenTest {
         compose.onNodeWithText("Minhas").performClick()
         compose.waitForIdle()
 
-        assert(source.boardsRequested > before) { "tocar no filtro tinha que pedir o quadro de novo" }
+        assert(source.boardsRequested > before) { "tapping the filter should have requested the board again" }
     }
 
     @Test
-    fun `tocar num cartao abre a folha da issue`() {
+    fun `tapping a card opens the issue sheet`() {
         val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 
-        compose.onNodeWithText("resumo de TASK-1").performClick()
+        compose.onNodeWithText("summary of TASK-1").performClick()
         compose.waitForIdle()
 
         compose.onNodeWithTag(TAG_ISSUE_SHEET).assertIsDisplayed()
     }
 
     @Test
-    fun `um erro de carga oferece tentar de novo`() {
-        val source = FakeSource(JiraResult.Error("Falha de conexão."))
+    fun `a load error offers to try again`() {
+        val source = FakeSource(JiraResult.Error("Connection failed."))
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 
-        compose.onNodeWithText("Falha de conexão.").assertIsDisplayed()
+        compose.onNodeWithText("Connection failed.").assertIsDisplayed()
         compose.onNodeWithText("Try again").assertIsDisplayed()
     }
 }

@@ -5,14 +5,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * What this test protects: the magnifier has to stick to the LINE, not to the
- * finger.
- *
- * It is the only rule about the magnifier that is ours — the drawing, the zoom
- * and the animation are the manufacturer's. If the Y followed the finger, the
- * magnifier would tremble vertically with every wobble of the hand and would
- * show half of the line above with half of the one below, which is exactly
- * what it exists to avoid.
+ * The magnifier's Y must stick to the center of the line, not to the finger, so it
+ * does not tremble with the hand or show half of two lines.
  */
 class HandleMagnifierTest {
 
@@ -24,35 +18,34 @@ class HandleMagnifierTest {
     )
 
     @Test
-    fun `o Y vai para o centro da celula, nao para o dedo`() {
+    fun `the Y goes to the center of the cell, not to the finger`() {
         // Finger at y=25: inside row 1 (20..40), but near the top of it.
         val cell = hitTester.hitTest(Offset(x = 35f, y = 25f))
         val rect = hitTester.cellRect(cell.row, cell.col)
 
-        assertEquals("linha sob o dedo", 1, cell.row)
-        assertEquals("centro da linha, e nao o y do dedo", 30f, rect.center.y, 0.01f)
+        assertEquals("row under the finger", 1, cell.row)
+        assertEquals("center of the row, not the finger's y", 30f, rect.center.y, 0.01f)
     }
 
     @Test
-    fun `dedo oscilando dentro da mesma linha nao move a lupa`() {
-        // The hand trembles a few pixels; the magnifier has to stay put.
+    fun `a finger wobbling inside the same row does not move the magnifier`() {
         val high = hitTester.hitTest(Offset(x = 35f, y = 21f))
         val down = hitTester.hitTest(Offset(x = 35f, y = 39f))
 
         val yHigh = hitTester.cellRect(high.row, high.col).center.y
         val yDown = hitTester.cellRect(down.row, down.col).center.y
 
-        assertEquals("18 px de tremor na mesma linha = zero movimento da lupa", yHigh, yDown, 0.01f)
+        assertEquals("18 px of tremor in the same row means zero magnifier movement", yHigh, yDown, 0.01f)
     }
 
     @Test
-    fun `mudar de linha move a lupa uma linha inteira`() {
+    fun `changing rows moves the magnifier by a whole row`() {
         val first = hitTester.hitTest(Offset(x = 35f, y = 25f))
         val second = hitTester.hitTest(Offset(x = 35f, y = 45f))
 
         val y1 = hitTester.cellRect(first.row, first.col).center.y
         val y2 = hitTester.cellRect(second.row, second.col).center.y
 
-        assertEquals("uma altura de celula, exatamente", 20f, y2 - y1, 0.01f)
+        assertEquals("exactly one cell height", 20f, y2 - y1, 0.01f)
     }
 }

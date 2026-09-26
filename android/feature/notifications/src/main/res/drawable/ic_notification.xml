@@ -1,34 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Ícone pequeno de notificação — o que aparece na barra de status.
+    Status bar notification icon: the vps-manager mark (same as logo-mark.svg).
 
-    DOIS CONSERTOS aqui, um de correção e um de identidade.
+    The xmlns must be ".../apk/res/android"; a typo compiles silently with aapt2 but
+    the vector then fails to inflate at runtime.
 
-    1) O xmlns estava escrito ".../apis/res/android" em vez de ".../apk/res/android".
-       Um caractere. O aapt2 não reclama: ele compila os atributos como sendo de
-       um namespace desconhecido qualquer, e `aapt2 dump xmltree` sobre o APK
-       mostrava TODOS eles — width, height, viewportWidth, viewportHeight,
-       pathData — fora do namespace do Android. Ou seja: o VectorDrawable chegava
-       ao inflater sem dimensão, sem viewport e sem caminho nenhum. Toda
-       notificação acionável (ActionableNotificationBuilder.setSmallIcon) apontava
-       para um recurso que não inflava. Falha silenciosa em build-time, quebra em
-       runtime — exatamente o tipo de erro que só aparece com o app na mão.
+    Must be a SILHOUETTE: Android discards colour and repaints the shape in the theme
+    colour, so only alpha matters (opaque hexagon, transparent evenOdd cutouts and
+    surroundings). A coloured or filled icon shows as a grey square.
 
-    2) O desenho era um sininho genérico. O ícone da barra de status é o que
-       identifica QUEM está notificando, então ele tem que ser a marca do
-       vps-manager, a mesma de logo-mark.svg e do ícone do app — e não um
-       pictograma de "notificação", que não distingue este app de nenhum outro.
-
-    SILHUETA, obrigatoriamente: o Android descarta toda informação de cor deste
-    recurso e repinta a forma com a cor do tema (branco na barra de status,
-    a cor de destaque na gaveta). Um ícone colorido ou com fundo chapado vira um
-    quadrado cinza sem forma. Por isso só existe alpha aqui: branco opaco no
-    hexágono, transparente nos recortes (mesma máscara em evenOdd do ícone do
-    app) e transparente em volta.
-
-    O grupo escala a marca (56 unidades de altura no viewport 64 de origem) para
-    20dp de altura dentro dos 24dp canônicos, centrada em (12,12) — cerca de 2dp
-    de folga em volta, que é o respiro óptico que a barra de status espera.
+    The group scales the mark (56 units tall in a 64 viewport) to 20dp inside the
+    24dp frame, centred at (12,12), leaving about 2dp of padding.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"

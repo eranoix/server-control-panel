@@ -37,14 +37,10 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 private val CALL_PERMISSIONS = arrayOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
 
 /**
- * The active-call screen: own camera preview, one tile per remote peer, and the
- * bottom control bar. [roomId] is joined once per screen instance via `LaunchedEffect(roomId)`;
- * [CallViewModel] is scoped to THIS back-stack entry (`createCallViewModel(context)`, no
- * `SavedStateHandle` dependency — see the ViewModel's own doc comment on why a fresh instance per
- * room visit is correct here, unlike `TerminalViewModel`'s session-name-from-back-stack case).
+ * The call screen: lobby, then own preview, one tile per remote peer and the control bar.
+ * [CallViewModel] is scoped to this back-stack entry, so each room visit gets a fresh instance.
  *
- * Applies neither `imePadding()` nor a second `consumeWindowInsets` call — `AppNavHost`'s
- * `NavHost` modifier already applies both exactly once for every destination, this one included.
+ * No `imePadding()` or `consumeWindowInsets` here: `AppNavHost` already applies both once.
  */
 @Composable
 fun CallScreen(
@@ -58,24 +54,18 @@ fun CallScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) {
-        // Re-attempt regardless of the exact grant map — openLobby re-checks every
-        // permission itself and re-emits PermissionRequired for whatever is still missing.
+        // openLobby re-checks every permission itself, so the grant map is ignored.
         viewModel.openLobby()
     }
 
-    // THE GREEN ROOM, not joining straight away. Joining a call is the only
-    // action in this app that is public and irreversible: by the time the
-    // person finds out they were muted, the others have already seen. See
-    // [LobbyScreen].
+    // Open the lobby first: joining is public and irreversible.
     LaunchedEffect(roomId) {
         viewModel.openLobby()
     }
 
     val inWindow by FloatingWindow.inWindow.collectAsStateWithLifecycle()
 
-    // Auto-enter only applies INSIDE the call. Enabling it while the screen is
-    // still asking for permission would make leaving the app open a little
-    // window for a call that never started.
+    // PiP auto-enter only during the call, never for one that has not started.
     AutoEnterFloatingWindow(enabled = state is CallUiState.InCall)
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -93,24 +83,13 @@ fun CallScreen(
                 onSwitchCamera = viewModel::onSwitchCamera,
                 onEnter = { viewModel.joinRoom(roomId) },
                 onGiveUp = {
-                    // Backing out of the green room has to RELEASE the
-                    // camera. Without the onLeave, the device's light would
-                    // stay on after the person went back to the list — and the
-                    // next call would find the camera busy with this very app.
+                    // Release the camera, or it stays on and the next call finds it busy.
                     viewModel.onLeave()
                     onLeaveCall()
                 },
             )
             is CallUiState.InCall -> if (inWindow) {
-                // IN THE LITTLE WINDOW: video and one line of state, nothing
-                // more.
-                //
-                // It is not a "reduced" version of the full screen — it is
-                // different content. In a window of ~200 dp, a 48 dp button
-                // covers a quarter of the area and nobody hits it; participant
-                // names and the grid turn to mush. And the state has to fit
-                // there because the little window is the ONLY place where a
-                // drop can be seen while the app is not in the foreground.
+                // In PiP (~200 dp) show only video and one status line; controls would not fit.
                 CallInWindow(state = current, eglBaseContext = viewModel.eglBaseContext)
             } else {
                 InCallContent(
@@ -129,7 +108,7 @@ fun CallScreen(
     }
 }
 
-/** Builds the real, production [CallViewModel] via [createCallViewModel] — the injectable `viewModel` param on [CallScreen] exists so a test can supply one built from fakes instead (mirrors `PasskeyRegisterFlow`'s `passkeyRegisterViewModel()`). */
+/** Production [CallViewModel]; tests pass their own through [CallScreen]'s `viewModel` parameter. */
 @Composable
 private fun defaultCallViewModel(): CallViewModel {
     val context = LocalContext.current

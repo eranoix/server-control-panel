@@ -21,27 +21,17 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/** A comfortable margin over `longPressTimeoutMillis` (400–500 ms). */
+/** A comfortable margin over `longPressTimeoutMillis` (400 to 500 ms). */
 private const val LONG_PRESS_SLACK_MS = 700L
 
 /** Well inside `doubleTapTimeoutMillis` (300 ms on devices and on the emulator). */
 private const val DOUBLE_TAP_INTERVAL_MS = 60L
 
 /**
- * The defect the app's owner reported: *"in the terminal, when I tap the
- * screen on the writing part, the keyboard should open"*. Tapping the grid did
- * absolutely nothing — the keyboard only came up once, on the system's
- * auto-show when entering the screen, and once dismissed there was no way
- * back.
- *
- * These tests pin down EVERY meaning a single finger can have on the grid,
- * which is where the risk lives: making the short tap work without breaking
- * the long press that already selects text ([canvasDragGestures] +
- * [SelectionGestureController], whose behaviour under a real touch the
- * instrumented `SelectionComposeIndependenceTest` proves), and adding the
- * double/triple tap without breaking either. That is why both recognisers are
- * mounted TOGETHER on the same `Modifier` in every case — testing the tap in
- * isolation would prove nothing about them coexisting.
+ * Every meaning a single finger can have on the grid: a short tap opens the keyboard,
+ * long press selects ([canvasDragGestures] + [SelectionGestureController]), and
+ * double/triple taps count up. Both recognizers are mounted together on the same
+ * `Modifier` so the tests prove they coexist.
  */
 @RunWith(RobolectricTestRunner::class)
 class CanvasTapGestureTest {
@@ -63,10 +53,7 @@ class CanvasTapGestureTest {
 
     private val sink = RecordingSink()
 
-    /**
-     * An encoder that behaves like the native one with tracking ACTIVE — the
-     * only situation in which a tap may go to the remote program.
-     */
+    /** Behaves like the native encoder with mouse tracking active. */
     private val trackingEncoder = MouseEventEncoder { action, _, _, _ ->
         val terminator = if (action == MouseAction.RELEASE) 'm' else 'M'
         "\u001b[<0;1;1$terminator".toByteArray(Charsets.US_ASCII)
@@ -96,36 +83,34 @@ class CanvasTapGestureTest {
 
     private fun noMouse() = TouchRouting { false }
 
-    private fun comMouse() = TouchRouting { true }
+    private fun withMouse() = TouchRouting { true }
 
     @Test
-    fun `toque curto na grade pede o teclado`() {
+    fun `a short tap on the grid requests the keyboard`() {
         buildGrid(noMouse())
 
         composeRule.onRoot().performTouchInput { down(center); up() }
         composeRule.waitForIdle()
 
-        assertEquals("um toque curto na grade tem que pedir o teclado, uma vez", 1, recordedTaps.size)
-        assertEquals("e ser contado como toque simples", SINGLE_TAP, recordedTaps[0].second)
-        assertNull("um toque curto não é seleção", selectionHolder.selection)
+        assertEquals("a short tap on the grid must request the keyboard once", 1, recordedTaps.size)
+        assertEquals("and count as a single tap", SINGLE_TAP, recordedTaps[0].second)
+        assertNull("a short tap is not a selection", selectionHolder.selection)
     }
 
     @Test
-    fun `toque longo continua selecionando e nao pede o teclado`() {
+    fun `a long press still selects and does not request the keyboard`() {
         buildGrid(noMouse())
 
-        // The gesture is split into two blocks with the virtual clock
-        // advanced in between: `advanceEventTime` only stamps the injected
-        // events' timestamps, and the long-press timer runs as a `delay` on
-        // the test's clock.
+        // `advanceEventTime` only stamps event times; the long-press timer runs on the
+        // test clock, which must be advanced separately.
         composeRule.onRoot().performTouchInput {
             down(center)
             advanceEventTime(LONG_PRESS_SLACK_MS)
         }
         composeRule.mainClock.advanceTimeBy(LONG_PRESS_SLACK_MS)
 
-        assertNotNull("o toque longo tem que ancorar a seleção", selectionHolder.selection)
-        assertTrue("um toque longo NÃO é toque curto: nada de teclado", recordedTaps.isEmpty())
+        assertNotNull("the long press must anchor the selection", selectionHolder.selection)
+        assertTrue("a long press is not a short tap, so no keyboard", recordedTaps.isEmpty())
 
         composeRule.onRoot().performTouchInput {
             moveTo(center + Offset(120f, 80f))
@@ -134,15 +119,15 @@ class CanvasTapGestureTest {
         composeRule.waitForIdle()
 
         val selection = selectionHolder.selection
-        assertNotNull("o arraste depois do toque longo tem que manter a seleção viva", selection)
+        assertNotNull("dragging after the long press must keep the selection alive", selection)
         assertTrue(
-            "soltar o dedo no fim de um arraste de seleção não pode virar um toque curto",
+            "lifting the finger after a selection drag must not become a short tap",
             recordedTaps.isEmpty(),
         )
     }
 
     @Test
-    fun `dois toques rapidos no mesmo lugar sao um toque duplo`() {
+    fun `two quick taps in the same place are a double tap`() {
         buildGrid(noMouse())
 
         composeRule.onRoot().performTouchInput { down(center); up() }
@@ -153,11 +138,11 @@ class CanvasTapGestureTest {
         }
         composeRule.waitForIdle()
 
-        assertEquals("os dois toques chegam, na ordem", listOf(SINGLE_TAP, DOUBLE_TAP), recordedTaps.map { it.second })
+        assertEquals("both taps arrive in order", listOf(SINGLE_TAP, DOUBLE_TAP), recordedTaps.map { it.second })
     }
 
     @Test
-    fun `tres toques rapidos chegam a contagem de linha e nao passam disso`() {
+    fun `three quick taps reach the line count and go no further`() {
         buildGrid(noMouse())
 
         repeat(4) {
@@ -170,14 +155,14 @@ class CanvasTapGestureTest {
         composeRule.waitForIdle()
 
         assertEquals(
-            "acima de três não há gesto definido: o contador satura em vez de criar estados sem significado",
+            "there is no gesture above three, so the counter saturates",
             listOf(SINGLE_TAP, DOUBLE_TAP, TRIPLE_TAP, TRIPLE_TAP),
             recordedTaps.map { it.second },
         )
     }
 
     @Test
-    fun `dois toques longe um do outro sao dois toques simples`() {
+    fun `two taps far apart are two single taps`() {
         buildGrid(noMouse())
 
         composeRule.onRoot().performTouchInput { down(center); up() }
@@ -189,14 +174,14 @@ class CanvasTapGestureTest {
         composeRule.waitForIdle()
 
         assertEquals(
-            "tocar em cantos opostos da tela não é gesto de palavra",
+            "tapping opposite corners is not a word gesture",
             listOf(SINGLE_TAP, SINGLE_TAP),
             recordedTaps.map { it.second },
         )
     }
 
     @Test
-    fun `um toque longo no meio quebra a sequencia de toques`() {
+    fun `a long press in between breaks the tap sequence`() {
         buildGrid(noMouse())
 
         composeRule.onRoot().performTouchInput { down(center); up() }
@@ -214,34 +199,33 @@ class CanvasTapGestureTest {
         composeRule.waitForIdle()
 
         assertEquals(
-            "depois de um arraste de seleção o próximo toque recomeça do 1",
+            "after a selection drag the next tap starts again from 1",
             listOf(SINGLE_TAP, SINGLE_TAP),
             recordedTaps.map { it.second },
         )
     }
 
     @Test
-    fun `com o programa pedindo mouse o toque vira clique pro programa, nao teclado`() {
-        buildGrid(comMouse())
+    fun `with the program asking for the mouse a tap becomes a click for it, not the keyboard`() {
+        buildGrid(withMouse())
 
         composeRule.onRoot().performTouchInput { down(center); up() }
         composeRule.waitForIdle()
 
-        assertTrue("com mouse ativo o toque pertence ao programa remoto", recordedTaps.isEmpty())
+        assertTrue("with the mouse active the tap belongs to the remote program", recordedTaps.isEmpty())
         assertEquals(
-            "um clique é o par pressiona/solta na mesma célula",
+            "a click is a press and release pair on the same cell",
             2,
             sink.sent.size,
         )
-        assertTrue("o primeiro evento é o pressionar (terminador M)", sink.sent[0].endsWith("M"))
-        assertTrue("o segundo é o soltar (terminador m)", sink.sent[1].endsWith("m"))
+        assertTrue("the first event is the press (terminator M)", sink.sent[0].endsWith("M"))
+        assertTrue("the second is the release (terminator m)", sink.sent[1].endsWith("m"))
     }
 
     @Test
-    fun `sem programa pedindo mouse nenhum byte de mouse e emitido`() {
-        // The proof of the defect: at a bash prompt, tapping the grid must
-        // not put ONE byte into the stream. That is where the "crazy text"
-        // was coming from.
+    fun `with no program asking for the mouse no mouse bytes are emitted`() {
+        // At a bash prompt, touches must not put any mouse bytes into the stream (they
+        // would show up as garbage text).
         buildGrid(noMouse())
 
         composeRule.onRoot().performTouchInput { down(center); up() }
@@ -257,7 +241,7 @@ class CanvasTapGestureTest {
         composeRule.waitForIdle()
 
         assertTrue(
-            "nem o toque nem o arraste podem virar sequência de mouse quando ninguém pediu mouse",
+            "neither tap nor drag may become a mouse sequence when nobody asked for the mouse",
             sink.sent.isEmpty(),
         )
     }

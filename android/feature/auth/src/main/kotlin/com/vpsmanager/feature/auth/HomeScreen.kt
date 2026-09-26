@@ -64,44 +64,15 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
 /**
- * Home: the operations dashboard.
+ * Home: the operations dashboard (tile grid, attention card, quick actions,
+ * session footer).
  *
- * ## The order of the cards, and why
- * 1. **Needs attention** — the question of someone opening the app in a hurry
- *    is "did something break?". It only exists when there is something; in
- *    silence it disappears and the rest moves up.
- * 2. **Server health** — the subsystems AGGREGATED ("9 · all ok"), with the
- *    healthy ones behind a button. Nine green lines teach the eye to ignore
- *    the area, and it is the future red line that pays the bill.
- * 3. **Right now** — the queue, the last deploy, the next scheduled job: "can
- *    I touch this right now?", which is the next question.
- * 4. **Resources** — CPU/memory/swap/disk. Fourth, not first: saturation is a
- *    debugging metric, not an alerting one; it explains *why*, after something
- *    has already fired.
- * 5. **Quick actions** — the "and then?" of each glance.
- * 6. **Session** — identity last; nobody opens a dashboard in a hurry to find
- *    out their own email address.
- *
- * ## Navigation
- * The screen knows no routes: it emits a [DashboardTarget], and whoever hosts
- * it translates that into a route ([onOpenSection] for the sections the server
- * describes, [onOpenTerminal] for the shell's Terminal destination). That way
- * navigation stays in one place and this screen stays testable without a
- * `NavHost`.
+ * The screen knows no routes: it emits a [DashboardTarget] and the host maps it
+ * via [onOpenSection] or [onOpenTerminal], so it is testable without a `NavHost`.
  */
 @Composable
 fun HomeScreen(
-    /**
-     * Opens the device's security screen.
-     *
-     * It lives here, on the Session card, and not in the drawer: it is a thing
-     * of THIS device — like the identity and the server already on that card —
-     * and not a place of work you navigate to all day. One more destination in
-     * the drawer would push "Sign out" off the screen.
-     *
-     * Defaults to empty so it does not break anyone already composing this
-     * screen in a test.
-     */
+    /** Opens this device's security screen, from the Session card. */
     onOpenSecurity: () -> Unit = {},
     onOpenDiagnostics: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -112,9 +83,7 @@ fun HomeScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // The widget summary's writer is wired up here because the screen has a
-    // context and the ViewModel should not gain one just to store four
-    // strings.
+    // Wired here so the ViewModel does not need a Context to store the widget summary.
     val context = LocalContext.current
     LaunchedEffect(context) {
         viewModel.publishSummaryWith { snapshot ->
@@ -139,17 +108,11 @@ fun HomeScreen(
 }
 
 /**
- * Fires [onTick] every [intervalMillis] WHILE the screen is visible.
+ * Fires [onTick] every [intervalMillis] only while the screen is resumed, saving
+ * battery and refreshing promptly on return.
  *
- * The loop is tied to the lifecycle for two reasons. The first is battery and
- * radio: a backgrounded dashboard has nobody to show a new number to. The
- * second is honesty — when the app comes back out of a pocket, the first tick
- * arrives promptly and the timestamp keeps up; without it, the screen would
- * reappear with a half-hour-old number looking current.
- *
- * An [intervalMillis] of `<= 0` turns the loop off. That is what the tests
- * use: an infinite `delay` inside the composition never lets Compose go idle,
- * and the test's `waitForIdle` would wait forever.
+ * `<= 0` disables it; tests need that because an infinite `delay` keeps
+ * `waitForIdle` waiting forever.
  */
 @Composable
 private fun AutoRefreshWhileResumed(intervalMillis: Long, onTick: () -> Unit) {
@@ -180,8 +143,7 @@ private fun AutoRefreshWhileResumed(intervalMillis: Long, onTick: () -> Unit) {
 }
 
 /**
- * The content, with no ViewModel — every dependency is a parameter, so a test
- * can compose any state directly.
+ * The content without a ViewModel, so tests can compose any state directly.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -227,12 +189,8 @@ private fun DashboardContent(
     val warning = snapshot.attention
     val context = LocalContext.current
 
-    // "GO HOME" MEANS THE TOP OF THE PAGE.
-    //
-    // The drawer navigates with `restoreState = true`, which restores the saved
-    // scroll position — so tapping Home handed back the same page halfway down,
-    // with the header cut off under the bar. To whoever tapped, that is "the
-    // button did not work". See ScrollToTopRequest.
+    // Tapping Home must scroll to the top: the drawer's `restoreState = true`
+    // would otherwise restore a mid-page position. See ScrollToTopRequest.
     val scroll = rememberLazyListState()
     val scrollToTopRequest by ScrollToTopRequest.counter.collectAsStateWithLifecycle()
     LaunchedEffect(scrollToTopRequest) {
@@ -269,12 +227,8 @@ private fun DashboardContent(
                 onRetry = onRetry,
             )
         }
-        // THE GRID COMES BEFORE EVERYTHING, including the attention card. It
-        // is the dashboard the person assembled, and the reason the model was
-        // chosen in the first place: the answer to "is everything all right?"
-        // in two seconds. The attention card stays right below because it
-        // EXPLAINS — the grid says the disk is red, the card says why that
-        // matters and where to go.
+        // The tile grid comes first (the at-a-glance answer); the attention card
+        // below explains what is wrong and where to go.
         item("painel") {
             TileDashboard(
                 tiles = visible,
@@ -286,31 +240,12 @@ private fun DashboardContent(
                 onRequestCatalog = { catalogOpen = true },
             )
         }
-        // THE ATTENTION CARD STAYS. I removed it by mistake and the tests
-        // caught it: it is not the banner the owner complained about — it is
-        // what carries a reverted deploy or a crossed threshold to the right
-        // screen. Removing "tell me when something is wrong" was not the
-        // request.
+        // Routes crossed thresholds and failed deploys to the right screen; must stay.
         if (warning.isNotEmpty()) {
             item("atencao") { AttentionCard(signals = warning, onTarget = onTarget) }
         }
-        // THE HEALTH CARD IS GONE (at the owner's request).
-        //
-        // It spent a block of height on the FIRST screen to say "9 subsystems
-        // · all ok" and hide the nine behind a button — a permanent frame for
-        // information that only matters when it is bad. And when it is bad,
-        // the attention card above already says so.
-        //
-        // Per-subsystem health is still there in full, in its own section of
-        // Administration. If it ever comes back here, it has to come back as
-        // an EXCEPTION: showing up only when something is degraded.
-        // THE RESOURCES CARD IS GONE too. The block grid shows the same
-        // judged signals, from the same `gradeResources`, and keeping both
-        // would be the same information in two places — which diverge the day
-        // only one of them is fixed. What the card had of its own and the grid
-        // does not (the sentence explaining the threshold) lives on the
-        // attention card, which is where it matters: when the threshold has
-        // been crossed.
+        // No permanent health or resources cards: the grid and the attention card
+        // cover them. Anything added here should appear only when something is wrong.
         if (snapshot.resourceSignals.isEmpty()) {
             item("recursos-ausentes") { ResourcesUnavailableCard() }
         }
@@ -327,11 +262,8 @@ private fun DashboardContent(
 }
 
 /**
- * The freshness timestamp, and the warning when the last fetch failed.
- *
- * Without a time, "no new data" and "the fetch is stuck" are
- * indistinguishable — and a stale number passing for a current one is the
- * worst possible defect on an operations dashboard.
+ * The freshness timestamp, plus a warning when the last fetch failed, so stale
+ * numbers never pass for current ones.
  */
 @Composable
 private fun FreshnessLine(fetchedAtEpochMs: Long, staleError: String?, onRetry: () -> Unit) {
@@ -389,7 +321,7 @@ private fun FreshnessLine(fetchedAtEpochMs: Long, staleError: String?, onRetry: 
     }
 }
 
-/** A server too old to expose `system` — the card says so rather than inventing a zero. */
+/** Shown when the server does not expose `system`, instead of showing zeros. */
 @Composable
 private fun ResourcesUnavailableCard() {
     DashboardCard(title = "Resources", subtitle = "unavailable") {
@@ -404,8 +336,7 @@ private fun ResourcesUnavailableCard() {
 
 @Composable
 private fun HomeLoading() {
-    // A skeleton, not a blank screen: three grey cards in the same positions
-    // the content will appear in, so the layout does not jump when it arrives.
+    // Skeleton cards in the final positions so the layout does not jump.
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
@@ -425,12 +356,7 @@ private fun HomeLoading() {
                 )
             }
         }
-        // THE TITLES HERE HAVE TO BE THE CARDS THE SCREEN ACTUALLY HAS.
-        // They went stale without anyone noticing: the list said "Server
-        // health", "Right now" and "Resources", and ALL THREE have since left
-        // the Home screen. A skeleton that promises cards which never arrive is
-        // worse than no skeleton at all — it teaches the wrong screen during
-        // loading and then contradicts itself.
+        // These titles must match the cards the screen actually shows.
         items(listOf("Quick actions", "Session")) { title ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -457,10 +383,7 @@ private fun HomeLoading() {
 }
 
 /**
- * A hard error: nothing on screen to preserve.
- *
- * The message says WHAT TO DO, not just what happened — an error screen that
- * only describes leaves the person stuck.
+ * A hard error with nothing to preserve. The text says what to do, not only what happened.
  */
 @Composable
 private fun HomeError(message: String, onRetry: () -> Unit) {
@@ -499,21 +422,15 @@ private fun HomeError(message: String, onRetry: () -> Unit) {
     }
 }
 
-/** "07:08" in the DEVICE's time zone — it is the clock the operator is looking at. */
+/** Time of day in the device's time zone, the clock the operator sees. */
 internal fun timeOf(epochMillis: Long): String =
     Instant.ofEpochMilli(epochMillis)
         .atZone(ZoneId.systemDefault())
         .format(DateTimeFormatter.ofPattern("HH:mm:ss"))
 
 /**
- * How far the server's clock and the device's may diverge before it is worth
- * reporting.
- *
- * Under 60 s the difference is network latency, second-level rounding and the
- * duration of the call itself — reporting that would be noise. Above it, the
- * clock really is out of sync, and that explains half of all "but I just ran
- * that": logs stamped at another hour, a cron that looks like it never fired,
- * a token that expires early.
+ * Clock drift worth reporting. Below 60 s it is just latency and rounding;
+ * above it, real drift explains odd log times, cron runs and early token expiry.
  */
 private const val CLOCK_DRIFT_SECONDS = 60L
 
@@ -529,12 +446,8 @@ internal fun clockDriftText(snapshot: DashboardSnapshot): String? {
 
 
 /**
- * The grid, with the header that makes it editable.
- *
- * The edit button lives HERE and not on the shell's title bar, for a reason of
- * scope: the bar belongs to the shell and applies to every screen, and
- * "arrange" only means something on this one. An icon that changes meaning
- * depending on the screen is the beginning of a bar nobody reads.
+ * The tile grid with its edit header. The edit button lives here, not in the
+ * shell's app bar, because editing only applies to this screen.
  */
 @Composable
 private fun TileDashboard(
@@ -562,10 +475,7 @@ private fun TileDashboard(
             }
         }
         if (tiles.isEmpty() && !editing) {
-            // THE REAL EMPTY: the person removed everything. We do not put
-            // the starting blocks back on our own — that would undo what they
-            // have just done. The invitation stays, and there is only one of
-            // it.
+            // The user removed everything; do not restore the defaults, just invite them to add.
             OutlinedCard(
                 modifier = Modifier.fillMaxWidth().clickable(onClick = onRequestCatalog),
             ) {

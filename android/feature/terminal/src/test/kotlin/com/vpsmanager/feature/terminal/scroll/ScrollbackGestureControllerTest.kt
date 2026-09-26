@@ -11,12 +11,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The translation from PIXEL to LINE, and the destination of each line. Runs
- * on the JVM: the rule does not depend on a device, and it is precisely the
- * one that would make scrolling look truncated or run away from the finger if
- * it were wrong.
- */
+/** Conversion of scroll pixels to lines, and where each line goes (viewport, wheel, arrows). */
 class ScrollbackGestureControllerTest {
 
     private val cellHeight = 20
@@ -53,13 +48,7 @@ class ScrollbackGestureControllerTest {
         return c.onScroll(px, Offset(5f, 5f))
     }
 
-    // ---- pixels become lines --------------------------------------------
-
-    /**
-     * Less than one cell scrolls nothing — but the pixel is not lost, and that
-     * is what makes the content follow the finger instead of jumping three
-     * lines at a time.
-     */
+    /** Less than one cell scrolls nothing, but the pixels accumulate so content follows the finger. */
     @Test
     fun dragSmallerThanCell_doesNotScrollButAccumulates() {
         val r = Recorder()
@@ -67,7 +56,7 @@ class ScrollbackGestureControllerTest {
         c.onScrollStart()
 
         drag(c, 8f)
-        assertTrue("nada devia ter rolado ainda", r.scrolls.isEmpty())
+        assertTrue("nothing should have scrolled yet", r.scrolls.isEmpty())
         drag(c, 8f)
         assertTrue(r.scrolls.isEmpty())
         // 8+8+8 = 24 px, past one cell of 20.
@@ -75,7 +64,7 @@ class ScrollbackGestureControllerTest {
         assertEquals(listOf(-1), r.scrolls)
     }
 
-    /** Finger DOWN shows the PAST — negative, the same convention as the wheel. */
+    /** Finger down shows the past (negative, same convention as the wheel). */
     @Test
     fun fingerDown_scrollsToPast() {
         val r = Recorder()
@@ -94,7 +83,7 @@ class ScrollbackGestureControllerTest {
         assertEquals(listOf(2), r.scrolls)
     }
 
-    /** Starting a new gesture clears the remainder: the previous drag does not leak. */
+    /** A new gesture clears the remainder of the previous one. */
     @Test
     fun newGesture_resetsAccumulated() {
         val r = Recorder()
@@ -105,10 +94,8 @@ class ScrollbackGestureControllerTest {
 
         c.onScrollStart()
         drag(c, 19f)
-        assertTrue("a sobra do gesto anterior vazou", r.scrolls.isEmpty())
+        assertTrue("the previous gesture's remainder leaked", r.scrolls.isEmpty())
     }
-
-    // ---- where the lines go ---------------------------------------------
 
     @Test
     fun noMouse_onNormalScreen_scrollsLocalViewport() {
@@ -117,10 +104,10 @@ class ScrollbackGestureControllerTest {
         c.onScrollStart()
         drag(c, 40f)
         assertEquals(listOf(-2), r.scrolls)
-        assertTrue("não devia mandar byte nenhum ao PTY", r.bytes.isEmpty())
+        assertTrue("should not send any bytes to the PTY", r.bytes.isEmpty())
     }
 
-    /** With `htop` open, the drag becomes the wheel — and nothing scrolls locally. */
+    /** With mouse tracking on (e.g. `htop`), the drag becomes wheel events and nothing scrolls locally. */
     @Test
     fun mouseActive_dragBecomesWheel_andDoesNotScrollLocally() {
         val r = Recorder()
@@ -129,9 +116,9 @@ class ScrollbackGestureControllerTest {
         c.onScrollStart()
         drag(c, 60f)
 
-        assertTrue("o viewport local não podia se mover", r.scrolls.isEmpty())
+        assertTrue("the local viewport must not move", r.scrolls.isEmpty())
         assertEquals(
-            "uma roda por linha, para cima",
+            "one wheel event per line, upwards",
             listOf(MouseButton.WHEEL_UP, MouseButton.WHEEL_UP, MouseButton.WHEEL_UP),
             r.wheels,
         )
@@ -148,7 +135,7 @@ class ScrollbackGestureControllerTest {
         assertEquals(listOf(MouseButton.WHEEL_DOWN, MouseButton.WHEEL_DOWN), r.wheels)
     }
 
-    /** `less`: alternate screen, no mouse, 1007 on — the drag becomes arrow keys. */
+    /** Alternate screen with mode 1007 and no mouse (e.g. `less`): the drag becomes arrow keys. */
     @Test
     fun altScreenWithAltScroll_sendsArrows() {
         val r = Recorder()
@@ -176,7 +163,7 @@ class ScrollbackGestureControllerTest {
         assertArrayEquals("\u001bOA".toByteArray(), r.bytes.single())
     }
 
-    /** Full screen without 1007: nothing happens, and the gesture says it is over. */
+    /** Alternate screen without 1007: nothing happens and the fling stops. */
     @Test
     fun altScreenWithoutAltScroll_doesNothingAndEndsFling() {
         val r = Recorder()
@@ -184,18 +171,12 @@ class ScrollbackGestureControllerTest {
         val c = controller(r)
         c.onScrollStart()
 
-        assertFalse("a inércia tinha que parar", drag(c, 40f))
+        assertFalse("the fling should stop", drag(c, 40f))
         assertTrue(r.scrolls.isEmpty())
         assertTrue(r.bytes.isEmpty())
     }
 
-    // ---- end of the history ----------------------------------------------
-
-    /**
-     * It reached the top: the gesture answers `false` and the fling stops,
-     * instead of grinding against the wall until the deceleration curve runs
-     * out on its own.
-     */
+    /** At the end of history the gesture returns `false` so the fling stops. */
     @Test
     fun atEndOfHistory_reportsNowhereToGo() {
         val r = Recorder()
@@ -205,7 +186,7 @@ class ScrollbackGestureControllerTest {
         assertFalse(drag(c, 40f))
     }
 
-    /** The wheel belongs to the remote program: there is no end of OUR history there. */
+    /** Wheel events belong to the remote program, so our history end does not apply. */
     @Test
     fun mouseActive_flingIsNeverStoppedByLocalEnd() {
         val r = Recorder()
@@ -232,9 +213,9 @@ class ScrollbackGestureControllerTest {
         val c = ScrollbackGestureController(
             modes = { TerminalModes.NONE },
             geometry = { null },
-            scrollViewport = { throw AssertionError("não podia rolar sem geometria") },
+            scrollViewport = { throw AssertionError("must not scroll without geometry") },
             canScrollViewport = { true },
-            sendBytes = { throw AssertionError("não podia mandar byte sem geometria") },
+            sendBytes = { throw AssertionError("must not send bytes without geometry") },
             encodeMouse = { _, _, _, _, _ -> null },
         )
         c.onScrollStart()

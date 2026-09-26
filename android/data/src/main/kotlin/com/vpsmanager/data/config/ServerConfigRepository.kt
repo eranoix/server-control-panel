@@ -11,25 +11,20 @@ sealed interface ConfigureServerResult {
     data class Rejected(val reason: String) : ConfigureServerResult
 
     /**
-     * The app is already configured against a DIFFERENT host than
-     * [attemptedBaseUrl] and [ServerConfigRepository.configure] was not
-     * called with `allowRepoint = true`. An untrusted QR code or deep link
-     * must never silently repoint an already-paired app at another
-     * server — that would hand a stranger's server every future credential
-     * this device sends. Only a deliberate, user-confirmed "trocar
-     * servidor" action may pass `allowRepoint = true`.
+     * The app is already configured for a DIFFERENT host than [attemptedBaseUrl]
+     * and `allowRepoint` was not set. An untrusted QR code or deep link must never
+     * silently repoint a paired app, which would send future credentials to a
+     * stranger's server; only a user-confirmed "change server" action may pass
+     * `allowRepoint = true`.
      */
     data class RepointBlocked(val currentBaseUrl: String, val attemptedBaseUrl: String) : ConfigureServerResult
 }
 
 /**
- * The single source of truth for which server this app talks to, backed by
- * [ServerConfigStore] (persisted across restarts — see
- * [EncryptedServerConfigStore]). Repositories that need the base URL take
- * this class through their constructor; nothing reads
- * `System.getProperty(ApiClient.BASE_URL_KEY)` directly anymore except
- * [publishLegacyBasePathSeam] itself, the one deliberate bridge into the
- * generated client's own config knob for call sites not yet migrated to
+ * The single source of truth for which server this app talks to, persisted by
+ * [ServerConfigStore] (see [EncryptedServerConfigStore]). Nothing reads
+ * `System.getProperty(ApiClient.BASE_URL_KEY)` directly except through
+ * [publishLegacyBasePathSeam], the bridge for call sites not yet using
  * constructor injection.
  */
 class ServerConfigRepository(private val store: ServerConfigStore) {
@@ -41,10 +36,8 @@ class ServerConfigRepository(private val store: ServerConfigStore) {
     fun currentConfig(): ServerConfig? = cached
 
     /**
-     * The absolute origin (e.g. `https://vpsm.example.com`) this app is
-     * configured to talk to, or null if never configured. Callers decide
-     * for themselves whether that is a hard failure or a "go to setup"
-     * navigation — this never guesses `localhost`.
+     * The absolute origin (e.g. `https://vpsm.example.com`), or null if never
+     * configured. Never guesses `localhost`; callers decide how to handle null.
      */
     fun currentBaseUrl(): String? = cached?.baseUrl
 
@@ -78,16 +71,11 @@ class ServerConfigRepository(private val store: ServerConfigStore) {
     }
 
     /**
-     * Mirrors the current [ServerConfig] into
-     * [ApiClient.BASE_URL_KEY] — the generated `*Api.defaultBasePath` seam
-     * every call site not yet migrated to constructor injection still
-     * reads (e.g. `com.vpsmanager.data.terminal.defaultTerminalWsBaseUrl`,
-     * `WhatsappApi.defaultBasePath`). Only ever SETS the property to a
-     * real, validated, absolute URL when a config exists; never falls back
-     * to a default, so anything reading the property before this ever ran
-     * keeps failing loud instead of resolving to `localhost`. Call once at
-     * app startup (after loading any persisted config) and again whenever
-     * [configure] succeeds.
+     * Mirrors the current [ServerConfig] into [ApiClient.BASE_URL_KEY], the seam
+     * that non-migrated call sites still read (e.g. `WhatsappApi.defaultBasePath`).
+     * Only sets a validated absolute URL and never a default, so early readers fail
+     * loudly instead of hitting `localhost`. Call at startup and after each
+     * successful [configure].
      */
     fun publishLegacyBasePathSeam() {
         val baseUrl = cached?.baseUrl ?: return

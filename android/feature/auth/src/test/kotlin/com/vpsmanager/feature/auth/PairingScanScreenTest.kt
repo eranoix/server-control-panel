@@ -22,18 +22,13 @@ import org.robolectric.Shadows.shadowOf
 /**
  * Renders [PairingScanScreen] under Robolectric.
  *
- * What these tests protect: **the screen degrades, it does not die.** The
- * previous code called `cameraProviderFuture.get()` inside a `Runnable` on the
- * main executor, with no `try`; on a device with no usable camera the future
- * fails, nothing catches the exception and the app CLOSES. Here every cause of
- * unavailability is injected through [CameraEnvironment] and what is verified is
- * that the screen renders a state explaining the cause and offering a way out.
+ * Guards that the screen degrades instead of crashing when the camera is
+ * unavailable: each cause is injected through [CameraEnvironment] and must render
+ * an explanation plus a way out.
  *
- * The injection is deliberate rather than relying on the emulator: the AVD's
- * camera configuration is shared state that another session turns on and off,
- * so a test tied to it proves nothing reliably. The HAPPY path (a real camera,
- * the CameraX pipeline, QR decoding) still requires a device/emulator, as
- * before.
+ * Causes are injected rather than relying on the emulator's camera config, which
+ * is shared and unreliable. The happy path (real camera, QR decoding) still
+ * needs a device.
  */
 @RunWith(RobolectricTestRunner::class)
 class PairingScanScreenTest {
@@ -71,10 +66,8 @@ class PairingScanScreenTest {
         }
     }
 
-    // --- the regression: with no camera, the screen renders instead of throwing ---
-
     @Test
-    fun `sem nenhuma camera no aparelho a tela degrada, com a saida alternativa`() {
+    fun `with no camera on the device the screen degrades with the alternative path`() {
         render(environment(readinesses = arrayOf(CameraReadiness.Unavailable(CameraFailure.NoCamera))))
 
         composeRule.onNodeWithText("This device has no camera").assertExists()
@@ -83,14 +76,11 @@ class PairingScanScreenTest {
     }
 
     /**
-     * The test that fails on the old code and passes on the new one, through
-     * the PUBLIC path and with no injection at all: under Robolectric the
-     * `CameraManager` exposes no camera whatsoever — the same condition as the
-     * lab emulator — and what is expected is the degraded screen, not a blank
-     * preview (nor the process dying).
+     * Through the public path with no injection: Robolectric's `CameraManager`
+     * exposes no camera, so the degraded screen must appear, not a blank preview or a crash.
      */
     @Test
-    fun `pelo caminho real, um aparelho sem camera cai no estado degradado`() {
+    fun `through the real path, a device without a camera reaches the degraded state`() {
         grantCameraPermission()
 
         composeRule.setContent { PairingScanScreen(onPairingScanned = {}, onManualSetupRequested = {}) }
@@ -100,14 +90,14 @@ class PairingScanScreenTest {
     }
 
     @Test
-    fun `renderiza sem quebrar antes de a permissao ser concedida`() {
+    fun `renders without crashing before permission is granted`() {
         composeRule.setContent { PairingScanScreen(onPairingScanned = {}) }
 
         composeRule.onRoot().assertExists()
     }
 
     @Test
-    fun `enquanto a permissao e pedida as saidas continuam de pe - spinner sozinho tambem e beco`() {
+    fun `while permission is requested the alternative paths stay available`() {
         render(
             environment(
                 hasPermission = false,
@@ -119,10 +109,8 @@ class PairingScanScreenTest {
         composeRule.onNodeWithText(LABEL_ALREADY_HAVE_ACCESS).assertHasClickAction()
     }
 
-    // --- each distinct cause, with the action that matches it ---
-
     @Test
-    fun `camera ocupada por outro app oferece tentar de novo, e a nova tentativa reconfere`() {
+    fun `a camera in use offers retry, and retrying checks again`() {
         render(
             environment(
                 readinesses = arrayOf(
@@ -136,20 +124,19 @@ class PairingScanScreenTest {
         composeRule.onNodeWithText("Try again").performClick()
         composeRule.waitForIdle()
 
-        // The second check returned a different cause: proof that the button
-        // really did re-check instead of merely repainting the same screen.
+        // A different cause on the second check proves the button really re-checked.
         composeRule.onNodeWithText("This device has no camera").assertExists()
     }
 
     @Test
-    fun `permissao negada pede de novo, e nao manda para as configuracoes`() {
+    fun `a denied permission asks again instead of sending to Settings`() {
         var requests = 0
         composeRule.setContent {
             CameraUnavailableContent(
                 failure = CameraFailure.PermissionDenied,
                 onRequestPermission = { requests++ },
-                onOpenSettings = { throw AssertionError("não deve abrir Configurações aqui") },
-                onRetry = { throw AssertionError("não deve reconferir sem permissão") },
+                onOpenSettings = { throw AssertionError("must not open Settings here") },
+                onRetry = { throw AssertionError("must not re-check without permission") },
                 onManualSetupRequested = {},
                 onLoginRequested = {},
             )
@@ -162,12 +149,12 @@ class PairingScanScreenTest {
     }
 
     @Test
-    fun `permissao negada em definitivo leva as configuracoes, sem insistir no dialogo`() {
+    fun `a permanently denied permission opens Settings instead of the dialog`() {
         var settingsOpened = 0
         composeRule.setContent {
             CameraUnavailableContent(
                 failure = CameraFailure.PermissionBlocked,
-                onRequestPermission = { throw AssertionError("pedir de novo aqui é o laço que queremos evitar") },
+                onRequestPermission = { throw AssertionError("asking again here is the loop we must avoid") },
                 onOpenSettings = { settingsOpened++ },
                 onRetry = {},
                 onManualSetupRequested = {},
@@ -182,7 +169,7 @@ class PairingScanScreenTest {
     }
 
     @Test
-    fun `sem camera nao oferece retentar - so os caminhos alternativos`() {
+    fun `no camera offers no retry, only the alternative paths`() {
         var manual = 0
         var login = 0
         composeRule.setContent {
@@ -190,7 +177,7 @@ class PairingScanScreenTest {
                 failure = CameraFailure.NoCamera,
                 onRequestPermission = {},
                 onOpenSettings = {},
-                onRetry = { throw AssertionError("não há o que retentar sem câmera") },
+                onRetry = { throw AssertionError("nothing to retry without a camera") },
                 onManualSetupRequested = { manual++ },
                 onLoginRequested = { login++ },
             )
@@ -205,24 +192,24 @@ class PairingScanScreenTest {
     }
 
     @Test
-    fun `falha inesperada e honesta - mostra o detalhe tecnico para o dono relatar`() {
+    fun `an unexpected failure shows the technical detail for the owner to report`() {
         render(
             environment(
                 readinesses = arrayOf(
                     CameraReadiness.Unavailable(
-                        CameraFailure.UnexpectedFailure("IllegalStateException: provedor não subiu"),
+                        CameraFailure.UnexpectedFailure("IllegalStateException: provider did not start"),
                     ),
                 ),
             ),
         )
 
         composeRule.onNodeWithText("Could not open the camera").assertExists()
-        composeRule.onNodeWithText("IllegalStateException: provedor não subiu").assertExists()
+        composeRule.onNodeWithText("IllegalStateException: provider did not start").assertExists()
         composeRule.onNodeWithText("Try again").assertHasClickAction()
     }
 
     @Test
-    fun `camera bloqueada pelo sistema tem texto proprio, distinto de ocupada`() {
+    fun `a camera blocked by the system has its own text, distinct from in use`() {
         render(
             environment(
                 readinesses = arrayOf(
@@ -236,7 +223,7 @@ class PairingScanScreenTest {
     }
 
     @Test
-    fun `toda tela degradada mantem as duas saidas do pareamento por QR`() {
+    fun `every degraded screen keeps both alternatives to QR pairing`() {
         val causes = listOf(
             CameraFailure.PermissionDenied,
             CameraFailure.PermissionBlocked,
@@ -264,6 +251,6 @@ class PairingScanScreenTest {
             composeRule.onNodeWithText(LABEL_SET_UP_MANUALLY).assertHasClickAction()
             composeRule.onNodeWithText(LABEL_ALREADY_HAVE_ACCESS).assertHasClickAction()
         }
-        assertTrue("nenhuma causa pode ficar sem saída", causes.isNotEmpty())
+        assertTrue("no cause may be left without a way out", causes.isNotEmpty())
     }
 }

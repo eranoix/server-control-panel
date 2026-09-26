@@ -18,23 +18,11 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Renders [ShareDestinationScreen] under Robolectric — this screen (and
- * every other Compose screen in the app) had never actually been composed
- * before, on a device or in a test. This is the render test that would have
- * caught the fix that avoids a name collision when sharing several items at
- * once: `ACTION_SEND_MULTIPLE` sharing two items that both resolve to the
- * same `displayName` (routine — two photos with no distinguishing
- * `DISPLAY_NAME` column both fall back to the literal `"arquivo"`, see
- * `ShareTargetActivity.resolveSharedUri`) used to blow up
- * `LazyColumn(key = { it.displayName })` with `IllegalArgumentException: Key
- * ... was already used`.
+ * Renders [ShareDestinationScreen] under Robolectric. Shared items often resolve to
+ * the same `displayName`, which must not crash the keyed `LazyColumn`.
  *
- * Both [ShareDestinationViewModel] and [TransferViewModel] are constructed
- * directly (never via the `viewModel()` factory default) so this test never
- * touches a real network client beyond what [FakeFilesRepository] fakes at
- * the seam `FileBrowserViewModelTest` already established, and WorkManager
- * runs against [WorkManagerTestInitHelper]'s synchronous test instance
- * instead of a real background executor.
+ * The ViewModels are built directly with [FakeFilesRepository], and WorkManager uses
+ * [WorkManagerTestInitHelper]'s synchronous instance, so no real network or executor runs.
  */
 @RunWith(RobolectricTestRunner::class)
 class ShareDestinationScreenTest {
@@ -55,8 +43,8 @@ class ShareDestinationScreenTest {
     @Test
     fun `two items sharing the same display name render without crashing`() {
         val duplicateNamedItems = listOf(
-            SharedItem(uri = "content://provider/1", displayName = "arquivo", sizeBytes = 100),
-            SharedItem(uri = "content://provider/2", displayName = "arquivo", sizeBytes = 200),
+            SharedItem(uri = "content://provider/1", displayName = "file", sizeBytes = 100),
+            SharedItem(uri = "content://provider/2", displayName = "file", sizeBytes = 200),
         )
         val viewModel = ShareDestinationViewModel(application, filesRepository = FakeFilesRepository())
         val transferViewModel = TransferViewModel(application)
@@ -70,19 +58,16 @@ class ShareDestinationScreenTest {
             )
         }
 
-        // disambiguateSharedItems must have renamed the second occurrence --
-        // both original and disambiguated names are visible, proving the
-        // list actually rendered both rows instead of throwing before either
-        // one reached the screen.
-        composeRule.onNodeWithText("arquivo").assertExists()
-        composeRule.onNodeWithText("arquivo (2)").assertExists()
+        // disambiguateSharedItems renamed the second one, and both rows rendered.
+        composeRule.onNodeWithText("file").assertExists()
+        composeRule.onNodeWithText("file (2)").assertExists()
     }
 
     @Test
     fun `a duplicate name with an extension gets suffixed before the extension, not after`() {
         val items = listOf(
-            SharedItem(uri = "content://provider/1", displayName = "foto.jpg", sizeBytes = 100),
-            SharedItem(uri = "content://provider/2", displayName = "foto.jpg", sizeBytes = 200),
+            SharedItem(uri = "content://provider/1", displayName = "photo.jpg", sizeBytes = 100),
+            SharedItem(uri = "content://provider/2", displayName = "photo.jpg", sizeBytes = 200),
         )
         val viewModel = ShareDestinationViewModel(application, filesRepository = FakeFilesRepository())
         val transferViewModel = TransferViewModel(application)
@@ -96,8 +81,8 @@ class ShareDestinationScreenTest {
             )
         }
 
-        composeRule.onNodeWithText("foto.jpg").assertExists()
-        composeRule.onNodeWithText("foto (2).jpg").assertExists()
+        composeRule.onNodeWithText("photo.jpg").assertExists()
+        composeRule.onNodeWithText("photo (2).jpg").assertExists()
     }
 
     @Test
@@ -105,7 +90,7 @@ class ShareDestinationScreenTest {
         val viewModel = ShareDestinationViewModel(
             application,
             filesRepository = FakeFilesRepository(
-                onInboxPath = { InboxDirResult.Error("O servidor está indisponível no momento.") },
+                onInboxPath = { InboxDirResult.Error("The server is unavailable right now.") },
             ),
         )
         val transferViewModel = TransferViewModel(application)
@@ -121,15 +106,11 @@ class ShareDestinationScreenTest {
 
         composeRule.onNodeWithText("Upload to the default folder").performClick()
 
-        composeRule.onNodeWithText("O servidor está indisponível no momento.").assertExists()
+        composeRule.onNodeWithText("The server is unavailable right now.").assertExists()
     }
 }
 
-/**
- * A fake at the [FilesRepository] seam -- mirrors
- * [com.vpsmanager.feature.files.browse.FileBrowserViewModelTest]'s
- * `FakeFilesRepository` precedent.
- */
+/** Fake [FilesRepository], like the one in [com.vpsmanager.feature.files.browse.FileBrowserViewModelTest]. */
 private class FakeFilesRepository(
     private val onInboxPath: suspend () -> InboxDirResult = { InboxDirResult.Success("/srv/inbox") },
 ) : FilesRepository() {

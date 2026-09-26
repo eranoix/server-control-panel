@@ -48,28 +48,14 @@ import com.vpsmanager.feature.whatsapp.send.PickedAttachment
 import com.vpsmanager.feature.whatsapp.send.UploadProgressBubble
 
 /**
- * Renders [ConversationUiState] as it comes back from [ConversationViewModel]
- * -- history loaded once over REST, then kept live by
- * [ConversationViewModel]'s `/ws/whatsapp` subscription. Media messages
- * (image/video/audio/document) render via [MediaMessageRow] backed by the
- * bounded [MediaCache].
+ * Renders [ConversationUiState]: history loaded over REST, then kept live over the WebSocket.
+ * Media messages render via [MediaMessageRow] backed by [MediaCache].
  *
- * [imageLoader], [dataSourceFactory] and [sharedPlayer] are each built once
- * per conversation via `remember`/`DisposableEffect`, scoped to this
- * screen's lifetime -- they own real resources (a disk-cache lock, an
- * ExoPlayer surface) that must not be recreated on every recomposition or
- * per message row. `serverBaseUrl` is resolved once the same way, mirroring
- * `feature-auth`'s existing call-site convention for `ServerConfigRepository`
- * (this app has no DI container).
+ * The image loader, data source factory and shared player own real resources (disk cache lock,
+ * ExoPlayer), so they are built once per screen, never per recomposition or row.
  *
- * Building [sharedPlayer] with a [DefaultMediaSourceFactory] wrapping the
- * `:data`-supplied `DataSource.Factory` (Range-request-aware media3-okhttp
- * under the hood) touches a Media3 `@UnstableApi` surface. `UnstableApi` is
- * marked with `androidx.annotation.RequiresOptIn` (not Kotlin's
- * `kotlin.RequiresOptIn`), so it is opted into with `androidx.annotation.OptIn`
- * -- scoped to this function only, so the opt-in does not propagate to every
- * caller of [ConversationScreen] the way annotating the function itself
- * would.
+ * `UnstableApi` uses androidx `RequiresOptIn`, so it needs `androidx.annotation.OptIn`, which
+ * keeps the opt-in from propagating to callers.
  */
 @OptIn(markerClass = [UnstableApi::class])
 @Composable
@@ -225,10 +211,8 @@ private fun MessageBubble(
         ) {
             Column(modifier = Modifier.widthIn(max = 280.dp).padding(10.dp)) {
                 if (uploadState != null) {
-                    // Still local/in-flight -- UploadProgressBubble reads the
-                    // `file://` path directly and owns its own progress/retry
-                    // affordance, so this bubble does not fall through to the
-                    // server-URL-based MediaMessageRow until it reconciles.
+                    // In-flight upload: shows the local file with its own progress and retry
+                    // until the message reconciles with the server copy.
                     UploadProgressBubble(
                         message = message,
                         uploadState = uploadState,
@@ -257,9 +241,7 @@ private fun MessageBubble(
             }
         }
         if (uploadState == null) {
-            // A media bubble already shows its own "Enviando.../Falha ao
-            // enviar" state inline via UploadProgressBubble -- this row is
-            // only for plain-text sends.
+            // Media uploads show their own status in UploadProgressBubble; this row is for text only.
             when (message.sendStatus) {
                 MessageSendStatus.SENDING -> Text(
                     text = "Sending…",
@@ -271,13 +253,7 @@ private fun MessageBubble(
                         Text("Try again")
                     }
                 }
-                // QUEUED: deliberately no retry button.
-                //
-                // The message is already stored and will go out on its own;
-                // offering "try again" would invite the person to create a
-                // second copy of the same message — which is exactly what the
-                // queue exists to prevent. The sentence says what is going to
-                // happen, and the right action is none.
+                // No retry for QUEUED: it will send on its own, and a retry would duplicate it.
                 MessageSendStatus.QUEUED -> Text(
                     text = "Queued — sends when the internet is back",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

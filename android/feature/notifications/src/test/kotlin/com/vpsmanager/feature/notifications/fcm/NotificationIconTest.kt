@@ -16,27 +16,10 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * The notification's small icon — the one that shows in the status bar.
- *
- * This test was born from a real and silent defect: `ic_notification.xml`
- * declared the namespace as `http://schemas.android.com/apis/res/android`, with
- * an "apis" where "apk" belonged. aapt2 does not complain about that. It
- * compiles the attributes as belonging to some unknown namespace and carries on
- * — `aapt2 dump xmltree` over the APK showed width, height, viewportWidth,
- * viewportHeight and pathData ALL outside the Android namespace. The result is a
- * `<vector>` that reaches the inflater with no dimension, no viewport and no
- * path: green build, broken notification on the device.
- *
- * The lesson this test pins down is that **referencing a drawable does not prove
- * it inflates**. `setSmallIcon(R.drawable.ic_notification)` compiles against any
- * syntactically valid XML. Only loading the resource for real and looking at the
- * pixels tells an icon apart from an inert resource.
- *
- * The second group of assertions covers the other half of the platform's
- * requirement: the small icon has to be a SILHOUETTE (alpha channel only).
- * Android discards the colour and repaints the shape in the theme colour, so a
- * coloured PNG or a drawing flat to the edge turns into that shapeless grey
- * square in the status bar.
+ * The status bar small icon. Referencing a drawable does not prove it inflates (a
+ * wrong xmlns compiles fine but yields an inert vector), so these tests load the
+ * real resource and inspect its pixels. They also check it is a SILHOUETTE, since
+ * Android repaints the alpha shape in the theme colour and a filled icon turns grey.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class)
@@ -52,36 +35,32 @@ class NotificationIconTest {
             "event_type" to "job.finished",
             "job_id" to "hello-42",
             "severity" to "info",
-            "title" to "Deploy concluído",
-            "body" to "hello — deploy terminou em 12s",
+            "title" to "Deploy finished",
+            "body" to "hello: deploy finished in 12s",
         ),
     ).build()
 
-    /**
-     * Rasterises the notification's small icon at the canonical size of 24dp,
-     * scaled up, over a transparent background — which is exactly how the
-     * system consumes it.
-     */
+    /** Rasterises the small icon at 24dp times [scale] over transparency, as the system does. */
     private fun rasterizeSmallIcon(scale: Int = 16): Bitmap {
         val icon = realNotification().smallIcon
         assertNotNull(
-            "A notificação saiu sem smallIcon — o Android recusa notificação sem ícone pequeno.",
+            "The notification has no smallIcon; Android rejects notifications without one.",
             icon,
         )
         val drawable = icon.loadDrawable(context)
         assertNotNull(
-            "R.drawable.ic_notification não inflacionou: loadDrawable devolveu null. É o sintoma " +
-                "de XML de vetor inválido — confira o xmlns (apk/res/android, não apis/res/android).",
+            "R.drawable.ic_notification did not inflate: loadDrawable returned null. This means " +
+                "invalid vector XML; check the xmlns (apk/res/android, not apis/res/android).",
             drawable,
         )
         assertTrue(
-            "O drawable do ícone inflacionou sem tamanho intrínseco (${drawable!!.intrinsicWidth}x" +
-                "${drawable.intrinsicHeight}). Um <vector> cujo android:width/height caiu fora do " +
-                "namespace do Android chega assim — inerte, e invisível na barra de status.",
+            "The icon drawable inflated with no intrinsic size (${drawable!!.intrinsicWidth}x" +
+                "${drawable.intrinsicHeight}). A <vector> whose android:width/height fell outside " +
+                "the Android namespace looks like this: inert and invisible in the status bar.",
             drawable.intrinsicWidth > 0 && drawable.intrinsicHeight > 0,
         )
         assertEquals(
-            "O ícone pequeno precisa medir os 24dp canônicos da barra de status.",
+            "The small icon must be the canonical 24dp of the status bar.",
             24,
             drawable.intrinsicWidth,
         )
@@ -94,25 +73,23 @@ class NotificationIconTest {
     }
 
     @Test
-    fun `o icone da barra de status inflaciona e desenha alguma coisa`() {
+    fun `the status bar icon inflates and draws something`() {
         val bitmap = rasterizeSmallIcon()
         val opaque = countOpaque(bitmap)
         assertTrue(
-            "O ícone inflacionou mas renderizou VAZIO: nenhum pixel opaco. Uma notificação com " +
-                "ícone vazio aparece como um buraco na barra de status.",
+            "The icon inflated but rendered EMPTY: no opaque pixel. A notification with an " +
+                "empty icon shows as a hole in the status bar.",
             opaque > 0,
         )
     }
 
     @Test
-    fun `e uma silhueta, nao um quadrado chapado`() {
+    fun `it is a silhouette, not a filled square`() {
         val bitmap = rasterizeSmallIcon()
         val total = bitmap.width * bitmap.height
         val opaque = countOpaque(bitmap)
 
-        // The four corners have to be empty. An icon with a flat background (the
-        // classic mistake of reusing the app's coloured icon) fills the corners
-        // and is exactly what the system shows as a grey square.
+        // The corners must be empty; a filled background shows as a grey square.
         for ((x, y) in listOf(
             0 to 0,
             bitmap.width - 1 to 0,
@@ -120,48 +97,41 @@ class NotificationIconTest {
             bitmap.width - 1 to bitmap.height - 1,
         )) {
             assertEquals(
-                "A quina ($x,$y) do ícone da barra de status está pintada. O ícone pequeno é " +
-                    "silhueta sobre transparente: com fundo chapado o Android desenha um " +
-                    "quadrado cinza sem forma.",
+                "Corner ($x,$y) of the status bar icon is painted. The small icon is a " +
+                    "silhouette over transparency: with a filled background Android draws a " +
+                    "shapeless grey square.",
                 0,
                 Color.alpha(bitmap.getPixel(x, y)),
             )
         }
 
-        // And the ink covers a fraction of the area consistent with a shape, not
-        // with a block. A 20dp mark in a 24dp frame covers around 40%.
+        // Coverage must look like a shape, not a block; a 20dp mark in a 24dp frame covers about 40%.
         val coverage = 100f * opaque / total
         assertTrue(
-            "O ícone cobre %.0f%% do quadro de 24dp. Fora da faixa de 15%% a 70%% ele não lê ".format(
+            "The icon covers %.0f%% of the 24dp frame. Outside 15%% to 70%% it does not read ".format(
                 coverage,
-            ) + "como símbolo: ou sumiu, ou virou bloco.",
+            ) + "as a symbol: it either vanished or became a block.",
             coverage in 15f..70f,
         )
     }
 
     @Test
-    fun `preserva os recortes que fazem a marca ser reconhecivel`() {
-        // The vps-manager mark is a hexagon with a spine and wedges in negative
-        // space. At 24dp those voids are the difference between "the vps-manager
-        // symbol" and "any old filled hexagon" — and they are the first thing to
-        // go if someone swaps the drawing for an over-simplified version.
+    fun `keeps the cutouts that make the mark recognisable`() {
+        // The negative-space spine and wedges are what distinguish the mark from a plain hexagon.
         val bitmap = rasterizeSmallIcon()
         val middle = bitmap.width / 2
         val transparentInCenterColumn = (0 until bitmap.height).count {
             Color.alpha(bitmap.getPixel(middle, it)) == 0
         }
         assertTrue(
-            "A coluna central do ícone está sólida: a espinha em espaço negativo desapareceu.",
+            "The icon's centre column is solid: the negative-space spine is gone.",
             transparentInCenterColumn > bitmap.height / 4,
         )
     }
 
     @Test
-    fun `a arte fica disponivel para conferencia visual`() {
-        // The icon is 24dp: at that size one more detail turns into a blur, and
-        // no assert describes "it came out blurry". Whoever touches this does not
-        // necessarily have a device at hand — the scaled-up PNG allows checking
-        // it by eye.
+    fun `the artwork is written out for visual review`() {
+        // No assert can detect a blurry 24dp icon, so write PNGs for checking by eye.
         val output = File("build/reports/icone-notificacao").apply { mkdirs() }
         File(output, "ic-notification-24dp.png").outputStream().use {
             rasterizeSmallIcon(scale = 24).compress(Bitmap.CompressFormat.PNG, 100, it)

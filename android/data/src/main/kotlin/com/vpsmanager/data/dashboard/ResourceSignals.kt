@@ -5,9 +5,8 @@ import com.vpsmanager.data.ops.SystemSnapshot
 import kotlin.math.roundToInt
 
 /**
- * Severity of a dashboard signal. THE ORDER OF THE ENTRIES IS THE ORDER OF
- * URGENCY — the enum's `compareTo` is the sort criterion and the group rollup
- * ("worst wins"), so nothing here may be reordered for looks.
+ * Severity of a dashboard signal. Entry order is urgency order: `compareTo` drives
+ * sorting and the "worst wins" rollup, so never reorder the entries.
  */
 enum class Severity(
     /** Value stored in the widget preferences; kept stable across renames. */
@@ -25,13 +24,12 @@ enum class Severity(
     }
 }
 
-/** The worse of two — the group rollup operation. */
+/** The worse of two severities (the group rollup operation). */
 fun worstOf(a: Severity, b: Severity): Severity = if (a >= b) a else b
 
 /**
- * Where a tap leads. Home knows nothing about navigation routes (that belongs
- * to `:app`); it names the DESTINATION and whoever hosts the screen resolves
- * it. That keeps the card testable on the JVM and navigation in one place.
+ * Where a tap leads. Home names the destination and the host resolves it to a
+ * route (routes belong to `:app`), which keeps the card testable on the JVM.
  */
 enum class DashboardTarget(val sectionId: String?) {
     ALERTS("alerts.rules"),
@@ -51,12 +49,8 @@ enum class DashboardTarget(val sectionId: String?) {
 
 /**
  * A reading already judged: the number, the sentence that explains it, the
- * severity and where a tap leads.
- *
- * [detail] exists because a threshold without an explanation becomes
- * superstition — whoever reads "Swap WARNING" needs to see, on the same line,
- * WHY 100% swap deserves attention and what that means. It is what separates a
- * signal from an ornament.
+ * severity and where a tap leads. [detail] says why the value matters, so a
+ * threshold is never shown without its reason.
  */
 data class ResourceSignal(
     val id: String,
@@ -67,109 +61,59 @@ data class ResourceSignal(
     val target: DashboardTarget,
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// THRESHOLDS
-//
-// The rule that holds for all of them: an arbitrary threshold becomes a false
-// alarm, and a false alarm trains the eye to ignore the colour. So every
-// constant below has its reason written beside it, and the preference is
-// always for a number that MEANS something (the definition of the quantity)
-// over a pretty round one.
-//
-// The scale has two bands on purpose — WARNING ("look today") and CRITICAL
-// ("look now"). Three or more bands force you to decide the difference between
-// "high" and "very high" in the middle of an incident, which is when nobody
-// decides well.
-// ─────────────────────────────────────────────────────────────────────────────
+// Thresholds: every constant carries its reason, since an arbitrary threshold
+// becomes a false alarm that trains people to ignore the colour. Two bands only:
+// WARNING ("look today") and CRITICAL ("look now").
 
 /**
- * CPU is judged by LOAD PER CORE, not by `used_percent`.
- *
- * `used_percent` is an instantaneous sample: any compile takes it to 100% for a
- * few seconds with nothing wrong, and alerting on that is the shortest path to
- * the operator switching the alert off. Load average, on the other hand, has an
- * exact meaning: it is the average number of tasks ready to run. Divided by the
- * number of cores, it stops being a loose number and becomes a ratio
- * comparable across any machine.
- *
- * 1.0 = there are as many ready tasks as there are cores. Above that a queue
- * starts — this is not a chosen number, it is the definition of the quantity.
+ * CPU is judged by load per core, not `used_percent`, which spikes to 100% on any
+ * compile. 1.0 means as many runnable tasks as cores; above that a queue forms.
  */
 const val LOAD_PER_CORE_WARNING = 1.0
 
-/** 2.0 = each task waits, on average, as long as it runs. The machine is in debt. */
+/** 2.0 = each task waits, on average, as long as it runs. */
 const val LOAD_PER_CORE_CRITICAL = 2.0
 
 /**
- * Steal is CPU time the VM paid for and the hypervisor handed to someone else.
- * There is no fix from inside the machine — only the decision to resize or move
- * elsewhere. Precisely because it is unfixable it needs to be SEEN: without it,
- * the machine "is slow" and usage "is not high", and the operator looks in the
- * wrong place.
- *
- * Below 5% is normal noise from the host's scheduler. Past that, every latency
- * measurement taken in here is inflated by a factor that is not its own.
+ * Steal: CPU time the hypervisor gave to another guest. Nothing inside the VM
+ * fixes it, but it explains "slow with low usage". Below 5% is normal host noise.
  */
 const val STEAL_WARNING_PCT = 5.0
 
-/** 15% = a seventh of the CPU you are paying for simply never arrives. That is a contract problem, not a code one. */
+/** 15% = a seventh of the CPU you pay for never arrives. */
 const val STEAL_CRITICAL_PCT = 15.0
 
-/**
- * Iowait is idle CPU waiting on storage. Above 10% the bottleneck has stopped
- * being the processor and become the disk — and optimising CPU in that state is
- * work thrown away.
- */
+/** Iowait above 10%: the bottleneck is the disk, not the processor. */
 const val IOWAIT_WARNING_PCT = 10.0
 
 /** 25% = a quarter of CPU time is spent waiting on disk. */
 const val IOWAIT_CRITICAL_PCT = 25.0
 
 /**
- * Memory. The server computes `used` as `total - MemAvailable` (see
- * `internal/system/system.go`), so cache and buffers are ALREADY out of the
- * count — 85% here is 85% of genuinely committed memory, not Linux using free
- * RAM for cache, which is the classic misreading.
- *
- * 85% = the headroom is gone; the next large allocation will push a page into
- * swap. 95% = the OOM killer takes the field.
+ * Memory. The server computes `used` as `total - MemAvailable`
+ * (`internal/system/system.go`), so cache and buffers are already excluded.
+ * 85% = no headroom left; 95% = the OOM killer is close.
  */
 const val MEM_WARNING_PCT = 85.0
 const val MEM_CRITICAL_PCT = 95.0
 
 /**
- * Swap is NOT measured by the same ruler as memory, and this is where most
- * dashboards lie.
- *
- * Swap is a safety net, not a resource to consume: what matters is not how much
- * has been used, but whether there is anywhere LEFT to page to when the
- * pressure comes. At 95% there is not — 5% of 8 GiB is less than the working
- * set of a single large process. The signal is "the safety net is gone", and
- * that deserves to be seen.
- *
- * But on its own it is NOT critical, and the distinction is deliberate: a
- * machine 18 days up, with swap full and 37% of RAM free, is in a normal
- * long-uptime state — the kernel paged out what nobody has touched in weeks and
- * left it at that. Painting that red every day is exactly the false alarm that
- * teaches people to ignore red. It only becomes CRITICAL when RAM is tight too
- * ([MEM_CRITICAL_PCT]), because then the combination is the recipe for an OOM:
- * nothing to allocate and nowhere to page to.
+ * Swap is a safety net, so what matters is whether there is room left to page,
+ * not how much is used. Full swap alone is a WARNING (normal after long uptime);
+ * it is CRITICAL only when RAM is also above [MEM_CRITICAL_PCT], since then an
+ * OOM is imminent.
  */
 const val SWAP_EXHAUSTED_PCT = 95.0
 
 /**
- * Disk. 85% is where the remaining runway gets short enough for a log rotation
- * or a `docker pull` to finish the job, and where ext4's allocator starts to
- * fragment. 95% is where ext4's 5% root reserve runs out and writes from
- * ordinary processes begin to fail.
- *
- * The server already discards squashfs/tmpfs/overlay (`ignoredDiskFSTypes`), so
- * there is none of the false "14 mounts at 100%" that snaps produce.
+ * Disk. At 85% a log rotation or `docker pull` can fill it and ext4 starts to
+ * fragment; at 95% ext4's 5% root reserve runs out and normal writes fail. The
+ * server already drops squashfs/tmpfs/overlay mounts (`ignoredDiskFSTypes`).
  */
 const val DISK_WARNING_PCT = 85.0
 const val DISK_CRITICAL_PCT = 95.0
 
-/** A percentage in short text, no decimal place — a phone dashboard read at a glance. */
+/** A percentage as short text with no decimals, for reading at a glance. */
 private fun pct(value: Double): String = "${value.roundToInt()}%"
 
 private fun grade(value: Double, warning: Double, critical: Double): Severity = when {
@@ -179,11 +123,9 @@ private fun grade(value: Double, warning: Double, critical: Double): Severity = 
 }
 
 /**
- * Judges each of the machine's resources and returns one signal per quantity,
- * ALWAYS in the same order (CPU, memory, swap, disks, network) — a stable
- * position is what lets the eye memorise where each thing lives; which ones
- * rise to the top is decided afterwards, by [attentionSignals], without
- * shuffling the card below.
+ * Judges each resource and returns one signal per quantity, always in the same
+ * order (CPU, memory, swap, disks, network) so positions stay stable; which ones
+ * rise to the top is decided by [attentionSignals].
  */
 fun gradeResources(system: SystemSnapshot): List<ResourceSignal> = buildList {
     add(cpuSignal(system))
@@ -197,9 +139,8 @@ fun gradeResources(system: SystemSnapshot): List<ResourceSignal> = buildList {
 
 private fun cpuSignal(system: SystemSnapshot): ResourceSignal {
     val cpu = system.cpu
-    // cores == 0 should never happen, but dividing by it would produce
-    // Infinity and a permanently CRITICAL card. With no cores declared there is
-    // no ratio to compute: you do not judge what you do not know.
+    // With zero cores there is no ratio to compute; avoid a division producing
+    // Infinity and a permanently CRITICAL card.
     val perCore = if (cpu.cores > 0) cpu.load1 / cpu.cores else 0.0
     val severity = if (cpu.cores > 0) {
         grade(perCore, LOAD_PER_CORE_WARNING, LOAD_PER_CORE_CRITICAL)
@@ -221,41 +162,14 @@ private fun cpuSignal(system: SystemSnapshot): ResourceSignal {
 }
 
 /**
- * Stolen CPU — INFORMATION, never an alert.
- *
- * ## Why it stopped shouting
- *
- * The owner reported it, with a photo: "when stolen cpu shows up it keeps
- * popping up something needs attention. i don't want that". He is right, and
- * the reason was already written in this very file, two lines above the defect:
- * *"there is no fix from inside the VM"*.
- *
- * An alert exists to provoke an ACTION. Steal is CPU time the hypervisor handed
- * to another guest — there is no command, file or restart inside this machine
- * that changes the number. The only possible response is to resize or switch
- * providers, which is a contract decision taken once a year, not a Tuesday
- * alert.
- *
- * Alerting every day about something unfixable is the exact definition of the
- * false alarm this file's header tells you to avoid — and its cost is not the
- * annoyance: it is that red stops meaning anything. When a disk really does
- * fill up, the red card will look like yesterday's.
- *
- * ## What it still does
- *
- * The number stays VISIBLE, with the same sentence explaining it. It is the
- * answer to "why is this machine slow if usage is not high?" — the question
- * that sends you looking in the wrong place when the number is hidden. It just
- * no longer rises to the attention card, nor forces its way into the dashboard.
- *
- * It is the same treatment the network already had, and for the same reason: a
- * context number, always OK, never at the top.
+ * Stolen CPU is shown as information, never as an alert: nothing inside the VM
+ * can change it (only resizing or moving can), and a daily alert nobody can act
+ * on teaches people to ignore red. The number stays visible to explain slowness.
  */
 private fun stealSignal(system: SystemSnapshot): ResourceSignal {
     val steal = system.cpu.steal
-    // The thresholds still exist and are still named: they describe TECHNICAL
-    // SEVERITY, which is real. What changed is the product conclusion —
-    // severity with no possible action does not become an alert.
+    // The threshold still describes technical severity, but without a possible
+    // action it does not become an alert.
     val grave = steal >= STEAL_WARNING_PCT
     return ResourceSignal(
         id = "steal",
@@ -307,8 +221,7 @@ private fun memorySignal(system: SystemSnapshot): ResourceSignal {
 
 private fun swapSignal(system: SystemSnapshot): ResourceSignal {
     val swap = system.swap
-    // A machine with no swap configured has no signal to give: 0 of 0 is 0%,
-    // and the card says so instead of faking health.
+    // No swap configured shows 0 of 0 as 0%, which is honest rather than healthy.
     val severity = when {
         swap.usedPercent < SWAP_EXHAUSTED_PCT -> Severity.OK
         system.memory.usedPercent >= MEM_CRITICAL_PCT -> Severity.CRITICAL
@@ -354,43 +267,27 @@ private fun netSignal(net: com.vpsmanager.data.ops.NetSnapshot): ResourceSignal 
     return ResourceSignal(
         id = "rede",
         label = "Network ${net.iface}",
-        // [headline] deliberately EMPTY: two rates with units do not fit the
-        // narrow right-hand column — at phone width they pushed the label onto
-        // two lines and the detail onto four. Network is the only row whose
-        // value is a pair, so it goes in the detail, which has the full width.
-        // The line disappears from the right instead of being squeezed.
+        // Headline left empty: two rates with units do not fit the narrow right
+        // column on a phone, so they go in the full-width detail.
         headline = "",
         detail = if (rates.isEmpty()) "instant rate on the uplink" else "$rates on the uplink",
-        // Network is NOT judged: there is no honest threshold for "too much
-        // traffic" — 200 KiB/s could be a healthy backup or an exfiltration. It
-        // stays a context number, always OK, never rising to the top.
+        // Network is not judged: there is no honest threshold for "too much traffic".
         severity = Severity.OK,
         target = DashboardTarget.METRICS,
     )
 }
 
 /**
- * The signals that DESERVE the top, worst first.
- *
- * The resources card stays where it is (fourth, as the SRE Workbook prescribes:
- * saturation is a debugging metric, not an alerting one). What rises here is
- * not "the CPU number": it is the fact that it CROSSED a threshold — at that
- * moment it stopped being saturation and became an alert, and an alert is the
- * first thing on the screen. The number stays down below, to explain why
- * afterwards.
+ * The signals that deserve the top, worst first. The resources card keeps its
+ * place; a resource rises only once it crosses a threshold and becomes an alert.
  */
 fun attentionSignals(signals: List<ResourceSignal>): List<ResourceSignal> =
-    // `sortedByDescending` is STABLE: within the same severity the input order
-    // survives, and the input order is [gradeResources]'s fixed one. Breaking
-    // ties by id instead would sort alphabetically, which means nothing to the
-    // reader.
+    // `sortedByDescending` is stable, so ties keep [gradeResources]'s fixed order.
     signals.filter { it.severity != Severity.OK }.sortedByDescending { it.severity }
 
 /**
- * Converts an alert the SERVER raised into the same shape as the derived
- * signals, so the two live together on one card, ordered by the same ruler. A
- * server alert is never downgraded here: if the rule fired, the rule's owner
- * has already decided it matters.
+ * Converts a server-raised alert into the same shape as derived signals so both
+ * share one card and ordering. A server alert is never downgraded here.
  */
 fun OpsAlert.toSignal(): ResourceSignal {
     val severity = when (severity.lowercase()) {
@@ -408,6 +305,6 @@ fun OpsAlert.toSignal(): ResourceSignal {
     )
 }
 
-/** `92.0` becomes "92"; `0.5` stays "0.5". A useless zero decimal only steals width. */
+/** `92.0` becomes "92"; `0.5` stays "0.5". */
 private fun trimNumber(value: Double): String =
     if (value == value.roundToInt().toDouble()) value.roundToInt().toString() else "%.1f".format(value)

@@ -12,20 +12,9 @@ import com.vpsmanager.app.VpsManagerApplication
 import java.util.concurrent.TimeUnit
 
 /**
- * The periodic update check.
- *
- * ### What this worker does NOT do
- * It downloads nothing. All that runs here is `GET /app/update`, a JSON of
- * a few hundred bytes — the 1.4 or 10 MB download only starts when the
- * owner TAPS the banner. On a bad connection, an app that downloads on its
- * own is an app that uninstalls itself.
- *
- * ### Why periodic AND at launch
- * `WorkManager`'s minimum period is 15 minutes and the system stretches it
- * at will to save battery: a device that goes days without network can
- * spend a long time without a run. The check at launch (see
- * [com.vpsmanager.app.MainActivity]) covers exactly that hole, and the two
- * together cost one small JSON.
+ * The periodic update check. It only fetches `GET /app/update` (a small JSON); the download
+ * starts only when the user taps the banner. The system can defer periodic work for a long
+ * time, so [com.vpsmanager.app.MainActivity] also checks at launch.
  */
 class UpdateCheckWorker(
     context: Context,
@@ -34,9 +23,7 @@ class UpdateCheckWorker(
 
     override suspend fun doWork(): Result {
         val app = applicationContext as? VpsManagerApplication ?: return Result.success()
-        // `check` swallows its own errors (a "could not check" banner is noise,
-        // not information), so there is no Result.retry to give here: the next
-        // periodic window is the retry.
+        // `check` swallows its own errors; the next periodic window is the retry.
         app.updateCoordinator.check()
         return Result.success()
     }

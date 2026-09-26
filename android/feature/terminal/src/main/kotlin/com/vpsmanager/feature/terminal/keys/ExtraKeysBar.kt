@@ -43,15 +43,9 @@ import com.vpsmanager.terminalengine.KeyByteEncoder
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * The three states of the extra-keys row. The row is the ONLY permanent chrome
- * left below the grid (everything else moved into `TerminalOptionsSheet`), so
- * every dp it takes is a dp the grid does not get — hence three states rather
- * than a binary "show/hide".
- *
- * [COLLAPSED] is not "hidden": hiding it outright would make Ctrl+C
- * unreachable, and Ctrl+C is the number one reason anyone opens a terminal on
- * a phone. It is 32 dp holding the minimum set that keeps the terminal
- * usable — see [collapsedKeys].
+ * The three states of the extra-keys row, the only permanent chrome below the
+ * grid, so every dp counts. [COLLAPSED] is not hidden: it keeps the minimum set
+ * that makes the terminal usable (Ctrl+C above all); see [collapsedKeys].
  */
 enum class ExtraKeysBarState(val heightDp: Dp, val visualRowHeightDp: Dp) {
     COLLAPSED(heightDp = 32.dp, visualRowHeightDp = 32.dp),
@@ -82,14 +76,10 @@ enum class ExtraKeysBarState(val heightDp: Dp, val visualRowHeightDp: Dp) {
 
     companion object {
         /**
-         * The state a connected PHYSICAL keyboard imposes. With a real
-         * keyboard, Esc/Tab/Ctrl/arrows already exist in hardware and the row
-         * becomes pure lost grid — Blink does this by design, it is a
-         * years-old open complaint against Termux, and JuiceSSH's own FAQ
-         * acknowledges it as a bug precisely because it does NOT. Automatic,
-         * but reversible through the handle: vanishing entirely annoys people
-         * who want the arrow keys even with a keyboard, so the target is
-         * [COLLAPSED], never "no row at all".
+         * The state a connected physical keyboard imposes: it already has
+         * Esc/Tab/Ctrl/arrows, so the row collapses (as Blink does). [COLLAPSED],
+         * never gone, since some users still want the arrows; the handle can
+         * change it back.
          */
         fun forHardwareKeyboard(present: Boolean): ExtraKeysBarState =
             if (present) COLLAPSED else ONE_ROW
@@ -97,16 +87,15 @@ enum class ExtraKeysBarState(val heightDp: Dp, val visualRowHeightDp: Dp) {
 }
 
 /**
- * What a key on the row sends to the terminal. Its own type, rather than a
- * lambda hanging off each key, so that the key map — including each key's
- * second function on swipe-up — is inspectable data, exercisable on the JVM
- * through [runKeyAction] without standing up any composition.
+ * What a key sends to the terminal. A type rather than a lambda, so the key map
+ * (including swipe-up functions) is inspectable data, testable on the JVM via
+ * [runKeyAction].
  */
 internal sealed interface KeyAction {
     /** A key with an Android keycode: goes through [KeyByteEncoder] with the pending modifiers merged in. */
     data class Code(val keyCode: Int) : KeyAction
 
-    /** An explicit Ctrl+letter chord (Ctrl+C, Ctrl+D, Ctrl+L) — it does not depend on the sticky chip being armed. */
+    /** An explicit Ctrl+letter chord (Ctrl+C, Ctrl+D, Ctrl+L), independent of the sticky chip. */
     data class Ctrl(val letter: Char) : KeyAction
 
     /** Raw UTF-8 text, for the keys that are a character rather than a key (`|`). */
@@ -120,9 +109,8 @@ internal sealed interface KeyAction {
 }
 
 /**
- * Runs a [KeyAction]. The single point that translates "the operator pressed
- * this key" into bytes, so that tap and swipe-up share exactly the same
- * pending-modifier semantics.
+ * Runs a [KeyAction]: the single point that turns a key press into bytes, so tap
+ * and swipe-up share the same pending-modifier semantics.
  */
 internal fun runKeyAction(
     action: KeyAction,
@@ -139,9 +127,8 @@ internal fun runKeyAction(
             pendingModifiers.consumeAfterKeystroke()
         }
         is KeyAction.Literal -> {
-            // A pending Alt becomes an ESC prefix, matching what
-            // KeyByteEncoder does on the keycode path — a literal character
-            // must not carry different modifier semantics than a mapped key.
+            // A pending Alt becomes an ESC prefix, as on the keycode path in
+            // KeyByteEncoder.
             val body = action.text.toByteArray(Charsets.UTF_8)
             val bytes = if (pendingModifiers.isAltPending()) byteArrayOf(0x1b, *body) else body
             onSendBytes(bytes)
@@ -157,26 +144,19 @@ internal data class ExtraKey(
     val label: String,
     val action: KeyAction,
     val swipeUp: KeyAction? = null,
-    /** Repeats while held (arrows): without it, going back 30 characters is 30 taps. */
+    /** Repeats while held (arrows), so moving 30 characters is not 30 taps. */
     val repeats: Boolean = false,
-    /** Which sticky chip this key stands for, if it is Ctrl or Alt (it changes colour with the state). */
+    /** Which sticky chip this key represents, if Ctrl or Alt (its colour follows the state). */
     val sticky: StickyKind? = null,
 )
 
 internal enum class StickyKind { CTRL, ALT }
 
 /**
- * STATE A — the minimum that keeps the terminal USABLE with no other keys at
- * all.
- *
- * It deliberately diverges from the researched design (`⌃⌥ ⌃C ⌃D ⇥`) on two
- * points: `Esc` and `↑` come in, `⌃D` goes out. The reason: `Esc` and `↑` have
- * NO equivalent at all on the software keyboard (Gboard has neither Esc nor
- * arrows) — without them, leaving vim and repeating the last command are
- * impossible while the row is collapsed. `⌃D` goes because it stays reachable
- * (armed Ctrl chip plus `d` on the software keyboard) and because it is the
- * key that ENDS the session — the one you least want a single tap away on a
- * 32 dp target.
+ * State A: the minimum that keeps the terminal usable. `Esc` and `↑` are included
+ * because the software keyboard has neither (no leaving vim, no repeating the last
+ * command otherwise). `⌃D` is left out: it stays reachable via the Ctrl chip and
+ * it ends the session, so it should not be one tap away on a 32 dp target.
  */
 internal val collapsedKeys: List<ExtraKey> = listOf(
     ExtraKey("Esc", KeyAction.Code(KeyEvent.KEYCODE_ESCAPE), swipeUp = KeyAction.Ctrl('c')),
@@ -187,10 +167,9 @@ internal val collapsedKeys: List<ExtraKey> = listOf(
 )
 
 /**
- * STATE B — eight keys, each with a second function on swipe-up. The pairing
- * of arrows with Home/End/PgUp/PgDn is the one from Termux's own advanced
- * `ExtraKeysInfo.java` example; swipe-up is its mechanism (`popup`), and the
- * only one that doubles capacity without costing a pixel of height.
+ * State B: eight keys, each with a second function on swipe-up (arrows paired
+ * with Home/End/PgUp/PgDn, as in Termux's `ExtraKeysInfo.java` example). Swipe-up
+ * doubles capacity without costing height.
  */
 internal val oneRowKeys: List<ExtraKey> = listOf(
     ExtraKey("Esc", KeyAction.Code(KeyEvent.KEYCODE_ESCAPE), swipeUp = KeyAction.Ctrl('c')),
@@ -203,7 +182,7 @@ internal val oneRowKeys: List<ExtraKey> = listOf(
     ExtraKey("→", KeyAction.Code(KeyEvent.KEYCODE_DPAD_RIGHT), swipeUp = KeyAction.Code(KeyEvent.KEYCODE_MOVE_END), repeats = true),
 )
 
-/** STATE C, top row: navigation and the shell punctuation the software keyboard buries behind pages. */
+/** State C, top row: navigation and shell punctuation the software keyboard buries. */
 internal val twoRowsTopKeys: List<ExtraKey> = listOf(
     ExtraKey("Esc", KeyAction.Code(KeyEvent.KEYCODE_ESCAPE), swipeUp = KeyAction.Ctrl('c')),
     ExtraKey("/", KeyAction.Code(KeyEvent.KEYCODE_SLASH)),
@@ -214,7 +193,7 @@ internal val twoRowsTopKeys: List<ExtraKey> = listOf(
     ExtraKey("PgUp", KeyAction.Code(KeyEvent.KEYCODE_PAGE_UP), repeats = true),
 )
 
-/** STATE C, bottom row. Seven keys per row: the number Termux converged on in both of its stock configurations. */
+/** State C, bottom row. Seven keys per row, as in Termux's stock configurations. */
 internal val twoRowsBottomKeys: List<ExtraKey> = listOf(
     ExtraKey("Tab", KeyAction.Code(KeyEvent.KEYCODE_TAB), swipeUp = KeyAction.Ctrl('d')),
     ExtraKey("Ctrl", KeyAction.ToggleCtrl, swipeUp = KeyAction.Ctrl('l'), sticky = StickyKind.CTRL),
@@ -225,7 +204,7 @@ internal val twoRowsBottomKeys: List<ExtraKey> = listOf(
     ExtraKey("PgDn", KeyAction.Code(KeyEvent.KEYCODE_PAGE_DOWN), repeats = true),
 )
 
-/** Test tags — the row's height is a requirement, so it has to be measurable. */
+/** Test tags: the row height is a requirement, so it must be measurable. */
 const val EXTRA_KEYS_BAR_TAG = "barra-teclas-extras"
 
 /** Test tag for the handle. */
@@ -237,27 +216,16 @@ const val HANDLE_DESCRIPTION = "Toggle key bar size"
 /** The wait before a held key repeats for the first time. */
 private const val INITIAL_REPEAT_DELAY_MILLIS = 400L
 
-/** The interval between repeats — Termux's own `DEFAULT_LONG_PRESS_REPEAT_DELAY` value. */
+/** Interval between repeats (Termux's `DEFAULT_LONG_PRESS_REPEAT_DELAY`). */
 private const val REPEAT_INTERVAL_MILLIS = 80L
 
 /**
- * The extra keys bar, now with three states and a handle where the label used
- * to be.
+ * The extra keys bar: three states and a 40 dp handle inside the bar (a tap
+ * cycles A, B, C; a vertical drag moves to the neighbouring state). Ctrl and Alt
+ * are three-state sticky ([PendingModifiers]).
  *
- * What it replaced: a scrollable `Row` of 9 buttons with an "Ocultar teclas ▾"
- * `TextButton` on a LINE OF ITS OWN above it — two rows of height to show one,
- * and the worst possible use of the screen's scarcest resource. The toggle is
- * now a 40 dp wide handle INSIDE the bar itself: a tap cycles A->B->C->A, a
- * vertical drag goes straight to the neighbouring state.
- *
- * Ctrl and Alt stay three-state sticky ([PendingModifiers]) — that was already
- * right and is more sophisticated than Termux; only where they live changes.
- *
- * A visual height of 40 dp with a 48 dp touch target: Compose expands a pointer
- * input node's hit-test area up to the system's minimum touchable size even
- * beyond the visual bounds, so the ink can be 40 dp without violating
- * Material's minimum target. Termux solves the same dilemma by violating the
- * target (a fixed 37.5 dp); here that is not necessary.
+ * The keys are 40 dp tall visually with a 48 dp touch target: Compose expands a
+ * pointer input node's hit area to the minimum touch size beyond its bounds.
  */
 @Composable
 fun ExtraKeysBar(
@@ -271,15 +239,10 @@ fun ExtraKeysBar(
     /** Opens the attachment source sheet. See [AttachButton]. */
     onAttach: () -> Unit = {},
 ) {
-    // A physical keyboard being connected or disconnected repositions the row
-    // on its own, once per transition — and only per transition, so that the
-    // handle still has the last word afterwards.
-    //
-    // `alreadyEvaluated` is what stops the automation from becoming tyranny: on the
-    // FIRST composition it only acts if a physical keyboard is present.
-    // Without it, every entry into the screen (and every recomposition from
-    // scratch) would reimpose ONE_ROW over the state the operator had
-    // chosen with the handle.
+    // Connecting or disconnecting a physical keyboard repositions the row once
+    // per transition, so the handle keeps the last word. On the first
+    // composition it only acts when a keyboard is present; otherwise every entry
+    // would override the state the user chose.
     var alreadyEvaluated by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(hasHardwareKeyboard) {
         if (hasHardwareKeyboard || alreadyEvaluated) {
@@ -313,7 +276,7 @@ fun ExtraKeysBar(
     }
 }
 
-/** One row of keys, split evenly — no key ends up off-screen, so there is no horizontal scrolling. */
+/** One row of keys, split evenly, so nothing is off-screen and there is no horizontal scroll. */
 @Composable
 private fun KeyLine(
     keys: List<ExtraKey>,
@@ -338,13 +301,10 @@ private fun KeyLine(
 }
 
 /**
- * One key. A single pointer loop covers all three gestures because they
- * compete for the SAME finger: a tap fires the primary action on `up`, a drag
- * upwards past the threshold fires the second function (and cancels the tap),
- * and holding repeats the primary every 80 ms (Termux's number) after an
- * initial 400 ms wait. Composing `detectTapGestures` with
- * `detectVerticalDragGestures` would not give you this: whichever recognises
- * first consumes the event, and the other never sees the whole gesture.
+ * One key. A single pointer loop handles tap (primary on `up`), swipe-up past a
+ * threshold (second function, cancels the tap) and hold (repeat every 80 ms after
+ * 400 ms). Combining `detectTapGestures` and `detectVerticalDragGestures` would
+ * not work: whichever recognises first consumes the event.
  */
 @Composable
 private fun KeyCap(
@@ -425,9 +385,8 @@ private fun KeyCap(
 }
 
 /**
- * The handle. It replaces the "Hide keys ▾" `TextButton` that took a whole
- * line just to announce that there was a line below it. A tap cycles the three
- * states; a vertical drag goes straight to the neighbour (upwards = more keys).
+ * The handle: a tap cycles the three states; a vertical drag goes to the
+ * neighbour (up = more keys).
  */
 @Composable
 private fun BarHandle(state: ExtraKeysBarState, onStateChange: (ExtraKeysBarState) -> Unit) {
@@ -472,13 +431,10 @@ private fun BarHandle(state: ExtraKeysBarState, onStateChange: (ExtraKeysBarStat
 }
 
 /**
- * Encodes and sends one direct tap from the row (Esc/Tab/arrows/extra key),
- * merging [pendingModifiers]'s sticky Ctrl/Alt into the synthetic [KeyEvent]'s
- * metaState before [KeyByteEncoder.encode] runs — the exact same pre-encoding
- * merge [HardwareKeyHandler] applies to physical keystrokes, so both paths
- * share one encoder call site and one modifier semantics. `internal` (not
- * `private`) so `ExtraKeysBarActionTest` can drive it directly without needing a
- * Compose test rule.
+ * Encodes and sends one tap from the row, merging [pendingModifiers]' sticky
+ * Ctrl/Alt into the synthetic [KeyEvent] before [KeyByteEncoder.encode], the same
+ * merge [HardwareKeyHandler] applies to physical keys. `internal` so
+ * `ExtraKeysBarActionTest` can call it without a Compose rule.
  */
 internal fun tapExtraKey(
     keyCode: Int,
@@ -496,38 +452,12 @@ internal fun tapExtraKey(
 }
 
 /**
- * The attach button, at the end of the key row.
+ * The attach button at the end of the key row, the only spot that does not cost
+ * a real key. Attaching files or images to the session had no other path.
  *
- * ## What used to be here, and why it left
- *
- * This spot belonged to the input-mode switch ("abc"/"cmd"). It was promoted
- * here because it had been buried in the options sheet and the owner reported
- * the symptom of someone who does not know the feature exists. It went back
- * down at his request, now that the sheet **explains** what the mode does
- * ("Your keyboard's autocorrect and suggestions") instead of merely offering
- * two words — see `TerminalOptionsSheet`. Keeping both would be the same
- * control in two places, and this end of the row is expensive: it is the only
- * region that does not cost a real key.
- *
- * ## Why attaching earns the spot
- *
- * Getting an image or a file into the session had no path at all before — not
- * even a hidden one. And it is what everyday use asks for constantly: a
- * screenshot, a log, a file for Claude Code running in the session to read.
- *
- * ## Why it does NOT disable while offline
- *
- * The first version of this button locked while the session was down, on the
- * grounds that there would be nowhere to paste the path. The grounds were
- * false: `TerminalAttachment` already handles that case — the file uploads, it
- * sits in the [AttachmentBar], and it is the INSERTION of the path that waits
- * for the connection (see `AttachmentOfflineInsertionTest`, written after a path
- * really did evaporate on a reconnecting emulator).
- *
- * Locking here would remove exactly the case that code exists to serve:
- * picking the file while the network comes back. And it would leave two paths
- * to the same action under different rules, since the options sheet never
- * locked.
+ * It stays enabled while offline: the file still uploads and waits in the
+ * [AttachmentBar], and only inserting the path waits for the connection (see
+ * `AttachmentOfflineInsertionTest`). The options sheet entry follows the same rule.
  */
 @Composable
 private fun AttachButton(onAttach: () -> Unit) {
@@ -535,9 +465,8 @@ private fun AttachButton(onAttach: () -> Unit) {
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = Modifier
             .fillMaxHeight()
-            // 48dp is the minimum touch target. `Modifier.clickable` does NOT
-            // enforce it — the Material components do, and this is a bare
-            // Surface.
+            // 48 dp minimum touch target: `Modifier.clickable` does not enforce it
+            // on a bare Surface.
             .width(48.dp)
             .clickable(onClick = onAttach)
             .semantics { contentDescription = "Attach image or file to the session" },

@@ -7,25 +7,12 @@ import java.io.PrintWriter
 import java.io.StringWriter
 
 /**
- * Startup diagnostics.
+ * Startup diagnostics, so the app can report its own failure on a phone without adb or logcat.
  *
- * Why this exists: this app was built end to end with no device
- * available — 412 unit tests green, zero real execution. The first boot
- * on a phone is, by construction, the first time any of these paths
- * actually runs. And the operator has only the phone: no `adb`, no
- * logcat, no way to see a stack trace.
- *
- * So the app has to be able to report its own failure. Two halves:
- *
- * 1. [installCrashReporter] persists every uncaught exception to disk
- *    BEFORE the process dies, and the launch screen shows the text on the
- *    next boot.
- * 2. [step] lets each startup stage fail without taking the app down —
- *    phone-account registration, WorkManager, notification channels and
- *    the like are things a manufacturer may refuse. None of them is
- *    essential for the first screen to open, so none has the right to
- *    stop the app from coming up. Failing visibly and carrying on beats
- *    dying silently in the user's face.
+ * 1. [installCrashReporter] persists every uncaught exception to disk before the process dies;
+ *    the launch screen shows it on the next boot.
+ * 2. [step] lets each non-essential startup stage (phone account, WorkManager, notification
+ *    channels, things a manufacturer may refuse) fail visibly without stopping the app.
  */
 object Bootstrap {
 
@@ -43,19 +30,18 @@ object Bootstrap {
         try {
             block()
         } catch (t: Throwable) {
-            Log.e(TAG, "falha na etapa de inicializacao: $name", t)
+            Log.e(TAG, "startup step failed: $name", t)
             initFailures += "$name: ${t.javaClass.simpleName}: ${t.message}"
         }
     }
 
     /**
      * Installs a handler that writes the stack trace to disk before the process
-     * dies, chaining the previous handler so the crash behaviour itself is
-     * unchanged (the app still dies — it just stops dying mute).
+     * dies, chaining the previous handler so the crash behavior itself is unchanged.
      */
     fun installCrashReporter(context: Context) {
         val appContext = context.applicationContext
-        val anterior = Thread.getDefaultUncaughtExceptionHandler()
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             try {
                 val sw = StringWriter()
@@ -75,7 +61,7 @@ object Bootstrap {
             } catch (_: Throwable) {
                 // Writing the report must never make the original crash worse.
             }
-            anterior?.uncaughtException(thread, error)
+            previous?.uncaughtException(thread, error)
         }
     }
 

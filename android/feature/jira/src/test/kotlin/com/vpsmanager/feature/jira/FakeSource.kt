@@ -15,7 +15,7 @@ import com.vpsmanager.data.jira.BulkResult
 
 /** A test card, with the bare minimum filled in. */
 internal fun card(key: String, status: String = "Backlog", category: String = "new") =
-    JiraCard(key = key, summary = "resumo de $key", status = status, category = category)
+    JiraCard(key = key, summary = "summary of $key", status = status, category = category)
 
 /** A three-column board, holding whatever cards it is given. */
 internal fun testBoard(
@@ -39,14 +39,7 @@ internal fun testBoard(
     rejection = rejection,
 )
 
-/**
- * A double for the source.
- *
- * It records what was ASKED, and not only what came back: half of these tests
- * are about a call that must NOT happen (moving to the column the card is
- * already in) or about what the client sent (the column by its label, never a
- * transition id).
- */
+/** Test double for [JiraSource] that records the calls made, since many tests assert what was sent or not sent. */
 internal class FakeSource(
     private var board: JiraResult<JiraBoard> = JiraResult.Ok(testBoard()),
     private var onMove: (String, String) -> JiraResult<String> = { _, _ -> JiraResult.Ok("Pronto") },
@@ -82,7 +75,7 @@ internal class FakeSource(
     }
 
     override suspend fun issue(key: String): JiraResult<JiraIssue> = JiraResult.Ok(
-        JiraIssue(key = key, summary = "resumo de $key", status = "Backlog", category = "new"),
+        JiraIssue(key = key, summary = "summary of $key", status = "Backlog", category = "new"),
     )
 
     override suspend fun comment(key: String, text: String): JiraResult<JiraComment> =
@@ -97,7 +90,7 @@ internal class FakeSource(
         JiraResult.Ok(listOf(JiraPerson("acc-eu", "Sam Rivera")))
 
     override suspend fun meta(project: String): JiraResult<JiraMeta> =
-        JiraResult.Ok(JiraMeta(listOf("Task", "Bug"), listOf("Alta", "Média")))
+        JiraResult.Ok(JiraMeta(listOf("Task", "Bug"), listOf("High", "Medium")))
 
     override suspend fun create(newIssue: NewIssue): JiraResult<String> {
         created += newIssue

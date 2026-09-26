@@ -3,104 +3,51 @@ package com.vpsmanager.feature.terminal.geometry
 /**
  * Where the terminal frame rests against the visible area.
  *
- * ## The defect
+ * The grid has as many rows as fit on screen, but a TUI frame (e.g. an input
+ * composer with a footer) may use far fewer, leaving it stranded at the top, away
+ * from the thumb and the keyboard. Unlike a desktop terminal, this grid is born
+ * large, filled by a replay, and can grow later, so blank space at the bottom can
+ * happen.
  *
- * The grid has as many rows as fit on screen — 52, on a tall device with a
- * small font. The frame the remote program draws is however tall IT wants: the
- * Claude Code composer, with its footer, takes about twenty. The remaining
- * thirty-two stay blank **at the bottom**, and the composer — the one place on
- * screen where anything gets done — stops in the top third, far from the thumb
- * and from the keyboard.
- *
- * It was the owner's report, in so many words: *"the writing window always has
- * to stay at the bottom"*.
- *
- * ## Why this is not a defect of the remote program
- *
- * An ordinary terminal never shows this because it is never taller than the
- * content already scrolled: text rises from the footer and the frame always
- * rests at the bottom. Here the grid is born large and filled by a replay, and
- * then grows (the connection banner disappears, the keyboard closes) — so blank
- * space at the bottom can exist, which on a desktop terminal it cannot. It is a
- * new condition, and the answer is ours to give.
- *
- * ## The rule
- *
- * The bottom of the CONTENT rests against the bottom of the VISIBLE AREA.
- * Nothing more:
- *
- * - frame shorter than the area → it moves down, and the blank goes to the top;
- * - frame taller than the area (keyboard up) → it moves up, exactly as it
- *   already did, showing the end;
- * - frame the same size as the area → nothing moves.
- *
- * One rule, in both directions, instead of a special case for the keyboard.
+ * Rule: the bottom of the content rests against the bottom of the visible area.
+ * A shorter frame moves down, a taller one (keyboard up) moves up to show the
+ * end, an equal one stays put.
  */
 object ScreenAnchor {
 
     /**
-     * How far the frame has to shift in Y. Positive moves DOWN, negative UP.
+     * How far the frame shifts in Y; positive moves down, negative up.
      *
-     * @param contentBottomPx where whatever is useful in the grid ends — see
-     *   [lastUsefulRow].
-     * @param visibleHeightPx the height the person actually sees.
-     * @param maxLiftPx how much grid exists beyond the visible area
-     *   (what the keyboard covered). Moving up further than that would drag the
-     *   grid off screen with nothing to put in its place.
+     * @param contentBottomPx where the useful content ends; see [lastUsefulRow].
+     * @param visibleHeightPx the height the user actually sees.
+     * @param maxLiftPx how much grid lies beyond the visible area (what the
+     *   keyboard covers); lifting further would drag the grid off screen.
      */
     fun offsetY(contentBottomPx: Int, visibleHeightPx: Int, maxLiftPx: Int): Int =
         (visibleHeightPx - contentBottomPx).coerceAtLeast(-maxLiftPx)
 
     /**
-     * The last row that has to stay visible.
-     *
-     * There are two questions, and the answer is the larger of the two:
-     *
-     * 1. **Where the drawn content ends** ([lastRowWithContent]).
-     * 2. **Where the cursor is**, with some slack below it. The slack is not
-     *    decoration: in a TUI there is almost always content AFTER the cursor —
-     *    in Claude Code the input box is three lines tall and the cursor sits on
-     *    the middle one, so pinning the cursor to the edge ate the bottom border
-     *    of the box. That too was the owner's report: *"the keyboard is cutting
-     *    off the writing window"*.
-     *
-     * The second exists because the first is not enough when the cursor sits in
-     * a region the drawing considers empty (a blank line inside the frame), and
-     * the first exists because the second is not enough when there is a footer
-     * below the cursor.
+     * The last row that must stay visible: the larger of the last drawn row and
+     * the cursor row plus [slackBelowCursor]. The slack matters because TUIs draw
+     * below the cursor (an input box's bottom border); the drawn-content check
+     * matters when the cursor sits on a blank line above a footer.
      */
     fun lastUsefulRow(lastRowWithContent: Int, cursorRow: Int, slackBelowCursor: Int, lines: Int): Int {
-        // AN ENTIRELY EMPTY GRID HAS NOTHING TO ANCHOR TO.
-        //
-        // Without this early exit, a grid without a single character fell back
-        // on the cursor — which in an empty grid sits on row 0 — and the frame
-        // dropped fifty rows, becoming a TWO-LINE STRIP glued to the footer,
-        // with the application surface showing above it. That was exactly the
-        // screen the owner photographed: "when the session opens everything is
-        // black".
-        //
-        // Anchoring nothing is a question with no answer; the right answer is
-        // to leave it alone and let whatever arrives fill the grid from the top
-        // down, the way a terminal does.
+        // An empty grid has nothing to anchor to. Falling back to the cursor
+        // (row 0) would shrink the frame into a two-line strip at the bottom, so
+        // leave it and let content fill from the top.
         if (lastRowWithContent < 0) return (lines - 1).coerceAtLeast(0)
         val target = maxOf(lastRowWithContent, cursorRow + slackBelowCursor)
         return target.coerceIn(0, (lines - 1).coerceAtLeast(0))
     }
 
     /**
-     * The last row with anything drawn on it, sweeping from the bottom up.
+     * The last row with anything drawn, scanning bottom up (on a full screen the
+     * first row checked answers). Returns `-1` for an empty grid, which callers
+     * treat as "nothing to anchor".
      *
-     * `-1` when the whole grid is empty — and the caller treats that as
-     * "nothing to anchor", not as "row zero".
-     *
-     * It sweeps from the bottom because that is where the answer usually is: on
-     * a full screen it comes out on the first row examined. The worst case (an
-     * empty grid) costs one pass over cells that are all spaces — a few thousand
-     * comparisons, nowhere near mattering within a frame.
-     *
-     * @param vazia tells whether the cell `(x, y)` draws nothing. A space counts
-     *   as empty ON PURPOSE: a frame whose footer ends with thirty columns of
-     *   space must not pretend the row runs to the end.
+     * @param isEmpty whether cell `(x, y)` draws nothing. A space counts as empty on
+     *   purpose, so trailing spaces do not extend a row.
      */
     inline fun lastRowWithContent(columns: Int, lines: Int, isEmpty: (Int, Int) -> Boolean): Int {
         for (y in lines - 1 downTo 0) {

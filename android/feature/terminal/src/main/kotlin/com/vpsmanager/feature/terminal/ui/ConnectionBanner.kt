@@ -16,15 +16,10 @@ import androidx.compose.ui.unit.dp
 import com.vpsmanager.feature.terminal.transport.ConnectionState
 
 /**
- * Always composed above the terminal grid — a screen that just
- * looks frozen and one that visibly says "reconectando (2)…" are never
- * allowed to be indistinguishable. Every [ConnectionState] value renders as
- * a distinct label; [isStalled] adds a further distinct label on top of
- * `Live` for the case the socket itself never noticed anything is wrong
- * (see `TerminalViewModel.evaluateStall`).
- *
- * Hidden only for the one state that needs no explanation: a healthy,
- * unstalled `Live` connection with nothing to report.
+ * Always composed above the terminal grid, so a frozen-looking screen is never
+ * confused with one that is reconnecting. Every [ConnectionState] renders a
+ * distinct label; [isStalled] adds one for a `Live` socket that has not noticed a
+ * problem (see `TerminalViewModel.evaluateStall`). Hidden only for a healthy `Live`.
  */
 @Composable
 fun ConnectionBanner(
@@ -61,10 +56,8 @@ private fun bannerContent(
     isStalled: Boolean,
     typingDiscarded: Boolean = false,
 ): BannerContent = when {
-    // First of all, and on top of any connection state: losing what was typed
-    // is the only thing here that has already cost somebody work. While `send`
-    // was swallowing the bytes in silence, the operator only found out through
-    // the command that never ran.
+    // Takes precedence over any connection state: discarded typing is the only
+    // case here that has already cost the user work.
     typingDiscarded -> BannerContent(
         visible = true,
         text = "The connection dropped and what you typed was not sent — run the command again",
