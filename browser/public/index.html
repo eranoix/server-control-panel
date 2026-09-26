@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>Navegador · Server Control Panel</title>
+    <title>Browser · Server Control Panel</title>
     <link rel="shortcut icon" href="/browser/favicon.ico" />
     <script src="/browser/baremux/index.js" defer></script>
     <script src="/browser/uv/uv.bundle.js" defer></script>
@@ -70,19 +70,19 @@
   <body>
     <div class="logo">
       <span class="dot"></span>
-      <h1>Navegador tunelado</h1>
+      <h1>Tunnelled browser</h1>
     </div>
     <p class="desc">
-      Navegação saindo pela sua VPS. O tráfego entre este painel e os sites
-      passa criptografado pelo servidor — a sua rede local só enxerga a conexão
-      com o Server Control Panel.
+      Browsing that exits through your VPS. Traffic between this panel and the sites
+      travels encrypted through the server — your local network only sees the connection
+      to the Server Control Panel.
     </p>
     <form id="uv-form">
       <input id="uv-search-engine" value="https://www.google.com/search?q=%s" type="hidden" />
-      <input id="uv-address" type="text" placeholder="Digite uma URL ou busca…" autocomplete="off" autofocus />
-      <button type="submit">Abrir</button>
+      <input id="uv-address" type="text" placeholder="Type a URL or a search…" autocomplete="off" autofocus />
+      <button type="submit">Open</button>
     </form>
-    <p class="hint">Saída pelo IP do <b>VPS</b> · sem instalar nada no seu computador</p>
+    <p class="hint">Exits through the <b>VPS</b> IP · nothing to install on your computer</p>
     <div>
       <p id="uv-error"></p>
       <pre id="uv-error-code"></pre>

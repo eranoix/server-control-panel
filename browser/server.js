@@ -1,6 +1,6 @@
-// Server Control Panel — Navegador tunelado (Ultraviolet + Wisp)
-// Servidor Node isolado, escuta apenas em 127.0.0.1 e é exposto pelo painel
-// (Go) sob /browser/ com autenticação. NÃO deve ser exposto direto à internet.
+// Server Control Panel — tunnelled browser (Ultraviolet + Wisp)
+// Isolated Node server: it listens on 127.0.0.1 only and is exposed by the panel
+// (Go) under /browser/ behind authentication. It must NOT be exposed directly to the internet.
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -17,8 +17,8 @@ const epoxyPath = join(__dirname, "node_modules", "@mercuryworkshop", "epoxy-tra
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = parseInt(process.env.PORT || "8090", 10);
 
-// --- Hardening do Wisp: impede usar o proxy para alcançar a rede interna da VPS
-// (painel, pooler do Supabase, docker, metadata, etc.). O navegador só sai pra internet pública.
+// --- Wisp hardening: stops the proxy from being used to reach the VPS's internal network
+// (panel, Supabase pooler, docker, metadata, etc.). The browser only goes out to the public internet.
 Object.assign(wisp.options, {
   allow_private_ips: false,
   allow_loopback_ips: false,
@@ -29,9 +29,9 @@ Object.assign(wisp.options, {
     /\.internal$/i,
     /(^|\.)panel\.northwind\.example$/i,
   ],
-  // stream_limit_per_host fica desativado (-1): há um bug em wisp-js@0.4.1 que
-  // faz `for...of` sobre connection.streams (objeto, não iterável) e derruba o
-  // processo. O limite total abaixo usa Object.keys e funciona normalmente.
+  // stream_limit_per_host stays disabled (-1): wisp-js@0.4.1 has a bug that
+  // runs `for...of` over connection.streams (an object, not iterable) and kills the
+  // process. The total limit below uses Object.keys and works normally.
   stream_limit_per_host: -1,
   stream_limit_total: 512,
   wisp_motd: "panel-browser",
@@ -40,32 +40,32 @@ Object.assign(wisp.options, {
 const app = express();
 app.disable("x-powered-by");
 
-// Healthcheck para o painel monitorar o serviço.
+// Healthcheck so the panel can monitor the service.
 app.get("/healthz", (_req, res) => res.json({ ok: true, service: "panel-browser" }));
 
-// Counters de banda (KB) por aba+pane, expostos via /api/bandwidth. Atualizado
-// no upgrade handler do wisp envolvendo o socket pra somar bytes trafegados.
+// Bandwidth counters (KB) per tab+pane, exposed via /api/bandwidth. Updated
+// in the wisp upgrade handler by wrapping the socket to add up the bytes carried.
 const bwCounters = { totalSent: 0, totalRecv: 0, perOrigin: {} };
 app.get("/api/bandwidth", (_req, res) => res.json(bwCounters));
 
-// ---- Camada 1: Challenge solver (Byparr) ----
-// Quando UV pega 403 por anti-bot (Akamai/Cloudflare/DataDome), o cliente
-// chama este endpoint passando a URL. Byparr (Camoufox Firefox real, rodando
-// em 127.0.0.1:8191) navega, resolve o challenge, e retorna cookies+HTML.
-// Cliente injeta os cookies na sessão do UV e re-tenta a navegação.
-// Tudo o overhead (banda do challenge ~10-30MB) fica na VPS — pro browser
-// no PC do usuário só chega o HTML final (~50-500KB, igual UV cru).
+// ---- Layer 1: challenge solver (Byparr) ----
+// When UV gets a 403 from an anti-bot (Akamai/Cloudflare/DataDome), the client
+// calls this endpoint with the URL. Byparr (a real Camoufox Firefox, running
+// on 127.0.0.1:8191) navigates, solves the challenge and returns cookies+HTML.
+// The client injects the cookies into the UV session and retries the navigation.
+// All the overhead (challenge bandwidth ~10-30MB) stays on the VPS — the browser
+// on the user's PC only receives the final HTML (~50-500KB, same as plain UV).
 const BYPARR_URL = process.env.BYPARR_URL || "http://127.0.0.1:8191/v1";
-// Byparr aguarda 'networkidle' por padrão; alguns sites com RUM/trackers nunca
-// atingem networkidle, então damos 90s antes de desistir. O Camoufox geralmente
-// já tem cookies de challenge resolvidos bem antes (~5-15s) — o tempo extra
-// cobre o pior caso. Cliente vê spinner com mensagem de progresso.
+// Byparr waits for 'networkidle' by default; some sites with RUM/trackers never
+// reach networkidle, so we allow 90s before giving up. Camoufox usually has the
+// challenge cookies solved well before that (~5-15s) — the extra time covers
+// the worst case. The client sees a spinner with a progress message.
 const SOLVER_TIMEOUT_MS = 90000;
 
 app.post("/api/solve", express.json({ limit: "32kb" }), async (req, res) => {
   const url = (req.body && req.body.url || "").toString().trim();
   if (!/^https?:\/\//i.test(url)) {
-    return res.status(400).json({ error: "url inválida" });
+    return res.status(400).json({ error: "invalid url" });
   }
   const ctl = new AbortController();
   const to = setTimeout(() => ctl.abort(), SOLVER_TIMEOUT_MS + 5000);
@@ -78,13 +78,13 @@ app.post("/api/solve", express.json({ limit: "32kb" }), async (req, res) => {
     });
     clearTimeout(to);
     if (!r.ok) {
-      return res.status(502).json({ error: "solver erro " + r.status });
+      return res.status(502).json({ error: "solver error " + r.status });
     }
     const data = await r.json();
     if (data.status !== "ok") {
-      return res.status(502).json({ error: data.message || "solver falhou", raw: data });
+      return res.status(502).json({ error: data.message || "solver failed", raw: data });
     }
-    // Resposta enxuta pro cliente: só o necessário pra injetar cookies + UA.
+    // Lean response for the client: only what it needs to inject cookies + UA.
     const sol = data.solution || {};
     res.json({
       url: sol.url || url,
@@ -95,22 +95,22 @@ app.post("/api/solve", express.json({ limit: "32kb" }), async (req, res) => {
         path: c.path || "/", secure: !!c.secure, httpOnly: !!c.httpOnly,
         sameSite: c.sameSite || null, expires: c.expires || null,
       })),
-      // HTML não é enviado por padrão (pode ser pesado); cliente pede com ?withHtml=1.
+      // HTML is not sent by default (it can be heavy); the client asks with ?withHtml=1.
       html: req.query.withHtml === "1" ? (sol.response || "") : undefined,
       htmlSize: (sol.response || "").length,
       tookMs: data.endTimestamp && data.startTimestamp ? (data.endTimestamp - data.startTimestamp) : null,
     });
   } catch (e) {
     clearTimeout(to);
-    res.status(502).json({ error: "solver inalcançável: " + (e.message || e) });
+    res.status(502).json({ error: "solver unreachable: " + (e.message || e) });
   }
 });
 
-// Overlay (nosso index/branding) tem precedência sobre o static padrão do UV.
-// no-cache em register-sw.js + index.html: esses arquivos coordenam a versão
-// do Service Worker (?v=N). Se o browser servir do cache, o user fica preso
-// num SW velho com CSP/headers obsoletos mesmo após deploy do server. O resto
-// do static (uv.bundle.js, etc — paths com hash de versão da lib) pode cachear.
+// The overlay (our index/branding) takes precedence over UV's default static files.
+// no-cache on register-sw.js + index.html: these files coordinate the Service
+// Worker version (?v=N). If the browser served them from cache, the user would be
+// stuck on an old SW with stale CSP/headers even after a server deploy. The rest
+// of the static files (uv.bundle.js, etc — paths carrying the lib version) may be cached.
 app.use((req, res, next) => {
   if (req.path === "/" || req.path === "/index.html" || req.path === "/register-sw.js") {
     res.set("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -134,7 +134,7 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`[panel-browser] Ultraviolet+Wisp em http://${HOST}:${PORT} (wisp em /wisp/)`);
+  console.log(`[panel-browser] Ultraviolet+Wisp on http://${HOST}:${PORT} (wisp on /wisp/)`);
 });
 
 for (const sig of ["SIGINT", "SIGTERM"]) {

@@ -1,5 +1,5 @@
-// Override do uv.config.js — caminhos com prefixo /browser/ porque o painel
-// (Go) serve este app sob /browser/ na mesma origem.
+// Override of uv.config.js — paths carry the /browser/ prefix because the panel
+// (Go) serves this app under /browser/ on the same origin.
 self.__uv$config = {
   prefix: "/browser/uv/service/",
   bare: "/browser/bare/",

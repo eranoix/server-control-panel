@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Navegador tunelado (Ultraviolet + Wisp) embutido no Server Control Panel",
+  "description": "Tunnelled browser (Ultraviolet + Wisp) embedded in the Server Control Panel",
   "scripts": {
     "start": "node server.js"
   },

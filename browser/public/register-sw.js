@@ -1,20 +1,20 @@
 "use strict";
 /**
- * Server Control Panel — registro do service worker + transporte Wisp (via Epoxy).
- * Substitui o register-sw.js padrão do ultraviolet-static para configurar
- * o transporte epoxy apontando para o endpoint Wisp servido por este host.
+ * Server Control Panel — service worker registration + Wisp transport (via Epoxy).
+ * Replaces ultraviolet-static's default register-sw.js to configure the epoxy
+ * transport pointing at the Wisp endpoint served by this host.
  *
- * SW_VERSION: bump quando algo do CSP/headers servidos pelo Go mudar — o
- * Service Worker herda o CSP do response do próprio arquivo .js no momento
- * do install e fica RETIDO com esse CSP até ser unregistered. Mudar a URL
- * via ?v=<n> força o browser a tratar como SW novo e reinstalar (pegando
- * o response/CSP atual). 2 = CSP ganhou `blob:` em connect-src (12/06/2026).
+ * SW_VERSION: bump it when anything in the CSP/headers served by Go changes — the
+ * Service Worker inherits the CSP of the response for its own .js file at install
+ * time and KEEPS that CSP until it is unregistered. Changing the URL via
+ * ?v=<n> forces the browser to treat it as a new SW and reinstall it (picking up
+ * the current response/CSP). 2 = the CSP gained `blob:` in connect-src (2026-06-12).
  */
 const SW_VERSION = 2;
 const stockSW = "/browser/uv/sw.js?v=" + SW_VERSION;
 const swAllowedHostnames = ["localhost", "127.0.0.1"];
 
-// Endpoint Wisp relativo à origem atual (mesma origem do painel, sob /browser/).
+// Wisp endpoint relative to the current origin (same origin as the panel, under /browser/).
 const wispUrl =
   (location.protocol === "https:" ? "wss" : "ws") + "://" + location.host + "/browser/wisp/";
 
@@ -26,38 +26,38 @@ async function registerSW() {
       location.protocol !== "https:" &&
       !swAllowedHostnames.includes(location.hostname)
     )
-      throw new Error("Service workers exigem HTTPS.");
-    throw new Error("Seu navegador não suporta service workers.");
+      throw new Error("Service workers require HTTPS.");
+    throw new Error("Your browser does not support service workers.");
   }
 
-  // Garante o transporte epoxy -> wisp antes de navegar.
+  // Make sure the epoxy -> wisp transport is set before navigating.
   if ((await bareMux.getTransport()) !== "/browser/epoxy/index.mjs") {
     await bareMux.setTransport("/browser/epoxy/index.mjs", [{ wisp: wispUrl }]);
   }
 
-  // Limpa SWs antigos no scope antes de registrar o atual. Sem isso, um SW
-  // anteriormente registrado com URL "/browser/uv/sw.js" (sem ?v=) fica
-  // ativo no mesmo scope com o CSP que herdou no install — e o browser
-  // continua aplicando esse CSP velho mesmo após response novos do server.
-  // O SW novo (?v=N) só "wins" depois do .register() seguinte; chamamos
-  // unregister() primeiro pra garantir que o scope esteja limpo.
+  // Clear old SWs in the scope before registering the current one. Without this, a SW
+  // previously registered with the URL "/browser/uv/sw.js" (no ?v=) stays
+  // active in the same scope with the CSP it inherited at install — and the browser
+  // keeps applying that old CSP even after new responses from the server.
+  // The new SW (?v=N) only "wins" after the next .register(); we call
+  // unregister() first to make sure the scope is clean.
   try {
     const regs = await navigator.serviceWorker.getRegistrations();
     for (const r of regs) {
       const sw = r.active || r.waiting || r.installing;
       const url = sw && sw.scriptURL ? sw.scriptURL : "";
-      // Mata qualquer SW no scope UV cuja URL NÃO seja a versão atual.
-      // Match liberal (contains /browser/uv/sw.js) pra cobrir tanto a URL
-      // sem ?v= quanto versões antigas (?v=1, etc).
+      // Kill any SW in the UV scope whose URL is NOT the current version.
+      // Loose match (contains /browser/uv/sw.js) to cover both the URL
+      // without ?v= and older versions (?v=1, etc).
       if (url.includes("/browser/uv/sw.js") && !url.endsWith(stockSW)) {
         await r.unregister();
       }
     }
   } catch (_) {}
 
-  // Limpa caches do SW antigo. Sem isso, o response cacheado lá dentro
-  // ainda traz headers velhos (CSP sem blob:, etc), e o browser aplica
-  // o CSP do cache quando o iframe carrega via SW novo.
+  // Clear the old SW's caches. Without this, the response cached in there
+  // still carries old headers (CSP without blob:, etc), and the browser applies
+  // the cached CSP when the iframe loads through the new SW.
   try {
     if (typeof caches !== "undefined") {
       const keys = await caches.keys();
@@ -66,15 +66,15 @@ async function registerSW() {
   } catch (_) {}
 
   const reg = await navigator.serviceWorker.register(stockSW, { scope: __uv$config.prefix });
-  // Força check de update — se o byte do .js mudou, instala. Cobre o caso
-  // de cache do browser que serve o SW antigo apesar do reload.
+  // Force an update check — if the .js bytes changed, it installs. Covers the case
+  // of a browser cache serving the old SW despite the reload.
   try { await reg.update(); } catch (_) {}
 }
 
-// Auto-registra o SW assim que o landing carrega (antes dependia do submit do
-// form). Sem isso, navegar via address bar do painel — ou restaurar uma aba
-// salva apontando para /browser/uv/service/<enc> — dá 404 porque o request
-// chega ao servidor antes do SW interceptar.
+// Auto-register the SW as soon as the landing page loads (it used to depend on the
+// form submit). Without this, navigating via the panel's address bar — or restoring a
+// saved tab pointing at /browser/uv/service/<enc> — gives a 404 because the request
+// reaches the server before the SW can intercept it.
 const swReadyPromise = registerSW()
   .then(() => {
     try { window.parent.postMessage({ type: "panel-browser-ready" }, location.origin); } catch (_) {}
@@ -84,8 +84,8 @@ const swReadyPromise = registerSW()
     try { window.parent.postMessage({ type: "panel-browser-error", message: String(err) }, location.origin); } catch (_) {}
   });
 
-// Ouve pedidos de navegação vindos do painel pai. Aguarda o SW pronto antes
-// de mudar location.href, evitando a corrida que causava 404.
+// Listen for navigation requests from the parent panel. Wait for the SW to be ready
+// before changing location.href, avoiding the race that caused a 404.
 window.addEventListener("message", async (ev) => {
   if (ev.origin !== location.origin) return;
   const d = ev.data || {};
