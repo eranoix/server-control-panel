@@ -47,7 +47,7 @@ func TestVocabularyIsExactlySevenTypes(t *testing.T) {
 			t.Errorf("AllComponentTypes() contains %q, outside the expected closed set", ct)
 		}
 		if seen[ct] {
-			t.Errorf("AllComponentTypes() repete %q", ct)
+			t.Errorf("AllComponentTypes() repeats %q", ct)
 		}
 		seen[ct] = true
 	}
@@ -189,19 +189,19 @@ func TestEnvelopeRoundTrip(t *testing.T) {
 				FormComponent{
 					ComponentBase: ComponentBase{Type: ComponentTypeForm, ID: "f1", PermissionHint: "docker.write"},
 					Fields: []FormField{
-						{Key: "name", Label: "Nome", Kind: "text", Required: true},
+						{Key: "name", Label: "Name", Kind: "text", Required: true},
 					},
 					SubmitAction: ActionRef{ActionID: "notify.rule.create"},
 				},
 				TableComponent{
 					ComponentBase: ComponentBase{Type: ComponentTypeTable, ID: "t1"},
 					Columns: []TableColumn{
-						{Key: "name", Label: "Nome", Kind: "text"},
+						{Key: "name", Label: "Name", Kind: "text"},
 						{Key: "status", Label: "Status", Kind: "badge", BadgeMap: map[string]string{"running": "success"}},
 					},
 					RowsSource: DataSource{Endpoint: "/api/mobile/v1/docker/containers", Method: "GET"},
 					RowActions: []ActionRef{{ActionID: "container.stop"}},
-					EmptyState: &EmptyState{Text: "Nenhum container"},
+					EmptyState: &EmptyState{Text: "No containers"},
 				},
 				ListComponent{
 					ComponentBase: ComponentBase{Type: ComponentTypeList, ID: "l1"},
@@ -211,7 +211,7 @@ func TestEnvelopeRoundTrip(t *testing.T) {
 				DetailComponent{
 					ComponentBase: ComponentBase{Type: ComponentTypeDetail, ID: "d1"},
 					DataSource:    DataSource{Endpoint: "/api/mobile/v1/docker/containers/{id}"},
-					Fields:        []DetailField{{Key: "image", Label: "Imagem"}},
+					Fields:        []DetailField{{Key: "image", Label: "Image"}},
 				},
 				ActionComponent{
 					ComponentBase: ComponentBase{Type: ComponentTypeAction, ID: "a1", Critical: true},
@@ -229,8 +229,8 @@ func TestEnvelopeRoundTrip(t *testing.T) {
 				ConfirmDestructiveComponent{
 					ComponentBase:            ComponentBase{Type: ComponentTypeConfirmDestructive, ID: "cd1"},
 					ActionID:                 "container.stop",
-					Message:                  "Isto vai parar o container permanentemente.",
-					RequireTypedConfirmation: "meu-container",
+					Message:                  "This will stop the container permanently.",
+					RequireTypedConfirmation: "my-container",
 				},
 			},
 		},

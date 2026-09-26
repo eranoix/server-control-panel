@@ -29,10 +29,10 @@ import (
 
 type mobileLoginInput struct {
 	Body struct {
-		Username    string `json:"username" doc:"Username ou email cadastrado."`
+		Username    string `json:"username" doc:"Registered username or email."`
 		Password    string `json:"password"`
-		TOTPCode    string `json:"totp_code,omitempty" doc:"Código do segundo fator (Supabase MFA/TOTP ou backup code). Omitir na primeira tentativa."`
-		DeviceLabel string `json:"device_label,omitempty" doc:"Rótulo do aparelho, usado na lista de sessões mobile (ex.: 'Pixel 8')."`
+		TOTPCode    string `json:"totp_code,omitempty" doc:"Second-factor code (Supabase MFA/TOTP or backup code). Omit on the first attempt."`
+		DeviceLabel string `json:"device_label,omitempty" doc:"Device label, used in the mobile sessions list (e.g. 'Pixel 8')."`
 	}
 }
 
@@ -41,7 +41,7 @@ type mobileLoginOutput struct {
 		AccessToken  string `json:"access_token,omitempty"`
 		RefreshToken string `json:"refresh_token,omitempty"`
 		ExpiresIn    int    `json:"expires_in,omitempty"`
-		TOTPRequired bool   `json:"totp_required,omitempty" doc:"Quando true, nenhum token foi emitido — reenviar com totp_code preenchido."`
+		TOTPRequired bool   `json:"totp_required,omitempty" doc:"When true, no token was issued: resend with totp_code filled in."`
 	}
 }
 
@@ -54,7 +54,7 @@ type mobileRefreshInput struct {
 type mobileRefreshOutput struct {
 	Body struct {
 		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token" doc:"Novo refresh token — o anterior já foi invalidado por esta chamada."`
+		RefreshToken string `json:"refresh_token" doc:"New refresh token; the previous one was already invalidated by this call."`
 		ExpiresIn    int    `json:"expires_in"`
 	}
 }
@@ -68,8 +68,8 @@ func registerMobileLogin(api huma.API, deps Deps) {
 		OperationID: "mobileLogin",
 		Method:      http.MethodPost,
 		Path:        "/auth/login",
-		Summary:     "Login por senha + segundo fator (mesma política MFA do painel desktop)",
-		Description: "Sucesso devolve access_token + refresh_token. Quando o segundo fator está enrolado e totp_code não foi enviado, devolve {\"totp_required\":true} sem nenhum token.",
+		Summary:     "Password login + second factor (same MFA policy as the desktop panel)",
+		Description: "Success returns access_token + refresh_token. When a second factor is enrolled and totp_code was not sent, returns {\"totp_required\":true} with no token.",
 		Tags:        []string{"mobile", "auth"},
 		Middlewares: huma.Middlewares{injectClientMeta},
 	}, func(ctx context.Context, in *mobileLoginInput) (*mobileLoginOutput, error) {
@@ -100,8 +100,8 @@ func registerMobileLogin(api huma.API, deps Deps) {
 		OperationID: "mobileRefresh",
 		Method:      http.MethodPost,
 		Path:        "/auth/refresh",
-		Summary:     "Troca um refresh token mobile por um novo par access+refresh",
-		Description: "Rotação obrigatória: o refresh_token enviado é invalidado por esta chamada, com sucesso ou sem. Reenviar um token já rotacionado, revogado ou nunca emitido falha da mesma forma (401).",
+		Summary:     "Exchanges a mobile refresh token for a new access+refresh pair",
+		Description: "Mandatory rotation: the refresh_token sent is invalidated by this call, whether it succeeds or not. Resending a token that was already rotated, revoked or never issued fails the same way (401).",
 		Tags:        []string{"mobile", "auth"},
 	}, func(_ context.Context, in *mobileRefreshInput) (*mobileRefreshOutput, error) {
 		if pk == nil {

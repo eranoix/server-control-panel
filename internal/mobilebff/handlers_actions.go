@@ -37,7 +37,7 @@ func registerActions(api huma.API, deps Deps) {
 		OperationID: "runAction",
 		Method:      http.MethodPost,
 		Path:        "/actions/{action_id}",
-		Summary:     "Executa uma ação SDUI registrada, com confirmação destrutiva reforçada pelo servidor",
+		Summary:     "Runs a registered SDUI action, with destructive confirmation enforced by the server",
 		Tags:        []string{"mobile", "sdui"},
 		// requireAuth (handlers_session.go) replies 401 without calling next()
 		// for an unauthenticated request. handleAction does the rest —
@@ -55,7 +55,7 @@ func registerActions(api huma.API, deps Deps) {
 // req.PathValue("action_id") straight off the raw request, never through
 // this struct.
 type actionInput struct {
-	ActionID string `path:"action_id" doc:"Id da ação registrada em internal/mobilebff/sdui (ex.: scheduler.jobs.run_now)"`
+	ActionID string `path:"action_id" doc:"Id of an action registered in internal/mobilebff/sdui (e.g. scheduler.jobs.run_now)"`
 }
 
 // actionOutput declares the request/response body as free-form JSON — for

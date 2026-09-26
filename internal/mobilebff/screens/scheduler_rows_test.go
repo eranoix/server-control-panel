@@ -164,7 +164,7 @@ func TestSchedulerRows_WireShape(t *testing.T) {
 		}
 	}
 	if adminRoot == nil {
-		t.Fatal("job-admin-root ausente")
+		t.Fatal("job-admin-root missing")
 	}
 
 	wantKeys := []string{"id", "name", "schedule", "kind", "enabled", "owner", "last_status", "last_fire", "next_fire", "run_as_root"}
@@ -196,7 +196,7 @@ func TestSchedulerRows_NeverFiredJobHasEmptyTimestamps(t *testing.T) {
 		}
 	}
 	if orphan == nil {
-		t.Fatal("job-orphaned-kind ausente")
+		t.Fatal("job-orphaned-kind missing")
 	}
 	// newFakeSchedulerBackend's fixture does not set LastFire/NextFire for
 	// job-orphaned-kind — they must arrive as "".

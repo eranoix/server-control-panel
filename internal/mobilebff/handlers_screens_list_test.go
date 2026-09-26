@@ -22,8 +22,8 @@ import (
 // The pair is what lets us prove, over real HTTP, both halves of the contract:
 // what shows up and — more importantly — what is OMITTED.
 func init() {
-	sdui.RegisterCatalog("test.screens.basic", sdui.GroupSystem, "Tela básica", func(sdui.Viewer) bool { return true })
-	sdui.RegisterCatalog("test.screens.adminonly", sdui.GroupSecurity, "Só admin", func(v sdui.Viewer) bool { return v.IsAdmin() })
+	sdui.RegisterCatalog("test.screens.basic", sdui.GroupSystem, "Basic screen", func(sdui.Viewer) bool { return true })
+	sdui.RegisterCatalog("test.screens.adminonly", sdui.GroupSecurity, "Admin only", func(v sdui.Viewer) bool { return v.IsAdmin() })
 }
 
 func listScreens(t *testing.T, username string) (*httptest.ResponseRecorder, ScreensResponse) {

@@ -59,9 +59,9 @@ func applyBearerSecurity(config *huma.Config) {
 		Type:         "http",
 		Scheme:       "bearer",
 		BearerFormat: "JWT",
-		Description: "Access token emitido por POST /auth/login (ou renovado por " +
-			"POST /auth/refresh), enviado como `Authorization: Bearer <token>`. " +
-			"Quem valida é auth.Middleware, o mesmo de toda rota autenticada do painel.",
+		Description: "Access token issued by POST /auth/login (or renewed by " +
+			"POST /auth/refresh), sent as `Authorization: Bearer <token>`. " +
+			"It is validated by auth.Middleware, the same one used by every authenticated panel route.",
 	}
 	config.OnAddOperation = append(config.OnAddOperation, requireBearer)
 }

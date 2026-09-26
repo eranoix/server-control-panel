@@ -5,19 +5,10 @@ package mobilebff
 // transition takes a card to the chosen column, and which JQL each quick filter
 // means.
 //
-// # Why this logic belongs to the SERVER
-//
-// Today it exists once, in JavaScript, inside the web panel
-// (`00-shell.js`: jiraColumns, jiraIssuesInCol, jiraDropOnCol,
-// applyJiraFilter). Rewriting it in Kotlin would create a SECOND
-// implementation of the same rule — and silent divergence between the web
-// surface and the mobile one is exactly what killed the previous attempt. The
-// app receives columns already built and cards already distributed; it decides
-// how to draw, never what a column is.
-//
-// That is why everything here is a pure function over `[]jira.Issue` — no
-// network, no vault, no huma. The whole file is testable with no server
-// running, and it is where the rule the web panel and the app now SHARE lives.
+// The logic lives on the server so the app never keeps a second implementation
+// of the web panel's rule (`00-shell.js`: jiraColumns, jiraIssuesInCol,
+// jiraDropOnCol, applyJiraFilter): the app receives built columns and decides
+// only how to draw them. Everything here is a pure function over `[]jira.Issue`.
 
 import (
 	"encoding/json"
@@ -39,7 +30,7 @@ type JiraBoardCard struct {
 	Key        string   `json:"key"`
 	Summary    string   `json:"summary"`
 	Status     string   `json:"status"`
-	Category   string   `json:"category" doc:"new | indeterminate | done — o identificador ESTÁVEL da categoria"`
+	Category   string   `json:"category" doc:"new | indeterminate | done: the STABLE category identifier"`
 	Type       string   `json:"type,omitempty"`
 	Priority   string   `json:"priority,omitempty"`
 	Assignee   string   `json:"assignee,omitempty"`
@@ -55,7 +46,7 @@ type JiraBoardCard struct {
 // [StatusNames] and [Category] are MUTUALLY exclusive and exist so the client
 // can hand the column back on a move call without inventing vocabulary: it
 // sends the [Label] back, and the server finds the column again. [Fallback]
-// marks the "Outros" column — the one that collects issues whose status matches
+// marks the "Others" column — the one that collects issues whose status matches
 // no configured column.
 type JiraBoardColumn struct {
 	Label       string          `json:"label"`
@@ -70,13 +61,12 @@ type JiraBoardColumn struct {
 //
 // Category and not name: a status name is translatable and customizable per
 // project; `statusCategory.key` is one of the three values Jira guarantees. A
-// column by name would break in any project that calls "To Do" "Backlog" —
-// which is this very project's case.
+// column by name would break in any project that calls "To Do" "Backlog".
 func defaultColumns() []JiraBoardColumn {
 	return []JiraBoardColumn{
-		{Label: "A fazer", Category: "new"},
-		{Label: "Em andamento", Category: "indeterminate"},
-		{Label: "Concluído", Category: "done"},
+		{Label: "To Do", Category: "new"},
+		{Label: "In Progress", Category: "indeterminate"},
+		{Label: "Done", Category: "done"},
 	}
 }
 
@@ -101,7 +91,7 @@ func configuredColumns(raw string) []JiraBoardColumn {
 	for i, c := range reads {
 		label := strings.TrimSpace(c.Label)
 		if label == "" {
-			label = "Coluna " + strconv.Itoa(i+1)
+			label = "Column " + strconv.Itoa(i+1)
 		}
 		names := make([]string, 0, len(c.StatusNames))
 		for _, n := range c.StatusNames {
@@ -118,10 +108,9 @@ func configuredColumns(raw string) []JiraBoardColumn {
 //
 // [hideDoneAfter], when greater than zero, hides issues that have been
 // done for more days than that — the same retention as the panel
-// (`jiraIssueVisible`). It keeps the "Concluído" column from becoming a
-// two-year-old morgue your thumb never finishes scrolling through.
+// (`jiraIssueVisible`), so the "Done" column does not grow forever.
 //
-// [ordem] is "field:direction" (`updated:desc`, `key:asc`, `name:asc`,
+// [order] is "field:direction" (`updated:desc`, `key:asc`, `name:asc`,
 // `type:asc`); empty or unknown preserves the order Jira returned, which is
 // already the JQL's.
 func BuildBoard(
@@ -156,10 +145,9 @@ func BuildBoard(
 		columns[dest].Cards = append(columns[dest].Cards, boardCard(is))
 	}
 
-	// The "Outros" column only exists when there is an orphan. A well-configured
-	// board does not earn a permanent empty column just to prove it is complete.
+	// The "Others" column only exists when there is an orphan.
 	if byName && len(orphans) > 0 {
-		leftover := JiraBoardColumn{Label: "Outros", Fallback: true}
+		leftover := JiraBoardColumn{Label: "Others", Fallback: true}
 		for _, is := range orphans {
 			leftover.Cards = append(leftover.Cards, boardCard(is))
 		}
@@ -302,10 +290,9 @@ func keyNumber(key string) int {
 //
 // It returns nil when NO transition gets there. That is not a failure of the app
 // nor of the server: it is the project's workflow forbidding that jump (you do
-// not go from "A fazer" straight to "Concluído" in a workflow with mandatory
-// review). The caller turns that nil into an explained refusal, and the card
-// GOES BACK to where it was — dropping it and appearing to have moved is the
-// worst possible outcome, because the person goes on believing they moved it.
+// not go from "To Do" straight to "Done" in a workflow with mandatory review).
+// The caller turns that nil into an explained refusal and the card goes back to
+// where it was, so nobody believes a card moved when it did not.
 func TransitionToColumn(col JiraBoardColumn, transitions []jira.Transition) *jira.Transition {
 	if col.Category != "" {
 		for i := range transitions {
@@ -334,10 +321,10 @@ var quickFilters = []struct {
 	Key   string
 	Label string
 }{
-	{"all", "Todas"},
+	{"all", "All"},
 	{"mine", "Mine"},
-	{"todo", "A fazer"},
-	{"inprogress", "Em andamento"},
+	{"todo", "To Do"},
+	{"inprogress", "In Progress"},
 	{"last7", "Last 7 days"},
 	{"reported", "Reported by me"},
 	{"custom", "JQL"},
@@ -346,17 +333,8 @@ var quickFilters = []struct {
 // ownBoardFilter is the JQL the operator configured as THEIR board
 // (`jira_board_jql` in the vault). It is only offered when it exists.
 //
-// It is a NAMED filter, and that is the fix for a real defect: before, a
-// configured `board_jql` silently hijacked the "Todas" filter — but only on the
-// FIRST load, because the condition that triggered it was "the client did not
-// send a project", and the client only learns the project from the response.
-// The same filter, with the same project, gave two different boards depending
-// on whether the app already knew where it was. Since this operator's configured
-// JQL returned zero issues, the board opened empty and filled up on refresh.
-//
-// Choosing explicitly is what makes the result explainable: an empty board under
-// "My board" says the stored query matches nothing — and not that the app
-// failed.
+// It is a NAMED filter so the stored query never silently replaces "All": an
+// empty board under "My board" then means the stored query matches nothing.
 var ownBoardFilter = JiraFilterOption{Key: "board", Label: "My board"}
 
 // JiraFilterOption is one quick filter offered to the app.
@@ -387,8 +365,7 @@ func BoardFilters(withOwnBoard bool) []JiraFilterOption {
 // [jqlCustom] is only used by the "custom" filter and [boardJQL] only by the
 // "board" one; in all the others both are ignored on purpose — a loose JQL
 // travelling alongside a named filter would be a second source of truth about
-// what the board is showing, and that is exactly how the board came to open
-// empty and fill up on refresh.
+// what the board is showing.
 func FilterJQL(filter, project, jqlCustom, boardJQL string) string {
 	project = strings.TrimSpace(project)
 	// "My board" with no stored query is not a state: it falls back to "all",
@@ -479,20 +456,8 @@ func firstNonEmpty(vs ...string) string {
 	return ""
 }
 
-// --- one search PER COLUMN -----------------------------------------------------
-//
-// # The defect this fixes
-//
-// The board did ONE search of a hundred issues ordered by update time and
-// distributed the result across the columns. In a project with ninety-nine done
-// issues, the done ones ate the whole quota and the left-hand columns starved:
-// the same project showed "A fazer 2" under the "A fazer" filter and
-// "A fazer 1" under the "Todas" filter. A column lost a card because of another
-// column.
-//
-// That is not tunable with a bigger ceiling — it is the shape of the query that
-// is wrong. A board has a quota PER COLUMN, because that is how it is read:
-// nobody scrolls four hundred done issues to find out what is still to do.
+// The board runs one search PER COLUMN: with a single shared search, done
+// issues could use up the whole quota and starve the other columns.
 
 // SplitJQL separates the search clause from the ordering one.
 //
@@ -536,7 +501,7 @@ func categoryJQL(key string) string {
 
 // ColumnRestriction is the slice of JQL that isolates one column's issues.
 //
-// The "Outros" column is the complement of the others (`status NOT IN (...)`) —
+// The "Others" column is the complement of the others (`status NOT IN (...)`) —
 // the only way to ASK Jira for something defined as "whatever is none of the
 // rest". It returns "" when the column has no way to restrict itself, and in
 // that case the caller falls back to the single search.

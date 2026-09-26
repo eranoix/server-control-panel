@@ -139,12 +139,12 @@ type Deps struct {
 	// credential — it is what switching project in the board's picker does.
 	JiraSetProject func(user, project string) error
 	// Idem is the result table that keeps a RETRY from executing the action twice
-	// (see idempotencia.go). It is what allows the app's outbound queue to carry
+	// (see idempotency.go). It is what allows the app's outbound queue to carry
 	// writes beyond WhatsApp: without a server that recognizes "I have seen
 	// this", resending what timed out duplicates.
 	//
 	// ONE instance for the whole BFF, built in internal/api. Several of them
-	// pointing at the same file would trample each other in gravar(). nil is
+	// pointing at the same file would trample each other in save(). nil is
 	// legitimate and becomes a no-op in every method — it is the case of
 	// cmd/mobile-openapi-gen, which builds the registry without a dataDir.
 	Idem *Idempotency

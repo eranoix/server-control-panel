@@ -169,7 +169,7 @@ type fixtureScreenBody struct {
 func TestFixtureConformance(t *testing.T) {
 	entries, err := os.ReadDir(fixturesDir)
 	if err != nil {
-		t.Fatalf("lendo %s: %v", fixturesDir, err)
+		t.Fatalf("reading %s: %v", fixturesDir, err)
 	}
 
 	contract := GenerateContract()
@@ -183,7 +183,7 @@ func TestFixtureConformance(t *testing.T) {
 		path := filepath.Join(fixturesDir, name)
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			t.Fatalf("lendo %s: %v", path, err)
+			t.Fatalf("reading %s: %v", path, err)
 		}
 
 		var top map[string]interface{}
@@ -237,7 +237,7 @@ func TestFixtureConformance(t *testing.T) {
 	}
 
 	if found == 0 {
-		t.Fatal("no fixture with sdui_version found in " + fixturesDir + " — a corpus dourada está ausente")
+		t.Fatal("no fixture with sdui_version found in " + fixturesDir + ": the golden corpus is missing")
 	}
 }
 
@@ -270,7 +270,7 @@ func TestFixtureConformance(t *testing.T) {
 func TestFixtureRoundTripMatchesRealMarshaller(t *testing.T) {
 	entries, err := os.ReadDir(fixturesDir)
 	if err != nil {
-		t.Fatalf("lendo %s: %v", fixturesDir, err)
+		t.Fatalf("reading %s: %v", fixturesDir, err)
 	}
 
 	checked := 0
@@ -286,7 +286,7 @@ func TestFixtureRoundTripMatchesRealMarshaller(t *testing.T) {
 		path := filepath.Join(fixturesDir, name)
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			t.Fatalf("lendo %s: %v", path, err)
+			t.Fatalf("reading %s: %v", path, err)
 		}
 
 		var top map[string]interface{}
@@ -350,30 +350,30 @@ func diffJSONValues(path string, a, b interface{}) []string {
 	case map[string]interface{}:
 		bv, ok := b.(map[string]interface{})
 		if !ok {
-			return []string{fmt.Sprintf("%s: era objeto no original, é %T na saída regenerada", path, b)}
+			return []string{fmt.Sprintf("%s: was an object in the original, is %T in the regenerated output", path, b)}
 		}
 		var diffs []string
 		for k, avVal := range av {
 			bval, present := bv[k]
 			if !present {
-				diffs = append(diffs, fmt.Sprintf("%s.%s: presente na fixture original, AUSENTE na saída real do marshaller", path, k))
+				diffs = append(diffs, fmt.Sprintf("%s.%s: present in the original fixture, MISSING from the real marshaller output", path, k))
 				continue
 			}
 			diffs = append(diffs, diffJSONValues(path+"."+k, avVal, bval)...)
 		}
 		for k := range bv {
 			if _, present := av[k]; !present {
-				diffs = append(diffs, fmt.Sprintf("%s.%s: ausente na fixture original, PRESENTE na saída real do marshaller", path, k))
+				diffs = append(diffs, fmt.Sprintf("%s.%s: missing from the original fixture, PRESENT in the real marshaller output", path, k))
 			}
 		}
 		return diffs
 	case []interface{}:
 		bv, ok := b.([]interface{})
 		if !ok {
-			return []string{fmt.Sprintf("%s: era array no original, é %T na saída regenerada", path, b)}
+			return []string{fmt.Sprintf("%s: was an array in the original, is %T in the regenerated output", path, b)}
 		}
 		if len(av) != len(bv) {
-			return []string{fmt.Sprintf("%s: tamanho do array era %d no original, é %d na saída regenerada", path, len(av), len(bv))}
+			return []string{fmt.Sprintf("%s: array length was %d in the original, is %d in the regenerated output", path, len(av), len(bv))}
 		}
 		var diffs []string
 		for i := range av {
@@ -382,7 +382,7 @@ func diffJSONValues(path string, a, b interface{}) []string {
 		return diffs
 	default:
 		if !reflect.DeepEqual(a, b) {
-			return []string{fmt.Sprintf("%s: original=%#v, saída real do marshaller=%#v", path, a, b)}
+			return []string{fmt.Sprintf("%s: original=%#v, real marshaller output=%#v", path, a, b)}
 		}
 		return nil
 	}

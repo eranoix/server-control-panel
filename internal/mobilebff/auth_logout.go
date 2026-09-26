@@ -89,8 +89,8 @@ func registerLogout(api huma.API, deps Deps) {
 		OperationID: "mobileLogout",
 		Method:      http.MethodPost,
 		Path:        "/auth/logout",
-		Summary:     "Encerra a sessão do dispositivo chamador — nunca as demais sessões do usuário",
-		Description: "Revoga SOMENTE o jti do token usado nesta chamada (mesmo internal/sessions.Store do painel web). Idempotente: chamar de novo com um token já revogado ainda responde 200.",
+		Summary:     "Ends the calling device's session, never the user's other sessions",
+		Description: "Revokes ONLY the jti of the token used in this call (same internal/sessions.Store as the web panel). Idempotent: calling again with an already revoked token still answers 200.",
 		Tags:        []string{"mobile", "auth"},
 		Middlewares: huma.Middlewares{requireAuth, injectSessionMeta},
 	}, func(ctx context.Context, _ *struct{}) (*mobileLogoutOutput, error) {

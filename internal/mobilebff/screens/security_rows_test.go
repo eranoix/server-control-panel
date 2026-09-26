@@ -210,7 +210,7 @@ func TestSecurityUsersRows_WireShape(t *testing.T) {
 		t.Errorf("role = %v, want \"admin\"", admin["role"])
 	}
 	if admin["has_totp"] != "yes" {
-		t.Errorf("has_totp = %v, want \"sim\"", admin["has_totp"])
+		t.Errorf("has_totp = %v, want \"yes\"", admin["has_totp"])
 	}
 	if _, isString := admin["sessions"].(string); !isString {
 		t.Errorf("sessions = %v (%T), want a pre-formatted string", admin["sessions"], admin["sessions"])
@@ -251,7 +251,7 @@ func TestSecuritySecretsRows_WireShape(t *testing.T) {
 // {"rows":[{"id","user","ip","user_agent","issued_at","last_seen","is_current"}]}
 // over a real HTTP round trip (auth.WithUser only — auth.JTIFrom's context
 // key is unexported outside internal/auth, so this request carries no JTI
-// and both rows correctly render is_current="não"; the CALLER's-own-session
+// and both rows correctly render is_current="no"; the CALLER's-own-session
 // flagging logic itself is pinned separately by
 // TestSecuritySessionRow_FlagsCallersOwnJTI below, calling securitySessionRow
 // directly with an explicit currentJTI).
@@ -274,7 +274,7 @@ func TestSecuritySessionsRows_WireShape(t *testing.T) {
 	}
 	for _, row := range body.Rows {
 		if row["is_current"] != "no" {
-			t.Errorf("with no JTI in the test context, is_current should be \"não\" for every row: %v", row)
+			t.Errorf("with no JTI in the test context, is_current should be \"no\" for every row: %v", row)
 		}
 	}
 }
@@ -290,13 +290,13 @@ func TestSecuritySessionRow_FlagsCallersOwnJTI(t *testing.T) {
 	other := SessionRow{ID: "jti-other", User: "sec-user", IssuedAt: 1798000100, LastSeen: 1798000600}
 
 	if got := securitySessionRow(own, "jti-current")["is_current"]; got != "yes" {
-		t.Errorf("the caller's own session: is_current = %v, want \"sim\"", got)
+		t.Errorf("the caller's own session: is_current = %v, want \"yes\"", got)
 	}
 	if got := securitySessionRow(other, "jti-current")["is_current"]; got != "no" {
-		t.Errorf("another user's session: is_current = %v, want \"não\"", got)
+		t.Errorf("another user's session: is_current = %v, want \"no\"", got)
 	}
 	if got := securitySessionRow(own, "")["is_current"]; got != "no" {
-		t.Errorf("with no caller JTI (currentJTI empty): is_current = %v, want \"não\" (never flag by mistake)", got)
+		t.Errorf("with no caller JTI (currentJTI empty): is_current = %v, want \"no\" (never flag by mistake)", got)
 	}
 }
 
@@ -332,7 +332,7 @@ func TestSecurityUFWDetail_WireShape(t *testing.T) {
 		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
 	}
 	if body.Detail["enabled"] != "Active" {
-		t.Errorf("enabled = %v, want \"Ativo\"", body.Detail["enabled"])
+		t.Errorf("enabled = %v, want \"Active\"", body.Detail["enabled"])
 	}
 	if _, ok := body.Detail["output"]; !ok {
 		t.Errorf("detail does not have \"output\": %v", body.Detail)
@@ -354,7 +354,7 @@ func TestSecurityAdGuardDetail_WireShape(t *testing.T) {
 		}
 	}
 	if body.Detail["protection_enabled"] != "Active" {
-		t.Errorf("protection_enabled = %v, want \"Ativa\"", body.Detail["protection_enabled"])
+		t.Errorf("protection_enabled = %v, want \"Active\"", body.Detail["protection_enabled"])
 	}
 	if body.Detail["version"] != "v0.107.5" {
 		t.Errorf("version = %v, want \"v0.107.5\"", body.Detail["version"])
@@ -383,7 +383,7 @@ func TestSecurityDevicesRows_WireShape(t *testing.T) {
 		}
 	}
 	if row["exit"] != "vps" || row["datasaver"] != "no" {
-		t.Errorf("row = %v, want exit=vps datasaver=não", row)
+		t.Errorf("row = %v, want exit=vps datasaver=no", row)
 	}
 }
 
@@ -423,7 +423,7 @@ func TestSecurityRows_UnavailableDoesNotBecomeEmptyTable(t *testing.T) {
 	t.Run("audit down doesn't answer 200", func(t *testing.T) {
 		sec := fakeSecurityRowsDeps()
 		sec.ListAuditEvents = func(AuditFilter) ([]AuditRow, error) {
-			return nil, errors.New("auditoria indisponível")
+			return nil, errors.New("audit unavailable")
 		}
 		mux := newSecurityRowsMux(sec, fakeNetworkRowsDeps())
 		rec, _ := doSecurityRowsRequest(t, mux, "/security/audit", "sec-admin")
@@ -435,7 +435,7 @@ func TestSecurityRows_UnavailableDoesNotBecomeEmptyTable(t *testing.T) {
 	t.Run("measurement down doesn't answer 200", func(t *testing.T) {
 		net := fakeNetworkRowsDeps()
 		net.UsageSnapshot = func() ([]UsageRow, error) {
-			return nil, errors.New("medição indisponível")
+			return nil, errors.New("measurement unavailable")
 		}
 		mux := newSecurityRowsMux(fakeSecurityRowsDeps(), net)
 		rec, _ := doSecurityRowsRequest(t, mux, "/security/economia", "sec-admin")

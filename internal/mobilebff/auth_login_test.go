@@ -33,7 +33,7 @@ func TestMobileLogin_Success_ReturnsTokens(t *testing.T) {
 	resp, body := postJSON(t, srv, "/auth/login", map[string]any{
 		"username":     "sam",
 		"password":     "hunter2",
-		"device_label": "Pixel de teste",
+		"device_label": "Test Pixel",
 	})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, expected 200: %v", resp.StatusCode, body)
@@ -51,8 +51,8 @@ func TestMobileLogin_Success_ReturnsTokens(t *testing.T) {
 		t.Fatalf("MobileLogin called %d times, expected 1", len(backend.mobileLoginCalls))
 	}
 	call := backend.mobileLoginCalls[0]
-	if call.username != "sam" || call.password != "hunter2" || call.deviceLabel != "Pixel de teste" {
-		t.Fatalf("call repassada incorretamente: %+v", call)
+	if call.username != "sam" || call.password != "hunter2" || call.deviceLabel != "Test Pixel" {
+		t.Fatalf("call forwarded incorrectly: %+v", call)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestMobileLogin_ErrorMapping(t *testing.T) {
 			srv := newPasskeyTestServer(t, backend)
 			resp, body := postJSON(t, srv, "/auth/login", map[string]any{
 				"username": "sam",
-				"password": "errada",
+				"password": "wrong",
 			})
 			if resp.StatusCode != c.status {
 				t.Fatalf("status = %d, expected %d: %v", resp.StatusCode, c.status, body)
@@ -142,7 +142,7 @@ func TestMobileRefresh_InvalidOrReused_Always401(t *testing.T) {
 	srv := newPasskeyTestServer(t, backend)
 
 	resp, body := postJSON(t, srv, "/auth/refresh", map[string]any{
-		"refresh_token": "sam.ja-rotacionado",
+		"refresh_token": "sam.already-rotated",
 	})
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status = %d, expected 401: %v", resp.StatusCode, body)
@@ -151,7 +151,7 @@ func TestMobileRefresh_InvalidOrReused_Always401(t *testing.T) {
 	// Repeating the SAME attempt keeps failing in exactly the same way —
 	// there is no "second chance" for a token that is already invalid.
 	resp2, body2 := postJSON(t, srv, "/auth/refresh", map[string]any{
-		"refresh_token": "sam.ja-rotacionado",
+		"refresh_token": "sam.already-rotated",
 	})
 	if resp2.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("second attempt: status = %d, expected 401: %v", resp2.StatusCode, body2)

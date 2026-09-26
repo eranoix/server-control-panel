@@ -32,7 +32,7 @@ func newFakeAlertsBackend() *fakeAlertsBackend {
 	return &fakeAlertsBackend{
 		rules: map[string]AlertRuleRow{
 			"rule-1": {
-				ID: "rule-1", Name: "Jobs falhando", Enabled: true,
+				ID: "rule-1", Name: "Failing jobs", Enabled: true,
 				TypePrefix: "job.failed", MinSeverity: notify.SeverityWarning,
 				Channels: []string{"chan-webhook-1"},
 			},
@@ -124,7 +124,7 @@ func TestAlertsAction_Save_InvalidFieldsKeyed(t *testing.T) {
 	admin, _ := testAlertsViewers()
 
 	_, err := handle(context.Background(), admin, nil, mustJSONAlerts(t, saveAlertRuleInput{
-		Name: "x", Condition: "condicao-inexistente", Threshold: "catastrofico", Channel: "canal-fantasma",
+		Name: "x", Condition: "nonexistent-condition", Threshold: "catastrophic", Channel: "ghost-channel",
 	}))
 
 	var fe sdui.FieldErrors
@@ -180,7 +180,7 @@ func TestAlertsAction_Save_ValidRuleInvalidatesAndAudits(t *testing.T) {
 	admin, _ := testAlertsViewers()
 
 	result, err := handle(context.Background(), admin, nil, mustJSONAlerts(t, saveAlertRuleInput{
-		Name: "Nova regra", Condition: "job.failed", Threshold: notify.SeverityWarning,
+		Name: "New rule", Condition: "job.failed", Threshold: notify.SeverityWarning,
 		Channel: "chan-telegram-1", Enabled: true,
 	}))
 	if err != nil {

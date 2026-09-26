@@ -218,7 +218,7 @@ type SystemDeps struct {
 	// authenticated user, system-wide TCP/UDP listening sockets. This is
 	// deliberately NOT handlers_port.go's private listListeningPorts() (a
 	// narrower, admin-only, loopback-only dev-port-forwarding feature
-	// unrelated to the web panel's "Portas/Conexões" page).
+	// unrelated to the web panel's "Ports/Connections" page).
 	ListPorts func() ([]sysextra.Port, error)
 
 	// ListUnits mirrors handleUnits: sysextra.ListUnits(), open read, no
@@ -397,8 +397,8 @@ type SecurityDeps struct {
 	// closure must perform and for why password reset is NOT part of this.
 	SaveUser func(UserInput) (*UserRow, error)
 	// DeleteUser wraps internal/config.RemoveUser. The self-delete guard
-	// (mirroring handlers_users.go's unconditional 403 "não pode deletar o
-	// próprio usuário") and the Primary-target guard both live in
+	// (mirroring handlers_users.go's unconditional 403 on deleting your own
+	// user) and the Primary-target guard both live in
 	// security_actions.go, BEFORE this closure is ever called — this
 	// closure itself performs no guard beyond what RemoveUser's own error
 	// already provides, exactly like DockerDeps.RemoveContainer performs no
@@ -450,13 +450,12 @@ type SecurityDeps struct {
 }
 
 // NetworkDeps is the injection seam for the four Network screens (ufw,
-// adguard, devices, economia) and their actions — all four registered under
+// adguard, devices, data saver) and their actions — all four registered under
 // the "security." screen id prefix by RegisterNetwork (security.go), even
 // though the backing seam is a separate struct from SecurityDeps: the four
 // domains (firewall, DNS filtering, VLESS/singbox device provisioning,
 // per-device network usage) are four genuinely distinct subsystems with no
-// shared shape, so splitting the seam mirrors the actual domain boundary —
-// see PLAN.md's Blocker 3 ("rede" was never one screen, it was four).
+// shared shape, so splitting the seam mirrors the actual domain boundary.
 // internal/api/api.go constructs one value of this type from
 // handlers_system.go's UFW helpers, *adguard.Client, *singbox.Manager and
 // *netusage.Tracker, and passes it to RegisterNetwork below.
@@ -539,15 +538,14 @@ type NetworkDeps struct {
 	AuditEvent func(user, action, target string)
 }
 
-// MiscDeps is the injection seam for the four screens fanned out by Plano
-// 08-06: ai.settings, jira.issues, deploy.apps, queue.jobs. Kept in one
+// MiscDeps is the injection seam for four screens: ai.settings, jira.issues, deploy.apps, queue.jobs. Kept in one
 // struct (unlike Security/Network's split into two) because none of these
 // four domains is on its own large enough to earn a dedicated *Deps type —
 // see misc.go's package-level doc comment for why these four are grouped,
 // and for the explicit boundary against Phase 6's self-deployment mechanism
 // (ops_deploy.go/ops_health.go), which this struct's closures never call.
 type MiscDeps struct {
-	// ai.settings: tiering de modelos — NUNCA segredos --------
+	// ai.settings: model tiering, NEVER secrets.
 	// AIModelsConfig mirrors handleAIModelsConfig's GET branch: the current
 	// config plus the resolved effective model per tier (env > config >
 	// default). Only model-tier strings (haiku/sonnet/opus/fable/"") ever
@@ -563,7 +561,7 @@ type MiscDeps struct {
 	// the panel's own defense in depth.
 	SaveAIModels func(config.AIModels) error
 
-	// --- jira.issues: gerencia issues (list/view/transition/comment) ------
+	// jira.issues: manages issues (list/view/transition/comment).
 	// Deliberately does NOT reproduce the web panel's kanban board (PLAN.md
 	// Risks: "permanently, not for now, see 08-05's gameconsole precedent")
 	// — this screen is a table + detail, never a board/column component.
@@ -659,7 +657,7 @@ type MiscDeps struct {
 // (ID/Name/Enabled/TypePrefix/MinSeverity/Channels). SourcePrefix/Labels are
 // deliberately absent from this seam entirely, mirroring AuditFilter's
 // "deliberately minimal for v1" precedent above: a rule saved from the web
-// panel's own Alertas tab with those set keeps them untouched, this seam
+// panel's own Alerts tab with those set keeps them untouched, this seam
 // simply never reads or edits them.
 type AlertRuleRow struct {
 	ID          string
@@ -689,7 +687,7 @@ type AlertRuleInput struct {
 // ChannelOption is one entry of AlertsDeps.ChannelOptions — the live catalog
 // of configured notify.ChannelDef instances a rule can route to (id + human
 // label), sourced from internal/notify's own channel store, never a
-// hardcoded list, so a channel the panel's own Alertas tab has not
+// hardcoded list, so a channel the panel's own Alerts tab has not
 // configured never appears as a selectable option here either.
 type ChannelOption struct {
 	Value string
@@ -698,7 +696,7 @@ type ChannelOption struct {
 
 // EventOption is one entry of AlertsDeps.EventOptions — the type_prefix
 // catalog a rule's "condition" field selects from, sourced from internal/api's
-// own notify event catalog (the same catalog the panel's own Alertas tab
+// own notify event catalog (the same catalog the panel's own Alerts tab
 // rule-builder form renders), never invented here.
 type EventOption struct {
 	Value string

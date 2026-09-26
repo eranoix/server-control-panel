@@ -49,8 +49,8 @@ func buildLabUpdate(t *testing.T) labUpdate {
 	// APK format — the server only serves files and compares hashes. The proof
 	// that the patch reconstructs a real APK lives in
 	// scripts/test-android-patches.sh, with real hdiffz/hpatchz.
-	shaAPKNew := hashHex([]byte("apk-versao-nova"))
-	shaAPKBase := hashHex([]byte("apk-versao-antiga"))
+	shaAPKNew := hashHex([]byte("apk-new-version"))
+	shaAPKBase := hashHex([]byte("apk-old-version"))
 
 	fullContent := bytes.Repeat([]byte("F"), 1000)
 	patchContent := bytes.Repeat([]byte("P"), 300)
@@ -152,7 +152,7 @@ func TestAppUpdate_KnownBase_ReturnsPatch(t *testing.T) {
 		t.Fatalf("full.size_bytes = %d, want 1000", got.Full.SizeBytes)
 	}
 	if got.Latest.SHA256 != lab.shaAPKNew || got.Latest.VersionCode != 6 {
-		t.Fatalf("latest inesperado: %+v", got.Latest)
+		t.Fatalf("unexpected latest: %+v", got.Latest)
 	}
 	if got.PatchTool == "" {
 		t.Fatal("patch_tool empty — the format-incompatibility diagnosis is lost")
@@ -164,7 +164,7 @@ func TestAppUpdate_KnownBase_ReturnsPatch(t *testing.T) {
 // patch. It is "no patch" + the full path.
 func TestAppUpdate_UnknownBase_NullPatchAndFullPresent(t *testing.T) {
 	lab := buildLabUpdate(t)
-	unknown := hashHex([]byte("apk-que-o-servidor-nunca-viu"))
+	unknown := hashHex([]byte("apk-the-server-never-saw"))
 	rec := requestUpdate(t, lab.dataDir, "?base_sha256="+unknown)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
@@ -177,7 +177,7 @@ func TestAppUpdate_UnknownBase_NullPatchAndFullPresent(t *testing.T) {
 		t.Fatal("up_to_date = true for an unknown base")
 	}
 	if got.Full.SHA256 == "" || got.Full.URL == "" {
-		t.Fatalf("full incompleto: %+v", got.Full)
+		t.Fatalf("incomplete full: %+v", got.Full)
 	}
 }
 
@@ -343,12 +343,12 @@ func TestAppUpdateArtifact_NotInManifest_404(t *testing.T) {
 	lab := buildLabUpdate(t)
 
 	// A real file, in the updates directory, but absent from the manifest.
-	writeOut(t, filepath.Join(androidupdate.Dir(lab.dataDir), "full", "intruso.hdiff"), []byte("x"))
+	writeOut(t, filepath.Join(androidupdate.Dir(lab.dataDir), "full", "intruder.hdiff"), []byte("x"))
 	// And a plausible secret outside the directory, the target of a traversal.
-	writeOut(t, filepath.Join(lab.dataDir, "secrets.vault"), []byte("SEGREDO"))
+	writeOut(t, filepath.Join(lab.dataDir, "secrets.vault"), []byte("SECRET"))
 
 	for _, name := range []string{
-		"full/intruso.hdiff",
+		"full/intruder.hdiff",
 		"../secrets.vault",
 		"../../etc/passwd",
 		"/etc/passwd",
@@ -359,7 +359,7 @@ func TestAppUpdateArtifact_NotInManifest_404(t *testing.T) {
 		if rec.Code == http.StatusOK {
 			t.Fatalf("file=%q returned 200 — the manifest allowlist did not hold", name)
 		}
-		if bytes.Contains(rec.Body.Bytes(), []byte("SEGREDO")) {
+		if bytes.Contains(rec.Body.Bytes(), []byte("SECRET")) {
 			t.Fatalf("file=%q leaked content from outside the updates directory", name)
 		}
 	}

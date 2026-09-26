@@ -13,7 +13,7 @@ import (
 // updateGoldenScreens is Go's standard golden-test flag: running with
 // `-update` regenerates the files instead of comparing them. `make
 // sdui-golden` is the only sanctioned way to invoke it.
-var updateGoldenScreens = flag.Bool("update", false, "regenera os goldens de tela SDUI em contracts/sdui/fixtures/screens/")
+var updateGoldenScreens = flag.Bool("update", false, "regenerates the SDUI screen goldens in contracts/sdui/fixtures/screens/")
 
 // screensGoldenDir is where the screen goldens live — inside the same
 // Go/Kotlin shared fixture tree (see fixtures/README.md), in a subfolder of

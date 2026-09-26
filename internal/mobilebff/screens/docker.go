@@ -341,7 +341,7 @@ func buildDockerPruneScreen() *sdui.Envelope {
 // --- Rows endpoints -------------------------------------------------------
 
 func registerDockerContainersRows(api huma.API, deps DockerDeps, mbDeps mobilebff.Deps) {
-	registerDockerRows(api, "getDockerContainerRows", "/docker/containers", "Linhas de docker.containers", mbDeps.Cfg,
+	registerDockerRows(api, "getDockerContainerRows", "/docker/containers", "Rows of docker.containers", mbDeps.Cfg,
 		func(ctx context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.ListContainers(ctx)
 			if err != nil {
@@ -356,7 +356,7 @@ func registerDockerContainersRows(api huma.API, deps DockerDeps, mbDeps mobilebf
 }
 
 func registerDockerImagesRows(api huma.API, deps DockerDeps, mbDeps mobilebff.Deps) {
-	registerDockerRows(api, "getDockerImageRows", "/docker/images", "Linhas de docker.images", mbDeps.Cfg,
+	registerDockerRows(api, "getDockerImageRows", "/docker/images", "Rows of docker.images", mbDeps.Cfg,
 		func(ctx context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.ListImages(ctx)
 			if err != nil {
@@ -371,7 +371,7 @@ func registerDockerImagesRows(api huma.API, deps DockerDeps, mbDeps mobilebff.De
 }
 
 func registerDockerVolumesRows(api huma.API, deps DockerDeps, mbDeps mobilebff.Deps) {
-	registerDockerRows(api, "getDockerVolumeRows", "/docker/volumes", "Linhas de docker.volumes", mbDeps.Cfg,
+	registerDockerRows(api, "getDockerVolumeRows", "/docker/volumes", "Rows of docker.volumes", mbDeps.Cfg,
 		func(ctx context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.ListVolumes(ctx)
 			if err != nil {
@@ -389,7 +389,7 @@ func registerDockerVolumesRows(api huma.API, deps DockerDeps, mbDeps mobilebff.D
 }
 
 func registerDockerNetworksRows(api huma.API, deps DockerDeps, mbDeps mobilebff.Deps) {
-	registerDockerRows(api, "getDockerNetworkRows", "/docker/networks", "Linhas de docker.networks", mbDeps.Cfg,
+	registerDockerRows(api, "getDockerNetworkRows", "/docker/networks", "Rows of docker.networks", mbDeps.Cfg,
 		func(ctx context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.ListNetworks(ctx)
 			if err != nil {
@@ -404,7 +404,7 @@ func registerDockerNetworksRows(api huma.API, deps DockerDeps, mbDeps mobilebff.
 }
 
 func registerDockerComposeRows(api huma.API, deps DockerDeps, mbDeps mobilebff.Deps) {
-	registerDockerRows(api, "getDockerComposeRows", "/docker/compose", "Linhas de docker.compose", mbDeps.Cfg,
+	registerDockerRows(api, "getDockerComposeRows", "/docker/compose", "Rows of docker.compose", mbDeps.Cfg,
 		func(ctx context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.ListComposeStacks(ctx)
 			if err != nil {

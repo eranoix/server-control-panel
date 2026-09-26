@@ -138,8 +138,8 @@ func TestPasskeyRegisterFinish_NeverReturnsToken(t *testing.T) {
 	srv := newPasskeyTestServer(t, backend)
 
 	resp, body := postJSON(t, srv, "/auth/passkey/register/finish", map[string]any{
-		"continuation_token": "qualquer-coisa",
-		"label":              "Pixel de teste",
+		"continuation_token": "anything",
+		"label":              "Test Pixel",
 		"credential":         json.RawMessage(`{"id":"abc"}`),
 	})
 
@@ -246,8 +246,8 @@ func TestPasskeyLoginFinish_PendingApproval_NoToken(t *testing.T) {
 func TestPasskeyLoginFinish_Success_ReturnsAccessAndRefreshToken(t *testing.T) {
 	backend := &fakePasskeyBackend{
 		finishLoginResult: MobileLoginResult{
-			AccessToken:  "jwt-de-teste",
-			RefreshToken: "sam.refresh-de-teste",
+			AccessToken:  "test-jwt",
+			RefreshToken: "sam.test-refresh",
 			ExpiresIn:    43200,
 		},
 		allowLogin: true,
@@ -261,11 +261,11 @@ func TestPasskeyLoginFinish_Success_ReturnsAccessAndRefreshToken(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, expected 200: %v", resp.StatusCode, body)
 	}
-	if body["access_token"] != "jwt-de-teste" {
-		t.Fatalf("body[\"access_token\"] = %v, expected \"jwt-de-teste\"", body["access_token"])
+	if body["access_token"] != "test-jwt" {
+		t.Fatalf("body[\"access_token\"] = %v, expected \"test-jwt\"", body["access_token"])
 	}
-	if body["refresh_token"] != "sam.refresh-de-teste" {
-		t.Fatalf("body[\"refresh_token\"] = %v, expected \"sam.refresh-de-teste\"", body["refresh_token"])
+	if body["refresh_token"] != "sam.test-refresh" {
+		t.Fatalf("body[\"refresh_token\"] = %v, expected \"sam.test-refresh\"", body["refresh_token"])
 	}
 	if body["expires_in"] != float64(43200) {
 		t.Fatalf("body[\"expires_in\"] = %v, expected 43200", body["expires_in"])
@@ -290,7 +290,7 @@ func TestPasskeyRegisterFinish_UnwrappedBackendError_NeverLeaksServerPath(t *tes
 	leakedPath := "/opt/panel/data/users/sam/webauthn/credentials.json"
 	underlying := &os.PathError{Op: "open", Path: leakedPath, Err: errors.New("no such file or directory")}
 	backend := &fakePasskeyBackend{
-		finishRegErr: fmt.Errorf("passkey: lendo credenciais aprovadas: %w", underlying),
+		finishRegErr: fmt.Errorf("passkey: reading approved credentials: %w", underlying),
 	}
 	srv := newPasskeyTestServer(t, backend)
 

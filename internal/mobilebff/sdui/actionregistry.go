@@ -104,7 +104,7 @@ var (
 // boot.
 func RegisterAction(desc ActionDescriptor, authorize func(Viewer) bool, h ActionHandler) {
 	if desc.ActionID == "" {
-		panic("sdui: RegisterAction: ActionID vazio")
+		panic("sdui: RegisterAction: empty ActionID")
 	}
 	if authorize == nil {
 		panic("sdui: RegisterAction(" + desc.ActionID + "): authorize is required — no action may be registered without an explicit authorization decision")

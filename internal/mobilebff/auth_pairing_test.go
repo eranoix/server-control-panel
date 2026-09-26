@@ -19,15 +19,15 @@ import (
 // guarantee: even when the backend signals success, the only data field in the
 // body is "reg_token" — never a session token.
 func TestMobilePairConsume_Success_ReturnsOnlyRegToken(t *testing.T) {
-	backend := &fakePasskeyBackend{pairingRegToken: "reg-tok-de-teste"}
+	backend := &fakePasskeyBackend{pairingRegToken: "test-reg-tok"}
 	srv := newPasskeyTestServer(t, backend)
 
-	resp, body := postJSON(t, srv, "/auth/pair", map[string]any{"ticket": "qualquer-ticket"})
+	resp, body := postJSON(t, srv, "/auth/pair", map[string]any{"ticket": "any-ticket"})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, expected 200: %v", resp.StatusCode, body)
 	}
-	if body["reg_token"] != "reg-tok-de-teste" {
-		t.Fatalf("body[\"reg_token\"] = %v, expected \"reg-tok-de-teste\"", body["reg_token"])
+	if body["reg_token"] != "test-reg-tok" {
+		t.Fatalf("body[\"reg_token\"] = %v, expected \"test-reg-tok\"", body["reg_token"])
 	}
 	for _, forbidden := range []string{"token", "access_token", "refresh_token", "session", "jwt"} {
 		if _, present := body[forbidden]; present {
@@ -47,7 +47,7 @@ func TestMobilePairConsume_InvalidTicketFails(t *testing.T) {
 	backend := &fakePasskeyBackend{pairingErr: ErrPairingTicketInvalid}
 	srv := newPasskeyTestServer(t, backend)
 
-	resp, body := postJSON(t, srv, "/auth/pair", map[string]any{"ticket": "ticket-invalido"})
+	resp, body := postJSON(t, srv, "/auth/pair", map[string]any{"ticket": "invalid-ticket"})
 	if resp.StatusCode == http.StatusOK {
 		t.Fatalf("expected an HTTP error for an invalid ticket, got 200: %v", body)
 	}

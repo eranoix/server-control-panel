@@ -64,7 +64,7 @@ func TestWhatsAppMedia_Get_CallsDownloadAndDelegatesToServeMediaRel(t *testing.T
 // truth for the status).
 func TestWhatsAppMedia_Get_DownloadErrorBecomesRightStatus(t *testing.T) {
 	svc := &fakeWhatsappSvc{
-		downloadErr: &whatsapp.DownloadMediaError{Status: http.StatusNotFound, Msg: "mensagem nao encontrada"},
+		downloadErr: &whatsapp.DownloadMediaError{Status: http.StatusNotFound, Msg: "message not found"},
 	}
 	_, mux := newWhatsappMediaTestAPI(svc)
 
@@ -127,11 +127,11 @@ func TestWhatsAppMedia_Upload_DelegatesToSendFileDedup(t *testing.T) {
 	svc := &fakeWhatsappSvc{sendFileID: "wamid-upload-1"}
 	_, mux := newWhatsappMediaTestAPI(svc)
 
-	content := []byte("conteudo-do-arquivo-de-teste")
-	body, contentType := buildMultipart(t, "foto.jpg", content, map[string]string{
-		"client_msg_id": "cliente-upload-1",
-		"caption":       "uma legenda",
-		"quoted_id":     "msg-anterior",
+	content := []byte("test-file-content")
+	body, contentType := buildMultipart(t, "photo.jpg", content, map[string]string{
+		"client_msg_id": "client-upload-1",
+		"caption":       "a caption",
+		"quoted_id":     "previous-msg",
 	})
 
 	req := newAuthedRequest(http.MethodPost, "/api/mobile/v1/whatsapp/chats/jid123/media", nil)
@@ -152,7 +152,7 @@ func TestWhatsAppMedia_Upload_DelegatesToSendFileDedup(t *testing.T) {
 		t.Fatalf("jid = %q, want jid123", svc.lastSendFileJID)
 	}
 	got := svc.lastSendFileArg
-	if got.filename != "foto.jpg" || got.caption != "uma legenda" || got.quotedID != "msg-anterior" || got.clientMsgID != "cliente-upload-1" {
+	if got.filename != "photo.jpg" || got.caption != "a caption" || got.quotedID != "previous-msg" || got.clientMsgID != "client-upload-1" {
 		t.Fatalf("args = %+v", got)
 	}
 	if !bytes.Equal(got.data, content) {
@@ -168,7 +168,7 @@ func TestWhatsAppMedia_Upload_DelegatesToSendFileDedup(t *testing.T) {
 // (422 — the same status as any other missing required field in the BFF)
 // before any call to the service.
 func TestWhatsAppMedia_Upload_NoFileReturns422(t *testing.T) {
-	svc := &fakeWhatsappSvc{sendFileID: "nao-deveria-ser-usado"}
+	svc := &fakeWhatsappSvc{sendFileID: "should-not-be-used"}
 	_, mux := newWhatsappMediaTestAPI(svc)
 
 	buf := &bytes.Buffer{}

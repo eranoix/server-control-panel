@@ -122,8 +122,8 @@ func RegisterMisc(deps MiscDeps) {
 
 	// Catalog entries. The four screens in this file fall into different
 	// groups on purpose: queue and deploy are things that HAPPEN on the
-	// machine (Automação), while AI and Jira are OUTSIDE services the panel
-	// talks to (Integrações).
+	// machine (Automation), while AI and Jira are OUTSIDE services the panel
+	// talks to (Integrations).
 	//
 	// jira.issues is alwaysVisible despite looking sensitive: its visibility
 	// axis is not role, it is per-user CREDENTIAL
@@ -138,7 +138,7 @@ func RegisterMisc(deps MiscDeps) {
 	registerMiscActions(deps)
 
 	mobilebff.Register("jira.issues.rows", func(api huma.API, mbDeps mobilebff.Deps) {
-		registerMiscRows(api, "getJiraIssuesRows", "/jira/issues", "Linhas de jira.issues", mbDeps.Cfg,
+		registerMiscRows(api, "getJiraIssuesRows", "/jira/issues", "Rows of jira.issues", mbDeps.Cfg,
 			func(ctx context.Context, v sdui.Viewer) ([]map[string]any, error) {
 				connected, project := deps.JiraStatus(v.Username)
 				if !connected {
@@ -160,7 +160,7 @@ func RegisterMisc(deps MiscDeps) {
 			})
 	})
 	mobilebff.Register("jira.issue-detail", func(api huma.API, mbDeps mobilebff.Deps) {
-		registerMiscDetail(api, "getJiraIssueDetail", "/jira/issue-detail", "Detalhe da issue selecionada de jira.issues", mbDeps.Cfg,
+		registerMiscDetail(api, "getJiraIssueDetail", "/jira/issue-detail", "Detail of the selected jira.issues issue", mbDeps.Cfg,
 			func(ctx context.Context, v sdui.Viewer) (map[string]any, error) {
 				key := jiraSelectedIssueFor(v.Username)
 				if key == "" {
@@ -174,7 +174,7 @@ func RegisterMisc(deps MiscDeps) {
 			})
 	})
 	mobilebff.Register("jira.issue-transitions", func(api huma.API, mbDeps mobilebff.Deps) {
-		registerMiscRows(api, "getJiraIssueTransitions", "/jira/issue-transitions", "Transições disponíveis para a issue selecionada", mbDeps.Cfg,
+		registerMiscRows(api, "getJiraIssueTransitions", "/jira/issue-transitions", "Transitions available for the selected issue", mbDeps.Cfg,
 			func(ctx context.Context, v sdui.Viewer) ([]map[string]any, error) {
 				key := jiraSelectedIssueFor(v.Username)
 				if key == "" {
@@ -193,7 +193,7 @@ func RegisterMisc(deps MiscDeps) {
 	})
 
 	mobilebff.Register("deploy.apps.rows", func(api huma.API, mbDeps mobilebff.Deps) {
-		registerMiscRows(api, "getDeployAppsRows", "/deploy/apps", "Linhas de deploy.apps", mbDeps.Cfg,
+		registerMiscRows(api, "getDeployAppsRows", "/deploy/apps", "Rows of deploy.apps", mbDeps.Cfg,
 			func(_ context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 				apps, err := deps.ListDeployApps()
 				if err != nil {
@@ -208,7 +208,7 @@ func RegisterMisc(deps MiscDeps) {
 	})
 
 	mobilebff.Register("queue.jobs.rows", func(api huma.API, mbDeps mobilebff.Deps) {
-		registerMiscRows(api, "getQueueJobsRows", "/queue/jobs", "Linhas de queue.jobs", mbDeps.Cfg,
+		registerMiscRows(api, "getQueueJobsRows", "/queue/jobs", "Rows of queue.jobs", mbDeps.Cfg,
 			func(_ context.Context, v sdui.Viewer) ([]map[string]any, error) {
 				owner := ""
 				if !v.IsAdmin() {
@@ -262,7 +262,7 @@ func buildAISettingsScreenForViewer(v sdui.Viewer, deps MiscDeps) (*sdui.Envelop
 	return buildAISettingsScreen(deps), nil
 }
 
-// aiModelOptionValue maps a persisted "" (herda o default do processo) to
+// aiModelOptionValue maps a persisted "" (inherits the process default) to
 // the wire value "inherit" a select field can carry — internal/aimodel's
 // own normalize() already treats "inherit" as an alias for "" on the way
 // back in (aimodel.Allowed("inherit") == true), so this is a display

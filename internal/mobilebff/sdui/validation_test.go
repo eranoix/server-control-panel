@@ -18,7 +18,7 @@ const validationErrorFixturePath = "../../../contracts/sdui/fixtures/validation-
 func TestFieldErrors_MarshalsToCommittedFixture(t *testing.T) {
 	fe := FieldErrors{
 		"name":     {"required"},
-		"schedule": {"cron inválido: campo de minuto fora do intervalo 0-59"},
+		"schedule": {"invalid cron: minute field out of range 0-59"},
 	}
 
 	got, err := json.Marshal(fe)
@@ -28,7 +28,7 @@ func TestFieldErrors_MarshalsToCommittedFixture(t *testing.T) {
 
 	want, err := os.ReadFile(validationErrorFixturePath)
 	if err != nil {
-		t.Fatalf("lendo fixture %s: %v", validationErrorFixturePath, err)
+		t.Fatalf("reading fixture %s: %v", validationErrorFixturePath, err)
 	}
 
 	var gotVal, wantVal any
@@ -36,7 +36,7 @@ func TestFieldErrors_MarshalsToCommittedFixture(t *testing.T) {
 		t.Fatalf("decoding FieldErrors output: %v (%s)", err, got)
 	}
 	if err := json.Unmarshal(want, &wantVal); err != nil {
-		t.Fatalf("decodificando fixture: %v (%s)", err, want)
+		t.Fatalf("decoding fixture: %v (%s)", err, want)
 	}
 	if !reflect.DeepEqual(gotVal, wantVal) {
 		t.Fatalf("produced FieldErrors diverges from the fixture:\nproduced: %s\nfixture:   %s", got, want)
@@ -60,11 +60,11 @@ func TestFieldErrors_Validate(t *testing.T) {
 		fe      FieldErrors
 		wantErr bool
 	}{
-		{"válido", FieldErrors{"name": {"required"}}, false},
-		{"mapa vazio", FieldErrors{}, true},
-		{"chave vazia", FieldErrors{"": {"x"}}, true},
-		{"slice de mensagens vazio", FieldErrors{"name": {}}, true},
-		{"mensagem vazia", FieldErrors{"name": {""}}, true},
+		{"valid", FieldErrors{"name": {"required"}}, false},
+		{"empty map", FieldErrors{}, true},
+		{"empty key", FieldErrors{"": {"x"}}, true},
+		{"empty message slice", FieldErrors{"name": {}}, true},
+		{"empty message", FieldErrors{"name": {""}}, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -100,7 +100,7 @@ func TestFieldErrors_MatchesForm(t *testing.T) {
 
 	// ConfirmationFieldKey is reserved and always passes, even when it is not
 	// among the form's fields.
-	if err := (FieldErrors{ConfirmationFieldKey: {"confirmação obrigatória"}}).MatchesForm(form); err != nil {
+	if err := (FieldErrors{ConfirmationFieldKey: {"confirmation required"}}).MatchesForm(form); err != nil {
 		t.Fatalf("MatchesForm with ConfirmationFieldKey: %v", err)
 	}
 }

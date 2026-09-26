@@ -24,7 +24,7 @@ var (
 // sdui.Register and sdui.RegisterAction.
 func RegisterForbiddenForNonAdmin(screenID string, fn func() []string) {
 	if screenID == "" {
-		panic("sdui: RegisterForbiddenForNonAdmin: screenID vazio")
+		panic("sdui: RegisterForbiddenForNonAdmin: empty screenID")
 	}
 	if fn == nil {
 		panic("sdui: RegisterForbiddenForNonAdmin(" + screenID + "): fn is required")

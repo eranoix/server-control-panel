@@ -166,22 +166,22 @@ var (
 
 type passkeyRegisterBeginInput struct {
 	Body struct {
-		RegToken string `json:"reg_token" doc:"Token de autorização de UMA cerimônia de registro, emitido pelo pareamento por QR code (03-04)."`
+		RegToken string `json:"reg_token" doc:"Authorization token for ONE registration ceremony, issued by QR code pairing."`
 	}
 }
 
 type passkeyRegisterBeginOutput struct {
 	Body struct {
-		Options           json.RawMessage `json:"options" doc:"PublicKeyCredentialCreationOptions — repassar ao autenticador (navigator.credentials.create() / WebAuthn Android)."`
-		ContinuationToken string          `json:"continuation_token" doc:"Enviar sem alteração em /register/finish."`
+		Options           json.RawMessage `json:"options" doc:"PublicKeyCredentialCreationOptions: pass to the authenticator (navigator.credentials.create() / WebAuthn Android)."`
+		ContinuationToken string          `json:"continuation_token" doc:"Send unchanged to /register/finish."`
 	}
 }
 
 type passkeyRegisterFinishInput struct {
 	Body struct {
 		ContinuationToken string          `json:"continuation_token"`
-		Label             string          `json:"label,omitempty" doc:"Rótulo do dispositivo, mostrado na tela de aprovação (ex.: 'Pixel 8 — Chrome')."`
-		Credential        json.RawMessage `json:"credential" doc:"Resposta bruta do autenticador (PublicKeyCredential serializado)."`
+		Label             string          `json:"label,omitempty" doc:"Device label shown on the approval screen (e.g. 'Pixel 8 - Chrome')."`
+		Credential        json.RawMessage `json:"credential" doc:"Raw authenticator response (serialized PublicKeyCredential)."`
 	}
 }
 
@@ -199,15 +199,15 @@ type passkeyLoginBeginInput struct{}
 
 type passkeyLoginBeginOutput struct {
 	Body struct {
-		Options           json.RawMessage `json:"options" doc:"PublicKeyCredentialRequestOptions — repassar ao autenticador."`
-		ContinuationToken string          `json:"continuation_token" doc:"Enviar sem alteração em /login/finish."`
+		Options           json.RawMessage `json:"options" doc:"PublicKeyCredentialRequestOptions: pass to the authenticator."`
+		ContinuationToken string          `json:"continuation_token" doc:"Send unchanged to /login/finish."`
 	}
 }
 
 type passkeyLoginFinishInput struct {
 	Body struct {
 		ContinuationToken string          `json:"continuation_token"`
-		Credential        json.RawMessage `json:"credential" doc:"Resposta bruta do autenticador (PublicKeyCredential serializado)."`
+		Credential        json.RawMessage `json:"credential" doc:"Raw authenticator response (serialized PublicKeyCredential)."`
 	}
 }
 
@@ -220,11 +220,11 @@ type passkeyLoginFinishInput struct {
 type passkeyLoginFinishOutput struct {
 	Status int
 	Body   struct {
-		AccessToken  string `json:"access_token,omitempty" doc:"JWT de sessão — presente somente quando a credencial já está aprovada."`
-		RefreshToken string `json:"refresh_token,omitempty" doc:"Refresh token mobile rotativo — mesma família de auth_login.go, presente junto com access_token."`
-		ExpiresIn    int    `json:"expires_in,omitempty" doc:"Validade do access_token em segundos."`
-		Error        string `json:"error,omitempty" doc:"Código de erro estável (ex.: 'pending_approval'). Ausente em caso de sucesso."`
-		Message      string `json:"message,omitempty" doc:"Mensagem legível para exibir ao usuário. Ausente em caso de sucesso."`
+		AccessToken  string `json:"access_token,omitempty" doc:"Session JWT, present only when the credential is already approved."`
+		RefreshToken string `json:"refresh_token,omitempty" doc:"Rotating mobile refresh token (same family as auth_login.go), present together with access_token."`
+		ExpiresIn    int    `json:"expires_in,omitempty" doc:"access_token lifetime in seconds."`
+		Error        string `json:"error,omitempty" doc:"Stable error code (e.g. 'pending_approval'). Absent on success."`
+		Message      string `json:"message,omitempty" doc:"Human-readable message to show the user. Absent on success."`
 	}
 }
 
@@ -237,7 +237,7 @@ func registerPasskey(api huma.API, deps Deps) {
 		OperationID: "passkeyRegisterBegin",
 		Method:      http.MethodPost,
 		Path:        "/auth/passkey/register/begin",
-		Summary:     "Inicia o registro de uma passkey",
+		Summary:     "Starts registering a passkey",
 		Tags:        []string{"mobile", "auth"},
 	}, func(_ context.Context, in *passkeyRegisterBeginInput) (*passkeyRegisterBeginOutput, error) {
 		if pk == nil {
@@ -257,8 +257,8 @@ func registerPasskey(api huma.API, deps Deps) {
 		OperationID: "passkeyRegisterFinish",
 		Method:      http.MethodPost,
 		Path:        "/auth/passkey/register/finish",
-		Summary:     "Conclui o registro de uma passkey — NUNCA autentica",
-		Description: "Sucesso aqui SEMPRE devolve {\"status\":\"pending_approval\"}. A credencial nasce inerte e só pode logar depois de aprovada a partir de uma sessão desktop já autenticada.",
+		Summary:     "Finishes registering a passkey (NEVER authenticates)",
+		Description: "Success here ALWAYS returns {\"status\":\"pending_approval\"}. The credential starts inert and can only log in after it is approved from an already authenticated desktop session.",
 		Tags:        []string{"mobile", "auth"},
 	}, func(_ context.Context, in *passkeyRegisterFinishInput) (*passkeyRegisterFinishOutput, error) {
 		if pk == nil {
@@ -276,7 +276,7 @@ func registerPasskey(api huma.API, deps Deps) {
 		OperationID: "passkeyLoginBegin",
 		Method:      http.MethodPost,
 		Path:        "/auth/passkey/login/begin",
-		Summary:     "Inicia um login sem senha (passkey discoverable)",
+		Summary:     "Starts a passwordless login (discoverable passkey)",
 		Tags:        []string{"mobile", "auth"},
 		Middlewares: huma.Middlewares{injectClientMeta},
 	}, func(ctx context.Context, _ *passkeyLoginBeginInput) (*passkeyLoginBeginOutput, error) {
@@ -301,8 +301,8 @@ func registerPasskey(api huma.API, deps Deps) {
 		OperationID: "passkeyLoginFinish",
 		Method:      http.MethodPost,
 		Path:        "/auth/passkey/login/finish",
-		Summary:     "Conclui o login sem senha",
-		Description: "Sucesso devolve access_token + refresh_token (mesma forma de /auth/login). 403 {\"error\":\"pending_approval\"} quando a credencial existe mas ainda não foi aprovada no painel.",
+		Summary:     "Finishes the passwordless login",
+		Description: "Success returns access_token + refresh_token (same shape as /auth/login). 403 {\"error\":\"pending_approval\"} when the credential exists but has not been approved in the panel yet.",
 		Tags:        []string{"mobile", "auth"},
 		Middlewares: huma.Middlewares{injectClientMeta},
 	}, func(ctx context.Context, in *passkeyLoginFinishInput) (*passkeyLoginFinishOutput, error) {

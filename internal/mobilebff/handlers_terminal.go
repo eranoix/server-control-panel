@@ -90,9 +90,9 @@ type ScrollbackResponse struct {
 }
 
 type scrollbackInput struct {
-	Name  string `query:"name" required:"true" doc:"Nome da sessão de terminal"`
-	Lines int    `query:"lines" default:"5000" doc:"Quantidade máxima de linhas de histórico"`
-	Plain bool   `query:"plain" doc:"Se true, devolve texto sem escapes ANSI (para copiar)"`
+	Name  string `query:"name" required:"true" doc:"Terminal session name"`
+	Lines int    `query:"lines" default:"5000" doc:"Maximum number of history lines"`
+	Plain bool   `query:"plain" doc:"If true, returns text without ANSI escapes (for copying)"`
 }
 
 type scrollbackOutput struct {
@@ -110,11 +110,9 @@ type scrollbackOutput struct {
 // app replays that log into its own emulator to rebuild the session, and an old
 // slice applied before the live stream paints one picture over another.
 //
-// That is exactly what happened: the app's read cache (`CacheDeLeitura`) makes
-// every successful GET cacheable and, when the network fails — which Android 15+
-// causes all by itself by cutting the app's network in the background — it
-// serves a copy up to seven days old. The owner only escaped by clearing the
-// app's storage.
+// The app's read cache makes every successful GET cacheable and serves a copy
+// up to seven days old when the network fails (Android 15+ cuts background
+// network on its own).
 //
 // `no-store` is what the app's cache already respects explicitly, so saying it
 // here fixes any version of it.
@@ -139,12 +137,12 @@ const noCache = "no-store"
 // not fit in the request. The app uses that to tell the truth on screen instead
 // of suggesting that is all there ever was.
 type RawLogResponse struct {
-	Base64 string `json:"base64" doc:"Log cru da sessão, codificado em base64"`
-	Bytes  int    `json:"bytes" doc:"Quantos bytes de log estão nesta resposta"`
-	Total  int    `json:"total" doc:"Tamanho total do log disponível no servidor"`
+	Base64 string `json:"base64" doc:"Raw session log, base64-encoded"`
+	Bytes  int    `json:"bytes" doc:"How many log bytes are in this response"`
+	Total  int    `json:"total" doc:"Total size of the log available on the server"`
 }
 
-// HistoryResponse delivers the session's RENDERED history — the lines that
+// HistoricoResponse delivers the session's RENDERED history — the lines that
 // have already scrolled off the screen, as append-only text.
 //
 // The difference from the raw log is not one of format, it is one of nature:
@@ -164,26 +162,28 @@ type RawLogResponse struct {
 //
 // base64 for the same reason as the raw log: there are still SGR sequences in
 // the stream.
-type HistoryResponse struct {
-	Base64 string `json:"base64" doc:"Histórico renderizado da sessão, codificado em base64"`
-	Bytes  int    `json:"bytes" doc:"Quantos bytes de histórico estão nesta resposta"`
-	Total  int    `json:"total" doc:"Tamanho total do histórico disponível no servidor"`
+// The type name is the OpenAPI schema name the Android client is generated
+// from, so it stays until the client is regenerated.
+type HistoricoResponse struct {
+	Base64 string `json:"base64" doc:"Rendered session history, base64-encoded"`
+	Bytes  int    `json:"bytes" doc:"How many history bytes are in this response"`
+	Total  int    `json:"total" doc:"Total size of the history available on the server"`
 }
 
 type historyInput struct {
-	Name  string `query:"name" required:"true" doc:"Nome da sessão de terminal"`
-	Bytes int    `query:"bytes" default:"2097152" doc:"Teto de bytes do recorte final do histórico"`
+	Name  string `query:"name" required:"true" doc:"Terminal session name"`
+	Bytes int    `query:"bytes" default:"2097152" doc:"Byte cap for the final slice of the history"`
 }
 
 type historyOutput struct {
 	// NEVER CACHE, for the same reason as the raw log.
 	CacheControl string `header:"Cache-Control"`
-	Body         HistoryResponse
+	Body         HistoricoResponse
 }
 
 type rawLogInput struct {
-	Name  string `query:"name" required:"true" doc:"Nome da sessão de terminal"`
-	Bytes int    `query:"bytes" default:"4194304" doc:"Teto de bytes do recorte final do log"`
+	Name  string `query:"name" required:"true" doc:"Terminal session name"`
+	Bytes int    `query:"bytes" default:"4194304" doc:"Byte cap for the final slice of the log"`
 }
 
 type rawLogOutput struct {
@@ -202,7 +202,7 @@ func registerTerminal(api huma.API, deps Deps) {
 		OperationID: "listTerminalSessions",
 		Method:      http.MethodGet,
 		Path:        "/terminal/sessions",
-		Summary:     "Sessões de terminal visíveis ao usuário autenticado",
+		Summary:     "Terminal sessions visible to the authenticated user",
 		Tags:        []string{"mobile", "terminal"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusUnauthorized},
@@ -212,7 +212,7 @@ func registerTerminal(api huma.API, deps Deps) {
 		OperationID: "issueTerminalWSTicket",
 		Method:      http.MethodPost,
 		Path:        "/terminal/ws-ticket",
-		Summary:     "Emite um ticket WS one-shot (60s) para anexar em /ws/shell",
+		Summary:     "Issues a one-shot WS ticket (60s) to attach to /ws/shell",
 		Tags:        []string{"mobile", "terminal"},
 		Middlewares: huma.Middlewares{captureJTI},
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
@@ -222,7 +222,7 @@ func registerTerminal(api huma.API, deps Deps) {
 		OperationID: "getTerminalScrollback",
 		Method:      http.MethodGet,
 		Path:        "/terminal/scrollback",
-		Summary:     "Histórico (tail) de uma sessão de terminal que o usuário possui",
+		Summary:     "History (tail) of a terminal session the user owns",
 		Tags:        []string{"mobile", "terminal"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
@@ -232,7 +232,7 @@ func registerTerminal(api huma.API, deps Deps) {
 		OperationID: "getTerminalRawLog",
 		Method:      http.MethodGet,
 		Path:        "/terminal/log-bruto",
-		Summary:     "Log cru (bytes do PTY) de uma sessão, para o app primar o próprio emulador",
+		Summary:     "Raw log (PTY bytes) of a session, so the app can prime its own emulator",
 		Tags:        []string{"mobile", "terminal"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
@@ -242,7 +242,7 @@ func registerTerminal(api huma.API, deps Deps) {
 		OperationID: "getTerminalHistorico",
 		Method:      http.MethodGet,
 		Path:        "/terminal/historico",
-		Summary:     "Histórico renderizado de uma sessão — o que a pessoa viu, uma vez cada",
+		Summary:     "Rendered history of a session: what the person saw, once each",
 		Tags:        []string{"mobile", "terminal"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
@@ -352,7 +352,7 @@ func terminalHistoryHandler(cfg *config.Config, own *ptysvc.Ownership) func(ctx 
 			return nil, huma.Error404NotFound("session not found")
 		}
 		data, total := ptysvc.SessionHistory(user, name, in.Bytes)
-		return &historyOutput{CacheControl: noCache, Body: HistoryResponse{
+		return &historyOutput{CacheControl: noCache, Body: HistoricoResponse{
 			Base64: base64.StdEncoding.EncodeToString(data),
 			Bytes:  len(data),
 			Total:  total,

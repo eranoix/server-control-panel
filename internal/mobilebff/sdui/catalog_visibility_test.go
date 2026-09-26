@@ -85,18 +85,18 @@ func checkCatalogAgainstBuilders(
 				if !visible[id] {
 					mismatches = append(mismatches, catalogMismatch{
 						Screen: id, Role: role,
-						Detail: "o construtor MONTA a tela para este papel, mas o catálogo a omite — a tela fica inalcançável pelo seletor",
+						Detail: "the builder BUILDS the screen for this role, but the catalog omits it: the screen is unreachable from the picker",
 					})
 				}
 			case errors.Is(err, sdui.ErrScreenNotFound):
 				if visible[id] {
 					mismatches = append(mismatches, catalogMismatch{
 						Screen: id, Role: role,
-						Detail: "o catálogo OFERECE a tela para este papel, mas o construtor devolve ErrScreenNotFound — o seletor mostraria um item que abre em 404",
+						Detail: "the catalog OFFERS the screen for this role, but the builder returns ErrScreenNotFound: the picker would show an item that opens as a 404",
 					})
 				}
 			default:
-				return nil, fmt.Errorf("Build(%q) para o papel %q falhou por um motivo que não é ErrScreenNotFound: %w", id, role, err)
+				return nil, fmt.Errorf("Build(%q) for role %q failed for a reason other than ErrScreenNotFound: %w", id, role, err)
 			}
 		}
 	}
@@ -159,15 +159,15 @@ func TestCatalogNoProductionScreenUsesSyntheticPrefix(t *testing.T) {
 func catalogTestViewers() map[string]sdui.Viewer {
 	cfg := &config.Config{
 		SchemaVersion: config.CurrentSchemaVersion,
-		Primary:       "catalogo-admin",
+		Primary:       "catalog-admin",
 		Users: []config.User{
-			{Username: "catalogo-admin", PasswordHash: "h"},
-			{Username: "catalogo-user", PasswordHash: "h"},
+			{Username: "catalog-admin", PasswordHash: "h"},
+			{Username: "catalog-user", PasswordHash: "h"},
 		},
 	}
 	return map[string]sdui.Viewer{
-		"admin":    sdui.ViewerFrom(cfg, "catalogo-admin"),
-		"nonadmin": sdui.ViewerFrom(cfg, "catalogo-user"),
+		"admin":    sdui.ViewerFrom(cfg, "catalog-admin"),
+		"nonadmin": sdui.ViewerFrom(cfg, "catalog-user"),
 	}
 }
 
@@ -239,14 +239,14 @@ func TestCatalogCatalogedScreensAllExist(t *testing.T) {
 func TestCatalogCheckerCatchesLie(t *testing.T) {
 	viewers := catalogTestViewers()
 
-	// "mentira-oferecida": the catalog offers it to everyone; the builder
+	// "lie-offered": the catalog offers it to everyone; the builder
 	// only delivers it to admins. The non-admin would see an item that 404s.
-	// "mentira-omitida": the builder delivers to everyone; the catalog
+	// "lie-omitted": the builder delivers to everyone; the catalog
 	// hides it from everyone. The screen becomes unreachable from the picker.
-	const offered, omitted = "mentira.oferecida", "mentira.omitida"
+	const offered, omitted = "lie.offered", "lie.omitted"
 
 	catalogFor := func(v sdui.Viewer) []sdui.CatalogEntry {
-		return []sdui.CatalogEntry{{ID: offered, Group: sdui.GroupSystem, Label: "Oferecida"}}
+		return []sdui.CatalogEntry{{ID: offered, Group: sdui.GroupSystem, Label: "Offered"}}
 	}
 	build := func(_ context.Context, id string, v sdui.Viewer) (*sdui.Envelope, error) {
 		if id == offered && !v.IsAdmin() {
@@ -275,7 +275,7 @@ func TestCatalogCheckerCatchesLie(t *testing.T) {
 			t.Errorf("the verifier did NOT catch the lie %q — mismatches: %+v", want, mismatches)
 		}
 	}
-	// The only legitimate combination is oferecida/admin: the catalog offers and
+	// The only legitimate combination is offered/admin: the catalog offers and
 	// the builder delivers. If it shows up as a mismatch, the checker is
 	// reporting a false positive.
 	if got[offered+"/admin"] {

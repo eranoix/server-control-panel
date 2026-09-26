@@ -109,7 +109,7 @@ func TestOpsStatus_System_Shape(t *testing.T) {
 		t.Errorf("uptime = %d / %q, want 1602225 / \"18d 13h 3m\"", sys.UptimeSeconds, sys.UptimeText)
 	}
 	if sys.ServerTimeEpoch == 0 || sys.ServerTime == "" {
-		t.Errorf("server_time = %q / %d, want preenchidos", sys.ServerTime, sys.ServerTimeEpoch)
+		t.Errorf("server_time = %q / %d, want both filled", sys.ServerTime, sys.ServerTimeEpoch)
 	}
 	if _, err := time.Parse(time.RFC3339, sys.ServerTime); err != nil {
 		t.Errorf("server_time %q is not RFC3339: %v", sys.ServerTime, err)
@@ -154,7 +154,7 @@ func TestOpsStatus_System_DisksFilteredAndSorted(t *testing.T) {
 		}
 	}
 	if got[0].TotalText != "386.4 GiB" || got[0].UsedText != "282.8 GiB" {
-		t.Errorf("/ textos = %q / %q", got[0].TotalText, got[0].UsedText)
+		t.Errorf("/ texts = %q / %q", got[0].TotalText, got[0].UsedText)
 	}
 	if got[0].FSType != "ext4" || got[0].Free != 111283953664 {
 		t.Errorf("/ = %#v", got[0])
@@ -203,7 +203,7 @@ func TestNetRateTracker_NeedsTwoSamples(t *testing.T) {
 		t.Fatalf("first sample = %#v", first)
 	}
 	if first.BytesSent != 1000 || first.BytesRecv != 2000 {
-		t.Errorf("contadores acumulados = %d/%d", first.BytesSent, first.BytesRecv)
+		t.Errorf("accumulated counters = %d/%d", first.BytesSent, first.BytesRecv)
 	}
 	if first.SentRate != nil || first.RecvRate != nil || first.SentRateText != "" {
 		t.Errorf("the first sample published a rate: %#v", first)
@@ -218,7 +218,7 @@ func TestNetRateTracker_NeedsTwoSamples(t *testing.T) {
 		t.Fatalf("recv_rate = %v, want 10240", second.RecvRate)
 	}
 	if second.SentRateText != "2.0 KiB/s" || second.RecvRateText != "10.0 KiB/s" {
-		t.Errorf("textos = %q / %q", second.SentRateText, second.RecvRateText)
+		t.Errorf("texts = %q / %q", second.SentRateText, second.RecvRateText)
 	}
 }
 
@@ -239,7 +239,7 @@ func TestNetRateTracker_SameSampleDoesNotDropRate(t *testing.T) {
 	// The same collection served from the cache 2s later: rate preserved, baseline still.
 	cached := tr.sample([]system.NetInfo{{Name: "eth0", BytesSent: 10240, BytesRecv: 0}}, t0.Add(12*time.Second))
 	if cached.SentRate == nil || *cached.SentRate != 1024 {
-		t.Fatalf("taxa cacheada = %v, want 1024 preservado", cached.SentRate)
+		t.Fatalf("cached rate = %v, want 1024 preserved", cached.SentRate)
 	}
 
 	// A fresh sample at t0+20s: the delta has to be measured against t0+10s (the
@@ -290,7 +290,7 @@ func TestOpsStatus_System_MissingWhenCollectionFails(t *testing.T) {
 		Cfg:            adminCfg(),
 		HealthDetailed: fakeHealthDetailed(true),
 		SysStats: func(context.Context) (*system.Stats, error) {
-			return nil, errors.New("gopsutil indisponível")
+			return nil, errors.New("gopsutil unavailable")
 		},
 	}
 	body := getOpsStatusJSON(t, deps, testPrimary)

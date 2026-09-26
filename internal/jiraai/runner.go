@@ -1,4 +1,4 @@
-// Package jiraai is the "Iniciar AI" feature: given a Jira issue key, spawn
+// Package jiraai is the "Start AI" feature: given a Jira issue key, spawn
 // the local `claude` CLI inside the project's repository, capture the audit
 // report, post it as a comment, and tag the issue with labels.
 //
@@ -21,7 +21,7 @@
 // each job runs with its owner's Jira credentials and repo mapping.
 //
 // Project → repo mapping lives in the user's vault under `jira_project_repos`
-// as JSON `{"TTW":"/root/projetos/northwind-web","CSS":"/root/projetos/acme-booking",...}`.
+// as JSON `{"TTW":"/root/projects/northwind-web","CSS":"/root/projects/acme-booking",...}`.
 // Empty mapping = the AI runs without a cwd (generic advice only).
 package jiraai
 
@@ -416,7 +416,7 @@ const verifyAcceptThreshold = 85
 // The ticket asked for "refine until ≥85%, however many rounds it takes".
 // A literally infinite loop is unsafe with 3 shared workers (starvation),
 // so convergence is bounded by THREE brakes:
-//  1. reaching the threshold (APROVADO && certainty >= verifyAcceptThreshold);
+//  1. reaching the threshold (APPROVED && certainty >= verifyAcceptThreshold);
 //  2. this hard cap on rounds;
 //  3. its own time budget (Runner.verifyTimeout);
 //
@@ -463,7 +463,7 @@ func ratchetThreshold(priorCertainty int) int {
 //  1. Build the verification prompt around the current plan
 //  2. Spawn `claude -p` in the repo
 //  3. Parse verdict/certainty/refined plan
-//  4. If APROVADO and certainty >= threshold → stop
+//  4. If APPROVED and certainty >= threshold → stop
 //  5. Otherwise, next iteration with the refined plan
 //
 // Best-effort on error: if a round fails (claude crashed, parse failed), it
@@ -500,7 +500,7 @@ func (r *Runner) verifyPlanLoop(ctx context.Context, initialPlan, repoPath strin
 			// on the next round (if any) we review the improved version.
 			currentPlan = wrapRefinedPlan(initialPlan, refined, verdict, c, parseRisks(out), parseSummary(out), threshold)
 		}
-		if verdict == "APROVADO" && c >= threshold {
+		if verdict == "APPROVED" && c >= threshold {
 			return currentPlan, certainty, rounds
 		}
 		// Anti-stagnation: if certainty did not rise relative to the previous
@@ -585,22 +585,22 @@ func buildVerifyPrompt(assembledPreamble, plan string) string {
 	return b.String()
 }
 
-// verdictRe captures "APROVADO" or "REVISAR" in the "## ✅ Veredicto" block.
-var verdictRe = regexp.MustCompile(`(?im)^##\s*✅?\s*Veredicto\s*\n+\s*(APROVADO|REVISAR)`)
+// verdictRe captures "APPROVED" or "REVISE" in the "## ✅ Verdict" block.
+var verdictRe = regexp.MustCompile(`(?im)^##\s*✅?\s*Verdict\s*\n+\s*(APPROVED|REVISE)`)
 
-// certaintyRe captures the 0-100 integer in the "## 🎯 Certeza de Sucesso" block.
+// certaintyRe captures the 0-100 integer in the "## 🎯 Confidence of Success" block.
 // It tolerates variations like "85" or "85%" or "85 (alta)".
-var certaintyRe = regexp.MustCompile(`(?im)^##\s*🎯?\s*Certeza\s+de\s+Sucesso\s*\n+\s*(\d{1,3})`)
+var certaintyRe = regexp.MustCompile(`(?im)^##\s*🎯?\s*Confidence\s+of\s+Success\s*\n+\s*(\d{1,3})`)
 
-// refinedPlanRe captures everything from "## 📋 Plano Final" to EOF.
-var refinedPlanRe = regexp.MustCompile(`(?ims)^##\s*📋?\s*Plano\s+Final\s*\n+(.+)$`)
+// refinedPlanRe captures everything from "## 📋 Final Plan" to EOF.
+var refinedPlanRe = regexp.MustCompile(`(?ims)^##\s*📋?\s*Final\s+Plan\s*\n+(.+)$`)
 
-// risksRe captures the body of the "## ⚠️ Riscos" block up to the next "## ".
-var risksRe = regexp.MustCompile(`(?ims)^##\s*⚠️?\s*Riscos\s*\n+(.+?)(?:\n##\s|\z)`)
+// risksRe captures the body of the "## ⚠️ Risks" block up to the next "## ".
+var risksRe = regexp.MustCompile(`(?ims)^##\s*⚠️?\s*Risks\s*\n+(.+?)(?:\n##\s|\z)`)
 
-// summaryRe captures the plain-language summary in the "## 🗣 Em resumo" block
+// summaryRe captures the plain-language summary in the "## 🗣 In short" block
 // up to the next "## ". It is the non-technical text explaining what the plan does.
-var summaryRe = regexp.MustCompile(`(?ims)^##\s*🗣️?\s*Em\s+resumo\s*\n+(.+?)(?:\n##\s|\z)`)
+var summaryRe = regexp.MustCompile(`(?ims)^##\s*🗣️?\s*In\s+short\s*\n+(.+?)(?:\n##\s|\z)`)
 
 func parseVerdict(out string) string {
 	m := verdictRe.FindStringSubmatch(out)
@@ -644,7 +644,7 @@ func parseRisks(out string) string {
 	return strings.TrimSpace(m[1])
 }
 
-// parseSummary extracts the plain-language summary ("## 🗣 Em resumo") —
+// parseSummary extracts the plain-language summary ("## 🗣 In short") —
 // the non-technical explanation of what the plan does, shown above the risks.
 func parseSummary(out string) string {
 	m := summaryRe.FindStringSubmatch(out)
@@ -660,16 +660,16 @@ func parseSummary(out string) string {
 //
 // The final structure preserves the 6 sections the parser expects (title,
 // diagnosis, audit, plan, improvements, labels) — we only replace the content
-// of the "🛠 Plano de Correção" section with the refined plan.
+// of the "🛠 Fix Plan" section with the refined plan.
 func wrapRefinedPlan(original, refined, verdict string, certainty int, risks, summary string, threshold int) string {
-	// The audit report now emits its own "## 🗣 Em resumo" and
-	// "## 🎯 Certeza de Sucesso". On a verified round the header below already
+	// The audit report now emits its own "## 🗣 In short" and
+	// "## 🎯 Confidence of Success". On a verified round the header below already
 	// carries the authoritative summary + certainty — strip the audit's echo so
 	// the ticket doesn't show both twice.
 	original = stripAuditEcho(original)
 	// Extract the headers we keep (title + labels + other sections) and
-	// replace only the "Plano de Correção" section.
-	planSectionRe := regexp.MustCompile(`(?ims)(^##\s*🛠?\s*Plano\s+de\s+Corre[cç][ãa]o[^\n]*\n)(.+?)(\n##\s|\z)`)
+	// replace only the "Fix Plan" section.
+	planSectionRe := regexp.MustCompile(`(?ims)(^##\s*🛠?\s*Fix\s+Plan[^\n]*\n)(.+?)(\n##\s|\z)`)
 	loc := planSectionRe.FindStringSubmatchIndex(original)
 	if loc == nil {
 		// The expected section wasn't found — return the refined text as a raw
@@ -699,7 +699,7 @@ func formatVerificationHeader(verdict string, certainty int, risks, summary stri
 		b.WriteString(s)
 		b.WriteString("\n")
 	}
-	if strings.TrimSpace(risks) != "" && !strings.EqualFold(strings.TrimSpace(risks), "Nenhum identificado") {
+	if strings.TrimSpace(risks) != "" && !strings.EqualFold(strings.TrimSpace(risks), "None identified") {
 		b.WriteString("\n**Risks identified:**\n")
 		b.WriteString(risks)
 		b.WriteString("\n")
@@ -707,13 +707,13 @@ func formatVerificationHeader(verdict string, certainty int, risks, summary stri
 	return b.String()
 }
 
-// stripBody removes the "## 📝 Título sugerido" block (already used as
+// stripBody removes the "## 📝 Suggested title" block (already used as
 // the new summary) from the report before inlining it into the
 // description — avoid duplicating the title in both fields.
 func stripBody(report string) string {
-	// remove from "## 📝 Título sugerido" through (but not including)
+	// remove from "## 📝 Suggested title" through (but not including)
 	// the next "## " heading
-	startRe := regexp.MustCompile(`(?m)^##\s*📝?\s*[Tt]ítulo[^\n]*\n`)
+	startRe := regexp.MustCompile(`(?m)^##\s*📝?\s*(?:Suggested\s+)?[Tt]itle[^\n]*\n`)
 	loc := startRe.FindStringIndex(report)
 	if loc == nil {
 		return strings.TrimSpace(report)
@@ -734,8 +734,8 @@ var sectionHeadRe = regexp.MustCompile(`(?m)^##\s`)
 // emits. The optional emoji mirrors summaryRe/certaintyRe so a model that drops
 // the emoji is still matched.
 var (
-	auditSummaryHeadRe   = regexp.MustCompile(`(?m)^##\s*🗣️?\s*Em\s+resumo[^\n]*\n`)
-	auditCertaintyHeadRe = regexp.MustCompile(`(?m)^##\s*🎯?\s*Certeza\s+de\s+Sucesso[^\n]*\n`)
+	auditSummaryHeadRe   = regexp.MustCompile(`(?m)^##\s*🗣️?\s*In\s+short[^\n]*\n`)
+	auditCertaintyHeadRe = regexp.MustCompile(`(?m)^##\s*🎯?\s*Confidence\s+of\s+Success[^\n]*\n`)
 )
 
 // stripSection removes one "## …" section from s — the header line matched by
@@ -755,8 +755,8 @@ func stripSection(s string, headerRe *regexp.Regexp) string {
 	return strings.TrimRight(s[:loc[0]], "\n") + "\n"
 }
 
-// stripAuditEcho removes the audit report's own "## 🗣 Em resumo" and
-// "## 🎯 Certeza de Sucesso" blocks. On a VERIFIED run, formatVerificationHeader
+// stripAuditEcho removes the audit report's own "## 🗣 In short" and
+// "## 🎯 Confidence of Success" blocks. On a VERIFIED run, formatVerificationHeader
 // already surfaces the authoritative (adversarially reviewed) summary + certainty
 // at the top, so keeping the auditor's self-assessment too would duplicate both
 // in the ticket. This runs only inside wrapRefinedPlan, which is reached only when
@@ -802,7 +802,7 @@ func stripAIBlock(s string) string {
 
 // extractAIBlock returns the INNER content of a prior AI block (everything
 // between aiBlockStart and aiBlockEnd), or "" if there is no well-formed
-// block. The leading "_(gerado em … )_" stamp line is dropped so the model
+// block. The leading "_(generated on … )_" stamp line is dropped so the model
 // isn't anchored on a timestamp when refining. This is the counterpart of
 // stripAIBlock: stripAIBlock keeps the ticket minus the block, extractAIBlock
 // keeps the block minus the ticket.
@@ -816,18 +816,18 @@ func extractAIBlock(s string) string {
 		inner = inner[:j]
 	}
 	inner = strings.TrimSpace(inner)
-	// Drop the generated-at stamp line ("_(gerado em … )_") if present so the
+	// Drop the generated-at stamp line ("_(generated on … )_") if present so the
 	// refine prompt carries the plan, not the bookkeeping note.
 	inner = stampLineRe.ReplaceAllString(inner, "")
 	return strings.TrimSpace(inner)
 }
 
-// stampLineRe matches the italic "_(gerado em … )_" line mergeAIBlock prepends.
+// stampLineRe matches the italic "_(generated on … )_" line mergeAIBlock prepends.
 var stampLineRe = regexp.MustCompile(`(?m)^_\(generated on [^\n]*\)_\n?`)
 
-// priorCertaintyRe captures the "**Certeza:** NN%" written by
+// priorCertaintyRe captures the "**Confidence:** NN%" written by
 // formatVerificationHeader into the description block on a verified run.
-var priorCertaintyRe = regexp.MustCompile(`(?i)\*\*Certeza:\*\*\s*(\d{1,3})\s*%`)
+var priorCertaintyRe = regexp.MustCompile(`(?i)\*\*Confidence:\*\*\s*(\d{1,3})\s*%`)
 
 // parsePriorCertainty reads the certainty a previous run recorded inside the
 // AI block. Returns 0 when there's no verified block (first run, or a run that
@@ -879,8 +879,8 @@ func clampForADF(s string, limit int) (string, bool) {
 	return strings.TrimSpace(s[:cut]) + note, true
 }
 
-// writeIssueMeta emits the shared ticket metadata block (Ticket/Tipo/
-// Prioridade/Status/Labels/Repo + Título) used by both the audit and refine
+// writeIssueMeta emits the shared ticket metadata block (Ticket/Type/
+// Priority/Status/Labels/Repo + Title) used by both the audit and refine
 // prompts. cleanDesc is the ORIGINAL ticket description with any prior AI
 // block already stripped (see Run) — keeping the model's own previous output
 // out of the "user ask" so it can't be mistaken for the requirement.
@@ -888,18 +888,18 @@ func writeIssueMeta(b *strings.Builder, d *jira.IssueDetail, projectKey, repoPat
 	b.WriteString("**Ticket:** ")
 	b.WriteString(d.Key)
 	if projectKey != "" {
-		b.WriteString(" (projeto: ")
+		b.WriteString(" (project: ")
 		b.WriteString(projectKey)
 		b.WriteString(")")
 	}
 	b.WriteString("\n")
 	if d.IssueType != nil {
-		b.WriteString("**Tipo:** ")
+		b.WriteString("**Type:** ")
 		b.WriteString(d.IssueType.Name)
 		b.WriteString("\n")
 	}
 	if d.Priority != nil {
-		b.WriteString("**Prioridade:** ")
+		b.WriteString("**Priority:** ")
 		b.WriteString(d.Priority.Name)
 		b.WriteString("\n")
 	}
@@ -988,9 +988,9 @@ func buildCommentBody(report, issueKey string, certainty, rounds, priorCertainty
 	return header + "\n---\n\n" + report
 }
 
-// titleLineRe matches "## 📝 Título sugerido" (or just "## Título") followed
+// titleLineRe matches "## 📝 Suggested title" (or just "## Title") followed
 // by the first non-empty line below.
-var titleLineRe = regexp.MustCompile(`(?m)^##\s*📝?\s*[Tt]ítulo[^\n]*\n+([^\n]+)`)
+var titleLineRe = regexp.MustCompile(`(?m)^##\s*📝?\s*(?:Suggested\s+)?[Tt]itle[^\n]*\n+([^\n]+)`)
 
 // parseSuggestedTitle extracts the AI-proposed summary. Strips quotes,
 // trims trivial decorations, and clamps to Jira's 255-char limit.

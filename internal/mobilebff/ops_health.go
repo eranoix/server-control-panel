@@ -25,7 +25,7 @@ func registerOpsHealth(api huma.API, deps Deps) {
 		OperationID: "getOpsStatus",
 		Method:      http.MethodGet,
 		Path:        "/ops/status",
-		Summary:     "Saúde, fila, alertas ativos e recursos do servidor em uma chamada (admin)",
+		Summary:     "Server health, queue, active alerts and resources in one call (admin)",
 		Tags:        []string{"mobile", "ops"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusForbidden},

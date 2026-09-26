@@ -30,9 +30,8 @@ const (
 
 // Screen ids for the four Network screens — registered under the same
 // "security." prefix as the four screens above even though the backing seam
-// is NetworkDeps, a separate struct (see deps.go's NetworkDeps doc comment
-// and PLAN.md's Blocker 3: "rede" was never one screen, it was four genuinely
-// distinct subsystems).
+// is NetworkDeps, a separate struct (see deps.go's NetworkDeps doc comment):
+// the network area is four distinct subsystems, not one screen.
 const (
 	securityUFWScreenID       = "security.ufw"
 	securityAdGuardScreenID   = "security.adguard"
@@ -223,7 +222,7 @@ func buildSecurityUsersScreen() *sdui.Envelope {
 }
 
 func registerSecurityUsersRows(api huma.API, deps SecurityDeps, mbDeps mobilebff.Deps) {
-	registerSecurityRows(api, "getSecurityUserRows", "/security/users", "Linhas de security.users", mbDeps.Cfg,
+	registerSecurityRows(api, "getSecurityUserRows", "/security/users", "Rows of security.users", mbDeps.Cfg,
 		func(_ context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list := deps.ListUsers()
 			rows := make([]map[string]any, 0, len(list))
@@ -310,7 +309,7 @@ func buildSecuritySecretsScreen() *sdui.Envelope {
 }
 
 func registerSecuritySecretsRows(api huma.API, deps SecurityDeps, mbDeps mobilebff.Deps) {
-	registerSecurityRows(api, "getSecuritySecretRows", "/security/secrets", "Linhas de security.secrets", mbDeps.Cfg,
+	registerSecurityRows(api, "getSecuritySecretRows", "/security/secrets", "Rows of security.secrets", mbDeps.Cfg,
 		func(_ context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list := deps.ListSecretKeys()
 			rows := make([]map[string]any, 0, len(list))
@@ -385,7 +384,7 @@ func registerSecuritySessionsRows(api huma.API, deps SecurityDeps, mbDeps mobile
 		OperationID: "getSecuritySessionRows",
 		Method:      http.MethodGet,
 		Path:        "/security/sessions",
-		Summary:     "Linhas de security.sessions",
+		Summary:     "Rows of security.sessions",
 		Tags:        []string{"mobile", "sdui", "security"},
 		Middlewares: huma.Middlewares{mobilebff.RequireAuth, serveSecuritySessionsRows(cfg, deps)},
 	}, securityRowsDocHandler)
@@ -482,7 +481,7 @@ func buildSecurityAuditScreen() *sdui.Envelope {
 const securityAuditRowsLimit = 200
 
 func registerSecurityAuditRows(api huma.API, deps SecurityDeps, mbDeps mobilebff.Deps) {
-	registerSecurityRows(api, "getSecurityAuditRows", "/security/audit", "Linhas de security.audit", mbDeps.Cfg,
+	registerSecurityRows(api, "getSecurityAuditRows", "/security/audit", "Rows of security.audit", mbDeps.Cfg,
 		func(_ context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.ListAuditEvents(AuditFilter{Limit: securityAuditRowsLimit})
 			if err != nil {
@@ -517,10 +516,10 @@ func securityAuditRow(e AuditRow) map[string]any {
 // --- RegisterNetwork ---------------------------------------------------
 
 // RegisterNetwork wires the four Network screens (ufw, adguard, devices,
-// economia), their actions and their rows/detail endpoints. Called
+// data saver), their actions and their rows/detail endpoints. Called
 // explicitly by internal/api/api.go. All four screen ids carry the
 // "security." prefix even though the seam is NetworkDeps, a separate struct
-// — see NetworkDeps' doc comment in deps.go and PLAN.md's Blocker 3. All four
+// (see NetworkDeps' doc comment in deps.go). All four
 // are whole-screen admin-only, same posture as the four Security screens.
 func RegisterNetwork(deps NetworkDeps) {
 	sdui.Register(securityUFWScreenID, func(_ context.Context, v sdui.Viewer) (*sdui.Envelope, error) {
@@ -536,10 +535,9 @@ func RegisterNetwork(deps NetworkDeps) {
 		return buildSecurityDataSaverScreenForViewer(v)
 	})
 
-	// Catalog entries — the same four network screens, all `...ForViewer` and
-	// therefore adminOnly. "Network usage" instead of "Economia": the id is
-	// historical (security.economia), but the label has to say what the person
-	// will find, not the internal name of the field.
+	// Catalog entries: the same four network screens, all `...ForViewer` and
+	// therefore adminOnly. The data saver screen keeps its historical id
+	// (security.economia) but is labelled "Network usage".
 	sdui.RegisterCatalog(securityUFWScreenID, sdui.GroupSecurity, "Firewall (UFW)", adminOnly)
 	sdui.RegisterCatalog(securityAdGuardScreenID, sdui.GroupSecurity, "AdGuard DNS", adminOnly)
 	sdui.RegisterCatalog(securityDevicesScreenID, sdui.GroupSecurity, "Devices (VLESS)", adminOnly)
@@ -573,7 +571,7 @@ func RegisterNetwork(deps NetworkDeps) {
 		}
 	})
 	sdui.RegisterForbiddenForNonAdmin(securityDataSaverScreenID, func() []string {
-		// security.economia has no actions at all — same belt-and-suspenders
+		// The data saver screen has no actions at all; same belt-and-suspenders
 		// reasoning as security.audit above.
 		return []string{securityDataSaverScreenID}
 	})
@@ -632,7 +630,7 @@ func buildSecurityUFWScreen() *sdui.Envelope {
 }
 
 func registerSecurityUFWDetail(api huma.API, deps NetworkDeps, mbDeps mobilebff.Deps) {
-	registerSecurityDetail(api, "getSecurityUFWDetail", "/security/ufw/status", "Detalhe de security.ufw", mbDeps.Cfg,
+	registerSecurityDetail(api, "getSecurityUFWDetail", "/security/ufw/status", "Detail of security.ufw", mbDeps.Cfg,
 		func(_ context.Context, _ sdui.Viewer) (map[string]any, error) {
 			enabled, output, err := deps.UFWStatus()
 			if err != nil {
@@ -697,7 +695,7 @@ func buildSecurityAdGuardScreen() *sdui.Envelope {
 }
 
 func registerSecurityAdGuardDetail(api huma.API, deps NetworkDeps, mbDeps mobilebff.Deps) {
-	registerSecurityDetail(api, "getSecurityAdGuardDetail", "/security/adguard/status", "Detalhe de security.adguard", mbDeps.Cfg,
+	registerSecurityDetail(api, "getSecurityAdGuardDetail", "/security/adguard/status", "Detail of security.adguard", mbDeps.Cfg,
 		func(ctx context.Context, _ sdui.Viewer) (map[string]any, error) {
 			status, err := deps.AdGuardStatus(ctx)
 			if err != nil {
@@ -791,7 +789,7 @@ func buildSecurityDevicesScreen() *sdui.Envelope {
 }
 
 func registerSecurityDevicesRows(api huma.API, deps NetworkDeps, mbDeps mobilebff.Deps) {
-	registerSecurityRows(api, "getSecurityDeviceRows", "/security/devices", "Linhas de security.devices", mbDeps.Cfg,
+	registerSecurityRows(api, "getSecurityDeviceRows", "/security/devices", "Rows of security.devices", mbDeps.Cfg,
 		func(_ context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.ListDevices()
 			if err != nil {
@@ -823,7 +821,7 @@ func securityDeviceRow(d DeviceRow) map[string]any {
 	}
 }
 
-// --- security.economia ---------------------------------------------------
+// security.economia (data saver) screen.
 
 func buildSecurityDataSaverScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
@@ -852,7 +850,7 @@ func buildSecurityDataSaverScreen() *sdui.Envelope {
 }
 
 func registerSecurityDataSaverRows(api huma.API, deps NetworkDeps, mbDeps mobilebff.Deps) {
-	registerSecurityRows(api, "getSecurityEconomiaRows", "/security/economia", "Linhas de security.economia", mbDeps.Cfg,
+	registerSecurityRows(api, "getSecurityEconomiaRows", "/security/economia", "Rows of security.economia", mbDeps.Cfg,
 		func(_ context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.UsageSnapshot()
 			if err != nil {

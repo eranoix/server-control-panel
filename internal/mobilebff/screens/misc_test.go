@@ -321,14 +321,14 @@ func TestFormatMiscTimestamp_ZeroIsEmpty(t *testing.T) {
 // pattern.
 func TestMiscRowShapingFuncs_NeverEmitRawNumbers(t *testing.T) {
 	issueRow := jiraIssueRow(jira.Issue{
-		Key: "PROJ-1", Summary: "algo", Status: jira.Status{Name: "Aberto"},
-		Assignee: &jira.User{DisplayName: "Fulano"},
+		Key: "PROJ-1", Summary: "something", Status: jira.Status{Name: "Open"},
+		Assignee: &jira.User{DisplayName: "Someone"},
 	})
 	if _, ok := issueRow["assignee"].(string); !ok {
 		t.Errorf("jiraIssueRow[\"assignee\"] = %v (%T), want string", issueRow["assignee"], issueRow["assignee"])
 	}
 
-	noAssignee := jiraIssueRow(jira.Issue{Key: "PROJ-2", Summary: "outro", Status: jira.Status{Name: "Feito"}})
+	noAssignee := jiraIssueRow(jira.Issue{Key: "PROJ-2", Summary: "other", Status: jira.Status{Name: "Done"}})
 	if v, ok := noAssignee["assignee"].(string); !ok || v != "" {
 		t.Errorf("jiraIssueRow without an assignee: %v (%T), want an empty string", noAssignee["assignee"], noAssignee["assignee"])
 	}

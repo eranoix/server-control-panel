@@ -37,15 +37,15 @@ func newFakeSchedulerBackend() *fakeSchedulerBackend {
 				Kind: "docker_prune", Owner: "sched-admin", RunAsRoot: true, Enabled: true, Created: 1000,
 			},
 			"job-user-owned": {
-				ID: "job-user-owned", Name: "Job do usuário", Schedule: "*/15 * * * *",
+				ID: "job-user-owned", Name: "User's job", Schedule: "*/15 * * * *",
 				Kind: "docker_prune", Owner: "sched-user", Enabled: true, Created: 1000,
 			},
 			"job-other-owned": {
-				ID: "job-other-owned", Name: "Job de outro usuário", Schedule: "*/30 * * * *",
+				ID: "job-other-owned", Name: "Another user's job", Schedule: "*/30 * * * *",
 				Kind: "docker_prune", Owner: "sched-other", Enabled: true, Created: 1000,
 			},
 			"job-orphaned-kind": {
-				ID: "job-orphaned-kind", Name: "Job órfão", Schedule: "*/5 * * * *",
+				ID: "job-orphaned-kind", Name: "Orphaned job", Schedule: "*/5 * * * *",
 				Kind: "system_reboot", Owner: "sched-user", Enabled: true, Created: 1000,
 			},
 		},
@@ -120,9 +120,9 @@ func (b *fakeSchedulerBackend) deps() SchedulerDeps {
 			return []time.Time{time.Now()}, nil
 		},
 		AuthorizedKinds: func(_ string, isAdmin bool) []KindOption {
-			shared := KindOption{Value: "docker_prune", Label: "Limpar Docker"}
+			shared := KindOption{Value: "docker_prune", Label: "Prune Docker"}
 			if isAdmin {
-				return []KindOption{shared, {Value: "system_reboot", Label: "Reiniciar sistema"}}
+				return []KindOption{shared, {Value: "system_reboot", Label: "Reboot system"}}
 			}
 			return []KindOption{shared}
 		},
@@ -216,7 +216,7 @@ func TestSchedulerAction_Save_EmptyNameAndUnknownKind(t *testing.T) {
 	}
 
 	_, err = handle(context.Background(), admin, nil, mustJSON(t, saveJobInput{
-		Name: "x", Schedule: "*/5 * * * *", Kind: "kind_que_nao_existe",
+		Name: "x", Schedule: "*/5 * * * *", Kind: "kind_that_does_not_exist",
 	}))
 	fe = nil
 	if !errors.As(err, &fe) {
@@ -285,7 +285,7 @@ func TestSchedulerAction_ResponseModes(t *testing.T) {
 
 	saveHandle := handleSchedulerJobSave(backend.deps())
 	saveResult, err := saveHandle(context.Background(), admin, nil, mustJSON(t, saveJobInput{
-		Name: "Novo job", Schedule: "*/5 * * * *", Kind: "docker_prune", Enabled: true,
+		Name: "New job", Schedule: "*/5 * * * *", Kind: "docker_prune", Enabled: true,
 	}))
 	if err != nil {
 		t.Fatalf("save: %v", err)

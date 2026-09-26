@@ -28,13 +28,13 @@ import (
 func init() { Register("transfer", registerTransfer) }
 
 type filesDownloadInput struct {
-	Path string `query:"path" required:"true" doc:"Caminho absoluto do arquivo a baixar"`
+	Path string `query:"path" required:"true" doc:"Absolute path of the file to download"`
 }
 
 type UploadInitRequest struct {
-	DestDir   string `json:"dest_dir" doc:"Diretório de destino (já existente) onde o arquivo será gravado ao completar"`
-	Filename  string `json:"filename" doc:"Nome do arquivo final; não pode conter '..' nem separador de caminho"`
-	TotalSize int64  `json:"total_size" doc:"Tamanho total em bytes do arquivo a enviar"`
+	DestDir   string `json:"dest_dir" doc:"Destination directory (must exist) where the file is written on completion"`
+	Filename  string `json:"filename" doc:"Final file name; may not contain '..' or a path separator"`
+	TotalSize int64  `json:"total_size" doc:"Total size in bytes of the file to upload"`
 }
 
 type uploadInitInput struct {
@@ -51,12 +51,12 @@ type uploadInitOutput struct {
 
 type uploadChunkInput struct {
 	SessionID string `query:"session_id" required:"true"`
-	Offset    int64  `query:"offset" required:"true" doc:"Posição, em bytes, de onde este pedaço começa no arquivo final"`
+	Offset    int64  `query:"offset" required:"true" doc:"Byte position where this chunk starts in the final file"`
 	RawBody   []byte `contentType:"application/octet-stream"`
 }
 
 type UploadChunkResponse struct {
-	ReceivedBytes int64 `json:"received_bytes" doc:"Total de bytes já gravados de forma durável nesta sessão"`
+	ReceivedBytes int64 `json:"received_bytes" doc:"Total bytes already durably written in this session"`
 }
 
 type uploadChunkOutput struct {
@@ -93,7 +93,7 @@ func (e *UploadIncompleteResponse) Error() string  { return e.Reason }
 func (e *UploadIncompleteResponse) GetStatus() int { return http.StatusConflict }
 
 type InboxResponse struct {
-	Path string `json:"path" doc:"Diretório onde um arquivo compartilhado por outro app pousa por padrão"`
+	Path string `json:"path" doc:"Directory where a file shared from another app lands by default"`
 }
 
 type inboxOutput struct {
@@ -114,7 +114,7 @@ func registerTransfer(api huma.API, deps Deps) {
 		OperationID: "downloadFile",
 		Method:      http.MethodGet,
 		Path:        "/files/download",
-		Summary:     "Baixa um arquivo do servidor, com suporte a Range (download parcial/retomável)",
+		Summary:     "Downloads a file from the server, with Range support (partial/resumable download)",
 		Tags:        []string{"mobile"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound},
@@ -139,7 +139,7 @@ func registerTransfer(api huma.API, deps Deps) {
 		OperationID: "initUpload",
 		Method:      http.MethodPost,
 		Path:        "/files/upload/init",
-		Summary:     "Inicia uma sessão de upload em pedaços, reservando o destino final",
+		Summary:     "Starts a chunked upload session, reserving the final destination",
 		Tags:        []string{"mobile"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusRequestEntityTooLarge},
@@ -155,7 +155,7 @@ func registerTransfer(api huma.API, deps Deps) {
 		OperationID: "uploadChunk",
 		Method:      http.MethodPost,
 		Path:        "/files/upload/chunk",
-		Summary:     "Grava um pedaço do upload na posição indicada (offset), retomável fora de ordem",
+		Summary:     "Writes an upload chunk at the given offset; resumable and order-independent",
 		Tags:        []string{"mobile"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound},
@@ -171,13 +171,13 @@ func registerTransfer(api huma.API, deps Deps) {
 		OperationID: "completeUpload",
 		Method:      http.MethodPost,
 		Path:        "/files/upload/complete",
-		Summary:     "Finaliza o upload, movendo o arquivo montado para o destino; 409 se ainda faltam bytes",
+		Summary:     "Finishes the upload, moving the assembled file to its destination; 409 if bytes are still missing",
 		Tags:        []string{"mobile"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound},
 		Responses: map[string]*huma.Response{
 			"409": {
-				Description: "Sessão incompleta: ainda faltam bytes para completar o upload",
+				Description: "Incomplete session: bytes are still missing to complete the upload",
 				Content: map[string]*huma.MediaType{
 					"application/json": {Schema: incompleteSchema},
 				},
@@ -202,7 +202,7 @@ func registerTransfer(api huma.API, deps Deps) {
 		OperationID: "filesInbox",
 		Method:      http.MethodGet,
 		Path:        "/files/inbox",
-		Summary:     "Devolve o diretório padrão onde um arquivo compartilhado por outro app pousa",
+		Summary:     "Returns the default directory where a file shared from another app lands",
 		Tags:        []string{"mobile"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusUnauthorized},

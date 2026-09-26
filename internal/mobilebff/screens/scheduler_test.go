@@ -37,8 +37,8 @@ func testSchedulerViewers() (admin, nonAdmin sdui.Viewer) {
 // scheduler_rows_test.go, since TableComponent never embeds row data in the
 // screen envelope (see component.go): the envelope itself carries no job.
 func testSchedulerDeps() SchedulerDeps {
-	adminOnlyKind := KindOption{Value: "system_reboot", Label: "Reiniciar sistema"}
-	sharedKind := KindOption{Value: "docker_prune", Label: "Limpar Docker"}
+	adminOnlyKind := KindOption{Value: "system_reboot", Label: "Reboot system"}
+	sharedKind := KindOption{Value: "docker_prune", Label: "Prune Docker"}
 	return SchedulerDeps{
 		AuthorizedKinds: func(_ string, isAdmin bool) []KindOption {
 			if isAdmin {

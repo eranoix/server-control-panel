@@ -368,7 +368,7 @@ func buildSystemMetricsScreen(v sdui.Viewer) *sdui.Envelope {
 // --- Rows / series endpoints ------------------------------------------------
 
 func registerSystemHistoryRows(api huma.API, deps SystemDeps, mbDeps mobilebff.Deps) {
-	registerSystemRows(api, "getSystemHistoryRows", "/system/history", "Linhas de system.history", mbDeps.Cfg,
+	registerSystemRows(api, "getSystemHistoryRows", "/system/history", "Rows of system.history", mbDeps.Cfg,
 		func(_ context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			points := deps.ListHistory()
 			rows := make([]map[string]any, 0, len(points))
@@ -380,7 +380,7 @@ func registerSystemHistoryRows(api huma.API, deps SystemDeps, mbDeps mobilebff.D
 }
 
 func registerSystemProcessesRows(api huma.API, deps SystemDeps, mbDeps mobilebff.Deps) {
-	registerSystemRows(api, "getSystemProcessesRows", "/system/processes", "Linhas de system.processes", mbDeps.Cfg,
+	registerSystemRows(api, "getSystemProcessesRows", "/system/processes", "Rows of system.processes", mbDeps.Cfg,
 		func(ctx context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.ListProcesses(ctx)
 			if err != nil {
@@ -395,7 +395,7 @@ func registerSystemProcessesRows(api huma.API, deps SystemDeps, mbDeps mobilebff
 }
 
 func registerSystemPortsRows(api huma.API, deps SystemDeps, mbDeps mobilebff.Deps) {
-	registerSystemRows(api, "getSystemPortsRows", "/system/ports", "Linhas de system.ports", mbDeps.Cfg,
+	registerSystemRows(api, "getSystemPortsRows", "/system/ports", "Rows of system.ports", mbDeps.Cfg,
 		func(_ context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.ListPorts()
 			if err != nil {
@@ -410,7 +410,7 @@ func registerSystemPortsRows(api huma.API, deps SystemDeps, mbDeps mobilebff.Dep
 }
 
 func registerSystemUnitsRows(api huma.API, deps SystemDeps, mbDeps mobilebff.Deps) {
-	registerSystemRows(api, "getSystemUnitsRows", "/system/units", "Linhas de system.systemd", mbDeps.Cfg,
+	registerSystemRows(api, "getSystemUnitsRows", "/system/units", "Rows of system.systemd", mbDeps.Cfg,
 		func(_ context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.ListUnits()
 			if err != nil {

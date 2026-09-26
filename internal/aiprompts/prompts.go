@@ -1,5 +1,5 @@
 // Package aiprompts is the runtime registry for the editable AI prompts
-// used by the Jira "Iniciar AI" feature.
+// used by the Jira "Start AI" feature.
 //
 // Each prompt has a compiled-in default (defaults.go) and an optional
 // admin override persisted to <DataDir>/ai_prompts.json. The registry is
@@ -176,7 +176,7 @@ func (r *Registry) VerifyPreamble(threshold int) string {
 	return assemble(r.template(Verify), specs[Verify], threshold)
 }
 
-// WorkTrailer returns the editable "Trabalhar agora" instruction block.
+// WorkTrailer returns the editable "Work on it now" instruction block.
 func (r *Registry) WorkTrailer() string {
 	return r.template(Work)
 }

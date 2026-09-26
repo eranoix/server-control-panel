@@ -67,7 +67,7 @@ type saveAlertRuleInput struct {
 // UpsertRule performs NO field validation of its own (see
 // internal/notify/store.go) — this handler is the only place mobile-path
 // validation can happen, so it re-implements the same minimal checks the
-// panel's own Alertas tab form enforces client-side: a required name, a
+// panel's own Alerts tab form enforces client-side: a required name, a
 // condition drawn from the real event catalog (or the explicit wildcard), a
 // recognized severity, and a channel that actually exists. Validating the
 // channel matters specifically because an alert rule drives real

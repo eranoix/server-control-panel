@@ -55,7 +55,7 @@ func registerEvents(api huma.API, deps Deps) {
 		OperationID: "issueMobileEventsWSTicket",
 		Method:      http.MethodPost,
 		Path:        "/events/ws-ticket",
-		Summary:     "Emite um ticket WS one-shot (60s) para anexar em /ws/mobile-events",
+		Summary:     "Issues a one-shot WS ticket (60s) to attach to /ws/mobile-events",
 		Tags:        []string{"mobile", "events"},
 		Middlewares: huma.Middlewares{captureJTI},
 		Errors:      []int{http.StatusUnauthorized},

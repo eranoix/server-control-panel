@@ -129,7 +129,7 @@ func (b *fakeMiscBackend) deps() MiscDeps {
 			defer b.mu.Unlock()
 			j, ok := b.jobs[id]
 			if !ok {
-				return nil, errors.New("job não encontrado")
+				return nil, errors.New("job not found")
 			}
 			return j, nil
 		},
@@ -413,12 +413,12 @@ func TestMiscAction_JiraTransition_InvalidTransitionIsFieldError(t *testing.T) {
 	deps := backend.deps()
 	_, nonAdmin := testMiscViewers()
 
-	backend.setTransitions([]jira.Transition{{ID: "31", Name: "Em progresso"}, {ID: "41", Name: "Concluído"}})
+	backend.setTransitions([]jira.Transition{{ID: "31", Name: "In progress"}, {ID: "41", Name: "Done"}})
 	setJiraSelectedIssue(nonAdmin.Username, "PROJ-1")
 
 	handler := handleJiraIssueTransition(deps)
 
-	body, _ := json.Marshal(jiraIssueTransitionInput{TransitionID: "999-nao-existe"})
+	body, _ := json.Marshal(jiraIssueTransitionInput{TransitionID: "999-does-not-exist"})
 	_, err := handler(context.Background(), nonAdmin, nil, body)
 	var fe sdui.FieldErrors
 	if !errors.As(err, &fe) {

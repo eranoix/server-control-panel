@@ -209,9 +209,9 @@ func (s *DeviceTokenStore) AllTokens() []fcmpush.DeviceToken {
 
 type registerDeviceInput struct {
 	Body struct {
-		DeviceID string `json:"device_id" doc:"ID mintado pelo cliente (ex.: ANDROID_ID)"`
+		DeviceID string `json:"device_id" doc:"ID minted by the client (e.g. ANDROID_ID)"`
 		FCMToken string `json:"fcm_token"`
-		Platform string `json:"platform,omitempty" doc:"android hoje; aberto a mais no futuro"`
+		Platform string `json:"platform,omitempty" doc:"android today; open to more in the future"`
 	}
 }
 
@@ -245,8 +245,8 @@ func registerPushDevices(api huma.API, deps Deps) {
 		OperationID: "registerPushDevice",
 		Method:      http.MethodPost,
 		Path:        "/notify/devices",
-		Summary:     "Registra (ou atualiza) o token FCM deste dispositivo",
-		Description: "device_id é mintado pelo próprio app (nunca pelo servidor). Upsert: chamar de novo com o mesmo device_id só atualiza o token. No primeiro registro de um device_id novo, semeia preferências default (apenas eventos críticos) em DevicePrefsStore.",
+		Summary:     "Registers (or updates) this device's FCM token",
+		Description: "device_id is minted by the app itself (never by the server). Upsert: calling again with the same device_id only updates the token. On the first registration of a new device_id, seeds default preferences (critical events only) in DevicePrefsStore.",
 		Tags:        []string{"mobile", "notify"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusUnauthorized, http.StatusServiceUnavailable},
@@ -284,7 +284,7 @@ func registerPushDevices(api huma.API, deps Deps) {
 		OperationID: "unregisterPushDevice",
 		Method:      http.MethodDelete,
 		Path:        "/notify/devices/{device_id}",
-		Summary:     "Remove o registro de push nativo deste dispositivo (ex.: no logout)",
+		Summary:     "Removes this device's native push registration (e.g. on logout)",
 		Tags:        []string{"mobile", "notify"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusUnauthorized, http.StatusServiceUnavailable},

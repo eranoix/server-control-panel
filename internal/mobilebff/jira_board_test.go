@@ -10,7 +10,7 @@ import (
 func testIssue(key, status, category string) jira.Issue {
 	return jira.Issue{
 		Key:     key,
-		Summary: "resumo de " + key,
+		Summary: "summary of " + key,
 		Status: jira.Status{
 			Name:           status,
 			StatusCategory: jira.StatusCategory{Key: category},
@@ -19,12 +19,12 @@ func testIssue(key, status, category string) jira.Issue {
 }
 
 func TestBoardWithoutConfigUsesThreeCategories(t *testing.T) {
-	// This project calls "A fazer" "Backlog". Columns by NAME would break on
+	// This project calls "To Do" "Backlog". Columns by NAME would break on
 	// it; by category, they do not.
 	issues := []jira.Issue{
 		testIssue("V-1", "Backlog", "new"),
-		testIssue("V-2", "EM REVISAO", "indeterminate"),
-		testIssue("V-3", "Pronto", "done"),
+		testIssue("V-2", "IN REVIEW", "indeterminate"),
+		testIssue("V-3", "Ready", "done"),
 	}
 	cols := BuildBoard("", issues, 0, "", time.Now())
 
@@ -35,22 +35,22 @@ func TestBoardWithoutConfigUsesThreeCategories(t *testing.T) {
 		t.Errorf("Backlog had to land in the 'new' column: %+v", cols[0].Cards)
 	}
 	if len(cols[1].Cards) != 1 || cols[1].Cards[0].Key != "V-2" {
-		t.Errorf("EM REVISAO had to land in the 'indeterminate' column: %+v", cols[1].Cards)
+		t.Errorf("IN REVIEW had to land in the 'indeterminate' column: %+v", cols[1].Cards)
 	}
 	if len(cols[2].Cards) != 1 || cols[2].Cards[0].Key != "V-3" {
-		t.Errorf("Pronto had to land in the 'done' column: %+v", cols[2].Cards)
+		t.Errorf("Ready had to land in the 'done' column: %+v", cols[2].Cards)
 	}
 }
 
 func TestBoardWithConfiguredColumnsMatchesByNameCaseInsensitive(t *testing.T) {
-	cfg := `[{"label":"Fazendo","status_names":["Em Progresso","EM REVISÃO"]}]`
+	cfg := `[{"label":"Doing","status_names":["In Progress","IN REVIEW"]}]`
 	issues := []jira.Issue{
-		testIssue("V-1", "em revisão", "indeterminate"),
+		testIssue("V-1", "in review", "indeterminate"),
 	}
 	cols := BuildBoard(cfg, issues, 0, "", time.Now())
 
 	if len(cols) != 1 {
-		t.Fatalf("expected 1 column (no orphans, no 'Outros'), got %d", len(cols))
+		t.Fatalf("expected 1 column (no orphans, no 'Others'), got %d", len(cols))
 	}
 	if len(cols[0].Cards) != 1 {
 		t.Fatalf("name matching must ignore case: %+v", cols[0])
@@ -58,25 +58,25 @@ func TestBoardWithConfiguredColumnsMatchesByNameCaseInsensitive(t *testing.T) {
 }
 
 func TestOtherColumnOnlyExistsWithOrphans(t *testing.T) {
-	cfg := `[{"label":"Fazendo","status_names":["Em Progresso"]}]`
+	cfg := `[{"label":"Doing","status_names":["In Progress"]}]`
 
-	noOrphan := BuildBoard(cfg, []jira.Issue{testIssue("V-1", "Em Progresso", "indeterminate")}, 0, "", time.Now())
+	noOrphan := BuildBoard(cfg, []jira.Issue{testIssue("V-1", "In Progress", "indeterminate")}, 0, "", time.Now())
 	if len(noOrphan) != 1 {
-		t.Fatalf("a board with no orphan must not gain an empty 'Outros' column: %d columns", len(noOrphan))
+		t.Fatalf("a board with no orphan must not gain an empty 'Others' column: %d columns", len(noOrphan))
 	}
 
-	withOrphan := BuildBoard(cfg, []jira.Issue{testIssue("V-2", "Bloqueada", "indeterminate")}, 0, "", time.Now())
+	withOrphan := BuildBoard(cfg, []jira.Issue{testIssue("V-2", "Blocked", "indeterminate")}, 0, "", time.Now())
 	if len(withOrphan) != 2 || !withOrphan[1].Fallback {
-		t.Fatalf("an issue whose status is outside the columns had to appear in 'Outros': %+v", withOrphan)
+		t.Fatalf("an issue whose status is outside the columns had to appear in 'Others': %+v", withOrphan)
 	}
 	if withOrphan[1].Cards[0].Key != "V-2" {
-		t.Errorf("the wrong orphan went to 'Outros': %+v", withOrphan[1].Cards)
+		t.Errorf("the wrong orphan went to 'Others': %+v", withOrphan[1].Cards)
 	}
 }
 
 func TestInvalidConfigFallsBackToDefaultInsteadOfBreaking(t *testing.T) {
 	// A crooked preference in the vault must not keep the board from opening.
-	for _, bad := range []string{"isto nao e json", "[]", "{}", "   "} {
+	for _, bad := range []string{"this is not json", "[]", "{}", "   "} {
 		cols := BuildBoard(bad, []jira.Issue{testIssue("V-1", "Backlog", "new")}, 0, "", time.Now())
 		if len(cols) != 3 {
 			t.Errorf("config %q had to fall back to the 3 default columns, got %d", bad, len(cols))
@@ -89,9 +89,9 @@ func TestOldDoneIssuesDisappearButOnlyDoneOnes(t *testing.T) {
 	old := now.Add(-40 * 24 * time.Hour).Format("2006-01-02T15:04:05.000-0700")
 	recent := now.Add(-2 * 24 * time.Hour).Format("2006-01-02T15:04:05.000-0700")
 
-	oldDone := testIssue("V-1", "Pronto", "done")
+	oldDone := testIssue("V-1", "Ready", "done")
 	oldDone.Updated = old
-	recentDone := testIssue("V-2", "Pronto", "done")
+	recentDone := testIssue("V-2", "Ready", "done")
 	recentDone.Updated = recent
 	oldOpen := testIssue("V-3", "Backlog", "new")
 	oldOpen.Updated = old
@@ -109,8 +109,8 @@ func TestOldDoneIssuesDisappearButOnlyDoneOnes(t *testing.T) {
 func TestIssueWithoutReadableDateNeverAgesOut(t *testing.T) {
 	// Losing work over a date-formatting detail would be the worst possible
 	// outcome of a cosmetic preference.
-	noDate := testIssue("V-1", "Pronto", "done")
-	noDate.Updated = "ontem de tarde"
+	noDate := testIssue("V-1", "Ready", "done")
+	noDate.Updated = "yesterday afternoon"
 
 	cols := BuildBoard("", []jira.Issue{noDate}, 1, "", time.Now())
 	if len(cols[2].Cards) != 1 {
@@ -142,17 +142,17 @@ func TestUnknownOrderKeepsJQLOrder(t *testing.T) {
 		testIssue("V-3", "Backlog", "new"),
 		testIssue("V-1", "Backlog", "new"),
 	}
-	cols := BuildBoard("", issues, 0, "prioridade_ponderada:desc", time.Now())
+	cols := BuildBoard("", issues, 0, "weighted_priority:desc", time.Now())
 	if cols[0].Cards[0].Key != "V-3" {
 		t.Fatalf("an unknown order should be a no-op: %+v", cols[0].Cards)
 	}
 }
 
 func TestTransitionToColumnByCategory(t *testing.T) {
-	col := JiraBoardColumn{Label: "Concluído", Category: "done"}
+	col := JiraBoardColumn{Label: "Done", Category: "done"}
 	trs := []jira.Transition{
-		{ID: "11", Name: "Iniciar", ToName: "Em Progresso", ToCat: "indeterminate"},
-		{ID: "31", Name: "Concluir", ToName: "Pronto", ToCat: "done"},
+		{ID: "11", Name: "Start", ToName: "In Progress", ToCat: "indeterminate"},
+		{ID: "31", Name: "Finish", ToName: "Ready", ToCat: "done"},
 	}
 	tr := TransitionToColumn(col, trs)
 	if tr == nil || tr.ID != "31" {
@@ -161,11 +161,11 @@ func TestTransitionToColumnByCategory(t *testing.T) {
 }
 
 func TestTransitionToColumnByNameRespectsOperatorOrder(t *testing.T) {
-	// The operator wrote "Em Progresso" first: that is their preference.
-	col := JiraBoardColumn{Label: "Fazendo", StatusNames: []string{"Em Progresso", "EM REVISÃO"}}
+	// The operator wrote "In Progress" first: that is their preference.
+	col := JiraBoardColumn{Label: "Doing", StatusNames: []string{"In Progress", "IN REVIEW"}}
 	trs := []jira.Transition{
-		{ID: "21", Name: "Revisar", ToName: "EM REVISÃO", ToCat: "indeterminate"},
-		{ID: "11", Name: "Iniciar", ToName: "em progresso", ToCat: "indeterminate"},
+		{ID: "21", Name: "Review", ToName: "IN REVIEW", ToCat: "indeterminate"},
+		{ID: "11", Name: "Start", ToName: "in progress", ToCat: "indeterminate"},
 	}
 	tr := TransitionToColumn(col, trs)
 	if tr == nil || tr.ID != "11" {
@@ -176,8 +176,8 @@ func TestTransitionToColumnByNameRespectsOperatorOrder(t *testing.T) {
 func TestNoTransitionToColumnReturnsNil(t *testing.T) {
 	// The project's workflow forbids the jump. This is NOT an error — it is the
 	// answer that sends the card back to its original column with a reason.
-	col := JiraBoardColumn{Label: "Concluído", Category: "done"}
-	trs := []jira.Transition{{ID: "11", ToName: "Em Progresso", ToCat: "indeterminate"}}
+	col := JiraBoardColumn{Label: "Done", Category: "done"}
+	trs := []jira.Transition{{ID: "11", ToName: "In Progress", ToCat: "indeterminate"}}
 	if tr := TransitionToColumn(col, trs); tr != nil {
 		t.Fatalf("there is no transition to 'done'; should be nil, got %+v", tr)
 	}
@@ -186,8 +186,8 @@ func TestNoTransitionToColumnReturnsNil(t *testing.T) {
 func TestIssueAlreadyInColumnIsRecognized(t *testing.T) {
 	// The same function the board draws with. If they diverged, dragging a card
 	// onto the column it is already in would turn into a real transition.
-	col := JiraBoardColumn{Label: "Em andamento", Category: "indeterminate"}
-	if !issueInColumn(testIssue("V-1", "EM REVISÃO", "indeterminate"), col) {
+	col := JiraBoardColumn{Label: "In Progress", Category: "indeterminate"}
+	if !issueInColumn(testIssue("V-1", "IN REVIEW", "indeterminate"), col) {
 		t.Error("the issue is already in this column and that has to be recognized")
 	}
 	if issueInColumn(testIssue("V-2", "Backlog", "new"), col) {
@@ -203,10 +203,10 @@ func TestFilterJQLMirrorsWebPanel(t *testing.T) {
 		{"all", "", "", "ORDER BY updated DESC"},
 		{"mine", "VPSM", "", "project = VPSM AND assignee = currentUser() AND statusCategory != Done ORDER BY rank ASC"},
 		{"reported", "", "", "reporter = currentUser() ORDER BY updated DESC"},
-		{"custom", "VPSM", "labels = urgente", "labels = urgente"},
+		{"custom", "VPSM", "labels = urgent", "labels = urgent"},
 		// A filter this server does not know falls back to "all" — the app may
 		// be newer than the server.
-		{"inventado", "VPSM", "", "project = VPSM ORDER BY updated DESC"},
+		{"made-up", "VPSM", "", "project = VPSM ORDER BY updated DESC"},
 	}
 	for _, c := range cases {
 		if got := FilterJQL(c.filter, c.project, c.custom, ""); got != c.want {
@@ -218,7 +218,7 @@ func TestFilterJQLMirrorsWebPanel(t *testing.T) {
 func TestJQLNeverHasDanglingAND(t *testing.T) {
 	// The bug the web panel patches with a regex after assembling. Here the
 	// assembly is born right.
-	for _, f := range []string{"all", "mine", "todo", "inprogress", "last7", "reported", "outro"} {
+	for _, f := range []string{"all", "mine", "todo", "inprogress", "last7", "reported", "other"} {
 		for _, p := range []string{"", "VPSM"} {
 			jql := FilterJQL(f, p, "", "")
 			if len(jql) > 0 && (containsSeq(jql, "AND ORDER") || hasPrefixSeq(jql, "AND ")) {
@@ -232,16 +232,16 @@ func TestSearchLooksAtKeySummaryStatusLabelAndAssignee(t *testing.T) {
 	withAssignee := testIssue("V-1", "Backlog", "new")
 	withAssignee.Assignee = &jira.User{DisplayName: "Sam Rivera"}
 	withLabel := testIssue("V-2", "Backlog", "new")
-	withLabel.Labels = []string{"urgente"}
-	issues := []jira.Issue{withAssignee, withLabel, testIssue("V-3", "Pronto", "done")}
+	withLabel.Labels = []string{"urgent"}
+	issues := []jira.Issue{withAssignee, withLabel, testIssue("V-3", "Ready", "done")}
 
 	if got := FilterBySearch(issues, "sam"); len(got) != 1 || got[0].Key != "V-1" {
 		t.Errorf("search by assignee failed: %+v", got)
 	}
-	if got := FilterBySearch(issues, "URGENTE"); len(got) != 1 || got[0].Key != "V-2" {
+	if got := FilterBySearch(issues, "URGENT"); len(got) != 1 || got[0].Key != "V-2" {
 		t.Errorf("search by label must ignore case: %+v", got)
 	}
-	if got := FilterBySearch(issues, "pronto"); len(got) != 1 || got[0].Key != "V-3" {
+	if got := FilterBySearch(issues, "ready"); len(got) != 1 || got[0].Key != "V-3" {
 		t.Errorf("search by status failed: %+v", got)
 	}
 	if got := FilterBySearch(issues, ""); len(got) != 3 {
@@ -255,19 +255,19 @@ func TestCardCarriesPreformattedAssignee(t *testing.T) {
 	is.Assignee = &jira.User{
 		AccountID:   "acc-1",
 		DisplayName: "Sam Rivera",
-		AvatarURLs:  map[string]string{"48x48": "https://exemplo/48.png"},
+		AvatarURLs:  map[string]string{"48x48": "https://example/48.png"},
 	}
-	is.Priority = &jira.NamedRef{Name: "Alta"}
+	is.Priority = &jira.NamedRef{Name: "High"}
 	is.IssueType = &jira.NamedRef{Name: "Bug"}
 
 	c := boardCard(is)
 	if c.Assignee != "Sam Rivera" || c.AssigneeID != "acc-1" {
 		t.Errorf("assignee did not come formatted: %+v", c)
 	}
-	if c.AvatarURL != "https://exemplo/48.png" {
+	if c.AvatarURL != "https://example/48.png" {
 		t.Errorf("avatar should be the largest one available: %q", c.AvatarURL)
 	}
-	if c.Priority != "Alta" || c.Type != "Bug" {
+	if c.Priority != "High" || c.Type != "Bug" {
 		t.Errorf("priority/type did not come through: %+v", c)
 	}
 }
@@ -329,9 +329,9 @@ func TestCategoryRestrictionUsesJQLVocabulary(t *testing.T) {
 }
 
 func TestNameRestrictionListsColumnStatuses(t *testing.T) {
-	col := JiraBoardColumn{Label: "Fazendo", StatusNames: []string{"Em Progresso", "EM REVISÃO"}}
+	col := JiraBoardColumn{Label: "Doing", StatusNames: []string{"In Progress", "IN REVIEW"}}
 	got := ColumnRestriction(col, nil)
-	want := `status IN ("Em Progresso", "EM REVISÃO")`
+	want := `status IN ("In Progress", "IN REVIEW")`
 	if got != want {
 		t.Errorf("%q (want %q)", got, want)
 	}
@@ -341,11 +341,11 @@ func TestOtherColumnQueriesTheCOMPLEMENT(t *testing.T) {
 	// "Whatever is none of the others" is only askable of Jira as NOT IN.
 	all := []JiraBoardColumn{
 		{Label: "A", StatusNames: []string{"Backlog"}},
-		{Label: "B", StatusNames: []string{"Pronto"}},
-		{Label: "Outros", Fallback: true},
+		{Label: "B", StatusNames: []string{"Ready"}},
+		{Label: "Others", Fallback: true},
 	}
 	got := ColumnRestriction(all[2], all)
-	want := `status NOT IN ("Backlog", "Pronto")`
+	want := `status NOT IN ("Backlog", "Ready")`
 	if got != want {
 		t.Errorf("%q (want %q)", got, want)
 	}
@@ -357,7 +357,7 @@ func TestUnrestrictableColumnReturnsEmpty(t *testing.T) {
 	if got := ColumnRestriction(JiraBoardColumn{Label: "?"}, nil); got != "" {
 		t.Errorf("a column with neither category nor names should return empty, got %q", got)
 	}
-	if got := ColumnRestriction(JiraBoardColumn{Category: "inventada"}, nil); got != "" {
+	if got := ColumnRestriction(JiraBoardColumn{Category: "made-up"}, nil); got != "" {
 		t.Errorf("an unknown category should return empty, got %q", got)
 	}
 }
@@ -368,7 +368,7 @@ func TestColumnJQLWrapsFilterInPARENTHESES(t *testing.T) {
 	got := ColumnJQL(`project = VPSM OR project = TTW`, "ORDER BY updated DESC", `statusCategory = "To Do"`)
 	want := `(project = VPSM OR project = TTW) AND statusCategory = "To Do" ORDER BY updated DESC`
 	if got != want {
-		t.Errorf("%q\nqueria %q", got, want)
+		t.Errorf("%q\nwant %q", got, want)
 	}
 }
 
@@ -384,7 +384,7 @@ func TestColumnJQLWithoutFilterNeverStartsWithAND(t *testing.T) {
 }
 
 func TestQuotedStatusNameDoesNotBreakWHOLEQuery(t *testing.T) {
-	col := JiraBoardColumn{StatusNames: []string{`Em "revisao"`}}
+	col := JiraBoardColumn{StatusNames: []string{`In "review"`}}
 	got := ColumnRestriction(col, nil)
 	if !containsSeq(got, `\"`) {
 		t.Errorf("the inner quotes must come out escaped: %q", got)
@@ -394,15 +394,11 @@ func TestQuotedStatusNameDoesNotBreakWHOLEQuery(t *testing.T) {
 // --- the operator's own board filter ------------------------------------------
 
 func TestOwnBoardOnlyAppearsByChoice(t *testing.T) {
-	// THE DEFECT this fixes: a configured board_jql hijacked the "Todas"
-	// filter — but only on the FIRST load, because the condition that triggered
-	// it was "the client did not send a project", and the client only learns the
-	// project from the response. With a board_jql that returns zero, the board
-	// opened empty and filled up on refresh.
-	if got := FilterJQL("all", "VPSM", "", "project = OUTRO"); got != "project = VPSM ORDER BY updated DESC" {
-		t.Errorf("the operator's JQL must not hijack the 'Todas' filter: %q", got)
+	// A configured board_jql must never replace the "All" filter.
+	if got := FilterJQL("all", "VPSM", "", "project = OTHER"); got != "project = VPSM ORDER BY updated DESC" {
+		t.Errorf("the operator's JQL must not hijack the 'All' filter: %q", got)
 	}
-	if got := FilterJQL("board", "VPSM", "", "project = OUTRO"); got != "project = OUTRO" {
+	if got := FilterJQL("board", "VPSM", "", "project = OTHER"); got != "project = OTHER" {
 		t.Errorf("chosen on purpose, it counts: %q", got)
 	}
 }
@@ -415,17 +411,17 @@ func TestOwnBoardWithoutQueryFallsBackToAll(t *testing.T) {
 }
 
 func TestMyBoardOnlyOFFEREDWhenItExists(t *testing.T) {
-	sem := BoardFilters(false)
-	for _, f := range sem {
+	without := BoardFilters(false)
+	for _, f := range without {
 		if f.Key == "board" {
-			t.Fatal("with no board_jql configured, 'Meu quadro' must not appear")
+			t.Fatal("with no board_jql configured, 'My board' must not appear")
 		}
 	}
-	com := BoardFilters(true)
-	if com[len(com)-1].Key != "board" {
-		t.Fatalf("with board_jql, 'Meu quadro' goes at the end: %+v", com)
+	with := BoardFilters(true)
+	if with[len(with)-1].Key != "board" {
+		t.Fatalf("with board_jql, 'My board' goes at the end: %+v", with)
 	}
-	if len(com) != len(sem)+1 {
-		t.Fatalf("only one filter more: %d vs %d", len(com), len(sem))
+	if len(with) != len(without)+1 {
+		t.Fatalf("only one filter more: %d vs %d", len(with), len(without))
 	}
 }

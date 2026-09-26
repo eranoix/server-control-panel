@@ -129,7 +129,7 @@ func buildAlertsRulesScreen(deps AlertsDeps, v sdui.Viewer) *sdui.Envelope {
 			// threshold, channel, enabled) but is added here under
 			// deviation Rule 2: notify.Rule.Name is a real, persisted
 			// field, and a rule saved with no name is indistinguishable
-			// from every other unnamed rule in the panel's own Alertas
+			// from every other unnamed rule in the panel's own Alerts
 			// tab — an operational correctness gap for a domain whose
 			// whole point is knowing which rule did what.
 			{Key: "name", Label: "Name", Kind: "text", Required: true},
@@ -171,7 +171,7 @@ func registerAlertsRulesRows(api huma.API, deps AlertsDeps, mbDeps mobilebff.Dep
 		OperationID: "getAlertsRuleRows",
 		Method:      http.MethodGet,
 		Path:        "/alerts/rules",
-		Summary:     "Linhas da tabela alerts.rules — somente admin",
+		Summary:     "Rows of the alerts.rules table (admin only)",
 		Tags:        []string{"mobile", "sdui", "alerts"},
 		Middlewares: huma.Middlewares{mobilebff.RequireAuth, serveAlertsRulesRows(cfg, deps)},
 	}, alertsRulesRowsDocHandler)

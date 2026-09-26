@@ -27,7 +27,7 @@ func init() { Register("files", registerFiles) }
 // which is why it cannot be referenced by name here) that matter to the app:
 // name, size, whether it is a directory, and mtime. Mode/IsLink/Target are
 // preserved when present so the app can show a link icon and the
-// "(protegido)" warning the desktop panel already computes.
+// "(protected)" warning the desktop panel already computes.
 type FileEntry struct {
 	Name     string `json:"name"`
 	Size     int64  `json:"size"`
@@ -45,7 +45,7 @@ type FileListResponse struct {
 }
 
 type filesListInput struct {
-	Path string `query:"path" required:"true" doc:"Caminho absoluto do diretório a listar"`
+	Path string `query:"path" required:"true" doc:"Absolute path of the directory to list"`
 }
 
 type filesListOutput struct {
@@ -54,13 +54,13 @@ type filesListOutput struct {
 
 type FileReadResponse struct {
 	Content  string `json:"content"`
-	Mtime    int64  `json:"mtime" doc:"mtime do arquivo em disco (unix) — devolver em write.expected_mtime para detectar conflito"`
-	Language string `json:"language" doc:"Hint de linguagem derivado da extensão, para syntax highlighting"`
+	Mtime    int64  `json:"mtime" doc:"File mtime on disk (unix); send it back in write.expected_mtime to detect conflicts"`
+	Language string `json:"language" doc:"Language hint derived from the extension, for syntax highlighting"`
 	Size     int64  `json:"size"`
 }
 
 type filesReadInput struct {
-	Path string `query:"path" required:"true" doc:"Caminho absoluto do arquivo a ler"`
+	Path string `query:"path" required:"true" doc:"Absolute path of the file to read"`
 }
 
 type filesReadOutput struct {
@@ -70,7 +70,7 @@ type filesReadOutput struct {
 type FileWriteRequest struct {
 	Path          string `json:"path"`
 	Content       string `json:"content"`
-	ExpectedMtime int64  `json:"expected_mtime,omitempty" doc:"mtime lido antes da edição; 0 ou omitido = sem leitura prévia, grava incondicionalmente"`
+	ExpectedMtime int64  `json:"expected_mtime,omitempty" doc:"mtime read before editing; 0 or omitted = no previous read, writes unconditionally"`
 }
 
 type filesWriteInput struct {
@@ -79,7 +79,7 @@ type filesWriteInput struct {
 
 type FileWriteResponse struct {
 	OK    bool  `json:"ok"`
-	Mtime int64 `json:"mtime" doc:"Novo mtime do arquivo após a escrita"`
+	Mtime int64 `json:"mtime" doc:"New file mtime after the write"`
 }
 
 type filesWriteOutput struct {
@@ -115,7 +115,7 @@ func registerFiles(api huma.API, deps Deps) {
 		OperationID: "listFiles",
 		Method:      http.MethodGet,
 		Path:        "/files/list",
-		Summary:     "Lista o conteúdo de um diretório do servidor",
+		Summary:     "Lists the contents of a directory on the server",
 		Tags:        []string{"mobile"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound},
@@ -125,7 +125,7 @@ func registerFiles(api huma.API, deps Deps) {
 		OperationID: "readFile",
 		Method:      http.MethodGet,
 		Path:        "/files/read",
-		Summary:     "Lê um arquivo de texto do servidor com hint de linguagem para highlight",
+		Summary:     "Reads a text file from the server with a language hint for highlighting",
 		Tags:        []string{"mobile"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors: []int{
@@ -138,13 +138,13 @@ func registerFiles(api huma.API, deps Deps) {
 		OperationID: "writeFile",
 		Method:      http.MethodPost,
 		Path:        "/files/write",
-		Summary:     "Grava um arquivo; rejeita com 409 se o arquivo mudou em disco desde a leitura",
+		Summary:     "Writes a file; rejects with 409 if the file changed on disk since it was read",
 		Tags:        []string{"mobile"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound},
 		Responses: map[string]*huma.Response{
 			"409": {
-				Description: "Conflito: o arquivo mudou em disco desde a última leitura",
+				Description: "Conflict: the file changed on disk since the last read",
 				Content: map[string]*huma.MediaType{
 					"application/json": {Schema: conflictSchema},
 				},

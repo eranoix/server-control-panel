@@ -69,7 +69,7 @@ func (s *e2eMediaSvc) DownloadMediaForMessage(chatJID, msgID string) (rel, mimeT
 	if err != nil {
 		return "", "", "", 0, err
 	}
-	return v.(string), s.mime, "arquivo.bin", 0, nil
+	return v.(string), s.mime, "file.bin", 0, nil
 }
 
 func (s *e2eMediaSvc) ServeMediaRel(w http.ResponseWriter, r *http.Request, rel string) {
@@ -85,7 +85,7 @@ func (s *e2eMediaSvc) ServeMediaRel(w http.ResponseWriter, r *http.Request, rel 
 		return
 	}
 	w.Header().Set("Content-Type", s.mime)
-	http.ServeContent(w, r, "arquivo.bin", fi.ModTime(), f)
+	http.ServeContent(w, r, "file.bin", fi.ModTime(), f)
 }
 
 func (s *e2eMediaSvc) SendFileDedup(chatJID, msgType, filename, mimeType, caption, quotedID, clientMsgID string, data []byte) (string, error) {
@@ -138,7 +138,7 @@ func e2eMediaURL(srv *httptest.Server, jid, msgID string) string {
 // Content-Range and Accept-Ranges when the client asks for a byte range.
 func TestE2E_WhatsAppMedia_RangeRequest_Returns206WithContentRange(t *testing.T) {
 	dir := t.TempDir()
-	path := dir + "/arquivo.bin"
+	path := dir + "/file.bin"
 	content := []byte("0123456789ABCDEFGHIJ") // 20 bytes, indices 0-19
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
@@ -184,7 +184,7 @@ func TestE2E_WhatsAppMedia_RangeRequest_Returns206WithContentRange(t *testing.T)
 // end when the requested range does not exist in the file.
 func TestE2E_WhatsAppMedia_UnsatisfiableRange_Returns416(t *testing.T) {
 	dir := t.TempDir()
-	path := dir + "/arquivo.bin"
+	path := dir + "/file.bin"
 	content := []byte("0123456789") // 10 bytes
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
@@ -216,10 +216,10 @@ func TestE2E_WhatsAppMedia_UnsatisfiableRange_Returns416(t *testing.T) {
 // must bypass even with the client announcing Accept-Encoding: gzip.
 func TestE2E_WhatsAppMedia_NoRange_DoesNotCompressMedia(t *testing.T) {
 	dir := t.TempDir()
-	path := dir + "/arquivo.bin"
-	content := []byte("conteudo binario de mentirinha, mas grande o bastante pra passar do minGzipBytes se fosse texto comprimivel " +
-		"conteudo binario de mentirinha, mas grande o bastante pra passar do minGzipBytes se fosse texto comprimivel " +
-		"conteudo binario de mentirinha, mas grande o bastante pra passar do minGzipBytes se fosse texto comprimivel")
+	path := dir + "/file.bin"
+	content := []byte("fake binary content, but large enough to pass minGzipBytes if it were compressible text " +
+		"fake binary content, but large enough to pass minGzipBytes if it were compressible text " +
+		"fake binary content, but large enough to pass minGzipBytes if it were compressible text")
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestE2E_WhatsAppMedia_NoRange_DoesNotCompressMedia(t *testing.T) {
 		t.Fatalf("Content-Encoding = gzip — media should not be compressed")
 	}
 	if !bytes.Equal(body, content) {
-		t.Fatalf("body corrompido: len(got)=%d len(want)=%d", len(body), len(content))
+		t.Fatalf("body corrupted: len(got)=%d len(want)=%d", len(body), len(content))
 	}
 }
 
@@ -258,8 +258,8 @@ func TestE2E_WhatsAppMedia_NoRange_DoesNotCompressMedia(t *testing.T) {
 // same remote file.
 func TestE2E_WhatsAppMedia_RealConcurrency_CollapsesIntoOneDownload(t *testing.T) {
 	dir := t.TempDir()
-	path := dir + "/arquivo.bin"
-	if err := os.WriteFile(path, []byte("bytes-da-midia"), 0o600); err != nil {
+	path := dir + "/file.bin"
+	if err := os.WriteFile(path, []byte("media-bytes"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	svc := &e2eMediaSvc{filePath: path, mime: "image/jpeg", downloadDelay: 150 * time.Millisecond}
@@ -301,5 +301,5 @@ func TestE2E_WhatsAppMedia_RealConcurrency_CollapsesIntoOneDownload(t *testing.T
 	if elapsed > 600*time.Millisecond {
 		t.Fatalf("elapsed = %v, want bounded near a single downloadDelay (did the collapse not happen?)", elapsed)
 	}
-	fmt.Printf("concorrencia: %d requests reais, %d download(s), %v\n", n, svc.downloadCalls, elapsed)
+	fmt.Printf("concurrency: %d real requests, %d download(s), %v\n", n, svc.downloadCalls, elapsed)
 }

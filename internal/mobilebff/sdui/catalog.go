@@ -62,9 +62,9 @@ const (
 )
 
 // catalogGroupOrder is the ORDER in which the groups appear in the picker,
-// and it is deliberate: Docker and Sistema first because they are what you
-// look at to know whether the machine is healthy; Segurança next; Automação
-// and Integrações last, because they are what you configure once and revisit
+// and it is deliberate: Docker and System first because they are what you
+// look at to know whether the machine is healthy; Security next; Automation
+// and Integrations last, because they are what you configure once and revisit
 // rarely.
 var catalogGroupOrder = []string{
 	GroupDocker,
@@ -102,10 +102,10 @@ var (
 // nil visible, a group outside catalogGroupOrder, or a duplicate id.
 func RegisterCatalog(id, group, label string, visible func(Viewer) bool) {
 	if id == "" {
-		panic("sdui: RegisterCatalog: id vazio")
+		panic("sdui: RegisterCatalog: empty id")
 	}
 	if label == "" {
-		panic("sdui: RegisterCatalog(" + id + "): label vazio")
+		panic("sdui: RegisterCatalog(" + id + "): empty label")
 	}
 	if visible == nil {
 		panic("sdui: RegisterCatalog(" + id + "): visible is required — no catalog entry may exist without an explicit visibility decision")

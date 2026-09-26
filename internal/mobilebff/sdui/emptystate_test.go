@@ -9,9 +9,8 @@ import (
 )
 
 // emptystate_test.go — a table's empty state is PRODUCT COPY, not a technical
-// observation. An operator who opens "Regras de alerta" for the first time and
-// reads "Nenhuma regra encontrada" learns exactly what the blank screen was
-// already showing. The tests in this file exist so that regression does not
+// observation: "No rules found" only repeats what the blank screen already
+// shows. The tests in this file exist so that regression does not
 // come back in silence: they run over EVERY registered screen
 // (RegisteredScreens(), populated by the *_golden_test.go files of the
 // external sdui_test package in the same test binary), for both synthetic
@@ -27,7 +26,7 @@ import (
 //     removed is worse than no promise at all).
 //
 // Check 4 is why these tests build the screen per role instead of inspecting
-// the descriptors' source: "há formulário abaixo" is true for an admin and
+// the descriptors' source: "there is a form below" is true for an admin and
 // may be a lie for a non-admin, and only the Envelope actually assembled
 // knows which of the two is the case.
 
@@ -47,10 +46,10 @@ var emptyStateScreenPointers = map[string][]string{
 // emptyStateFormPromise is the textual trigger of the "the form I promised
 // really exists" check: any text containing this phrase obliges the screen
 // assembled for THAT role to contain a usable FormComponent.
-const emptyStateFormPromise = "formulário abaixo"
+const emptyStateFormPromise = "form below"
 
 // minEmptyStateRunes is the size floor that separates an observation
-// ("Nenhum container encontrado.", 28 runes) from a text that answers the
+// ("No containers found.", 20 runes) from a text that answers the
 // three questions of an empty state. It is not a verbosity target: the real
 // ceiling is editorial (two or three lines), and this floor exists only so
 // that nobody brings the bare observation back without CI noticing.
@@ -104,8 +103,8 @@ func screenForms(t *testing.T, screen string, v Viewer) []FormComponent {
 }
 
 // TestEmptyState_EveryRegisteredTableHasOne is requirement 1: a TableComponent
-// with no EmptyState falls back to the Kotlin renderer's generic text ("Nada
-// para mostrar."), which is exactly the copy that teaches nothing. The server
+// with no EmptyState falls back to the Kotlin renderer's generic text ("Nothing
+// to show."), which is exactly the copy that teaches nothing. The server
 // is what knows why that particular table is empty, so the server writes it.
 func TestEmptyState_EveryRegisteredTableHasOne(t *testing.T) {
 	// Without this count, EVERY test in this file would pass trivially the
@@ -196,8 +195,8 @@ func TestEmptyState_TeachesInsteadOfStatingTheObvious(t *testing.T) {
 }
 
 // TestEmptyState_PromisedFormExists is the "action on the screen itself" half
-// of requirement 4. A text that tells the user to fill in "o formulário
-// abaixo" is only true if THAT role really received a usable form —
+// of requirement 4. A text that tells the user to fill in "the form
+// below" is only true if THAT role really received a usable form —
 // DropFormFields may have emptied the form and DropComponents removed it
 // entirely (filter.go), and in that case the text becomes an impossible order.
 func TestEmptyState_PromisedFormExists(t *testing.T) {

@@ -179,7 +179,7 @@ func registerSchedulerRows(api huma.API, deps SchedulerDeps, mbDeps mobilebff.De
 		OperationID: "getSchedulerJobRows",
 		Method:      http.MethodGet,
 		Path:        "/scheduler/jobs",
-		Summary:     "Linhas da tabela scheduler.jobs, filtradas por RBAC para o usuário autenticado",
+		Summary:     "Rows of the scheduler.jobs table, filtered by RBAC for the authenticated user",
 		Tags:        []string{"mobile", "sdui", "scheduler"},
 		Middlewares: huma.Middlewares{mobilebff.RequireAuth, serveSchedulerRows(cfg, deps)},
 	}, schedulerRowsDocHandler)

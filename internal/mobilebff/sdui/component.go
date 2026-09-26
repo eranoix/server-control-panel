@@ -78,7 +78,7 @@ var ErrUnknownComponentType = errors.New("sdui: unknown component type")
 //     in the filter that assembles the screen per role.
 //   - Critical governs what an old client does when it meets a "type" it does
 //     not know: false (the default) = ignore it and render the rest normally;
-//     true = show an "atualize o app" placeholder in the component's position.
+//     true = show an "update the app" placeholder in the component's position.
 type ComponentBase struct {
 	Type           ComponentType `json:"type"`
 	ID             string        `json:"id"`
@@ -197,7 +197,7 @@ type FormComponent struct {
 func (FormComponent) ComponentType() ComponentType { return ComponentTypeForm }
 
 // ActionComponent is a standalone button/menu entry, not bound to a row
-// (e.g. "Deploy agora", "Reiniciar serviço").
+// (e.g. "Deploy now", "Restart service").
 type ActionComponent struct {
 	ComponentBase
 	Label    string `json:"label"`

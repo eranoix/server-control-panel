@@ -60,7 +60,7 @@ func registerSession(api huma.API, deps Deps) {
 		OperationID: "getMe",
 		Method:      http.MethodGet,
 		Path:        "/me",
-		Summary:     "Identidade, sessão e capacidades do usuário autenticado",
+		Summary:     "Identity, session and capabilities of the authenticated user",
 		Tags:        []string{"mobile"},
 		Middlewares: huma.Middlewares{requireAuth},
 	}, meHandler(authSvc, cfg))

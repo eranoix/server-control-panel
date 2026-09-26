@@ -68,11 +68,11 @@ type mediaGetInput struct {
 // ClientMsgID guarantees idempotency (a network retry does not duplicate the
 // send) — the same contract sendMessageHandler already uses for text.
 type UploadMediaForm struct {
-	File        huma.FormFile `form:"file" required:"true" doc:"Arquivo de mídia a enviar"`
-	ClientMsgID string        `form:"client_msg_id" required:"true" doc:"ID gerado pelo cliente; reenviar com o mesmo id não duplica o envio"`
-	Caption     string        `form:"caption" required:"false" doc:"Legenda opcional"`
-	QuotedID    string        `form:"quoted_id" required:"false" doc:"ID da mensagem citada, se houver"`
-	MsgType     string        `form:"msg_type" required:"false" doc:"image|video|audio|document; inferido do mime/nome quando vazio"`
+	File        huma.FormFile `form:"file" required:"true" doc:"Media file to send"`
+	ClientMsgID string        `form:"client_msg_id" required:"true" doc:"Client-generated ID; resending with the same id does not duplicate the send"`
+	Caption     string        `form:"caption" required:"false" doc:"Optional caption"`
+	QuotedID    string        `form:"quoted_id" required:"false" doc:"ID of the quoted message, if any"`
+	MsgType     string        `form:"msg_type" required:"false" doc:"image|video|audio|document; inferred from the mime/name when empty"`
 }
 
 type mediaUploadInput struct {
@@ -103,7 +103,7 @@ func registerWhatsappMediaWithResolver(api huma.API, resolve whatsappResolver) {
 		OperationID: "getWhatsAppMedia",
 		Method:      http.MethodGet,
 		Path:        "/whatsapp/chats/{jid}/media/{msg_id}",
-		Summary:     "Baixa (sob demanda em cache miss) e serve os bytes de uma mídia, com suporte a Range",
+		Summary:     "Downloads (on demand on a cache miss) and serves a media item's bytes, with Range support",
 		Tags:        []string{"mobile", "whatsapp"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors: []int{
@@ -116,7 +116,7 @@ func registerWhatsappMediaWithResolver(api huma.API, resolve whatsappResolver) {
 		OperationID: "uploadWhatsAppMedia",
 		Method:      http.MethodPost,
 		Path:        "/whatsapp/chats/{jid}/media",
-		Summary:     "Envia um arquivo de mídia; idempotente por client_msg_id, teto de 100 MiB (mesmo do painel)",
+		Summary:     "Sends a media file; idempotent by client_msg_id, 100 MiB cap (same as the panel)",
 		Tags:        []string{"mobile", "whatsapp"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors: []int{

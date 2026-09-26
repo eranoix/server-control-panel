@@ -33,8 +33,8 @@ func fakeJira(t *testing.T, transitions string) *httptest.Server {
 			_, _ = w.Write([]byte(`{"values":[{"key":"VPSM","name":"VPS Manager"}]}`))
 		case strings.Contains(r.URL.Path, "/search"):
 			_, _ = w.Write([]byte(`{"issues":[
-				{"id":"1","key":"TASK-1","fields":{"summary":"cair a fila","status":{"name":"Backlog","statusCategory":{"key":"new"}}}},
-				{"id":"2","key":"TASK-2","fields":{"summary":"revisar o quadro","status":{"name":"EM REVISÃO","statusCategory":{"key":"indeterminate"}}}}
+				{"id":"1","key":"TASK-1","fields":{"summary":"drain the queue","status":{"name":"Backlog","statusCategory":{"key":"new"}}}},
+				{"id":"2","key":"TASK-2","fields":{"summary":"review the board","status":{"name":"IN REVIEW","statusCategory":{"key":"indeterminate"}}}}
 			],"total":2}`))
 		case strings.Contains(r.URL.Path, "/transitions"):
 			if r.Method == http.MethodPost {
@@ -44,7 +44,7 @@ func fakeJira(t *testing.T, transitions string) *httptest.Server {
 			_, _ = w.Write([]byte(transitions))
 		default:
 			// Some issue, for the "already in the column" path.
-			_, _ = w.Write([]byte(`{"id":"1","key":"TASK-1","fields":{"summary":"cair a fila","status":{"name":"Backlog","statusCategory":{"key":"new"}}}}`))
+			_, _ = w.Write([]byte(`{"id":"1","key":"TASK-1","fields":{"summary":"drain the queue","status":{"name":"Backlog","statusCategory":{"key":"new"}}}}`))
 		}
 	}))
 	t.Cleanup(srv.Close)
@@ -99,16 +99,16 @@ func TestBoardReturnsColumnsWithDistributedCards(t *testing.T) {
 	if len(body.Columns[0].Cards) != 1 || body.Columns[0].Cards[0].Key != "TASK-1" {
 		t.Errorf("the Backlog issue had to land in the first column: %+v", body.Columns[0].Cards)
 	}
-	// "EM REVISÃO" is the name Jira uses; the column is by CATEGORY, and that is
-	// why it lands in "Em andamento" with nobody translating anything by hand.
+	// "IN REVIEW" is the name Jira uses; the column is by CATEGORY, so it lands
+	// in "In Progress".
 	if len(body.Columns[1].Cards) != 1 || body.Columns[1].Cards[0].Key != "TASK-2" {
-		t.Errorf("EM REVISÃO had to land in the middle column: %+v", body.Columns[1].Cards)
+		t.Errorf("IN REVIEW had to land in the middle column: %+v", body.Columns[1].Cards)
 	}
 	if len(body.Filters) == 0 {
 		t.Error("the filters come from the server — without them the app would keep its own list that goes stale")
 	}
 	if body.Me == nil || body.Me.AccountID != "acc-eu" {
-		t.Errorf("the board has to say who is looking (that's what 'atribuir a mim' uses): %+v", body.Me)
+		t.Errorf("the board has to say who is looking (that's what 'assign to me' uses): %+v", body.Me)
 	}
 }
 
@@ -136,10 +136,10 @@ func TestBoardWithoutLinkedAccountReturns200WithForm(t *testing.T) {
 
 func TestMoveAppliesTransitionReachingColumn(t *testing.T) {
 	srv := fakeJira(t, `{"transitions":[
-		{"id":"11","name":"Iniciar","to":{"name":"Em Progresso","statusCategory":{"key":"indeterminate"}}},
-		{"id":"31","name":"Concluir","to":{"name":"Pronto","statusCategory":{"key":"done"}}}
+		{"id":"11","name":"Start","to":{"name":"In Progress","statusCategory":{"key":"indeterminate"}}},
+		{"id":"31","name":"Finish","to":{"name":"Ready","statusCategory":{"key":"done"}}}
 	]}`)
-	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"Concluído"}`)
+	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"Done"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -147,8 +147,8 @@ func TestMoveAppliesTransitionReachingColumn(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
 	// The status comes from the APPLIED transition, not from the client's wish: it
 	// is with that status that the app confirms instead of assuming.
-	if body.Status != "Pronto" || body.Column != "Concluído" {
-		t.Errorf("response = %+v; want status Pronto in column Concluído", body)
+	if body.Status != "Ready" || body.Column != "Done" {
+		t.Errorf("response = %+v; want status Ready in column Done", body)
 	}
 }
 
@@ -158,13 +158,13 @@ func TestNoTransitionToColumnReturns409WithPossibleDestinations(t *testing.T) {
 	// original column instead of showing "server error". And the reason has to say
 	// where it IS possible to go — that is what turns the refusal into a next step.
 	srv := fakeJira(t, `{"transitions":[
-		{"id":"11","name":"Iniciar","to":{"name":"Em Progresso","statusCategory":{"key":"indeterminate"}}}
+		{"id":"11","name":"Start","to":{"name":"In Progress","statusCategory":{"key":"indeterminate"}}}
 	]}`)
-	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-2","column":"Concluído"}`)
+	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-2","column":"Done"}`)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409 (body=%s)", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "Em Progresso") {
+	if !strings.Contains(rec.Body.String(), "In Progress") {
 		t.Errorf("the refusal has to name the possible destinations: %s", rec.Body.String())
 	}
 }
@@ -174,7 +174,7 @@ func TestMoveToColumnIssueIsAlreadyInIsNotError(t *testing.T) {
 	// answer from "the workflow forbids it", and confusing the two would send the
 	// card back for no reason.
 	srv := fakeJira(t, `{"transitions":[]}`)
-	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"A fazer"}`)
+	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"To Do"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -184,7 +184,7 @@ func TestColumnMissingFromBoardIs400(t *testing.T) {
 	// The operator may have reconfigured the board between the load and the drag.
 	// Moving to a "similar-looking" column would be worse than refusing.
 	srv := fakeJira(t, `{"transitions":[]}`)
-	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"Coluna que não existe"}`)
+	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/board/move", `{"key":"TASK-1","column":"Column that does not exist"}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -194,17 +194,17 @@ func TestBatchReturnsWhatSucceededAndWhatFailed(t *testing.T) {
 	// A batch is not atomic against Jira: every issue has its own workflow. An
 	// "ok" for the set would hide precisely the ones that need action.
 	srv := fakeJira(t, `{"transitions":[
-		{"id":"11","name":"Iniciar","to":{"name":"Em Progresso","statusCategory":{"key":"indeterminate"}}}
+		{"id":"11","name":"Start","to":{"name":"In Progress","statusCategory":{"key":"indeterminate"}}}
 	]}`)
 	rec := call(t, depsWithJira(srv), http.MethodPost, "/jira/bulk/move",
-		`{"issue_keys":["TASK-1","TASK-2"],"column":"Em andamento"}`)
+		`{"issue_keys":["TASK-1","TASK-2"],"column":"In Progress"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d (body=%s)", rec.Code, rec.Body.String())
 	}
 	var body JiraBulkResult
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
 	if len(body.Done) != 2 {
-		t.Errorf("both had a transition to 'Em andamento': %+v", body)
+		t.Errorf("both had a transition to 'In Progress': %+v", body)
 	}
 }
 
@@ -218,10 +218,9 @@ func TestWithoutJiraOnServerRoutesReturn503InsteadOfPanic(t *testing.T) {
 }
 
 func TestIssueCarriesDestinationsInColumnVocabulary(t *testing.T) {
-	// Whoever sees "Em andamento" on the board should not have to translate
-	// "Em Progresso" in their head in the move menu.
+	// The move menu uses the board's column label, not the raw status name.
 	srv := fakeJira(t, `{"transitions":[
-		{"id":"11","name":"Iniciar","to":{"name":"Em Progresso","statusCategory":{"key":"indeterminate"}}}
+		{"id":"11","name":"Start","to":{"name":"In Progress","statusCategory":{"key":"indeterminate"}}}
 	]}`)
 	rec := call(t, depsWithJira(srv), http.MethodGet, "/jira/issue?key=TASK-1", "")
 	if rec.Code != http.StatusOK {
@@ -232,10 +231,10 @@ func TestIssueCarriesDestinationsInColumnVocabulary(t *testing.T) {
 	if len(body.Moves) != 1 {
 		t.Fatalf("expected one destination: %+v", body.Moves)
 	}
-	if body.Moves[0].Column != "Em andamento" {
+	if body.Moves[0].Column != "In Progress" {
 		t.Errorf("destination = %q; the menu speaks the COLUMN name, not the status name", body.Moves[0].Column)
 	}
-	if body.Moves[0].Status != "Em Progresso" {
+	if body.Moves[0].Status != "In Progress" {
 		t.Errorf("the real status name stays available for whoever wants to check: %+v", body.Moves[0])
 	}
 }
@@ -260,7 +259,7 @@ func starvingJira(t *testing.T) (*httptest.Server, *[]string) {
 		switch {
 		case strings.Contains(jql, "To Do"):
 			_, _ = w.Write([]byte(`{"issues":[
-				{"id":"1","key":"TASK-1","fields":{"summary":"a fazer","status":{"name":"Backlog","statusCategory":{"key":"new"}}}}
+				{"id":"1","key":"TASK-1","fields":{"summary":"to do","status":{"name":"Backlog","statusCategory":{"key":"new"}}}}
 			],"total":1}`))
 		case strings.Contains(jql, "In Progress"):
 			_, _ = w.Write([]byte(`{"issues":[],"total":0}`))
@@ -272,7 +271,7 @@ func starvingJira(t *testing.T) (*httptest.Server, *[]string) {
 				if i > 0 {
 					sb.WriteString(",")
 				}
-				fmt.Fprintf(&sb, `{"id":"%d","key":"VPSM-D%d","fields":{"summary":"feita","status":{"name":"Pronto","statusCategory":{"key":"done"}}}}`, 100+i, i)
+				fmt.Fprintf(&sb, `{"id":"%d","key":"VPSM-D%d","fields":{"summary":"done","status":{"name":"Ready","statusCategory":{"key":"done"}}}}`, 100+i, i)
 			}
 			sb.WriteString(`],"total":99}`)
 			_, _ = w.Write([]byte(sb.String()))
@@ -283,9 +282,7 @@ func starvingJira(t *testing.T) (*httptest.Server, *[]string) {
 }
 
 func TestColumnNotStarvedByAnother(t *testing.T) {
-	// The defect in the owner's screenshots: the same project showed "A fazer 2"
-	// under the "A fazer" filter and "A fazer 1" under the "Todas" filter. The
-	// column was losing a card because of the done issues.
+	// Done issues must not use up the quota of the other columns.
 	srv, queries := starvingJira(t)
 	rec := call(t, depsWithJira(srv), http.MethodGet, "/jira/board?max=40", "")
 	if rec.Code != http.StatusOK {
@@ -299,7 +296,7 @@ func TestColumnNotStarvedByAnother(t *testing.T) {
 		t.Fatalf("expected 3 columns, got %d", len(body.Columns))
 	}
 	if len(body.Columns[0].Cards) != 1 || body.Columns[0].Cards[0].Key != "TASK-1" {
-		t.Fatalf("the 'A fazer' column starved again: %+v", body.Columns[0].Cards)
+		t.Fatalf("the 'To Do' column starved again: %+v", body.Columns[0].Cards)
 	}
 	if len(body.Columns[2].Cards) == 0 {
 		t.Error("the done ones keep coming — they just stop trampling the others")
@@ -322,11 +319,11 @@ func TestFailingColumnDoesNotEraseOthers(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		if strings.Contains(string(body)+r.URL.RawQuery, "In Progress") {
 			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte(`{"errorMessages":["JQL invalido"]}`))
+			_, _ = w.Write([]byte(`{"errorMessages":["invalid JQL"]}`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"issues":[
-			{"id":"1","key":"TASK-1","fields":{"summary":"a fazer","status":{"name":"Backlog","statusCategory":{"key":"new"}}}}
+			{"id":"1","key":"TASK-1","fields":{"summary":"to do","status":{"name":"Backlog","statusCategory":{"key":"new"}}}}
 		],"total":1}`))
 	}))
 	t.Cleanup(srv.Close)
@@ -362,12 +359,11 @@ func TestFirstLoadEqualsRefresh(t *testing.T) {
 	srv := fakeJira(t, `{"transitions":[]}`)
 	deps := depsWithJira(srv)
 	deps.JiraConfigFor = func(user string) jira.Config {
-		// A configured board_jql that matches NOTHING — exactly the owner's case.
-		// If it goes back to hijacking the filter, this test fails.
+		// A configured board_jql that matches NOTHING must not hijack the filter.
 		return jira.Config{
 			Site:       srv.URL,
 			ProjectKey: "VPSM",
-			BoardJQL:   `project = PROJETO_QUE_NAO_EXISTE`,
+			BoardJQL:   `project = PROJECT_THAT_DOES_NOT_EXIST`,
 			HasToken:   true,
 		}
 	}
@@ -414,7 +410,7 @@ func TestMyBoardChosenOnPurposeUsesOperatorJQL(t *testing.T) {
 	var body JiraBoardResponse
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
 	if !strings.Contains(body.JQL, "assignee = currentUser()") {
-		t.Errorf("the 'Meu quadro' filter has to use the operator's JQL: %q", body.JQL)
+		t.Errorf("the 'My board' filter has to use the operator's JQL: %q", body.JQL)
 	}
 	hasOption := false
 	for _, f := range body.Filters {

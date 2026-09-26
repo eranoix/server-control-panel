@@ -292,8 +292,8 @@ type securityUserDeleteInput struct {
 // this exact order, both BEFORE deps.DeleteUser is ever called:
 //
 //  1. Self-delete: unconditional, mirrors handlers_users.go's
-//     handleUserDelete verbatim 403 "não pode deletar o próprio usuário
-//     (logado agora)" — checked first and independent of admin count.
+//     handleUserDelete 403 on deleting the currently logged-in user;
+//     checked first and independent of admin count.
 //  2. Primary-protection / last-admin lockout: NOT a count check here —
 //     deps.DeleteUser wraps internal/config.RemoveUser, whose own
 //     Primary-branch rejection is surfaced below as a field error on the

@@ -44,17 +44,17 @@ func init() { Register("update", registerUpdate) }
 type AppUpdateRelease struct {
 	VersionName string `json:"version_name"`
 	VersionCode int64  `json:"version_code"`
-	SHA256      string `json:"sha256" doc:"SHA-256 (hex minúsculo) do APK assinado desta versão"`
-	SizeBytes   int64  `json:"size_bytes" doc:"Tamanho do APK assinado reconstruído, não do artefato baixado"`
+	SHA256      string `json:"sha256" doc:"SHA-256 (lowercase hex) of this version's signed APK"`
+	SizeBytes   int64  `json:"size_bytes" doc:"Size of the reconstructed signed APK, not of the downloaded artifact"`
 }
 
 // AppUpdateArtifact is one .hdiff file to download. SizeBytes/SHA256 describe
 // the ARTIFACT (what travels), not the APK it reconstructs — they are what the
 // app uses to show progress and to verify the download before applying it.
 type AppUpdateArtifact struct {
-	URL       string `json:"url" doc:"Caminho absoluto da rota de bytes (aceita Range, download retomável)"`
+	URL       string `json:"url" doc:"Absolute path of the bytes route (accepts Range, resumable download)"`
 	SizeBytes int64  `json:"size_bytes"`
-	SHA256    string `json:"sha256" doc:"SHA-256 (hex minúsculo) do próprio arquivo .hdiff"`
+	SHA256    string `json:"sha256" doc:"SHA-256 (lowercase hex) of the .hdiff file itself"`
 }
 
 // AppUpdateResponse is the manifest's response.
@@ -66,14 +66,14 @@ type AppUpdateArtifact struct {
 // the app has a single code path for both cases.
 type AppUpdateResponse struct {
 	Latest    AppUpdateRelease   `json:"latest"`
-	UpToDate  bool               `json:"up_to_date" doc:"true quando base_sha256 já é o APK da versão mais nova"`
-	Patch     *AppUpdateArtifact `json:"patch,omitempty" doc:"Patch incremental a partir de base_sha256; AUSENTE quando não há patch para essa base exata"`
-	Full      AppUpdateArtifact  `json:"full" doc:"Reconstrução completa (hpatchz com base vazia); sempre disponível"`
-	PatchTool string             `json:"patch_tool" doc:"Ferramenta e opções que geraram os artefatos, para diagnóstico de incompatibilidade"`
+	UpToDate  bool               `json:"up_to_date" doc:"true when base_sha256 is already the newest version's APK"`
+	Patch     *AppUpdateArtifact `json:"patch,omitempty" doc:"Incremental patch from base_sha256; ABSENT when there is no patch for that exact base"`
+	Full      AppUpdateArtifact  `json:"full" doc:"Full reconstruction (hpatchz with an empty base); always available"`
+	PatchTool string             `json:"patch_tool" doc:"Tool and options that produced the artifacts, for diagnosing incompatibilities"`
 }
 
 type appUpdateInput struct {
-	BaseSHA256 string `query:"base_sha256" doc:"SHA-256 (hex) do APK instalado no aparelho; omitir devolve só o caminho completo"`
+	BaseSHA256 string `query:"base_sha256" doc:"SHA-256 (hex) of the APK installed on the device; omitting it returns only the full path"`
 }
 
 type appUpdateOutput struct {
@@ -81,7 +81,7 @@ type appUpdateOutput struct {
 }
 
 type appUpdateArtifactInput struct {
-	File string `query:"file" required:"true" doc:"Campo 'file' do artefato, exatamente como veio no manifesto"`
+	File string `query:"file" required:"true" doc:"The artifact's 'file' field, exactly as it came in the manifest"`
 }
 
 // artifactPath is the byte route. It sits under the BFF's same Prefix, and
@@ -98,7 +98,7 @@ func registerUpdate(api huma.API, deps Deps) {
 		OperationID: "getAppUpdate",
 		Method:      http.MethodGet,
 		Path:        "/app/update",
-		Summary:     "Manifesto de atualização do app: patch incremental para a base informada, ou reconstrução completa",
+		Summary:     "App update manifest: incremental patch for the given base, or a full reconstruction",
 		Tags:        []string{"mobile"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusUnauthorized, http.StatusServiceUnavailable},
@@ -129,7 +129,7 @@ func registerUpdate(api huma.API, deps Deps) {
 		OperationID: "downloadAppUpdateArtifact",
 		Method:      http.MethodGet,
 		Path:        artifactPath,
-		Summary:     "Baixa um artefato de atualização (.hdiff), com suporte a Range — download retomável",
+		Summary:     "Downloads an update artifact (.hdiff), with Range support for resumable downloads",
 		Tags:        []string{"mobile"},
 		Middlewares: huma.Middlewares{requireAuth},
 		Errors:      []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusServiceUnavailable},

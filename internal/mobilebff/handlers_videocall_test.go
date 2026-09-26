@@ -34,7 +34,7 @@ func newVideocallTestAPI(svc videocallRoomLister) (huma.API, *http.ServeMux) {
 func TestHandleVideocallRooms_ReturnsOnlyCallerRooms(t *testing.T) {
 	svc := &fakeVideocallRoomLister{byUser: map[string][]videocall.Room{
 		"sam": {
-			{ID: "r1", Name: "Sala 1", Owner: "sam", Members: []string{"jordan"}, CreatedAt: 100},
+			{ID: "r1", Name: "Room 1", Owner: "sam", Members: []string{"jordan"}, CreatedAt: 100},
 		},
 	}}
 	_, mux := newVideocallTestAPI(svc)

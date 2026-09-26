@@ -54,7 +54,7 @@ func TestMountDeclaresBearerScheme(t *testing.T) {
 	}
 	scheme, ok := spec.Components.SecuritySchemes[BearerSchemeName]
 	if !ok {
-		t.Fatalf("securityScheme %q ausente; presentes: %v", BearerSchemeName, spec.Components.SecuritySchemes)
+		t.Fatalf("securityScheme %q missing; present: %v", BearerSchemeName, spec.Components.SecuritySchemes)
 	}
 	if scheme.Type != "http" || scheme.Scheme != "bearer" {
 		t.Errorf("securityScheme = {type:%q scheme:%q}, want {type:\"http\" scheme:\"bearer\"}", scheme.Type, scheme.Scheme)

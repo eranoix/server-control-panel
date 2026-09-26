@@ -93,15 +93,15 @@ type JiraBoardResponse struct {
 }
 
 type jiraBoardInput struct {
-	Project string `query:"project" doc:"Chave do projeto; vazio usa o projeto configurado"`
-	Filter  string `query:"filter" doc:"Filtro rápido: all, mine, todo, inprogress, last7, reported, custom" default:"all"`
-	JQL     string `query:"jql" doc:"JQL próprio — só vale com filter=custom"`
-	Search  string `query:"search" doc:"Busca livre sobre o que o JQL trouxe"`
-	Sort    string `query:"sort" doc:"campo:direção — updated:desc, key:asc, name:asc, type:asc"`
+	Project string `query:"project" doc:"Project key; empty uses the configured project"`
+	Filter  string `query:"filter" doc:"Quick filter: all, mine, todo, inprogress, last7, reported, custom" default:"all"`
+	JQL     string `query:"jql" doc:"Custom JQL, only used with filter=custom"`
+	Search  string `query:"search" doc:"Free-text search over what the JQL returned"`
+	Sort    string `query:"sort" doc:"field:direction, e.g. updated:desc, key:asc, name:asc, type:asc"`
 	// The default is 0 (show everything) because hiding work without being
 	// asked is worse than a long column.
-	HideDoneDays int `query:"hide_done_days" doc:"Esconde concluídas há mais de N dias; 0 mostra todas"`
-	Max          int `query:"max" doc:"Teto de issues buscadas" default:"100"`
+	HideDoneDays int `query:"hide_done_days" doc:"Hides issues done more than N days ago; 0 shows all"`
+	Max          int `query:"max" doc:"Maximum number of issues fetched" default:"100"`
 }
 
 type jiraBoardOutput struct {
@@ -116,8 +116,8 @@ type jiraBoardOutput struct {
 // require it to fetch the transitions before every drag — a network trip in the
 // middle of the gesture.
 type JiraMoveRequest struct {
-	Key    string `json:"key" doc:"Chave da issue (ex.: PROJ-42)" required:"true"`
-	Column string `json:"column" doc:"Rótulo da coluna de destino" required:"true"`
+	Key    string `json:"key" doc:"Issue key (e.g. PROJ-42)" required:"true"`
+	Column string `json:"column" doc:"Label of the destination column" required:"true"`
 }
 
 // JiraMoveResponse reports what actually happened.
@@ -171,14 +171,12 @@ type JiraIssueResponse struct {
 // JiraMoveOption is a possible destination, already translated into the
 // vocabulary of the board's COLUMNS — not into the raw status name.
 //
-// Whoever looks at the board sees "Em andamento"; Jira calls that "EM REVISÃO".
-// Offering the raw name in the menu would force the person to translate between
-// two languages for the same thing in their head. [Status] stays available for
-// anyone who wants to check the real name.
+// The board shows "In Progress" where Jira may say "IN REVIEW"; the menu uses
+// the column label, and [Status] keeps the real status name.
 type JiraMoveOption struct {
 	Column string `json:"column"`
 	Status string `json:"status"`
-	Name   string `json:"name,omitempty" doc:"Nome da transição no Jira (ex.: \"Iniciar revisão\")"`
+	Name   string `json:"name,omitempty" doc:"Transition name in Jira (e.g. \"Start review\")"`
 }
 
 // JiraCommentItem is a comment already flattened for reading.
@@ -198,7 +196,7 @@ type JiraIssueLinkRef struct {
 }
 
 type jiraIssueInput struct {
-	Key string `query:"key" doc:"Chave da issue" required:"true"`
+	Key string `query:"key" doc:"Issue key" required:"true"`
 }
 
 type jiraIssueOutput struct {
@@ -226,7 +224,7 @@ type jiraCommentOutput struct {
 // would create two ways of saying the same thing.
 type JiraAssignRequest struct {
 	Key       string `json:"key" required:"true"`
-	AccountID string `json:"account_id" doc:"accountId do responsável; vazio desatribui"`
+	AccountID string `json:"account_id" doc:"Assignee accountId; empty unassigns"`
 }
 
 type jiraAssignInput struct {
@@ -239,8 +237,8 @@ type JiraUsersResponse struct {
 }
 
 type jiraUsersInput struct {
-	Project string `query:"project" doc:"Chave do projeto" required:"true"`
-	Query   string `query:"q" doc:"Filtro por nome/e-mail"`
+	Project string `query:"project" doc:"Project key" required:"true"`
+	Query   string `query:"q" doc:"Filter by name/e-mail"`
 }
 
 type jiraUsersOutput struct {
@@ -259,7 +257,7 @@ type JiraMetaResponse struct {
 }
 
 type jiraMetaInput struct {
-	Project string `query:"project" doc:"Chave do projeto" required:"true"`
+	Project string `query:"project" doc:"Project key" required:"true"`
 }
 
 type jiraMetaOutput struct {
@@ -276,7 +274,7 @@ type JiraCreateRequest struct {
 	AssigneeID  string   `json:"assignee_id,omitempty"`
 	Labels      []string `json:"labels,omitempty"`
 	DueDate     string   `json:"due_date,omitempty" doc:"AAAA-MM-DD"`
-	ParentKey   string   `json:"parent_key,omitempty" doc:"Épico ou issue-mãe"`
+	ParentKey   string   `json:"parent_key,omitempty" doc:"Epic or parent issue"`
 }
 
 type jiraCreateInput struct {
@@ -301,7 +299,7 @@ type JiraBulkMoveRequest struct {
 // JiraBulkAssignRequest assigns several issues to the same person.
 type JiraBulkAssignRequest struct {
 	Keys      []string `json:"issue_keys" required:"true"`
-	AccountID string   `json:"account_id" doc:"accountId; vazio desatribui"`
+	AccountID string   `json:"account_id" doc:"accountId; empty unassigns"`
 }
 
 // JiraBulkResult is the HONEST result of a bulk action.
@@ -336,10 +334,10 @@ type jiraBulkOutput struct {
 
 // JiraConnectRequest connects this user's Jira account.
 type JiraConnectRequest struct {
-	Site    string `json:"site" doc:"Subdomínio ou host (ex.: suaempresa ou suaempresa.atlassian.net)" required:"true"`
+	Site    string `json:"site" doc:"Subdomain or host (e.g. yourcompany or yourcompany.atlassian.net)" required:"true"`
 	Email   string `json:"email" required:"true"`
 	Token   string `json:"token" doc:"Token de API do Atlassian" required:"true"`
-	Project string `json:"project,omitempty" doc:"Projeto padrão (opcional)"`
+	Project string `json:"project,omitempty" doc:"Default project (optional)"`
 }
 
 type jiraConnectInput struct {
@@ -362,10 +360,10 @@ func registerJira(api huma.API, deps Deps) {
 		OperationID: "getJiraBoard",
 		Method:      http.MethodGet,
 		Path:        "/jira/board",
-		Summary:     "O quadro kanban: colunas, cartões, filtros e projetos",
-		Description: "Uma chamada devolve o quadro inteiro. `connected:false` é " +
-			"resposta normal para quem ainda não ligou a conta — o aplicativo " +
-			"mostra o formulário de conexão, não um erro.",
+		Summary:     "The kanban board: columns, cards, filters and projects",
+		Description: "One call returns the whole board. `connected:false` is a " +
+			"normal response for a user who has not connected an account yet: " +
+			"the app shows the connection form, not an error.",
 		Tags:   []string{"mobile", "jira"},
 		Errors: []int{http.StatusUnauthorized, http.StatusServiceUnavailable},
 	}, jiraBoardHandler(deps))
@@ -374,10 +372,10 @@ func registerJira(api huma.API, deps Deps) {
 		OperationID: "moveJiraIssue",
 		Method:      http.MethodPost,
 		Path:        "/jira/board/move",
-		Summary:     "Move um cartão para uma coluna",
-		Description: "Recebe o RÓTULO da coluna e resolve a transição do lado do " +
-			"servidor. Responde 409 quando o fluxo de trabalho do projeto não " +
-			"permite o salto — o cartão volta para a coluna de origem.",
+		Summary:     "Moves a card to a column",
+		Description: "Takes the column LABEL and resolves the transition on the " +
+			"server. Answers 409 when the project workflow does not allow " +
+			"the jump, and the card goes back to its original column.",
 		Tags:        []string{"mobile", "jira"},
 		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusConflict, http.StatusServiceUnavailable},
@@ -387,7 +385,7 @@ func registerJira(api huma.API, deps Deps) {
 		OperationID: "getJiraIssue",
 		Method:      http.MethodGet,
 		Path:        "/jira/issue",
-		Summary:     "Uma issue com comentários e destinos possíveis",
+		Summary:     "An issue with its comments and possible destinations",
 		Tags:        []string{"mobile", "jira"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
 	}, jiraIssueHandler(deps))
@@ -396,7 +394,7 @@ func registerJira(api huma.API, deps Deps) {
 		OperationID: "commentJiraIssue",
 		Method:      http.MethodPost,
 		Path:        "/jira/issue/comment",
-		Summary:     "Comenta numa issue",
+		Summary:     "Comments on an issue",
 		Tags:        []string{"mobile", "jira"},
 		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
@@ -406,7 +404,7 @@ func registerJira(api huma.API, deps Deps) {
 		OperationID: "assignJiraIssue",
 		Method:      http.MethodPost,
 		Path:        "/jira/issue/assign",
-		Summary:     "Troca o responsável por uma issue",
+		Summary:     "Changes the assignee of an issue",
 		Tags:        []string{"mobile", "jira"},
 		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
@@ -416,9 +414,9 @@ func registerJira(api huma.API, deps Deps) {
 		OperationID: "listJiraAssignableUsers",
 		Method:      http.MethodGet,
 		Path:        "/jira/users",
-		Summary:     "A quem uma issue deste projeto pode ser atribuída",
-		Description: "Existe para o aplicativo OFERECER a lista em vez de pedir " +
-			"que se digite um accountId — que ninguém sabe de cabeça.",
+		Summary:     "Who an issue of this project can be assigned to",
+		Description: "Lets the app OFFER the list instead of asking the user " +
+			"to type an accountId, which nobody knows by heart.",
 		Tags:   []string{"mobile", "jira"},
 		Errors: []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
 	}, jiraUsersHandler(deps))
@@ -427,7 +425,7 @@ func registerJira(api huma.API, deps Deps) {
 		OperationID: "getJiraMeta",
 		Method:      http.MethodGet,
 		Path:        "/jira/meta",
-		Summary:     "Tipos de issue e prioridades do projeto",
+		Summary:     "Issue types and priorities of the project",
 		Tags:        []string{"mobile", "jira"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
 	}, jiraMetaHandler(deps))
@@ -436,7 +434,7 @@ func registerJira(api huma.API, deps Deps) {
 		OperationID: "createJiraIssue",
 		Method:      http.MethodPost,
 		Path:        "/jira/issue/create",
-		Summary:     "Cria uma issue",
+		Summary:     "Creates an issue",
 		Tags:        []string{"mobile", "jira"},
 		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
@@ -446,9 +444,9 @@ func registerJira(api huma.API, deps Deps) {
 		OperationID: "bulkMoveJiraIssues",
 		Method:      http.MethodPost,
 		Path:        "/jira/bulk/move",
-		Summary:     "Move várias issues para a mesma coluna",
-		Description: "O resultado é por issue: o que foi e o que não foi, com o " +
-			"motivo. Lote não é atômico contra o Jira.",
+		Summary:     "Moves several issues to the same column",
+		Description: "The result is per issue: what moved and what did not, with " +
+			"the reason. A batch is not atomic against Jira.",
 		Tags:        []string{"mobile", "jira"},
 		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
@@ -458,7 +456,7 @@ func registerJira(api huma.API, deps Deps) {
 		OperationID: "bulkAssignJiraIssues",
 		Method:      http.MethodPost,
 		Path:        "/jira/bulk/assign",
-		Summary:     "Atribui várias issues à mesma pessoa",
+		Summary:     "Assigns several issues to the same person",
 		Tags:        []string{"mobile", "jira"},
 		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
@@ -468,9 +466,9 @@ func registerJira(api huma.API, deps Deps) {
 		OperationID: "connectJira",
 		Method:      http.MethodPost,
 		Path:        "/jira/connect",
-		Summary:     "Liga a conta do Jira deste usuário",
-		Description: "As credenciais vão para o cofre POR USUÁRIO, o mesmo que o " +
-			"painel web usa. O token nunca volta em nenhuma resposta.",
+		Summary:     "Connects this user's Jira account",
+		Description: "The credentials go to the PER-USER vault, the same one the " +
+			"web panel uses. The token is never returned in any response.",
 		Tags:        []string{"mobile", "jira"},
 		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
@@ -480,7 +478,7 @@ func registerJira(api huma.API, deps Deps) {
 		OperationID: "setJiraProject",
 		Method:      http.MethodPost,
 		Path:        "/jira/project",
-		Summary:     "Fixa o projeto padrão do quadro",
+		Summary:     "Sets the default project of the board",
 		Tags:        []string{"mobile", "jira"},
 		Middlewares: huma.Middlewares{withAudit},
 		Errors:      []int{http.StatusUnauthorized, http.StatusBadRequest, http.StatusServiceUnavailable},
@@ -550,13 +548,7 @@ func jiraBoardHandler(deps Deps) func(context.Context, *jiraBoardInput) (*jiraBo
 			}
 		}
 
-		// The operator's JQL becomes a NAMED FILTER, and never again a silent
-		// detour from "Todas". The old condition (`in.Project == ""`) meant to say
-		// "the operator picked no project", but in practice it said "the client has
-		// not learned the project yet" — that is, first load. The same filter gave
-		// two different boards depending on whether the app already knew where it
-		// was, and with a board_jql that returns zero the board opened empty and
-		// filled up on refresh.
+		// The operator's JQL is a NAMED filter, never a silent replacement for "All".
 		hasOwnBoard := strings.TrimSpace(cfg.BoardJQL) != ""
 		out.Body.Filters = BoardFilters(hasOwnBoard)
 		out.Body.Filter = validFilter(in.Filter, hasOwnBoard)
@@ -857,9 +849,7 @@ func columnLabelOf(columns []JiraBoardColumn, key string) string {
 }
 
 // destinationLabel translates a transition's destination into the label of the
-// column it lands in. Without that translation, the menu would offer
-// "EM REVISÃO" while the board shows "Em andamento" — two languages for the
-// same square.
+// column it lands in, so the menu and the board use the same names.
 func destinationLabel(columns []JiraBoardColumn, t jira.Transition) string {
 	for _, c := range columns {
 		if c.Category != "" && c.Category == t.ToCat {

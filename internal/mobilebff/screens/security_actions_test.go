@@ -197,7 +197,7 @@ func (b *fakeSecurityActionsBackend) counts() map[string]int {
 // past the single (failed) DeleteUser call.
 func TestSecurityUserDelete_SurfacesRemoveUserError(t *testing.T) {
 	backend := newFakeSecurityActionsBackend()
-	backend.deleteUserErr = errors.New("não pode remover o usuário primary 'sec-admin'")
+	backend.deleteUserErr = errors.New("cannot remove the primary user 'sec-admin'")
 	deps := backend.securityDeps()
 	admin, _ := testSecurityViewers()
 
@@ -209,7 +209,7 @@ func TestSecurityUserDelete_SurfacesRemoveUserError(t *testing.T) {
 		t.Fatalf("error = %v (%T), want sdui.FieldErrors", err, err)
 	}
 	msgs, ok := fe["username"]
-	if !ok || len(msgs) == 0 || msgs[0] != "não pode remover o usuário primary 'sec-admin'" {
+	if !ok || len(msgs) == 0 || msgs[0] != "cannot remove the primary user 'sec-admin'" {
 		t.Errorf("FieldErrors[\"username\"] = %v, want the EXACT error from RemoveUser, never reworded", msgs)
 	}
 	if backend.counts()["deleteUser"] != 1 {
@@ -222,7 +222,7 @@ func TestSecurityUserDelete_SurfacesRemoveUserError(t *testing.T) {
 // FieldErrors keyed "admin", never a re-derived count check.
 func TestSecurityUserSave_SurfacesSetAdminError(t *testing.T) {
 	backend := newFakeSecurityActionsBackend()
-	backend.saveUserErr = errors.New("não pode revogar admin do usuário primary 'sec-admin'")
+	backend.saveUserErr = errors.New("cannot revoke admin from the primary user 'sec-admin'")
 	deps := backend.securityDeps()
 	admin, _ := testSecurityViewers()
 
@@ -235,7 +235,7 @@ func TestSecurityUserSave_SurfacesSetAdminError(t *testing.T) {
 		t.Fatalf("error = %v (%T), want sdui.FieldErrors", err, err)
 	}
 	msgs, ok := fe["admin"]
-	if !ok || len(msgs) == 0 || msgs[0] != "não pode revogar admin do usuário primary 'sec-admin'" {
+	if !ok || len(msgs) == 0 || msgs[0] != "cannot revoke admin from the primary user 'sec-admin'" {
 		t.Errorf("FieldErrors[\"admin\"] = %v, want the EXACT error from SetAdmin, never reworded", msgs)
 	}
 	if backend.counts()["saveUser"] != 1 {

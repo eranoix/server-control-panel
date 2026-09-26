@@ -29,7 +29,7 @@ func newTestSessionsStore(t *testing.T) *sessions.Store {
 // through the real auth.Service.Middleware (rather than injecting user/jti by
 // hand) so the test exercises the actual production path.
 func TestMobileLogout_RevokesOnlyCallingSession(t *testing.T) {
-	svc := auth.New("segredo-de-teste", []auth.Credential{{Username: "sam", PasswordHash: "x"}})
+	svc := auth.New("test-secret", []auth.Credential{{Username: "sam", PasswordHash: "x"}})
 	store := newTestSessionsStore(t)
 	svc = svc.WithSessions(store)
 
@@ -41,7 +41,7 @@ func TestMobileLogout_RevokesOnlyCallingSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Issue tokenB (another device, same user): %v", err)
 	}
-	tokenOther, jtiOther, err := svc.Issue("outro-usuario", nil)
+	tokenOther, jtiOther, err := svc.Issue("other-user", nil)
 	if err != nil {
 		t.Fatalf("Issue tokenOther: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestMobileLogout_RevokesOnlyCallingSession(t *testing.T) {
 // logging out after a revocation through some other path, e.g. "revoke all
 // sessions" in the web panel) must not break: it answers 200, never 500.
 func TestMobileLogout_IdempotentOnAlreadyRevokedSession(t *testing.T) {
-	svc := auth.New("segredo-de-teste", []auth.Credential{{Username: "sam", PasswordHash: "x"}})
+	svc := auth.New("test-secret", []auth.Credential{{Username: "sam", PasswordHash: "x"}})
 	store := newTestSessionsStore(t)
 	svc = svc.WithSessions(store)
 
@@ -103,7 +103,7 @@ func TestMobileLogout_IdempotentOnAlreadyRevokedSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	store.Revoke(jti) // simulates a prior revocation (e.g. "revogar todas" in the panel)
+	store.Revoke(jti) // simulates a prior revocation (e.g. "revoke all" in the panel)
 
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Sessions: store})
@@ -125,7 +125,7 @@ func TestMobileLogout_IdempotentOnAlreadyRevokedSession(t *testing.T) {
 // builds Deps{} without Sessions (see the Deps.Sessions docstring in
 // registry.go); the endpoint must not panic on a nil store.
 func TestMobileLogout_NoSessionsStoreDegradesTo200(t *testing.T) {
-	svc := auth.New("segredo-de-teste", []auth.Credential{{Username: "sam", PasswordHash: "x"}})
+	svc := auth.New("test-secret", []auth.Credential{{Username: "sam", PasswordHash: "x"}})
 
 	token, _, err := svc.Issue("sam", nil)
 	if err != nil {

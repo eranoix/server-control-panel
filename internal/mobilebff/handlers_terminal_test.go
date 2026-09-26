@@ -73,7 +73,7 @@ func TestTerminalWSTicket_NewSessionName_AllowsAnyAuthenticatedUser(t *testing.T
 	mux := http.NewServeMux()
 	Mount(mux, Deps{SessionOwn: own})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/mobile/v1/terminal/ws-ticket", strings.NewReader(`{"name":"nunca-existiu"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/mobile/v1/terminal/ws-ticket", strings.NewReader(`{"name":"never-existed"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req = req.WithContext(auth.WithUser(req.Context(), "sam"))
 	rec := httptest.NewRecorder()
@@ -99,13 +99,13 @@ func TestTerminalWSTicket_NewSessionName_AllowsAnyAuthenticatedUser(t *testing.T
 // gets a ticket — 404, never 403, so as not to leak existence.
 func TestTerminalWSTicket_OwnedByOtherUser_404NotFound(t *testing.T) {
 	own := newTestOwnership(t)
-	if err := own.Claim("privado-do-jordan", "jordan"); err != nil {
+	if err := own.Claim("jordans-private", "jordan"); err != nil {
 		t.Fatalf("Claim: %v", err)
 	}
 	mux := http.NewServeMux()
 	Mount(mux, Deps{SessionOwn: own})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/mobile/v1/terminal/ws-ticket", strings.NewReader(`{"name":"privado-do-jordan"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/mobile/v1/terminal/ws-ticket", strings.NewReader(`{"name":"jordans-private"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req = req.WithContext(auth.WithUser(req.Context(), "sam"))
 	rec := httptest.NewRecorder()
@@ -121,13 +121,13 @@ func TestTerminalWSTicket_OwnedByOtherUser_404NotFound(t *testing.T) {
 // model's "(non-AudienceAll)" parenthesis asks for.
 func TestTerminalWSTicket_AudienceAllSession_AllowsAnyUser(t *testing.T) {
 	own := newTestOwnership(t)
-	if err := own.Assign("sala-compartilhada", ptysvc.AudienceAll); err != nil {
+	if err := own.Assign("shared-room", ptysvc.AudienceAll); err != nil {
 		t.Fatalf("Assign: %v", err)
 	}
 	mux := http.NewServeMux()
 	Mount(mux, Deps{SessionOwn: own})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/mobile/v1/terminal/ws-ticket", strings.NewReader(`{"name":"sala-compartilhada"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/mobile/v1/terminal/ws-ticket", strings.NewReader(`{"name":"shared-room"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req = req.WithContext(auth.WithUser(req.Context(), "sam"))
 	rec := httptest.NewRecorder()
@@ -140,13 +140,13 @@ func TestTerminalWSTicket_AudienceAllSession_AllowsAnyUser(t *testing.T) {
 
 func TestTerminalWSTicket_OwnSession_Allowed(t *testing.T) {
 	own := newTestOwnership(t)
-	if err := own.Claim("minha-sessao", "sam"); err != nil {
+	if err := own.Claim("my-session", "sam"); err != nil {
 		t.Fatalf("Claim: %v", err)
 	}
 	mux := http.NewServeMux()
 	Mount(mux, Deps{SessionOwn: own})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/mobile/v1/terminal/ws-ticket", strings.NewReader(`{"name":"minha-sessao"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/mobile/v1/terminal/ws-ticket", strings.NewReader(`{"name":"my-session"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req = req.WithContext(auth.WithUser(req.Context(), "sam"))
 	rec := httptest.NewRecorder()
@@ -172,13 +172,13 @@ func TestTerminalScrollback_Unauthenticated(t *testing.T) {
 
 func TestTerminalScrollback_NotOwned_404NotFound(t *testing.T) {
 	own := newTestOwnership(t)
-	if err := own.Claim("sessao-do-jordan", "jordan"); err != nil {
+	if err := own.Claim("jordans-session", "jordan"); err != nil {
 		t.Fatalf("Claim: %v", err)
 	}
 	mux := http.NewServeMux()
 	Mount(mux, Deps{SessionOwn: own})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/terminal/scrollback?name=sessao-do-jordan", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/terminal/scrollback?name=jordans-session", nil)
 	req = req.WithContext(auth.WithUser(req.Context(), "sam"))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -206,13 +206,13 @@ func TestTerminalRawLog_Unauthenticated(t *testing.T) {
 
 func TestTerminalRawLog_NotOwned_404NotFound(t *testing.T) {
 	own := newTestOwnership(t)
-	if err := own.Claim("sessao-do-jordan", "jordan"); err != nil {
+	if err := own.Claim("jordans-session", "jordan"); err != nil {
 		t.Fatalf("Claim: %v", err)
 	}
 	mux := http.NewServeMux()
 	Mount(mux, Deps{SessionOwn: own})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/terminal/log-bruto?name=sessao-do-jordan", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/terminal/log-bruto?name=jordans-session", nil)
 	req = req.WithContext(auth.WithUser(req.Context(), "sam"))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

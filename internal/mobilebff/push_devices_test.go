@@ -177,11 +177,11 @@ func TestDevicePrefs_SeedDefaultsEnablesOnlyCriticalRules(t *testing.T) {
 		t.Fatalf("notify.New: %v", err)
 	}
 	t.Cleanup(router.Close)
-	if _, err := router.UpsertRule(notify.Rule{Name: "critico", Enabled: true, MinSeverity: notify.SeverityCritical, Channels: []string{"push"}}); err != nil {
-		t.Fatalf("UpsertRule critico: %v", err)
+	if _, err := router.UpsertRule(notify.Rule{Name: "critical", Enabled: true, MinSeverity: notify.SeverityCritical, Channels: []string{"push"}}); err != nil {
+		t.Fatalf("UpsertRule critical: %v", err)
 	}
-	if _, err := router.UpsertRule(notify.Rule{Name: "chato", Enabled: true, MinSeverity: notify.SeverityInfo, Channels: []string{"push"}}); err != nil {
-		t.Fatalf("UpsertRule chato: %v", err)
+	if _, err := router.UpsertRule(notify.Rule{Name: "noisy", Enabled: true, MinSeverity: notify.SeverityInfo, Channels: []string{"push"}}); err != nil {
+		t.Fatalf("UpsertRule noisy: %v", err)
 	}
 
 	s := NewDevicePrefsStore(dir)
@@ -192,9 +192,9 @@ func TestDevicePrefs_SeedDefaultsEnablesOnlyCriticalRules(t *testing.T) {
 	var criticalID, chattyID string
 	for _, rl := range router.Rules() {
 		switch rl.Name {
-		case "critico":
+		case "critical":
 			criticalID = rl.ID
-		case "chato":
+		case "noisy":
 			chattyID = rl.ID
 		}
 	}

@@ -174,7 +174,7 @@ func TestHandleMe_Unauthenticated(t *testing.T) {
 func TestHandleMe_NoDuplicatedAuthLogic(t *testing.T) {
 	src, err := os.ReadFile("handlers_session.go")
 	if err != nil {
-		t.Fatalf("lendo handlers_session.go: %v", err)
+		t.Fatalf("reading handlers_session.go: %v", err)
 	}
 	forbidden := []string{"bcrypt", "jwt.Parse", "SupabaseClient", "sessions.Store"}
 	for _, f := range forbidden {

@@ -26,7 +26,7 @@ import (
 func TestTransferDownload_RangeRequest_ReturnsPartialContent(t *testing.T) {
 	dir := t.TempDir()
 	content := bytes.Repeat([]byte("0123456789"), 100) // 1000 bytes
-	f := filepath.Join(dir, "grande.bin")
+	f := filepath.Join(dir, "large.bin")
 	if err := os.WriteFile(f, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestTransferDownload_RangeRequest_ReturnsPartialContent(t *testing.T) {
 // empty body.
 func TestTransferDownload_UnsatisfiableRange_Returns416(t *testing.T) {
 	dir := t.TempDir()
-	f := filepath.Join(dir, "pequeno.bin")
+	f := filepath.Join(dir, "small.bin")
 	if err := os.WriteFile(f, []byte("0123456789"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -84,8 +84,8 @@ func TestTransferDownload_UnsatisfiableRange_Returns416(t *testing.T) {
 // request (no Range) keeps working as a full download.
 func TestTransferDownload_NoRange_ReturnsFullFile200(t *testing.T) {
 	dir := t.TempDir()
-	content := []byte("conteudo completo do arquivo")
-	f := filepath.Join(dir, "completo.txt")
+	content := []byte("full file content")
+	f := filepath.Join(dir, "complete.txt")
 	if err := os.WriteFile(f, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestTransferUpload_ResumeAfterFailure_HashMatches(t *testing.T) {
 	part2 := original[2000:5000]
 
 	// 1. init
-	initBody, _ := json.Marshal(UploadInitRequest{DestDir: destDir, Filename: "resumido.bin", TotalSize: int64(len(original))})
+	initBody, _ := json.Marshal(UploadInitRequest{DestDir: destDir, Filename: "resumed.bin", TotalSize: int64(len(original))})
 	req := newAuthedRequest(http.MethodPost, "/api/mobile/v1/files/upload/init", initBody)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -213,7 +213,7 @@ func TestTransferUpload_IncompleteComplete_409WithProgress(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: &config.Config{DataDir: dataDir}})
 
-	initBody, _ := json.Marshal(UploadInitRequest{DestDir: destDir, Filename: "incompleto.bin", TotalSize: 1000})
+	initBody, _ := json.Marshal(UploadInitRequest{DestDir: destDir, Filename: "incomplete.bin", TotalSize: 1000})
 	req := newAuthedRequest(http.MethodPost, "/api/mobile/v1/files/upload/init", initBody)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -247,7 +247,7 @@ func TestTransferUpload_IncompleteComplete_409WithProgress(t *testing.T) {
 // err.Error() of an *os.PathError, which embeds exactly that path.
 func TestTransferDownload_MissingFile_404NoPathLeak(t *testing.T) {
 	dir := t.TempDir()
-	missing := filepath.Join(dir, "nao-existe.bin")
+	missing := filepath.Join(dir, "missing.bin")
 
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: &config.Config{DataDir: t.TempDir()}})
@@ -299,7 +299,7 @@ func TestTransferInbox_ReturnsExistingDir(t *testing.T) {
 func TestMapTransferErr_DiskFull_507(t *testing.T) {
 	err := mapTransferErr(&os.PathError{
 		Op:   "write",
-		Path: "/srv/segredo/.mobile-upload-staging/abc/data",
+		Path: "/srv/secret/.mobile-upload-staging/abc/data",
 		Err:  syscall.ENOSPC,
 	})
 
@@ -310,7 +310,7 @@ func TestMapTransferErr_DiskFull_507(t *testing.T) {
 	if statusErr.GetStatus() != http.StatusInsufficientStorage {
 		t.Fatalf("status = %d, want 507", statusErr.GetStatus())
 	}
-	if strings.Contains(err.Error(), "/srv/segredo") {
+	if strings.Contains(err.Error(), "/srv/secret") {
 		t.Fatalf("message leaked the server's path: %s", err.Error())
 	}
 }
@@ -322,7 +322,7 @@ func TestMapTransferErr_DiskFull_507(t *testing.T) {
 func TestMapTransferErr_PermissionDenied_403(t *testing.T) {
 	err := mapTransferErr(&os.PathError{
 		Op:   "open",
-		Path: "/srv/segredo/protegido",
+		Path: "/srv/secret/protected",
 		Err:  syscall.EACCES,
 	})
 
@@ -333,7 +333,7 @@ func TestMapTransferErr_PermissionDenied_403(t *testing.T) {
 	if statusErr.GetStatus() != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", statusErr.GetStatus())
 	}
-	if strings.Contains(err.Error(), "/srv/segredo") {
+	if strings.Contains(err.Error(), "/srv/secret") {
 		t.Fatalf("message leaked the server's path: %s", err.Error())
 	}
 }

@@ -34,9 +34,9 @@ func init() { Register("screens", registerScreens) }
 // generated DTO is desirable here: the app needs to draw groups and labels, and
 // a new field here is a contract change that deserves to show up in the OpenAPI.
 type ScreenSection struct {
-	ID    string `json:"id" doc:"Id da tela, para GET /screens/{id}"`
-	Group string `json:"group" doc:"Grupo do seletor (ex.: Docker, Sistema, Segurança)"`
-	Label string `json:"label" doc:"Rótulo em português, legível fora do grupo"`
+	ID    string `json:"id" doc:"Screen id, for GET /screens/{id}"`
+	Group string `json:"group" doc:"Picker group (e.g. Docker, System, Security)"`
+	Label string `json:"label" doc:"Human-readable label, understandable outside its group"`
 }
 
 // ScreensResponse wraps the list under a key instead of returning a bare array,
@@ -71,7 +71,7 @@ func registerScreensList(api huma.API, deps Deps) {
 		OperationID: "listScreens",
 		Method:      http.MethodGet,
 		Path:        "/screens",
-		Summary:     "Seções SDUI disponíveis para o usuário autenticado, agrupadas",
+		Summary:     "SDUI sections available to the authenticated user, grouped",
 		Tags:        []string{"mobile", "sdui"},
 		Middlewares: huma.Middlewares{requireAuth},
 	}, func(ctx context.Context, _ *struct{}) (*screensListOutput, error) {
@@ -96,7 +96,7 @@ func registerScreens(api huma.API, deps Deps) {
 		OperationID: "getScreen",
 		Method:      http.MethodGet,
 		Path:        "/screens/{id}",
-		Summary:     "Descritor de tela SDUI, filtrado por RBAC para o usuário autenticado",
+		Summary:     "SDUI screen descriptor, filtered by RBAC for the authenticated user",
 		Tags:        []string{"mobile", "sdui"},
 		// requireAuth (handlers_session.go) replies 401 without calling next()
 		// when there is no authenticated user. serveScreen does the rest —
@@ -113,7 +113,7 @@ func registerScreens(api huma.API, deps Deps) {
 // generated OpenAPI — serveScreen reads req.PathValue("id") directly off the
 // raw request, never through this struct.
 type screenInput struct {
-	ID string `path:"id" doc:"Id da tela registrada em internal/mobilebff/sdui (ex.: scheduler.jobs)"`
+	ID string `path:"id" doc:"Id of a screen registered in internal/mobilebff/sdui (e.g. scheduler.jobs)"`
 }
 
 // screenOutput declares the response body as free-form JSON

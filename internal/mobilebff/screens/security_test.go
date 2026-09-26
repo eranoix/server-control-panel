@@ -411,14 +411,14 @@ func TestSecurityUFWScreen_SpecFieldIsPassthroughNotStructural(t *testing.T) {
 // action) happens server-side in Go, never encoded as client-evaluated logic.
 func TestSecurityScreens_NoClientSideLogicKeys(t *testing.T) {
 	envs := map[string]*sdui.Envelope{
-		"users":    buildSecurityUsersScreen(),
-		"secrets":  buildSecuritySecretsScreen(),
-		"sessions": buildSecuritySessionsScreen(),
-		"audit":    buildSecurityAuditScreen(),
-		"ufw":      buildSecurityUFWScreen(),
-		"adguard":  buildSecurityAdGuardScreen(),
-		"devices":  buildSecurityDevicesScreen(),
-		"economia": buildSecurityDataSaverScreen(),
+		"users":     buildSecurityUsersScreen(),
+		"secrets":   buildSecuritySecretsScreen(),
+		"sessions":  buildSecuritySessionsScreen(),
+		"audit":     buildSecurityAuditScreen(),
+		"ufw":       buildSecurityUFWScreen(),
+		"adguard":   buildSecurityAdGuardScreen(),
+		"devices":   buildSecurityDevicesScreen(),
+		"datasaver": buildSecurityDataSaverScreen(),
 	}
 	forbidden := []string{"\"condition\"", "\"visible_when\"", "\"expression\""}
 	for name, env := range envs {

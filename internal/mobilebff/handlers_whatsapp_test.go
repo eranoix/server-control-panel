@@ -198,11 +198,11 @@ func TestWhatsAppMessages_MapsFieldsAndBackfilling(t *testing.T) {
 		messages: []whatsapp.Message{
 			{
 				ID: "m1", ChatJID: "a@s.whatsapp.net", FromJID: "a@s.whatsapp.net",
-				FromMe: false, TS: 111, Type: "text", Body: "olá", Ack: 2,
+				FromMe: false, TS: 111, Type: "text", Body: "hello", Ack: 2,
 			},
 			{
 				ID: "m2", ChatJID: "a@s.whatsapp.net", FromMe: true, TS: 222, Type: "image",
-				Media: &whatsapp.Media{MimeType: "image/jpeg", Size: 1234, Filename: "foto.jpg", Width: 10, Height: 20},
+				Media: &whatsapp.Media{MimeType: "image/jpeg", Size: 1234, Filename: "photo.jpg", Width: 10, Height: 20},
 			},
 		},
 	}
@@ -225,7 +225,7 @@ func TestWhatsAppMessages_MapsFieldsAndBackfilling(t *testing.T) {
 	if len(body.Messages) != 2 {
 		t.Fatalf("len(messages) = %d, want 2", len(body.Messages))
 	}
-	if body.Messages[0].ID != "m1" || body.Messages[0].Sender != "a@s.whatsapp.net" || body.Messages[0].Text != "olá" {
+	if body.Messages[0].ID != "m1" || body.Messages[0].Sender != "a@s.whatsapp.net" || body.Messages[0].Text != "hello" {
 		t.Fatalf("messages[0] = %+v", body.Messages[0])
 	}
 	if body.Messages[1].Media == nil {
@@ -251,7 +251,7 @@ func TestWhatsAppSendMessage_ClientMsgIDIdempotent(t *testing.T) {
 	svc := &fakeWhatsappSvc{sendID: "wamid-999"}
 	_, mux := newWhatsappTestAPI(svc)
 
-	body, _ := json.Marshal(SendMessageRequest{Text: "oi", ClientMsgID: "cliente-123"})
+	body, _ := json.Marshal(SendMessageRequest{Text: "hi", ClientMsgID: "client-123"})
 
 	do := func() (*httptest.ResponseRecorder, SendMessageResponse) {
 		req := newAuthedRequest(http.MethodPost, "/api/mobile/v1/whatsapp/chats/5511999998888@c.us/messages", body)
@@ -274,7 +274,7 @@ func TestWhatsAppSendMessage_ClientMsgIDIdempotent(t *testing.T) {
 	}
 
 	if resp1.ID != "wamid-999" || resp2.ID != "wamid-999" {
-		t.Fatalf("ids = %q, %q, want ambos wamid-999", resp1.ID, resp2.ID)
+		t.Fatalf("ids = %q, %q, want both wamid-999", resp1.ID, resp2.ID)
 	}
 	// The boundary tested here is HTTP -> handler -> SendTextDedup: the fake
 	// counts how many times the HANDLER called SendTextDedup over the HTTP route.
@@ -295,7 +295,7 @@ func TestWhatsAppSendMessage_BackendErrorBecomes502(t *testing.T) {
 	svc := &fakeWhatsappSvc{sendErr: errBadGatewayTest}
 	_, mux := newWhatsappTestAPI(svc)
 
-	body, _ := json.Marshal(SendMessageRequest{Text: "oi", ClientMsgID: "c1"})
+	body, _ := json.Marshal(SendMessageRequest{Text: "hi", ClientMsgID: "c1"})
 	req := newAuthedRequest(http.MethodPost, "/api/mobile/v1/whatsapp/chats/jid/messages", body)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -334,7 +334,7 @@ func TestWhatsAppAvatar_StreamsServiceStatus(t *testing.T) {
 	}
 }
 
-var errBadGatewayTest = &testSendErr{"waha indisponível"}
+var errBadGatewayTest = &testSendErr{"waha unavailable"}
 
 type testSendErr struct{ msg string }
 
