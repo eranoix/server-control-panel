@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"encoding/base64"
+	"strings"
 	"testing"
 )
 
@@ -48,7 +50,7 @@ func TestWebAuthnRegToken_TamperRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	tampered := tok[:len(tok)-1] + flipLastChar(tok[len(tok)-1:])
+	tampered := flipSignatureBit(t, tok)
 	if _, err := s.VerifyWebAuthnRegToken(tampered); err == nil {
 		t.Fatalf("SECURITY: tampered token was accepted")
 	}
@@ -137,9 +139,24 @@ func TestWebAuthnCeremonyTokens_NeverAcceptedBySessionParser(t *testing.T) {
 	}
 }
 
-func flipLastChar(c string) string {
-	if c == "A" {
-		return "B"
+// flipSignatureBit returns tok with one bit of its decoded signature inverted.
+//
+// Swapping the last base64url character is not a reliable tamper: an HS256
+// signature is 32 bytes, so its 43rd character carries 4 bits of signature and
+// 2 padding bits. Replacing an "A" with a "B" changes only a padding bit, the
+// decoder ignores it, and the untouched signature verifies. That happened
+// whenever the signature ended in "A", one run in sixteen. Flipping a bit of the
+// decoded bytes always changes the signature itself.
+func flipSignatureBit(t *testing.T, tok string) string {
+	t.Helper()
+	dot := strings.LastIndexByte(tok, '.')
+	if dot < 0 {
+		t.Fatalf("token has no signature segment: %q", tok)
 	}
-	return "A"
+	sig, err := base64.RawURLEncoding.DecodeString(tok[dot+1:])
+	if err != nil || len(sig) == 0 {
+		t.Fatalf("decode signature: %v", err)
+	}
+	sig[0] ^= 0x01
+	return tok[:dot+1] + base64.RawURLEncoding.EncodeToString(sig)
 }
