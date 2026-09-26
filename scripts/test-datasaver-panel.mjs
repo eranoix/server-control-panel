@@ -74,7 +74,7 @@ ok('the four statistic cards are among them',
    exprs.filter((e) => e.tipo === 'text').length + ' x-text');
 
 // ── evaluation ──────────────────────────────────────────────────────────────
-const escopo = {
+const scope = {
   fmtBytes: (n) => {
     if (typeof n !== 'number' || !isFinite(n)) throw new Error('fmtBytes received ' + n);
     return String(n);
@@ -83,8 +83,8 @@ const escopo = {
 };
 
 function evaluate(expr, dsStatus) {
-  const names = Object.keys(escopo).concat(['dsStatus']);
-  const vals = Object.values(escopo).concat([dsStatus]);
+  const names = Object.keys(scope).concat(['dsStatus']);
+  const vals = Object.values(scope).concat([dsStatus]);
   return new Function(...names, 'return (' + expr + ')')(...vals);
 }
 
@@ -103,16 +103,16 @@ const scenarios = [
 
 for (const [nome, st] of scenarios) {
   if (!st) { ok('scenario ' + nome, false, 'state was not built'); continue; }
-  let erro = null, bad = null;
-  for (const { tipo, expr } of exprs) {
+  let err = null, bad = null;
+  for (const { tipo: type, expr } of exprs) {
     try {
       const v = evaluate(expr, st);
-      if (tipo !== 'text') continue;   // conditional: not blowing up is enough
+      if (type !== 'text') continue;   // conditional: not blowing up is enough
       const txt = String(v);
       if (txt.includes('undefined') || txt.includes('NaN')) { bad = expr + ' -> "' + txt + '"'; break; }
-    } catch (ex) { erro = expr + ' -> ' + ex.constructor.name + ': ' + ex.message; break; }
+    } catch (ex) { err = expr + ' -> ' + ex.constructor.name + ': ' + ex.message; break; }
   }
-  ok('survives: ' + nome, !erro && !bad, erro || bad || '');
+  ok('survives: ' + nome, !err && !bad, err || bad || '');
 }
 
 // ── the shape guard: the container can never be promised empty ──────────────

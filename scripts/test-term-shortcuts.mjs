@@ -13,8 +13,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const alvo = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
-const src = readFileSync(alvo, 'utf8');
+const target = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const src = readFileSync(target, 'utf8');
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('  ✓ ' + m); pass++; };
 const no = (m) => { console.log('  ✗ ' + m); fail++; };
@@ -26,38 +26,38 @@ const block = src.match(/\/\/ ── Ctrl\+C \/ Ctrl\+V ─[\s\S]*?\n(?= +\/\/ C
 if (!block) { no('could not extract the Ctrl+C/Ctrl+V block'); process.exit(1); }
 
 const build = ({ selection, ctrlV }) => {
-  const estado = { copied: null, cleared: false, pasted: false };
+  const termState = { copied: null, cleared: false, pasted: false };
   const term = {
     getSelection: () => selection,
-    clearSelection: () => { estado.cleared = true; },
+    clearSelection: () => { termState.cleared = true; },
   };
-  const self = { hostTermCtrlV: ctrlV, _pasteIntoPane: async () => { estado.pasted = true; }, _pasteImageIfAny: () => { estado.image = true; } };
+  const self = { hostTermCtrlV: ctrlV, _pasteIntoPane: async () => { termState.pasted = true; }, _pasteImageIfAny: () => { termState.image = true; } };
   const state = {};
   // navigator is read-only on Node 22 → inject it as a parameter
-  const navigator = { clipboard: { writeText: (t) => { estado.copied = t; return Promise.resolve(); } } };
+  const navigator = { clipboard: { writeText: (t) => { termState.copied = t; return Promise.resolve(); } } };
   const fn = new Function('ev', 'term', 'self', 'state', 'c', 'navigator',
     block[0] + '\n return "PASSOU_ADIANTE";');
   const run = (ev) => fn(ev, term, self, state, ev.ctrlKey || ev.metaKey, navigator);
-  return { run, estado };
+  return { run, estado: termState };
 };
 const ev = (key, extra = {}) => ({ type: 'keydown', key, ctrlKey: true, shiftKey: false, altKey: false, preventDefault(){}, ...extra });
 
 // 1) Ctrl+C WITHOUT a selection → does NOT intercept (the ^C must be SIGINT)
 {
-  const { run, estado } = build({ selection: '', ctrlV: true });
+  const { run, estado: state } = build({ selection: '', ctrlV: true });
   const r = run(ev('c'));
-  (r === 'PASSOU_ADIANTE' || r === true) && estado.copied === null
+  (r === 'PASSOU_ADIANTE' || r === true) && state.copied === null
     ? ok('Ctrl+C with no selection → passes through as SIGINT (does not swallow the ^C)')
     : no('Ctrl+C with no selection was INTERCEPTED — the user lost the SIGINT');
 }
 // 2) Ctrl+C WITH a selection → copies and CLEARS the selection
 {
-  const { run, estado } = build({ selection: 'copied text', ctrlV: true });
+  const { run, estado: state } = build({ selection: 'copied text', ctrlV: true });
   const r = run(ev('c'));
-  r === false && estado.copied === 'copied text'
+  r === false && state.copied === 'copied text'
     ? ok('Ctrl+C with a selection → copies')
     : no('Ctrl+C with a selection did not copy');
-  estado.cleared
+  state.cleared
     ? ok('the selection is CLEARED after copying (the next Ctrl+C interrupts again)')
     : no('the selection was NOT cleared — every later Ctrl+C would stop being SIGINT');
 }
@@ -75,7 +75,7 @@ const ev = (key, extra = {}) => ({ type: 'keydown', key, ctrlKey: true, shiftKey
 // neither text NOR image. Only FALSE makes _keyDown return before cancel(),
 // letting the browser run the default paste. `true` here is a bug, not a detail.
 {
-  const { run, estado } = build({ selection: '', ctrlV: true });
+  const { run, estado: state } = build({ selection: '', ctrlV: true });
   let blocked = false;
   const e = ev('v'); e.preventDefault = () => { blocked = true; };
   const r = run(e);
@@ -87,15 +87,15 @@ const ev = (key, extra = {}) => ({ type: 'keydown', key, ctrlKey: true, shiftKey
   !blocked
     ? ok('we do not call preventDefault (xterm is the one that would cancel)')
     : no('we call preventDefault — that kills the native paste by ourselves');
-  !estado.pasted
+  !state.pasted
     ? ok('does not paste through the Clipboard API (no permission needed)')
     : no('still pastes through the API → duplicated text and a silent NotAllowedError');
 }
 // 4) Ctrl+V with the toggle off → passes through (literal ^V for vim/readline)
 {
-  const { run, estado } = build({ selection: '', ctrlV: false });
+  const { run, estado: state } = build({ selection: '', ctrlV: false });
   const r = run(ev('v'));
-  (r === 'PASSOU_ADIANTE' || r === true) && !estado.pasted
+  (r === 'PASSOU_ADIANTE' || r === true) && !state.pasted
     ? ok('Ctrl+V (toggle off) → the literal ^V reaches the app (vim visual-block)')
     : no('with the toggle off the literal ^V was not delivered');
 }
@@ -109,9 +109,9 @@ const ev = (key, extra = {}) => ({ type: 'keydown', key, ctrlKey: true, shiftKey
 }
 // 6) Cmd+C (macOS) copies too
 {
-  const { run, estado } = build({ selection: 'mac', ctrlV: true });
+  const { run, estado: state } = build({ selection: 'mac', ctrlV: true });
   const r = run({ type:'keydown', key:'c', ctrlKey:false, metaKey:true, shiftKey:false, altKey:false, preventDefault(){} });
-  r === false && estado.copied === 'mac' ? ok('Cmd+C (macOS) copies') : no('Cmd+C did not copy');
+  r === false && state.copied === 'mac' ? ok('Cmd+C (macOS) copies') : no('Cmd+C did not copy');
 }
 console.log('─'.repeat(37));
 console.log(`RESULT: ${pass} OK / ${fail} FAILED`);

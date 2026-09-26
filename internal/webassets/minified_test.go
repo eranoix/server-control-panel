@@ -45,11 +45,11 @@ func TestServedMinifiedMatchesCurrentSource(t *testing.T) {
 		source := path.Join(dirDoApp, nome)
 
 		expected := path.Join(dirDoApp, strings.TrimSuffix(nome, ".js")+".min.js")
-		_, existe := fs.Stat(sub, expected)
+		_, exists := fs.Stat(sub, expected)
 
 		min, ok := MinificadoDe(source)
 		if !ok {
-			if existe == nil {
+			if exists == nil {
 				// Runtime is safe (it falls back to the original), but this is a BUILD
 				// DEFECT: there is an obsolete bundle embedded in the binary and every
 				// client silently downloads twice as much — in a project that has a data

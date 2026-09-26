@@ -42,35 +42,35 @@ const m = shell.match(/const primeAndOpen = \(\) => \{([\s\S]*?)\n {6}\};/);
 if (!m) {
   no('panel: could not find the primer — history depends on the server alone again');
 } else {
-  const corpo = m[1];
+  const body = m[1];
 
   // THE ORDER OF THE SOURCES matters: the rendered history first (it is not a
   // replay, so it cannot duplicate or misalign), the raw log only as the fallback
   // for an old session that has no history file yet.
-  const iHist = corpo.indexOf("/api/terminal/historico");
-  const iCru = corpo.indexOf("/api/terminal/log-bruto");
+  const iHist = body.indexOf("/api/terminal/historico");
+  const iCru = body.indexOf("/api/terminal/log-bruto");
   (iHist >= 0 && iCru > iHist)
     ? ok('panel: fetches the rendered history first and the raw log as the fallback')
     : no('panel: wrong source order — the raw log must not come before the history');
 
   // The order: open() has to happen AFTER the write, never in parallel.
-  const iWrite = corpo.indexOf('state.term.write');
-  const iFollow = corpo.indexOf('follow()');
-  const opensOnlyAtEnd = /\.finally\(\(\) => \{ clearTimeout\(cap\); follow\(\); \}\)/.test(corpo);
+  const iWrite = body.indexOf('state.term.write');
+  const iFollow = body.indexOf('follow()');
+  const opensOnlyAtEnd = /\.finally\(\(\) => \{ clearTimeout\(cap\); follow\(\); \}\)/.test(body);
   (iWrite >= 0 && opensOnlyAtEnd)
     ? ok('panel: writes the history and only then connects (the order is what avoids overlap)')
     : no('panel: connects in parallel with the fetch — history and live stream overlap');
   iFollow >= 0 || no('panel: no opening path');
 
-  /setTimeout\(\(\) => \{[\s\S]{0,120}?follow\(\);/.test(corpo)
+  /setTimeout\(\(\) => \{[\s\S]{0,120}?follow\(\);/.test(body)
     ? ok('panel: the primer has a time ceiling (a slow server does not become a terminal that never opens)')
     : no('panel: no ceiling — a slow server holds the terminal shut');
 
-  /_primerDone/.test(corpo)
+  /_primerDone/.test(body)
     ? ok('panel: the primer does not run again on reconnect (it would duplicate what xterm already has)')
     : no('panel: the primer runs again on reconnect');
 
-  /CHUNK/.test(corpo)
+  /CHUNK/.test(body)
     ? ok('panel: writes in chunks (a few MB at once would cost the frame)')
     : no('panel: writes the history in one go');
 }

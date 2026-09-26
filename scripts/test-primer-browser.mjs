@@ -101,10 +101,10 @@ console.log('=== test-primer-navegador ===');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vpsm-primer-'));
 const binary = path.join(tmp, 'vps-manager');
-let servidor = null;
+let server = null;
 
 function shutdown() {
-  try { servidor?.kill('SIGKILL'); } catch { /* already dead */ }
+  try { server?.kill('SIGKILL'); } catch { /* already dead */ }
   // The test sessions live in the temporary dataDir; the dtach master outlives
   // the server on purpose, so this is where it gets killed.
   spawnSync('pkill', ['-f', path.join(tmp, 'session-sox')], { stdio: 'ignore' });
@@ -120,15 +120,15 @@ try {
     process.exit(1);
   }
 
-  const porta = await freePort();
-  const base = `http://127.0.0.1:${porta}`;
+  const port = await freePort();
+  const base = `http://127.0.0.1:${port}`;
   const cfg = path.join(tmp, 'config.json');
   // schema_version 2 + an explicit primary: without it the v1->v2 migration runs
   // at boot and aborts looking for the production primary user.
   fs.writeFileSync(cfg, JSON.stringify({
     schema_version: 2,
     primary: 'admin',
-    listen: `127.0.0.1:${porta}`,
+    listen: `127.0.0.1:${port}`,
     data_dir: tmp,
     jwt_secret: 'x'.repeat(64),
     auth_backend: 'local',
@@ -137,14 +137,14 @@ try {
   }, null, 2));
 
   console.log(`• bringing the test instance up on ${base} (dataDir ${tmp})`);
-  servidor = spawn(binary, [], {
+  server = spawn(binary, [], {
     cwd: ROOT,
     env: { ...process.env, VPSM_CONFIG: cfg },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const serverLog = [];
-  servidor.stdout.on('data', d => serverLog.push(String(d)));
-  servidor.stderr.on('data', d => serverLog.push(String(d)));
+  server.stdout.on('data', d => serverLog.push(String(d)));
+  server.stderr.on('data', d => serverLog.push(String(d)));
 
   if (!await waitHealthy(base)) {
     console.error('FAILED: the test instance never went healthy. Log:\n' + serverLog.join('').slice(-3000));
@@ -166,8 +166,8 @@ try {
     const pag = await ctx.newPage();
     const routes = [];
     pag.on('request', r => { const u = r.url(); if (u.includes('/api/terminal/')) routes.push(u.replace(base, '')); });
-    const erros = [];
-    pag.on('pageerror', e => erros.push(String(e)));
+    const errors = [];
+    pag.on('pageerror', e => errors.push(String(e)));
 
     await pag.goto(base + '/', { waitUntil: 'domcontentloaded' });
     await pag.waitForSelector('#login-user', { timeout: 20000 });
@@ -202,7 +202,7 @@ try {
       return !!(p && p.ws && p.ws.readyState === 1 && p.term);
     }, { timeout: 30000 }).then(() => true).catch(() => false);
 
-    return { ctx, pag, routes, erros, abriu, label };
+    return { ctx, pag, routes, erros: errors, abriu, label };
   }
 
   // ── 1) first computer: produce history ─────────────────────────────────

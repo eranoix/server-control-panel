@@ -3505,16 +3505,16 @@ function app() {
         + 'Name, slots, passwords and schedules are NOT affected — the game has no '
         + 'default for those fields.\n'
         + 'This only changes the form; nothing is written until you save.'))) return;
-      let mudou = 0, noDefault = 0;
+      let changed = 0, noDefault = 0;
       for (const k of Object.keys(this.games.gsDraft || {})) {
         if (this.gsMeta(k).def === undefined) { noDefault++; continue; }
-        if (!this.gsIsDefault(k)) mudou++;
+        if (!this.gsIsDefault(k)) changed++;
         this.gsResetDefault(k);
       }
       // Honest feedback: saying how many fields have NO known default avoids the
       // impression that the button ignored part of the screen for no reason.
       const extra = noDefault ? (' · ' + noDefault + ' with no known default, kept') : '';
-      this.showToast(mudou + ' field(s) returned to the default' + extra + ' — review and save', '');
+      this.showToast(changed + ' field(s) returned to the default' + extra + ' — review and save', '');
     },
 
     GAME_SETTING_LABELS: {
@@ -10535,7 +10535,7 @@ function app() {
         // will: the server deduplicates (pty.go), so SIGWINCH only reaches
         // the PTY when the value really changes. It is the cheap resend that closes the
         // whole class of bug, and no longer one guard for one path.
-        state._assertSize = (motivo) => {
+        state._assertSize = (reason) => {
           const t = state.term;
           if (!t || !state.ws || state.ws.readyState !== 1) return false;
           // ── WHAT IS ASSERTED IS THE WINDOW, NOT THE GRID DRAWN ──────────
@@ -10560,7 +10560,7 @@ function app() {
           if (!(cols >= 2 && rows >= 1)) return false;
           try {
             state.ws.send(JSON.stringify({ type:'resize', cols, rows }));
-            state._assertedSize = cols + 'x' + rows + (motivo ? ' ' + motivo : '');
+            state._assertedSize = cols + 'x' + rows + (reason ? ' ' + reason : '');
             return true;
           } catch (_) { return false; }
         };
@@ -12258,10 +12258,10 @@ function app() {
       const fresh = String(this.cron.content || '');
       const old = String(this.cron.serverContent || '');
       if (!fresh.trim() && old.trim()) {
-        const linhas = old.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
+        const lines = old.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
         const ok = await this.confirmAsync(
           'Delete the WHOLE root crontab?\n\nYou are saving empty content over '
-          + linhas + ' active cron line(s). Every scheduled root task will be removed.',
+          + lines + ' active cron line(s). Every scheduled root task will be removed.',
           { title: 'Delete the whole crontab?', danger: true }
         );
         if (!ok) return;
@@ -13924,8 +13924,8 @@ function app() {
     },
     _canPredict(pane, d){
       if (!pane || !pane.term) return false;
-      const modo = this.hostTermEcoPreditivo || 'auto';
-      if (modo === 'nunca') return false;
+      const mode = this.hostTermEcoPreditivo || 'auto';
+      if (mode === 'nunca') return false;
       // Printable characters only: Enter, arrows and Ctrl-* have an effect that only the
       // program on the other side knows.
       if (!/^[\x20-\x7e\u00a0-\uffff]+$/.test(d)) return false;
@@ -13934,7 +13934,7 @@ function app() {
       if (!buf || buf.type === 'alternate') return false;
       if (pane._serverEchoes === false) return false;
       if (this._looksLikePasswordLine(pane)) return false;
-      if (modo === 'sempre') return true;
+      if (mode === 'sempre') return true;
       const ms = pane.eco || pane.rtt || 0;
       return ms >= (this.hostTermEchoThreshold || 60);
     },
@@ -14064,12 +14064,12 @@ function app() {
     // there is no conversation to resume, and whichever one is open is lost. The confirm
     // text says so, because that is the difference that matters to the operator.
     async restartRecoveryClaude(proc){
-      const alvo = proc.ref || this.claudeVer.instalada || '?';
+      const target = proc.ref || this.claudeVer.instalada || '?';
       const ok = await this.confirmAsync(
         'Restart the recovery Claude?\n'
         + 'Restarts the container and Claude comes up on the version it already downloaded. '
         + 'Unlike the sessions, there is NO --continue here: a recovery conversation in progress is lost.\n\n'
-        + 'Running version: ' + proc.versao + '  →  in the container: ' + alvo,
+        + 'Running version: ' + proc.versao + '  →  in the container: ' + target,
         { danger: true });
       if (!ok) return;
       this.claudeVer.restarting = proc.pid;
@@ -14113,8 +14113,8 @@ function app() {
       this.setPage('dev'); this.setTab('host');
       // Ctrl-C aborts whatever is running; /exit closes Claude cleanly; then it
       // reopens with --continue. The intervals give the CLI time to process each step.
-      const passos = [['\x03', 400], ['/exit\r', 1200], ['claude --continue\r', 300]];
-      for (const [txt, wait] of passos) {
+      const steps = [['\x03', 400], ['/exit\r', 1200], ['claude --continue\r', 300]];
+      for (const [txt, wait] of steps) {
         this._paneSendInput(pane, txt);
         await new Promise(r => setTimeout(r, wait));
       }

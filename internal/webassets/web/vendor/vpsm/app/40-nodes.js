@@ -190,10 +190,10 @@
       // spinner covers the real operation, not the "request accepted".
       nodesPower(n, action) {
         const labels = { start: 'Turn on', stop: 'Power off (cuts the power)', shutdown: 'Shut down gracefully' };
-        const aviso = action === 'stop'
+        const warning = action === 'stop'
           ? `Cuts the power to "${n.name}" outright — the same as pulling the cable.`
           : `Runs "${action}" on "${n.name}". The response only comes back once the hypervisor has finished the task.`;
-        this.askConfirm(labels[action] || action, aviso, async () => {
+        this.askConfirm(labels[action] || action, warning, async () => {
           if (this.nodes.busy) return;
           this.nodes.busy = n.id;
           this.nodes.lastError = '';

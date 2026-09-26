@@ -25,8 +25,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const alvo = process.argv[2] || join(root, 'internal/webassets/web/index.html');
-const html = readFileSync(alvo, 'utf8');
+const target = process.argv[2] || join(root, 'internal/webassets/web/index.html');
+const html = readFileSync(target, 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('  ✓ ' + m); pass++; };
@@ -44,7 +44,7 @@ if (!chrome) { console.log('  ⚠ no Chrome — test skipped (not a failure)'); 
 // harness measures a cascade that exists nowhere — that is how the rail showed up
 // 14px outside the viewport in a test meant to reflect the real screen.
 let reset = '';
-for (const cand of [join(dirname(alvo), 'tailwind.css'),
+for (const cand of [join(dirname(target), 'tailwind.css'),
                     join(root, 'internal/webassets/web/tailwind.css')]) {
   try { reset = readFileSync(cand, 'utf8'); break; } catch {}
 }
@@ -84,12 +84,12 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><style>
 </body></html>`;
 
 const profile = mkdtempSync(join(tmpdir(), 'vpsm-chrome-'));
-const arquivo = join(profile, 'sidebar.html');
-writeFileSync(arquivo, page);
+const file = join(profile, 'sidebar.html');
+writeFileSync(file, page);
 
-const porta = 9222 + (process.pid % 900);
+const port = 9222 + (process.pid % 900);
 const proc = spawn(chrome, [
-  '--headless=new', `--remote-debugging-port=${porta}`, `--user-data-dir=${profile}`,
+  '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
   '--no-sandbox', '--disable-gpu', '--window-size=1400,900', '--no-first-run',
   '--disable-extensions', '--disable-dev-shm-usage', 'about:blank',
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -102,9 +102,9 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 async function targetWs() {
   for (let i = 0; i < 60; i++) {
     try {
-      const r = await fetch(`http://127.0.0.1:${porta}/json/list`);
-      const alvos = await r.json();
-      const p = alvos.find(t => t.type === 'page');
+      const r = await fetch(`http://127.0.0.1:${port}/json/list`);
+      const targets = await r.json();
+      const p = targets.find(t => t.type === 'page');
       if (p?.webSocketDebuggerUrl) return p.webSocketDebuggerUrl;
     } catch {}
     await sleep(150);
@@ -135,7 +135,7 @@ try {
   const cdp = new CDP(ws);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
-  await cdp.send('Page.navigate', { url: 'file://' + arquivo });
+  await cdp.send('Page.navigate', { url: 'file://' + file });
   await sleep(700);
 
   const COLLAPSED = 50.6, EXPANDED = 240;

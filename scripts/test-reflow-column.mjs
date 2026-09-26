@@ -212,21 +212,21 @@ sustained.logo === 56 && sustained.fim === 55
   ? ok('panel: a SUSTAINED ±1 column is applied on the second measurement (56 → 55)')
   : no('panel: a real 1 column change was not applied (immediate=' + sustained.logo + ', final=' + sustained.fim + ')');
 
-const grande = await guard(`
+const large = await guard(`
   step(40, 30);                    // rotation / split: real intent
   return { logo: t.cols };
 `);
-grande.logo === 40
+large.logo === 40
   ? ok('panel: a change of ≥2 columns goes through at once (no quarantine)')
-  : no('panel: a real width change got stuck in the hysteresis (cols=' + grande.logo + ')');
+  : no('panel: a real width change got stuck in the hysteresis (cols=' + large.logo + ')');
 
-const linhas = await guard(`
+const lines = await guard(`
   step(55, 22);                    // virtual keyboard: width +-1, height changes
   return { cols: t.cols, rows: t.rows };
 `);
-linhas.cols === 56 && linhas.rows === 22
+lines.cols === 56 && lines.rows === 22
   ? ok('panel: the ROWS go through at once even with the column quarantined (virtual keyboard)')
-  : no('panel: rows stuck along with the column (cols=' + linhas.cols + ', rows=' + linhas.rows + ') — the prompt stays hidden');
+  : no('panel: rows stuck along with the column (cols=' + lines.cols + ', rows=' + lines.rows + ') — the prompt stays hidden');
 
 // ── 3. THE RECOVERY GUARD — separate code on purpose ────────────────────────
 const rec = await page.evaluate(`(async () => {

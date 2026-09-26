@@ -17,8 +17,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const alvo = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
-const src = readFileSync(alvo, 'utf8');
+const target = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const src = readFileSync(target, 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
@@ -43,7 +43,7 @@ const app = {
 };
 
 // Fake terminal with a cursor and a single line — all the prediction consults.
-function newPane({ line = '$ ', cursorX = 2, tipo = 'normal', eco = 300, cols = 80 } = {}) {
+function newPane({ line = '$ ', cursorX = 2, tipo: type = 'normal', eco = 300, cols = 80 } = {}) {
   const written = [];
   const pane = {
     eco, written,
@@ -51,7 +51,7 @@ function newPane({ line = '$ ', cursorX = 2, tipo = 'normal', eco = 300, cols = 
       cols,
       write(x){ written.push(x); },
       buffer: { active: {
-        type: tipo, baseY: 0, cursorY: 0, cursorX,
+        type: type, baseY: 0, cursorY: 0, cursorX,
         getLine: () => ({ translateToString: () => line }),
       } },
     },

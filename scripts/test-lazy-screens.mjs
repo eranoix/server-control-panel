@@ -114,14 +114,14 @@ const exe = findBrowser();
 if (!exe) { console.error('FAILED: no Chromium found — skipping would be faking coverage.'); process.exit(1); }
 
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
-const porta = srv.address().port;
+const port = srv.address().port;
 const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
 const page = await browser.newPage();
-const erros = [];
-page.on('pageerror', (e) => erros.push('pageerror: ' + ((e && e.message) || e)));
-page.on('console', (m) => { if (m.type() === 'error') erros.push('console: ' + m.text()); });
+const errors = [];
+page.on('pageerror', (e) => errors.push('pageerror: ' + ((e && e.message) || e)));
+page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
 
-await page.goto(`http://127.0.0.1:${porta}/`, { waitUntil: 'networkidle' });
+await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle' });
 await page.waitForTimeout(300);
 
 let pass = 0, fail = 0;
@@ -150,7 +150,7 @@ for (const t of SCREENS) {
   }, t);
   await page.waitForTimeout(150);
   const n = await count(t);
-  const existe = await page.evaluate((screen) => !!document.querySelector(`section[x-show*="${screen}"]`), t);
+  const exists = await page.evaluate((screen) => !!document.querySelector(`section[x-show*="${screen}"]`), t);
   sizes[t] = n;
   // The floor is deliberately low and measures what can be measured without
   // inventing: part of the content of these screens is only born after a fetch
@@ -158,9 +158,9 @@ for (const t of SCREENS) {
   // state). What the pin asserts is the 0 → mounted transition, with the real
   // section in the DOM and no error — a broken mount gives 0 nodes or blows up in
   // the console, and both are caught.
-  (existe && n > 10)
+  (exists && n > 10)
     ? ok(`visiting "${t}" mounts the screen (${n} nodes)`)
-    : no(`"${t}" did not mount (section present=${existe}, ${n} nodes)`);
+    : no(`"${t}" did not mount (section present=${exists}, ${n} nodes)`);
 }
 
 // ── 3. the latch: leaving the screen must NOT destroy it ────────────────────
@@ -179,9 +179,9 @@ for (const t of SCREENS) {
 }
 
 // ── 4. rendering must not cost an error ─────────────────────────────────────
-erros.length === 0
+errors.length === 0
   ? ok('no console/page error while mounting the four screens')
-  : no('errors while mounting:\n    ' + erros.slice(0, 8).join('\n    '));
+  : no('errors while mounting:\n    ' + errors.slice(0, 8).join('\n    '));
 
 await browser.close(); srv.close();
 console.log('─────────────────────────────────────');

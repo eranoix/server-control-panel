@@ -23,8 +23,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const alvo = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
-const src = readFileSync(alvo, 'utf8');
+const target = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const src = readFileSync(target, 'utf8');
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('  ✓ ' + m); pass++; };
 const no = (m) => { console.log('  ✗ ' + m); fail++; };
@@ -41,8 +41,8 @@ function method(nome) {
 
 // Assembles an object with the requested methods + stubs, to really call them.
 function app(names, extra = {}) {
-  const corpo = names.map(method).join('\n');
-  const factory = new Function('extra', 'document', 'return Object.assign({' + corpo + '\n}, extra);');
+  const body = names.map(method).join('\n');
+  const factory = new Function('extra', 'document', 'return Object.assign({' + body + '\n}, extra);');
   const doc = {
     createElement: () => ({ style:{}, classList:{}, dataset:{}, appendChild(){}, querySelectorAll:()=>[], set textContent(v){}, click(){} }),
     querySelectorAll: () => [],
@@ -65,19 +65,19 @@ const event = (dataTransfer, extra = {}) => {
     ...extra,
   };
 };
-const arquivo = (name, type) => ({ name, type, kind: 'file', getAsFile(){ return this; } });
+const file = (name, type) => ({ name, type, kind: 'file', getAsFile(){ return this; } });
 
 // ── 1. _clipboardFiles: the rule that protects the text paste ─────────
 {
   const a = app(['_clipboardFiles']);
   // Excel/Word/image-in-page: text + PNG together → it has to paste TEXT.
-  const excel = event({ types: ['text/plain', 'text/html', 'Files'], items: [arquivo('image.png','image/png')], files: [] });
+  const excel = event({ types: ['text/plain', 'text/html', 'Files'], items: [file('image.png','image/png')], files: [] });
   a._clipboardFiles(excel) === null
     ? ok('clipboard with text/plain + file → null (pastes the TEXT, does not upload the PNG)')
     : no('REGRESSION: pasting text from Excel would become an image upload');
 
   // A file copied in the file manager of the system: no text/plain.
-  const f = arquivo('contract.pdf', 'application/pdf');
+  const f = file('contract.pdf', 'application/pdf');
   const so = event({ types: ['Files'], items: [f], files: [f] });
   const r = a._clipboardFiles(so);
   Array.isArray(r) && r.length === 1 && r[0].name === 'contract.pdf'
@@ -135,7 +135,7 @@ const arquivo = (name, type) => ({ name, type, kind: 'file', getAsFile(){ return
 // ── 4. _panelDrop: uploads the files into the right pane ───────────────────
 {
   let received = null;
-  const f = arquivo('spec.pdf', 'application/pdf');
+  const f = file('spec.pdf', 'application/pdf');
   const a = app(['_panelDrop', '_dragHasFiles'], {
     terms: { _dragPane: null },
     _hideFileDropOverlay(){},
@@ -178,7 +178,7 @@ const arquivo = (name, type) => ({ name, type, kind: 'file', getAsFile(){ return
     showToast(){},
   });
   const pane = { id: 'p1' };
-  await a._sendFilesToPane(pane, [arquivo('a.pdf','application/pdf'), arquivo('b.csv','text/csv')]);
+  await a._sendFilesToPane(pane, [file('a.pdf','application/pdf'), file('b.csv','text/csv')]);
   uploaded.join(',') === 'a.pdf,b.csv' ? ok('uploads every dropped file') : no('not every file was uploaded');
   sent && sent.pane === pane
     ? ok('injects through _paneSendInput (the outbox — nothing is lost in an outage)')
@@ -195,7 +195,7 @@ const arquivo = (name, type) => ({ name, type, kind: 'file', getAsFile(){ return
     _paneSendInput(){ sent++; return true; },
     showToast(){},
   });
-  await a._sendFilesToPane({ id:'p1' }, [arquivo('x.bin','application/octet-stream')]);
+  await a._sendFilesToPane({ id:'p1' }, [file('x.bin','application/octet-stream')]);
   sent === 0 ? ok('upload failed → nothing is injected into the terminal') : no('it injected garbage after a failed upload');
 }
 
@@ -220,7 +220,7 @@ const arquivo = (name, type) => ({ name, type, kind: 'file', getAsFile(){ return
 
 // ── 8. global guard: it acts only on what nobody handled ───────────────────
 {
-  const src2 = readFileSync(alvo, 'utf8');
+  const src2 = readFileSync(target, 'utf8');
   /_installGlobalDropGuard\(\)\{[\s\S]*?if \(ev\.defaultPrevented\) return;/.test(src2)
     ? ok('the global guard respects whoever already called preventDefault (legitimate zones stay in charge)')
     : no('the global guard does not check defaultPrevented — it would run over existing drop zones');

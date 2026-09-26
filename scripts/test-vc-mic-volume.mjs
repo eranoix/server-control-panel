@@ -32,7 +32,7 @@ catch {
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
-const near = (v, alvo, tol) => Math.abs(v - alvo) <= tol;
+const near = (v, target, tol) => Math.abs(v - target) <= tol;
 
 const srcVC = fs.readFileSync(path.join(WEB, 'vendor', 'vpsm', 'videocall.js'), 'utf8');
 const srcSTT = fs.readFileSync(path.join(WEB, 'vendor', 'vpsm', 'stt.js'), 'utf8');

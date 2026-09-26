@@ -206,19 +206,19 @@ if (!exe) {
 }
 
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
-const porta = srv.address().port;
+const port = srv.address().port;
 const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
 const page = await browser.newPage();
 
-const erros = [];
-page.on('console', (m) => { if (m.type() === 'error') { const l = m.location(); erros.push('console: ' + m.text() + ' @ ' + (l ? l.url + ':' + l.lineNumber : '?')); } });
-page.on('pageerror', (e) => erros.push('pageerror: ' + ((e && e.message) || e) + (process.env.VPSM_RENDER_DEBUG && e && e.stack ? '\n          ' + String(e.stack).split('\n').slice(0,4).join('\n          ') : '')));
-page.on('response', (r) => { if (r.status() >= 400) erros.push('HTTP ' + r.status() + ': ' + r.url()); });
+const errors = [];
+page.on('console', (m) => { if (m.type() === 'error') { const l = m.location(); errors.push('console: ' + m.text() + ' @ ' + (l ? l.url + ':' + l.lineNumber : '?')); } });
+page.on('pageerror', (e) => errors.push('pageerror: ' + ((e && e.message) || e) + (process.env.VPSM_RENDER_DEBUG && e && e.stack ? '\n          ' + String(e.stack).split('\n').slice(0,4).join('\n          ') : '')));
+page.on('response', (r) => { if (r.status() >= 400) errors.push('HTTP ' + r.status() + ': ' + r.url()); });
 // says WHICH resource was missing, instead of the console's opaque 'Failed to load resource'
-page.on('requestfailed', (r) => erros.push('resource failed: ' + r.url()));
+page.on('requestfailed', (r) => errors.push('resource failed: ' + r.url()));
 if (process.env.VPSM_RENDER_DEBUG) page.on('request', (r) => console.log('    req ' + r.url()));
 
-await page.goto(`http://127.0.0.1:${porta}/`, { waitUntil: 'networkidle' });
+await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle' });
 await page.waitForTimeout(400);
 if (process.env.VPSM_DIAG) await page.evaluate(() => { window.__diag = true; });
 
@@ -233,16 +233,16 @@ for (let i = 0; i < total; i++) {
   const nome = await page.evaluate((k) => window.__script[k].nome, i);
   await page.evaluate((k) => window.__script[k].step(), i);
   await page.waitForTimeout(180);
-  let nota = '';
+  let note = '';
   if (await page.evaluate((k) => !!window.__script[k].expect, i)) {
     measured++;
     const r = await page.evaluate((k) => window.__script[k].expect(), i);
-    if (r && r.erro) erros.push('measurement: ' + r.erro);
-    if (r && r.nota) nota = '  [' + r.nota + ']';
+    if (r && r.erro) errors.push('measurement: ' + r.erro);
+    if (r && r.nota) note = '  [' + r.nota + ']';
   }
-  const newOnes = erros.splice(0);
+  const newOnes = errors.splice(0);
   if (newOnes.length) { rejected++; console.log('  FAIL ' + nome + '\n        ' + newOnes.join('\n        ')); }
-  else console.log('  ok   ' + nome + nota);
+  else console.log('  ok   ' + nome + note);
 }
 
 await browser.close();

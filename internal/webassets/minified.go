@@ -97,9 +97,9 @@ func verify(sub fs.FS, source, min string) bool {
 // minified body may contain the same sequence inside a string without that
 // meaning provenance.
 func readStamp(b []byte) (string, bool) {
-	linhas := bytes.Split(b, []byte("\n"))
-	for i := len(linhas) - 1; i >= 0; i-- {
-		line := bytes.TrimSpace(linhas[i])
+	lines := bytes.Split(b, []byte("\n"))
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := bytes.TrimSpace(lines[i])
 		if len(line) == 0 {
 			continue
 		}

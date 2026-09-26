@@ -66,9 +66,9 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
 const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
 
 for (const theme of ['dark', 'light']) {
-  const corpo = headers.map((c, i) => '<div class="fm-modal" data-i="' + i + '">' + c.html + '</div>').join('');
+  const body = headers.map((c, i) => '<div class="fm-modal" data-i="' + i + '">' + c.html + '</div>').join('');
   await page.setContent('<style>' + tail + '</style><style>' + styles + '</style><body style="margin:0">'
-    + corpo
+    + body
     + '<div class="fm-modal" id="danger"><div class="fm-modal-head"><h3 class="is-danger">Delete everything?</h3>'
     + '<button class="fm-modal-close">×</button></div></div></body>');
   await page.evaluate((t) => { if (t === 'light') document.documentElement.setAttribute('data-theme', 'light'); }, theme);

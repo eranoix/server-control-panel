@@ -159,9 +159,9 @@ for (const larg of [320, 380, 430, 700]) {
       stuck: !!cs && cs.position === 'sticky',
       close: rx ? Math.min(Math.round(rx.width), Math.round(rx.height)) : 0,
     };
-    const linhas = [...wide.querySelectorAll('.vc-popover-item')].filter((el) => el.closest('.vc-popover') === wide);
-    sheet.linhas = linhas.length;
-    sheet.low = linhas.filter((el) => el.getBoundingClientRect().height < 44).length;
+    const lines = [...wide.querySelectorAll('.vc-popover-item')].filter((el) => el.closest('.vc-popover') === wide);
+    sheet.linhas = lines.length;
+    sheet.low = lines.filter((el) => el.getBoundingClientRect().height < 44).length;
     sheet.content = Math.round(wide.scrollHeight);
     wide.style.display = 'none';
     return { pops: out, toolbar: toolbar.length, small, narrow, covered, leaking, sheet,

@@ -116,9 +116,9 @@ ok('the memory percentage matches the sum of the observed ones',
 
   // 🔴 Zero is ABSENCE, not 1970. An empty datastore and one with an ancient copy
   // call for opposite actions.
-  const vazio = comp.pvxBackupAge(items[2]);
+  const empty = comp.pvxBackupAge(items[2]);
   ok('an empty datastore says "no copy yet", not an age counted from 1970',
-     vazio.vazio === true && vazio.seg === undefined);
+     empty.vazio === true && empty.seg === undefined);
   ok('a datastore with an error does not become silence', !!comp.pvxBackupAge(items[3]).erro);
 
   // The threshold is PER datastore: PBS runs every day, the external-disk rotation
@@ -142,10 +142,10 @@ ok('the memory percentage matches the sum of the observed ones',
   // was standing, verify-by-content was running and a restore had been rehearsed.
   // Permanent red trains people to ignore, which is the disease that already cost
   // this lab the credibility of its alarm channel.
-  const desarmado = { storage: 'backupusb', total: 5, ultimo_ctime: 1_000_000 - 340 * 3600,
+  const disarmed = { storage: 'backupusb', total: 5, ultimo_ctime: 1_000_000 - 340 * 3600,
                       guests: [1, 2, 3], agendamento: 'desarmado', schedule: '03:30' };
-  const eD = comp.pvxBackupState(desarmado);
-  ok('a DISARMED layer does not come out red', !vermelho(comp.pvxBackupStyle(desarmado)), eD.cor);
+  const eD = comp.pvxBackupState(disarmed);
+  ok('a DISARMED layer does not come out red', !vermelho(comp.pvxBackupStyle(disarmed)), eD.cor);
   ok('and it says the label "desarmado", not an alarming age', eD.label === 'disarmed', eD.label);
   ok('and it explains WHY, with the time it used to run', /schedule turned off/.test(eD.nota) && /03:30/.test(eD.nota), eD.nota);
   ok('and it says outright that this is not a failure', /this is not a failure/.test(eD.nota));
@@ -471,14 +471,14 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   // 🔴 The fallback cannot guess. Inventing "VM" would make the operator act on the
   // wrong category — starting, stopping or snapshotting something that is not what
   // the screen said it was.
-  const desconhecido = typeOf('coisa/9', { kind: 'coisa' });
+  const unknown = typeOf('coisa/9', { kind: 'coisa' });
   ok('an unknown type says it does not know, instead of guessing',
-     desconhecido.key === '?' && desconhecido.abbrev === '?', desconhecido.label);
+     unknown.key === '?' && unknown.abbrev === '?', unknown.label);
 
   // A template is not a startable guest, and the difference has to show up BEFORE
   // somebody tries to start it.
-  const modelo = typeOf('lxc/900', { template: true });
-  ok('a template is marked as a template', modelo.modelo === true);
+  const model = typeOf('lxc/900', { template: true });
+  ok('a template is marked as a template', model.modelo === true);
   ok('and the title warns that it is not startable',
      /TEMPLATE/.test(comp.pvxTypeTitle({ id: 'lxc/900', kind: 'guest', vmid: 900, template: true })));
 

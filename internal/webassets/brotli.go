@@ -52,7 +52,7 @@ func acceptsBrotli(r *http.Request) bool {
 // the optimization would worsen exactly the case it exists to improve. This way
 // the cost leaves the critical path and the maximum level comes for free: q=11
 // gives 196 KB against 226 KB for q=5 and 252 KB for gzip (measured on the real index).
-func brotliOnce(key string, corpo []byte) []byte {
+func brotliOnce(key string, body []byte) []byte {
 	if v, ok := brCache.Load(key); ok {
 		b, _ := v.([]byte)
 		return b
@@ -63,7 +63,7 @@ func brotliOnce(key string, corpo []byte) []byte {
 		return nil
 	}
 	// Copy: the caller may be handing us a buffer it reuses.
-	dados := append([]byte(nil), corpo...)
+	dados := append([]byte(nil), body...)
 	go func() {
 		defer brInFlight.Delete(key)
 		var buf bytes.Buffer
@@ -90,11 +90,11 @@ func brotliOnce(key string, corpo []byte) []byte {
 // serveBrotli writes the compressed body if the client accepts it and the
 // compression was worth it. Returns false when the caller should follow the
 // normal path (no encoding), and in that case NOTHING was written to the response.
-func serveBrotli(w http.ResponseWriter, r *http.Request, key string, corpo []byte) bool {
+func serveBrotli(w http.ResponseWriter, r *http.Request, key string, body []byte) bool {
 	if !acceptsBrotli(r) {
 		return false
 	}
-	compressed := brotliOnce(key, corpo)
+	compressed := brotliOnce(key, body)
 	if compressed == nil {
 		return false
 	}
@@ -109,8 +109,8 @@ func serveBrotli(w http.ResponseWriter, r *http.Request, key string, corpo []byt
 // ServeBrotliAsset exposes the brotli path to whoever serves assets outside
 // this package (the /vendor handler in the router). Same contract: it returns
 // false without having written anything when the caller should take the normal path.
-func ServeBrotliAsset(w http.ResponseWriter, r *http.Request, key string, corpo []byte) bool {
-	return serveBrotli(w, r, key, corpo)
+func ServeBrotliAsset(w http.ResponseWriter, r *http.Request, key string, body []byte) bool {
+	return serveBrotli(w, r, key, body)
 }
 
 // AcceptsBrotli reports whether the client advertised support — used to vary the

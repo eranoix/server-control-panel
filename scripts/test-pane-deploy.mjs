@@ -18,8 +18,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const alvo = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
-const src = readFileSync(alvo, 'utf8');
+const target = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const src = readFileSync(target, 'utf8');
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('  ✓ ' + m); pass++; };
 const no = (m) => { console.log('  ✗ ' + m); fail++; };
@@ -33,21 +33,21 @@ function method(nome) {
 }
 
 // ── 1. _trySafeReload: the guard matrix ───────────────────────────────
-function scenario({ hidden, hiddenSince, lastTyping, outbox = [], dialog = false, ligado = true, nova = true }) {
+function scenario({ hidden, hiddenSince, lastTyping, outbox = [], dialog = false, ligado: on = true, nova = true }) {
   const now = 1_000_000_000;
   const doc = {
     get hidden(){ return hidden; },
     querySelector: (sel) => (dialog && sel.includes('dialog')) ? {} : null,
   };
   let reloaded = false;
-  const corpo = method('_trySafeReload');
+  const body = method('_trySafeReload');
   const factory = new Function('document', 'location', 'Date', 'clearInterval', 'setInterval',
-    'return {' + corpo + '\n};');
+    'return {' + body + '\n};');
   const obj = factory(doc, { reload(){ reloaded = true; } },
     { now: () => now }, () => {}, () => 1);
   Object.assign(obj, {
     newVersionAvailable: nova,
-    hostTermAutoReload: ligado,
+    hostTermAutoReload: on,
     _hiddenSince: hiddenSince === undefined ? 0 : now - hiddenSince,
     _lastTyping: lastTyping === undefined ? 0 : now - lastTyping,
     _reloadTimer: 1,

@@ -368,8 +368,8 @@
         return this.pvxEhGuest(n) ? n.id : '';
       },
       async pvxLoadSeries() {
-        const alvo = this.pvxSeriesTarget();
-        const q = '?janela=' + encodeURIComponent(this.pvx.janela) + (alvo ? '&node=' + encodeURIComponent(alvo) : '');
+        const target = this.pvxSeriesTarget();
+        const q = '?janela=' + encodeURIComponent(this.pvx.janela) + (target ? '&node=' + encodeURIComponent(target) : '');
         this.pvx.seriesLoading = true;
         try {
           const r = await this.api('/api/proxmox/rrd' + q, { raw: true });
@@ -405,18 +405,18 @@
         // the attribute got `undefined` and the SVG refused it with
         // "attribute cx: Unexpected end of attribute". The same disease as state born
         // null, one level down — in the return value of a function.
-        const vazio = {
+        const empty = {
           temDado: false, area: '', stroke: '', pontos: '',
           cap: 1, max: 0, min: 0, last: null, fimX: 0, fimY: 0, gaps: 0, n: 0,
         };
-        if (!d || !Array.isArray(d.pontos) || !d.pontos.length) return vazio;
+        if (!d || !Array.isArray(d.pontos) || !d.pontos.length) return empty;
         const pts = d.pontos;
         const vals = pts.map((p) => {
           const v = p[metric.id];
           return v === undefined || v === null || Number.isNaN(Number(v)) ? null : Number(v);
         });
         const present = vals.filter((v) => v !== null);
-        if (!present.length) return vazio;
+        if (!present.length) return empty;
 
         const t0 = Number(pts[0].time), t1 = Number(pts[pts.length - 1].time);
         const dur = Math.max(1, t1 - t0);
@@ -439,16 +439,16 @@
         const Y = (v) => this.GH - Math.min(1, Math.max(0, v / cap)) * this.GH;
 
         const segments = [];
-        let atual = [];
+        let current = [];
         let gaps = 0;
         for (let i = 0; i < pts.length; i++) {
           if (vals[i] === null) {
-            if (atual.length) { segments.push(atual); atual = []; gaps++; }
+            if (current.length) { segments.push(current); current = []; gaps++; }
             continue;
           }
-          atual.push([X(pts[i].time), Y(vals[i])]);
+          current.push([X(pts[i].time), Y(vals[i])]);
         }
-        if (atual.length) segments.push(atual);
+        if (current.length) segments.push(current);
 
         const dPath = (seg) => seg.map(([x, y], i) => (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1)).join(' ');
         // The area only closes over continuous segments: one single area drawn across
@@ -477,14 +477,14 @@
         // A lone point (a single sample surrounded by holes) drawn as a zero-length
         // subpath: with `stroke-linecap="round"` the renderer paints a disc. It comes
         // free for the same reason: no loop.
-        const pontos = segments
+        const points = segments
           .filter((s) => s.length === 1)
           .map((s) => `M${s[0][0].toFixed(1)} ${s[0][1].toFixed(1)} L${s[0][0].toFixed(1)} ${s[0][1].toFixed(1)}`)
           .join(' ');
         return {
           temDado: true,
           stroke,
-          pontos,
+          pontos: points,
           area,
           cap,
           max: Math.max(...present),
@@ -533,8 +533,8 @@
       // serial. In that case the serial match does not happen and the function returns
       // empty — rather than guessing by type and risking tying the pool to the wrong
       // disk, which is worse than not tying it at all.
-      pvxSerialOfPath(caminho) {
-        let base = String(caminho || '');
+      pvxSerialOfPath(path) {
+        let base = String(path || '');
         const i = base.lastIndexOf('/');
         if (i >= 0) base = base.slice(i + 1);
         base = base.replace(/-part\d+$/, '').replace(/-0:0$/, '');
@@ -615,7 +615,7 @@
       // to `null` in a catch would recreate exactly the defect the stable shape just
       // solved — and the error path is the MOST likely one to happen with the
       // hypervisor down, which is when the screen most needs to open.
-      async pvxLoad(route, field, vazio) {
+      async pvxLoad(route, field, empty) {
         try {
           const r = await this.api(route, { raw: true });
           if (r.status === 403) { this.pvx.forbidden = true; return; }
@@ -624,7 +624,7 @@
           this.pvx.loaded[field] = true;
         } catch (e) {
           this.pvx.lastError = this._errText(e);
-          this.pvx[field] = vazio;
+          this.pvx[field] = empty;
         }
       },
       pvxLoadSystem()  { return this.pvxLoad('/api/proxmox/sistema', 'sistema', {}); },
@@ -1007,11 +1007,11 @@
       },
       pvxTick() {
         if (typeof document !== 'undefined' && document.hidden) return;
-        const motivo = this.pvxPauseReason();
-        this.pvx.paused = !!motivo;
-        this.pvx.pauseReason = motivo;
+        const reason = this.pvxPauseReason();
+        this.pvx.paused = !!reason;
+        this.pvx.pauseReason = reason;
         this.pvxRefreshAge();
-        if (motivo) return;
+        if (reason) return;
         if (typeof this.loadNodes === 'function') this.loadNodes();
         this.pvxLoadHealth();
         const aba = this.pvxActiveTab();
@@ -1710,7 +1710,7 @@
           if (segment && stateOf(n) !== segment) return false;
           const st = (n.status && n.status.value) || '';
           const cred = (n.credential && n.credential.state) || '';
-          const tipo = String(n.id || '').split('/')[0];
+          const type = String(n.id || '').split('/')[0];
           return terms.every(function (t) {
             const i = t.indexOf(':');
             const field = i > 0 ? t.slice(0, i) : '';
@@ -1726,7 +1726,7 @@
                 const canon = { ct: 'lxc', conteiner: 'lxc', contêiner: 'lxc', container: 'lxc',
                                 vm: 'qemu', maquina: 'qemu', 'máquina': 'qemu',
                                 no: 'node', 'nó': 'node', host: 'node', hipervisor: 'node' }[valor] || valor;
-                return tipo.toLowerCase() === canon
+                return type.toLowerCase() === canon
                     || String(n.kind || '').toLowerCase() === canon
                     || String(n.kind || '').toLowerCase() === valor;
               }
@@ -1734,7 +1734,7 @@
               case 'cred': return cred.toLowerCase().includes(valor);
               case 'id': return String(n.id || '').toLowerCase().includes(valor);
             }
-            return [n.id, n.name, n.address, st, cred, tipo].join(' ').toLowerCase().includes(t);
+            return [n.id, n.name, n.address, st, cred, type].join(' ').toLowerCase().includes(t);
           });
         });
       },
@@ -1826,7 +1826,7 @@
         if (!n) return { can: false, motivo: 'unknown node' };
         const st = (n.status && n.status.value) || '';
         const cred = (n.credential && n.credential.state) || '';
-        const ligado = st === 'running' || st === 'online';
+        const on = st === 'running' || st === 'online';
 
         // A node the hypervisor no longer lists accepts no action at all — and the reason
         // says so, instead of letting the operator click and get back the Perl error PVE
@@ -1902,13 +1902,13 @@
         // failure gets hunted afterwards.
         // Restarting a powered-off guest is not "starting" it: PVE returns an error and
         // the trail gains noise. The right button for that already sits next to it.
-        if (action === 'reboot' && !ligado) {
+        if (action === 'reboot' && !on) {
           return { can: false, motivo: 'it is powered off — to start it, use "Turn on"' };
         }
-        if (action === 'start' && ligado) {
+        if (action === 'start' && on) {
           return { can: false, motivo: 'it is already running — asking again returns "already running" and pollutes the task trail' };
         }
-        if ((action === 'shutdown' || action === 'stop') && !ligado) {
+        if ((action === 'shutdown' || action === 'stop') && !on) {
           return { can: false, motivo: 'it is already powered off' };
         }
         return { can: true, motivo: '' };
@@ -2029,7 +2029,7 @@
       pvxMd(txt) {
         const esc = (x) => String(x).replace(/[&<>"']/g, (c) => (
           { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        const linhas = String(txt || '').replace(/\r\n?/g, '\n').split('\n');
+        const lines = String(txt || '').replace(/\r\n?/g, '\n').split('\n');
         const out = [];
         let inList = false, inCode = false;
         const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
@@ -2045,7 +2045,7 @@
           .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
             '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
-        for (const raw of linhas) {
+        for (const raw of lines) {
           const l = raw.trimEnd();
           if (/^```/.test(l)) {
             closeList();
@@ -2102,8 +2102,8 @@
       // the meantime, and the prize for getting it wrong is an error in the middle of a
       // clone.
       async pvxOpenClone(n) {
-        const estado = this.pvxActionState(n, 'clone');
-        if (!estado.can) { this.showToast(estado.motivo, 'err'); return; }
+        const state = this.pvxActionState(n, 'clone');
+        if (!state.can) { this.showToast(state.motivo, 'err'); return; }
         this.pvx.clone = { open: true, loading: true, origem: n.id, originName: n.name,
                            newID: 0, nome: '', ligado: false,
                            needsSnap: false, snapshots: [], snapshot: '', erro: '' };
@@ -2186,8 +2186,8 @@
       },
 
       pvxBackupConfirm(n) {
-        const estado = this.pvxActionState(n, 'backup');
-        if (!estado.can) { this.showToast(estado.motivo, 'err'); return; }
+        const state = this.pvxActionState(n, 'backup');
+        if (!state.can) { this.showToast(state.motivo, 'err'); return; }
         const st = this.pvx.bkp.storage || (this.pvxStoragesDeBackup()[0] || {}).id || '';
         if (!st) { this.showToast('no storage accepts backups', 'err'); return; }
         this.pvx.bkp.storage = st;
@@ -2424,25 +2424,25 @@
       pvxPowerBulk(action) {
         const labels = { start: 'Turn on', shutdown: 'Shut down gracefully', stop: 'Cut the power' };
         const sel = this.pvxSelNos();
-        const alvos = sel.filter(n => this.pvxActionState(n, action).can);
+        const targets = sel.filter(n => this.pvxActionState(n, action).can);
         const fora = sel.filter(n => !this.pvxActionState(n, action).can);
-        if (!alvos.length) {
+        if (!targets.length) {
           this.showToast('none of the selected nodes accepts "' + action + '" right now', 'err');
           return;
         }
-        const names = alvos.map(n => `${n.name} (${n.id})`).join(', ');
+        const names = targets.map(n => `${n.name} (${n.id})`).join(', ');
         const skipped = fora.length
           ? `\n\nLEFT OUT (${fora.length}): ` + fora.map(n => `${n.name} — ${this.pvxActionState(n, action).motivo}`).join('; ')
           : '';
-        const step = this.pvxStep(action, alvos.length);
-        const aviso = (action === 'stop'
-          ? `Cuts the power to ${alvos.length} node(s) outright — the same as pulling the cable on each one.`
-          : `Runs "${action}" on ${alvos.length} node(s), one at a time, waiting for the hypervisor to finish each task.`)
+        const step = this.pvxStep(action, targets.length);
+        const warning = (action === 'stop'
+          ? `Cuts the power to ${targets.length} node(s) outright — the same as pulling the cable on each one.`
+          : `Runs "${action}" on ${targets.length} node(s), one at a time, waiting for the hypervisor to finish each task.`)
           + `\n\nTHEY ARE: ${names}` + skipped
           + (step >= 3 ? `\n\nType IN BULK to confirm.` : '');
         const options = step >= 3 ? { danger: true, requireText: 'IN BULK' } : {};
-        this.askConfirm(labels[action] + ` — ${alvos.length} node(s)`, aviso, async () => {
-          for (const n of alvos) {
+        this.askConfirm(labels[action] + ` — ${targets.length} node(s)`, warning, async () => {
+          for (const n of targets) {
             await this.pvxPowerNow(n, action);
           }
           this.pvx.sel = [];
@@ -2454,29 +2454,29 @@
       // opens no dialog at all: restoring destroys nothing, and a dialog on every click
       // trains the operator to confirm without reading.
       pvxPower(n, action) {
-        const estado = this.pvxActionState(n, action);
-        if (!estado.can) { this.showToast(estado.motivo, 'err'); return; }
+        const state = this.pvxActionState(n, action);
+        if (!state.can) { this.showToast(state.motivo, 'err'); return; }
         const step = this.pvxStep(action, 1);
         if (step <= 1) { this.pvxPowerNow(n, action); return; }
         const labels = { shutdown: 'Shut down gracefully', stop: 'Cut the power', reboot: 'Restart' };
-        let aviso;
+        let warning;
         if (action === 'stop') {
-          aviso = `Cuts the power to "${n.name}" outright — the same as pulling the cable. `
+          warning = `Cuts the power to "${n.name}" outright — the same as pulling the cable. `
             + `Whatever is in memory and has not been written is lost. `
             + `Type the node name (${n.name}) to confirm.`;
         } else if (action === 'reboot') {
           // The warning says what REALLY happens, not "are you sure?". Whoever reads it
           // needs to know that the service goes down during the round trip and that the
           // request is made FROM THE INSIDE — a hung guest can simply ignore it.
-          aviso = `Restarts "${n.name}" from the inside (the system receives the request and reboots itself). `
+          warning = `Restarts "${n.name}" from the inside (the system receives the request and reboots itself). `
             + `Everything running on it is offline until it comes back. `
             + `If the system is stuck it may IGNORE the request — the task then fails `
             + `and the guest stays up, and then the way out is "Cut the power".`;
         } else {
-          aviso = `Runs "${action}" on "${n.name}". The response only comes back once the hypervisor has finished the task.`;
+          warning = `Runs "${action}" on "${n.name}". The response only comes back once the hypervisor has finished the task.`;
         }
         const options = step >= 3 ? { danger: true, requireText: n.name } : {};
-        this.askConfirm(labels[action] || action, aviso, () => this.pvxPowerNow(n, action), options);
+        this.askConfirm(labels[action] || action, warning, () => this.pvxPowerNow(n, action), options);
       },
 
       // pvxPowerNow runs it and WAITS for the whole response: the server only answers
@@ -2508,8 +2508,8 @@
       // strongest warning on the screen: the operation is irreversible on BOTH sides
       // (the token leaves the hypervisor AND the vault). Rung 3, by definition.
       pvxRevoke(n) {
-        const estado = this.pvxActionState(n, 'revoke');
-        if (!estado.can) { this.showToast(estado.motivo, 'err'); return; }
+        const state = this.pvxActionState(n, 'revoke');
+        if (!state.can) { this.showToast(state.motivo, 'err'); return; }
         this.askConfirm('Revoke the credential',
           `Deletes the token for "${n.name}" on the hypervisor AND in the vault, in that order. `
           + `Irreversible: the node is left with no credential until someone runs the applier again — `

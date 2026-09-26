@@ -36,17 +36,17 @@ console.log('=== test-tamanho-reconciliado ===');
   // The reassertion has to send the CURRENT xterm size, not a value captured
   // when the timer was scheduled: with the window hidden the timer fires minutes
   // later, and the value at that moment is the one that counts.
-  const m = shell.match(/state\._assertSize = \(motivo\) => \{([\s\S]*?)\n {8}\};/);
+  const m = shell.match(/state\._assertSize = \(reason\) => \{([\s\S]*?)\n {8}\};/);
   if (!m) {
     no('could not find _assertSize in the panel client — the size is an event again');
   } else {
-    const corpo = m[1];
+    const body = m[1];
     // Measured RIGHT THEN (nothing captured when the timer was scheduled) and
     // measured from the WINDOW, not from the drawn grid — see just below.
-    (/let cols = t\.cols, rows = t\.rows/.test(corpo) && /proposeDimensions\(\)/.test(corpo))
+    (/let cols = t\.cols, rows = t\.rows/.test(body) && /proposeDimensions\(\)/.test(body))
       ? ok('panel: reasserts by reading the CURRENT xterm size (the natural window, measured right then)')
       : no('panel: reasserts a value captured earlier — with the window hidden it is stale');
-    /cols >= 2 && rows >= 1/.test(corpo)
+    /cols >= 2 && rows >= 1/.test(body)
       ? ok('panel: never reasserts a degenerate size')
       : no('panel: no guard against a degenerate size');
   }

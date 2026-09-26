@@ -51,8 +51,8 @@ func repoRootDir(t *testing.T) string {
 // a Dockerfile and a startup script).
 func RunBash(t *testing.T, script string) {
 	t.Helper()
-	caminho := filepath.Join(repoRootDir(t), "scripts", script)
-	output, err := exec.Command("bash", caminho).CombinedOutput()
+	path := filepath.Join(repoRootDir(t), "scripts", script)
+	output, err := exec.Command("bash", path).CombinedOutput()
 	verify(t, script, string(output), err)
 }
 

@@ -20,8 +20,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Optional target via argv: lets the test run against a MUTATED COPY of
 // 00-shell.js and prove it fails when the bug comes back (a test that only ever
 // passes proves nothing).
-const alvo = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
-const src = readFileSync(alvo, 'utf8');
+const target = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const src = readFileSync(target, 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('  ✓ ' + m); pass++; };
@@ -255,10 +255,10 @@ const fakeTerm = (written, line) => ({
   if (!mp) { no('could not extract _viewportNeedsRepaint'); }
   else {
     const needs = new Function('term', mp[1]);
-    const termCom = (linhas) => ({
-      rows: linhas.length,
-      buffer: { active: { viewportY: 0, getLine: (i) => linhas[i] === undefined ? null
-        : { translateToString: () => linhas[i] } } },
+    const termCom = (lines) => ({
+      rows: lines.length,
+      buffer: { active: { viewportY: 0, getLine: (i) => lines[i] === undefined ? null
+        : { translateToString: () => lines[i] } } },
     });
     needs(termCom(['', '  $ ls', ''])) === false
       ? ok('screen WITH content → no escalation (no more jolt on deploy)')

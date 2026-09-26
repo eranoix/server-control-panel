@@ -71,26 +71,26 @@ func block(t *testing.T, source, nome string) string {
 // the file, not assumed. If somebody reverts the JS to the naive scan, this
 // resolver reverts with it and the test fails NAMING the tab that goes black —
 // instead of staying green because the right rule lives only in the Go.
-func resolverAba(remap map[string][2]string, order []string, grupo, aba string, canonicalFirst bool) string {
+func resolverAba(remap map[string][2]string, order []string, group, aba string, canonicalFirst bool) string {
 	if canonicalFirst {
-		if c, ok := remap[aba]; ok && c[0] == grupo && c[1] == aba {
+		if c, ok := remap[aba]; ok && c[0] == group && c[1] == aba {
 			return aba
 		}
 	}
 	for _, view := range order {
 		c := remap[view]
-		if c[0] == grupo && c[1] == aba {
+		if c[0] == group && c[1] == aba {
 			return view
 		}
 	}
-	return grupo
+	return group
 }
 
-func readSource(t *testing.T, caminho string) string {
+func readSource(t *testing.T, path string) string {
 	t.Helper()
-	b, err := os.ReadFile(caminho)
+	b, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("could not read %s: %v", caminho, err)
+		t.Fatalf("could not read %s: %v", path, err)
 	}
 	return string(b)
 }
@@ -150,9 +150,9 @@ func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 		declared[strings.SplitN(par, "|", 2)[1]] = true
 	}
 	var orphans []string
-	for _, alvo := range navigations {
-		if !declared[alvo] {
-			orphans = append(orphans, alvo)
+	for _, target := range navigations {
+		if !declared[target] {
+			orphans = append(orphans, target)
 		}
 	}
 	if len(orphans) > 0 {
@@ -174,14 +174,14 @@ func TestEveryTabResolvesToAnExistingSection(t *testing.T) {
 	checked := 0
 	for _, p := range pares {
 		parts := strings.SplitN(p, "|", 2)
-		grupo, aba := parts[0], parts[1]
-		if _, temDefault := defaults[grupo]; !temDefault {
+		group, aba := parts[0], parts[1]
+		if _, temDefault := defaults[group]; !temDefault {
 			continue // group with no tabs: currentView is the page itself
 		}
 		checked++
-		view := resolverAba(remap, order, grupo, aba, canonicalFirst)
+		view := resolverAba(remap, order, group, aba, canonicalFirst)
 		if !sections[view] {
-			broken = append(broken, fmt.Sprintf("%s → %s  resolves to currentView=%q, and NO section x-show matches (the screen opens BLACK)", grupo, aba, view))
+			broken = append(broken, fmt.Sprintf("%s → %s  resolves to currentView=%q, and NO section x-show matches (the screen opens BLACK)", group, aba, view))
 		}
 	}
 	if checked < 30 {
@@ -204,12 +204,12 @@ func TestShellTabToViewIsDeterministic(t *testing.T) {
 	if m == nil {
 		t.Fatalf("method tabToView not found in %s — the guard went blind", shellFile)
 	}
-	corpo := m[1]
-	if !strings.Contains(corpo, "this.PAGE_REMAP[tab]") {
+	body := m[1]
+	if !strings.Contains(body, "this.PAGE_REMAP[tab]") {
 		t.Errorf("tabToView voltou a varrer sem preferir a key canonical.\n"+
 			"Sem `this.PAGE_REMAP[tab]` a resposta depende da ORDEM DE ESCRITA das chaves,\n"+
 			"e uma aba com alias (hoje: nodes/proxmox) resolve para o alias em vez da\n"+
-			"canonica — que foi como a aba Proxmox abriu PRETA (quick 260820-95v).\ncorpo lido:\n%s", corpo)
+			"canonica — que foi como a aba Proxmox abriu PRETA (quick 260820-95v).\ncorpo lido:\n%s", body)
 	}
 }
 
@@ -223,7 +223,7 @@ func TestPageRemapAliasesStayAlive(t *testing.T) {
 	for _, m := range reRemapEntry.FindAllStringSubmatch(block(t, shell, "PAGE_REMAP"), -1) {
 		remap[m[1]] = [2]string{m[2], m[3]}
 	}
-	for _, alias := range []struct{ key, grupo, aba string }{
+	for _, alias := range []struct{ key, group, aba string }{
 		{"nodes", "operations", "proxmox"},
 	} {
 		got, ok := remap[alias.key]
@@ -231,8 +231,8 @@ func TestPageRemapAliasesStayAlive(t *testing.T) {
 			t.Errorf("the alias %q disappeared from PAGE_REMAP — an old link, a bookmark and the command palette now land nowhere", alias.key)
 			continue
 		}
-		if got[0] != alias.grupo || got[1] != alias.aba {
-			t.Errorf("the alias %q points at %v, expected [%s %s]", alias.key, got, alias.grupo, alias.aba)
+		if got[0] != alias.group || got[1] != alias.aba {
+			t.Errorf("the alias %q points at %v, expected [%s %s]", alias.key, got, alias.group, alias.aba)
 		}
 	}
 }

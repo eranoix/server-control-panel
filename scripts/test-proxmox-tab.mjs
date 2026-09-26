@@ -49,10 +49,10 @@ function noComments(src) {
 }
 
 // extracts the body of an object method indented by six spaces, by name.
-function extract(src, arquivo, nome, sig) {
+function extract(src, file, nome, sig) {
   const re = new RegExp(nome + '\\(' + sig + '\\) \\{([\\s\\S]*?)\\n      \\},');
   const m = src.match(re);
-  if (!m) { console.error('FATAL: method not found in', arquivo + ':', nome); process.exit(2); }
+  if (!m) { console.error('FATAL: method not found in', file + ':', nome); process.exit(2); }
   return m[1];
 }
 
@@ -195,18 +195,18 @@ check('capacity and zpool are in the 30 s poll (they are a heartbeat)',
 
 // The guard, in its three readings. `sem-medida` is the third, and it is the
 // one that stops the screen accusing a lack of permission nobody measured.
-const estado = extract(pvxJs, '41-proxmox.js', 'pvxStorageState', '');
+const state = extract(pvxJs, '41-proxmox.js', 'pvxStorageState', '');
 for (const st of ['sem-medida', 'sem-permissao', 'ok']) {
-  check(`pvxStorageState distinguishes '${st}'`, estado.includes(`'${st}'`));
+  check(`pvxStorageState distinguishes '${st}'`, state.includes(`'${st}'`));
 }
 check('pvxStorageState demands the TIMESTAMP before accusing (observed_at)',
-  estado.includes('observed_at'),
+  state.includes('observed_at'),
   'without checking the timestamp, "I never asked" would turn into "no permission"');
 
 // The function is extracted from the file that is SERVED and really executed;
 // only the read of component state is swapped for the argument. Rewriting the
 // logic here would prove the copy, not what goes to the browser.
-const guardFn = new Function('storageDoPainel', estado.replace(/this\.pvx\.storage/g, 'storageDoPainel'));
+const guardFn = new Function('storageDoPainel', state.replace(/this\.pvx\.storage/g, 'storageDoPainel'));
 check('guard: no timestamp → sem-medida', guardFn({ datastore_audit: { value: false, observed_at: 0 } }) === 'sem-medida');
 check('🔴 guard: measured and DENIED → sem-permissao (the banner COMES BACK)',
   guardFn({ datastore_audit: { value: false, observed_at: 1787000000 } }) === 'sem-permissao');
@@ -561,9 +561,9 @@ const fakeComponent = () => {
     nodes: { list: LIST },
   };
   const turnOn = (nome, params) => {
-    const corpo = extract(pvxJs, '41-proxmox.js', nome, params.join(',\\s*'))
+    const body = extract(pvxJs, '41-proxmox.js', nome, params.join(',\\s*'))
       .replace('pvxGaugePct(n, which)', '(n.__pct ? n.__pct[which] : null)');
-    const f = new Function(...params, corpo);
+    const f = new Function(...params, body);
     comp[nome] = function (...a) { return f.apply(comp, a); };
   };
   turnOn('pvxNodeState', ['n']);
@@ -802,21 +802,21 @@ check('a failure fetching disks does not clear either',
   !/this\.pvx\.disks = \[\];/.test(extract(pvxJs, '41-proxmox.js', 'pvxLoadDisks', '')));
 
 // ── the skeleton, and the THREE empties ──────────────────────────────────
-const vazio = new Function('pvx', 'nodes', 'list', 'filtrados',
+const empty = new Function('pvx', 'nodes', 'list', 'filtrados',
   extract(pvxJs, '41-proxmox.js', 'pvxEmpty', '')
     .replace(/this\.pvxFilteredNodes\(\)/g, 'filtrados')
     .replace(/this\.pvxNos\(\)/g, 'list')
     .replace(/this\.pvx\./g, 'pvx.')
     .replace(/this\.nodes/g, 'nodes'));
 check('🔴 empty: no permission is a diagnosis of its own',
-  vazio({ forbidden: false }, { forbidden: true }, [], []) === 'sem-permissao');
+  empty({ forbidden: false }, { forbidden: true }, [], []) === 'sem-permissao');
 check('🔴 empty: a fetch failure is another one (the lab may be perfectly fine)',
-  vazio({ forbidden: false }, { forbidden: false, lastError: 'connection refused' }, [], []) === 'falhou');
-check('empty: "there is nothing" is the third', vazio({ forbidden: false }, { forbidden: false }, [], []) === 'nada');
+  empty({ forbidden: false }, { forbidden: false, lastError: 'connection refused' }, [], []) === 'falhou');
+check('empty: "there is nothing" is the third', empty({ forbidden: false }, { forbidden: false }, [], []) === 'nada');
 check('empty: a filter with no match is distinct from "there is nothing"',
-  vazio({ forbidden: false }, { forbidden: false }, [1], []) === 'filtrado');
+  empty({ forbidden: false }, { forbidden: false }, [1], []) === 'filtrado');
 check('with data, there is no empty state at all',
-  vazio({ forbidden: false }, { forbidden: false }, [1], [1]) === '');
+  empty({ forbidden: false }, { forbidden: false }, [1], [1]) === '');
 check('🔴 the empty state replaces the WHOLE TABLE, header included',
   /<template x-if="!pvxEmpty\(\)">/.test(index),
   'a standing header makes a screen reader announce six columns of a table with no rows');

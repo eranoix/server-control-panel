@@ -82,20 +82,20 @@ const exe = findBrowser();
 if (!exe) { console.error('FAILURE: no Chromium found — skipping would be faking coverage.'); process.exit(1); }
 
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
-const porta = srv.address().port;
+const port = srv.address().port;
 const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
-const erros = [];
-page.on('pageerror', (e) => erros.push('pageerror: ' + ((e && e.message) || e)));
+const errors = [];
+page.on('pageerror', (e) => errors.push('pageerror: ' + ((e && e.message) || e)));
 // The browser asks for the favicon on its own and this test server does not
 // serve it; counting that 404 as a page error would be noise masking signal.
 page.on('console', (m) => {
   // The console "Failed to load resource" does not say WHICH resource; the URL
   // comes from the response handler below. Reporting both duplicates the failure.
-  if (m.type() === 'error' && !/Failed to load resource/i.test(m.text())) erros.push('console: ' + m.text());
+  if (m.type() === 'error' && !/Failed to load resource/i.test(m.text())) errors.push('console: ' + m.text());
 });
-page.on('requestfailed', (r) => { if (!/favicon/i.test(r.url())) erros.push('resource failed: ' + r.url()); });
-page.on('response', (r) => { if (r.status() >= 400 && !/favicon/i.test(r.url())) erros.push('HTTP ' + r.status() + ': ' + r.url()); });
+page.on('requestfailed', (r) => { if (!/favicon/i.test(r.url())) errors.push('resource failed: ' + r.url()); });
+page.on('response', (r) => { if (r.status() >= 400 && !/favicon/i.test(r.url())) errors.push('HTTP ' + r.status() + ': ' + r.url()); });
 
 const visible = (sel) => page.evaluate((s) => {
   const el = document.querySelector(s);
@@ -103,7 +103,7 @@ const visible = (sel) => page.evaluate((s) => {
 }, sel);
 const clica = async (sel) => { await page.click(sel); await page.waitForTimeout(250); };
 
-await page.goto(`http://127.0.0.1:${porta}/`, { waitUntil: 'domcontentloaded' });
+await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(400);
 
 // ── 1. initial state: the host only ─────────────────────────────────────────
@@ -159,8 +159,8 @@ await page.waitForTimeout(400);
     : no(`active terminal squeezed: ${Math.round(heights.claude)}px of ${heights.janela}px — another screen is stealing height`);
 }
 
-erros.length === 0 ? ok('no console errors when switching tabs')
-                   : no('errors:\n    ' + erros.slice(0, 6).join('\n    '));
+errors.length === 0 ? ok('no console errors when switching tabs')
+                   : no('errors:\n    ' + errors.slice(0, 6).join('\n    '));
 
 await browser.close(); srv.close();
 console.log('─────────────────────────────────────');

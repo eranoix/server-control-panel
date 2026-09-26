@@ -20,8 +20,8 @@ import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const alvo = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
-const src = readFileSync(alvo, 'utf8');
+const target = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const src = readFileSync(target, 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
@@ -106,7 +106,7 @@ const result = await page.evaluate(({ guardBody, filesBody }) => {
 
   const evPaste = (files, text) => {
     const dt = new DataTransfer();
-    for (const [nome, tipo] of files) dt.items.add(new File(['x'], nome, { type: tipo }));
+    for (const [nome, type] of files) dt.items.add(new File(['x'], nome, { type: type }));
     if (text !== undefined) dt.setData('text/plain', text);
     return new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
   };

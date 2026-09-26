@@ -282,9 +282,9 @@ const RE_ANSI = /\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][\s\S]*?(?:\x07|\x1b\\)|\x1b[(
 function createSimpleEngine() {
   const box = document.createElement('div');
   box.className = 'simple';
-  const aviso = document.createElement('div');
-  aviso.className = 'simple-aviso';
-  aviso.textContent = 'Simple mode: the terminal emulator (xterm) did not load. '
+  const warning = document.createElement('div');
+  warning.className = 'simple-aviso';
+  warning.textContent = 'Simple mode: the terminal emulator (xterm) did not load. '
     + 'The connection, the commands and the quick actions still work — the output comes without colours '
     + 'and input is line by line (Enter sends; Ctrl+C, Ctrl+D and Ctrl+Z work). '
     + 'Full-screen programs (vim, htop, less) will not draw correctly here.';
@@ -298,7 +298,7 @@ function createSimpleEngine() {
   const bt = document.createElement('button');
   bt.type = 'button'; bt.textContent = 'Send';
   bar.append(inp, bt);
-  box.append(aviso, pre, bar);
+  box.append(warning, pre, bar);
 
   const dec = new TextDecoder('utf-8', { fatal: false });
   const CAP = 200 * 1024;          // scrollback: ceiling so the tab does not grow forever
@@ -495,12 +495,12 @@ safeFit();
 
 // There is only one pill and both tabs write to it; without this filter, the tab
 // nobody is looking at would overwrite the state of the one in front.
-function conn(estado, text) {
+function conn(state, text) {
   // ALWAYS store, paint only if this is the front tab. Without storing, switching
   // tabs left the pill frozen on the OTHER tab's state until the next event —
   // in an emergency, reading "connected" from a terminal that went down is worse
   // than reading nothing. With the state stored, showTab() can repaint at once.
-  st.estado = estado; st.text = text;
+  st.estado = state; st.text = text;
   if (!elConn) return;
   if (cfg.ativo && !cfg.ativo()) return;
   paint();
@@ -1076,9 +1076,9 @@ window.addEventListener('unhandledrejection', (ev) => {
 
 // ── quick actions console ──────────────────────────────────────────
 const consoleLines = [];
-function logaConsole(title, corpo, tom) {
+function logaConsole(title, body, tom) {
   const time = new Date().toLocaleTimeString('pt-BR', { hour12: false });
-  consoleLines.push({ time, title, corpo: String(corpo == null ? '' : corpo).replace(/\s+$/, ''), tom });
+  consoleLines.push({ time, title, corpo: String(body == null ? '' : body).replace(/\s+$/, ''), tom });
   if (consoleLines.length > 200) consoleLines.shift();
   const pre = document.getElementById('console-txt');
   const cx = document.getElementById('console');

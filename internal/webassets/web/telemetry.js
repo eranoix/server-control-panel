@@ -74,7 +74,7 @@
       if (!buf.length) return;
 
       var batch = buf.slice(0, MAX_BATCH);
-      var corpo = JSON.stringify({ v: V, s: sid, e: batch, dropped: dropped });
+      var body = JSON.stringify({ v: V, s: sid, e: batch, dropped: dropped });
       buf = [];
       dropped = 0;
 
@@ -90,7 +90,7 @@
             keepalive: true,
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
-            body: corpo
+            body: body
           })['catch'](function () {});
           return;
         } catch (_) { /* fall through to the fallback */ }
@@ -99,7 +99,7 @@
       // (2) fallback: sendBeacon — authenticates with the HttpOnly vpsm_token cookie.
       //     Sends Content-Type: text/plain;charset=UTF-8, which the handler accepts.
       try {
-        if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, corpo)) return;
+        if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, body)) return;
       } catch (_) {}
 
       // (3) last resort: fetch without Bearer (cookie), still keepalive.
@@ -107,7 +107,7 @@
         if (window.fetch) {
           window.fetch(ENDPOINT, {
             method: 'POST', keepalive: true, credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' }, body: corpo
+            headers: { 'Content-Type': 'application/json' }, body: body
           })['catch'](function () {});
         }
       } catch (_) {}

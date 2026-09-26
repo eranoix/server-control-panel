@@ -143,21 +143,21 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   await page.addScriptTag({ content: srcVC });
   const r = await page.evaluate(async () => {
     const events = [];
-    let erro = '';
+    let err = '';
     try {
       await window.VPSMVideoCall.connect({
         roomId: 'x', token: 't', displayName: 'test',
         videosEl: document.createElement('div'),
         onState: (ev) => events.push(ev),
       });
-    } catch (e) { erro = e.message; }
-    return { events, erro, gum: window.__gumCalls };
+    } catch (e) { err = e.message; }
+    return { events, erro: err, gum: window.__gumCalls };
   });
   await page.close();
   const degraded = r.events.some(e => e.type === 'devices-degraded');
   degraded ? ok('engine: emitted devices-degraded') : no('engine: no devices-degraded — events=' + JSON.stringify(r.events.map(e=>e.type)));
-  const nota = (r.events.find(e => e.type === 'devices-degraded') || {}).note || '';
-  /c.mera/i.test(nota) ? ok('engine: the note says the camera was missing ("' + nota + '")') : no('engine: unexpected note: ' + nota);
+  const note = (r.events.find(e => e.type === 'devices-degraded') || {}).note || '';
+  /c.mera/i.test(note) ? ok('engine: the note says the camera was missing ("' + note + '")') : no('engine: unexpected note: ' + note);
   // The last gUM attempt has to have been audio-without-video.
   const last = r.gum[r.gum.length - 1] || {};
   (last.audio === true && last.video === false) ? ok('engine: fell back to audio-only') : no('engine: the last attempt was ' + JSON.stringify(last));
@@ -206,9 +206,9 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
       { n: 'tab on an old bundle', err: 'Microphone in use by another program.', caps: undefined, ver: true, sev: 'is-aviso' },
     ];
     for (const c of cases) {
-      const estado = JSON.stringify({ lobbyError: c.err, lobbyCaps: c.caps, lobbyForRoomId: 'r', lobbyForPassphrase: '' });
+      const state = JSON.stringify({ lobbyError: c.err, lobbyCaps: c.caps, lobbyForRoomId: 'r', lobbyForPassphrase: '' });
       await page.setContent('<style>' + tail + '</style><style>' + vars + css + '</style>'
-        + "<div x-data='{ videocall: " + estado + ", vcLobbyOpen(){} }'>" + banner + '</div>');
+        + "<div x-data='{ videocall: " + state + ", vcLobbyOpen(){} }'>" + banner + '</div>');
       await page.addScriptTag({ content: alpine });
       await page.waitForTimeout(200);
       const r = await page.evaluate(() => {
@@ -336,15 +336,15 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
     await page.addScriptTag({ content: alpine });
     await page.waitForTimeout(250);
     const r = await page.evaluate(() => {
-      const linhas = [...document.querySelectorAll('.vc-pill.is-line')].filter(e => e.offsetParent !== null);
+      const lines = [...document.querySelectorAll('.vc-pill.is-line')].filter(e => e.offsetParent !== null);
       const level = document.querySelector('.vc-pill.is-line .level');
       const test = document.querySelector('.vc-pill.is-line .test');
       const rot = document.querySelector('.vc-pill label.label');
       const tit = document.getElementById('dlg-vc-settings-title');
-      const cs = linhas[0] ? getComputedStyle(linhas[0]) : null;
+      const cs = lines[0] ? getComputedStyle(lines[0]) : null;
       const ct = test ? getComputedStyle(test) : null;
-      return { n: linhas.length,
-               levelPct: level && linhas[1] ? level.getBoundingClientRect().width / linhas[1].getBoundingClientRect().width : -1,
+      return { n: lines.length,
+               levelPct: level && lines[1] ? level.getBoundingClientRect().width / lines[1].getBoundingClientRect().width : -1,
                hasTest: !!test, testBorder: ct ? ct.borderTopColor : '', testBackground: ct ? ct.backgroundColor : '',
                visibleLabel: rot ? rot.getBoundingClientRect().width > 2 : false,
                upperLabel: rot ? getComputedStyle(rot).textTransform : '',

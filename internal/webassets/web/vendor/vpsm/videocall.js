@@ -300,26 +300,26 @@
   // combinado, probe por tipo, e a degradacao do Call.start).
   function humanizeGumError(e, kindLabel) {
     const name = e && e.name;
-    const alvo = kindLabel || 'câmera/microfone';
+    const target = kindLabel || 'câmera/microfone';
     if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-      return 'Permissão de ' + alvo + ' bloqueada. Clique no ícone 🔒 ao lado da URL → permitir → recarregar a página.';
+      return 'Permissão de ' + target + ' bloqueada. Clique no ícone 🔒 ao lado da URL → permitir → recarregar a página.';
     }
     if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-      return 'Nenhum(a) ' + alvo + ' foi encontrado(a) neste computador.';
+      return 'Nenhum(a) ' + target + ' foi encontrado(a) neste computador.';
     }
     if (name === 'NotReadableError' || name === 'TrackStartError') {
-      return alvo.charAt(0).toUpperCase() + alvo.slice(1) + ' já está em uso por outro programa (Zoom/Meet/OBS/app do sistema). Feche os outros e tente de novo.';
+      return target.charAt(0).toUpperCase() + target.slice(1) + ' já está em uso por outro programa (Zoom/Meet/OBS/app do sistema). Feche os outros e tente de novo.';
     }
     if (name === 'OverconstrainedError') {
-      return 'O dispositivo salvo para ' + alvo + ' não existe mais (foi desconectado?). Escolha outro na lista.';
+      return 'O dispositivo salvo para ' + target + ' não existe mais (foi desconectado?). Escolha outro na lista.';
     }
     if (name === 'SecurityError') {
       return 'Bloqueado por política de segurança — o site precisa estar em HTTPS.';
     }
     if (name === 'AbortError') {
-      return 'O pedido de permissão de ' + alvo + ' foi cancelado/interrompido.';
+      return 'O pedido de permissão de ' + target + ' foi cancelado/interrompido.';
     }
-    return (e && e.message) || ('Erro desconhecido ao acessar ' + alvo + '.');
+    return (e && e.message) || ('Erro desconhecido ao acessar ' + target + '.');
   }
   // Testa UM tipo isolado. Existe porque getUserMedia e all-or-nothing:
   // pedir {audio,video} junto e ter so o microfone devolve NotFoundError
@@ -856,7 +856,7 @@
       delete cp.deviceId; delete cp.facingMode;
       return cp;
     };
-    const step = (a, v, nota) => { if (a || v) plan.push({ audio: a, video: v, nota: nota }); };
+    const step = (a, v, note) => { if (a || v) plan.push({ audio: a, video: v, nota: note }); };
     step(audio, video, '');
     const hasFixedId = (audio && audio.deviceId) || (video && (video.deviceId || video.facingMode));
     if (hasFixedId) step(semId(audio), semId(video), 'o dispositivo salvo não existe mais — entrei com o padrão do sistema');
@@ -1715,7 +1715,7 @@
   // lado que travou — manda `reset` pro outro recriar o dele e voltamos como
   // iniciador (abrimos os DataChannels e oferecemos). O `reset` sai pelo mesmo
   // WS e antes da oferta nova, entao chega primeiro. Ate 3 por peer.
-  Call.prototype._rebuildPeer = function (remoteId, motivo, warn) {
+  Call.prototype._rebuildPeer = function (remoteId, reason, warn) {
     const old = this.peers[remoteId];
     if (!old || this.stopped) return;
     this._peerRebuilds = this._peerRebuilds || {};
@@ -1726,9 +1726,9 @@
       return;
     }
     this._peerRebuilds[remoteId] = n;
-    console.warn('[vpsm:vc] recriando conexao com ' + remoteId.slice(-6) + ' (' + motivo + ', ' + n + '/3)');
+    console.warn('[vpsm:vc] recriando conexao com ' + remoteId.slice(-6) + ' (' + reason + ', ' + n + '/3)');
     const user = old.remoteUser, clientId = old.remoteClientId;
-    if (warn) this.send({ type: 'reset', to: remoteId, payload: jsonRaw({ reason: motivo }) });
+    if (warn) this.send({ type: 'reset', to: remoteId, payload: jsonRaw({ reason: reason }) });
     try { old.close(); } catch (_) {}
     delete this.peers[remoteId];
     this._teardownPeerMonitor(remoteId);

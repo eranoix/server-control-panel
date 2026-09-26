@@ -5,9 +5,9 @@
     const c = origApp();
     c.token = 'harness';
     c.api = async function (route, opts) {
-      const corpo = (window.__responses && window.__responses[route.split('?')[0]]) || {};
-      if (opts && opts.raw) return { ok: true, status: 200, json: async () => corpo };
-      return corpo;
+      const body = (window.__responses && window.__responses[route.split('?')[0]]) || {};
+      if (opts && opts.raw) return { ok: true, status: 200, json: async () => body };
+      return body;
     };
     c._apiError = async () => new Error('erro-de-test');
     c._errText = (e) => String((e && e.message) || e);
@@ -86,7 +86,7 @@
 
   const series = (n, opts) => {
     opts = opts || {};
-    const pontos = [];
+    const points = [];
     for (let i = 0; i < n; i++) {
       const p = { time: 1787000000 + i * 60 };
       if (!(opts.gapAt && opts.gapAt.includes(i))) {
@@ -97,9 +97,9 @@
         p.mem = 1e9; p.maxmem = 2e9; p.disk = 5e9; p.maxdisk = 10e9;
         p.diskread = 1e5; p.diskwrite = 2e5;
       }
-      pontos.push(p);
+      points.push(p);
     }
-    return { pontos, escopo: opts.escopo || 'hypervisor', janela: 'hour' };
+    return { pontos: points, escopo: opts.escopo || 'hypervisor', janela: 'hour' };
   };
 
   // 🔴 NODES WITH THE REAL SHAPE, COPIED FROM THE LIVE /api/nodes RESPONSE.
@@ -376,10 +376,10 @@
     step: () => { open('lxc/204', 'summary'); },
     expect: () => {
       const comp = C();
-      const alvos = Array.from(document.querySelectorAll('[\\:disabled]'));
-      if (alvos.length < 5) return { erro: 'só ' + alvos.length + ' elements com :disabled — vacuidade' };
+      const targets = Array.from(document.querySelectorAll('[\\:disabled]'));
+      if (targets.length < 5) return { erro: 'só ' + targets.length + ' elements com :disabled — vacuidade' };
       const bad = [];
-      for (const el of alvos) {
+      for (const el of targets) {
         const expr = el.getAttribute(':disabled');
         let v;
         try { v = Function('c', 'with (c) { return (' + expr + ') }')(comp); }
@@ -387,7 +387,7 @@
         if (typeof v !== 'boolean') bad.push(expr + ' → ' + JSON.stringify(v) + ' (' + typeof v + '), não booleano');
       }
       if (bad.length) return { erro: bad.length + ' expressão(ões) não booleana(s): ' + bad.join(' ;; ') };
-      return { nota: alvos.length + ' expressões :disabled, todas booleanas' };
+      return { nota: targets.length + ' expressões :disabled, todas booleanas' };
     },
   });
 
