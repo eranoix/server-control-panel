@@ -87,17 +87,17 @@ func TestLoad_HappyPath(t *testing.T) {
 // filtering out the bad entry and serving the rest.
 func TestLoad_RejectsUnsafeOrInconsistentManifest(t *testing.T) {
 	cases := map[string]func(m *Manifest){
-		"schema desconhecido":         func(m *Manifest) { m.SchemaVersion = 99 },
-		"full com caminho absoluto":   func(m *Manifest) { m.Full.File = "/etc/passwd" },
-		"full escapando do diretorio": func(m *Manifest) { m.Full.File = "../../secrets.vault" },
-		"full nao normalizado":        func(m *Manifest) { m.Full.File = "full/./x.hdiff" },
-		"full com kind errado":        func(m *Manifest) { m.Full.Kind = "patch" },
-		"full sem sha":                func(m *Manifest) { m.Full.SHA256 = "" },
-		"full com tamanho zero":       func(m *Manifest) { m.Full.SizeBytes = 0 },
-		"latest sem sha valido":       func(m *Manifest) { m.Latest.SHA256 = "abc" },
-		"patch com caminho absoluto":  func(m *Manifest) { m.Patches[0].File = "/etc/shadow" },
-		"patch com base invalida":     func(m *Manifest) { m.Patches[0].FromSHA256 = "xyz" },
-		"patch com kind errado":       func(m *Manifest) { m.Patches[0].Kind = "full" },
+		"unknown schema":              func(m *Manifest) { m.SchemaVersion = 99 },
+		"full with absolute path":     func(m *Manifest) { m.Full.File = "/etc/passwd" },
+		"full escaping the directory": func(m *Manifest) { m.Full.File = "../../secrets.vault" },
+		"full not normalized":         func(m *Manifest) { m.Full.File = "full/./x.hdiff" },
+		"full with wrong kind":        func(m *Manifest) { m.Full.Kind = "patch" },
+		"full without sha":            func(m *Manifest) { m.Full.SHA256 = "" },
+		"full with zero size":         func(m *Manifest) { m.Full.SizeBytes = 0 },
+		"latest without valid sha":    func(m *Manifest) { m.Latest.SHA256 = "abc" },
+		"patch with absolute path":    func(m *Manifest) { m.Patches[0].File = "/etc/shadow" },
+		"patch with invalid base":     func(m *Manifest) { m.Patches[0].FromSHA256 = "xyz" },
+		"patch with wrong kind":       func(m *Manifest) { m.Patches[0].Kind = "full" },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -136,7 +136,7 @@ func TestArtifactByFile_OnlyWhatIsInManifest(t *testing.T) {
 	if m.ArtifactByFile(m.Patches[0].File) == nil {
 		t.Fatal("the manifest's own patch was not found")
 	}
-	for _, name := range []string{"", "full/outro.hdiff", "../secrets.vault", "/etc/passwd", "FULL/" + shaNew + ".hdiff"} {
+	for _, name := range []string{"", "full/other.hdiff", "../secrets.vault", "/etc/passwd", "FULL/" + shaNew + ".hdiff"} {
 		if m.ArtifactByFile(name) != nil {
 			t.Fatalf("ArtifactByFile(%q) returned an artifact", name)
 		}
@@ -148,10 +148,10 @@ func TestOpenArtifact_RejectsWhatIsNotInManifest(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(Dir(dataDir), "full"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dataDir, "secrets.vault"), []byte("SEGREDO"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dataDir, "secrets.vault"), []byte("SECRET"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"../secrets.vault", "/etc/passwd", "full/inexistente.hdiff"} {
+	for _, name := range []string{"../secrets.vault", "/etc/passwd", "full/missing.hdiff"} {
 		f, _, _, err := OpenArtifact(dataDir, name)
 		if err == nil {
 			f.Close()

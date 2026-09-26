@@ -234,7 +234,7 @@ func TestPollerTotalFailurePreservesNodes(t *testing.T) {
 	oldStamp := nodesByID(t, st)["lxc/207"].Status.ObservedAt
 
 	f.mu.Lock()
-	f.failure = errors.New("hipervisor inalcançável")
+	f.failure = errors.New("hypervisor unreachable")
 	f.mu.Unlock()
 	rel.advance(5 * time.Minute)
 	if err := p.tick(context.Background()); err == nil {
@@ -254,7 +254,7 @@ func TestPollerPartialFailure(t *testing.T) {
 	f := &fakePVE{
 		resources: testResources(),
 		addrs:     map[int]string{208: "192.168.100.48"},
-		addrErr:   map[int]error{207: errors.New("config ilegível")},
+		addrErr:   map[int]error{207: errors.New("unreadable config")},
 	}
 	p, st, rel := newTestPoller(t, f, Sources{}, PollerConfig{})
 	if err := p.tick(context.Background()); err != nil {
@@ -314,7 +314,7 @@ func TestPollerPanicDoesNotKillLoop(t *testing.T) {
 	var n int32
 	deps := Sources{Jobs: func() ([]JobRef, error) {
 		if atomic.AddInt32(&n, 1) == 1 {
-			panic("fonte de jobs explodiu")
+			panic("job source blew up")
 		}
 		return nil, nil
 	}}
@@ -330,7 +330,7 @@ func TestPollerPanicDoesNotKillLoop(t *testing.T) {
 	requireSet(t, st, pveSet()...)
 }
 
-// ordenados is the helper for SET assertions — never counting.
+// sorted is the helper for SET assertions — never counting.
 func sortedIDs(nodes map[string]Node) []string {
 	var ids []string
 	for id := range nodes {
@@ -366,7 +366,7 @@ func pveSet() []string { return []string{"node/pve", "lxc/207", "qemu/208"} }
 //
 // The second tick uses the SAME configuration, the SAME store and the SAME
 // poller — nothing is edited between them. The only new fact is that the
-// hypervisor started returning `lxc/299 surpresa`. If this test passed with the
+// hypervisor started returning `lxc/299 surprise`. If this test passed with the
 // guest missing, auto-discovery would be decorative and the inventory would go
 // back to being a hand-written JSON — which is exactly what auto-discovery
 // exists to end.
@@ -382,7 +382,7 @@ func TestDiscoveryAddsUnknownGuest(t *testing.T) {
 	// The hypervisor gained a guest. NOTHING else changed.
 	f.mu.Lock()
 	f.resources = append(f.resources, pve.Resource{
-		ID: "lxc/299", VMID: 299, Name: "surpresa", Node: "pve", Type: "lxc", Status: "running", Uptime: 42,
+		ID: "lxc/299", VMID: 299, Name: "surprise", Node: "pve", Type: "lxc", Status: "running", Uptime: 42,
 	})
 	f.mu.Unlock()
 	rel.advance(30 * time.Second)
@@ -393,7 +393,7 @@ func TestDiscoveryAddsUnknownGuest(t *testing.T) {
 	nodes := requireSet(t, st, append(pveSet(), "lxc/299")...)
 
 	fresh := nodes["lxc/299"]
-	if fresh.Name != "surpresa" || fresh.Kind != NodeKindGuest || fresh.VMID != 299 {
+	if fresh.Name != "surprise" || fresh.Kind != NodeKindGuest || fresh.VMID != 299 {
 		t.Fatalf("malformed new guest: %+v", fresh)
 	}
 	if fresh.Status.ObservedAt != rel.now().Unix() {
@@ -445,24 +445,24 @@ func TestDiscoveryRemovalKeepsHistory(t *testing.T) {
 // the hypervisor is "pve-api"; a seed declares its own; a value outside the set
 // is refused by the model.
 func TestNodeTransport(t *testing.T) {
-	seeds := []Node{{ID: "canario", Name: "canario", Transport: TransportAgent, Address: "127.0.0.1:9", Kind: NodeKindExternal}}
+	seeds := []Node{{ID: "canary", Name: "canary", Transport: TransportAgent, Address: "127.0.0.1:9", Kind: NodeKindExternal}}
 	f := &fakePVE{resources: testResources()}
 	deps := Sources{
 		Seeds:     func() ([]Node, error) { return seeds, nil },
-		AgentPing: func(ctx context.Context, addr string) error { return errors.New("recusada") },
+		AgentPing: func(ctx context.Context, addr string) error { return errors.New("refused") },
 	}
 	p, st, _ := newTestPoller(t, f, deps, PollerConfig{})
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	nodes := requireSet(t, st, append(pveSet(), "canario")...)
+	nodes := requireSet(t, st, append(pveSet(), "canary")...)
 	for _, id := range pveSet() {
 		if nodes[id].Transport != TransportPVEAPI {
 			t.Errorf("%s: transport = %q, want pve-api", id, nodes[id].Transport)
 		}
 	}
-	if nodes["canario"].Transport != TransportAgent {
-		t.Errorf("the seed lost the transport: %+v", nodes["canario"])
+	if nodes["canary"].Transport != TransportAgent {
+		t.Errorf("the seed lost the transport: %+v", nodes["canary"])
 	}
 	// The enum is closed: anyone inventing a fourth value is refused at validation.
 	if err := (Node{ID: "x", Transport: "telnet", Kind: NodeKindExternal}).Validate(); err == nil {
@@ -484,7 +484,7 @@ func TestAggregatesReferences(t *testing.T) {
 			return []JobRef{{ID: "j_1", Kind: "queue", NodeID: "lxc/207", Source: "user"}}, nil
 		},
 		Services: func() ([]Service, error) {
-			return []Service{{ID: "s1", NodeID: "lxc/207", Name: "painel", Unit: "vps-manager.service"}}, nil
+			return []Service{{ID: "s1", NodeID: "lxc/207", Name: "panel", Unit: "vps-manager.service"}}, nil
 		},
 	}
 	f := &fakePVE{resources: testResources()}
@@ -547,7 +547,7 @@ func TestRevokedCredentialOnlyForUnexpired(t *testing.T) {
 		t.Errorf("a valid token that took a 401: state = %q, want %q", got, CredRevoked)
 	}
 	if got := nodes["lxc/207"].Credential.State; got == CredRevoked {
-		t.Errorf("an ALREADY EXPIRED token was marked revogada — the clue that this is a calendar matter disappears")
+		t.Errorf("an ALREADY EXPIRED token was marked revoked — the clue that this is a calendar matter disappears")
 	}
 	// And the final read for the screen, which is what resolves the state:
 	seen := View(Inventory{Nodes: []Node{nodes["lxc/207"]}}, time.Minute, rel.now())
@@ -574,7 +574,7 @@ func TestNoCredentialErrorMarksNothing(t *testing.T) {
 	}
 	for id, n := range nodesByID(t, st) {
 		if n.Credential.State == CredRevoked {
-			t.Errorf("%s marked revogada because of a TRANSPORT error", id)
+			t.Errorf("%s marked revoked because of a TRANSPORT error", id)
 		}
 	}
 }
@@ -600,8 +600,8 @@ func TestRedeclaredSeedUpdates(t *testing.T) {
 	}
 
 	// The operator rewrites the seed: another address, another transport, another name.
-	seeds[0] = Node{ID: "vps", Name: "vps-novo", Transport: TransportAgent, Address: "10.0.0.9:8099", Kind: NodeKindExternal}
-	deps.AgentPing = func(ctx context.Context, addr string) error { return errors.New("sem resposta") }
+	seeds[0] = Node{ID: "vps", Name: "vps-new", Transport: TransportAgent, Address: "10.0.0.9:8099", Kind: NodeKindExternal}
+	deps.AgentPing = func(ctx context.Context, addr string) error { return errors.New("no response") }
 	p2, _, _ := newTestPoller(t, f, deps, PollerConfig{})
 	p2.store = st
 	if err := p2.tick(context.Background()); err != nil {
@@ -610,12 +610,12 @@ func TestRedeclaredSeedUpdates(t *testing.T) {
 
 	n := nodesByID(t, st)["vps"]
 	if n.Transport != TransportAgent {
-		t.Errorf("transport = %q, want agente (the seed was rewritten)", n.Transport)
+		t.Errorf("transport = %q, want agent (the seed was rewritten)", n.Transport)
 	}
 	if n.Address != "10.0.0.9:8099" {
 		t.Errorf("address = %q, want the new one", n.Address)
 	}
-	if n.Name != "vps-novo" {
+	if n.Name != "vps-new" {
 		t.Errorf("name = %q, want the new one", n.Name)
 	}
 }
@@ -642,12 +642,12 @@ func TestSeedsLoad(t *testing.T) {
 		t.Fatalf("seeds missing: (%v, %v), want (empty, nil)", seeds, err)
 	}
 
-	writeSeeds(t, dir, `[{"id":"canario","name":"canario","transport":"agente","address":"127.0.0.1:9","kind":"externo"}]`)
+	writeSeeds(t, dir, `[{"id":"canary","name":"canary","transport":"agente","address":"127.0.0.1:9","kind":"externo"}]`)
 	seeds, err = LoadSeeds(dir)
 	if err != nil {
 		t.Fatalf("LoadSeeds: %v", err)
 	}
-	if len(seeds) != 1 || seeds[0].ID != "canario" || seeds[0].Transport != TransportAgent {
+	if len(seeds) != 1 || seeds[0].ID != "canary" || seeds[0].Transport != TransportAgent {
 		t.Fatalf("seeds = %+v", seeds)
 	}
 }
@@ -661,12 +661,12 @@ func TestSeedsInvalid(t *testing.T) {
 		json   string
 		inText string
 	}{
-		{"transporte fora do enum", `[{"id":"x","transport":"telnet","kind":"externo"}]`, "telnet"},
-		{"kind fora do enum", `[{"id":"x","transport":"ssh","kind":"container"}]`, "container"},
-		{"sem id", `[{"transport":"ssh","kind":"externo"}]`, "ID"},
-		{"id repetido", `[{"id":"x","transport":"ssh","kind":"externo"},{"id":"x","transport":"ssh","kind":"externo"}]`, "repetido"},
-		{"agente sem address", `[{"id":"x","transport":"agente","kind":"externo"}]`, "address"},
-		{"json malformado", `{isto nao e json}`, "malformado"},
+		{"transport outside the enum", `[{"id":"x","transport":"telnet","kind":"externo"}]`, "telnet"},
+		{"kind outside the enum", `[{"id":"x","transport":"ssh","kind":"container"}]`, "container"},
+		{"missing id", `[{"transport":"ssh","kind":"externo"}]`, "ID"},
+		{"duplicate id", `[{"id":"x","transport":"ssh","kind":"externo"},{"id":"x","transport":"ssh","kind":"externo"}]`, "duplicate"},
+		{"agent without address", `[{"id":"x","transport":"agente","kind":"externo"}]`, "address"},
+		{"malformed json", `{this is not json}`, "malformed"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -694,7 +694,7 @@ func TestSeedsInvalid(t *testing.T) {
 func TestAgentPollDeadNode(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	deps := Sources{Seeds: func() ([]Node, error) {
-		return []Node{{ID: "canario", Name: "canario", Transport: TransportAgent, Address: "127.0.0.1:9", Kind: NodeKindExternal}}, nil
+		return []Node{{ID: "canary", Name: "canary", Transport: TransportAgent, Address: "127.0.0.1:9", Kind: NodeKindExternal}}, nil
 	}}
 	p, st, rel := newTestPoller(t, f, deps, PollerConfig{})
 
@@ -706,15 +706,15 @@ func TestAgentPollDeadNode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nodes := requireSet(t, st, append(pveSet(), "canario")...)
-	if got := nodes["canario"].Status.ObservedAt; got != 0 {
+	nodes := requireSet(t, st, append(pveSet(), "canary")...)
+	if got := nodes["canary"].Status.ObservedAt; got != 0 {
 		t.Fatalf("the canary was timestamped (%d) — port 9 answered nothing", got)
 	}
 	if got := nodes["lxc/207"].Status.ObservedAt; got != rel.now().Unix() {
 		t.Fatalf("the PVE node did not advance on the same tick (%d) — the canary failure contaminated it", got)
 	}
 	// And the read for the screen: the canary is stale, the guest is not.
-	seen := View(Inventory{Nodes: []Node{nodes["canario"], nodes["lxc/207"]}}, 90*time.Second, rel.now())
+	seen := View(Inventory{Nodes: []Node{nodes["canary"], nodes["lxc/207"]}}, 90*time.Second, rel.now())
 	if !seen[0].Stale || seen[0].AgeSeconds != -1 {
 		t.Errorf("canary = %+v, want stale with age -1 (never observed)", seen[0])
 	}
@@ -736,14 +736,14 @@ func TestAgentPollAliveStamps(t *testing.T) {
 
 	f := &fakePVE{resources: testResources()}
 	deps := Sources{Seeds: func() ([]Node, error) {
-		return []Node{{ID: "vivo", Name: "vivo", Transport: TransportAgent,
+		return []Node{{ID: "alive", Name: "alive", Transport: TransportAgent,
 			Address: strings.TrimPrefix(srv.URL, "http://"), Kind: NodeKindExternal}}, nil
 	}}
 	p, st, rel := newTestPoller(t, f, deps, PollerConfig{})
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := nodesByID(t, st)["vivo"].Status.ObservedAt; got != rel.now().Unix() {
+	if got := nodesByID(t, st)["alive"].Status.ObservedAt; got != rel.now().Unix() {
 		t.Fatalf("a LIVE agent node was not timestamped (%d) — the canary guard would be vacuous", got)
 	}
 }
@@ -773,9 +773,8 @@ func TestSSHSeedHasNoActivePoll(t *testing.T) {
 	}
 }
 
-// 🔴 TestPollerAppliesCredentials is the poller side of the production defect:
-// without the source, Credential stays zeroed and credentialState() returns
-// "ausente" for every node — 11 nodes saying "no credential" with a full vault.
+// TestPollerAppliesCredentials: without the credential source, Credential stays
+// zeroed and credentialState() reports every node as missing despite a full vault.
 func TestPollerAppliesCredentials(t *testing.T) {
 	f := &fakePVE{resources: testResources()}
 	deps := Sources{Credentials: func(nodes []Node) (map[string]Credential, error) {
@@ -850,12 +849,12 @@ func TestPollerRevokedBeatsMissing(t *testing.T) {
 	}
 	nodes := nodesByID(t, st)
 	if got := nodes["lxc/207"].Credential.State; got != CredRevoked {
-		t.Fatalf("state = %q, want revogada — the tick erased the record of the revocation", got)
+		t.Fatalf("state = %q, want revoked — the tick erased the record of the revocation", got)
 	}
 	// And the neighbour, which also lost its entry but was NEVER revoked, goes back
-	// to "ausente" — which is the truth for it.
+	// to missing, which is the truth for it.
 	if got := nodes["qemu/208"].Credential.State; got != "" {
-		t.Errorf("neighbour = %q, want empty (the view will say ausente)", got)
+		t.Errorf("neighbour = %q, want empty (the view will say missing)", got)
 	}
 }
 
@@ -867,7 +866,7 @@ func TestPollerBrokenCredentialSourceDeletesNothing(t *testing.T) {
 	var broken bool
 	deps := Sources{Credentials: func(nodes []Node) (map[string]Credential, error) {
 		if broken {
-			return nil, errors.New("cofre fora do ar")
+			return nil, errors.New("vault down")
 		}
 		out := map[string]Credential{}
 		for _, n := range nodes {
@@ -909,7 +908,7 @@ func TestPollerBrokenCredentialSourceDeletesNothing(t *testing.T) {
 func TestGoneNodeMarkedMissingNotDeleted(t *testing.T) {
 	inv := Inventory{Nodes: []Node{
 		{ID: "lxc/207", Name: "apps", Kind: NodeKindGuest, Transport: TransportPVEAPI, VMID: 207},
-		{ID: "lxc/101", Name: "prova-clone", Kind: NodeKindGuest, Transport: TransportPVEAPI, VMID: 101},
+		{ID: "lxc/101", Name: "test-clone", Kind: NodeKindGuest, Transport: TransportPVEAPI, VMID: 101},
 		{ID: "node/pve", Name: "pve", Kind: NodeKindHost, Transport: TransportPVEAPI},
 	}}
 	added := markGone(&inv, testResources(), nil, 1800000000)
@@ -928,7 +927,7 @@ func TestGoneNodeMarkedMissingNotDeleted(t *testing.T) {
 		t.Errorf("lxc/101 with no absence timestamp: %d", byID["lxc/101"].MissingSince)
 	}
 	if byID["lxc/207"].MissingSince != 0 || byID["node/pve"].MissingSince != 0 {
-		t.Errorf("a node that is present was marked ausente")
+		t.Errorf("a node that is present was marked missing")
 	}
 }
 
@@ -953,7 +952,7 @@ func TestReturningNodeLosesMissingMark(t *testing.T) {
 	inv := Inventory{Nodes: []Node{{ID: "lxc/207", Kind: NodeKindGuest, Transport: TransportPVEAPI, VMID: 207, MissingSince: 1799999999}}}
 	markGone(&inv, testResources(), nil, 1800000000)
 	if inv.Nodes[0].MissingSince != 0 {
-		t.Errorf("the node came back and is still marked ausente: %d", inv.Nodes[0].MissingSince)
+		t.Errorf("the node came back and is still marked missing: %d", inv.Nodes[0].MissingSince)
 	}
 }
 
@@ -975,18 +974,18 @@ func TestEmptyResponseMarksNobody(t *testing.T) {
 	}
 	for _, n := range inv.Nodes {
 		if n.MissingSince != 0 {
-			t.Fatalf("🔴 the lab was marked ausente because of an empty response: %s", n.ID)
+			t.Fatalf("🔴 the lab was marked missing because of an empty response: %s", n.ID)
 		}
 	}
 }
 
 // 🔴 GUARD 3: a node that is NOT discovered by the hypervisor is not judged by
-// it. `canario` has transport agente and comes from seeds; its absence from
+// it. The `canary` seed has the agent transport and comes from seeds; its absence from
 // /cluster/resources means nothing.
 func TestOtherTransportNodeNotMarked(t *testing.T) {
 	inv := Inventory{Nodes: []Node{
-		{ID: "canario", Kind: "externo", Transport: TransportAgent, Address: "127.0.0.1:9"},
-		{ID: "maquina-ssh", Transport: TransportSSH},
+		{ID: "canary", Kind: "externo", Transport: TransportAgent, Address: "127.0.0.1:9"},
+		{ID: "ssh-machine", Transport: TransportSSH},
 		{ID: "lxc/207", Kind: NodeKindGuest, Transport: TransportPVEAPI, VMID: 207},
 	}}
 	if added := markGone(&inv, testResources(), nil, 1800000000); added != nil {
@@ -994,7 +993,7 @@ func TestOtherTransportNodeNotMarked(t *testing.T) {
 	}
 	for _, n := range inv.Nodes {
 		if n.MissingSince != 0 {
-			t.Errorf("%s was marked ausente without the hypervisor owning it", n.ID)
+			t.Errorf("%s was marked missing without the hypervisor owning it", n.ID)
 		}
 	}
 }
@@ -1027,7 +1026,7 @@ func TestDiscoveryFailureDoesNotMarkAbsence(t *testing.T) {
 		t.Fatalf("the first tick did not populate the inventory: %v", before)
 	}
 
-	f.failure = errors.New("hipervisor inalcançável")
+	f.failure = errors.New("hypervisor unreachable")
 	if err := p.tick(context.Background()); err == nil {
 		t.Fatal("the tick with failed discovery returned nil")
 	}
@@ -1040,7 +1039,7 @@ func TestDiscoveryFailureDoesNotMarkAbsence(t *testing.T) {
 	}
 	for _, n := range invAfter.Nodes {
 		if n.MissingSince != 0 {
-			t.Errorf("🔴 FAILED discovery marked %s as ausente — 'nobody told me' became 'it is not there'", n.ID)
+			t.Errorf("🔴 FAILED discovery marked %s as missing — 'nobody told me' became 'it is not there'", n.ID)
 		}
 	}
 }

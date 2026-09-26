@@ -220,7 +220,7 @@ func TestCallRegistry_DoesNotReviveOldCall(t *testing.T) {
 	r1 := newCallRegistry(path)
 	// A call from "yesterday", written with an old LastActiveAt.
 	r1.calls["R"] = &LiveCall{
-		RoomID: "R", CallID: "velho",
+		RoomID: "R", CallID: "old",
 		StartedAt:    time.Now().Unix() - 86400,
 		LastActiveAt: time.Now().Unix() - 86400,
 		Participants: map[string]int64{"cid-a": 1},
@@ -241,7 +241,7 @@ func TestCallRegistry_DoesNotReviveOldCall(t *testing.T) {
 func TestCallRegistry_CorruptFileDoesNotCrash(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "active-calls.json")
-	if err := os.WriteFile(path, []byte("{lixo nao json"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("{garbage not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	r := newCallRegistry(path)
@@ -257,7 +257,7 @@ func TestDeviceStore_PolicyPerDevice(t *testing.T) {
 	now := time.Now().Unix()
 
 	// An unknown device RINGS — graceful degradation.
-	if !d.ShouldRing("sam", "dev-desconhecido", now) {
+	if !d.ShouldRing("sam", "dev-unknown", now) {
 		t.Fatal("an unknown device has to ring")
 	}
 	// An old client (with no device_id) does too.
@@ -379,7 +379,7 @@ func TestPresenceHub_WantsRing(t *testing.T) {
 func TestService_DeployDoesNotRing(t *testing.T) {
 	dir := t.TempDir()
 	s := openServiceAt(t, dir)
-	room, err := s.CreateRoom("sam", "Nosso Momento")
+	room, err := s.CreateRoom("sam", "Our Moment")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +424,7 @@ func TestService_DeployDoesNotRing(t *testing.T) {
 func TestService_AnsweringOnOneDeviceSilencesOthers(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
-	room, _ := s.CreateRoom("sam", "Nosso Momento")
+	room, _ := s.CreateRoom("sam", "Our Moment")
 	_ = s.AddMember("sam", room.ID, "jordan")
 
 	win := s.Presence.Subscribe("sam", "dev-win")
@@ -453,7 +453,7 @@ func TestService_AnsweringOnOneDeviceSilencesOthers(t *testing.T) {
 func TestService_HangupClearsPendingModal(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
-	room, _ := s.CreateRoom("sam", "Nosso Momento")
+	room, _ := s.CreateRoom("sam", "Our Moment")
 	_ = s.AddMember("sam", room.ID, "jordan")
 
 	win := s.Presence.Subscribe("sam", "dev-win")
@@ -476,7 +476,7 @@ func TestService_HangupClearsPendingModal(t *testing.T) {
 func TestService_CallAfterHangupRingsAgain(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
-	room, _ := s.CreateRoom("sam", "Nosso Momento")
+	room, _ := s.CreateRoom("sam", "Our Moment")
 	_ = s.AddMember("sam", room.ID, "jordan")
 	win := s.Presence.Subscribe("sam", "dev-win")
 	defer s.Presence.Unsubscribe(win)
@@ -533,7 +533,7 @@ func wsDialQ(t *testing.T, srv *httptest.Server, user, room, clientID string, ex
 func TestHandleWS_ReconnectDoesNotRing_E2E(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
-	room, _ := s.CreateRoom("sam", "Nosso Momento")
+	room, _ := s.CreateRoom("sam", "Our Moment")
 	if err := s.AddMember("sam", room.ID, "jordan"); err != nil {
 		t.Fatal(err)
 	}
@@ -567,7 +567,7 @@ func TestHandleWS_ReconnectDoesNotRing_E2E(t *testing.T) {
 func TestHandleWS_ExplicitLeaveEndsCall_E2E(t *testing.T) {
 	s := openTempService(t)
 	defer s.Close()
-	room, _ := s.CreateRoom("sam", "Nosso Momento")
+	room, _ := s.CreateRoom("sam", "Our Moment")
 	if err := s.AddMember("sam", room.ID, "jordan"); err != nil {
 		t.Fatal(err)
 	}

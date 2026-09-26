@@ -52,7 +52,7 @@ func (t *TelegramChannel) Send(ctx context.Context, ev Event, cfg ChannelConfig)
 	return nil
 }
 
-// errMissing builds a uniform "<channel>: <field> não configurado" error.
+// errMissing builds a uniform "<channel>: <field> not configured" error.
 func errMissing(channel, field string) error {
 	return fmt.Errorf("%s: %s not configured", channel, field)
 }

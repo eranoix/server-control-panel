@@ -39,7 +39,7 @@ func TestWebAuthnCredentialsStore_RoundTripAcrossRestart(t *testing.T) {
 		t.Fatalf("expected 1 approved credential surviving the restart, got %+v", list)
 	}
 	if list[0].Credential.PublicKey == nil {
-		t.Fatalf("credencial persistida perdeu o blob webauthn.Credential")
+		t.Fatalf("persisted credential lost the webauthn.Credential blob")
 	}
 }
 
@@ -75,7 +75,7 @@ func TestWebAuthnCredentialsStore_AddDefaultsPending(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "alice.json")
 	store := NewWebAuthnCredentialsStore(path)
 
-	rec, err := store.Add(testCred(2), "novo dispositivo")
+	rec, err := store.Add(testCred(2), "new device")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestWebAuthnCredentialsStore_ApproveRejectsUnknownWithoutMutation(t *testin
 		t.Fatalf("invalid Approve should not create/mutate anything in store B: %+v", allB)
 	}
 
-	if err := storeA.Approve("id-que-nao-existe"); err == nil {
+	if err := storeA.Approve("missing-id"); err == nil {
 		t.Fatalf("expected an error when approving an unknown ID")
 	}
 	allA, err := storeA.ListAll()
@@ -141,11 +141,11 @@ func TestWebAuthnCredentialsStore_RemoveRegardlessOfStatus(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "alice.json")
 	store := NewWebAuthnCredentialsStore(path)
 
-	pending, err := store.Add(testCred(4), "pendente")
+	pending, err := store.Add(testCred(4), "pending")
 	if err != nil {
 		t.Fatalf("Add pending: %v", err)
 	}
-	approvedRec, err := store.Add(testCred(5), "aprovado")
+	approvedRec, err := store.Add(testCred(5), "approved")
 	if err != nil {
 		t.Fatalf("Add approved: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestWebAuthnCredentialsStore_RemoveRegardlessOfStatus(t *testing.T) {
 		t.Fatalf("expected an empty store after removing both, got %+v", all)
 	}
 
-	if err := store.Remove("inexistente"); err == nil {
+	if err := store.Remove("nonexistent"); err == nil {
 		t.Fatalf("expected an error when removing a nonexistent ID")
 	}
 }
@@ -212,7 +212,7 @@ func TestWebAuthnCredentialsStore_UpdateCredentialPreservesStatus(t *testing.T) 
 // real user with no approved credentials — there is no distinct error behind
 // the two cases for an attacker to observe.
 func TestWebAuthnCredentialsStore_MissingFileBehavesAsEmpty(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "nao-existe", "fantasma.json")
+	path := filepath.Join(t.TempDir(), "missing", "ghost.json")
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("precondition failed: %q already exists", path)
 	}
@@ -234,7 +234,7 @@ func TestWebAuthnCredentialsStore_MissingFileBehavesAsEmpty(t *testing.T) {
 		t.Fatalf("ListAll on a nonexistent file should be empty, got %+v", all)
 	}
 
-	_, ok, err := store.CredentialByID("qualquer-id")
+	_, ok, err := store.CredentialByID("any-id")
 	if err != nil {
 		t.Fatalf("CredentialByID on a nonexistent file returned an error (should be silent): %v", err)
 	}

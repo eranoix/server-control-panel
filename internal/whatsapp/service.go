@@ -487,7 +487,7 @@ func (s *Service) cleanupOrphanMedia() {
 type Options struct {
 	StoreRoot   string // data/whatsapp/
 	MediaRoot   string // /var/lib/vpsm-whatsapp/media/
-	GowsDBPath  string // /var/lib/vpsm-whatsapp/<user>/sessions/gows/default/gows.db; vazio = legacy default
+	GowsDBPath  string // /var/lib/vpsm-whatsapp/<user>/sessions/gows/default/gows.db; empty = legacy default
 	WAHABaseURL string // http://127.0.0.1:3000
 	WAHAAPIKey  string // X-Api-Key
 	HMACSecret  string // shared with WAHA's WHATSAPP_HOOK_HMAC

@@ -17,7 +17,7 @@ func testManager(t *testing.T) (*Manager, string) {
 	state := t.TempDir()
 	t.Setenv("WAD_STATE_DIR", state)
 
-	vault, err := secrets.Open(filepath.Join(t.TempDir(), "v.vault"), "senha-de-teste-123")
+	vault, err := secrets.Open(filepath.Join(t.TempDir(), "v.vault"), "test-password-123")
 	if err != nil {
 		t.Fatalf("opening the vault: %v", err)
 	}
@@ -29,7 +29,7 @@ func testManager(t *testing.T) (*Manager, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := scope.NewUserVault(vault, u).Set("waha_hmac_secret", "segredo-de-teste"); err != nil {
+	if err := scope.NewUserVault(vault, u).Set("waha_hmac_secret", "test-secret"); err != nil {
 		t.Fatalf("seeding hmac: %v", err)
 	}
 	return m, state

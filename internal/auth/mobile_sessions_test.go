@@ -14,7 +14,7 @@ func TestMobileSession_MintRotateRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	store := NewMobileRefreshStore(filepath.Join(dir, "mobile-sessions-sam.json"))
 
-	tok, err := store.Mint("sam", "Pixel de teste")
+	tok, err := store.Mint("sam", "Test Pixel")
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestMobileSession_RotatedAwaySecretInvalid(t *testing.T) {
 	dir := t.TempDir()
 	store := NewMobileRefreshStore(filepath.Join(dir, "mobile-sessions-sam.json"))
 
-	oldTok, err := store.Mint("sam", "Pixel de teste")
+	oldTok, err := store.Mint("sam", "Test Pixel")
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestMobileSession_RotateUnknownTokenFails(t *testing.T) {
 	dir := t.TempDir()
 	store := NewMobileRefreshStore(filepath.Join(dir, "mobile-sessions-sam.json"))
 
-	if _, _, ok, err := store.Rotate("sam.nunca-emitido-token-falso"); err != nil {
+	if _, _, ok, err := store.Rotate("sam.never-issued-fake-token"); err != nil {
 		t.Fatalf("unexpected IO error: %v", err)
 	} else if ok {
 		t.Fatal("a token that was never issued should not rotate successfully")
@@ -72,7 +72,7 @@ func TestMobileSession_RotateUnknownTokenFails(t *testing.T) {
 	if _, _, ok, _ := store.Rotate(""); ok {
 		t.Fatal("an empty token should not rotate successfully")
 	}
-	if _, _, ok, _ := store.Rotate("sem-ponto-nenhum"); ok {
+	if _, _, ok, _ := store.Rotate("no-dot-at-all"); ok {
 		t.Fatal("a malformed token (without a username prefix) should not rotate successfully")
 	}
 }
@@ -81,7 +81,7 @@ func TestMobileSession_RevokeInvalidatesToken(t *testing.T) {
 	dir := t.TempDir()
 	store := NewMobileRefreshStore(filepath.Join(dir, "mobile-sessions-sam.json"))
 
-	tok, err := store.Mint("sam", "Pixel de teste")
+	tok, err := store.Mint("sam", "Test Pixel")
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestMobileSession_ListReturnsActiveSessions(t *testing.T) {
 	dir := t.TempDir()
 	store := NewMobileRefreshStore(filepath.Join(dir, "mobile-sessions-sam.json"))
 
-	if _, err := store.Mint("sam", "Pixel de teste"); err != nil {
+	if _, err := store.Mint("sam", "Test Pixel"); err != nil {
 		t.Fatalf("Mint: %v", err)
 	}
 	sessions, err := store.List()
@@ -133,8 +133,8 @@ func TestMobileSession_ListReturnsActiveSessions(t *testing.T) {
 	if len(sessions) != 1 {
 		t.Fatalf("List returned %d sessions, expected 1", len(sessions))
 	}
-	if sessions[0].DeviceLabel != "Pixel de teste" {
-		t.Fatalf("DeviceLabel = %q, expected \"Pixel de teste\"", sessions[0].DeviceLabel)
+	if sessions[0].DeviceLabel != "Test Pixel" {
+		t.Fatalf("DeviceLabel = %q, expected \"Test Pixel\"", sessions[0].DeviceLabel)
 	}
 	if sessions[0].Hash == "" {
 		t.Fatal("Hash empty — the secret should not be stored in the clear, nor be absent")

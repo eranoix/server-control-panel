@@ -131,7 +131,7 @@ type actionReq struct {
 	Text   string `json:"text"`   // edit: the new text content
 	Sender string `json:"sender"` // react/star: author of the target msg (from the server store)
 	TS     int64  `json:"ts"`     // histsync: timestamp of the reference message
-	Count  int    `json:"count"`  // histsync: quantas msgs antigas pedir
+	Count  int    `json:"count"`  // histsync: how many old messages to request
 }
 
 func (s *session) action(ctx context.Context, r actionReq) error {
@@ -270,7 +270,7 @@ func (s *session) action(ctx context.Context, r actionReq) error {
 		s.mediaMu.Lock()
 		ids := s.unread[chatKey]
 		li := s.lastIn[chatKey]
-		delete(s.unread, chatKey) // limpa o lote marcado
+		delete(s.unread, chatKey) // clear the marked batch
 		s.mediaMu.Unlock()
 		if len(ids) == 0 {
 			return nil // nothing to mark

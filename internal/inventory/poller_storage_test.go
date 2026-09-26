@@ -71,7 +71,7 @@ func (f *pveStorageSource) Permissions(ctx context.Context) (map[string]map[stri
 // poller, the tests in this file point at the wrong name.
 func renamedResources() []pve.Resource {
 	return []pve.Resource{
-		{ID: "lxc/204", Type: "lxc", VMID: 204, Name: "lab", Node: "hipervisor-renomeado", Status: "running"},
+		{ID: "lxc/204", Type: "lxc", VMID: 204, Name: "lab", Node: "renamed-hypervisor", Status: "running"},
 	}
 }
 
@@ -101,7 +101,7 @@ func TestTickCollectsCapacityAndZpool(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatalf("tick: %v", err)
 	}
-	if f.noPools != "hipervisor-renomeado" || f.noZPools != "hipervisor-renomeado" {
+	if f.noPools != "renamed-hypervisor" || f.noZPools != "renamed-hypervisor" {
 		t.Errorf("nodes asked = %q/%q — want the DISCOVERED name, not a hard-coded hostname",
 			f.noPools, f.noZPools)
 	}
@@ -141,9 +141,9 @@ func TestStorageFailureKeepsPools(t *testing.T) {
 	}
 
 	// Tick 2, 5 min later: the three new calls fail.
-	f.poolsErr = errors.New("hipervisor mudo")
-	f.zpoolsErr = errors.New("hipervisor mudo")
-	f.permsErr = errors.New("hipervisor mudo")
+	f.poolsErr = errors.New("hypervisor silent")
+	f.zpoolsErr = errors.New("hypervisor silent")
+	f.permsErr = errors.New("hypervisor silent")
 	p2 := NewPoller(st, f, Sources{}, PollerConfig{
 		Now: func() time.Time { return time.Unix(1800000300, 0) },
 	})
@@ -189,7 +189,7 @@ func TestNoHypervisorNameDoesNotAsk(t *testing.T) {
 	}
 }
 
-// 🔴 TestSemPrivilegioOVereditoVira false: the hypervisor returns 200 with []
+// 🔴 without privilege the verdict turns false: the hypervisor returns 200 with []
 // and the panel has to record BOTH things — the empty list AND the reason for it.
 func TestNoPrivilegeVerdictBecomesFalse(t *testing.T) {
 	f := &pveStorageSource{

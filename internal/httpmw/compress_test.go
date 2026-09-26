@@ -22,9 +22,9 @@ import (
 // Android app) would receive data inconsistent with the header that says where
 // it belongs in the final file.
 func TestCompress_RangeRequest_NotGzipped(t *testing.T) {
-	content := strings.Repeat("conteudo-compressivel-de-verdade ", 200) // > minGzipBytes
+	content := strings.Repeat("really-compressible-content ", 200) // > minGzipBytes
 	handler := Compress(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.ServeContent(w, r, "arquivo.txt", time.Now(), strings.NewReader(content))
+		http.ServeContent(w, r, "file.txt", time.Now(), strings.NewReader(content))
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/download", nil)
@@ -52,7 +52,7 @@ func TestCompress_RangeRequest_NotGzipped(t *testing.T) {
 // Range-specific — an ordinary compressible response goes on being
 // gzip-compressed as always.
 func TestCompress_NonRangeRequest_StillGzipped(t *testing.T) {
-	content := strings.Repeat("conteudo-compressivel-de-verdade ", 200)
+	content := strings.Repeat("really-compressible-content ", 200)
 	handler := Compress(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte(content))
@@ -95,7 +95,7 @@ func TestMaxBody_DefaultLimitRejectsOver25MiB(t *testing.T) {
 func TestMaxBody_RegisterLargeBody_OverridesForMatchedRoute(t *testing.T) {
 	body := bytes.Repeat([]byte("b"), 30<<20) // 30 MiB
 	RegisterLargeBody(func(r *http.Request) bool {
-		return r.URL.Path == "/rota-grande"
+		return r.URL.Path == "/large-route"
 	}, 100<<20)
 
 	var gotN int64
@@ -104,7 +104,7 @@ func TestMaxBody_RegisterLargeBody_OverridesForMatchedRoute(t *testing.T) {
 		gotN, gotErr = io.Copy(io.Discard, r.Body)
 	}))
 
-	req := httptest.NewRequest(http.MethodPost, "/rota-grande", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/large-route", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -121,7 +121,7 @@ func TestMaxBody_RegisterLargeBody_OverridesForMatchedRoute(t *testing.T) {
 	otherHandler := MaxBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, otherErr = io.Copy(io.Discard, r.Body)
 	}))
-	req2 := httptest.NewRequest(http.MethodPost, "/outra-rota", bytes.NewReader(body))
+	req2 := httptest.NewRequest(http.MethodPost, "/other-route", bytes.NewReader(body))
 	rec2 := httptest.NewRecorder()
 	otherHandler.ServeHTTP(rec2, req2)
 	if otherErr == nil {

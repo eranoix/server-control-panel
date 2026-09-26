@@ -112,7 +112,7 @@ func (s *Service) tryServeAvatar(w http.ResponseWriter, r *http.Request, url str
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return false // URL expirada / hotlink-block → caller tenta URL fresca
+		return false // expired URL / hotlink block: the caller tries a fresh URL
 	}
 	// A safelist of inactive RASTER types. Crucially, it rejects image/svg+xml
 	// — an SVG can carry a <script> and, served SAME-ORIGIN, would execute XSS

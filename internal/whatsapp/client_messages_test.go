@@ -26,10 +26,10 @@ func TestSendFileJSONContract(t *testing.T) {
 		wantCaption bool
 		wantReply   bool
 	}{
-		{"image with caption+reply", "image", "olá", "ABC123", "/api/sendImage", false, true, true},
+		{"image with caption+reply", "image", "hello", "ABC123", "/api/sendImage", false, true, true},
 		{"document plain", "document", "", "", "/api/sendFile", false, false, false},
 		{"voice converts", "voice", "", "", "/api/sendVoice", true, false, false},
-		{"video converts", "video", "legenda", "", "/api/sendVideo", true, true, false},
+		{"video converts", "video", "caption", "", "/api/sendVideo", true, true, false},
 		{"unknown falls back to image", "weird", "", "", "/api/sendImage", false, false, false},
 	}
 

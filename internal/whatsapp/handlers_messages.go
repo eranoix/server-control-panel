@@ -23,8 +23,7 @@ import (
 )
 
 // maxSendFileBytes is the panel's media upload ceiling — the same value the
-// frontend announces to the user ("Arquivo maior que 100MB (limite do
-// WhatsApp)", 00-shell.js) and the same one the mobile BFF's twin route uses
+// frontend announces to the user (00-shell.js) and the same one the mobile BFF's twin route uses
 // (handlers_whatsapp_media.go). httpmw.MaxBody applies 25 MiB by default on
 // every route; without the RegisterLargeBody in init() below, any media
 // between 25 and 100 MiB was cut off by the global MaxBytesReader BEFORE

@@ -50,7 +50,7 @@ func (s *Store) Destroy(ctx context.Context, name string, w io.Writer) error {
 	if !ok {
 		return fmt.Errorf("app %q does not exist", name)
 	}
-	// previews primeiro
+	// previews first
 	for _, p := range s.Previews(app) {
 		_ = TeardownPreview(ctx, s, app, p, w)
 	}

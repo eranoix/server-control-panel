@@ -33,8 +33,8 @@ func TestValidGroupName(t *testing.T) {
 		want      bool
 	}
 	cases := []tc{
-		{"Projeto X", false, true},
-		{"infra", false, true},
+		{"Project X", false, true},
+		{"ops", false, true},
 		{"northwind", true, true},
 		{"", false, false},    // empty rejected
 		{"a:b", false, false}, // colon (namespace separator)
@@ -60,7 +60,7 @@ func TestMetaKeyRejectedAndHidden(t *testing.T) {
 		t.Fatal("validLogicalKey(__meta__) = true, want false")
 	}
 
-	if err := uv.SetWithMeta("token", "abc", EntryMeta{Group: "infra", Type: "token"}); err != nil {
+	if err := uv.SetWithMeta("token", "abc", EntryMeta{Group: "ops", Type: "token"}); err != nil {
 		t.Fatalf("SetWithMeta: %v", err)
 	}
 	for _, k := range uv.List() {
@@ -76,7 +76,7 @@ func TestMetaKeyRejectedAndHidden(t *testing.T) {
 func TestSetWithMetaAndListEntries(t *testing.T) {
 	uv, _, _, _ := newTestVault(t)
 
-	if err := uv.SetWithMeta("db_pass", "s3cr3t", EntryMeta{Group: "Projeto X", Type: "password", Notes: "prod"}); err != nil {
+	if err := uv.SetWithMeta("db_pass", "s3cr3t", EntryMeta{Group: "Project X", Type: "password", Notes: "prod"}); err != nil {
 		t.Fatalf("SetWithMeta: %v", err)
 	}
 	entries := uv.ListEntries()
@@ -84,7 +84,7 @@ func TestSetWithMetaAndListEntries(t *testing.T) {
 		t.Fatalf("ListEntries len = %d, want 1", len(entries))
 	}
 	e := entries[0]
-	if e.Key != "db_pass" || e.Group != "Projeto X" || e.Type != "password" || e.Notes != "prod" {
+	if e.Key != "db_pass" || e.Group != "Project X" || e.Type != "password" || e.Notes != "prod" {
 		t.Fatalf("entry = %+v, unexpected fields", e)
 	}
 	if e.CreatedAt == 0 || e.UpdatedAt == 0 {
@@ -93,7 +93,7 @@ func TestSetWithMetaAndListEntries(t *testing.T) {
 	created := e.CreatedAt
 
 	// Re-set: CreatedAt preserved, UpdatedAt refreshed (>= created).
-	if err := uv.SetWithMeta("db_pass", "new-secret", EntryMeta{Group: "Projeto X", Type: "password"}); err != nil {
+	if err := uv.SetWithMeta("db_pass", "new-secret", EntryMeta{Group: "Project X", Type: "password"}); err != nil {
 		t.Fatalf("SetWithMeta 2: %v", err)
 	}
 	e2 := uv.ListEntries()[0]
@@ -157,7 +157,7 @@ func TestCrossBinaryPlaintextStaysMap(t *testing.T) {
 		t.Fatalf("Set: %v", err)
 	}
 	// New-code write with metadata.
-	if err := uv.SetWithMeta("api_token", "tok", EntryMeta{Group: "infra", Type: "token", Notes: "n"}); err != nil {
+	if err := uv.SetWithMeta("api_token", "tok", EntryMeta{Group: "ops", Type: "token", Notes: "n"}); err != nil {
 		t.Fatalf("SetWithMeta: %v", err)
 	}
 	_ = store
@@ -187,7 +187,7 @@ func TestCrossBinaryPlaintextStaysMap(t *testing.T) {
 	if err := json.Unmarshal([]byte(blob), &parsed); err != nil {
 		t.Fatalf("meta blob is not valid JSON: %v", err)
 	}
-	if parsed["api_token"].Group != "infra" {
+	if parsed["api_token"].Group != "ops" {
 		t.Fatalf("meta blob lost data: %+v", parsed)
 	}
 
@@ -246,7 +246,7 @@ func TestHandlerAuditEmitted(t *testing.T) {
 	}})
 
 	// set
-	body, _ := json.Marshal(map[string]string{"key": "tok", "value": "v", "group": "infra"})
+	body, _ := json.Marshal(map[string]string{"key": "tok", "value": "v", "group": "ops"})
 	req := httptest.NewRequest(http.MethodPost, "/set", bytes.NewReader(body))
 	h.ServeHTTP(httptest.NewRecorder(), req)
 	// reveal
@@ -257,7 +257,7 @@ func TestHandlerAuditEmitted(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/delete", bytes.NewReader(body))
 	h.ServeHTTP(httptest.NewRecorder(), req)
 
-	want := []string{"secrets.set infra/tok", "secrets.reveal infra/tok", "secrets.delete infra/tok"}
+	want := []string{"secrets.set ops/tok", "secrets.reveal ops/tok", "secrets.delete ops/tok"}
 	if strings.Join(events, "|") != strings.Join(want, "|") {
 		t.Fatalf("audit events = %v, want %v", events, want)
 	}
@@ -265,8 +265,8 @@ func TestHandlerAuditEmitted(t *testing.T) {
 
 func TestHandlerListGroups(t *testing.T) {
 	uv, _, _, _ := newTestVault(t)
-	_ = uv.SetWithMeta("k1", "v", EntryMeta{Group: "infra"})
-	_ = uv.SetWithMeta("k2", "v", EntryMeta{Group: "infra"})
+	_ = uv.SetWithMeta("k1", "v", EntryMeta{Group: "ops"})
+	_ = uv.SetWithMeta("k2", "v", EntryMeta{Group: "ops"})
 	_ = uv.SetWithMeta("k3", "v", EntryMeta{}) // ungrouped
 
 	h := uv.Handler(HandlerOpts{})
@@ -284,12 +284,12 @@ func TestHandlerListGroups(t *testing.T) {
 	if len(resp.Keys) != 3 {
 		t.Fatalf("keys = %v, want 3", resp.Keys)
 	}
-	// "infra" (2 entries) sorts before the empty group (1 entry, pushed last).
+	// "ops" (2 entries) sorts before the empty group (1 entry, pushed last).
 	if len(resp.Groups) != 2 {
 		t.Fatalf("groups = %d, want 2", len(resp.Groups))
 	}
-	if resp.Groups[0].Name != "infra" || len(resp.Groups[0].Entries) != 2 {
-		t.Fatalf("first group = %+v, want infra/2", resp.Groups[0])
+	if resp.Groups[0].Name != "ops" || len(resp.Groups[0].Entries) != 2 {
+		t.Fatalf("first group = %+v, want ops/2", resp.Groups[0])
 	}
 	if resp.Groups[1].Name != "" || len(resp.Groups[1].Entries) != 1 {
 		t.Fatalf("last group = %+v, want empty/1", resp.Groups[1])

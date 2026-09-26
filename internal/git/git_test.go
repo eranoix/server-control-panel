@@ -239,7 +239,7 @@ func TestParseBlamePorcelain(t *testing.T) {
 		"author-mail <alice@x.com>",
 		"author-time 1781038626",
 		"author-tz +0000",
-		"summary primeiro commit",
+		"summary first commit",
 		"boundary",
 		"filename go.mod",
 		"\tmodule vps-manager",

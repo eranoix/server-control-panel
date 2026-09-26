@@ -29,11 +29,11 @@ import (
 
 func TestCreateRoom_AssignsIDAndPersists(t *testing.T) {
 	s := openTempService(t)
-	r, err := s.CreateRoom("alice", "Sala da Casa")
+	r, err := s.CreateRoom("alice", "Living Room")
 	if err != nil {
 		t.Fatalf("CreateRoom: %v", err)
 	}
-	if r.ID == "" || r.Owner != "alice" || r.Name != "Sala da Casa" {
+	if r.ID == "" || r.Owner != "alice" || r.Name != "Living Room" {
 		t.Fatalf("unexpected room: %+v", r)
 	}
 	got, ok := s.Room(r.ID)
@@ -145,7 +145,7 @@ func TestRemoveMember_EvictsOnlyMatchingUser(t *testing.T) {
 
 func TestRenameRoom_OwnerOnly(t *testing.T) {
 	s := openTempService(t)
-	r, _ := s.CreateRoom("alice", "Antiga")
+	r, _ := s.CreateRoom("alice", "Old")
 	// a non-owner is rejected
 	if err := s.RenameRoom("eve", r.ID, "Hack"); err == nil {
 		t.Fatal("eve should not rename")
@@ -512,7 +512,7 @@ func wsReadUntil(t *testing.T, c *websocket.Conn, typ string) SignalingMsg {
 
 func TestHandleWS_Reconnect_SameClientID_EvictsGhost_E2E(t *testing.T) {
 	s := openTempService(t)
-	r, _ := s.CreateRoom("alice", "Sala")
+	r, _ := s.CreateRoom("alice", "Room")
 	if err := s.AddMember("alice", r.ID, "bob"); err != nil {
 		t.Fatalf("AddMember: %v", err)
 	}
@@ -572,7 +572,7 @@ func TestHub_RateLimit_DropsExcessive(t *testing.T) {
 
 func TestRecordCallSession_AppendsAndFiltersByUser(t *testing.T) {
 	s := openTempService(t)
-	r, _ := s.CreateRoom("alice", "Sala")
+	r, _ := s.CreateRoom("alice", "Room")
 	s.RecordCallSession(CallSession{
 		RoomID: r.ID, User: "alice", StartedAt: 1000, DurationS: 60,
 		BytesSent: 1024, BytesRecv: 2048, Codec: "AV1", ConnectionType: "direct",
@@ -582,7 +582,7 @@ func TestRecordCallSession_AppendsAndFiltersByUser(t *testing.T) {
 		BytesSent: 512, BytesRecv: 256,
 	})
 	gotA := s.HistoryForUser("alice", 10)
-	if len(gotA) != 1 || gotA[0].User != "alice" || gotA[0].RoomName != "Sala" {
+	if len(gotA) != 1 || gotA[0].User != "alice" || gotA[0].RoomName != "Room" {
 		t.Fatalf("alice history wrong: %+v", gotA)
 	}
 	gotB := s.HistoryForUser("bob", 10)
@@ -596,7 +596,7 @@ func TestRecordCallSession_AppendsAndFiltersByUser(t *testing.T) {
 
 func TestRecordCallSession_CapsAt500(t *testing.T) {
 	s := openTempService(t)
-	r, _ := s.CreateRoom("alice", "Sala")
+	r, _ := s.CreateRoom("alice", "Room")
 	for i := 0; i < 600; i++ {
 		s.RecordCallSession(CallSession{
 			RoomID: r.ID, User: "alice", StartedAt: int64(1000 + i),
@@ -614,7 +614,7 @@ func TestRecordCallSession_CapsAt500(t *testing.T) {
 func TestRecordCallSession_PersistsAcrossReload(t *testing.T) {
 	dir := t.TempDir()
 	s := openServiceAt(t, dir)
-	r, _ := s.CreateRoom("alice", "Sala")
+	r, _ := s.CreateRoom("alice", "Room")
 	s.RecordCallSession(CallSession{
 		RoomID: r.ID, User: "alice", StartedAt: 1000, DurationS: 60,
 		BytesSent: 1, BytesRecv: 2,
@@ -642,7 +642,7 @@ func TestHandleRecordingUpload_RejectsNonMember(t *testing.T) {
 	}
 	s.Recordings = recStore
 	// Alice creates a room, Bob is a stranger.
-	room, _ := s.CreateRoom("alice", "Sala")
+	room, _ := s.CreateRoom("alice", "Room")
 
 	// Helper to assemble a multipart upload request simulating 'bob' trying to
 	// upload to alice's room.
@@ -687,7 +687,7 @@ func TestHandleRecordingUpload_RejectsNonMember(t *testing.T) {
 
 func TestRoomForUser_NonMemberSeesNotFound(t *testing.T) {
 	s := openTempService(t)
-	r, _ := s.CreateRoom("alice", "Privada")
+	r, _ := s.CreateRoom("alice", "Private")
 	// The owner sees it.
 	if got, ok := s.RoomForUser("alice", r.ID); !ok || got.ID != r.ID {
 		t.Fatal("the owner should see their room")

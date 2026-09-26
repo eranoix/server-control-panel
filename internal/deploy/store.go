@@ -57,7 +57,7 @@ type App struct {
 type DeployRecord struct {
 	ID       string `json:"id"`                // sc-like id, also the log file's name
 	Ref      string `json:"ref"`               // refs/heads/<branch>
-	Commit   string `json:"commit"`            // sha completo
+	Commit   string `json:"commit"`            // full sha
 	Preview  string `json:"preview,omitempty"` // preview slug; empty = production
 	Project  string `json:"project"`           // name of the compose project (-p) used
 	Status   string `json:"status"`            // building|running|failed|rolled_back
@@ -161,12 +161,12 @@ func (s *Store) loadFile() (File, error) {
 	case ShapeV1Array:
 		return File{}, fmt.Errorf(
 			"apps.json still in v1 format (raw array, no schema_version) at %s: "+
-				"este binário lê schema_version=%d — suba o vps-manager (cmd/server) uma vez, "+
-				"que ele migra no boot; nada foi escrito", s.file(), AppsSchemaVersion)
+				"this binary reads schema_version=%d; start vps-manager (cmd/server) once, "+
+				"it migrates at boot; nothing was written", s.file(), AppsSchemaVersion)
 	default:
 		return File{}, fmt.Errorf(
 			"apps.json in unknown format (schema_version=%d, this vps-manager binary reads %d) at %s: "+
-				"nada foi escrito", version, AppsSchemaVersion, s.file())
+				"nothing was written", version, AppsSchemaVersion, s.file())
 	}
 }
 

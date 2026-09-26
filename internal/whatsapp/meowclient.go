@@ -147,7 +147,7 @@ func (m *meowClient) GetQR() (string, error) {
 	// Without this, <img src="<raw string>"> breaks — the QR bug on accounts
 	// running the wad backend.
 	if strings.HasPrefix(out.QR, "data:") {
-		return out.QR, nil // ja e imagem (defensivo)
+		return out.QR, nil // already an image (defensive)
 	}
 	png, err := qrcode.Encode(out.QR, qrcode.Medium, 280)
 	if err != nil {

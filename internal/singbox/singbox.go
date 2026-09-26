@@ -51,7 +51,7 @@ var deviceInbounds = map[string]bool{"vless-ws-in": true, "vless-reality-in": tr
 // Exit values.
 const (
 	ExitVPS  = "vps"  // default outbound (direct) — leaves through the VPS
-	ExitHome = "casa" // casa outbound — leaves through the house (residential)
+	ExitHome = "casa" // home outbound — leaves through the house (residential)
 )
 
 // Data-saver proxy outbound tags (defined in config.json). A device with
@@ -214,7 +214,7 @@ func routeRules(doc map[string]any) []any {
 }
 
 // authUsersFor scans, read-only, the auth_user names of every rule matching a
-// predicate. Used to reconstruct the casa/datasaver membership sets from the
+// predicate. Used to reconstruct the home/datasaver membership sets from the
 // config (config is the single source of truth, surviving registry loss).
 func authUsersFor(doc map[string]any, match func(rm map[string]any) bool) map[string]bool {
 	out := map[string]bool{}
@@ -233,8 +233,8 @@ func authUsersFor(doc map[string]any, match func(rm map[string]any) bool) map[st
 	return out
 }
 
-// homeMembers: names whose exit is casa (auth_user in ANY rule bound to the
-// casa outbound — the plain casa rule or the proxy-casa rule).
+// homeMembers: names whose exit is home (auth_user in ANY rule bound to the
+// home outbound — the plain home rule or the proxy-casa rule).
 func homeMembers(doc map[string]any) map[string]bool {
 	return authUsersFor(doc, func(rm map[string]any) bool {
 		out, _ := rm["outbound"].(string)
@@ -251,17 +251,17 @@ func dsMembers(doc map[string]any) map[string]bool {
 }
 
 // setManagedRules rewrites the auth_user-keyed route rules deterministically
-// from the desired casa/datasaver sets, preserving every other rule (the
+// from the desired home/datasaver sets, preserving every other rule (the
 // leading resolve rule, the http-casa-in bridge — neither carries auth_user).
 //
 // Order (first match wins), appended after the preserved rules:
 //  1. QUIC reject for datasaver devices — forces the browser to fall back to TCP,
 //     otherwise HTTP/3 escapes the transformation.
-//  2. proxy-casa: web (80/443) of datasaver ∩ casa.
+//  2. proxy-casa: web (80/443) of datasaver ∩ home.
 //  3. proxy-vps:  web (80/443) of datasaver ∩ vps.
-//  4. casa: all the remaining traffic of the casa devices (other ports).
+//  4. home: all the remaining traffic of the home devices (other ports).
 //
-// Non-web from datasaver∩casa falls to rule 4 (casa); non-web from datasaver∩vps
+// Non-web from datasaver∩home falls to rule 4 (home); non-web from datasaver∩vps
 // falls through to the end (direct). Banks/pinning go out without MITM via the proxy's own
 // ignore_hosts list — they need no rule here.
 func setManagedRules(doc map[string]any, homeSet, dsSet map[string]bool) {
@@ -278,7 +278,7 @@ func setManagedRules(doc map[string]any, homeSet, dsSet map[string]bool) {
 			continue
 		}
 		if _, hasUser := rm["auth_user"]; hasUser {
-			continue // managed (casa/proxy/quic) — rebuilt below
+			continue // managed (home/proxy/quic) — rebuilt below
 		}
 		preserved = append(preserved, r)
 	}
@@ -332,7 +332,7 @@ func toList(set map[string]bool) []any {
 // ---------- device operations ----------
 
 // List returns the devices declared in the config (union across device
-// inbounds), with exit resolved from the casa rule and created_at from the
+// inbounds), with exit resolved from the home rule and created_at from the
 // registry. Deterministic order by name.
 func (m *Manager) List() ([]Device, error) {
 	m.mu.Lock()
@@ -430,7 +430,7 @@ func (m *Manager) Add(ctx context.Context, name string) (Device, error) {
 	return Device{Name: name, UUID: uuid, Exit: ExitVPS, Created: m.loadRegistry()[name].Created}, nil
 }
 
-// Remove revokes a device (drops its user from every inbound + the casa rule).
+// Remove revokes a device (drops its user from every inbound + the home rule).
 func (m *Manager) Remove(ctx context.Context, uuid string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -472,7 +472,7 @@ func (m *Manager) Remove(ctx context.Context, uuid string) error {
 	return m.restart(ctx)
 }
 
-// SetExit moves a device between VPS and casa by editing the casa auth_user list.
+// SetExit moves a device between VPS and home by editing the home auth_user list.
 func (m *Manager) SetExit(ctx context.Context, uuid, exit string) error {
 	if exit != ExitVPS && exit != ExitHome {
 		return fmt.Errorf("invalid exit: use %q or %q", ExitVPS, ExitHome)
@@ -502,7 +502,7 @@ func (m *Manager) SetExit(ctx context.Context, uuid, exit string) error {
 
 // SetDatasaver turns a device's compression (data-saver) on/off: on →
 // web traffic (80/443) goes through the proxy of its exit; off → it leaves directly through the
-// exit (VPS/casa) with no transformation.
+// exit (VPS/home) with no transformation.
 func (m *Manager) SetDatasaver(ctx context.Context, uuid string, on bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

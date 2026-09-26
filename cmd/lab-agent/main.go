@@ -77,9 +77,9 @@ func buildBackend(no, dataDir string) gameservers.Backend {
 	}
 	dc, err := docker.New()
 	if err != nil {
-		// Name the socket: "docker indisponivel" without saying WHERE sends the
-		// investigation to the wrong place when the problem is the unit's
-		// ReadWritePaths and not the daemon.
+		// Say WHERE docker failed: a bare "docker unavailable" sends the
+		// investigation to the daemon when the problem is often the unit's
+		// ReadWritePaths.
 		return unavailableBackend{reason: fmt.Sprintf("docker on this node is unavailable: %v", err)}
 	}
 
@@ -108,13 +108,13 @@ func buildBackend(no, dataDir string) gameservers.Backend {
 	return gameservers.NewBackendLocal(gameservers.New(dataDir, dc), no)
 }
 
-// carimbo is filled in at link time (-ldflags -X). With no value, in a
-// hand-made build, it says so instead of lying about a number.
-var stamp = "sem-carimbo"
+// stamp is filled in at link time (-ldflags -X). A hand-made build says so
+// instead of reporting a made-up number.
+var stamp = "unstamped"
 
 func main() {
 	var (
-		no        = flag.String("no", envOr("LAB_AGENT_NO", "desconhecido"), "node name (label in /metrics)")
+		no        = flag.String("no", envOr("LAB_AGENT_NO", "unknown"), "node name (label in /metrics)")
 		tokenFile = flag.String("token-file", envOr("LAB_AGENT_TOKEN_FILE", "/etc/lab-agent/token"), "0600 file holding this node's bearer token")
 		bridge    = flag.String("bridge-ip", envOr("LAB_AGENT_BRIDGE_IP", ""), "internal bridge IP to listen on (required; a wildcard is refused)")
 		port      = flag.Int("porta", envInt("LAB_AGENT_PORTA", 8710), "port for both listeners")
@@ -142,7 +142,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("lab-agent: carimbo=%s", stamp)
+	log.Printf("lab-agent: stamp=%s", stamp)
 	log.Printf("lab-agent: node=%s listening on 127.0.0.1:%d and %s:%d", *no, *port, *bridge, *port)
 	if err := srv.Listen(ctx, *bridge, *port); err != nil {
 		log.Fatalf("lab-agent: %v", err)

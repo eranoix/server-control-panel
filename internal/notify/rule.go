@@ -5,7 +5,7 @@ import "strings"
 // Rule routes events to channels. An event matches a rule when ALL configured
 // predicates pass (empty predicate = wildcard). A matching rule fans the event
 // out to every channel ID in Channels. Rules are persisted to
-// <DataDir>/notify/rules.json and edited via the Alertas tab.
+// <DataDir>/notify/rules.json and edited via the Alerts tab.
 //
 // Matching predicates (all optional, AND-combined):
 //   - TypePrefix:   strings.HasPrefix(ev.Type, TypePrefix). "job." matches all

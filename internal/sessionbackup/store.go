@@ -162,7 +162,7 @@ func (s *Store) List(user string) []Meta {
 	return out
 }
 
-// Delete removes a whole backup or — with `sessao` filled in — only that one
+// Delete removes a whole backup or — with `session` filled in — only that one
 // session inside it. A backup left with no sessions is deleted: a file with an
 // empty list would show up in the listing promising to restore nothing.
 func (s *Store) Delete(user, id, session string) error {
@@ -224,7 +224,7 @@ func (s *Store) PruneSession(user, session string, keep int) {
 	})
 }
 
-// podar removes the files that pass `elegivel` beyond the `keep` most recent
+// prune removes the files that pass `eligible` beyond the `keep` most recent
 // ones. The order comes from the id (UnixNano), not from the mtime: the mtime
 // changes when the file is rewritten — deleting a session from inside a backup
 // rewrites it — and that would make an old backup look like the newest one.
@@ -280,7 +280,7 @@ func countLines(s ptysvc.SessionSnapshot) int {
 	return total
 }
 
-// Resumo returns ONE line saying what the session is about, so the listing can
+// Summary returns ONE line saying what the session is about, so the listing can
 // show "what this backup was of" without opening anything.
 func Summary(s ptysvc.SessionSnapshot) string {
 	var sb strings.Builder

@@ -47,7 +47,7 @@ import (
 type StoragePool struct {
 	ID        string   `json:"id"`      // "local-zfs"
 	Type      string   `json:"type"`    // "zfspool" | "dir" | "pbs"
-	Content   []string `json:"content"` // ["images","rootdir"], ordenado
+	Content   []string `json:"content"` // ["images","rootdir"], sorted
 	Total     int64    `json:"total"`   // bytes
 	Used      int64    `json:"used"`    // bytes
 	Avail     int64    `json:"avail"`   // bytes

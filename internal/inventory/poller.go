@@ -242,7 +242,7 @@ func (p *Poller) tick(ctx context.Context) (err error) {
 	}
 
 	// Capacity, zpool and the privilege verdict — in the SAME tick, with the SAME
-	// timestamp, and each one failing on its own account. See coletaStorage.
+	// timestamp, and each one failing on its own account. See collectCapacity.
 	cap := p.collectCapacity(tctx, hvName)
 
 	observed := p.addressesInParallel(tctx, resources)
@@ -264,7 +264,7 @@ func (p *Poller) tick(ctx context.Context) (err error) {
 		if hasHVHealth {
 			applyHypervisor(inv, hvName, hvHealth, now)
 		}
-		// 🔴 Each aplica* is conditional ON ITS OWN. Merging the three into a single
+		// 🔴 Each apply* is conditional ON ITS OWN. Merging the three into a single
 		// `if` would make a failure of /access/permissions erase the timestamp of the
 		// capacity that was JUST observed — and the screen would show a growing age
 		// over a brand-new number.
@@ -488,7 +488,7 @@ func applyDiscovery(inv *Inventory, resources []pve.Resource, addrs map[string]s
 //     can trust least.
 //  3. IT ONLY TOUCHES `pve-api`. A node declared in seeds (agent, ssh) is not
 //     discovered by the hypervisor and its absence here means nothing. The
-//     `canario` is exactly that case.
+//     canary test node is exactly that case.
 //
 // It returns the removed IDs because a node that vanishes from the screen MUST
 // NOT VANISH SILENTLY: the caller records them, and "where is my guest?" starts
@@ -558,7 +558,7 @@ func removeGone(inv *Inventory, resources []pve.Resource, seeds []Node) []string
 //  2. A RESPONSE WITH NO GUEST AT ALL MARKS NOTHING. A /cluster/resources empty
 //     from a passing upset would mark the whole laboratory as absent.
 //  3. `pve-api` ONLY. A node declared in seeds (agent, ssh) is not discovered by
-//     the hypervisor; its absence here means nothing. The `canario` is that.
+//     the hypervisor; its absence here means nothing. The canary test node is that.
 //
 // The timestamp is that of the FIRST tick in which the absence was seen, and it
 // is not rewritten on every tick: it is what says "gone for how long". And
@@ -575,7 +575,7 @@ func markGone(inv *Inventory, resources []pve.Resource, seeds []Node, now int64)
 			guests++
 		}
 	}
-	if guests == 0 { // guarda 2
+	if guests == 0 { // invariant 2
 		return nil
 	}
 	declaredIDs := make(map[string]bool, len(seeds))
@@ -586,7 +586,7 @@ func markGone(inv *Inventory, resources []pve.Resource, seeds []Node, now int64)
 	var added []string
 	for i := range inv.Nodes {
 		n := &inv.Nodes[i]
-		if n.Transport != TransportPVEAPI || declaredIDs[n.ID] { // guarda 3
+		if n.Transport != TransportPVEAPI || declaredIDs[n.ID] { // invariant 3
 			continue
 		}
 		if present[n.ID] {
@@ -716,7 +716,7 @@ func (p *Poller) markCredentialRevoked(now int64) error {
 			}
 			c := inv.Nodes[i].Credential
 			if c.Expire > 0 && c.Expire < now {
-				continue // already expired: "expirada" is the correct reading
+				continue // already expired: CredExpired is the correct reading
 			}
 			inv.Nodes[i].Credential.State = CredRevoked
 		}
@@ -884,7 +884,7 @@ func (p *Poller) applyCredentials(inv *Inventory) {
 		c, hasEntry := creds[inv.Nodes[i].ID]
 		if !hasEntry {
 			if inv.Nodes[i].Credential.State == CredRevoked {
-				continue // regra 1
+				continue // rule 1
 			}
 			inv.Nodes[i].Credential = Credential{}
 			continue

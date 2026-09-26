@@ -43,7 +43,7 @@ func TestAttemptStampedEvenWhenDiscoveryFails(t *testing.T) {
 
 	rel.advance(5 * time.Minute)
 	f.mu.Lock()
-	f.failure = errors.New("hipervisor mudo")
+	f.failure = errors.New("hypervisor silent")
 	f.mu.Unlock()
 	if err := p.tick(context.Background()); err == nil {
 		t.Fatal("the tick should have failed")
@@ -89,11 +89,11 @@ func TestViewPollResolvesAgeOnServer(t *testing.T) {
 		t.Error("4 s is not expired with a 90 s TTL")
 	}
 
-	stale := ViewPoll(Inventory{LastPollAt: 1800000000, LastPollError: "hipervisor mudo"}, ttl, now)
+	stale := ViewPoll(Inventory{LastPollAt: 1800000000, LastPollError: "hypervisor silent"}, ttl, now)
 	if stale.AgeSeconds != 300 || !stale.Stale {
 		t.Errorf("age = %d stale = %v, want 300/true", stale.AgeSeconds, stale.Stale)
 	}
-	if stale.Error != "hipervisor mudo" {
+	if stale.Error != "hypervisor silent" {
 		t.Errorf("the reason did not reach the view: %q", stale.Error)
 	}
 }

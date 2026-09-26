@@ -27,7 +27,7 @@ func TestUploadSession_OutOfOrderChunks_AssemblesCorrectly(t *testing.T) {
 	chunk1 := original[100:200]
 	chunk2 := original[200:300]
 
-	sessionID, err := InitUpload(dataDir, destDir, "arquivo.bin", int64(len(original)))
+	sessionID, err := InitUpload(dataDir, destDir, "file.bin", int64(len(original)))
 	if err != nil {
 		t.Fatalf("InitUpload: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestUploadSession_OutOfOrderChunks_AssemblesCorrectly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CompleteUpload: %v", err)
 	}
-	if want := filepath.Join(destDir, "arquivo.bin"); finalPath != want {
+	if want := filepath.Join(destDir, "file.bin"); finalPath != want {
 		t.Fatalf("finalPath = %q, want %q", finalPath, want)
 	}
 
@@ -73,7 +73,7 @@ func TestUploadSession_IncompleteCannotComplete(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
 
-	sessionID, err := InitUpload(dataDir, destDir, "parcial.bin", 300)
+	sessionID, err := InitUpload(dataDir, destDir, "partial.bin", 300)
 	if err != nil {
 		t.Fatalf("InitUpload: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestUploadSession_OutOfRangeOffset_Rejected(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
 
-	sessionID, err := InitUpload(dataDir, destDir, "pequeno.bin", 100)
+	sessionID, err := InitUpload(dataDir, destDir, "small.bin", 100)
 	if err != nil {
 		t.Fatalf("InitUpload: %v", err)
 	}
@@ -151,10 +151,10 @@ func TestUploadSession_OutOfRangeOffset_Rejected(t *testing.T) {
 // mapping.
 func TestUploadSession_UnknownSession_NotFound(t *testing.T) {
 	dataDir := t.TempDir()
-	if _, err := WriteChunk(dataDir, "sessao-que-nao-existe", 0, []byte("x")); !errors.Is(err, ErrSessionNotFound) {
+	if _, err := WriteChunk(dataDir, "missing-session", 0, []byte("x")); !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("WriteChunk on a nonexistent session: err = %v, want ErrSessionNotFound", err)
 	}
-	if _, err := CompleteUpload(dataDir, "sessao-que-nao-existe"); !errors.Is(err, ErrSessionNotFound) {
+	if _, err := CompleteUpload(dataDir, "missing-session"); !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("CompleteUpload on a nonexistent session: err = %v, want ErrSessionNotFound", err)
 	}
 }
@@ -163,7 +163,7 @@ func TestUploadSession_UnknownSession_NotFound(t *testing.T) {
 func TestInitUpload_RejectsOversizedTotal(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
-	if _, err := InitUpload(dataDir, destDir, "gigante.bin", maxUploadSize+1); !errors.Is(err, ErrTooLarge) {
+	if _, err := InitUpload(dataDir, destDir, "huge.bin", maxUploadSize+1); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("InitUpload above the ceiling: err = %v, want ErrTooLarge", err)
 	}
 }
@@ -203,7 +203,7 @@ func TestInitUpload_SymlinkDestDirEscapingDenylist_Rejected(t *testing.T) {
 		t.Fatalf("os.Symlink: %v", err)
 	}
 
-	if _, err := InitUpload(dataDir, link, "arquivo.bin", 10); err == nil {
+	if _, err := InitUpload(dataDir, link, "file.bin", 10); err == nil {
 		t.Fatal("InitUpload accepted a dest_dir that is a symlink into the denylist — path traversal via symlink was not blocked")
 	}
 
@@ -232,8 +232,8 @@ func TestCompleteUpload_DestDirSwappedToSymlinkAfterInit_Rejected(t *testing.T) 
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
 
-	content := []byte("conteudo-nao-deveria-vazar")
-	sessionID, err := InitUpload(dataDir, destDir, "arquivo.bin", int64(len(content)))
+	content := []byte("content-must-not-leak")
+	sessionID, err := InitUpload(dataDir, destDir, "file.bin", int64(len(content)))
 	if err != nil {
 		t.Fatalf("InitUpload: %v", err)
 	}
@@ -364,7 +364,7 @@ func TestReapStaleUploadSessions_FreshSessionSurvives(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
 
-	sessionID, err := InitUpload(dataDir, destDir, "fresca.bin", 100)
+	sessionID, err := InitUpload(dataDir, destDir, "fresh.bin", 100)
 	if err != nil {
 		t.Fatalf("InitUpload: %v", err)
 	}
@@ -389,7 +389,7 @@ func TestReapStaleUploadSessions_InProgressSurvivesEvenIfOld(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
 
-	sessionID, err := InitUpload(dataDir, destDir, "em-andamento.bin", 300)
+	sessionID, err := InitUpload(dataDir, destDir, "in-progress.bin", 300)
 	if err != nil {
 		t.Fatalf("InitUpload: %v", err)
 	}
@@ -424,7 +424,7 @@ func TestReapStaleUploadSessions_StaleSessionRemoved(t *testing.T) {
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
 
-	sessionID, err := InitUpload(dataDir, destDir, "abandonada.bin", 100)
+	sessionID, err := InitUpload(dataDir, destDir, "abandoned.bin", 100)
 	if err != nil {
 		t.Fatalf("InitUpload: %v", err)
 	}
@@ -453,7 +453,7 @@ func TestReapStaleUploadSessions_CorruptSidecarFallsBackToDirMtime(t *testing.T)
 	dataDir := t.TempDir()
 	destDir := t.TempDir()
 
-	sessionID, err := InitUpload(dataDir, destDir, "corrompida.bin", 100)
+	sessionID, err := InitUpload(dataDir, destDir, "corrupt.bin", 100)
 	if err != nil {
 		t.Fatalf("InitUpload: %v", err)
 	}

@@ -113,11 +113,11 @@ func TestNothingLostOrDoubled(t *testing.T) {
 
 	writeMessages(t, repo, "sess-a", []time.Time{now.Add(-time.Hour)}, 3_000_000)
 	writeMessages(t, repo, "sess-b", []time.Time{now.Add(-2 * time.Hour)}, 5_000_000)
-	writeMessages(t, repo, "sess-orfa", []time.Time{now.Add(-3 * time.Hour)}, 7_000_000)
+	writeMessages(t, repo, "sess-orphan", []time.Time{now.Add(-3 * time.Hour)}, 7_000_000)
 
 	_ = s.RecordAttrib(AttribEntry{Ts: now.Add(-90 * time.Minute).Unix(), SessionID: "sess-a", AccountID: "sam"})
 	_ = s.RecordAttrib(AttribEntry{Ts: now.Add(-3 * time.Hour).Unix(), SessionID: "sess-b", AccountID: "jordan"})
-	// sess-orfa is deliberately left OUT of the ledger.
+	// sess-orphan is deliberately left OUT of the ledger.
 
 	rep := s.UsageAll()
 	var sum int64
@@ -171,7 +171,7 @@ func TestLedgerRejectsInvalidEntry(t *testing.T) {
 	s, _ := setupTwoAccounts(t)
 	_ = s.RecordAttrib(AttribEntry{Ts: 1, SessionID: "", AccountID: "sam"})
 	_ = s.RecordAttrib(AttribEntry{Ts: 1, SessionID: "x", AccountID: ""})
-	_ = s.RecordAttrib(AttribEntry{Ts: 1, SessionID: "x", AccountID: "conta-que-nao-existe"})
+	_ = s.RecordAttrib(AttribEntry{Ts: 1, SessionID: "x", AccountID: "missing-account"})
 	if n := len(s.loadLedger().bySession); n != 0 {
 		t.Errorf("the ledger accepted %d invalid entries", n)
 	}
@@ -188,7 +188,7 @@ func TestConfigDirMapsToAccount(t *testing.T) {
 	if id := s.AccountIDForConfigDir(sam.ConfigDir + "/"); id != "sam" {
 		t.Errorf("sam's dir (with a trailing slash) → %q", id)
 	}
-	if id := s.AccountIDForConfigDir("/dir/inventado"); id != "" {
+	if id := s.AccountIDForConfigDir("/dir/made-up"); id != "" {
 		t.Errorf("unknown dir → %q, wanted empty", id)
 	}
 }

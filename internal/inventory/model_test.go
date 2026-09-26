@@ -72,7 +72,7 @@ func TestNodeTransportRoundTrip(t *testing.T) {
 		}
 	}
 
-	// `agente` already exists in the DOMAIN, but no agent has been built yet. The
+	// `TransportAgent` already exists in the DOMAIN, but no agent has been built yet. The
 	// value has to be accepted by the model even with no support behind it.
 	if !TransportAgent.Valid() {
 		t.Fatal("TransportAgent has to exist in the domain even with no implementation (Phase 8)")

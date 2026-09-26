@@ -13,14 +13,14 @@ func TestOnlyOutdatedNeedRestart(t *testing.T) {
 		behind             bool
 		why                string
 	}{
-		{"2.1.238", "2.1.240", true, "patch atrás"},
-		{"2.1.240", "2.1.240", false, "mesma versão"},
-		{"2.1.241", "2.1.240", false, "À FRENTE (foi o bug: container com instalação própria)"},
-		{"2.0.999", "2.1.0", true, "minor atrás, apesar do patch alto"},
-		{"2.1.9", "2.1.10", true, "10 > 9 — comparação numérica, não alfabética"},
-		{"2.1.10", "2.1.9", false, "à frente pela mesma razão"},
-		{"3.0.0", "2.9.9", false, "major à frente"},
-		{"", "2.1.240", false, "sem versão: não dá para afirmar que está atrás"},
+		{"2.1.238", "2.1.240", true, "patch behind"},
+		{"2.1.240", "2.1.240", false, "same version"},
+		{"2.1.241", "2.1.240", false, "AHEAD (container with its own installation)"},
+		{"2.0.999", "2.1.0", true, "minor behind despite a higher patch"},
+		{"2.1.9", "2.1.10", true, "10 > 9: numeric comparison, not alphabetical"},
+		{"2.1.10", "2.1.9", false, "ahead for the same reason"},
+		{"3.0.0", "2.9.9", false, "major ahead"},
+		{"", "2.1.240", false, "no version: cannot claim it is behind"},
 		{"2.1.240", "", false, "sem referência: idem"},
 	}
 	for _, c := range cases {

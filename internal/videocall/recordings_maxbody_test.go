@@ -20,11 +20,11 @@ func TestIsRecordingUpload_MatchesOnlyUploadRoute(t *testing.T) {
 		path   string
 		want   bool
 	}{
-		{"upload de gravacao", http.MethodPost, "/api/videocall/recordings", true},
-		{"listar nao casa", http.MethodGet, "/api/videocall/recordings", false},
-		{"metadado nao casa", http.MethodGet, "/api/videocall/recordings/abc123", false},
-		{"blob nao casa", http.MethodGet, "/api/videocall/recordings/abc123/blob", false},
-		{"summarize nao casa", http.MethodPost, "/api/videocall/recordings/abc123/summarize", false},
+		{"recording upload", http.MethodPost, "/api/videocall/recordings", true},
+		{"list does not match", http.MethodGet, "/api/videocall/recordings", false},
+		{"metadata does not match", http.MethodGet, "/api/videocall/recordings/abc123", false},
+		{"blob does not match", http.MethodGet, "/api/videocall/recordings/abc123/blob", false},
+		{"summarize does not match", http.MethodPost, "/api/videocall/recordings/abc123/summarize", false},
 	}
 	for _, c := range cases {
 		req := httptest.NewRequest(c.method, c.path, nil)

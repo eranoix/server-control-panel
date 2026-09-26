@@ -40,7 +40,7 @@ func TestDaemonStateNeverPointsToProductionUnderTest(t *testing.T) {
 // pointing at a temp dir, restarting the production daemon knocks the user's
 // WhatsApp offline in the middle of the suite.
 func TestDaemonRestartIsInertUnderTest(t *testing.T) {
-	marker := filepath.Join(t.TempDir(), "rodou")
+	marker := filepath.Join(t.TempDir(), "ran")
 	// The real function is the one that matters: if it did not have the guard, it
 	// would call systemctl for real. Here we only assert that it returns inertly.
 	restartWadDaemon()

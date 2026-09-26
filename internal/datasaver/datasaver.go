@@ -4,8 +4,8 @@
 // download, and the cumulative bytes-saved counters written by each proxy
 // instance.
 //
-// The proxy itself is mitmproxy (Docker, two instances: -vps and -casa). This
-// package is only the host-side file plane the panel (Segurança → Economia)
+// The proxy itself is mitmproxy (Docker, one instance per exit: vps and home). This
+// package is only the host-side file plane the panel (Security → Data saver)
 // reads and edits — it does not talk to the proxy over the network. Settings
 // are hot-reloaded by the addon on every request; the bypass list is read at
 // container start, so changing it needs a proxy restart (the caller does that).

@@ -160,11 +160,11 @@ func TestSendTextDedup(t *testing.T) {
 	backend := &fakeExportBackend{sendTextID: "wamid-1"}
 	svc := newExportTestService(t, backend)
 
-	id1, err := svc.SendTextDedup("5511999998888@c.us", "oi", "", "cliente-abc")
+	id1, err := svc.SendTextDedup("5511999998888@c.us", "oi", "", "client-abc")
 	if err != nil {
 		t.Fatalf("1st SendTextDedup: %v", err)
 	}
-	id2, err := svc.SendTextDedup("5511999998888@c.us", "oi", "", "cliente-abc")
+	id2, err := svc.SendTextDedup("5511999998888@c.us", "oi", "", "client-abc")
 	if err != nil {
 		t.Fatalf("2nd SendTextDedup: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestSendTextDedupDifferentClientMsgIDsDoNotDedup(t *testing.T) {
 func TestMessagesForDisplayTriggersBackfillWhenLocalStoreBehind(t *testing.T) {
 	backend := &fakeExportBackend{
 		chatMessagesPaged: []wahaHistoryMsg{
-			{ID: "wamid-100", From: "5511999998888@c.us", Timestamp: 1700000000, Body: "olá"},
+			{ID: "wamid-100", From: "5511999998888@c.us", Timestamp: 1700000000, Body: "hello"},
 		},
 	}
 	svc := newExportTestService(t, backend)
@@ -256,7 +256,7 @@ func TestMessagesForDisplayNoBackfillWhenStoreComplete(t *testing.T) {
 // being swallowed — unlike the legacy handleMarkRead, which is best-effort on
 // purpose.
 func TestMarkRead(t *testing.T) {
-	wantErr := errors.New("waha indisponível")
+	wantErr := errors.New("waha unavailable")
 	backend := &fakeExportBackend{markChatReadErr: wantErr}
 	svc := newExportTestService(t, backend)
 
@@ -321,7 +321,7 @@ func TestDownloadMediaForMessageCacheHitSkipsNetwork(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(full, []byte("ja-cacheado"), 0o600); err != nil {
+	if err := os.WriteFile(full, []byte("already-cached"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.Store.AppendMessage(Message{
@@ -357,15 +357,15 @@ func TestDownloadMediaForMessageCacheMissDownloadsAndPersists(t *testing.T) {
 	msgID := "wamid.NAOCACHEADO"
 	backend := &fakeExportBackend{
 		chatMessagesWithMedia: []wahaHistoryMsg{
-			{ID: msgID, MediaURL: "https://waha.local/files/abc.png", MimeType: "image/png", Filename: "foto.png"},
+			{ID: msgID, MediaURL: "https://waha.local/files/abc.png", MimeType: "image/png", Filename: "photo.png"},
 		},
-		downloadFileData: []byte("bytes-da-imagem"),
+		downloadFileData: []byte("image-bytes"),
 		downloadFileMime: "image/png",
 	}
 	svc := newExportTestService(t, backend)
 	if err := svc.Store.AppendMessage(Message{
 		ID: msgID, ChatJID: jid, TS: 1,
-		Media: &Media{MimeType: "image/png", Filename: "foto.png"},
+		Media: &Media{MimeType: "image/png", Filename: "photo.png"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -378,8 +378,8 @@ func TestDownloadMediaForMessageCacheMissDownloadsAndPersists(t *testing.T) {
 	if gotRel != wantRel {
 		t.Fatalf("rel = %q, want %q (layout chatDir/sanitizeMsgID+ext)", gotRel, wantRel)
 	}
-	if gotMime != "image/png" || gotFilename != "foto.png" || gotSize != int64(len("bytes-da-imagem")) {
-		t.Fatalf("mime/filename/size = %q/%q/%d, want image/png/foto.png/%d", gotMime, gotFilename, gotSize, len("bytes-da-imagem"))
+	if gotMime != "image/png" || gotFilename != "photo.png" || gotSize != int64(len("image-bytes")) {
+		t.Fatalf("mime/filename/size = %q/%q/%d, want image/png/photo.png/%d", gotMime, gotFilename, gotSize, len("image-bytes"))
 	}
 	backend.mu.Lock()
 	calls := backend.downloadFileCalls
@@ -404,8 +404,8 @@ func TestDownloadMediaForMessageCacheMissDownloadsAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the downloaded file does not exist at %s: %v", full, err)
 	}
-	if string(data) != "bytes-da-imagem" {
-		t.Fatalf("content of the downloaded file = %q, want %q", data, "bytes-da-imagem")
+	if string(data) != "image-bytes" {
+		t.Fatalf("content of the downloaded file = %q, want %q", data, "image-bytes")
 	}
 }
 
@@ -416,7 +416,7 @@ func TestDownloadMediaForMessageUnknownMessageReturns404(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
 
-	_, _, _, _, err := svc.DownloadMediaForMessage("jid", "nao-existe")
+	_, _, _, _, err := svc.DownloadMediaForMessage("jid", "missing")
 	if err == nil {
 		t.Fatal("err = nil, want DownloadMediaError 404")
 	}
@@ -435,7 +435,7 @@ func TestDownloadMediaForMessageUnknownMessageReturns404(t *testing.T) {
 // parallel (two tabs, an automatic retry) would fire N identical downloads.
 func TestDownloadMediaForMessageConcurrencyCollapsesToOneDownload(t *testing.T) {
 	jid := "5511999998888@c.us"
-	msgID := "wamid.CONCORRENTE"
+	msgID := "wamid.CONCURRENT"
 	release := make(chan struct{})
 	backend := &blockingDownloadBackend{
 		fakeExportBackend: fakeExportBackend{
@@ -500,13 +500,13 @@ func (b *blockingDownloadBackend) DownloadFile(fileURL string, dst io.Writer) (i
 func TestSendFileDedupCollapsesByClientMsgID(t *testing.T) {
 	backend := &fakeExportBackend{sendFileID: "wamid-file-1"}
 	svc := newExportTestService(t, backend)
-	data := []byte("conteudo-do-arquivo")
+	data := []byte("file-content")
 
-	id1, err := svc.SendFileDedup("jid", "image", "foto.jpg", "image/jpeg", "", "", "cliente-xyz", data)
+	id1, err := svc.SendFileDedup("jid", "image", "photo.jpg", "image/jpeg", "", "", "client-xyz", data)
 	if err != nil {
 		t.Fatalf("1st SendFileDedup: %v", err)
 	}
-	id2, err := svc.SendFileDedup("jid", "image", "foto.jpg", "image/jpeg", "", "", "cliente-xyz", data)
+	id2, err := svc.SendFileDedup("jid", "image", "photo.jpg", "image/jpeg", "", "", "client-xyz", data)
 	if err != nil {
 		t.Fatalf("2nd SendFileDedup: %v", err)
 	}
@@ -528,9 +528,9 @@ func TestSendFileDedupPersistsBytesLocally(t *testing.T) {
 	backend := &fakeExportBackend{sendFileID: "wamid-file-2"}
 	svc := newExportTestService(t, backend)
 	jid := "5511999998888@c.us"
-	data := []byte("bytes-enviados")
+	data := []byte("sent-bytes")
 
-	id, err := svc.SendFileDedup(jid, "image", "foto.png", "image/png", "legenda", "", "cliente-abc-2", data)
+	id, err := svc.SendFileDedup(jid, "image", "photo.png", "image/png", "caption", "", "client-abc-2", data)
 	if err != nil {
 		t.Fatalf("SendFileDedup: %v", err)
 	}
@@ -556,7 +556,7 @@ func TestSendFileDedupInfersTypeWhenEmpty(t *testing.T) {
 	jid := "jid"
 	data := []byte("audio")
 
-	id, err := svc.SendFileDedup(jid, "", "nota.ogg", "audio/ogg", "", "", "cliente-3", data)
+	id, err := svc.SendFileDedup(jid, "", "note.ogg", "audio/ogg", "", "", "client-3", data)
 	if err != nil {
 		t.Fatalf("SendFileDedup: %v", err)
 	}
@@ -576,7 +576,7 @@ func TestServeMediaRelRangeRequestReturns206(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
 	jid := "jid"
-	rel := filepath.Join(chatDir(jid), "arquivo.txt")
+	rel := filepath.Join(chatDir(jid), "file.txt")
 	full := filepath.Join(svc.Store.MediaRoot, rel)
 	if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
 		t.Fatal(err)
@@ -612,7 +612,7 @@ func TestServeMediaRelUnsatisfiableRangeReturns416(t *testing.T) {
 	backend := &fakeExportBackend{}
 	svc := newExportTestService(t, backend)
 	jid := "jid"
-	rel := filepath.Join(chatDir(jid), "arquivo.txt")
+	rel := filepath.Join(chatDir(jid), "file.txt")
 	full := filepath.Join(svc.Store.MediaRoot, rel)
 	if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
 		t.Fatal(err)

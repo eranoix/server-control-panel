@@ -400,7 +400,7 @@ func (s *Store) stamp() {
 //
 // 🔴 Why it exists: Get() reads an IN-MEMORY map loaded exactly once at
 // Open. Any secret written by another process — `vpsmctl secrets set`,
-// `bin/pve-credencial --apply`, a restore script — stayed invisible to the
+// a credential-applying tool, a restore script — stayed invisible to the
 // panel until the next restart. Measured: the revocation drill
 // recreated the node's token and the panel kept saying "revoked" indefinitely,
 // with the key already back in the vault and on the hypervisor.

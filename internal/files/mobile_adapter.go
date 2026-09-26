@@ -164,7 +164,7 @@ func MobileList(path string) (MobileListResult, error) {
 				abs = filepath.Clean(abs)
 				e.Target = tgt
 				if isProtectedSymlinkTarget(abs) {
-					e.Target = tgt + " (protegido)"
+					e.Target = tgt + " (protected)"
 				}
 			}
 		}

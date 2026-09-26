@@ -75,7 +75,7 @@ func TestFreshness(t *testing.T) {
 	// 🔴 Never observed is NOT "0 s ago". Zero on the screen reads as just-seen —
 	// the exact false green this pin exists to forbid. The marker is a negative
 	// age.
-	never := Node{ID: "lxc/299", Name: "novo", Transport: TransportSSH, Kind: NodeKindGuest}
+	never := Node{ID: "lxc/299", Name: "new", Transport: TransportSSH, Kind: NodeKindGuest}
 	v := c.View(Inventory{Nodes: []Node{never}}, ttl)
 	if v[0].AgeSeconds >= 0 {
 		t.Fatalf("a never-observed node returned age %d — 0 or positive reads as fresh data", v[0].AgeSeconds)
@@ -95,11 +95,11 @@ func TestCredentialStates(t *testing.T) {
 		want string
 	}{
 		{"bom", Credential{TokenID: "lab@pve!audit", Expire: t0.Add(30 * 24 * time.Hour).Unix()}, "ok"},
-		{"sem-expire-declarado", Credential{TokenID: "lab@pve!audit"}, "ok"},
-		{"ausente-do-cofre", Credential{}, "ausente"},
-		{"expirada", Credential{TokenID: "lab@pve!audit", Expire: t0.Add(-time.Second).Unix()}, "expirada"},
-		{"revogada", Credential{TokenID: "lab@pve!audit", State: CredRevoked}, "revogada"},
-		{"revogada-e-expirada", Credential{TokenID: "lab@pve!audit", State: CredRevoked,
+		{"no-declared-expire", Credential{TokenID: "lab@pve!audit"}, "ok"},
+		{"missing-from-vault", Credential{}, "ausente"},
+		{"expired", Credential{TokenID: "lab@pve!audit", Expire: t0.Add(-time.Second).Unix()}, "expirada"},
+		{"revoked", Credential{TokenID: "lab@pve!audit", State: CredRevoked}, "revogada"},
+		{"revoked-and-expired", Credential{TokenID: "lab@pve!audit", State: CredRevoked,
 			Expire: t0.Add(-time.Hour).Unix()}, "revogada"},
 	}
 	for _, c := range cases {
@@ -142,7 +142,7 @@ func TestViewAlwaysCarriesAge(t *testing.T) {
 	inv := Inventory{Nodes: []Node{
 		{ID: "lxc/207", Name: "apps", Transport: TransportPVEAPI, Kind: NodeKindGuest,
 			Status: Observe("running", t0.Add(-time.Minute).Unix())},
-		{ID: "lxc/299", Name: "nunca-visto", Transport: TransportSSH, Kind: NodeKindGuest},
+		{ID: "lxc/299", Name: "never-seen", Transport: TransportSSH, Kind: NodeKindGuest},
 		// 🔴 This case is what gives the pin teeth: observed NOW, the age is
 		// 0 and stale is false — the two values the omission tag would erase
 		// from the JSON. Without it the test would pass even with the tag in

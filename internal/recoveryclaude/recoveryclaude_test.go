@@ -9,9 +9,7 @@ import (
 )
 
 // The path the "Start the container" button walks: materialize the embedded
-// assets and run the manager from there. Two earlier versions died with "no
-// such file or directory" because they read the repository from disk — this
-// test exercises the real path instead of asserting about the text of the code.
+// assets and run the manager from there, exercising the real path.
 func TestMaterializeDeliversExecutableManager(t *testing.T) {
 	dir := t.TempDir()
 	script, err := Materialize(dir)
@@ -30,7 +28,7 @@ func TestMaterializeDeliversExecutableManager(t *testing.T) {
 	// Docker's build context is the materialized directory, so the Dockerfile
 	// and the scripts it copies have to come out TOGETHER. With one missing, the
 	// `build` would break only when it mattered.
-	for _, name := range []string{"Dockerfile", "entrypoint.sh", "bemvindo.sh", "manage.sh"} {
+	for _, name := range []string{"Dockerfile", "entrypoint.sh", "welcome.sh", "manage.sh"} {
 		if _, err := os.Stat(filepath.Join(dir, "recovery-claude", name)); err != nil {
 			t.Errorf("%s was not materialized: %v", name, err)
 		}
@@ -47,9 +45,7 @@ func TestEmbeddedPayloadDoesNotPointToRouter(t *testing.T) {
 		t.Fatalf("materialize: %v", err)
 	}
 	// Only DEFINING/INJECTING the variable breaks the independence. Mentioning
-	// it does not — the manager's own `doctor` has to cite it in order to VERIFY
-	// that it is absent, and the first version of this test failed exactly the
-	// check that protects the guarantee.
+	// it is fine: the manager's own `doctor` cites it to verify it is absent.
 	injected := []string{
 		`ENV ANTHROPIC_BASE_URL`,    // Dockerfile
 		`export ANTHROPIC_BASE_URL`, // shell
@@ -84,14 +80,14 @@ func TestMaterializeOverwritesOldVersion(t *testing.T) {
 		t.Fatalf("materialize: %v", err)
 	}
 	target := filepath.Join(dir, "recovery-claude", "manage.sh")
-	if err := os.WriteFile(target, []byte("#!/bin/sh\necho versao velha\n"), 0o755); err != nil {
+	if err := os.WriteFile(target, []byte("#!/bin/sh\necho old version\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Materialize(dir); err != nil {
 		t.Fatalf("materialize again: %v", err)
 	}
 	b, _ := os.ReadFile(target)
-	if strings.Contains(string(b), "versao velha") {
+	if strings.Contains(string(b), "old version") {
 		t.Error("the old manager survived — a corrected deploy would not reach the disk")
 	}
 }
@@ -110,7 +106,7 @@ func TestMaterializedManagerActuallyRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the materialized manager did not run: %v\n%s", err, output)
 	}
-	if !strings.Contains(string(output), "estado:") {
+	if !strings.Contains(string(output), "state:") {
 		t.Errorf("unexpected output from the manager:\n%s", output)
 	}
 }

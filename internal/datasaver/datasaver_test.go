@@ -25,12 +25,12 @@ func TestSettingsValidation(t *testing.T) {
 
 func TestBypassSanitize(t *testing.T) {
 	m := New(t.TempDir(), "")
-	err := m.SetBypass([]string{"  ITAU.com.br ", "*.nubank.com.br", "itau.com.br", "# comment", ""})
+	err := m.SetBypass([]string{"  BANK.example.com ", "*.pay.example.com", "bank.example.com", "# comment", ""})
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := m.Bypass()
-	// dedup + lowercase + strip "*." → itau.com.br, nubank.com.br
+	// dedup + lowercase + strip "*." → bank.example.com, pay.example.com
 	if len(got) != 2 {
 		t.Fatalf("expected 2 clean hosts, got %v", got)
 	}

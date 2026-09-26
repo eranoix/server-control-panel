@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// migrado builds a dataDir already in the v2 envelope (the normal state after boot).
+// migrated builds a dataDir already in the v2 envelope (the normal state after boot).
 func migrated(t *testing.T, apps ...App) string {
 	t.Helper()
 	dataDir := setupLegacyAppsDir(t, apps...)
@@ -71,7 +71,7 @@ func TestStoreRefusesV1AfterMigration(t *testing.T) {
 	if err := st.AppendDeploy("hello", DeployRecord{ID: "d2", Status: "building"}); err != nil {
 		t.Fatalf("AppendDeploy: %v", err)
 	}
-	if err := st.Remove("nao-existe"); err != nil {
+	if err := st.Remove("missing"); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
 
@@ -102,9 +102,9 @@ func TestStorePreservesForeignNodeID(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	envelope := `{"schema_version":2,
-	 "projects":[{"id":"hello","name":"Hello Mundo"},{"id":"api","name":"api"}],
+	 "projects":[{"id":"hello","name":"Hello World"},{"id":"api","name":"api"}],
 	 "deployments":[
-	   {"id":"hello@casa-apps","project_id":"hello","node_id":"casa-apps","branch":"main"},
+	   {"id":"hello@home-apps","project_id":"hello","node_id":"home-apps","branch":"main"},
 	   {"id":"api@vps-187","project_id":"api","node_id":"vps-187","branch":"prod"}]}`
 	if err := os.WriteFile(appsPath(dataDir), []byte(envelope), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
@@ -120,10 +120,10 @@ func TestStorePreservesForeignNodeID(t *testing.T) {
 	for _, d := range f.Deployments {
 		if d.ProjectID == "hello" {
 			found = true
-			if d.NodeID != "casa-apps" {
+			if d.NodeID != "home-apps" {
 				t.Fatalf("the node_id of another node was rewritten to %q", d.NodeID)
 			}
-			if d.ID != "hello@casa-apps" {
+			if d.ID != "hello@home-apps" {
 				t.Fatalf("another node's deployment id became %q", d.ID)
 			}
 		}
@@ -132,7 +132,7 @@ func TestStorePreservesForeignNodeID(t *testing.T) {
 		t.Fatalf("another node's deployment VANISHED from the envelope: %+v", f.Deployments)
 	}
 	for _, p := range f.Projects {
-		if p.ID == "hello" && p.Name != "Hello Mundo" {
+		if p.ID == "hello" && p.Name != "Hello World" {
 			t.Fatalf("the project name was flattened to %q", p.Name)
 		}
 	}

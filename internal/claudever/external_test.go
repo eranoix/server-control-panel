@@ -77,13 +77,13 @@ func TestDetectExternalComparesWithContainerInstall(t *testing.T) {
 	}
 	p := got[0]
 	if p.Version != "2.1.241" || p.Ref != "2.1.246" {
-		t.Fatalf("versao=%q ref=%q, want 2.1.241 / 2.1.246", p.Version, p.Ref)
+		t.Fatalf("version=%q ref=%q, want 2.1.241 / 2.1.246", p.Version, p.Ref)
 	}
 	if p.Current {
-		t.Fatal("Atual=true, but 2.1.241 is BEHIND 2.1.246")
+		t.Fatal("Current=true, but 2.1.241 is BEHIND 2.1.246")
 	}
 	if p.Target != "recovery" {
-		t.Fatalf("Alvo=%q, want \"recovery\"", p.Target)
+		t.Fatalf("Target=%q, want \"recovery\"", p.Target)
 	}
 }
 
@@ -98,11 +98,11 @@ func TestDetectExternalDoesNotFlagUpToDate(t *testing.T) {
 		t.Fatalf("found %d, want 1", len(got))
 	}
 	if !got[0].Current {
-		t.Fatal("Atual=false for a process on the SAME version as its container")
+		t.Fatal("Current=false for a process on the SAME version as its container")
 	}
 }
 
-// A HOST process must not leak in here — Levantar takes care of it, with the
+// A HOST process must not leak in here — Detect takes care of it, with the
 // host's reference. Listing it twice would give two rows for the same Claude.
 func TestDetectExternalIgnoresSameNamespaceProcess(t *testing.T) {
 	buildExternal(t, 902, verDir+"2.1.241", "VPSM_RECOVERY=1\x00", verDir+"2.1.246", true)
@@ -115,7 +115,7 @@ func TestDetectExternalIgnoresSameNamespaceProcess(t *testing.T) {
 // A container WITHOUT the marker is not the recovery one — restarting the wrong
 // container would take something else down.
 func TestDetectExternalRequiresMarker(t *testing.T) {
-	buildExternal(t, 903, verDir+"2.1.241", "HOME=/root\x00OUTRO=1\x00", verDir+"2.1.246", false)
+	buildExternal(t, 903, verDir+"2.1.241", "HOME=/root\x00OTHER=1\x00", verDir+"2.1.246", false)
 
 	if got := DetectExternal("VPSM_RECOVERY=1", "recovery"); len(got) != 0 {
 		t.Fatalf("found %d, wanted 0 (no VPSM_RECOVERY)", len(got))
@@ -132,7 +132,7 @@ func TestDetectExternalNoReferenceReportsNoLag(t *testing.T) {
 		t.Fatalf("found %d, want 1", len(got))
 	}
 	if got[0].Ref != "" || !got[0].Current {
-		t.Fatalf("ref=%q atual=%v; with no reference it has to assume up to date", got[0].Ref, got[0].Current)
+		t.Fatalf("ref=%q current=%v; with no reference it has to assume up to date", got[0].Ref, got[0].Current)
 	}
 }
 

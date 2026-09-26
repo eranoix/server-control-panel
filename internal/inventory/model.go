@@ -63,7 +63,7 @@ const (
 	TransportSSH Transport = "ssh"
 )
 
-// Valido reports whether t is one of the three transports.
+// Valid reports whether t is one of the three transports.
 func (t Transport) Valid() bool {
 	switch t {
 	case TransportAgent, TransportPVEAPI, TransportSSH:
@@ -81,7 +81,7 @@ const (
 	NodeKindExternal NodeKind = "externo" // a machine outside the hypervisor (e.g. a rented VPS)
 )
 
-// Valido reports whether k is one of the three node kinds.
+// Valid reports whether k is one of the three node kinds.
 func (k NodeKind) Valid() bool {
 	switch k {
 	case NodeKindHost, NodeKindGuest, NodeKindExternal:
@@ -133,7 +133,7 @@ const (
 type Credential struct {
 	TokenID string `json:"token_id"` // "lab@pve!<name>"; empty = absent
 	Expire  int64  `json:"expire"`   // unix seconds; 0 = no declared expiry
-	State   string `json:"state"`    // ok|ausente|revogada|expirada (ver constantes)
+	State   string `json:"state"`    // one of the Cred* constants
 }
 
 // Node is a node of the lab — the host, a guest or an external machine.
@@ -164,7 +164,7 @@ type Node struct {
 	MissingSince int64 `json:"ausente_desde,omitempty"`
 
 	Status Observed[string] `json:"status"` // "running"|"stopped"|… as the hypervisor returns it
-	Uptime Observed[int64]  `json:"uptime"` // segundos
+	Uptime Observed[int64]  `json:"uptime"` // seconds
 
 	// ── guest counters ──────────────────────────────────────────────────────
 	//
@@ -187,7 +187,7 @@ type Node struct {
 	CPUCores Observed[int]     `json:"cpu_cores"` // cores the guest sees
 
 	MemUsed  Observed[int64] `json:"mem_used"`  // bytes INSIDE the guest
-	MemTotal Observed[int64] `json:"mem_total"` // bytes configurados
+	MemTotal Observed[int64] `json:"mem_total"` // configured bytes
 	MemHost  Observed[int64] `json:"mem_host"`  // RAM spent on the HOST; NotReported on LXC
 
 	// 🔴 DiskUsed is NotReported (-1) when the hypervisor does not know — QEMU

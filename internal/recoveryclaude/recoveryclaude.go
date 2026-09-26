@@ -2,26 +2,10 @@
 // Claude needs: the Dockerfile, the entrypoint, the banner and the container
 // manager.
 //
-// WHY EMBED, instead of reading from the repository:
-//
-// The first version called "/opt/panel/scripts/recovery-claude.sh" and the
-// screen showed "fork/exec: no such file or directory". It was not a careless
-// path — it is structural, and it bit twice in a row:
-//
-//  1. the deploy builds from the ticket's WORKTREE, but /opt/panel is the main
-//     working tree, which lives on another branch and does not have the script;
-//  2. the next attempt — making the deploy INSTALL the script — would not have
-//     worked either: agentctl runs "$ROOT/scripts/deploy.sh", that is, the
-//     deploy.sh of the main working tree, so a change to the worktree's
-//     deploy.sh never runs.
-//
-// The root cause is always the same: the running process has no way to trust
-// the contents of the repository's working directory. The binary IS the unit of
-// deploy — so what it needs has to travel with it, as already happens with the
-// webassets.
-//
-// That way the files are always at the version that matches the binary in the
-// air, with no dependence on a branch, a working tree or who ran the deploy.
+// They are embedded instead of read from the repository because the running
+// process cannot trust the working tree (deploys build from ticket worktrees,
+// and /opt/panel may be on another branch). The binary is the unit of deploy, so
+// the files always match the binary that is live.
 package recoveryclaude
 
 import (
@@ -43,13 +27,10 @@ var assets embed.FS
 // from this package instead of repeating the string.
 const Container = "vpsm-recovery-claude"
 
-// Materializa writes the embedded assets into <dataDir>/recovery-claude and
+// Materialize writes the embedded assets into <dataDir>/recovery-claude and
 // returns the path of the manager (manage.sh), ready to execute.
 //
-// It always rewrites: the cost is a few KB and the alternative — skipping when
-// the file already exists — would leave an old deploy's version on disk after a
-// fix, which is exactly the kind of surprise you do not want in an emergency
-// tool.
+// It always rewrites, so a fix never leaves an old deploy's version on disk.
 func Materialize(dataDir string) (string, error) {
 	dest := filepath.Join(dataDir, "recovery-claude")
 	if err := os.MkdirAll(dest, 0o755); err != nil {
@@ -85,7 +66,7 @@ func Materialize(dataDir string) (string, error) {
 	return filepath.Join(dest, "manage.sh"), nil
 }
 
-// Comando returns an *exec.Cmd of the already-materialized manager. Docker's
+// Command returns an *exec.Cmd of the already-materialized manager. Docker's
 // build context is the materialized directory itself — which is why the
 // Dockerfile and the scripts have to come out together.
 func Command(dataDir string, args ...string) (*exec.Cmd, error) {
@@ -96,19 +77,14 @@ func Command(dataDir string, args ...string) (*exec.Cmd, error) {
 	return exec.Command(script, args...), nil
 }
 
-// Reinicia restarts the recovery Claude container (`manage.sh restart` →
+// Restart restarts the recovery Claude container (`manage.sh restart` →
 // `docker restart`), applying the CLI version the container has already pulled.
 //
-// The semantics are the SAME as the button for normal sessions on the version
-// panel: the CLI updates itself inside the container and writes the new
-// symlink, but the running process stays on the binary it loaded at boot — only
-// a relaunch applies it. Measured in practice: the process on 2.1.241, the
-// container's symlink already on 2.1.246.
+// The CLI updates itself inside the container, but the running process keeps
+// the binary it loaded at start, so only a relaunch applies the update.
 //
-// It differs from normal sessions on one point the caller must make clear to
-// the operator: there is no `--continue` here. The container comes up with
-// `sleep infinity` and the session is born when someone opens /recovery, so
-// restarting DISCARDS the recovery conversation in progress, if there is one.
+// Unlike normal sessions there is no `--continue`: restarting DISCARDS the
+// recovery conversation in progress, and the caller must tell the operator so.
 func Restart(ctx context.Context, dataDir string) error {
 	cmd, err := Command(dataDir, "restart")
 	if err != nil {

@@ -82,10 +82,10 @@ type Deployment struct {
 type Shape string
 
 const (
-	ShapeMissing Shape = "ausente"      // file does not exist — fresh install
-	ShapeV1Array Shape = "v1-array"     // array cru de App (formato antigo)
-	ShapeV2      Shape = "v2"           // envelope {schema_version: 2, …}
-	ShapeUnknown Shape = "desconhecida" // anything else: a future version, garbage, or truncated
+	ShapeMissing Shape = "missing"  // file does not exist — fresh install
+	ShapeV1Array Shape = "v1-array" // raw App array (old format)
+	ShapeV2      Shape = "v2"       // envelope {schema_version: 2, …}
+	ShapeUnknown Shape = "unknown"  // anything else: a future version, garbage, or truncated
 )
 
 // ErrConcurrentAppsMigration is returned when the apps.json lock is already
@@ -110,7 +110,7 @@ func appsLockPath(dataDir string) string {
 
 // DetectShape classifies the apps.json on disk. The second return is the
 // schema_version observed (0 when the document has none), used in the refusal
-// messages — saying "formato desconhecido" without saying WHICH format forces
+// messages — saying "unknown format" without saying WHICH format forces
 // the operator to open the file by hand.
 func DetectShape(dataDir string) (Shape, int, error) {
 	raw, err := os.ReadFile(appsPath(dataDir))
@@ -190,14 +190,14 @@ func GuardCLI(dataDir string) error {
 	case ShapeV1Array:
 		return fmt.Errorf(
 			"%s: %s is still in v1 format (raw array, no schema_version) and %s does NOT migrate: "+
-				"suba o vps-manager (cmd/server) uma vez — ele migra para schema_version=%d no boot — "+
-				"e rode o %s de novo; nada foi escrito",
+				"start vps-manager (cmd/server) once, it migrates to schema_version=%d at boot, "+
+				"then run %s again; nothing was written",
 			cliBinaryName, appsPath(dataDir), cliBinaryName, AppsSchemaVersion, cliBinaryName)
 	default:
 		return fmt.Errorf(
 			"%s: %s in unknown format (schema_version=%d): this binary %s reads schema_version=%d — "+
-				"atualize o %s (ele e o vps-manager são publicados juntos) em vez de deixá-lo reescrever o arquivo; "+
-				"nada foi escrito",
+				"update %s (it ships together with vps-manager) instead of letting it rewrite the file; "+
+				"nothing was written",
 			cliBinaryName, appsPath(dataDir), version, cliBinaryName, AppsSchemaVersion, cliBinaryName)
 	}
 }
@@ -281,17 +281,17 @@ func MigrateApps(d AppsMigration) error {
 		return fmt.Errorf("deploy: migrate: read apps.json: %w", err)
 	}
 
-	// Passo 4: classificar.
+	// Step 4: classify.
 	shape, version := detectShapeBytes(raw)
 	switch shape {
 	case ShapeV2:
 		return nil // another process migrated while we were waiting for the lock
 	case ShapeV1Array:
-		// segue
+		// continue below
 	default:
 		return fmt.Errorf(
 			"deploy: migrate: apps.json in unknown format (schema_version=%d, this binary reads %d) at %s: "+
-				"nada foi escrito — atualize o binário em vez de deixá-lo reescrever o arquivo",
+				"nothing was written; update the binary instead of letting it rewrite the file",
 			version, AppsSchemaVersion, path)
 	}
 
@@ -340,7 +340,7 @@ func MigrateApps(d AppsMigration) error {
 	// Step 7: the durable write. A rename without fsync leaves a zero-byte file
 	// on an abrupt power cut — an expected failure mode in this house.
 	if err := writeFileAtomic(path, out, 0o600); err != nil {
-		return rollback("escrever envelope", err)
+		return rollback("write envelope", err)
 	}
 
 	// Step 8: the audit. Non-fatal: the migration is already on disk.

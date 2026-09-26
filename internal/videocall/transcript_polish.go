@@ -91,8 +91,8 @@ func sanitizePromptContext(items []string) []string {
 }
 
 // HandleTranscriptPolish takes a raw block of Web Speech transcription and
-// returns a version polished by Claude Haiku: correct punctuation, no
-// hesitations ("uhm", "é", "tipo"), consistent proper nouns, without changing
+// returns a version polished by Claude Haiku: correct punctuation, no filler
+// hesitations, consistent proper nouns, without changing
 // the meaning or adding new words.
 //
 // POST /api/videocall/transcript/polish
@@ -213,8 +213,8 @@ func buildPolishPrompt(text, lang string, context []string, speaker string) stri
 	return sb.String()
 }
 
-// extractPolished takes Anthropic's answer and removes a possible "Versão
-// polida:" prefix or surrounding quotes. If it comes back empty or suspicious,
+// extractPolished takes the model's answer and removes a possible "Polished
+// version:" prefix (in English or Portuguese) or surrounding quotes. If it comes back empty or suspicious,
 // it returns the original text (defensive — better unpolished than ruined).
 func extractPolished(resp, original string) string {
 	r := strings.TrimSpace(resp)
@@ -250,11 +250,11 @@ func languageHumanName(bcp string) string {
 	case "en-US":
 		return "American English"
 	case "es-ES":
-		return "espanhol"
+		return "Spanish"
 	case "fr-FR":
 		return "French"
 	case "it-IT":
-		return "italiano"
+		return "Italian"
 	case "de-DE":
 		return "German"
 	case "ja-JP":

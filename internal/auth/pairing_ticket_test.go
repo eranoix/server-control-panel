@@ -39,7 +39,7 @@ func TestPairingTicket_ReplayFails(t *testing.T) {
 }
 
 func TestPairingTicket_UnknownTicketFails(t *testing.T) {
-	if _, ok := ConsumePairingTicket("ticket-que-nunca-foi-emitido"); ok {
+	if _, ok := ConsumePairingTicket("ticket-never-issued"); ok {
 		t.Fatal("a ticket that was never issued should not be accepted")
 	}
 	if _, ok := ConsumePairingTicket(""); ok {
@@ -52,7 +52,7 @@ func TestPairingTicket_UnknownTicketFails(t *testing.T) {
 // injecting directly into the store (no real 5min sleep).
 func TestPairingTicket_ExpiredFails(t *testing.T) {
 	globalPairingTicketStore.mu.Lock()
-	const fake = "ticket-de-teste-expirado"
+	const fake = "expired-test-ticket"
 	globalPairingTicketStore.tickets[fake] = pairingTicket{
 		user:      "sam",
 		expiresAt: time.Now().Add(-1 * time.Second), // already expired

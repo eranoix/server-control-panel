@@ -13,21 +13,21 @@ func TestResolveChatJID(t *testing.T) {
 	cases := []struct {
 		name     string
 		from, to string
-		preferTo bool // = fromMe pra mensagens; true pra ack/revoke
+		preferTo bool // = fromMe for messages; true for ack/revoke
 		want     string
 	}{
 		// The reported bug: group outbound (from=group, to=my own number).
-		{"grupo outbound from=group", group, self, true, group},
+		{"group outbound from=group", group, self, true, group},
 		// Defensive variant: some engines send from=self, to=group.
-		{"grupo outbound from=self", self, group, true, group},
+		{"group outbound from=self", self, group, true, group},
 		// Group inbound: from=group.
-		{"grupo inbound", group, self, false, group},
+		{"group inbound", group, self, false, group},
 		// 1:1 outbound: from=me, to=peer → peer.
-		{"1a1 outbound", self, peer, true, peer},
+		{"1to1 outbound", self, peer, true, peer},
 		// 1:1 inbound: from=peer → peer.
-		{"1a1 inbound", peer, self, false, peer},
+		{"1to1 inbound", peer, self, false, peer},
 		// An empty to falls back to from.
-		{"to vazio", peer, "", true, peer},
+		{"empty to", peer, "", true, peer},
 		// legitimate self-chat (message to oneself).
 		{"self chat", self, self, true, self},
 	}

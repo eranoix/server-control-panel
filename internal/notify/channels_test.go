@@ -63,10 +63,10 @@ func TestInboxFlowThroughRouter(t *testing.T) {
 	ch, _ := rt.UpsertChannel(ChannelDef{Name: "site", Type: TypeInApp, Enabled: true})
 	rt.UpsertRule(Rule{Name: "all", Enabled: true, Channels: []string{ch.ID}})
 
-	rt.Dispatch(Event{Type: "job.failed", Severity: SeverityCritical, Title: "Falhou", DedupKey: "job:1"})
+	rt.Dispatch(Event{Type: "job.failed", Severity: SeverityCritical, Title: "Failed", DedupKey: "job:1"})
 	<-done
 	box := rt.Inbox(10)
-	if len(box) != 1 || box[0].Title != "Falhou" {
+	if len(box) != 1 || box[0].Title != "Failed" {
 		t.Fatalf("inbox not populated: %+v", box)
 	}
 }
@@ -101,15 +101,9 @@ func TestSecretRedactionAndPreservation(t *testing.T) {
 	}
 }
 
-// 🔴 TestWebhookComCorpoFixoNaoVazaNADA from the event.
-//
-// An ntfy topic on the free plan is PUBLIC: anyone who guesses the name reads
-// everything. A webhook that dumps the Event as JSON sends it the title, the
-// body, the labels and the name of whatever broke — a live map of the house's
-// problems, for anyone to read.
-//
-// This test plants recognisable data in EVERY field of the event and requires
-// that none of it shows up in the POST body.
+// TestWebhookWithFixedBodyLeaksNothing: a free ntfy topic is PUBLIC, so a
+// webhook with a fixed body must not leak any event field. The test plants
+// recognisable data in every field and requires none of it in the POST body.
 func TestWebhookWithFixedBodyLeaksNothing(t *testing.T) {
 	var seen []byte
 	var contentType string
@@ -122,12 +116,12 @@ func TestWebhookWithFixedBodyLeaksNothing(t *testing.T) {
 	ev := Event{
 		Type:     "hypervisor.unreachable",
 		Severity: "critical",
-		Source:   "sentinela:hipervisor",
+		Source:   "sentinel:hypervisor",
 		Owner:    "sam",
 		Title:    "Home hypervisor unreachable",
 		Body:     "WHERE: https://hypervisor.local:8006 — rpool DEGRADED on /dev/sdb",
-		Labels:   map[string]string{"alvo": "hipervisor", "ip": "192.168.100.50"},
-		DedupKey: "hypervisor:alcance",
+		Labels:   map[string]string{"target": "hypervisor", "ip": "192.168.100.50"},
+		DedupKey: "hypervisor:reach",
 	}
 	const fixedBody = "home: something needs attention. check the private channel."
 
@@ -139,8 +133,8 @@ func TestWebhookWithFixedBodyLeaksNothing(t *testing.T) {
 		t.Fatalf("body = %q, want exactly the fixed text", seen)
 	}
 	for _, secret := range []string{
-		"hypervisor.unreachable", "critical", "sentinela", "sam", "unreachable",
-		"hypervisor.local", "rpool", "sdb", "192.168.100.50", "hypervisor:alcance",
+		"hypervisor.unreachable", "critical", "sentinel", "sam", "unreachable",
+		"hypervisor.local", "rpool", "sdb", "192.168.100.50", "hypervisor:reach",
 	} {
 		if strings.Contains(string(seen), secret) {
 			t.Errorf("🔴 %q LEAKED to the public destination: %s", secret, seen)
@@ -164,7 +158,7 @@ func TestWebhookWithoutFixedBodyStillSendsEvent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ev := Event{Type: "job.failed", Title: "deploy falhou", Body: "detalhe"}
+	ev := Event{Type: "job.failed", Title: "deploy failed", Body: "detail"}
 	ch := NewWebhookChannel()
 	if err := ch.Send(context.Background(), ev, ChannelConfig{URL: srv.URL}); err != nil {
 		t.Fatal(err)
@@ -173,7 +167,7 @@ func TestWebhookWithoutFixedBodyStillSendsEvent(t *testing.T) {
 	if err := json.Unmarshal(seen, &received); err != nil {
 		t.Fatalf("the body stopped being the Event as JSON: %s", seen)
 	}
-	if received.Type != "job.failed" || received.Title != "deploy falhou" {
+	if received.Type != "job.failed" || received.Title != "deploy failed" {
 		t.Errorf("the event arrived incomplete: %+v", received)
 	}
 	if !strings.HasPrefix(contentType, "application/json") {

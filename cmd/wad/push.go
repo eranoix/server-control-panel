@@ -122,7 +122,7 @@ func (p *pusher) deliver(user, event, url, secret string, body []byte) {
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 			resp.Body.Close()
 			if code >= 200 && code < 300 {
-				return // sucesso
+				return // success
 			}
 			if code == http.StatusUnauthorized || code == http.StatusForbidden {
 				// The in-memory secret may be stale — the panel rewrites meta.json

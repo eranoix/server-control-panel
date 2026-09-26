@@ -209,7 +209,7 @@ type Config struct {
 	// Defaults in applyDefaults.
 	DatasaverStateDir   string   `json:"datasaver_state_dir,omitempty"`  // /opt/datasaver/state
 	DatasaverCAPath     string   `json:"datasaver_ca_path,omitempty"`    // /opt/datasaver/ca/mitmproxy-ca-cert.pem
-	DatasaverContainers []string `json:"datasaver_containers,omitempty"` // [datasaver-vps, datasaver-casa]
+	DatasaverContainers []string `json:"datasaver_containers,omitempty"` // container names, see applyDefaults
 	TLSEnabled          bool     `json:"tls_enabled"`
 	TLSDomain           string   `json:"tls_domain,omitempty"`
 	TLSEmail            string   `json:"tls_email,omitempty"`
@@ -274,37 +274,25 @@ type Config struct {
 	// (Gmail stays read-only).
 	EmailPusherEnabled bool `json:"email_pusher_enabled,omitempty"`
 
-	// EmailExtractTasks turns on extraction of TASKS from the e-mail body:
-	// when on, the poller fetches the full body (format=full) and the classifier
-	// also extracts actionable tasks (titulo/responsavel/data_limite/descricao/
-	// prioridade), pushed in the tarefas[] field of POST /api/vps/emails — it feeds
-	// the CSS "Emails to Review" page. Default OFF: off = the previous
-	// behaviour (metadata + bucket only, no tasks). Additive/inert.
+	// EmailExtractTasks turns on extraction of actionable tasks from the e-mail
+	// body (the poller then fetches format=full). The tasks travel in the task
+	// list of POST /api/vps/emails. Default off: metadata and bucket only.
 	EmailExtractTasks bool `json:"email_extract_tasks,omitempty"`
 
-	// Acme roster — who counts as the INTERNAL TEAM for the purposes of the
-	// `lado` (cliente|fllr) of extracted tasks (meetings + e-mails). The AI
-	// classifier infers the side from the content and confuses "a task ABOUT
-	// the client" with "the client is the assignee"; this roster grounds the
-	// prompt AND deterministically forces lado=fllr when the assignee is
-	// internal. It is DATA (config), not a literal in Go, and it mirrors the
-	// source of truth in CSS (agendamento.pessoas ∪ domain). Sam is the DEV —
-	// he belongs to NEITHER side (neither client nor Acme). See ehFllr() in
-	// intake_processor.go.
+	// Internal-team roster: decides the side (client vs internal) of extracted
+	// tasks. The classifier confuses "a task about the client" with "the client
+	// is the assignee", so this roster grounds the prompt and forces the internal
+	// side when the assignee is internal. It mirrors the source of truth in CSS.
 	//   - IntakeFllrDomains: domains that define the org (default ["acme.example"]).
 	//   - IntakeFllrMembers: aliases the domain does not cover (display names +
 	//     alternative e-mails, e.g. Jordan's gmail). Case-insensitive.
 	IntakeFllrDomains []string `json:"intake_fllr_domains,omitempty"`
 	IntakeFllrMembers []string `json:"intake_fllr_members,omitempty"`
 
-	// CLIENT roster — the EXTERNAL companies Acme serves. The
-	// AI classifier extracts the `cliente` of each e-mail/meeting from the
-	// CONTENT (summary/minutes); these fields ground the prompt and normalize the parse
-	// deterministically. Acme is the CONSULTANCY (never a client), and vendors/
-	// platforms (OneTrust, Mercatus, …) are not clients either. The source of truth for the
-	// aliases is the CSS table agendamento.clientes_fllr (CSS re-normalizes on
-	// intake); here the roster is enough for grounding + the exclusion list. The
-	// client-name normalization lives in the intake processor.
+	// Client roster: the external companies Acme serves. The classifier extracts
+	// the client of each e-mail/meeting from its content; these fields ground the
+	// prompt and normalize the result. Acme itself and vendors are never clients.
+	// The canonical aliases live in CSS, which re-normalizes on intake.
 	//   - IntakeClientRoster: known canonical names (prompt grounding).
 	//   - IntakeClientExclusions: names/domains that are NEVER a client (Acme,
 	//     vendors, generic providers). Case-insensitive.
@@ -328,7 +316,7 @@ type Config struct {
 	SessionCollectorMaxReadKB     int `json:"session_collector_max_read_kb,omitempty"`    // cap on bytes read for the summary; a larger file is head+tail (default 2048 KB)
 
 	// FlowBEnabled turns on Flow B piece 2: the builder of the day's timeline
-	// (B3) + submission to Gate 2 in CSS + a time entry in quadro_apontamentos (B5).
+	// (B3) + submission to Gate 2 in CSS + a time entry in the CSS timesheet (B5).
 	// From the sessions already aggregated by piece 1 it builds timeline[] {hour,
 	// duration, task?} and sends it to CSS; on approval at Gate 2 it writes the
 	// time entry (dry-run by default — nothing written to Acme without an explicit OK).

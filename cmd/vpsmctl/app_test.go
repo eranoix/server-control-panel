@@ -24,7 +24,7 @@ func dataDirWith(t *testing.T, appsJSON string) string {
 		}
 	}
 	cfgPath := filepath.Join(dataDir, "config.json")
-	cfg := `{"listen":":8765","data_dir":"` + dataDir + `","jwt_secret":"teste","schema_version":2}`
+	cfg := `{"listen":":8765","data_dir":"` + dataDir + `","jwt_secret":"test","schema_version":2}`
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o600); err != nil {
 		t.Fatalf("write config.json: %v", err)
 	}

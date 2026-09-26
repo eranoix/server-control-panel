@@ -4,7 +4,7 @@
 // JWT and no minted token needed.
 //
 //	vpsmctl jira-comment --user=sam --key=PROJ-68 --body-file=/tmp/block.txt
-//	vpsmctl jira-comment --user=sam --key=PROJ-69 --body="texto curto"
+//	vpsmctl jira-comment --user=sam --key=PROJ-69 --body="short text"
 //
 // Every credential flag comes from the vault (jira_site/jira_email/jira_token),
 // seeded beforehand via `vpsmctl jira-seed`. The body is plain text; the client

@@ -73,7 +73,7 @@ type Channel interface {
 }
 
 // ChannelDef is a configured, persisted destination instance — one row in the
-// "channels" list the operator manages in the Alertas tab. Its Type selects
+// "channels" list the operator manages in the Alerts tab. Its Type selects
 // which registered Channel impl delivers it; Config carries that impl's
 // settings. Many ChannelDefs can share one Type (e.g. two WhatsApp chats).
 type ChannelDef struct {

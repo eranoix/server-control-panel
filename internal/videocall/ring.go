@@ -84,7 +84,7 @@ func (s *Service) announceJoin(roomID, user, displayName, clientID string, resum
 
 	if !dec.Ring {
 		incRingStat(dec.Reason)
-		log.Printf("videocall: ring suprimido room=%s from=%s reason=%s call=%s",
+		log.Printf("videocall: ring suppressed room=%s from=%s reason=%s call=%s",
 			roomID, user, dec.Reason, dec.CallID)
 		return
 	}
@@ -125,7 +125,7 @@ func (s *Service) announceJoin(roomID, user, displayName, clientID string, resum
 	}
 	incRingStat(ringReasonNewCall)
 	s.audit("videocall.ring", user, roomID)
-	log.Printf("videocall: ring room=%s from=%s call=%s destinatarios=%d entregues=%d deduped=%d",
+	log.Printf("videocall: ring room=%s from=%s call=%s recipients=%d delivered=%d deduped=%d",
 		roomID, user, dec.CallID, len(recipients), len(rang), deduped)
 
 	// Web Push (off-app) for whoever does NOT have a device ringing right now.
@@ -216,7 +216,7 @@ func (s *Service) broadcastCallEnded(roomID, callID string) {
 		RoomName: room.Name,
 		CallID:   callID,
 	})
-	log.Printf("videocall: chamada encerrada room=%s call=%s", roomID, callID)
+	log.Printf("videocall: call ended room=%s call=%s", roomID, callID)
 
 	// FCM: without this, a native recipient whose process already received the
 	// earlier data-only "incoming-call" (see announceJoin) is left with the ringer

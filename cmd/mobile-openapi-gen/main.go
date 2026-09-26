@@ -55,7 +55,7 @@ func main() {
 	screens.RegisterSystem(screens.SystemDeps{})
 
 	// security.users/secrets/sessions/audit and security.ufw/adguard/devices/
-	// economia register their eight row/detail routes (rows_source/data_source)
+	// datasaver register their eight row/detail routes (rows_source/data_source)
 	// the same way: only through an explicit RegisterSecurity(deps)/
 	// RegisterNetwork(deps), never through an init(). screens.SecurityDeps{}/
 	// screens.NetworkDeps{} (the zero values) are safe for the same reason as

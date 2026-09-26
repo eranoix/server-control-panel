@@ -131,7 +131,7 @@ func (DockerPullRunner) Run(ctx context.Context, args json.RawMessage, logW io.W
 	if !validImageRef(a.Ref) {
 		return errors.New("invalid image ref")
 	}
-	step("baixando " + a.Ref)
+	step("pulling " + a.Ref)
 	fmt.Fprintln(logW, "$ docker pull "+a.Ref)
 	cmd := exec.CommandContext(ctx, "docker", "pull", a.Ref)
 	return streamCommand(ctx, cmd, logW, progress)
@@ -250,7 +250,7 @@ func (b BackupNowRunner) Run(ctx context.Context, args json.RawMessage, logW io.
 		}
 		out = a.Dest
 	}
-	step("compactando " + target + " → " + out)
+	step("compressing " + target + " → " + out)
 	stamp := time.Now().UTC().Format("20060102-150405")
 	if err := os.MkdirAll(out, 0o700); err != nil {
 		return err
@@ -385,7 +385,7 @@ func (ShellRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writer
 	case "sh", "bash", "zsh", "dash", "ash", "ksh", "fish", "tcsh", "csh":
 		return errors.New("shell binaries blocked — use /api/exec for shell access")
 	}
-	step("executando " + base)
+	step("running " + base)
 	fmt.Fprintf(logW, "$ %s %s\n", a.Cmd, strings.Join(a.Args, " "))
 	cmd := exec.CommandContext(ctx, a.Cmd, a.Args...)
 	return streamCommand(ctx, cmd, logW, progress)
@@ -436,7 +436,7 @@ func (DockerRestartRunner) Run(ctx context.Context, args json.RawMessage, logW i
 	if !validContainerName(a.Container) {
 		return errors.New("invalid container name")
 	}
-	step("reiniciando " + a.Container)
+	step("restarting " + a.Container)
 	fmt.Fprintln(logW, "$ docker restart "+a.Container)
 	cmd := exec.CommandContext(ctx, "docker", "restart", a.Container)
 	return streamCommand(ctx, cmd, logW, progress)
@@ -463,7 +463,7 @@ func (DockerComposeRestartRunner) Run(ctx context.Context, args json.RawMessage,
 	if !strings.HasPrefix(a.Dir, "/") || strings.Contains(a.Dir, "..") {
 		return errors.New("dir must be absolute and free of ..")
 	}
-	step("reiniciando serviços do compose")
+	step("restarting the compose services")
 	fmt.Fprintln(logW, "$ cd "+a.Dir+" && docker compose restart")
 	cmd := exec.CommandContext(ctx, "docker", "compose", "restart")
 	cmd.Dir = a.Dir
@@ -556,7 +556,7 @@ func (DockerPruneRunner) Run(ctx context.Context, args json.RawMessage, logW io.
 	default:
 		return errors.New("scope must be volumes, networks or builder")
 	}
-	step("limpando " + a.Scope)
+	step("cleaning " + a.Scope)
 	fmt.Fprintln(logW, "$ docker "+strings.Join(cmdArgs, " "))
 	cmd := exec.CommandContext(ctx, "docker", cmdArgs...)
 	return streamCommand(ctx, cmd, logW, progress)
@@ -566,7 +566,7 @@ func (DockerPruneRunner) Run(ctx context.Context, args json.RawMessage, logW io.
 
 type HTTPCheckArgs struct {
 	URL    string `json:"url"`
-	Expect int    `json:"expect,omitempty"` // status esperado; 0 = aceitar 200–399
+	Expect int    `json:"expect,omitempty"` // expected status; 0 = accept 200-399
 }
 
 type HTTPCheckRunner struct{}
@@ -587,7 +587,7 @@ func (HTTPCheckRunner) Run(ctx context.Context, args json.RawMessage, logW io.Wr
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return errors.New("url must be a valid http(s) URL")
 	}
-	step("checando " + u.String())
+	step("checking " + u.String())
 	fmt.Fprintln(logW, "$ GET "+u.String())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {

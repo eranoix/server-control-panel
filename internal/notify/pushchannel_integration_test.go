@@ -15,7 +15,7 @@ import (
 // TestPushChannel_EndToEndThroughRouter proves the push channel end to end,
 // through the SAME rule/throttle/dedup engine the other five notify channels
 // share — not a bespoke path. It builds a real Router, a real ChannelDef +
-// Rule via the Alertas-tab CRUD paths (UpsertChannel/UpsertRule), a real
+// Rule via the Alerts-tab CRUD paths (UpsertChannel/UpsertRule), a real
 // *webpush.Store with a real EC P-256 subscriber keypair, and Dispatches a
 // metric.threshold Event. It asserts the real, encrypted HTTP POST webpush-go
 // sends over the wire reaches a fake push endpoint with the aes128gcm
@@ -59,13 +59,13 @@ func TestPushChannel_EndToEndThroughRouter(t *testing.T) {
 	}, Options{})
 
 	ch, err := h.r.UpsertChannel(ChannelDef{
-		Name: "Push (teste)", Type: TypePush, Enabled: true,
+		Name: "Push (test)", Type: TypePush, Enabled: true,
 	})
 	if err != nil {
 		t.Fatalf("UpsertChannel: %v", err)
 	}
 	if _, err := h.r.UpsertRule(Rule{
-		Name: "Métricas → push", Enabled: true,
+		Name: "Metrics → push", Enabled: true,
 		TypePrefix: "metric.", Channels: []string{ch.ID},
 	}); err != nil {
 		t.Fatalf("UpsertRule: %v", err)
@@ -76,7 +76,7 @@ func TestPushChannel_EndToEndThroughRouter(t *testing.T) {
 		Severity: SeverityWarning,
 		Source:   "metrics",
 		Title:    "Metric: cpu",
-		Body:     "valor 95.00 cruzou o limite",
+		Body:     "value 95.00 crossed the threshold",
 		Labels:   map[string]string{"rule": "cpu"},
 		DedupKey: "metric:cpu:1",
 	})

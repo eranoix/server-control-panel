@@ -3,7 +3,7 @@ package main
 // Backup/restore of sessions from the CLI, reusing EXACTLY the same code
 // (internal/pty) and the same file format/location the backend and the web UI
 // use (<DataDir>/users/<user>/session-backups/<id>.json). That way a backup
-// taken here (by the code-server vpsm-sessoes extension) is 100% interchangeable
+// taken here (by the code-server sessions extension) is 100% interchangeable
 // with the site's sessions page — no duplicated logic, no risk of divergence.
 
 import (

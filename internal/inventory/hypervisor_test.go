@@ -132,7 +132,7 @@ func TestStatusFailureKeepsHypervisor(t *testing.T) {
 // on its own instead of waiting for somebody to edit code.
 func TestHypervisorNameComesFromDiscovery(t *testing.T) {
 	resources := []pve.Resource{
-		{ID: "lxc/207", VMID: 207, Name: "apps", Node: "hipervisor-renomeado", Type: "lxc", Status: "running"},
+		{ID: "lxc/207", VMID: 207, Name: "apps", Node: "renamed-hypervisor", Type: "lxc", Status: "running"},
 	}
 	f := &fakePVE{resources: resources, status: testStatus()}
 	p, st, _ := newTestPoller(t, f, Sources{}, PollerConfig{})
@@ -141,13 +141,13 @@ func TestHypervisorNameComesFromDiscovery(t *testing.T) {
 		t.Fatalf("tick: %v", err)
 	}
 	inv, _ := st.Snapshot()
-	if inv.Hypervisor.Node != "hipervisor-renomeado" {
-		t.Errorf("Hypervisor.Node = %q, want 'hipervisor-renomeado' (name hard-coded in the code)", inv.Hypervisor.Node)
+	if inv.Hypervisor.Node != "renamed-hypervisor" {
+		t.Errorf("Hypervisor.Node = %q, want 'renamed-hypervisor' (name hard-coded in the code)", inv.Hypervisor.Node)
 	}
 	f.mu.Lock()
 	seen := f.nodeStatusName
 	f.mu.Unlock()
-	if seen != "hipervisor-renomeado" {
+	if seen != "renamed-hypervisor" {
 		t.Errorf("NodeStatus was called with %q — the node queried is not the one discovery pointed at", seen)
 	}
 }
@@ -159,11 +159,11 @@ func TestHypervisorNameComesFromDiscovery(t *testing.T) {
 func TestHypervisorNameIsDeterministic(t *testing.T) {
 	resources := []pve.Resource{
 		{ID: "lxc/207", VMID: 207, Name: "apps", Node: "zeta", Type: "lxc", Status: "running"},
-		{ID: "lxc/208", VMID: 208, Name: "dev", Node: "alfa", Type: "lxc", Status: "running"},
+		{ID: "lxc/208", VMID: 208, Name: "dev", Node: "alpha", Type: "lxc", Status: "running"},
 	}
 	for i := 0; i < 5; i++ {
-		if got := hypervisorName(resources); got != "alfa" {
-			t.Fatalf("hypervisorName = %q, want 'alfa' on EVERY run", got)
+		if got := hypervisorName(resources); got != "alpha" {
+			t.Fatalf("hypervisorName = %q, want 'alpha' on EVERY run", got)
 		}
 	}
 }
@@ -218,7 +218,7 @@ func TestLoadParsedAsNumber(t *testing.T) {
 	}
 	// A short or unreadable loadavg must not bring down the rest of the health.
 	st := testStatus()
-	st.LoadAvg = []string{"nao-e-numero"}
+	st.LoadAvg = []string{"not-a-number"}
 	var inv2 Inventory
 	applyHypervisor(&inv2, "pve", st, 1800000000)
 	if inv2.Hypervisor.MemUsed.Value != 40100000000 {

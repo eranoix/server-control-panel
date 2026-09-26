@@ -55,7 +55,7 @@ func TestPushChannel_MetricEvent_BuildsAlertFiredPayload(t *testing.T) {
 	ev := Event{
 		Type:   TypeMetricThreshold,
 		Title:  "Metric: cpu",
-		Body:   "valor 95.00 cruzou o limite",
+		Body:   "value 95.00 crossed the threshold",
 		Labels: map[string]string{"rule": "cpu"},
 	}
 	if err := c.Send(context.Background(), ev, ChannelConfig{}); err != nil {
@@ -74,7 +74,7 @@ func TestPushChannel_MetricEvent_BuildsAlertFiredPayload(t *testing.T) {
 	if payload["rule"] != "cpu" {
 		t.Fatalf("rule = %v, want cpu", payload["rule"])
 	}
-	if payload["body"] != "valor 95.00 cruzou o limite" {
+	if payload["body"] != "value 95.00 crossed the threshold" {
 		t.Fatalf("body = %v", payload["body"])
 	}
 }
@@ -84,7 +84,7 @@ func TestPushChannel_JobEvent_BuildsGenericPayload(t *testing.T) {
 	c := NewPushChannel(fake, nil)
 	ev := Event{
 		Type:  "job.failed",
-		Title: "Job falhou: shell",
+		Title: "Job failed: shell",
 		Body:  "exit 1",
 	}
 	if err := c.Send(context.Background(), ev, ChannelConfig{}); err != nil {
@@ -97,7 +97,7 @@ func TestPushChannel_JobEvent_BuildsGenericPayload(t *testing.T) {
 	if _, hasType := payload["type"]; hasType {
 		t.Fatalf("generic payload must not have a \"type\" field, got %v", payload["type"])
 	}
-	if payload["title"] != "Job falhou: shell" {
+	if payload["title"] != "Job failed: shell" {
 		t.Fatalf("title = %v", payload["title"])
 	}
 	if payload["body"] != "exit 1" {

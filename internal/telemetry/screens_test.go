@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// knownGroups are the 8 navigation groups from docs/INVENTARIO-LAB.md,
+// knownGroups are the 8 navigation groups of the panel inventory,
 // plus the two SOLO screens — `dashboard` and `config` — which belong to no
 // group at all because they do not live in a tab bar.
 var knownGroups = map[string]struct{}{
@@ -53,7 +53,7 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 				group = id[:i]
 			}
 			if _, ok := knownGroups[group]; !ok {
-				t.Errorf("id %q has group %q outside the 8 groups of the INVENTARIO-LAB", id, group)
+				t.Errorf("id %q has group %q outside the 8 navigation groups", id, group)
 			}
 		}
 	})
@@ -93,11 +93,8 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 		}
 	})
 
-	// The 5 ids from the later re-edition, done in BOTH forks in the same act:
-	// before it, navigating to these screens fell into the `unknown` bucket, and
-	// what was missing was the canonical list, not the instrumentation.
-	// `operacoes.backup` and `operacoes.embutidas` have no tab yet and report 0
-	// until they do — same contract as `sistema.ventoinhas`.
+	// Ids added later to the list. Some have no tab yet and report 0 until
+	// they do.
 	t.Run("list-re-edition", func(t *testing.T) {
 		for _, id := range []string{
 			"config",
@@ -162,7 +159,7 @@ func TestUnknownScreenIsNotAllowlisted(t *testing.T) {
 		"dashboard ",
 		"dev.codigo\r",
 		`{"screen":"x"}`,
-		"nao-existe-essa-tela",
+		"no-such-screen",
 	} {
 		if IsKnownScreen(id) {
 			t.Errorf("IsKnownScreen(%q) returned true — it should be false", id)
@@ -174,7 +171,7 @@ func TestUnknownScreenIsNotAllowlisted(t *testing.T) {
 func TestAllScreensIsACopy(t *testing.T) {
 	a := AllScreens()
 	orig := a[0]
-	a[0] = "ENVENENADO"
+	a[0] = "POISONED"
 	if b := AllScreens(); b[0] != orig {
 		t.Fatalf("AllScreens returned the internal slice: expected=%q observed=%q", orig, b[0])
 	}

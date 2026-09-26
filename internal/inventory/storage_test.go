@@ -109,12 +109,12 @@ func TestHealthStampClassifiesEveryField(t *testing.T) {
 		seen := hypervisorObservedAt(h.Interface().(Hypervisor)) == 1800000000
 
 		if outsideHealth[f.Name] && seen {
-			t.Errorf("%s entra no carimbo da SAÚDE — ele rejuvenesceria o card do hipervisor "+
-				"com uma observação que não é dele (A-5)", f.Name)
+			t.Errorf("%s feeds the HEALTH stamp: it would make the hypervisor card look fresh "+
+				"with an observation that is not its own", f.Name)
 		}
 		if !outsideHealth[f.Name] && !seen {
-			t.Errorf("%s NÃO entra no carimbo da saúde — a idade dele nunca contaria "+
-				"(ou ele é campo novo que ninguém classificou)", f.Name)
+			t.Errorf("%s does NOT feed the health stamp: its age would never count "+
+				"(or it is a new field nobody classified)", f.Name)
 		}
 	}
 }
@@ -222,7 +222,7 @@ func TestPoolsArriveNormalized(t *testing.T) {
 func TestUsedPctFallsBackToComputedWhenPVEOmitsIt(t *testing.T) {
 	var inv Inventory
 	applyStorage(&inv, []pve.Storage{{
-		Storage: "quase-cheio", Type: "dir",
+		Storage: "almost-full", Type: "dir",
 		Total: 1000, Used: 950, Avail: 50, UsedFraction: 0, Active: 1, Enabled: 1,
 	}}, 1800000000)
 	p := inv.Hypervisor.Storage.Value[0]
@@ -231,7 +231,7 @@ func TestUsedPctFallsBackToComputedWhenPVEOmitsIt(t *testing.T) {
 	}
 	// A total of zero must not become a division by zero, nor 100%.
 	var inv2 Inventory
-	applyStorage(&inv2, []pve.Storage{{Storage: "vazio", Total: 0, Used: 0}}, 1800000000)
+	applyStorage(&inv2, []pve.Storage{{Storage: "empty", Total: 0, Used: 0}}, 1800000000)
 	if got := inv2.Hypervisor.Storage.Value[0].UsedPct; got != 0 {
 		t.Errorf("UsedPct of a storage with no total = %v, want 0", got)
 	}

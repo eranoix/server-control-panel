@@ -96,12 +96,12 @@ func TestStoreDurableWrite(t *testing.T) {
 
 	// Snapshot returns a COPY: touching the result does not change what is on
 	// disk.
-	inv.Nodes[0].Name = "sequestrado"
+	inv.Nodes[0].Name = "hijacked"
 	inv2, err := s2.Snapshot()
 	if err != nil {
 		t.Fatalf("Snapshot 2: %v", err)
 	}
-	if inv2.Nodes[0].Name == "sequestrado" {
+	if inv2.Nodes[0].Name == "hijacked" {
 		t.Fatal("Snapshot returned the internal state, not a copy")
 	}
 }
@@ -122,10 +122,10 @@ func reflect_DeepEqualStrings(a, b []string) bool {
 // path. Starting empty in silence would erase the inventory on the next write.
 func TestStoreCorruptFile(t *testing.T) {
 	cases := map[string]string{
-		"truncado":   `{"schema_version":1,"nodes":[{"id":"lxc/2`,
-		"vazio":      "",
-		"lixo":       "nao sou json",
-		"tipoerrado": `["isto e uma lista, nao o envelope"]`,
+		"truncated": `{"schema_version":1,"nodes":[{"id":"lxc/2`,
+		"empty":     "",
+		"garbage":   "not json",
+		"wrongtype": `["this is a list, not the envelope"]`,
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -346,11 +346,11 @@ func TestStoreWritePathIsDurable(t *testing.T) {
 	src := string(b)
 
 	required := map[string]*regexp.Regexp{
-		"Sync() do arquivo temporário": regexp.MustCompile(`f\.Sync\(\)`),
-		"Sync() do diretório":          regexp.MustCompile(`d(ir)?f?\.Sync\(\)`),
-		"flock entre processos":        regexp.MustCompile(`syscall\.Flock\(`),
-		"mutex de pacote":              regexp.MustCompile(`(?m)^var \w+Mu sync\.Mutex`),
-		"rename atômico":               regexp.MustCompile(`os\.Rename\(`),
+		"Sync() of the temp file": regexp.MustCompile(`f\.Sync\(\)`),
+		"Sync() of the directory": regexp.MustCompile(`d(ir)?f?\.Sync\(\)`),
+		"cross-process flock":     regexp.MustCompile(`syscall\.Flock\(`),
+		"package mutex":           regexp.MustCompile(`(?m)^var \w+Mu sync\.Mutex`),
+		"atomic rename":           regexp.MustCompile(`os\.Rename\(`),
 	}
 	for desc, re := range required {
 		if !re.MatchString(src) {

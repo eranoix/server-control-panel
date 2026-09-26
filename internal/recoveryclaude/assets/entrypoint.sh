@@ -1,12 +1,11 @@
 #!/bin/bash
-# O processo 1 do container so precisa ficar de pe: quem trabalha aqui e a
-# sessao dtach que a tela de recuperacao anexa sob demanda (docker exec). Manter
-# o multiplexador fora do PID 1 e de proposito — assim um `claude` que morra, ou uma
-# sessao encerrada, nao derruba o container inteiro.
+# PID 1 only has to stay up: the work happens in the dtach session the recovery
+# screen attaches on demand (docker exec), so a dying `claude` or a closed
+# session never takes the container down.
 set -euo pipefail
 mkdir -p /config
-# settings.json proprio, SEM ANTHROPIC_BASE_URL: e isto que tira este Claude do
-# claude-router. Se o arquivo ja existir (o usuario mexeu), respeita.
+# Own settings.json without the router base URL: this keeps Claude off the
+# claude-router. An existing file (user edited) is left alone.
 if [ ! -f /config/settings.json ]; then
   cat > /config/settings.json <<'JSON'
 {
@@ -16,10 +15,10 @@ if [ ! -f /config/settings.json ]; then
 }
 JSON
 fi
-echo "[recovery-claude] pronto: $(claude --version 2>/dev/null || echo 'claude indisponivel')"
+echo "[recovery-claude] ready: $(claude --version 2>/dev/null || echo 'claude unavailable')"
 if [ -f /config/.credentials.json ]; then
-  echo "[recovery-claude] credencial propria presente"
+  echo "[recovery-claude] own credential present"
 else
-  echo "[recovery-claude] SEM credencial — rode 'claude' na aba de recuperacao e faca o login uma vez"
+  echo "[recovery-claude] NO credential: run 'claude' in the recovery tab and log in once"
 fi
 exec sleep infinity

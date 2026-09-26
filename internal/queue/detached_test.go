@@ -36,12 +36,12 @@ func TestDetachedEnqueueAndReap(t *testing.T) {
 	}
 
 	// Simulate the external process reporting progress, then completion.
-	if err := WriteDetachedStatus(q.dataDir, j.ID, DetachedStatus{Status: StatusRunning, Progress: 50, Step: "analisando"}); err != nil {
+	if err := WriteDetachedStatus(q.dataDir, j.ID, DetachedStatus{Status: StatusRunning, Progress: 50, Step: "analyzing"}); err != nil {
 		t.Fatal(err)
 	}
 	q.reapDetachedOnce()
 	got, _ := q.Get(j.ID)
-	if got.Progress != 50 || got.Step != "analisando" || got.Status != StatusRunning {
+	if got.Progress != 50 || got.Step != "analyzing" || got.Status != StatusRunning {
 		t.Fatalf("after progress: status=%q progress=%d step=%q", got.Status, got.Progress, got.Step)
 	}
 

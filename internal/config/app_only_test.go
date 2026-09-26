@@ -27,10 +27,10 @@ func TestAppOnly_SurvivesSaveLoadCycle(t *testing.T) {
 		SchemaVersion: CurrentSchemaVersion,
 		Primary:       "sam",
 		DataDir:       dir,
-		JWTSecret:     "segredo-de-teste-nao-usado-em-prod",
+		JWTSecret:     "test-secret-not-used-in-prod",
 		Users: []User{
 			{Username: "sam"},
-			{Username: "teste", Admin: true, AppOnly: true},
+			{Username: "tester", Admin: true, AppOnly: true},
 		},
 	}
 	if err := Save(cfg, path); err != nil {
@@ -42,14 +42,14 @@ func TestAppOnly_SurvivesSaveLoadCycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if !reloaded.IsAppOnly("teste") {
+	if !reloaded.IsAppOnly("tester") {
 		t.Fatalf("the app-only flag vanished in the Save/Load cycle: %+v", reloaded.Users)
 	}
 	if reloaded.IsAppOnly("sam") {
 		t.Fatalf("an account without the flag came back from disk flagged")
 	}
 	// Neighbours preserved — the marker must not have trampled another field.
-	if !reloaded.IsAdmin("teste") {
+	if !reloaded.IsAdmin("tester") {
 		t.Fatalf("the admin flag was lost along with it")
 	}
 
@@ -65,7 +65,7 @@ func TestAppOnly_SurvivesSaveLoadCycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load 2: %v", err)
 	}
-	if !again.IsAppOnly("teste") {
+	if !again.IsAppOnly("tester") {
 		t.Fatalf("the flag vanished in the SECOND write cycle")
 	}
 }
@@ -80,7 +80,7 @@ func TestAppOnly_OmitEmptyKeepsConfigClean(t *testing.T) {
 		SchemaVersion: CurrentSchemaVersion,
 		Primary:       "sam",
 		DataDir:       dir,
-		JWTSecret:     "segredo-de-teste-nao-usado-em-prod",
+		JWTSecret:     "test-secret-not-used-in-prod",
 		Users:         []User{{Username: "sam"}},
 	}
 	if err := Save(cfg, path); err != nil {
@@ -96,12 +96,12 @@ func TestAppOnly_OmitEmptyKeepsConfigClean(t *testing.T) {
 
 	// And the name of the field in the JSON is the contract with the
 	// production config.json (which is hand-edited) — pin it here.
-	marked := &Config{Users: []User{{Username: "teste", AppOnly: true}}}
+	marked := &Config{Users: []User{{Username: "tester", AppOnly: true}}}
 	b, err := json.Marshal(marked)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
 	if !strings.Contains(string(b), `"app_only":true`) {
-		t.Fatalf(`esperava "app_only":true no JSON serializado, got %s`, b)
+		t.Fatalf(`expected "app_only":true in the serialized JSON, got %s`, b)
 	}
 }

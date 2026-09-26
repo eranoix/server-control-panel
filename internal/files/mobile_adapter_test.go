@@ -199,7 +199,7 @@ func TestMobileRead_SymlinkEscapesDenylist_Rejected(t *testing.T) {
 	// A real decoy under the denied prefix — created and removed by the test
 	// itself, never reusing a production secret.
 	decoy := "/opt/panel/data/secrets-mobile-adapter-test-decoy"
-	if err := os.WriteFile(decoy, []byte("segredo-nao-deveria-vazar"), 0600); err != nil {
+	if err := os.WriteFile(decoy, []byte("secret-must-not-leak"), 0600); err != nil {
 		t.Skipf("could not create the decoy at %s (environment cannot write to that path): %v", decoy, err)
 	}
 	t.Cleanup(func() { _ = os.Remove(decoy) })
@@ -216,7 +216,7 @@ func TestMobileRead_SymlinkEscapesDenylist_Rejected(t *testing.T) {
 	if _, err := MobileList(dir); err != nil {
 		t.Fatalf("MobileList on the directory containing the symlink should not fail (the symlink itself is just a listed entry, not followed): %v", err)
 	}
-	if _, err := MobileWrite(link, "overwrite tentativa", 0); err == nil {
+	if _, err := MobileWrite(link, "overwrite attempt", 0); err == nil {
 		t.Fatal("MobileWrite followed a symlink into the denylist without an error — overwrite via path traversal was not blocked")
 	}
 
@@ -225,7 +225,7 @@ func TestMobileRead_SymlinkEscapesDenylist_Rejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "segredo-nao-deveria-vazar" {
+	if string(got) != "secret-must-not-leak" {
 		t.Fatal("the decoy was overwritten — MobileWrite should not have touched it")
 	}
 }
@@ -249,7 +249,7 @@ func TestMobileWrite_SymlinkParentEscapesDenylist_Rejected(t *testing.T) {
 	}
 
 	newFile := filepath.Join(linkDir, "new-file.txt")
-	if _, err := MobileWrite(newFile, "não deveria ser criado dentro do decoy", 0); err == nil {
+	if _, err := MobileWrite(newFile, "must not be created inside the decoy", 0); err == nil {
 		t.Fatal("MobileWrite created a file through a directory symlink into the denylist — path traversal was not blocked")
 	}
 	if _, err := os.Stat(filepath.Join(decoyDir, "new-file.txt")); err == nil {

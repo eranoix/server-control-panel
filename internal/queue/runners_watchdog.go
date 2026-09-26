@@ -150,7 +150,7 @@ func (b WatchdogRunner) Run(ctx context.Context, args json.RawMessage, logW io.W
 					fmt.Fprintf(logW, "integrity: FAILED (%s)\n", strings.TrimSpace(string(out)))
 					breaches = append(breaches, "newest backup is corrupted: "+filepath.Base(path))
 				} else {
-					fmt.Fprintln(logW, "integridade: OK (gzip -t)")
+					fmt.Fprintln(logW, "integrity: OK (gzip -t)")
 				}
 			}
 		}

@@ -250,7 +250,7 @@ func sanitizeAuditField(s string) string {
 func sanitizeName(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return "Sala"
+		return "Room"
 	}
 	// Strip control chars, keep printable + accents. Cap at 80 RUNES (not
 	// bytes) — len(s) used to cut in the middle of a multi-byte UTF-8 sequence

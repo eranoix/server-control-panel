@@ -69,7 +69,7 @@ func TestDeviceLifecycle(t *testing.T) {
 	if d.UUID == "" || d.Exit != ExitVPS {
 		t.Fatalf("unexpected device: %+v", d)
 	}
-	// appears in the device inbounds, NOT in ws-casa
+	// appears in the device inbounds, NOT in the legacy ws inbound
 	if got := len(usersOf(t, cfg, "vless-ws-in")); got != 2 {
 		t.Fatalf("ws-in users = %d, want 2", got)
 	}
@@ -79,7 +79,7 @@ func TestDeviceLifecycle(t *testing.T) {
 	if got := len(usersOf(t, cfg, "vless-ws-casa")); got != 1 {
 		t.Fatalf("ws-casa users = %d, want 1 (it must not receive devices)", got)
 	}
-	// reality user ganhou flow
+	// the reality user got a flow
 	for _, u := range usersOf(t, cfg, "vless-reality-in") {
 		if u["name"] == "pc-sam" && u["flow"] != "xtls-rprx-vision" {
 			t.Fatalf("reality device with no flow vision")
@@ -101,25 +101,25 @@ func TestDeviceLifecycle(t *testing.T) {
 		t.Fatalf("the link does not have the expected path/uuid: %s", link)
 	}
 
-	// SetExit → casa
+	// SetExit → home
 	if err := m.SetExit(ctx, d.UUID, ExitHome); err != nil {
-		t.Fatalf("SetExit casa: %v", err)
+		t.Fatalf("SetExit home: %v", err)
 	}
 	devs, _ = m.List()
 	if devs[0].Exit != ExitHome {
-		t.Fatalf("exit did not become casa: %+v", devs[0])
+		t.Fatalf("exit did not become home: %+v", devs[0])
 	}
 	// and the auth_user carries the name
 	if !homeMembersHas(t, cfg, "pc-sam") {
-		t.Fatalf("auth_user casa does not contain pc-sam")
+		t.Fatalf("auth_user home does not contain pc-sam")
 	}
 
-	// SetExit → vps (removes it from casa)
+	// SetExit → vps (removes it from home)
 	if err := m.SetExit(ctx, d.UUID, ExitVPS); err != nil {
 		t.Fatalf("SetExit vps: %v", err)
 	}
 	if homeMembersHas(t, cfg, "pc-sam") {
-		t.Fatalf("auth_user casa still contains pc-sam after going back to vps")
+		t.Fatalf("auth_user home still contains pc-sam after going back to vps")
 	}
 
 	// Rename
@@ -217,7 +217,7 @@ func hasRule(rules []map[string]any, outbound, user string, wantReject bool) boo
 	return false
 }
 
-// TestDatasaverMatrix exercises the (datasaver on/off) × (exit vps/casa) routing.
+// TestDatasaverMatrix exercises the (datasaver on/off) × (exit vps/home) routing.
 func TestDatasaverMatrix(t *testing.T) {
 	m, cfg := newTestMgr(t)
 	ctx := context.Background()
@@ -225,7 +225,7 @@ func TestDatasaverMatrix(t *testing.T) {
 	pc, _ := m.Add(ctx, "pc")
 	cel, _ := m.Add(ctx, "cel")
 
-	// cel → casa exit; pc stays vps
+	// cel → home exit; pc stays vps
 	if err := m.SetExit(ctx, cel.UUID, ExitHome); err != nil {
 		t.Fatal(err)
 	}
@@ -247,24 +247,24 @@ func TestDatasaverMatrix(t *testing.T) {
 		t.Fatalf("pc expected ds+vps: %+v", byName["pc"])
 	}
 	if !byName["cel"].Datasaver || byName["cel"].Exit != ExitHome {
-		t.Fatalf("cel expected ds+casa: %+v", byName["cel"])
+		t.Fatalf("cel expected ds+home: %+v", byName["cel"])
 	}
 
 	rules := rulesOf(t, cfg)
-	// pc (ds, vps) → proxy-vps ; cel (ds, casa) → proxy-casa
+	// pc (ds, vps) → proxy-vps ; cel (ds, home) → proxy-casa
 	if !hasRule(rules, "proxy-vps", "pc", false) {
 		t.Fatalf("proxy-vps missing for pc: %+v", rules)
 	}
 	if !hasRule(rules, "proxy-casa", "cel", false) {
 		t.Fatalf("proxy-casa missing for cel: %+v", rules)
 	}
-	// QUIC reject cobre ambos
+	// QUIC reject covers both
 	if !hasRule(rules, "", "pc", true) || !hasRule(rules, "", "cel", true) {
 		t.Fatalf("the QUIC reject is missing for the ds devices: %+v", rules)
 	}
-	// cel still has casa for non-web
+	// cel still has home for non-web
 	if !hasRule(rules, "casa", "cel", false) {
-		t.Fatalf("cel should keep the casa rule (non-web): %+v", rules)
+		t.Fatalf("cel should keep the home rule (non-web): %+v", rules)
 	}
 
 	// Turn pc's datasaver off → no proxy-vps, and since pc is vps no rule of its own is left
@@ -301,7 +301,7 @@ func TestProxyEndpoint(t *testing.T) {
 		t.Fatalf("ProxyEndpoint(vps) = %q, %v; want 172.18.0.40:8080", ep, err)
 	}
 	if ep, err := m.ProxyEndpoint(ExitHome); err != nil || ep != "172.18.0.41:8080" {
-		t.Fatalf("ProxyEndpoint(casa) = %q, %v; want 172.18.0.41:8080", ep, err)
+		t.Fatalf("ProxyEndpoint(ExitHome) = %q, %v; want 172.18.0.41:8080", ep, err)
 	}
 	// missing outbound → a clear error, not a panic
 	os.WriteFile(cfg, []byte(`{"inbounds":[{"type":"vless","tag":"vless-ws-in","users":[{"uuid":"x","name":"d"}]}],"outbounds":[{"type":"direct","tag":"direct"}],"route":{"rules":[],"final":"direct"}}`), 0o644)

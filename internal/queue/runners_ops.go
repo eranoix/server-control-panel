@@ -196,7 +196,7 @@ func (RcloneSyncRunner) Run(ctx context.Context, args json.RawMessage, logW io.W
 		return errors.New("invalid rclone remote")
 	}
 	dst := a.Remote + ":" + strings.TrimPrefix(strings.TrimSpace(a.RemotePath), "/")
-	step("sincronizando " + a.Source + " → " + dst)
+	step("syncing " + a.Source + " → " + dst)
 	fmt.Fprintln(logW, "$ rclone sync "+a.Source+" "+dst+" --stats-one-line")
 	cmd := exec.CommandContext(ctx, "rclone", "sync", a.Source, dst, "--stats-one-line")
 	return streamCommand(ctx, cmd, logW, progress)

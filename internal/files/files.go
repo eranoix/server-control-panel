@@ -82,7 +82,7 @@ var protectedTopLevel = map[string]bool{
 
 // isProtectedSymlinkTarget reports whether the resolved absolute target of a
 // symlink lands inside a protectedTopLevel directory. Used to flag (not block)
-// symlinks that point outside user-managed areas — UI shows "(protegido)" so
+// symlinks that point outside user-managed areas — UI shows "(protected)" so
 // users don't follow them silently into /etc, /root, etc.
 func isProtectedSymlinkTarget(abs string) bool {
 	parts := strings.Split(strings.TrimPrefix(abs, "/"), "/")
@@ -181,7 +181,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 				// already does not follow them automatically, but this avoids silent
 				// confusion when one points at /etc/passwd and the like.
 				if isProtectedSymlinkTarget(abs) {
-					e.Target = tgt + " (protegido)"
+					e.Target = tgt + " (protected)"
 				}
 			}
 		}

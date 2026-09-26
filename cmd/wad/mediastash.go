@@ -6,7 +6,7 @@ package main
 // which whatsmeow uses to decrypt) live only in the in-memory stash
 // (session.msgs), which is WIPED on every daemon restart — and every deploy
 // restarts the daemon. Since media download is MANUAL (the user clicks
-// "Baixar" possibly hours/days and several deploys after receiving it), an
+// "Download" possibly hours/days and several deploys after receiving it), an
 // ephemeral stash makes that click 404 forever as soon as the daemon restarts.
 // To make the manual download durable, we persist the message proto (which
 // carries the keys) to disk per media message, and reload it on demand when the
@@ -99,7 +99,7 @@ func mediaMimeOf(m *waE2E.Message) string {
 }
 
 // persistStashedMedia writes a media message's download keys to disk so a later
-// "Baixar" works even after a daemon restart. Best-effort: any error is
+// "Download" works even after a daemon restart. Best-effort: any error is
 // swallowed (the in-memory stash still serves this session).
 func (s *session) persistStashedMedia(id, sender string, fromMe bool, m *waE2E.Message) {
 	raw, err := proto.Marshal(m)

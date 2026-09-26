@@ -22,7 +22,7 @@ type MetricDescriptor struct {
 	Key      string `json:"key"`
 	Label    string `json:"label"`
 	Unit     string `json:"unit"`     // %, bytes, USD, tokens, count, s, load
-	Category string `json:"category"` // Sistema, Jobs, Notificações, Claude, Docker, ...
+	Category string `json:"category"` // display group, e.g. System, Jobs, Docker
 	Kind     string `json:"kind"`     // gauge | counter
 }
 

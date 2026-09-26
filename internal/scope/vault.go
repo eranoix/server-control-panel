@@ -22,11 +22,11 @@ var globalKeys = map[string]struct{}{
 	"JWT_SECRET": {},
 	// AdGuard Home is a daemon-wide service (a DNS filter for the whole
 	// instance, not per user), like the JWT. Its admin credentials are
-	// read by the Segurança → AdGuard panel via a plain r.secrets.Get(...).
+	// read by the Security → AdGuard panel via a plain r.secrets.Get(...).
 	"adguard_user":     {},
 	"adguard_password": {},
 	// Secret of sing-box's Clash API (a daemon-wide tunnel, one per instance),
-	// read plain by the Segurança → Dispositivos panel.
+	// read plain by the Security → Devices panel.
 	"singbox_clash_secret": {},
 }
 
@@ -264,7 +264,7 @@ type HandlerOpts struct {
 	Audit func(action, target string)
 	// AllowSystemGroup gates the reserved "system" group name. Pass
 	// r.isPrimary(user) so only the primary account can file secrets under
-	// the shared "Sistema" group.
+	// the shared System group.
 	AllowSystemGroup bool
 	// MaxValueBytes caps an accepted value's size. <= 0 uses defaultMaxValueBytes.
 	MaxValueBytes int
@@ -393,7 +393,7 @@ func (v *UserVault) Handler(opts HandlerOpts) http.Handler {
 }
 
 // groupEntries buckets entries by group. Entries with no group land in a
-// bucket named "" (the front renders it as "Sem grupo"). Group names sort
+// bucket named "" (the front end renders it as "No group"). Group names sort
 // case-insensitively; the empty bucket is pushed last so real groups lead.
 func groupEntries(entries []Entry) []GroupView {
 	byGroup := map[string][]Entry{}
@@ -440,7 +440,7 @@ func validLogicalKey(key string) bool {
 // before this is reached (an empty group means "ungrouped" and is allowed on
 // the wire). Colons/slashes/NULs are blocked so a group can't smuggle a
 // namespace separator or path component. The reserved "system" group (the
-// shared "Sistema" bucket) is only accepted when isPrimary.
+// shared System bucket) is only accepted when isPrimary.
 func validGroupName(name string, isPrimary bool) bool {
 	if name == "" {
 		return false

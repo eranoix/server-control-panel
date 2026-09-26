@@ -70,7 +70,7 @@ type Todo struct {
 	SnoozeUntil  int64    `json:"snooze_until,omitempty"`
 	LastDone     int64    `json:"last_done,omitempty"`
 	DoneCount    int      `json:"done_count,omitempty"`
-	NotifyWA     bool     `json:"notify_wa,omitempty"` // notificar via WhatsApp quando vencer
+	NotifyWA     bool     `json:"notify_wa,omitempty"` // notify via WhatsApp when due
 	Created      int64    `json:"created"`
 	Updated      int64    `json:"updated"`
 }

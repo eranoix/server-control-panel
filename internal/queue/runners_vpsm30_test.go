@@ -98,7 +98,7 @@ func TestValidDBName(t *testing.T) {
 
 // validHost guards ssl_check against junk before net/tls.
 func TestValidHost(t *testing.T) {
-	for _, s := range []string{"exemplo.com", "sub.dom.io", "10.0.0.1", "a-b.example"} {
+	for _, s := range []string{"example.org", "sub.dom.io", "10.0.0.1", "a-b.example"} {
 		if !validHost(s) {
 			t.Errorf("expected valid host: %q", s)
 		}

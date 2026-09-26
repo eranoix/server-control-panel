@@ -48,7 +48,7 @@ const (
 func defaultIdentities() []config.GitIdentity {
 	return []config.GitIdentity{
 		{ID: "work", Label: "Work — Northwind", Name: "Sam Rivera", Email: "sam@northwind.example"},
-		{ID: "personal", Label: "Pessoal", Name: "northwind-dev", Email: "sam.rivera@personal.example"},
+		{ID: "personal", Label: "Personal", Name: "northwind-dev", Email: "sam.rivera@personal.example"},
 	}
 }
 

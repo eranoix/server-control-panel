@@ -370,7 +370,7 @@ func (s *Service) HandleJoinByPIN(w http.ResponseWriter, r *http.Request) {
 		displayName = displayName[:60]
 	}
 	if displayName == "" {
-		displayName = "Convidado"
+		displayName = "Guest"
 	}
 	room, ok := s.LookupByPIN(pin)
 	if !ok {

@@ -36,7 +36,7 @@ func TestCancelDetachedJob(t *testing.T) {
 	// The external process reported progress — the typical state at the moment
 	// someone clicks "cancel".
 	if err := WriteDetachedStatus(q.dataDir, j.ID, DetachedStatus{
-		Status: StatusRunning, Progress: 20, Step: "analisando",
+		Status: StatusRunning, Progress: 20, Step: "analyzing",
 	}); err != nil {
 		t.Fatal(err)
 	}

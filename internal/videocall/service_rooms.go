@@ -62,7 +62,7 @@ func (s *Service) DeleteRoom(user, roomID string) error {
 // else — only the display label changes. It validates the name with the same
 // sanitizer used in CreateRoom.
 func (s *Service) RenameRoom(owner, roomID, newName string) error {
-	// CreateRoom accepts an empty name (it defaults to "Sala"); here in rename
+	// CreateRoom accepts an empty name (it defaults to "Room"); here in rename
 	// we want to be stricter — empty = error, to avoid an accident.
 	if strings.TrimSpace(newName) == "" {
 		return errors.New("invalid name")

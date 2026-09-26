@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// linhas returns the non-empty lines of a file, plus the raw content.
+// lines returns the non-empty lines of a file, plus the raw content.
 func lines(t *testing.T, path string) ([]string, string) {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -254,7 +254,7 @@ func TestReadDayToleratesTruncatedLine(t *testing.T) {
 }
 
 func TestReadDayMissingFile(t *testing.T) {
-	st, err := ReadDay(filepath.Join(t.TempDir(), "nao-existe.jsonl"), nil)
+	st, err := ReadDay(filepath.Join(t.TempDir(), "missing.jsonl"), nil)
 	if err == nil {
 		t.Fatalf("a missing file should return an error; observed=%+v", st)
 	}

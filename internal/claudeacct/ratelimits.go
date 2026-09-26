@@ -273,8 +273,8 @@ func (s *Store) fetchRateLimits(acct Account) (RateLimitStatus, time.Duration) {
 		key, label string
 		src        *usageWindow
 	}{
-		{"five_hour", "5 horas", doc.FiveHour},
-		{"seven_day", "Semanal", doc.SevenDay},
+		{"five_hour", "5 hours", doc.FiveHour},
+		{"seven_day", "Weekly", doc.SevenDay},
 		{"seven_day_opus", "Weekly · Opus", doc.SevenDayOpus},
 		{"seven_day_sonnet", "Weekly · Sonnet", doc.SevenDaySonnet},
 		{"seven_day_oauth_apps", "Weekly · apps", doc.SevenDayOAuthApps},

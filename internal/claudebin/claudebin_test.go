@@ -61,8 +61,8 @@ func TestPathPrefersOverride(t *testing.T) {
 func TestPathIgnoresBrokenOverride(t *testing.T) {
 	reset()
 	t.Cleanup(reset)
-	t.Setenv(EnvOverride, filepath.Join(t.TempDir(), "nao-existe"))
-	if got := Path(); strings.HasSuffix(got, "nao-existe") {
+	t.Setenv(EnvOverride, filepath.Join(t.TempDir(), "missing"))
+	if got := Path(); strings.HasSuffix(got, "missing") {
 		t.Fatalf("a broken override was used: %q", got)
 	}
 }

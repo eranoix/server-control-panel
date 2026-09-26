@@ -360,7 +360,7 @@ func (s *Service) IssueVideocallGuestToken(displayName, roomID string, ttl time.
 	_, _ = rand.Read(jb)
 	jti = hex.EncodeToString(jb)
 	if displayName == "" {
-		displayName = "Convidado"
+		displayName = "Guest"
 	}
 	claims := jwt.MapClaims{
 		"sub":     "guest:" + displayName, // the prefix tells it apart from a real user

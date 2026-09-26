@@ -5,7 +5,7 @@ import (
 )
 
 func newTestService() *Service {
-	return New("test-secret-nao-usar-em-producao", nil)
+	return New("test-secret-do-not-use-in-production", nil)
 }
 
 // Round-trip: IssueWebAuthnRegToken -> VerifyWebAuthnRegToken returns the

@@ -40,7 +40,7 @@ func TestUpdateIssueOmitsIssueTypeWhenNil(t *testing.T) {
 	})
 	// IssueType nil but some other field present → PUT without the issuetype key.
 	if err := c.UpdateIssue(context.Background(), "X-1", UpdateIssueRequest{
-		Summary: strptr("só o summary"),
+		Summary: strptr("only the summary"),
 	}); err != nil {
 		t.Fatal(err)
 	}

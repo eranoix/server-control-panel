@@ -13,7 +13,7 @@ type Template struct {
 	Description string    `json:"description"`
 	Category    string    `json:"category"`  // db | cache | storage | monitoring | analytics | tool
 	Web         bool      `json:"web"`       // true = has an HTTP UI (an nginx proxy makes sense)
-	Port        int       `json:"port"`      // porta host sugerida (0 = escolher livre)
+	Port        int       `json:"port"`      // suggested host port (0 = pick a free one)
 	Compose     string    `json:"compose"`   // contents of the docker-compose.yml
 	EnvHints    []EnvHint `json:"env_hints"` // vars the user usually wants to set
 }

@@ -21,7 +21,7 @@ import (
 //	 "turn:tunnel.example.com:3478?transport=tcp",
 //	 "stun:stun.l.google.com:19302"]
 //
-// The Google STUN entry is gratuitous public infra; coturn is the actual
+// The Google STUN entry is free public infrastructure; coturn is the actual
 // fallback. Empty TURNConfig means TURN disabled — calls work P2P-only and
 // fail behind symmetric NAT. Used in dev / single-network demos.
 type TURNConfig struct {

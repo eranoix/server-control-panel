@@ -85,7 +85,7 @@ func LoadSeeds(dataDir string) ([]Node, error) {
 		if s.Transport == TransportAgent && s.Address == "" {
 			// A transport that requires active polling, with no address, is a
 			// node that will never be observed, presented as though it were.
-			return nil, fmt.Errorf("seeds: %s, entry %d: node %q with transport agente requires address", path, i, s.ID)
+			return nil, fmt.Errorf("seeds: %s, entry %d: node %q with the agent transport requires an address", path, i, s.ID)
 		}
 	}
 	return seeds, nil

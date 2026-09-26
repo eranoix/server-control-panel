@@ -54,7 +54,7 @@ func validHost(s string) bool {
 type SSLCheckArgs struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port,omitempty"`      // default 443
-	WarnDays int    `json:"warn_days,omitempty"` // falha se faltam < N dias (default 14)
+	WarnDays int    `json:"warn_days,omitempty"` // fail when fewer than N days remain (default 14)
 }
 
 type SSLCheckRunner struct{}
@@ -151,7 +151,7 @@ func (DiskCheckRunner) Run(ctx context.Context, args json.RawMessage, logW io.Wr
 	}
 	usedPct := int((total - avail) * 100 / total)
 	gib := func(b uint64) string { return fmt.Sprintf("%.1f GiB", float64(b)/(1<<30)) }
-	step("checando " + path)
+	step("checking " + path)
 	fmt.Fprintf(logW, "%s: used %s of %s (%d%%) — free %s\n", path, gib(total-avail), gib(total), usedPct, gib(avail))
 	progress(100)
 	if usedPct >= threshold {
@@ -239,7 +239,7 @@ func (IntegrityCheckRunner) Run(ctx context.Context, _ json.RawMessage, logW io.
 
 type TrivyScanArgs struct {
 	Scope    string `json:"scope"`              // "image" | "fs"
-	Target   string `json:"target"`             // ref da imagem ou caminho
+	Target   string `json:"target"`             // image ref or path
 	Severity string `json:"severity,omitempty"` // ex.: "HIGH,CRITICAL"
 }
 
@@ -325,7 +325,7 @@ func (AuditReportRunner) Run(ctx context.Context, _ json.RawMessage, logW io.Wri
 		}
 		cmd := exec.CommandContext(ctx, bin, a...)
 		if err := streamCommand(ctx, cmd, logW, nil); err != nil {
-			fmt.Fprintf(logW, "(%s retornou: %v)\n", bin, err)
+			fmt.Fprintf(logW, "(%s returned: %v)\n", bin, err)
 		}
 	}
 	step("collecting the audit snapshot")
@@ -367,7 +367,7 @@ func (CleanupRunner) Run(ctx context.Context, args json.RawMessage, logW io.Writ
 	default:
 		return errors.New("scope must be apt_cache, journal or tmp")
 	}
-	step("limpando " + a.Scope)
+	step("cleaning " + a.Scope)
 	fmt.Fprintln(logW, "$ "+strings.Join(cmd.Args, " "))
 	return streamCommand(ctx, cmd, logW, progress)
 }

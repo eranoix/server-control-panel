@@ -192,7 +192,7 @@ func TestMigrateAppsDetectByShape(t *testing.T) {
 		for _, body := range []string{
 			`{"schema_version":3,"projects":[]}`,
 			`{"apps":[]}`,
-			`"uma string solta"`,
+			`"a stray string"`,
 			`{`,
 		} {
 			dataDir := writeRawApps(t, body)
@@ -296,7 +296,7 @@ func TestMigrateAppsConcurrentLock(t *testing.T) {
 	sc := bufio.NewScanner(stdout)
 	locked := false
 	for sc.Scan() {
-		if strings.Contains(sc.Text(), "TRAVADO") {
+		if strings.Contains(sc.Text(), "LOCKED") {
 			locked = true
 			break
 		}
@@ -345,7 +345,7 @@ func TestHelperHoldsLock(t *testing.T) {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		t.Fatalf("flock: %v", err)
 	}
-	fmt.Println("TRAVADO")
+	fmt.Println("LOCKED")
 	// Hold on until the parent closes stdin.
 	_, _ = io.Copy(io.Discard, os.Stdin)
 	_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
@@ -389,11 +389,11 @@ func TestGuardCLIRejectsShapes(t *testing.T) {
 		body    string
 		accepts bool
 	}{
-		{"v2-corrente", `{"schema_version":2,"projects":[],"deployments":[]}`, true},
+		{"v2-current", `{"schema_version":2,"projects":[],"deployments":[]}`, true},
 		{"v1-array", `[{"name":"hello"}]`, false},
-		{"versao-futura", `{"schema_version":3,"projects":[]}`, false},
-		{"lixo", `{`, false},
-		{"vazio", ``, false},
+		{"future-version", `{"schema_version":3,"projects":[]}`, false},
+		{"garbage", `{`, false},
+		{"empty", ``, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -435,7 +435,7 @@ func TestGuardCLIRejectsShapes(t *testing.T) {
 //
 // Skipped by default — proving a migration with real data demands the real data:
 //
-//	DEPLOY_ENSAIO_APPS=/caminho/para/apps.json go test ./internal/deploy/ \
+//	DEPLOY_ENSAIO_APPS=/path/to/apps.json go test ./internal/deploy/ \
 //	    -run TestMigrateAppsDryRunWithRealFile -v
 //
 // The file it points at is NOT modified: the test works on a copy.

@@ -42,8 +42,8 @@ type Hypervisor struct {
 	Node string `json:"node"` // discovered name ("pve"); never written by hand
 
 	Version   Observed[string]     `json:"version"`    // "pve-manager/9.2.2/…"
-	Uptime    Observed[int64]      `json:"uptime"`     // segundos
-	Load      Observed[[3]float64] `json:"load"`       // 1, 5 e 15 minutos
+	Uptime    Observed[int64]      `json:"uptime"`     // seconds
+	Load      Observed[[3]float64] `json:"load"`       // 1, 5 and 15 minutes
 	MemTotal  Observed[int64]      `json:"mem_total"`  // bytes
 	MemUsed   Observed[int64]      `json:"mem_used"`   // bytes
 	SwapTotal Observed[int64]      `json:"swap_total"` // bytes

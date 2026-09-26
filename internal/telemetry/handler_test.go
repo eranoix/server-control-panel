@@ -27,7 +27,7 @@ func newHandler(t *testing.T) (http.HandlerFunc, string) {
 	return Handler(s, "vps-manager"), filepath.Join(dir, fixedDay+".jsonl")
 }
 
-// conteudo returns the day's file, or "" if it never even came into existence.
+// content returns the day's file, or "" if it never even came into existence.
 func content(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -215,7 +215,7 @@ func TestHandler(t *testing.T) {
 	t.Run("unknown-screen-becomes-unknown", func(t *testing.T) {
 		h, p := newHandler(t)
 		rec := post(h, "application/json",
-			`{"v":1,"s":"9f3a1c72","e":[{"screen":"nao-existe-essa-tela","origin":"nav"}]}`)
+			`{"v":1,"s":"9f3a1c72","e":[{"screen":"no-such-screen","origin":"nav"}]}`)
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("expected=204 observed=%d", rec.Code)
 		}
@@ -224,9 +224,9 @@ func TestHandler(t *testing.T) {
 			t.Fatalf("expected=1 observed=%d lines", n)
 		}
 		if got := strings.Count(c, `"screen":"unknown"`); got != 1 {
-			t.Errorf(`"screen":"unknown": esperado=1 observado=%d; conteúdo=%q`, got, c)
+			t.Errorf(`"screen":"unknown": expected=1 observed=%d; content=%q`, got, c)
 		}
-		if strings.Contains(c, "nao-existe-essa-tela") {
+		if strings.Contains(c, "no-such-screen") {
 			t.Errorf("the raw id was written — log poisoning: %q", c)
 		}
 	})
@@ -236,7 +236,7 @@ func TestHandler(t *testing.T) {
 		for _, sc := range []string{
 			`<script>alert(1)</script>`,
 			`../../etc/passwd`,
-			`dev.codigo","injetado":"sim`,
+			`dev.codigo","injected":"yes`,
 			`DOCKER.CONTAINERS`,
 		} {
 			h, p := newHandler(t)
@@ -250,7 +250,7 @@ func TestHandler(t *testing.T) {
 			}
 			c := content(t, p)
 			if strings.Contains(c, "script") || strings.Contains(c, "passwd") ||
-				strings.Contains(c, "injetado") || strings.Contains(c, "DOCKER") {
+				strings.Contains(c, "injected") || strings.Contains(c, "DOCKER") {
 				t.Errorf("screen=%q leaked into the file: %q", sc, c)
 			}
 			if n := countLines(c); n != 1 {
@@ -324,7 +324,7 @@ func TestHandler(t *testing.T) {
 	// 9. Body that is not JSON → 400, no panic.
 	t.Run("body-not-json", func(t *testing.T) {
 		for _, body := range []string{
-			"", "isso nao e json", "[]", "null", `{"v":1,"s":`, "\x00\x01\x02",
+			"", "this is not json", "[]", "null", `{"v":1,"s":`, "\x00\x01\x02",
 		} {
 			h, p := newHandler(t)
 			rec := post(h, "application/json", body)

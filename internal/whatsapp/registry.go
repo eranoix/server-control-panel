@@ -92,7 +92,7 @@ func (r *Registry) load() error {
 	}
 	for _, e := range raw.Entries {
 		if e.User == "" || e.Port < PortRangeMin || e.Port > PortRangeMax {
-			continue // entradas corrompidas viram lixo, ignoradas
+			continue // corrupt entries are skipped
 		}
 		r.entries[e.User] = e.Port
 	}

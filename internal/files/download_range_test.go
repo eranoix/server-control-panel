@@ -34,7 +34,7 @@ func requestDownload(t *testing.T, path string, header map[string]string) *httpt
 func testFile(t *testing.T) (string, []byte) {
 	t.Helper()
 	content := bytes.Repeat([]byte("0123456789"), 100) // 1000 bytes
-	path := filepath.Join(t.TempDir(), "grande.bin")
+	path := filepath.Join(t.TempDir(), "large.bin")
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestDownload_NoRange_200Full(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); got != "application/octet-stream" {
 		t.Fatalf("Content-Type = %q — it has to force a download, not let the browser guess", got)
 	}
-	if got := rec.Header().Get("Content-Disposition"); got != `attachment; filename="grande.bin"` {
+	if got := rec.Header().Get("Content-Disposition"); got != `attachment; filename="large.bin"` {
 		t.Fatalf("Content-Disposition = %q", got)
 	}
 }
@@ -113,14 +113,14 @@ func TestDownload_ErrorsPreserved(t *testing.T) {
 		path   string
 		status int
 	}{
-		"relativo": {"nao/absoluto", http.StatusBadRequest},
+		"relative": {"not/absolute", http.StatusBadRequest},
 		// The denylist (not a confined root) is this handler's gate: the file
 		// browser serves an arbitrary absolute path by design, so there is no
 		// "escaping the root" to test here — only that the high-value paths stay
 		// refused.
-		"denylist":    {"/etc/shadow", http.StatusBadRequest},
-		"diretorio":   {dir, http.StatusBadRequest},
-		"inexistente": {filepath.Join(dir, "nao-existe.bin"), http.StatusNotFound},
+		"denylist":  {"/etc/shadow", http.StatusBadRequest},
+		"directory": {dir, http.StatusBadRequest},
+		"missing":   {filepath.Join(dir, "missing.bin"), http.StatusNotFound},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

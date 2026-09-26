@@ -19,14 +19,14 @@ import (
 	"strings"
 )
 
-// Processo is a running `claude` and the version it actually loaded.
+// Process is a running `claude` and the version it actually loaded.
 type Process struct {
 	PID     int    `json:"pid"`
 	Version string `json:"versao"`
 	Session string `json:"sessao,omitempty"` // owning session, when it can be known
 	Current bool   `json:"atual"`            // already on the installed version?
 	Cwd     string `json:"cwd,omitempty"`    // helps tell which is which
-	// Alvo says HOW to restart this process when it does not belong to a panel
+	// Target says HOW to restart this process when it does not belong to a panel
 	// session. "" = an ordinary session (type into the pane); "recovery" = the
 	// Claude in the recovery container, which restarts through the container.
 	Target string `json:"alvo,omitempty"`
@@ -35,7 +35,7 @@ type Process struct {
 	Ref string `json:"ref,omitempty"`
 }
 
-// Estado is the complete answer: what is installed and who has not taken it yet.
+// State is the complete answer: what is installed and who has not taken it yet.
 type State struct {
 	Installed string    `json:"instalada"`
 	Processes []Process `json:"processos"`
@@ -76,7 +76,7 @@ func versionFromPath(p string) string {
 	return base
 }
 
-// Levantar sweeps the processes and returns the state. It never fails: on a
+// Detect sweeps the processes and returns the state. It never fails: on a
 // screen that exists to inform, an error reading /proc counts as "don't know",
 // not as a visible error.
 func Detect(sessionOwner func(pid int) string) State {
@@ -196,7 +196,7 @@ func ParentOf(pid int) int {
 }
 
 // AncestorIn climbs the process tree from pid and returns the first ancestor
-// present in `alvos`, or 0. The hop ceiling avoids an infinite loop if /proc
+// present in `targets`, or 0. The hop ceiling avoids an infinite loop if /proc
 // returns something inconsistent (which has happened with a recycled PID).
 func AncestorIn(pid int, targets map[int]bool) int {
 	for hop := 0; hop < 32 && pid > 1; hop++ {
@@ -212,7 +212,7 @@ func AncestorIn(pid int, targets map[int]bool) int {
 	return 0
 }
 
-// AncestorByArgv climbs the tree from pid and returns the value in `marcas`
+// AncestorByArgv climbs the tree from pid and returns the value in `marks`
 // whose KEY appears in the /proc/<pid>/cmdline of some ancestor (or of pid
 // itself). "" when none matches.
 //
@@ -256,15 +256,12 @@ func AncestorByArgv(pid int, marks map[string]string) string {
 // DetectExternal sweeps the `claude` processes running in ANOTHER mount
 // namespace — in practice, containers — that carry `markerEnv` in their environ.
 //
-// It exists because Levantar discards those processes on purpose (sameMount), and
-// the reason for discarding them still holds: the container has its OWN CLI
-// installation, so comparing it against the host's version is apples to oranges —
-// that is exactly how the first version of that code called a Claude "behind" when
-// it was NEWER than the host. Here the reference is ITS OWN installation: `Ref`
-// comes from the CLI symlink inside its namespace, reachable from the host through
-// /proc/<pid>/root without paying a `docker exec` every time the panel opens.
+// Detect skips these on purpose: a container has its OWN CLI installation, so
+// comparing it with the host's version would be wrong. Here the reference is the
+// container's own installation: `Ref` comes from the CLI symlink inside its
+// namespace, read through /proc/<pid>/root instead of a `docker exec`.
 //
-// `alvo` travels to the front end to say HOW to restart (see Processo.Alvo).
+// `target` tells the front end HOW to restart (see Process.Target).
 func DetectExternal(markerEnv, target string) []Process {
 	outside := []Process{}
 	if markerEnv == "" {

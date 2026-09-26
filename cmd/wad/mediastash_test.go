@@ -17,7 +17,7 @@ func sampleImageMsg() *waE2E.Message {
 		DirectPath:    proto.String("/o1/v/t24/f2/m231/AQPexampleDirectPath"),
 		MediaKey:      []byte("0123456789abcdef0123456789abcdef"),
 		Mimetype:      proto.String("image/jpeg"),
-		Caption:       proto.String("Chapéu da festa 99,99"),
+		Caption:       proto.String("Party hat 99.99"),
 		FileEncSHA256: []byte("encsha256_32_bytes_padding_here!"),
 		FileSHA256:    []byte("plainsha256_32_bytes_padding_okay"),
 		FileLength:    proto.Uint64(252122),
@@ -26,7 +26,7 @@ func sampleImageMsg() *waE2E.Message {
 
 // TestMediaStashRoundTrip is the core proof for the bug fix: a media message's
 // download keys, once persisted, reload identically from disk — so a manual
-// "Baixar" works after the in-memory stash is wiped by a daemon restart.
+// "Download" works after the in-memory stash is wiped by a daemon restart.
 func TestMediaStashRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	s := &session{dbPath: filepath.Join(dir, "session.db")}

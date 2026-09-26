@@ -50,7 +50,7 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
-// Close sinaliza o flusher pra parar e faz flush final.
+// Close tells the flusher to stop and does a final flush.
 func (s *Store) Close() error {
 	if s == nil {
 		return nil

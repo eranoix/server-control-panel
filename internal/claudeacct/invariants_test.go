@@ -58,15 +58,15 @@ func TestMetricInvariantsDoNotMatchInComments(t *testing.T) {
 			t.Errorf("%s: invariant %q matches nowhere — an empty guard", file, fallback)
 		}
 		if inComment > 0 {
-			t.Errorf("%s: invariante %q aparece em %d comentário(s). Apagar o código deixaria o "+
-				"comentário satisfazendo o grep, e o deploy passaria. Ancore em algo que só "+
-				"exista como código, ou tire o literal do comentário.", file, fallback, inComment)
+			t.Errorf("%s: invariant %q appears in %d comment(s). Deleting the code would leave the "+
+				"comment satisfying the grep and the deploy would pass. Anchor on something that only "+
+				"exists as code, or remove the literal from the comment.", file, fallback, inComment)
 		}
 	}
 	// Anti-vacuity: if the invariants get renamed and this loop stops matching
 	// anything, the test would go green without having verified a thing.
 	if checked < 4 {
-		t.Errorf("só %d invariantes de métrica verificados; esperava ao menos 4 "+
+		t.Errorf("only %d metric invariants checked; expected at least 4 "+
 			"(EvalSymlinks, IdentityMismatch, RecordAttrib, Unattributed)", checked)
 	}
 }

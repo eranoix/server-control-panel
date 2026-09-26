@@ -42,7 +42,7 @@ func TestFCMSender_SendToUser_PostsWellFormedMessageAndBearer(t *testing.T) {
 		baseURL: srv.URL,
 	}
 
-	n := s.SendToUser(context.Background(), "sam", []byte(`{"title":"oi","body":"tudo bem"}`), SendOptions{Priority: "high"}, nil)
+	n := s.SendToUser(context.Background(), "sam", []byte(`{"title":"oi","body":"all good"}`), SendOptions{Priority: "high"}, nil)
 	if n != 1 {
 		t.Fatalf("delivered = %d, want 1", n)
 	}
@@ -65,8 +65,8 @@ func TestFCMSender_SendToUser_PostsWellFormedMessageAndBearer(t *testing.T) {
 		t.Fatalf("message.android.priority = %#v, want high", android["priority"])
 	}
 	data, _ := msg["data"].(map[string]any)
-	if data == nil || data["title"] != "oi" || data["body"] != "tudo bem" {
-		t.Fatalf("message.data = %#v, want {title:oi body:tudo bem}", data)
+	if data == nil || data["title"] != "oi" || data["body"] != "all good" {
+		t.Fatalf("message.data = %#v, want {title:oi body:all good}", data)
 	}
 }
 

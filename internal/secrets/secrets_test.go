@@ -256,13 +256,13 @@ func TestLargeValueRoundTrips(t *testing.T) {
 
 // 🔴 TestReloadIfChanged pins a defect MEASURED in production: Get() reads an
 // in-memory map loaded once at Open, so a secret written by ANOTHER
-// process (`vpsmctl secrets set`, `bin/pve-credencial --apply`) stayed
+// process (`vpsmctl secrets set`, a credential-applying tool) stayed
 // invisible to the panel until the next restart. The revocation drill
 // recreated a node's token and the panel kept saying "revoked" with the key already
 // back in the vault and on the hypervisor.
 func TestReloadIfChanged(t *testing.T) {
 	path := vaultPath(t)
-	const pp = "senha-de-teste"
+	const pp = "test-password"
 
 	panel, err := Open(path, pp)
 	if err != nil {
@@ -282,12 +282,12 @@ func TestReloadIfChanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := other.Set("externo", "vindo-de-fora"); err != nil {
+	if err := other.Set("external", "from-outside"); err != nil {
 		t.Fatal(err)
 	}
 
 	// The defect: without a reload, the panel cannot see it.
-	if _, ok := panel.Get("externo"); ok {
+	if _, ok := panel.Get("external"); ok {
 		t.Fatal("the test does not reproduce the defect — the key showed up with no reload")
 	}
 
@@ -298,7 +298,7 @@ func TestReloadIfChanged(t *testing.T) {
 	if !changed {
 		t.Fatal("an external change was not detected")
 	}
-	if v, ok := panel.Get("externo"); !ok || v != "vindo-de-fora" {
+	if v, ok := panel.Get("external"); !ok || v != "from-outside" {
 		t.Fatalf("after the reload: (%q, %v), want the external key", v, ok)
 	}
 	// And what was already there is not lost.

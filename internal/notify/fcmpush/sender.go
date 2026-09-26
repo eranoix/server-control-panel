@@ -126,7 +126,7 @@ func (s *Sender) deliver(ctx context.Context, tokens []DeviceToken, allowDevice 
 	delivered := 0
 	for _, t := range tokens {
 		if allowDevice != nil && !allowDevice(t.DeviceID) {
-			continue // dispositivo silenciado pelo dono
+			continue // device muted by its owner
 		}
 		body, err := bodyFor(t.Token)
 		if err != nil {

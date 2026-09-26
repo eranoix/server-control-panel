@@ -122,7 +122,7 @@ func TestAnnounceJoin_FansOutToBothPushAndFCM(t *testing.T) {
 	}
 	defer s.Close()
 
-	room, err := s.CreateRoom("sam", "Sala")
+	room, err := s.CreateRoom("sam", "Room")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestAnnounceJoin_FCMNilDoesNotPanic(t *testing.T) {
 		t.Fatal("Options{} without FCM must leave Service.FCM nil")
 	}
 
-	room, err := s.CreateRoom("sam", "Sala")
+	room, err := s.CreateRoom("sam", "Room")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestBroadcastCallEnded_SendsFCMCancel(t *testing.T) {
 	}
 	defer s.Close()
 
-	room, err := s.CreateRoom("sam", "Sala")
+	room, err := s.CreateRoom("sam", "Room")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -117,7 +117,7 @@ func (s *session) connect(ctx context.Context) error {
 // unpaired. whatsmeow emits ~6 rotating codes over ~150s and then closes the
 // channel with a "timeout", disconnecting the client. The previous version
 // stopped at that point, so s.qrCode froze on the last (already-expired) code
-// and every scan after the window failed ("erro ao parear"). It also pushed a
+// and every scan after the window failed with a pairing error. It also pushed a
 // status only on the FIRST code (setStatus is change-gated), so once the daemon
 // rotated, the UI kept showing a stale code. This version force-pushes on every
 // rotation (the vps-manager re-pulls GetQR on each SCAN_QR_CODE event, so the
@@ -559,7 +559,7 @@ type mediaRecoveredOut struct {
 // media message, RECOVERING the ability to download old images/videos whose key
 // the daemon had lost (the in-memory stash is wiped on restart). For each
 // recovered media it tells the server (media.recovered) to enqueue the download
-// so the bubble swaps "Baixar" for the live image.
+// so the bubble swaps the "Download" button for the live image.
 func (s *session) onHistorySync(evt *events.HistorySync) {
 	if evt == nil || evt.Data == nil {
 		return
@@ -664,7 +664,7 @@ func (s *session) stashMsg(id string, m *waE2E.Message, sender string, fromMe bo
 	s.mediaMu.Unlock()
 
 	// Persist the media keys OUTSIDE the lock (disk I/O must not serialise inbound
-	// handling). This makes the manual "Baixar" durable across daemon restarts —
+	// handling). This makes the manual "Download" durable across daemon restarts —
 	// the in-memory stash above is wiped on every restart.
 	if hasDownloadableMedia(m) {
 		s.persistStashedMedia(id, sender, fromMe, m)

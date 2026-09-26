@@ -84,7 +84,7 @@ type Service struct {
 	// WhatsApp sender — bound to internal/whatsapp.Manager.ForUser(user).Client.SendText.
 	// user is the room's owner (multi-tenant: the invite goes out over HIS
 	// WhatsApp, not another profile's). nil when no user has WAHA configured;
-	// the UI then hides the "Enviar via WhatsApp" CTA.
+	// the UI then hides the "Send via WhatsApp" CTA.
 	WhatsAppSender func(user, jid, text string) error
 }
 
@@ -192,7 +192,7 @@ func Open(opt Options) (*Service, error) {
 	_ = s.loadHistory() // tolerant: empty if missing or corrupt
 	// Push notifications (off-app): VAPID keys generated lazily on first
 	// Open. Failure to init is non-fatal — the feature just stays unavailable
-	// (UI hides the "Receber off-app" toggle when Push is nil). If the
+	// (UI hides the off-app notifications toggle when Push is nil). If the
 	// caller injected a shared store (Options.Push), reuse it instead of
 	// opening a second one — a second Open() here would generate its own
 	// VAPID keypair and orphan every subscription already tied to the

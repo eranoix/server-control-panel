@@ -338,7 +338,7 @@ func (m *Manager) provisionWad(u scope.User) error {
 	hmacSec, okHmac := uv.Get("waha_hmac_secret")
 	if !okHmac || hmacSec == "" {
 		return fmt.Errorf("waha_hmac_secret missing/empty in the vault of %s — "+
-			"escrever meta.json sem ele faria o daemon perder toda mensagem recebida", u)
+			"writing meta.json without it would make the daemon lose every incoming message", u)
 	}
 	apiKey, ok := uv.Get("wad_api_key")
 	if !ok || apiKey == "" {

@@ -153,7 +153,7 @@ func TestUnreportedDiskNeverBecomesZero(t *testing.T) {
 // which the panel was blind.
 func TestNetworkRateDoesNotSpanGap(t *testing.T) {
 	base := resourcesWithCounters()
-	// 🔴 The starting value is COPIED: `f.recursos` and `base` are the same slice,
+	// 🔴 The starting value is COPIED: `f.resources` and `base` are the same slice,
 	// and reading `base[0].NetIn` after the first mutation would read the value
 	// that has already changed.
 	netIn0 := base[0].NetIn
@@ -220,7 +220,7 @@ func TestDiscoveryFailureKeepsCounters(t *testing.T) {
 
 	rel.advance(5 * time.Minute)
 	f.mu.Lock()
-	f.failure = errors.New("hipervisor mudo")
+	f.failure = errors.New("hypervisor silent")
 	f.mu.Unlock()
 	if err := p.tick(context.Background()); err == nil {
 		t.Fatal("the tick should have failed")

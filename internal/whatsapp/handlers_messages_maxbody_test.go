@@ -22,11 +22,11 @@ func TestIsPanelSendFileUpload_MatchesOnlyMultipartVariant(t *testing.T) {
 		ct     string
 		want   bool
 	}{
-		{"upload de midia", http.MethodPost, "/api/whatsapp/chats/5511999999999@s.whatsapp.net/messages", "multipart/form-data; boundary=x", true},
-		{"texto simples nao casa", http.MethodPost, "/api/whatsapp/chats/5511999999999@s.whatsapp.net/messages", "application/json", false},
-		{"GET nao casa", http.MethodGet, "/api/whatsapp/chats/5511999999999@s.whatsapp.net/messages", "multipart/form-data; boundary=x", false},
-		{"read nao casa", http.MethodPost, "/api/whatsapp/chats/5511999999999@s.whatsapp.net/read", "multipart/form-data; boundary=x", false},
-		{"outra rota nao casa", http.MethodPost, "/api/whatsapp/chats/sync", "multipart/form-data; boundary=x", false},
+		{"media upload", http.MethodPost, "/api/whatsapp/chats/5511999999999@s.whatsapp.net/messages", "multipart/form-data; boundary=x", true},
+		{"plain text does not match", http.MethodPost, "/api/whatsapp/chats/5511999999999@s.whatsapp.net/messages", "application/json", false},
+		{"GET does not match", http.MethodGet, "/api/whatsapp/chats/5511999999999@s.whatsapp.net/messages", "multipart/form-data; boundary=x", false},
+		{"read does not match", http.MethodPost, "/api/whatsapp/chats/5511999999999@s.whatsapp.net/read", "multipart/form-data; boundary=x", false},
+		{"other route does not match", http.MethodPost, "/api/whatsapp/chats/sync", "multipart/form-data; boundary=x", false},
 	}
 	for _, c := range cases {
 		req := httptest.NewRequest(c.method, c.path, nil)

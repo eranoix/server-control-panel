@@ -2,7 +2,7 @@
 //
 // AdGuard Home (http://127.0.0.1:3000 by default) is a self-hosted DNS filter
 // that blocks ads/trackers/telemetry. It runs on the host in Docker, published
-// only on loopback. VPSM proxies its control surface server-side (Segurança →
+// only on loopback. VPSM proxies its control surface server-side (Security →
 // AdGuard) so the admin credentials never reach the browser and the panel is
 // gated by VPSM's own auth instead of being exposed publicly.
 //

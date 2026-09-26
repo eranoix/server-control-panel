@@ -14,7 +14,7 @@ import (
 // asserted here.
 func service(t *testing.T) *Service {
 	t.Helper()
-	return New("segredo-de-teste-com-tamanho-suficiente-1234", nil)
+	return New("test-secret-with-enough-length-1234", nil)
 }
 
 func TestRenewPreservesLoginInstant(t *testing.T) {
@@ -23,7 +23,7 @@ func TestRenewPreservesLoginInstant(t *testing.T) {
 
 	tok, err := s.IssueRecoveryTokenFrom("sam", 30*time.Minute, login)
 	if err != nil {
-		t.Fatalf("emitir: %v", err)
+		t.Fatalf("issue: %v", err)
 	}
 	// Renew twice, as would happen over a long working session.
 	for i := 0; i < 2; i++ {
@@ -33,7 +33,7 @@ func TestRenewPreservesLoginInstant(t *testing.T) {
 		}
 		tok, err = s.IssueRecoveryTokenFrom("sam", 30*time.Minute, start)
 		if err != nil {
-			t.Fatalf("renovar: %v", err)
+			t.Fatalf("renew: %v", err)
 		}
 	}
 
@@ -55,11 +55,11 @@ func TestRenewedTokenStaysRecovery(t *testing.T) {
 	s := service(t)
 	tok, err := s.IssueRecoveryTokenFrom("sam", 30*time.Minute, time.Now())
 	if err != nil {
-		t.Fatalf("emitir: %v", err)
+		t.Fatalf("issue: %v", err)
 	}
 	user, err := s.VerifyRecoveryToken(tok)
 	if err != nil || user != "sam" {
-		t.Fatalf("verificar: user=%q err=%v", user, err)
+		t.Fatalf("verify: user=%q err=%v", user, err)
 	}
 	// And it must not pass as a normal session token: Parse() is what the
 	// panel's middleware uses, and it rejects kind != "" and != "session".
@@ -76,7 +76,7 @@ func TestOldTokenWithoutStartStillWorks(t *testing.T) {
 	s := service(t)
 	tok, err := s.IssueRecoveryToken("sam", 30*time.Minute)
 	if err != nil {
-		t.Fatalf("emitir: %v", err)
+		t.Fatalf("issue: %v", err)
 	}
 	start, err := s.RecoveryTokenStart(tok)
 	if err != nil {
@@ -93,7 +93,7 @@ func TestExpiredTokenCannotRenew(t *testing.T) {
 	s := service(t)
 	tok, err := s.IssueRecoveryTokenFrom("sam", -time.Minute, time.Now().Add(-time.Hour))
 	if err != nil {
-		t.Fatalf("emitir: %v", err)
+		t.Fatalf("issue: %v", err)
 	}
 	if _, err := s.VerifyRecoveryToken(tok); err == nil {
 		t.Error("expired token was accepted")

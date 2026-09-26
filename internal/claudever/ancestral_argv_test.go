@@ -41,19 +41,19 @@ type ent = struct {
 // "Restart" button is born disabled on every row. The anchor that works is the
 // socket path in the master's argv. Tree identical to production's:
 //
-//	claude  ->  bash -l  ->  dtach -n /…/session-sox/Servidor.sock -E -z bash -l
+//	claude  ->  bash -l  ->  dtach -n /…/session-sox/Server.sock -E -z bash -l
 func TestAncestorByArgvFindsSessionViaMasterSocket(t *testing.T) {
 	buildProc(t,
 		ent{300, 301, "claude --continue"},
 		ent{301, 302, "/usr/bin/bash -l"},
-		ent{302, 1, "/usr/bin/dtach -n /opt/panel/data/session-sox/Servidor.sock -E -z /usr/bin/bash -l"},
+		ent{302, 1, "/usr/bin/dtach -n /opt/panel/data/session-sox/Server.sock -E -z /usr/bin/bash -l"},
 	)
 	marks := map[string]string{
-		"/opt/panel/data/session-sox/Servidor.sock": "Servidor",
-		"/opt/panel/data/session-sox/Css.sock":      "Css",
+		"/opt/panel/data/session-sox/Server.sock": "Server",
+		"/opt/panel/data/session-sox/Css.sock":    "Css",
 	}
-	if got := AncestorByArgv(300, marks); got != "Servidor" {
-		t.Fatalf("AncestorByArgv = %q, want \"Servidor\"", got)
+	if got := AncestorByArgv(300, marks); got != "Server" {
+		t.Fatalf("AncestorByArgv = %q, want \"Server\"", got)
 	}
 }
 
@@ -63,9 +63,9 @@ func TestAncestorByArgvFindsSessionViaMasterSocket(t *testing.T) {
 func TestAncestorByArgvDoesNotInventOwner(t *testing.T) {
 	buildProc(t,
 		ent{400, 401, "claude --continue"},
-		ent{401, 1, "outro-mux new-session -d -s claude-rc claude --continue"},
+		ent{401, 1, "other-mux new-session -d -s claude-rc claude --continue"},
 	)
-	marks := map[string]string{"/opt/panel/data/session-sox/Servidor.sock": "Servidor"}
+	marks := map[string]string{"/opt/panel/data/session-sox/Server.sock": "Server"}
 	if got := AncestorByArgv(400, marks); got != "" {
 		t.Fatalf("AncestorByArgv = %q, wanted empty", got)
 	}
@@ -95,7 +95,7 @@ func TestAncestorByArgvDoesNotLoop(t *testing.T) {
 		ent{701, 700, "bash"},
 	)
 	done := make(chan string, 1)
-	go func() { done <- AncestorByArgv(700, map[string]string{"/nao/casa.sock": "x"}) }()
+	go func() { done <- AncestorByArgv(700, map[string]string{"/no/match.sock": "x"}) }()
 	select {
 	case got := <-done:
 		if got != "" {

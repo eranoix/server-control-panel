@@ -16,12 +16,12 @@ func TestValidID(t *testing.T) {
 	invalid := []string{"", "../etc/passwd", "1781/../x", "abc", "12a", "1.2", "-1", "12 ", " 12"}
 	for _, s := range valid {
 		if !ValidID(s) {
-			t.Errorf("IDValido refused the valid id %q", s)
+			t.Errorf("ValidID refused the valid id %q", s)
 		}
 	}
 	for _, s := range invalid {
 		if ValidID(s) {
-			t.Errorf("IDValido accepted the unsafe id %q", s)
+			t.Errorf("ValidID accepted the unsafe id %q", s)
 		}
 	}
 }
@@ -32,7 +32,7 @@ func backup(id string, created int64, origin string, sessions ...string) ptysvc.
 		bk.Sessions = append(bk.Sessions, ptysvc.SessionSnapshot{
 			Name: name,
 			Windows: []ptysvc.WindowSnapshot{{
-				Panes: []ptysvc.PaneSnapshot{{Scrollback: "linha um\nlinha dois\n"}},
+				Panes: []ptysvc.PaneSnapshot{{Scrollback: "line one\nline two\n"}},
 			}},
 		})
 	}
@@ -79,10 +79,10 @@ func TestOneUsersBackupDoesNotShowForAnother(t *testing.T) {
 	if err := s.Write("sam", backup("100", 100, SourceManual, "web")); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if list := s.List("teste"); len(list) != 0 {
+	if list := s.List("tester"); len(list) != 0 {
 		t.Fatalf("the backup leaked to another user: %d entries", len(list))
 	}
-	if _, err := s.Read("teste", "100"); err == nil {
+	if _, err := s.Read("tester", "100"); err == nil {
 		t.Fatal("a Read from another user should fail")
 	}
 }
@@ -245,10 +245,10 @@ func TestSummaryKeepsPromptWithCommand(t *testing.T) {
 func TestSummaryDoesNotMistakeDollarForPrompt(t *testing.T) {
 	snap := ptysvc.SessionSnapshot{
 		Windows: []ptysvc.WindowSnapshot{{
-			Panes: []ptysvc.PaneSnapshot{{Scrollback: "custo total em US$\n"}},
+			Panes: []ptysvc.PaneSnapshot{{Scrollback: "total cost in US$\n"}},
 		}},
 	}
-	if got := Summary(snap); got != "custo total em US$" {
+	if got := Summary(snap); got != "total cost in US$" {
 		t.Errorf("an ordinary line was discarded as a prompt: %q", got)
 	}
 }
@@ -259,12 +259,12 @@ func TestSummaryPrefersHeadline(t *testing.T) {
 	snap := ptysvc.SessionSnapshot{
 		Windows: []ptysvc.WindowSnapshot{{
 			Panes: []ptysvc.PaneSnapshot{{
-				Scrollback: "※ recap: consertando o teclado do app\n" +
+				Scrollback: "※ recap: fixing the app keyboard\n" +
 					"root@srv:/opt# ls\n",
 			}},
 		}},
 	}
-	if got := Summary(snap); got != "consertando o teclado do app" {
+	if got := Summary(snap); got != "fixing the app keyboard" {
 		t.Errorf("expected the recap headline, got %q", got)
 	}
 }

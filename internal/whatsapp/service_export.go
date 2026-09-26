@@ -82,7 +82,7 @@ func (s *Service) MessagesForDisplay(jid string, opts MessagesQuery) ([]Message,
 		}
 		if needBackfill {
 			backfilling = true
-			s.backfillFromWAHA(jid, limit) // no-op no daemon; mantido p/ backend WAHA
+			s.backfillFromWAHA(jid, limit) // no-op on the daemon; kept for the WAHA backend
 			s.requestHistoryGap(jid, 100)
 			if fresh, ferr := s.Store.LoadMessages(jid, before, limit); ferr == nil {
 				msgs = fresh

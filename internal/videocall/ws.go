@@ -223,7 +223,7 @@ func (s *Service) HandleGuestWS(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 
-	// The user identifier visible to peers: "guest:Esposa". It distinguishes
+	// The user identifier visible to peers: "guest:Alex". It distinguishes
 	// them from a real user (who comes with no prefix).
 	user := "guest:" + displayName
 	// The guest's stable identity = the token's jti. The front end reuses the
@@ -336,8 +336,8 @@ func (s *Service) runWSLoop(conn *websocket.Conn, peer *Peer, user, roomID strin
 			continue
 		}
 		switch msg.Type {
-		// "reset": o cliente que detectou a propria conexao travada (ICE
-		// parado sem candidato local) pede ao outro lado que recrie a dele.
+		// "reset": the client that detected its own connection stalled (ICE
+		// stuck with no local candidate) asks the other side to recreate its own.
 		case "offer", "answer", "ice", "chat", "reset":
 			if msg.To == "" {
 				continue

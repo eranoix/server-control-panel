@@ -55,7 +55,7 @@ func TestNew_Malicious(t *testing.T) {
 		{"colon", "a:b", ErrInvalidChar},
 		{"newline", "a\nb", ErrInvalidChar},
 		{"tab", "a\tb", ErrInvalidChar},
-		{"unicode", "árthur", ErrInvalidChar},
+		{"unicode", "zoë", ErrInvalidChar},
 		{"emoji", "user🦀", ErrInvalidChar},
 		{"too-long", strings.Repeat("a", MaxUsernameLen+1), ErrTooLong},
 		{"way-too-long", strings.Repeat("a", 1000), ErrTooLong},

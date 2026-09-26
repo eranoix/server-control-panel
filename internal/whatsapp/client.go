@@ -314,7 +314,7 @@ func (c *Client) GetQR() (string, error) {
 type wahaChatOverview struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	Picture     string `json:"picture,omitempty"` // URL do CDN do WhatsApp; pode ficar vazio
+	Picture     string `json:"picture,omitempty"` // WhatsApp CDN URL; may be empty
 	IsGroup     bool   `json:"isGroup"`
 	UnreadCount int    `json:"unreadCount"`
 	Archived    bool   `json:"archived"`

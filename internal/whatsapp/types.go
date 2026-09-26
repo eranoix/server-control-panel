@@ -131,7 +131,7 @@ type WSEvent struct {
 	Presence      string   `json:"presence,omitempty"` // available/unavailable/composing/recording
 	LastSeenTS    int64    `json:"last_seen_ts,omitempty"`
 	ReactionFrom  string   `json:"reaction_from,omitempty"`  // JID of whoever reacted
-	ReactionEmoji string   `json:"reaction_emoji,omitempty"` // "" = removida
+	ReactionEmoji string   `json:"reaction_emoji,omitempty"` // "" = removed
 	TS            int64    `json:"ts"`
 }
 
