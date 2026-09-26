@@ -99,20 +99,20 @@ const INIT = `
     const src = ctx.createMediaStreamSource(new MediaStream([track]));
     const an = ctx.createAnalyser(); an.fftSize = 2048; src.connect(an);
     const buf = new Float32Array(an.fftSize);
-    const quadros = [];
+    const frames = [];
     const fim = performance.now() + ms;
     await new Promise((r) => setTimeout(r, 150));
     while (performance.now() < fim) {
       an.getFloatTimeDomainData(buf);
       let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
       const rms = Math.sqrt(s / buf.length);
-      quadros.push(rms > 0 ? 20 * Math.log10(rms) : -120);
+      frames.push(rms > 0 ? 20 * Math.log10(rms) : -120);
       await new Promise((r) => setTimeout(r, 40));
     }
     ctx.close();
-    if (!quadros.length) return -120;
-    quadros.sort((a, b) => a - b);
-    return quadros[Math.floor(quadros.length / 2)];
+    if (!frames.length) return -120;
+    frames.sort((a, b) => a - b);
+    return frames[Math.floor(frames.length / 2)];
   };
   // dB difference between two tracks measured TOGETHER (same AudioContext,
   // same frames): median of (b - a) per frame. An underrun hits both at once

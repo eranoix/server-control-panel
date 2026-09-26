@@ -142,7 +142,7 @@
         // Remote console
         con: {
           guest: '',        // id of the guest with the console open ("lxc/204")
-          estado: 'closed',// fechado | abrindo | ligado | erro
+          estado: 'closed',// closed | opening | ligado | erro
           erro: '',
         },
 
@@ -178,7 +178,7 @@
         clone: { open: false, loading: false, origem: '', originName: '', newID: 0, nome: '', ligado: false,
                  needsSnap: false, snapshots: [], snapshot: '', erro: '' },
         bkp: { storage: '', modo: 'snapshot' },
-        // The note that EXPLAINS the node. Born with a shape; `carregando` and `origem`
+        // The note that EXPLAINS the node. Born with a shape; `loading` and `origem`
         // separate the three states the screen has to tell apart: I have not read it
         // yet, I read it and it is empty, I read it and it is not from this hypervisor.
         nota: { node: '', markdown: '', origem: '', motivo: '', loading: false, erro: '',
@@ -2381,7 +2381,7 @@
         // a button and NOTHING in between, neither text nor empty state, because the
         // state was still the initial one.
         //
-        // The harness did not catch it because its `abre()` called `pvxGoTo`
+        // The harness did not catch it because its `open()` called `pvxGoTo`
         // explicitly — it was more generous than a real click.
         this.pvxLoadNote(n.id);
       },
