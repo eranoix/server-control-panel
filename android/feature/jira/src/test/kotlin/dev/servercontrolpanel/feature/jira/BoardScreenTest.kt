@@ -49,9 +49,9 @@ class BoardScreenTest {
         val source = FakeSource(
             JiraResult.Ok(
                 testBoard(
-                    toDo = listOf(card("TASK-1"), card("TASK-2")),
-                    inProgress = listOf(card("TASK-3", "In Progress", "indeterminate")),
-                    done = listOf(card("TASK-4", "Done", "done")),
+                    toDo = listOf(card("KAN-1"), card("KAN-2")),
+                    inProgress = listOf(card("KAN-3", "In Progress", "indeterminate")),
+                    done = listOf(card("KAN-4", "Done", "done")),
                 ),
             ),
         )
@@ -63,16 +63,16 @@ class BoardScreenTest {
         compose.onNodeWithText("Done").assertIsDisplayed()
 
         // Cards from three different columns drawn at once, which a pager cannot do.
-        compose.onNodeWithText("TASK-1").assertIsDisplayed()
-        compose.onNodeWithText("TASK-3").assertIsDisplayed()
-        compose.onNodeWithText("TASK-4").assertIsDisplayed()
+        compose.onNodeWithText("KAN-1").assertIsDisplayed()
+        compose.onNodeWithText("KAN-3").assertIsDisplayed()
+        compose.onNodeWithText("KAN-4").assertIsDisplayed()
     }
 
     @Test
     fun `each column shows how many cards it has`() {
         val source = FakeSource(
             JiraResult.Ok(
-                testBoard(toDo = listOf(card("TASK-1"), card("TASK-2"))),
+                testBoard(toDo = listOf(card("KAN-1"), card("KAN-2"))),
             ),
         )
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
@@ -83,12 +83,12 @@ class BoardScreenTest {
     @Test
     fun `the first column appears with its cards`() {
         val source = FakeSource(
-            JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))),
+            JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))),
         )
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 
-        compose.onNodeWithText("TASK-1").assertIsDisplayed()
-        compose.onNodeWithText("summary of TASK-1").assertIsDisplayed()
+        compose.onNodeWithText("KAN-1").assertIsDisplayed()
+        compose.onNodeWithText("summary of KAN-1").assertIsDisplayed()
     }
 
     @Test
@@ -146,10 +146,10 @@ class BoardScreenTest {
 
     @Test
     fun `tapping a card opens the issue sheet`() {
-        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
+        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))))
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 
-        compose.onNodeWithText("summary of TASK-1").performClick()
+        compose.onNodeWithText("summary of KAN-1").performClick()
         compose.waitForIdle()
 
         compose.onNodeWithTag(TAG_ISSUE_SHEET).assertIsDisplayed()
@@ -166,12 +166,12 @@ class BoardScreenTest {
 
     @Test
     fun `dragging a card onto another column moves it there`() {
-        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
+        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))))
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 
-        val from = compose.onNodeWithText("summary of TASK-1").fetchSemanticsNode().boundsInRoot.center.x
+        val from = compose.onNodeWithText("summary of KAN-1").fetchSemanticsNode().boundsInRoot.center.x
         val to = compose.onNodeWithText("In Progress").fetchSemanticsNode().boundsInRoot.center.x
-        compose.onNodeWithText("summary of TASK-1").performTouchInput {
+        compose.onNodeWithText("summary of KAN-1").performTouchInput {
             down(center)
             advanceEventTime(viewConfiguration.longPressTimeoutMillis + 100)
             val steps = 10
@@ -180,8 +180,8 @@ class BoardScreenTest {
         }
         compose.waitForIdle()
 
-        assert(source.moves == listOf("TASK-1" to "In Progress")) {
-            "dropping on In Progress should move TASK-1 there, moves were ${source.moves}"
+        assert(source.moves == listOf("KAN-1" to "In Progress")) {
+            "dropping on In Progress should move KAN-1 there, moves were ${source.moves}"
         }
     }
 }

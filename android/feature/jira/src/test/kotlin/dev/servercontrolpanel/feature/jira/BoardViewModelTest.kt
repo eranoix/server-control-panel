@@ -47,13 +47,13 @@ class BoardViewModelTest {
     @Test
     fun `the card changes column BEFORE the server responds`() = runTest(dispatcher) {
         // Otherwise the screen contradicts the gesture for a whole network round trip.
-        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
+        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-1", "In Progress")
+        vm.move("KAN-1", "In Progress")
         // No dispatcher advance: the state must already have changed.
-        assertEquals(listOf("TASK-1"), keysIn(vm, "In Progress"))
+        assertEquals(listOf("KAN-1"), keysIn(vm, "In Progress"))
         assertTrue(keysIn(vm, "To Do").isEmpty())
     }
 
@@ -63,32 +63,32 @@ class BoardViewModelTest {
             // Putting it back at the end of a long column would make the card seem to disappear.
             val source = FakeSource(
                 board = JiraResult.Ok(
-                    testBoard(toDo = listOf(card("TASK-1"), card("TASK-2"), card("TASK-3"))),
+                    testBoard(toDo = listOf(card("KAN-1"), card("KAN-2"), card("KAN-3"))),
                 ),
-                onMove = { _, _ -> JiraResult.Rejected("the workflow does not take TASK-2 to \"Done\"") },
+                onMove = { _, _ -> JiraResult.Rejected("the workflow does not take KAN-2 to \"Done\"") },
             )
             val vm = BoardViewModel(source)
             advanceUntilIdle()
 
-            vm.move("TASK-2", "Done")
+            vm.move("KAN-2", "Done")
             advanceUntilIdle()
 
-            assertEquals(listOf("TASK-1", "TASK-2", "TASK-3"), keysIn(vm, "To Do"))
+            assertEquals(listOf("KAN-1", "KAN-2", "KAN-3"), keysIn(vm, "To Do"))
             assertTrue(keysIn(vm, "Done").isEmpty())
         }
 
     @Test
     fun `a refusal becomes a notice with the SERVER's reason, not a generic sentence`() = runTest(dispatcher) {
         // Only the server's message says where the card CAN go next.
-        val reason = "the workflow does not take TASK-1 to \"Done\"; from here it can only go to: In Progress"
+        val reason = "the workflow does not take KAN-1 to \"Done\"; from here it can only go to: In Progress"
         val source = FakeSource(
-            board = JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))),
+            board = JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))),
             onMove = { _, _ -> JiraResult.Rejected(reason) },
         )
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-1", "Done")
+        vm.move("KAN-1", "Done")
         advanceUntilIdle()
 
         assertEquals(reason, vm.notice.value)
@@ -97,26 +97,26 @@ class BoardViewModelTest {
     @Test
     fun `a network failure also puts the card back`() = runTest(dispatcher) {
         val source = FakeSource(
-            board = JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))),
+            board = JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))),
             onMove = { _, _ -> JiraResult.Error("Connection failed.") },
         )
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-1", "In Progress")
+        vm.move("KAN-1", "In Progress")
         advanceUntilIdle()
 
-        assertEquals(listOf("TASK-1"), keysIn(vm, "To Do"))
+        assertEquals(listOf("KAN-1"), keysIn(vm, "To Do"))
     }
 
     @Test
     fun `dropping on the card's current column does not call the server`() = runTest(dispatcher) {
         // Picking a card up and dropping it back is common; a transition there would be unasked for.
-        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
+        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-1", "To Do")
+        vm.move("KAN-1", "To Do")
         advanceUntilIdle()
 
         assertTrue("should not have called the server: ${source.moves}", source.moves.isEmpty())
@@ -124,27 +124,27 @@ class BoardViewModelTest {
 
     @Test
     fun `moving sends the column LABEL, never a transition id`() = runTest(dispatcher) {
-        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
+        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-1", "In Progress")
+        vm.move("KAN-1", "In Progress")
         advanceUntilIdle()
 
-        assertEquals(listOf("TASK-1" to "In Progress"), source.moves)
+        assertEquals(listOf("KAN-1" to "In Progress"), source.moves)
     }
 
     @Test
     fun `moving a card that is not on the board does nothing`() = runTest(dispatcher) {
-        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
+        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-404", "Done")
+        vm.move("KAN-404", "Done")
         advanceUntilIdle()
 
         assertTrue(source.moves.isEmpty())
-        assertEquals(listOf("TASK-1"), keysIn(vm, "To Do"))
+        assertEquals(listOf("KAN-1"), keysIn(vm, "To Do"))
     }
 
     @Test
@@ -164,20 +164,20 @@ class BoardViewModelTest {
     fun `the selection is pruned when the filter removes issues from the board`() = runTest(dispatcher) {
         // Without pruning, the counter would say "2 ticked" with none on screen.
         val source = FakeSource(
-            JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1"), card("TASK-2")))),
+            JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1"), card("KAN-2")))),
         )
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.toggleSelection("TASK-1")
-        vm.toggleSelection("TASK-2")
-        assertEquals(setOf("TASK-1", "TASK-2"), vm.selection.value)
+        vm.toggleSelection("KAN-1")
+        vm.toggleSelection("KAN-2")
+        assertEquals(setOf("KAN-1", "KAN-2"), vm.selection.value)
 
-        source.returnBoard(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
+        source.returnBoard(JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))))
         vm.switchFilter("mine")
         advanceUntilIdle()
 
-        assertEquals(setOf("TASK-1"), vm.selection.value)
+        assertEquals(setOf("KAN-1"), vm.selection.value)
     }
 
     @Test
@@ -186,7 +186,7 @@ class BoardViewModelTest {
         advanceUntilIdle()
 
         vm.toggleSelectionMode()
-        vm.toggleSelection("TASK-1")
+        vm.toggleSelection("KAN-1")
         vm.toggleSelectionMode()
 
         assertTrue(vm.selection.value.isEmpty())
@@ -194,24 +194,24 @@ class BoardViewModelTest {
 
     @Test
     fun `assign to me uses the accountId the SERVER said is mine`() = runTest(dispatcher) {
-        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
+        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.assignToMe("TASK-1")
+        vm.assignToMe("KAN-1")
         advanceUntilIdle()
 
-        assertEquals(listOf("TASK-1" to "acc-eu"), source.assignments)
+        assertEquals(listOf("KAN-1" to "acc-eu"), source.assignments)
     }
 
     @Test
     fun `without knowing who I am, assign to me warns instead of sending empty`() = runTest(dispatcher) {
         // An empty accountId would UNASSIGN, the opposite of what was asked.
-        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")), me = null)))
+        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")), me = null)))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.assignToMe("TASK-1")
+        vm.assignToMe("KAN-1")
         advanceUntilIdle()
 
         assertTrue(source.assignments.isEmpty())
@@ -246,13 +246,13 @@ class BoardViewModelTest {
 
     @Test
     fun `the notice is consumed only once`() = runTest(dispatcher) {
-        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
+        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("KAN-1")))))
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-1", "In Progress")
+        vm.move("KAN-1", "In Progress")
         advanceUntilIdle()
-        assertEquals("TASK-1 → In Progress", vm.notice.value)
+        assertEquals("KAN-1 → In Progress", vm.notice.value)
 
         vm.consumeNotice()
         assertNull(vm.notice.value)
@@ -269,8 +269,8 @@ class BulkSummaryTest {
     @Test
     fun `a single failure carries the full reason`() {
         assertEquals(
-            "TASK-2: no transition",
-            bulkSummary(0, listOf(BulkFailure("TASK-2", "no transition"))),
+            "KAN-2: no transition",
+            bulkSummary(0, listOf(BulkFailure("KAN-2", "no transition"))),
         )
     }
 
@@ -279,9 +279,9 @@ class BulkSummaryTest {
         // A bare "2 failed" would force a before/after board comparison to find which.
         val sentence = bulkSummary(
             1,
-            listOf(BulkFailure("TASK-2", "no transition"), BulkFailure("TASK-3", "no transition")),
+            listOf(BulkFailure("KAN-2", "no transition"), BulkFailure("KAN-3", "no transition")),
         )
-        assertTrue(sentence, sentence.contains("TASK-2") && sentence.contains("TASK-3"))
+        assertTrue(sentence, sentence.contains("KAN-2") && sentence.contains("KAN-3"))
     }
 
     @Test

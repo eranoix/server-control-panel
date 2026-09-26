@@ -17,22 +17,22 @@ class CardDragTest {
     @Test
     fun `release reports the column under the card before clearing the drag`() {
         val state = stateWithColumns()
-        state.pick(card("TASK-1"), "To Do", Offset(10f, 0f), IntSize(80, 40))
+        state.pick(card("KAN-1"), "To Do", Offset(10f, 0f), IntSize(80, 40))
         state.drag(Offset(100f, 0f))
 
         val released = state.release()
 
-        assertEquals(card("TASK-1") to "In Progress", released)
+        assertEquals(card("KAN-1") to "In Progress", released)
         assertFalse(state.dragging)
     }
 
     @Test
     fun `release outside every column reports no column`() {
         val state = stateWithColumns()
-        state.pick(card("TASK-1"), "To Do", Offset(10f, 0f), IntSize(80, 40))
+        state.pick(card("KAN-1"), "To Do", Offset(10f, 0f), IntSize(80, 40))
         state.drag(Offset(500f, 0f))
 
-        assertEquals(card("TASK-1") to null, state.release())
+        assertEquals(card("KAN-1") to null, state.release())
     }
 
     @Test

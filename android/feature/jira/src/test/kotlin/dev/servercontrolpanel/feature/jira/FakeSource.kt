@@ -94,7 +94,7 @@ internal class FakeSource(
 
     override suspend fun create(newIssue: NewIssue): JiraResult<String> {
         created += newIssue
-        return JiraResult.Ok("TASK-99")
+        return JiraResult.Ok("KAN-99")
     }
 
     override suspend fun bulkMove(keys: List<String>, column: String): JiraResult<BulkResult> {

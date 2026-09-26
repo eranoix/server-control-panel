@@ -120,14 +120,14 @@ func TestIssueWithoutReadableDateNeverAgesOut(t *testing.T) {
 
 func TestSortByKeyIsNumericNotAlphabetic(t *testing.T) {
 	issues := []jira.Issue{
-		testIssue("TASK-9", "Backlog", "new"),
-		testIssue("TASK-100", "Backlog", "new"),
-		testIssue("TASK-10", "Backlog", "new"),
+		testIssue("KAN-9", "Backlog", "new"),
+		testIssue("KAN-100", "Backlog", "new"),
+		testIssue("KAN-10", "Backlog", "new"),
 	}
 	cols := BuildBoard("", issues, 0, "key:asc", time.Now())
 
 	got := []string{cols[0].Cards[0].Key, cols[0].Cards[1].Key, cols[0].Cards[2].Key}
-	want := []string{"TASK-9", "TASK-10", "TASK-100"}
+	want := []string{"KAN-9", "KAN-10", "KAN-100"}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("ordering by key must be numeric: %v (wanted %v)", got, want)
