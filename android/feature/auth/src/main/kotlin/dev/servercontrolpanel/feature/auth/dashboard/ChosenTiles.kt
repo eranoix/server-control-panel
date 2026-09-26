@@ -12,9 +12,9 @@ import android.content.Context
  */
 internal object ChosenTiles {
 
-    private const val FILE = "panel_painel_blocos"
+    private const val FILE = "panel_dashboard_tiles"
     private const val KEY = "ids"
-    private const val KEY_ALREADY_CHOSE = "montado"
+    private const val KEY_ALREADY_CHOSE = "assembled"
 
     /** Unit separator (0x1F), which never occurs in a tile id. */
     private const val SEPARATOR = "\u001F"

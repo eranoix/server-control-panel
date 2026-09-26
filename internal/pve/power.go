@@ -115,10 +115,10 @@ func (c *Client) SnapshotDelete(ctx context.Context, node string, vmid int, typ,
 // 🔴 IT IS THE MOST DESTRUCTIVE OPERATION THIS PACKAGE EXPOSES, and it was
 // already granted before it existed: `Qemu.pm:6301` and `LXC/Snapshot.pm:275`
 // accept **VM.Snapshot** for rollback — the same privilege as creating and
-// deleting, which the LabOperador role already holds. Measured against the live
+// deleting, which the PanelOperator role already holds. Measured against the live
 // hypervisor:
 //
-//	GET /access/permissions with lab@pve!node-lab → {"/vms/204":{"VM.Snapshot":1,…}}
+//	GET /access/permissions with panel@pve!node-lab → {"/vms/204":{"VM.Snapshot":1,…}}
 //
 // In other words: the power to discard everything that happened since the
 // snapshot was already there, the panel did not show it, and nobody left a
@@ -178,7 +178,7 @@ func ValidSnapshotName(name string) error {
 // warning IS SHOWN.
 type TaskWarning struct {
 	UPID string
-	Exit string // o exitstatus cru do PVE, ex.: "WARNINGS: 1"
+	Exit string // the raw PVE exitstatus, e.g. "WARNINGS: 1"
 }
 
 func (a *TaskWarning) Error() string {

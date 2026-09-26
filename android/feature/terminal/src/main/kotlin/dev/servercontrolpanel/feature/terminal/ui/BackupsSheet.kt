@@ -413,4 +413,4 @@ private fun readableSize(bytes: Long): String = when {
     else -> String.format(Locale.getDefault(), "%.1f MB", bytes / (1024.0 * 1024.0))
 }
 
-internal const val BACKUP_LIST_TAG = "backups-lista"
+internal const val BACKUP_LIST_TAG = "backups-list"

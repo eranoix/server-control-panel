@@ -110,7 +110,7 @@ func TestStorageDeliversFourBarNumbers(t *testing.T) {
 	if p["id"] != "local-zfs" {
 		t.Errorf("id = %v, want local-zfs first", p["id"])
 	}
-	for _, field := range []string{"used_pct", "used", "total", "avail", "type", "content", "ativo"} {
+	for _, field := range []string{"used_pct", "used", "total", "avail", "type", "content", "active"} {
 		if _, ok := p[field]; !ok {
 			t.Errorf("pool without %q: %s", field, w.Body)
 		}
@@ -138,7 +138,7 @@ func TestZfsDeliversHealthFragAndAllocation(t *testing.T) {
 		t.Fatalf("pools = %d, want 2: %s", len(pools), w.Body)
 	}
 	rp := pools[1].(map[string]any)
-	if rp["name"] != "rpool" || rp["health"] != "ONLINE" || rp["saudavel"] != true {
+	if rp["name"] != "rpool" || rp["health"] != "ONLINE" || rp["healthy"] != true {
 		t.Errorf("rpool = %+v", rp)
 	}
 	if rp["frag_pct"].(float64) != 17 {
@@ -236,9 +236,9 @@ func TestPermissionsUseSameDatastoreVerdict(t *testing.T) {
 			if w.Code != 200 {
 				t.Fatalf("status = %d: %s", w.Code, w.Body)
 			}
-			if out["storage_visivel"] != cs.want {
-				t.Errorf("storage_visivel = %v, want %v — the screen's verdict diverged from pve.CanAuditDatastore",
-					out["storage_visivel"], cs.want)
+			if out["storage_visible"] != cs.want {
+				t.Errorf("storage_visible = %v, want %v — the screen's verdict diverged from pve.CanAuditDatastore",
+					out["storage_visible"], cs.want)
 			}
 			// The source of truth, called directly: the two have to agree
 			// ALWAYS, and not only in the cases I remembered to write down.

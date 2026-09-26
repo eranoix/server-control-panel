@@ -40,7 +40,7 @@ import (
 var emptyStateScreenPointers = map[string][]string{
 	"docker.containers": {"docker.compose"},
 	"docker.networks":   {"system.systemd"},
-	"security.economia": {"security.devices"},
+	"security.savings":  {"security.devices"},
 }
 
 // emptyStateFormPromise is the textual trigger of the "the form I promised
@@ -72,7 +72,7 @@ func screenTables(t *testing.T, screen string, v Viewer) ([]TableComponent, bool
 		if errors.Is(err, ErrScreenNotFound) {
 			return nil, false
 		}
-		t.Fatalf("buildando %q: %v", screen, err)
+		t.Fatalf("building %q: %v", screen, err)
 	}
 	var tables []TableComponent
 	for _, c := range env.Screen.Components {
@@ -91,7 +91,7 @@ func screenForms(t *testing.T, screen string, v Viewer) []FormComponent {
 		if errors.Is(err, ErrScreenNotFound) {
 			return nil
 		}
-		t.Fatalf("buildando %q: %v", screen, err)
+		t.Fatalf("building %q: %v", screen, err)
 	}
 	var forms []FormComponent
 	for _, c := range env.Screen.Components {

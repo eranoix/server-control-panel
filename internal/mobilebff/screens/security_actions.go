@@ -622,7 +622,7 @@ func handleSecurityDeviceSetExit(deps NetworkDeps) sdui.ActionHandler {
 				return sdui.ActionResult{}, sdui.FieldErrors{}.Add("exit", "invalid request body")
 			}
 		}
-		if in.Exit != "vps" && in.Exit != "casa" {
+		if in.Exit != "vps" && in.Exit != "home" {
 			return sdui.ActionResult{}, sdui.FieldErrors{}.Add("exit", "invalid exit")
 		}
 		if err := deps.SetDeviceExit(ctx, uuid, in.Exit); err != nil {

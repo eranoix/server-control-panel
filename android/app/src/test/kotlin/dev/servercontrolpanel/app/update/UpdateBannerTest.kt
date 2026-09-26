@@ -33,10 +33,10 @@ class UpdateBannerTest {
      * so the number matches what the device shows for the same file.
      */
     @Test
-    fun `the size is shown in MB with one decimal and a comma`() {
-        assertEquals("1,4 MB", formatDownloadSize(1_400_329))
-        assertEquals("10,0 MB", formatDownloadSize(10_029_237))
-        assertEquals("31,1 MB", formatDownloadSize(31_135_416))
+    fun `the size is shown in MB with one decimal and a decimal point`() {
+        assertEquals("1.4 MB", formatDownloadSize(1_400_329))
+        assertEquals("10.0 MB", formatDownloadSize(10_029_237))
+        assertEquals("31.1 MB", formatDownloadSize(31_135_416))
     }
 
     @Test
@@ -58,7 +58,7 @@ class UpdateBannerTest {
             }
         }
 
-        composeRule.onNodeWithText("Version 0.1.7 available — 1,4 MB").assertIsDisplayed()
+        composeRule.onNodeWithText("Version 0.1.7 available — 1.4 MB").assertIsDisplayed()
         composeRule.onNodeWithText("Update").assertIsDisplayed()
     }
 
@@ -80,7 +80,7 @@ class UpdateBannerTest {
         checkNotNull(content)
         assertEquals(0.5f, content.progress!!, 0.01f)
         assertEquals(listOf(UpdateBannerAction.Cancel), content.actions)
-        assertTrue(content.text, content.text.contains("700 KB of 1,4 MB"))
+        assertTrue(content.text, content.text.contains("700 KB of 1.4 MB"))
     }
 
     @Test
@@ -99,7 +99,7 @@ class UpdateBannerTest {
         val content = checkNotNull(
             bannerContentFor(
                 UpdateState.Failed(
-                    "Not enough space: free 5,5 MB and try again.",
+                    "Not enough space: free 5.5 MB and try again.",
                     canRetry = true,
                     recovery = UpdateRecovery.FREE_SPACE,
                 ),
@@ -110,7 +110,7 @@ class UpdateBannerTest {
             listOf(UpdateBannerAction.Recover("Free up space", UpdateRecovery.FREE_SPACE), UpdateBannerAction.Retry),
             content.actions,
         )
-        assertTrue(content.text.contains("5,5 MB"))
+        assertTrue(content.text.contains("5.5 MB"))
     }
 
     @Test

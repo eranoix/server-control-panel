@@ -15,13 +15,13 @@ const baseConfig = `{
     {"type":"vless","tag":"vless-ws-in","listen_port":8080,
      "users":[{"uuid":"00000000-0000-0000-0000-000000000000"}],
      "transport":{"type":"ws","path":"/wco1wox"}},
-    {"type":"vless","tag":"vless-ws-casa","listen_port":8081,
+    {"type":"vless","tag":"vless-ws-home","listen_port":8081,
      "users":[{"uuid":"00000000-0000-0000-0000-000000000000"}],
      "transport":{"type":"ws","path":"/leb1ts"}},
     {"type":"vless","tag":"vless-reality-in","listen_port":8443,
      "users":[{"uuid":"00000000-0000-0000-0000-000000000000","flow":"xtls-rprx-vision"}]}
   ],
-  "outbounds":[{"type":"direct","tag":"direct"},{"type":"socks","tag":"casa"}],
+  "outbounds":[{"type":"direct","tag":"direct"},{"type":"socks","tag":"home"}],
   "route":{"rules":[{"action":"resolve","strategy":"ipv4_only"}],"final":"direct"}
 }`
 
@@ -76,8 +76,8 @@ func TestDeviceLifecycle(t *testing.T) {
 	if got := len(usersOf(t, cfg, "vless-reality-in")); got != 2 {
 		t.Fatalf("reality users = %d, want 2", got)
 	}
-	if got := len(usersOf(t, cfg, "vless-ws-casa")); got != 1 {
-		t.Fatalf("ws-casa users = %d, want 1 (it must not receive devices)", got)
+	if got := len(usersOf(t, cfg, "vless-ws-home")); got != 1 {
+		t.Fatalf("ws-home users = %d, want 1 (it must not receive devices)", got)
 	}
 	// the reality user got a flow
 	for _, u := range usersOf(t, cfg, "vless-reality-in") {
@@ -251,19 +251,19 @@ func TestDatasaverMatrix(t *testing.T) {
 	}
 
 	rules := rulesOf(t, cfg)
-	// pc (ds, vps) → proxy-vps ; cel (ds, home) → proxy-casa
+	// pc (ds, vps) → proxy-vps ; cel (ds, home) → proxy-home
 	if !hasRule(rules, "proxy-vps", "pc", false) {
 		t.Fatalf("proxy-vps missing for pc: %+v", rules)
 	}
-	if !hasRule(rules, "proxy-casa", "cel", false) {
-		t.Fatalf("proxy-casa missing for cel: %+v", rules)
+	if !hasRule(rules, "proxy-home", "cel", false) {
+		t.Fatalf("proxy-home missing for cel: %+v", rules)
 	}
 	// QUIC reject covers both
 	if !hasRule(rules, "", "pc", true) || !hasRule(rules, "", "cel", true) {
 		t.Fatalf("the QUIC reject is missing for the ds devices: %+v", rules)
 	}
 	// cel still has home for non-web
-	if !hasRule(rules, "casa", "cel", false) {
+	if !hasRule(rules, "home", "cel", false) {
 		t.Fatalf("cel should keep the home rule (non-web): %+v", rules)
 	}
 
@@ -275,7 +275,7 @@ func TestDatasaverMatrix(t *testing.T) {
 	if hasRule(rules, "proxy-vps", "pc", false) {
 		t.Fatalf("pc's proxy-vps should have disappeared: %+v", rules)
 	}
-	// the http-casa-in bridge does NOT exist in this baseConfig, but the resolve rule must
+	// the http-home-in bridge does NOT exist in this baseConfig, but the resolve rule must
 	// still be the first one (preserved).
 	if act, _ := rules[0]["action"].(string); act != "resolve" {
 		t.Fatalf("the resolve rule should still come 1st: %+v", rules[0])
@@ -290,7 +290,7 @@ func TestProxyEndpoint(t *testing.T) {
 	  "outbounds":[
 	    {"type":"direct","tag":"direct"},
 	    {"type":"http","tag":"proxy-vps","server":"172.18.0.40","server_port":8080},
-	    {"type":"http","tag":"proxy-casa","server":"172.18.0.41","server_port":8080}
+	    {"type":"http","tag":"proxy-home","server":"172.18.0.41","server_port":8080}
 	  ],
 	  "route":{"rules":[{"action":"resolve","strategy":"ipv4_only"}],"final":"direct"}
 	}`), 0o644); err != nil {

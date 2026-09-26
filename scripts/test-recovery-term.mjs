@@ -33,10 +33,10 @@ let lineUnderCursor = 'root@vps:/opt#';
 let bufferType = 'normal';
 const term = {
   cols: 80, rows: 24,
-  _dados: null, _resize: null,
+  _data: null, _resize: null,
   write(x, cb) { written.push(String(x)); if (cb) cb(); },
   focus() {},
-  onData(f) { this._dados = f; },
+  onData(f) { this._data = f; },
   onResize(f) { this._resize = f; },
   buffer: { active: {
     get type() { return bufferType; },
@@ -99,7 +99,7 @@ try {
 }
 if (typeof ctx.__create !== 'function') { no('createTerminal does not exist — the two terminals would drift apart again'); process.exit(1); }
 sockets.length = 0;
-const inst = ctx.__create({ caminho: '/recovery/ws/pty', element: null, pill: null, label: 'host' });
+const inst = ctx.__create({ path: '/recovery/ws/pty', element: null, pill: null, label: 'host' });
 inst.open();
 const st = inst.st, send = inst.send;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -112,7 +112,7 @@ sockets[0].open();
 // ── 2. binary input, no per-keystroke envelope ──────────────────────────────
 {
   written.length = 0;
-  term._dados('ls');
+  term._data('ls');
   const b = sockets[0].sent.slice(-1)[0];
   (b instanceof Uint8Array && new TextDecoder().decode(b) === 'ls')
     ? ok('the keystroke goes out raw, in a binary frame')
@@ -123,7 +123,7 @@ sockets[0].open();
 {
   sockets[0].kill(1006);
   written.length = 0;
-  term._dados('reboot');
+  term._data('reboot');
   const queued = (st.outbox || []).join('');
   const painted = output().includes('reboot') && output().includes('\x1b[2m');
   (queued === 'reboot' && painted)
@@ -154,7 +154,7 @@ sockets[0].open();
   s.kill(1006);
   lineUnderCursor = '[sudo] password for sam:';
   written.length = 0;
-  term._dados('minhasenha');
+  term._data('mypassword');
   output() === ''
     ? ok('password prompt: no echo (the password never reaches the screen)')
     : no('ECHOED the password: ' + JSON.stringify(output()));

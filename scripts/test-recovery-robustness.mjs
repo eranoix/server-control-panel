@@ -66,9 +66,9 @@ function buildCtx({ withXterm }) {
 
   const writtenXterm = [];
   const termXterm = {
-    cols: 80, rows: 24, _dados: null, _resize: null,
+    cols: 80, rows: 24, _data: null, _resize: null,
     write(x, cb) { writtenXterm.push(String(x)); if (cb) cb(); },
-    focus() {}, onData(f) { this._dados = f; }, onResize(f) { this._resize = f; },
+    focus() {}, onData(f) { this._data = f; }, onResize(f) { this._resize = f; },
     buffer: { active: {
       type: 'normal', baseY: 0, cursorY: 0, cursorX: 5, length: 2,
       getLine: (i) => ({ translateToString: () => (i === 0 ? 'line one  ' : 'line two  ') }),
@@ -178,9 +178,9 @@ function run(ctx) {
       // (the scrollback of the engine accumulates on purpose — we check the suffix)
       const before = pre.textContent;
       api.host.term.write('first\r');
-      api.host.term.write('\nsegunda\r\n');
+      api.host.term.write('\nsecond\r\n');
       const t2 = pre.textContent.slice(before.length);
-      (t2 === 'first\nsegunda\n')
+      (t2 === 'first\nsecond\n')
         ? ok('no xterm: a CRLF split across two chunks does not swallow the line')
         : no('a split CRLF corrupted the output: ' + JSON.stringify(t2));
     } else no('the simple mode created no output <pre>');
@@ -268,7 +268,7 @@ function run(ctx) {
   const api2 = run(ctx2);
   const m2 = ctx2.__meta;
   m2.setResponse((url) => (url.includes('/recovery/renew')
-    ? { ok: true, status: 200, json: () => Promise.resolve({ ok: true, restante_seg: 4200 }) }
+    ? { ok: true, status: 200, json: () => Promise.resolve({ ok: true, remaining_seg: 4200 }) }
     : { ok: true, status: 200, json: () => Promise.resolve({}) }));
   m2.calls.length = 0;
   ctx2.document.hidden = false;

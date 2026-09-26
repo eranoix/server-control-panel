@@ -149,8 +149,8 @@ func TestParseMobileRefreshUsername(t *testing.T) {
 	}{
 		{"sam.deadbeef", "sam", true},
 		{"", "", false},
-		{"semponto", "", false},
-		{".semusuario", "", false},
+		{"nodot", "", false},
+		{".nouser", "", false},
 		{"sam.", "", false},
 	}
 	for _, c := range cases {

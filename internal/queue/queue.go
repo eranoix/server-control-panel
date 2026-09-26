@@ -59,8 +59,8 @@ type Job struct {
 	Owner    string          `json:"owner"`
 	Status   Status          `json:"status"`
 	Progress int             `json:"progress"`
-	// Step is a short human-readable label for the current phase ("clonando
-	// repo", "auditando"). Optional: runners that only track Progress leave
+	// Step is a short human-readable label for the current phase ("cloning
+	// repo", "auditing"). Optional: runners that only track Progress leave
 	// it empty. Lets the UI show "where are we" without opening the log.
 	Step     string `json:"step,omitempty"`
 	LogPath  string `json:"log_path,omitempty"`
@@ -91,7 +91,7 @@ type Job struct {
 //   - args is the per-job payload (opaque outside the runner)
 //   - logW receives combined stdout+stderr; runner controls framing
 //   - progress callback is optional but recommended for long jobs
-//   - step callback is optional; emits a short phase label ("auditando")
+//   - step callback is optional; emits a short phase label ("auditing")
 //     surfaced inline in the UI so users see progress without the log
 type Runner interface {
 	Kind() string

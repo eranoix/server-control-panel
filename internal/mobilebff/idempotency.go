@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Idempotencia stores the result of a mutation so that a RETRY of the same
+// Idempotency stores the result of a mutation so that a RETRY of the same
 // action does not execute it twice.
 //
 // # Why this exists
@@ -48,10 +48,10 @@ type Idempotency struct {
 
 type idempotentEntry struct {
 	// Body returned on the first run, repeated verbatim on the retry.
-	Body string `json:"corpo"`
+	Body string `json:"body"`
 	// HTTP status of the first run.
 	Status int   `json:"status"`
-	At     int64 `json:"quando_ms"`
+	At     int64 `json:"when_ms"`
 }
 
 const (
@@ -69,7 +69,7 @@ const (
 // NewIdempotency loads (or creates) the table in dataDir.
 func NewIdempotency(dataDir string) *Idempotency {
 	i := &Idempotency{
-		file:    filepath.Join(dataDir, "mobile-idempotencia.json"),
+		file:    filepath.Join(dataDir, "mobile-idempotency.json"),
 		entries: map[string]idempotentEntry{},
 		now:     time.Now,
 	}

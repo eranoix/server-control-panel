@@ -86,16 +86,16 @@ func TestHandleMe_Authenticated_NoUUIDMap_OmitsEmail(t *testing.T) {
 func TestHandleMe_Authenticated_AdminGetsAdminCapability(t *testing.T) {
 	cfg := &config.Config{
 		SchemaVersion: config.CurrentSchemaVersion,
-		Primary:       "meadmin",
+		Primary:       "theadmin",
 		Users: []config.User{
-			{Username: "meadmin", PasswordHash: "h"},
+			{Username: "theadmin", PasswordHash: "h"},
 		},
 	}
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: cfg})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/me", nil)
-	req = req.WithContext(auth.WithUser(req.Context(), "meadmin"))
+	req = req.WithContext(auth.WithUser(req.Context(), "theadmin"))
 	rec := httptest.NewRecorder()
 
 	mux.ServeHTTP(rec, req)
@@ -118,17 +118,17 @@ func TestHandleMe_Authenticated_AdminGetsAdminCapability(t *testing.T) {
 func TestHandleMe_Authenticated_NonAdminGetsNoCapability(t *testing.T) {
 	cfg := &config.Config{
 		SchemaVersion: config.CurrentSchemaVersion,
-		Primary:       "meadmin",
+		Primary:       "theadmin",
 		Users: []config.User{
-			{Username: "meadmin", PasswordHash: "h"},
-			{Username: "meuser", PasswordHash: "h"},
+			{Username: "theadmin", PasswordHash: "h"},
+			{Username: "theuser", PasswordHash: "h"},
 		},
 	}
 	mux := http.NewServeMux()
 	Mount(mux, Deps{Cfg: cfg})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/me", nil)
-	req = req.WithContext(auth.WithUser(req.Context(), "meuser"))
+	req = req.WithContext(auth.WithUser(req.Context(), "theuser"))
 	rec := httptest.NewRecorder()
 
 	mux.ServeHTTP(rec, req)

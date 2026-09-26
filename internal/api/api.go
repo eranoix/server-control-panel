@@ -923,7 +923,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	// The BFF's idempotency table: exactly ONE, shared by every handler (two
 	// tables pointing at the same file would clobber each other on write).
 	// Without DataDir it is never created — building it with an empty path
-	// would write `mobile-idempotencia.json` into the process's working
+	// would write `mobile-idempotency.json` into the process's working
 	// directory, and a nil here is a clean no-op across the whole table.
 	var mobileIdem *mobilebff.Idempotency
 	if r.cfg != nil && strings.TrimSpace(r.cfg.DataDir) != "" {
@@ -2361,14 +2361,14 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 	protected.HandleFunc("/api/terminal/code-restore-ping", r.handleCodeRestorePing)    // code-server restore trigger on reload
 	protected.HandleFunc("/api/terminal/assign-session", r.handleTerminalAssignSession) // reassigns the audience (admin-only)
 	protected.HandleFunc("/api/terminal/scrollback", r.handleTerminalScrollback)
-	protected.HandleFunc("/api/terminal/log-bruto", r.handleTerminalRawLog)  // panel primer: raw bytes (fallback)
-	protected.HandleFunc("/api/terminal/historico", r.handleTerminalHistory) // panel primer: rendered scrollback
+	protected.HandleFunc("/api/terminal/raw-log", r.handleTerminalRawLog)  // panel primer: raw bytes (fallback)
+	protected.HandleFunc("/api/terminal/history", r.handleTerminalHistory) // panel primer: rendered scrollback
 	protected.HandleFunc("/api/terminal/kill-session", r.handleTerminalKillSession)
 	// Which sessions are running an OLD version of the Claude Code CLI. The CLI
 	// says "Update installed · Restart to update" and the notice stays there
 	// forever without ever saying WHICH sessions need restarting — here that
 	// becomes a fact.
-	protected.HandleFunc("/api/claude/versoes", r.handleClaudeVersions)
+	protected.HandleFunc("/api/claude/versions", r.handleClaudeVersions)
 	protected.HandleFunc("/api/claude/recovery/restart", r.handleClaudeRecoveryRestart)
 	// The canonical attachment route (any type at all). The old name stays
 	// registered on the SAME handler because already-open tabs (cached JS) and
@@ -2549,7 +2549,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 		// the .min.js is a generated, untracked artefact, so a bundle from four
 		// days earlier kept being served against a fresh index.html and the
 		// front-end framework threw ReferenceError at boot. See
-		// internal/webassets/minificado.go.
+		// internal/webassets/minified.go.
 		//
 		// ?raw=1 returns the original: the LIVE invariant check greps the served
 		// asset literally, and minification rewrites whitespace and quotes. Same

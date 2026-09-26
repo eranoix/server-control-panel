@@ -189,7 +189,7 @@ func (o *Ownership) VisibleTo(name, user string, primary bool) bool {
 	if owner == user {
 		return true
 	}
-	if owner == AudienceAll { // "Todos" — visible to and attachable by anyone.
+	if owner == AudienceAll { // "Everyone" — visible to and attachable by anyone.
 		return true
 	}
 	if owner == "" && primary {
@@ -208,7 +208,7 @@ func (o *Ownership) SessionsOf(user string) []string {
 	defer o.mu.RUnlock()
 	out := make([]string, 0, 4)
 	for name, owner := range o.m {
-		if owner == AudienceAll { // "Todos" does not count against anyone's quota.
+		if owner == AudienceAll { // "Everyone" does not count against anyone's quota.
 			continue
 		}
 		if owner == user {

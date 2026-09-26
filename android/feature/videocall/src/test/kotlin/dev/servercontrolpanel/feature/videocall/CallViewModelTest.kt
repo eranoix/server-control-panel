@@ -32,7 +32,7 @@ private val testJson = Json { ignoreUnknownKeys = true }
 
 private inline fun <reified T> jsonPayload(value: T): JsonElement = testJson.encodeToJsonElement(value)
 
-private const val ROOM_ID = "sala-1"
+private const val ROOM_ID = "room-1"
 
 /** Scriptable signaling stream for [CallViewModel], with no real socket. */
 private class FakeSignaling : VideocallSignaling {

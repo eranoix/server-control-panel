@@ -100,9 +100,9 @@ const INIT = `
     const an = ctx.createAnalyser(); an.fftSize = 2048; src.connect(an);
     const buf = new Float32Array(an.fftSize);
     const frames = [];
-    const fim = performance.now() + ms;
+    const end = performance.now() + ms;
     await new Promise((r) => setTimeout(r, 150));
-    while (performance.now() < fim) {
+    while (performance.now() < end) {
       an.getFloatTimeDomainData(buf);
       let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
       const rms = Math.sqrt(s / buf.length);
@@ -126,8 +126,8 @@ const INIT = `
     const db = (buf) => { let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i]; const r = Math.sqrt(s / buf.length); return r > 0 ? 20 * Math.log10(r) : -120; };
     const difs = [], levelsA = [];
     await new Promise((r) => setTimeout(r, 150));
-    const fim = performance.now() + ms;
-    while (performance.now() < fim) {
+    const end = performance.now() + ms;
+    while (performance.now() < end) {
       aa.getFloatTimeDomainData(ba); ab.getFloatTimeDomainData(bb);
       const x = db(ba), y = db(bb);
       if (x > -90 && y > -90) { difs.push(y - x); levelsA.push(x); }
@@ -199,7 +199,7 @@ async function connect(page, id, extra) {
     window.__events = [];
     await window.PanelVideoCall.connect(Object.assign({
       roomId: 'room', token: 't', displayName: id, videosEl: el, quality: 'eco',
-      onState: (ev) => window.__events.push(ev), onError: (e) => window.__events.push({ type: 'erro', e }),
+      onState: (ev) => window.__events.push(ev), onError: (e) => window.__events.push({ type: 'error', e }),
     }, extra));
   }, { id, extra });
 }
@@ -324,7 +324,7 @@ await aLocal((p) => window.PanelVideoCall.setMicProcessing(p), SEM_PROC);
 // pipeline compensates; otherwise "100%" would be louder than the mic itself.
 {
   await aLocal(() => window.PanelVideoCall.setMicGain(1));
-  await aLocal(() => { window.PanelVideoCall.setSubtitles(true, { backend: 'web-speech', lang: 'pt-BR' }); });
+  await aLocal(() => { window.PanelVideoCall.setSubtitles(true, { backend: 'web-speech', lang: 'en-US' }); });
   await new Promise((r) => setTimeout(r, 400));
   const n = await aLocal(async () => {
     const raw = window.__sttStarts[window.__sttStarts.length - 1].getAudioTracks()[0];
@@ -340,7 +340,7 @@ await aLocal((p) => window.PanelVideoCall.setMicProcessing(p), SEM_PROC);
 }
 
 // ── 6. Transcription reads the raw mic ──────────────────────────────────
-await aLocal(() => { window.PanelVideoCall.setSubtitles(true, { backend: 'web-speech', lang: 'pt-BR' }); });
+await aLocal(() => { window.PanelVideoCall.setSubtitles(true, { backend: 'web-speech', lang: 'en-US' }); });
 await new Promise((r) => setTimeout(r, 400));
 const stt = await aLocal(async () => {
   const s = window.__sttStarts[window.__sttStarts.length - 1];
@@ -368,12 +368,12 @@ const mute = await aLocal(async () => {
   const lvl = window.PanelVideoCall.getMicLevel();
   const r = { enabled: t.enabled, level: lvl ? lvl.level : -1 };
   window.PanelVideoCall.setMuted(false);
-  r.voltou = t.enabled;
+  r.recovered = t.enabled;
   return r;
 });
 mute.enabled === false ? ok('mute: the transcription track goes off') : no('mute: transcription track stayed on, it would transcribe muted speech');
 mute.level === 0 ? ok('mute: the outgoing level meter drops to zero') : no('mute: meter at ' + mute.level + ' with the mic muted');
-mute.voltou === true ? ok('mute: unmuting turns the transcription track back on') : no('mute: unmuting did not turn the transcription track back on');
+mute.recovered === true ? ok('mute: unmuting turns the transcription track back on') : no('mute: unmuting did not turn the transcription track back on');
 
 // ── 8. Switching mics restarts transcription on the new track ───────────
 const restart = await aLocal(async () => {
@@ -399,7 +399,7 @@ await aLocal(() => { window.PanelVideoCall.setSubtitles(false); });
     window.SpeechRecognition = window.webkitSpeechRecognition = class {
       start(t) {
         if (t !== undefined && window.__srRejectTrack) throw new TypeError('unsupported');
-        window.__srArgs.push(t === undefined ? 'nada' : (t && t.kind));
+        window.__srArgs.push(t === undefined ? 'nothing' : (t && t.kind));
         setTimeout(() => this.onstart && this.onstart(), 0);
       }
       stop() {}
@@ -408,15 +408,15 @@ await aLocal(() => { window.PanelVideoCall.setSubtitles(false); });
   await page.addScriptTag({ content: srcSTT });
   const r = await page.evaluate(async () => {
     const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const h1 = window.PanelSTT.start({ backend: 'web-speech', continuous: true, stream: s, lang: 'pt-BR' });
+    const h1 = window.PanelSTT.start({ backend: 'web-speech', continuous: true, stream: s, lang: 'en-US' });
     h1 && h1.stop && h1.stop();
     window.__srRejectTrack = true;
-    const h2 = window.PanelSTT.start({ backend: 'web-speech', continuous: true, stream: s, lang: 'pt-BR' });
+    const h2 = window.PanelSTT.start({ backend: 'web-speech', continuous: true, stream: s, lang: 'en-US' });
     h2 && h2.stop && h2.stop();
     return window.__srArgs;
   });
   r[0] === 'audio' ? ok('web-speech: start(track) receives the call track') : no('web-speech: start received ' + r[0] + ' instead of the track');
-  r[1] === 'nada' ? ok('web-speech: without track support, falls back to start() on the default mic') : no('web-speech: fallback received ' + r[1]);
+  r[1] === 'nothing' ? ok('web-speech: without track support, falls back to start() on the default mic') : no('web-speech: fallback received ' + r[1]);
   await page.close();
 }
 

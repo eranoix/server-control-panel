@@ -16,9 +16,9 @@ package dev.servercontrolpanel.feature.terminal.transport
  *    frame lands below the previous one.
  *
  * The current conversation instead comes from `TerminalViewModel.startPrimer`,
- * which asks `/terminal/historico` first (the server feeds lines leaving the
+ * which asks `/terminal/history` first (the server feeds lines leaving the
  * screen of a live emulator into an append-only history; 4096 KiB of raw log
- * become 360 KiB of history) and falls back to `/terminal/log-bruto`. Older
+ * become 360 KiB of history) and falls back to `/terminal/raw-log`. Older
  * history stays reachable through the "load older" panel.
  *
  * Criterion: shells never move the cursor up to rewrite; differential renderers

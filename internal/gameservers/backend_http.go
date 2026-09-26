@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// BackendHTTP is the Backend the panel uses when the node has `transport: agente` (the config value for the agent transport).
+// BackendHTTP is the Backend the panel uses when the node has `transport: agent` (the config value for the agent transport).
 // It talks to that node's node-agent over the internal bridge.
 //
 // # ONE FORWARDER, NOT 23 FUNCTIONS — and why
@@ -149,7 +149,7 @@ func (b *BackendHTTP) Open(ctx context.Context, h Handle) (io.ReadCloser, error)
 		return nil, ErrHandleInvalid
 	}
 	target := *b.base
-	target.Path = strings.TrimRight(target.Path, "/") + "/v1/artefato/" + url.PathEscape(string(h))
+	target.Path = strings.TrimRight(target.Path, "/") + "/v1/artifact/" + url.PathEscape(string(h))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
@@ -184,7 +184,7 @@ func (b *BackendHTTP) Open(ctx context.Context, h Handle) (io.ReadCloser, error)
 // exactly what must not cross the boundary.
 func (b *BackendHTTP) Receive(ctx context.Context, r io.Reader) (Handle, error) {
 	target := *b.base
-	target.Path = strings.TrimRight(target.Path, "/") + "/v1/artefato"
+	target.Path = strings.TrimRight(target.Path, "/") + "/v1/artifact"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), r)
 	if err != nil {
@@ -235,7 +235,7 @@ func knownOp(op OpName) bool {
 // errorMessage extracts the agent's error field, with a readable indent.
 func errorMessage(raw []byte, code int, no string) string {
 	var env struct {
-		Error string `json:"erro"`
+		Error string `json:"error"`
 	}
 	if json.Unmarshal(raw, &env) == nil && env.Error != "" {
 		return env.Error

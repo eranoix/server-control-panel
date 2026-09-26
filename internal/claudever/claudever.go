@@ -22,14 +22,14 @@ import (
 // Process is a running `claude` and the version it actually loaded.
 type Process struct {
 	PID     int    `json:"pid"`
-	Version string `json:"versao"`
-	Session string `json:"sessao,omitempty"` // owning session, when it can be known
-	Current bool   `json:"atual"`            // already on the installed version?
-	Cwd     string `json:"cwd,omitempty"`    // helps tell which is which
+	Version string `json:"version"`
+	Session string `json:"session,omitempty"` // owning session, when it can be known
+	Current bool   `json:"current"`           // already on the installed version?
+	Cwd     string `json:"cwd,omitempty"`     // helps tell which is which
 	// Target says HOW to restart this process when it does not belong to a panel
 	// session. "" = an ordinary session (type into the pane); "recovery" = the
 	// Claude in the recovery container, which restarts through the container.
-	Target string `json:"alvo,omitempty"`
+	Target string `json:"target,omitempty"`
 	// Ref is the version installed IN ITS OWN ENVIRONMENT, when that environment
 	// is not the host's. Only filled for external processes — see DetectExternal.
 	Ref string `json:"ref,omitempty"`
@@ -37,10 +37,10 @@ type Process struct {
 
 // State is the complete answer: what is installed and who has not taken it yet.
 type State struct {
-	Installed string    `json:"instalada"`
-	Processes []Process `json:"processos"`
-	Outdated  int       `json:"defasados"`
-	Available bool      `json:"disponivel"` // were we able to determine the installed version?
+	Installed string    `json:"installed"`
+	Processes []Process `json:"processes"`
+	Outdated  int       `json:"outdated"`
+	Available bool      `json:"available"` // were we able to determine the installed version?
 }
 
 // procRoot is injectable for tests; in production it is /proc.

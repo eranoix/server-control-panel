@@ -43,7 +43,7 @@ const app = {
 };
 
 // Fake terminal with a cursor and a single line — all the prediction consults.
-function newPane({ line = '$ ', cursorX = 2, tipo: type = 'normal', eco = 300, cols = 80 } = {}) {
+function newPane({ line = '$ ', cursorX = 2, type: type = 'normal', eco = 300, cols = 80 } = {}) {
   const written = [];
   const pane = {
     eco, written,
@@ -72,7 +72,7 @@ const output = (p) => p.written.join('');
 // ── 2. the boundaries: each one, on its own, cancels the guess ──────────────
 {
   const cases = [
-    ['alternate screen (vim/htop repaints the whole screen)', newPane({ tipo: 'alternate' })],
+    ['alternate screen (vim/htop repaints the whole screen)', newPane({ type: 'alternate' })],
     ['password prompt on the cursor line',              newPane({ line: '[sudo] password for sam:' })],
     ['good network (below the threshold the risk is not worth it)', newPane({ eco: 20 })],
     ['edge of the line (\\b does not move up a line)',         newPane({ cursorX: 79 })],
@@ -92,11 +92,11 @@ const output = (p) => p.written.join('');
                          : no('predicted a control character');
 
   const off = newPane();
-  app._predictEcho.call({ ...app, hostTermPredictiveEcho: 'nunca' }, off, 'x');
+  app._predictEcho.call({ ...app, hostTermPredictiveEcho: 'never' }, off, 'x');
   output(off) === '' ? ok('does not predict: the user turned it off') : no('ignored the user preference');
 
   const forced = newPane({ eco: 5 });
-  app._predictEcho.call({ ...app, hostTermPredictiveEcho: 'sempre' }, forced, 'x');
+  app._predictEcho.call({ ...app, hostTermPredictiveEcho: 'always' }, forced, 'x');
   output(forced) !== '' ? ok('"always" mode predicts even on a good network') : no('"always" mode did not predict');
 }
 

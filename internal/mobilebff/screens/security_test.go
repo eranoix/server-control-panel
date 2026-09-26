@@ -241,7 +241,7 @@ func TestSecurityDataSaverScreen_Structure(t *testing.T) {
 		t.Fatalf("usage-table is not a TableComponent")
 	}
 	if len(env.Screen.Components) != 1 {
-		t.Errorf("security.economia has %d components, want only 1 (usage-table, read-only)", len(env.Screen.Components))
+		t.Errorf("security.savings has %d components, want only 1 (usage-table, read-only)", len(env.Screen.Components))
 	}
 }
 
@@ -264,7 +264,7 @@ func TestSecurityScreens_NonAdminGetsErrScreenNotFound(t *testing.T) {
 		{"security.ufw", buildSecurityUFWScreenForViewer},
 		{"security.adguard", buildSecurityAdGuardScreenForViewer},
 		{"security.devices", buildSecurityDevicesScreenForViewer},
-		{"security.economia", buildSecurityDataSaverScreenForViewer},
+		{"security.savings", buildSecurityDataSaverScreenForViewer},
 	}
 	for _, c := range cases {
 		if _, err := c.builder(admin); err != nil {

@@ -81,7 +81,7 @@ func TestLiveMaintenance(t *testing.T) {
 	if newID <= 0 {
 		t.Fatalf("next_id = %v — the hypervisor did not say which id is free", out["next_id"])
 	}
-	suggested, _ := out["sugestao"].(string)
+	suggested, _ := out["suggestion"].(string)
 	t.Logf("hypervisor says %d is free; suggested name %q", newID, suggested)
 
 	// Guard: the id has to be NEW. Cloning over an existing guest is this route's
@@ -102,11 +102,11 @@ func TestLiveMaintenance(t *testing.T) {
 	// 🔴 A RUNNING CONTAINER ONLY CLONES FROM A SNAPSHOT — and it was THIS test
 	// that discovered it, on its very first run, with the hypervisor refusing the
 	// clone. No grep of this machine's PVE source shows the rule.
-	needsSnap, _ := out["precisa_snapshot"].(bool)
+	needsSnap, _ := out["needs_snapshot"].(bool)
 	probeSnap := ""
 	if needsSnap {
 		probeSnap = "probe-clone-base"
-		snapBody, _ := json.Marshal(map[string]any{"nome": probeSnap})
+		snapBody, _ := json.Marshal(map[string]any{"name": probeSnap})
 		ws, _ := callAPI(t, r, http.MethodPost, "/api/nodes/"+cloneSourceLive+"/snapshot", string(snapBody))
 		if ws.Code != 200 {
 			// No snapshot route around here, so create it through the client
@@ -132,12 +132,12 @@ func TestLiveMaintenance(t *testing.T) {
 	}
 
 	name := "probe-clone"
-	body, _ := json.Marshal(map[string]any{"novo_id": newID, "nome": name, "snapshot": probeSnap})
+	body, _ := json.Marshal(map[string]any{"new_id": newID, "name": name, "snapshot": probeSnap})
 	w, out = callAPI(t, r, http.MethodPost, "/api/nodes/"+cloneSourceLive+"/clone", string(body))
 	if w.Code != 200 {
 		t.Fatalf("POST clone = %d: %s", w.Code, w.Body)
 	}
-	if out["status"] != "aceita" {
+	if out["status"] != "accepted" {
 		t.Errorf("status = %v, want \"accepted\" — the route does not wait for the task", out["status"])
 	}
 	upid, _ := out["upid"].(string)
@@ -189,19 +189,19 @@ func TestLiveMaintenance(t *testing.T) {
 	if dest == "" {
 		t.Fatal("no storage accepts backup — the proof has nowhere to send it")
 	}
-	body, _ = json.Marshal(map[string]any{"storage": dest, "modo": "stop"})
+	body, _ = json.Marshal(map[string]any{"storage": dest, "mode": "stop"})
 	w, out = callAPI(t, r, http.MethodPost, "/api/nodes/lxc/"+strconv.Itoa(newID)+"/backup", string(body))
 	if w.Code == 404 {
 		// The inventory only learns about the clone on the next cycle. That is not a
 		// defect in the route: it is the poller not having seen the new guest yet.
 		t.Logf("the inventory has not seen the clone yet (expected right after creation) — backup proven against the source")
-		body, _ = json.Marshal(map[string]any{"storage": dest, "modo": "snapshot"})
+		body, _ = json.Marshal(map[string]any{"storage": dest, "mode": "snapshot"})
 		w, out = callAPI(t, r, http.MethodPost, "/api/nodes/"+cloneSourceLive+"/backup", string(body))
 	}
 	if w.Code != 200 {
 		t.Fatalf("POST backup = %d: %s", w.Code, w.Body)
 	}
-	if out["status"] != "aceita" {
+	if out["status"] != "accepted" {
 		t.Errorf("backup status = %v, want \"accepted\"", out["status"])
 	}
 	upidBkp, _ := out["upid"].(string)
@@ -368,19 +368,19 @@ func TestLiveNoteOfEveryNode(t *testing.T) {
 
 	var withoutNote []string
 	for _, n := range inv.Nodes {
-		w, out := callAPI(t, r, http.MethodGet, "/api/nodes/"+n.ID+"/nota", "")
+		w, out := callAPI(t, r, http.MethodGet, "/api/nodes/"+n.ID+"/note", "")
 		if w.Code != 200 {
 			t.Errorf("%s: note = %d: %s", n.ID, w.Code, w.Body)
 			continue
 		}
-		origin, _ := out["origem"].(string)
+		origin, _ := out["origin"].(string)
 		md, _ := out["markdown"].(string)
 
 		// A node the inventory still lists but the hypervisor no longer has (a
 		// guest deleted on the previous cycle) is not a failure of this test — it
 		// is the state it helped discover. What is required is that the answer EXPLAINS.
-		if origin == "inexistente" {
-			if out["motivo"] == "" {
+		if origin == "nonexistent" {
+			if out["reason"] == "" {
 				t.Errorf("%s: disappeared from the hypervisor and the response does not say so", n.ID)
 			}
 			t.Logf("%-10s (no longer exists on the hypervisor — inventory from one cycle ago)", n.ID)
@@ -390,12 +390,12 @@ func TestLiveNoteOfEveryNode(t *testing.T) {
 		if n.Transport != "pve-api" {
 			// An external node has no config in PVE: an absence of SOURCE, and
 			// the answer has to say so instead of returning a mute blank.
-			if origin != "fora-do-pve" || out["motivo"] == "" {
-				t.Errorf("%s: external node returned origin=%q reason=%v", n.ID, origin, out["motivo"])
+			if origin != "outside-pve" || out["reason"] == "" {
+				t.Errorf("%s: external node returned origin=%q reason=%v", n.ID, origin, out["reason"])
 			}
 			continue
 		}
-		if origin == "vazia" || strings.TrimSpace(md) == "" {
+		if origin == "empty" || strings.TrimSpace(md) == "" {
 			withoutNote = append(withoutNote, n.ID)
 			continue
 		}
@@ -441,7 +441,7 @@ func TestLiveEditNote(t *testing.T) {
 	defer cancel()
 
 	// 1. read the original
-	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/"+target+"/nota", "")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/"+target+"/note", "")
 	if w.Code != 200 {
 		t.Fatalf("GET note = %d: %s", w.Code, w.Body)
 	}
@@ -453,12 +453,12 @@ func TestLiveEditNote(t *testing.T) {
 	// 2. ALWAYS restore, with the exact text
 	defer func() {
 		body, _ := json.Marshal(map[string]string{"markdown": original})
-		w, _ := callAPI(t, r, http.MethodPut, "/api/nodes/"+target+"/nota", string(body))
+		w, _ := callAPI(t, r, http.MethodPut, "/api/nodes/"+target+"/note", string(body))
 		if w.Code != 200 {
 			t.Errorf("🔴 CLEANUP FAILED: %s's note was left altered — restore it by hand: %s", target, w.Body)
 			return
 		}
-		w, out := callAPI(t, r, http.MethodGet, "/api/nodes/"+target+"/nota", "")
+		w, out := callAPI(t, r, http.MethodGet, "/api/nodes/"+target+"/note", "")
 		if got, _ := out["markdown"].(string); w.Code != 200 || got != original {
 			t.Errorf("🔴 CLEANUP INCOMPLETE: the note did not come back byte for byte")
 			return
@@ -469,13 +469,13 @@ func TestLiveEditNote(t *testing.T) {
 	// 3. write the original + a marker
 	mark := "\n\n<!-- live edit probe: this line is deleted at the end -->"
 	body, _ := json.Marshal(map[string]string{"markdown": original + mark})
-	w, _ = callAPI(t, r, http.MethodPut, "/api/nodes/"+target+"/nota", string(body))
+	w, _ = callAPI(t, r, http.MethodPut, "/api/nodes/"+target+"/note", string(body))
 	if w.Code != 200 {
 		t.Fatalf("PUT note = %d: %s", w.Code, w.Body)
 	}
 
 	// 4. the hypervisor really does have the new text — read back, not assumed
-	w, out = callAPI(t, r, http.MethodGet, "/api/nodes/"+target+"/nota", "")
+	w, out = callAPI(t, r, http.MethodGet, "/api/nodes/"+target+"/note", "")
 	if w.Code != 200 {
 		t.Fatalf("GET after the PUT = %d", w.Code)
 	}

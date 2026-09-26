@@ -159,12 +159,12 @@ func TestE2EFrame_PhoneNoLongerShrinksDesktop(t *testing.T) {
 	}
 
 	// The desktop arrives first, big, and accepts frames.
-	desktop := dial("&quadro=1")
+	desktop := dial("&frame=1")
 	desktop.send(map[string]any{"type": "resize", "cols": 120, "rows": 40})
 	time.Sleep(1800 * time.Millisecond)
 
 	// The phone arrives later, small, and accepts frames too.
-	phone := dial("&quadro=1")
+	phone := dial("&frame=1")
 	phone.send(map[string]any{"type": "resize", "cols": 53, "rows": 20})
 	time.Sleep(2000 * time.Millisecond)
 

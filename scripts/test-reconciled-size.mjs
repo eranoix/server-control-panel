@@ -86,7 +86,7 @@ console.log('=== test-reconciled-size ===');
 // ("120x40 → 80x24" followed by "80x24 → 120x40") and from then on the program
 // wrapped lines at one width while xterm drew at another.
 {
-  /_gradeSessao = \{ cols: _av\.cols, rows: _av\.rows \}/.test(shell)
+  /_gradeSession = \{ cols: _av\.cols, rows: _av\.rows \}/.test(shell)
     ? ok('panel: the size notice is STORED, not merely applied')
     : no('panel: the notice is not stored — the fit undoes it and nothing re-notifies');
 
@@ -94,7 +94,7 @@ console.log('=== test-reconciled-size ===');
   if (!sf) {
     no('could not find _safeFit');
   } else {
-    /_gradeSessao/.test(sf[1])
+    /_gradeSession/.test(sf[1])
       ? ok('panel: the fit obeys the session grid')
       : no('panel: the fit ignores the session grid — it fights the notice again');
     /_assertSize/.test(sf[1])
@@ -126,13 +126,13 @@ console.log('=== test-reconciled-size ===');
 
 // ── both clients ask for a RENDERED CROP ───────────────────────────────────
 //
-// Without `quadro=1`, the client goes back to being a CEILING on the size of the
+// Without `frame=1`, the client goes back to being a CEILING on the size of the
 // session — that is, the phone shrinks the desktop again. One letter in the URL
 // and the whole defect returns, with nothing on screen saying why.
 {
-  /ws\/shell\?size=1&quadro=1/.test(shell)
-    ? ok('panel: asks for quadro=1 in the socket URL')
-    : no('panel: no quadro=1 — the smaller window shrinks the shared session again');
+  /ws\/shell\?size=1&frame=1/.test(shell)
+    ? ok('panel: asks for frame=1 in the socket URL')
+    : no('panel: no frame=1 — the smaller window shrinks the shared session again');
 }
 
 // ── the recovery screen client ──────────────────────────────────────────────

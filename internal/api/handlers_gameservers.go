@@ -98,7 +98,7 @@ func (r *Router) handleGameServers(w http.ResponseWriter, req *http.Request) {
 			output = append(output, item)
 			continue
 		}
-		env, _ := json.Marshal(map[string]string{"servidor": s.ID})
+		env, _ := json.Marshal(map[string]string{"server_id": s.ID})
 		doc, err := back.Execute(req.Context(), gameservers.OpServerStatus, env)
 		if err != nil {
 			_, msg := translateNodeError(err, dest.Name)
@@ -165,7 +165,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		doc, ok := r.execOp(w, req, srv, gameservers.OpServerAction,
-			map[string]interface{}{"servidor": srv.ID, "verbo": string(verb)}, true)
+			map[string]interface{}{"server_id": srv.ID, "verb": string(verb)}, true)
 		if !ok {
 			return
 		}
@@ -176,7 +176,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		// route still exists because the screen still calls it; what changed is
 		// that it is no longer an operation of the catalogue's own.
 		doc, ok := r.execOp(w, req, srv, gameservers.OpServerAction,
-			map[string]interface{}{"servidor": srv.ID, "verbo": string(gameservers.VerbUpdate)}, true)
+			map[string]interface{}{"server_id": srv.ID, "verb": string(gameservers.VerbUpdate)}, true)
 		if !ok {
 			return
 		}
@@ -188,7 +188,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			tail = "200"
 		}
 		doc, ok := r.execOp(w, req, srv, gameservers.OpServerLogs,
-			map[string]interface{}{"servidor": srv.ID, "tail": tail}, false)
+			map[string]interface{}{"server_id": srv.ID, "tail": tail}, false)
 		if !ok {
 			return
 		}
@@ -201,7 +201,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		// so as not to break the old screen during the transition, but they serve
 		// the document's SECTION — not a lookup of their own.
 		doc, ok := r.execOp(w, req, srv, gameservers.OpServerStatus,
-			map[string]interface{}{"servidor": srv.ID}, false)
+			map[string]interface{}{"server_id": srv.ID}, false)
 		if !ok {
 			return
 		}
@@ -217,7 +217,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 	case "groups": // 27-case: `groups`
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
-				map[string]interface{}{"servidor": srv.ID}, false)
+				map[string]interface{}{"server_id": srv.ID}, false)
 			if !ok {
 				return
 			}
@@ -226,7 +226,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 				httpx.WriteErr(w, http.StatusBadGateway, "unreadable response from the node")
 				return
 			}
-			httpx.WriteJSON(w, map[string]interface{}{"groups": json.RawMessage(full["grupos"])})
+			httpx.WriteJSON(w, map[string]interface{}{"groups": json.RawMessage(full["groups"])})
 			return
 		}
 		var gbody struct {
@@ -238,7 +238,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsPatch, map[string]interface{}{
-			"servidor": srv.ID, "grupos": gbody.Groups, "reiniciar": gbody.Restart,
+			"server_id": srv.ID, "groups": gbody.Groups, "restart": gbody.Restart,
 		}, true)
 		if !ok {
 			return
@@ -248,7 +248,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 	case "bans": // 27-case: `bans`
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
-				map[string]interface{}{"servidor": srv.ID}, false)
+				map[string]interface{}{"server_id": srv.ID}, false)
 			if !ok {
 				return
 			}
@@ -257,7 +257,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 				httpx.WriteErr(w, http.StatusBadGateway, "unreadable response from the node")
 				return
 			}
-			httpx.WriteJSON(w, map[string]interface{}{"bans": json.RawMessage(full["banidos"])})
+			httpx.WriteJSON(w, map[string]interface{}{"bans": json.RawMessage(full["banned"])})
 			return
 		}
 		var bbody struct {
@@ -268,7 +268,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsPatch,
-			map[string]interface{}{"servidor": srv.ID, "banidos": bbody.Bans}, true)
+			map[string]interface{}{"server_id": srv.ID, "banned": bbody.Bans}, true)
 		if !ok {
 			return
 		}
@@ -279,7 +279,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 	case "server": // `server` — server options + default group
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
-				map[string]interface{}{"servidor": srv.ID}, false)
+				map[string]interface{}{"server_id": srv.ID}, false)
 			if !ok {
 				return
 			}
@@ -301,7 +301,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsPatch, map[string]interface{}{
-			"servidor": srv.ID, "server": body.Server, "grupo": body.Group, "reiniciar": body.Restart,
+			"server_id": srv.ID, "server": body.Server, "group": body.Group, "restart": body.Restart,
 		}, true)
 		if !ok {
 			return
@@ -311,7 +311,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 	case "settings": // 27-case: `settings`
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
-				map[string]interface{}{"servidor": srv.ID}, false)
+				map[string]interface{}{"server_id": srv.ID}, false)
 			if !ok {
 				return
 			}
@@ -320,7 +320,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 				httpx.WriteErr(w, http.StatusBadGateway, "unreadable response from the node")
 				return
 			}
-			writeRaw(w, full["jogo"])
+			writeRaw(w, full["game"])
 			return
 		}
 		var body struct {
@@ -336,7 +336,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsPatch, map[string]interface{}{
-			"servidor": srv.ID, "jogo": body.Patch, "reiniciar": body.Restart,
+			"server_id": srv.ID, "game": body.Patch, "restart": body.Restart,
 		}, true)
 		if !ok {
 			return
@@ -355,7 +355,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		// there was a single semantic guard; now there is a field allowlist.
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsGet,
-				map[string]interface{}{"servidor": srv.ID}, false)
+				map[string]interface{}{"server_id": srv.ID}, false)
 			if !ok {
 				return
 			}
@@ -366,7 +366,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			Text    string                 `json:"text"`
 			Server  map[string]interface{} `json:"server"`
 			Group   map[string]interface{} `json:"group"`
-			Game    map[string]interface{} `json:"jogo"`
+			Game    map[string]interface{} `json:"game"`
 			Restart bool                   `json:"restart"`
 		}
 		if err := httpx.DecodeBody(req.Body, &cbody); err != nil {
@@ -375,7 +375,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		if cbody.Text != "" {
 			httpx.WriteErr(w, http.StatusBadRequest,
-				"free-text writes were removed: send enumerated fields in 'server', 'group' or 'jogo'")
+				"free-text writes were removed: send enumerated fields in 'server', 'group' or 'game'")
 			return
 		}
 		if len(cbody.Server) == 0 && len(cbody.Group) == 0 && len(cbody.Game) == 0 {
@@ -383,8 +383,8 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		doc, ok := r.execOp(w, req, srv, gameservers.OpSettingsPatch, map[string]interface{}{
-			"servidor": srv.ID, "server": cbody.Server, "grupo": cbody.Group,
-			"jogo": cbody.Game, "reiniciar": cbody.Restart,
+			"server_id": srv.ID, "server": cbody.Server, "group": cbody.Group,
+			"game": cbody.Game, "restart": cbody.Restart,
 		}, true)
 		if !ok {
 			return
@@ -394,7 +394,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 	case "runtime": // 27-case: `runtime`
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpRuntimeGet,
-				map[string]interface{}{"servidor": srv.ID}, false)
+				map[string]interface{}{"server_id": srv.ID}, false)
 			if !ok {
 				return
 			}
@@ -409,7 +409,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		doc, ok := r.execOp(w, req, srv, gameservers.OpRuntimePatch,
-			map[string]interface{}{"servidor": srv.ID, "patch": rbody.Patch}, true)
+			map[string]interface{}{"server_id": srv.ID, "patch": rbody.Patch}, true)
 		if !ok {
 			return
 		}
@@ -425,7 +425,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 		doc, ok := r.execOp(w, req, srv, gameservers.OpHistoryList,
-			map[string]interface{}{"servidor": srv.ID, "horas": hours}, false)
+			map[string]interface{}{"server_id": srv.ID, "hours": hours}, false)
 		if !ok {
 			return
 		}
@@ -436,7 +436,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 	case "trainer": // 27-case: `trainer`
 		if req.Method == http.MethodGet {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpTrainerStatus,
-				map[string]interface{}{"servidor": srv.ID}, false)
+				map[string]interface{}{"server_id": srv.ID}, false)
 			if !ok {
 				return
 			}
@@ -445,7 +445,7 @@ func (r *Router) handleGameServerSub(w http.ResponseWriter, req *http.Request) {
 		}
 		if action == "apply" {
 			doc, ok := r.execOp(w, req, srv, gameservers.OpTrainerApply,
-				map[string]interface{}{"servidor": srv.ID}, true)
+				map[string]interface{}{"server_id": srv.ID}, true)
 			if !ok {
 				return
 			}
@@ -483,7 +483,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 	switch action {
 	case "": // 27-case: `worlds` ""
 		doc, ok := r.execOp(w, req, srv, gameservers.OpWorldList,
-			map[string]interface{}{"servidor": srv.ID}, false)
+			map[string]interface{}{"server_id": srv.ID}, false)
 		if !ok {
 			return
 		}
@@ -498,7 +498,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 			return
 		}
 		doc, ok := r.execOp(w, req, srv, gameservers.OpWorldSwitch,
-			map[string]interface{}{"servidor": srv.ID, "mundo": body.World}, true)
+			map[string]interface{}{"server_id": srv.ID, "world": body.World}, true)
 		if !ok {
 			return
 		}
@@ -510,7 +510,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 		// to open it. The one holding the disk is the node, from start to finish.
 		name := req.URL.Query().Get("world")
 		doc, back, dest, ok := r.execWithBackend(w, req, srv, gameservers.OpWorldExport,
-			map[string]interface{}{"servidor": srv.ID, "mundo": name}, false)
+			map[string]interface{}{"server_id": srv.ID, "world": name}, false)
 		if !ok {
 			return
 		}
@@ -551,7 +551,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 		// The SAME back-end as the upload: the handle lives in its vault. Asking
 		// for a new back-end here would lose the zip that has just been uploaded.
 		env, _ := json.Marshal(map[string]interface{}{
-			"servidor": srv.ID, "nome": req.FormValue("name"), "handle": string(h),
+			"server_id": srv.ID, "name": req.FormValue("name"), "handle": string(h),
 		})
 		doc, err := back.Execute(req.Context(), gameservers.OpWorldImport, env)
 		r.auditGame(req, dest.Name, srv.ID, gameservers.OpWorldImport, err)
@@ -572,7 +572,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 			return
 		}
 		doc, ok := r.execOp(w, req, srv, gameservers.OpWorldRename,
-			map[string]interface{}{"servidor": srv.ID, "de": body.World, "para": body.Name}, true)
+			map[string]interface{}{"server_id": srv.ID, "from": body.World, "to": body.Name}, true)
 		if !ok {
 			return
 		}
@@ -588,7 +588,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 			return
 		}
 		doc, ok := r.execOp(w, req, srv, gameservers.OpWorldDuplicate,
-			map[string]interface{}{"servidor": srv.ID, "de": body.World, "para": body.Name}, true)
+			map[string]interface{}{"server_id": srv.ID, "from": body.World, "to": body.Name}, true)
 		if !ok {
 			return
 		}
@@ -603,7 +603,7 @@ func (r *Router) gameWorlds(w http.ResponseWriter, req *http.Request, srv gamese
 			return
 		}
 		doc, ok := r.execOp(w, req, srv, gameservers.OpWorldDelete,
-			map[string]interface{}{"servidor": srv.ID, "mundo": body.World}, true)
+			map[string]interface{}{"server_id": srv.ID, "world": body.World}, true)
 		if !ok {
 			return
 		}
@@ -619,7 +619,7 @@ func (r *Router) gameBackups(w http.ResponseWriter, req *http.Request, srv games
 	switch action {
 	case "": // 27-case: `backups` ""
 		doc, ok := r.execOp(w, req, srv, gameservers.OpBackupList,
-			map[string]interface{}{"servidor": srv.ID}, false)
+			map[string]interface{}{"server_id": srv.ID}, false)
 		if !ok {
 			return
 		}
@@ -627,7 +627,7 @@ func (r *Router) gameBackups(w http.ResponseWriter, req *http.Request, srv games
 
 	case "create": // 27-case: `backups/create`
 		doc, ok := r.execOp(w, req, srv, gameservers.OpBackupCreate,
-			map[string]interface{}{"servidor": srv.ID}, true)
+			map[string]interface{}{"server_id": srv.ID}, true)
 		if !ok {
 			return
 		}
@@ -645,7 +645,7 @@ func (r *Router) gameBackups(w http.ResponseWriter, req *http.Request, srv games
 		// container is. It used to live here and made three round trips; now it is
 		// one single operation, and the network cannot interrupt it midway.
 		doc, ok := r.execOp(w, req, srv, gameservers.OpBackupRestore,
-			map[string]interface{}{"servidor": srv.ID, "arquivo": body.File}, true)
+			map[string]interface{}{"server_id": srv.ID, "file": body.File}, true)
 		if !ok {
 			return
 		}
@@ -654,7 +654,7 @@ func (r *Router) gameBackups(w http.ResponseWriter, req *http.Request, srv games
 	case "download": // 27-case: `backups/download`
 		file := req.URL.Query().Get("file")
 		doc, back, dest, ok := r.execWithBackend(w, req, srv, gameservers.OpBackupDownload,
-			map[string]interface{}{"servidor": srv.ID, "arquivo": file}, false)
+			map[string]interface{}{"server_id": srv.ID, "file": file}, false)
 		if !ok {
 			return
 		}

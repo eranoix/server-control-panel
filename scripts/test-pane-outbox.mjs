@@ -49,7 +49,7 @@ const app = {
   _renderPaneOverlay(){},
   _paneSendInput: extract('_paneSendInput', ['pane', 'd']),
   _paneTxFlush: extract('_paneTxFlush', ['pane']),
-  _paneEnfileiraOffline: extract('_paneEnfileiraOffline', ['pane', 'd']),
+  _paneEnqueueOffline: extract('_paneEnqueueOffline', ['pane', 'd']),
   _paneEchoOffline: extract('_paneEchoOffline', ['pane', 'd']),
   _looksLikePasswordLine: extract('_looksLikePasswordLine', ['pane']),
   _markSend: extract('_markSend', ['pane', 'd']),
@@ -198,7 +198,7 @@ const fakeTerm = (written, line) => ({
     '[sudo] password for sam:',
     'Password:',
     "Enter passphrase for key '/root/.ssh/id_rsa':",
-    'Senha:',
+    'Enter PIN:',
     "Password for 'https://github.com':",
   ]) {
     const written = [];

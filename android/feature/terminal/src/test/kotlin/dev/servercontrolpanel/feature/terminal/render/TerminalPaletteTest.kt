@@ -36,13 +36,13 @@ class TerminalPaletteTest {
 
     /** ANSI palette colors that vanish on a light background. */
     private val colorsThatVanishOnLight = mapOf(
-        "branco brilhante" to 0xFFFFFF,
-        "amarelo brilhante" to 0xFFFF00,
-        "ciano brilhante" to 0x00FFFF,
-        "verde brilhante" to 0x00FF00,
-        "branco (ls: arquivo comum)" to 0xE0E0E0,
-        "amarelo (ls: dispositivo)" to 0xCDCD00,
-        "ciano (ls: link simbolico)" to 0x00CDCD,
+        "white bright" to 0xFFFFFF,
+        "yellow bright" to 0xFFFF00,
+        "cyan bright" to 0x00FFFF,
+        "verde bright" to 0x00FF00,
+        "white (ls: regular file)" to 0xE0E0E0,
+        "yellow (ls: device)" to 0xCDCD00,
+        "cyan (ls: symbolic link)" to 0x00CDCD,
     )
 
     /** The full 16-color ANSI palette as the emulator resolves it. */
@@ -102,9 +102,9 @@ class TerminalPaletteTest {
         assertTrue("yellow turned gray", r > b && g > b)
         assertEquals("yellow lost its R=G symmetry", r, g)
 
-        val ciano = adjustForContrast(0x00FFFF, LightTerminalPalette.defaultBg, LightTerminalPalette.minLumaDelta)
-        assertEquals(0, (ciano shr 16) and 0xff)
-        assertTrue("cyan is no longer cyan", (ciano and 0xff) > 0)
+        val cyan = adjustForContrast(0x00FFFF, LightTerminalPalette.defaultBg, LightTerminalPalette.minLumaDelta)
+        assertEquals(0, (cyan shr 16) and 0xff)
+        assertTrue("cyan is no longer cyan", (cyan and 0xff) > 0)
     }
 
     @Test
@@ -198,15 +198,15 @@ class TerminalPaletteTest {
             minLumaDelta = LightTerminalPalette.minLumaDelta,
         )
         val normal = ops[0].fg
-        val esmaecido = ops[1].fg
-        assertNotEquals("faint equals normal, so the attribute has no effect", normal, esmaecido)
+        val faint = ops[1].fg
+        assertNotEquals("faint equals normal, so the attribute has no effect", normal, faint)
         val background = luma(LightTerminalPalette.defaultBg)
         assertTrue(
             "faint must be closer to the background than normal",
-            abs(luma(esmaecido) - background) < abs(luma(normal) - background),
+            abs(luma(faint) - background) < abs(luma(normal) - background),
         )
         // But still visible.
-        assertTrue("faint vanished into the background", abs(luma(esmaecido) - background) > 40)
+        assertTrue("faint vanished into the background", abs(luma(faint) - background) > 40)
     }
 
     @Test

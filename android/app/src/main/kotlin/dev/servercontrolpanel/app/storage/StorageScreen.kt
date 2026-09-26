@@ -22,8 +22,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.data.storage.AppStorage
 
-const val TAG_STORAGE = "tela-armazenamento"
-const val TAG_FREE_SPACE = "botao-liberar-espaco"
+const val TAG_STORAGE = "storage-screen"
+const val TAG_FREE_SPACE = "free-space-button"
 
 /**
  * What the app takes up, item by item, and a button that frees the rebuildable space. It gives

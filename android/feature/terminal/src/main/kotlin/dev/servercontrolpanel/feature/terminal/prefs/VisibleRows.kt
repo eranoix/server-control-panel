@@ -46,6 +46,6 @@ class VisibleRowsPreference(
     }
 
     private companion object {
-        val KEY = intPreferencesKey("terminal_linhas_visiveis")
+        val KEY = intPreferencesKey("terminal_visible_rows")
     }
 }

@@ -27,7 +27,7 @@ import org.robolectric.annotation.GraphicsMode
  *
  * Runs with `@GraphicsMode(NATIVE)` so real Skia rasterises the compiled VectorDrawable and the
  * platform's AdaptiveIconDrawable positions the layers. It also writes one PNG per mask into
- * `build/reports/icone-mascaras/` for visual review without a device.
+ * `build/reports/icon-masks/` for visual review without a device.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class)
@@ -188,8 +188,8 @@ class AppIconTest {
         val artwork = rawArtwork()
         val unmaskedMark = markPixels(artwork)
 
-        val output = File("build/reports/icone-mascaras").apply { mkdirs() }
-        File(output, "00-arte-crua-108dp.png").outputStream().use {
+        val output = File("build/reports/icon-masks").apply { mkdirs() }
+        File(output, "00-raw-art-108dp.png").outputStream().use {
             artwork.compress(Bitmap.CompressFormat.PNG, 100, it)
         }
 
@@ -232,7 +232,7 @@ class AppIconTest {
         }
         return listOf(
             // Circle: Pixel Launcher default, and the harshest mask for a hexagon.
-            build("01-circulo") { addCircle(50f, 50f, 50f, Path.Direction.CW) },
+            build("01-circle") { addCircle(50f, 50f, 50f, Path.Direction.CW) },
             // Squircle: Samsung One UI and many other launchers.
             build("02-squircle") {
                 moveTo(50f, 0f)
@@ -243,12 +243,12 @@ class AppIconTest {
                 close()
             },
             // Rounded rectangle: default on several skins (MIUI, ColorOS).
-            build("03-retangulo-arredondado") {
+            build("03-rounded-rectangle") {
                 addRoundRect(RectF(0f, 0f, 100f, 100f), 20f, 20f, Path.Direction.CW)
             },
             // Teardrop (AOSP icon-shape overlay). Asymmetric on purpose, to catch centring
             // errors a symmetric mask would hide.
-            build("04-gota") {
+            build("04-drop") {
                 moveTo(50f, 0f)
                 cubicTo(77.6f, 0f, 100f, 22.4f, 100f, 50f)
                 lineTo(100f, 85f)

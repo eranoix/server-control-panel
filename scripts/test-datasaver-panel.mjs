@@ -9,7 +9,7 @@
 //
 //   1. `adguardLoaded && adguard.protection_enabled`  -> ReferenceError
 //      (the index referenced state the SERVED bundle did not declare)
-//   2. `(dsStatus.saved ? dsStatus.saved.imgs : 0).toLocaleString('pt-BR')`
+//   2. `(dsStatus.saved ? dsStatus.saved.imgs : 0).toLocaleString('en-US')`
 //      -> TypeError: the guard tested the CONTAINER and dereferenced the FIELD;
 //      with `saved:{}` declared in the initial state itself, it returned undefined.
 //
@@ -66,12 +66,12 @@ const _dsShape = shapeBody ? new Function('s', shapeBody.slice(1, -1)) : null;
 // gate at all.
 const exprs = [];
 for (const m of index.matchAll(/x-(text|if|show)="([^"]*dsStatus[^"]*)"/g)) {
-  exprs.push({ tipo: m[1], expr: m[2] });
+  exprs.push({ type: m[1], expr: m[2] });
 }
 ok('expressions touching dsStatus extracted from index.html', exprs.length >= 4, exprs.length + ' found');
 ok('the four statistic cards are among them',
-   exprs.filter((e) => e.tipo === 'text').length >= 4,
-   exprs.filter((e) => e.tipo === 'text').length + ' x-text');
+   exprs.filter((e) => e.type === 'text').length >= 4,
+   exprs.filter((e) => e.type === 'text').length + ' x-text');
 
 // ── evaluation ──────────────────────────────────────────────────────────────
 const scope = {
@@ -104,7 +104,7 @@ const scenarios = [
 for (const [name, st] of scenarios) {
   if (!st) { ok('scenario ' + name, false, 'state was not built'); continue; }
   let err = null, bad = null;
-  for (const { tipo: type, expr } of exprs) {
+  for (const { type: type, expr } of exprs) {
     try {
       const v = evaluate(expr, st);
       if (type !== 'text') continue;   // conditional: not blowing up is enough

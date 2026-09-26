@@ -205,10 +205,10 @@ internal val twoRowsBottomKeys: List<ExtraKey> = listOf(
 )
 
 /** Test tags: the row height is a requirement, so it must be measurable. */
-const val EXTRA_KEYS_BAR_TAG = "barra-teclas-extras"
+const val EXTRA_KEYS_BAR_TAG = "extra-keys-bar"
 
 /** Test tag for the handle. */
-const val EXTRA_KEYS_HANDLE_TAG = "alca-teclas-extras"
+const val EXTRA_KEYS_HANDLE_TAG = "extra-keys-handle"
 
 /** The handle's description for screen readers. */
 const val HANDLE_DESCRIPTION = "Toggle key bar size"

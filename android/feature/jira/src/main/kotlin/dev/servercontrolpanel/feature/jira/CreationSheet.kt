@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.data.jira.NewIssue
 
 /** Test tag for the creation sheet. */
-internal const val TAG_CREATION_SHEET = "jira-folha-criacao"
+internal const val TAG_CREATION_SHEET = "jira-create-sheet"
 
 /**
  * Issue creation sheet for quick capture.

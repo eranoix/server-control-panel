@@ -43,11 +43,11 @@ type schedOptGroup struct {
 func (r *Router) handleSchedulerOptions(w http.ResponseWriter, req *http.Request) {
 	source := req.URL.Query().Get("source")
 
-	// The sessoes_do_usuario source is scoped to the user THEMSELVES (each account sees only its
+	// The sessions_do_user source is scoped to the user THEMSELVES (each account sees only its
 	// own sessions), so it is open to any authenticated user — unlike the other
 	// sources (systemd/docker/databases/…), which list host-wide resources and
 	// therefore require primary. Handled before the primary gate.
-	if source == "sessoes_do_usuario" {
+	if source == "sessions_do_user" {
 		user := auth.UserFrom(req)
 		if user == "" {
 			writeErr(w, 401, "unauthorized")
@@ -589,7 +589,7 @@ var schedDescriptors = map[string]schedDescriptor{
 		Description: "Saves the state of your sessions (windows, panes, each pane's folder and history) at the interval you choose. Pick 'All' and it looks at the sessions active at fire time and saves EACH ONE individually. Restore later from the session Backups tab.",
 		Schedulable: true,
 		Args: []schedArg{
-			{Name: "session", Label: "Session", Type: "select", Source: "sessoes_do_usuario", Placeholder: "All = every active session, saved individually"},
+			{Name: "session", Label: "Session", Type: "select", Source: "sessions_do_user", Placeholder: "All = every active session, saved individually"},
 			{Name: "retention", Label: "Keep the last N per session (0 = default)", Type: "number", Placeholder: "e.g. 24"},
 		},
 	},

@@ -41,9 +41,9 @@ class WordSelectionTest {
     @Test
     fun underscoreIsPartOfWord_butHyphenIsNot() {
         // `_` is part of identifiers; `-` separates a flag from its name.
-        val snapshot = grid(cols = 32, rows = 1, lines = arrayOf("SERVER_CONTROL_PANEL_HOME --dry-run"))
+        val snapshot = grid(cols = 32, rows = 1, lines = arrayOf("PANEL_CONFIG_DIR --dry-run"))
 
-        assertEquals("SERVER_CONTROL_PANEL_HOME", extractSelectedText(snapshot, selectWord(snapshot, 0, 5)))
+        assertEquals("PANEL_CONFIG_DIR", extractSelectedText(snapshot, selectWord(snapshot, 0, 5)))
         assertEquals("dry", extractSelectedText(snapshot, selectWord(snapshot, 0, 20)))
     }
 

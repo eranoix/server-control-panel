@@ -237,8 +237,6 @@ have those installed. CI runs on a clean runner, where they pass.
 
 ## Honest notes
 
-- The UI is being translated from Portuguese; some panels are still in the
-  original language.
 - Inside the demo container some panels have nothing to show: the Docker panel
   reports that it cannot reach the daemon (there is no socket in there) and
   the disk card is empty. That is the fail-soft behaviour described above,

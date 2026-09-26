@@ -225,10 +225,10 @@ func TestSinkConcurrentWrites(t *testing.T) {
 func TestReadDayToleratesTruncatedLine(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "2026-08-06.jsonl")
-	content := "{\"screen\":\"dev.codigo\"}\n" +
+	content := "{\"screen\":\"dev.code\"}\n" +
 		"{\"screen\":\"docker.containers.logs\"}\n" +
 		"{\"screen\":\"dashboard\"}\n" +
-		"{\"screen\":\"operacoes.gi" // crash mid-write: partial line, no \n
+		"{\"screen\":\"operations.gi" // crash mid-write: partial line, no \n
 	if err := os.WriteFile(p, []byte(content), 0640); err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestSinkRoundTripWithReadDay(t *testing.T) {
 	s, _ := NewSink(dir)
 	freeze(s, "2026-08-06")
 	for i := 0; i < 5; i++ {
-		rec, _ := json.Marshal(map[string]any{"screen": "dev.codigo", "i": i})
+		rec, _ := json.Marshal(map[string]any{"screen": "dev.code", "i": i})
 		if err := s.Write(rec); err != nil {
 			t.Fatal(err)
 		}

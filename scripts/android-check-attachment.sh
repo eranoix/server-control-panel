@@ -79,7 +79,7 @@ $A exec-out screencap -p > "$S/attachment-inserted.png"
 echo "   screenshot: $S/attachment-inserted.png"
 
 echo "== 7. did the worker complain about anything? =="
-$A logcat -d | grep -Ei "WM-|AnexoUpload|Could not create Worker|TransferRepository" | tail -15 || echo "   (nothing)"
+$A logcat -d | grep -Ei "WM-|AttachmentUpload|Could not create Worker|TransferRepository" | tail -15 || echo "   (nothing)"
 
 echo
 echo "Four cases that have failed before and deserve a run each:"

@@ -113,8 +113,8 @@ func TestMetricsFormat(t *testing.T) {
 	body := w.Body.String()
 	for _, required := range []string{
 		"# HELP", "# TYPE",
-		`node_agent_ops_total{no="test",op="server.status",resultado="ok"} 1`,
-		`node_agent_ops_total{no="test",op="nonexistent",resultado="desconhecida"} 1`,
+		`node_agent_ops_total{no="test",op="server.status",result="ok"} 1`,
+		`node_agent_ops_total{no="test",op="nonexistent",result="unknown"} 1`,
 		"node_agent_uptime_seconds",
 	} {
 		if !strings.Contains(body, required) {

@@ -45,7 +45,7 @@ class DashboardSnapshotTest {
     @Test
     fun `the health_ok contradiction reaches the attention card, not only the rollup`() {
         val snapshot = snapshotReal(ops = opsReal().copy(healthOk = false))
-        val signal = snapshot.attention.firstOrNull { it.id == "saude:health_ok" }
+        val signal = snapshot.attention.firstOrNull { it.id == "health:health_ok" }
         assertEquals(Severity.WARNING, signal?.severity)
         assertEquals(
             "the server reports health_ok = false, but no subsystem reports the problem",
@@ -60,8 +60,8 @@ class DashboardSnapshotTest {
             health = opsReal().health + ("whatsapp" to "disconnected"),
         )
         val snapshot = snapshotReal(ops = ops)
-        assertTrue(snapshot.attention.none { it.id == "saude:health_ok" })
-        assertTrue(snapshot.attention.any { it.id == "saude:whatsapp" })
+        assertTrue(snapshot.attention.none { it.id == "health:health_ok" })
+        assertTrue(snapshot.attention.any { it.id == "health:whatsapp" })
     }
 
     @Test
@@ -105,7 +105,7 @@ class DashboardSnapshotTest {
         val warning = snapshotReal(ops = ops).attention
 
         assertEquals(Severity.CRITICAL, warning.first().severity)
-        assertEquals("alerta:disk_root", warning.first().id)
+        assertEquals("alert:disk_root", warning.first().id)
         assertTrue(
             "derived signals must stay in the list: ${warning.map { it.id }}",
             warning.any { it.id == "swap" } && warning.any { it.id == "cpu" },

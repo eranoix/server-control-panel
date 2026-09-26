@@ -155,7 +155,7 @@ func consoleEvents(al *auth.AuditLog) []auth.Event {
 // UTF-16 units. If the frame were assembled in the browser, "ñ" would arrive cut
 // in half — measured against CT 204.
 func TestConsoleTranslatesProtocolOnSERVER(t *testing.T) {
-	fake := &fakePVE{console: newFakeConsole(), upid: "UPID:pve:x:vncproxy:204:lab@pve!node-lab:"}
+	fake := &fakePVE{console: newFakeConsole(), upid: "UPID:pve:x:vncproxy:204:panel@pve!node-lab:"}
 	r, _ := consoleRouter(t, fake)
 	_, wsURL := panelConsoleServer(t, r)
 
@@ -229,7 +229,7 @@ func TestConsoleRejectsTokenInURL(t *testing.T) {
 	r, _ := consoleRouter(t, fake)
 	_, wsURL := panelConsoleServer(t, r)
 
-	_, resp, err := websocket.DefaultDialer.Dial(wsURL+"?node=lxc/204&token=umjwtqualquer", nil)
+	_, resp, err := websocket.DefaultDialer.Dial(wsURL+"?node=lxc/204&token=anyjwt", nil)
 	if err == nil {
 		t.Fatal("the upgrade with a token in the URL was accepted")
 	}
@@ -274,7 +274,7 @@ func TestConsoleWithoutCredentialExplainsInsteadOfFailing(t *testing.T) {
 // A single event, at open time, would say who came in and never when they left; a
 // session opened and forgotten would be indistinguishable from a two-second one.
 func TestConsoleAuditsOpenAndClose(t *testing.T) {
-	fake := &fakePVE{console: newFakeConsole(), upid: "UPID:pve:x:vncproxy:204:lab@pve!node-lab:"}
+	fake := &fakePVE{console: newFakeConsole(), upid: "UPID:pve:x:vncproxy:204:panel@pve!node-lab:"}
 	r, al := consoleRouter(t, fake)
 	_, wsURL := panelConsoleServer(t, r)
 
@@ -336,7 +336,7 @@ func TestConsoleNeverLeaksSecretToBrowser(t *testing.T) {
 		}
 		all.Write(data)
 	}
-	for _, forbidden := range []string{"s3cr3t", "lab@pve!node-lab=s3cr3t", "PVEAPIToken"} {
+	for _, forbidden := range []string{"s3cr3t", "panel@pve!node-lab=s3cr3t", "PVEAPIToken"} {
 		if strings.Contains(all.String(), forbidden) {
 			t.Errorf("the browser received %q", forbidden)
 		}

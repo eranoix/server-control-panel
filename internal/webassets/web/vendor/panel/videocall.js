@@ -2547,7 +2547,7 @@
         }
       } catch (_) {}
     }
-    this.cbState({ type: 'legendas-show', show: this._showCaptions });
+    this.cbState({ type: 'subtitles-show', show: this._showCaptions });
   };
 
   // -- Live subtitles (PanelSTT adapter — whisper-local OR web-speech) --------
@@ -2560,7 +2560,7 @@
     const payload = JSON.stringify({
       type: 'subtitles-request',
       on: !!on,
-      lang: lang || 'pt-BR',
+      lang: lang || 'en-US',
       requestedBy: this.displayName || 'me',
       ts: Date.now(),
     });
@@ -2723,7 +2723,7 @@
           backend,
           continuous: true,
           interimResults: true,
-          lang: opts.lang || 'pt-BR',
+          lang: opts.lang || 'en-US',
           // Token priority: opts.token > this.token (the call WS token, which
           // also works for invited guests) > global __PANELTOKEN__ (logged-in only).
           token: opts.token || this.token || (window.__PANELTOKEN__ || null),
@@ -2825,7 +2825,7 @@
       };
 
       this._subtitlesActive = true;
-      this._subtitlesLang = opts.lang || 'pt-BR';
+      this._subtitlesLang = opts.lang || 'en-US';
       this._subtitlesBackend = 'web-speech';
       // Lets changeSubtitlesLang restart in place without an off/on broadcast.
       this._restartSubtitlesLocalOnly = (backend, lang) => {
@@ -2914,7 +2914,7 @@
       // Off does NOT stop other peers' STT (each controls its own mic); the
       // request is informational only.
       if (!opts._silentPropagate) {
-        const r = this._broadcastSubtitlesRequest(false, this._subtitlesLang || 'pt-BR');
+        const r = this._broadcastSubtitlesRequest(false, this._subtitlesLang || 'en-US');
         this.cbState({
           type: 'subtitles-broadcast-result',
           on: false,
@@ -3023,10 +3023,10 @@
 
   Call.prototype.changeSubtitlesLang = function (lang) {
     if (!this._subtitlesActive) {
-      this._subtitlesLang = lang || 'pt-BR';
+      this._subtitlesLang = lang || 'en-US';
       return false;
     }
-    this._subtitlesLang = lang || 'pt-BR';
+    this._subtitlesLang = lang || 'en-US';
     const backend = this._subtitlesBackend || 'web-speech';
     try { this._subtitlesHandle && this._subtitlesHandle.stop && this._subtitlesHandle.stop(); } catch (_) {}
     this._subtitlesHandle = null;
@@ -3304,7 +3304,7 @@
         dc.send(JSON.stringify({
           type: 'subtitles-request',
           on: true,
-          lang: this.call._subtitlesLang || 'pt-BR',
+          lang: this.call._subtitlesLang || 'en-US',
           requestedBy: this.call.displayName || 'me',
           ts: Date.now(),
         }));
@@ -3359,7 +3359,7 @@
         const requesterLabel = payload.requestedBy || ('peer ' + this.remoteId.slice(-4));
         console.log('[panel:vc] subtitles-request received: on=' + payload.on +
                     ' from=' + this.remoteId.slice(-6) + ' by=' + requesterLabel +
-                    ' lang=' + (payload.lang || 'pt-BR'));
+                    ' lang=' + (payload.lang || 'en-US'));
         if (typeof payload.on !== 'boolean') return;
         // Tell the UI WHO asked, even if local STT is already on.
         this.call.cbState({
@@ -3367,7 +3367,7 @@
           from: this.remoteId,
           requestedBy: requesterLabel,
           on: !!payload.on,
-          lang: payload.lang || 'pt-BR',
+          lang: payload.lang || 'en-US',
         });
         if (payload.on) {
           // Remember the initiator to send ack/status when STT starts or fails.
@@ -3400,7 +3400,7 @@
             }
             try {
               const ok = this.call.setSubtitles(true, {
-                lang: payload.lang || 'pt-BR',
+                lang: payload.lang || 'en-US',
                 _silentPropagate: true,
               });
               console.log('[panel:vc] STT remote-activated → ' + (ok ? 'OK' : 'FAIL'));

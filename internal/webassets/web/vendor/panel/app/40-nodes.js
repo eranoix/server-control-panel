@@ -46,7 +46,7 @@
         list: [],          // NodeViews exactly as the server delivered them
         loading: false,
         forbidden: false,
-        vault: 'ok',       // 'ok' | 'inalcancavel' — GLOBAL state of the vault
+        vault: 'ok',       // 'ok' | 'unreachable' — GLOBAL state of the vault
         ttl: 90,
         open: '',          // id of the node whose detail is open
         detail: null,      // { node, services, deployments, jobs }
@@ -123,21 +123,21 @@
 
       // nodesCredLabel translates the FOUR states the server distinguishes. Merging
       // two of them here would undo what the backend separated on purpose:
-      //   ausente  = there never was a token for this node
-      //   revogada = the operator revoked it (DELETE on the PVE + vault), a recorded action
-      //   expirada = the `expire` date went by; that is the CALENDAR, not security
+      //   absent  = there never was a token for this node
+      //   revoked = the operator revoked it (DELETE on the PVE + vault), a recorded action
+      //   expired = the `expire` date went by; that is the CALENDAR, not security
       //   ok       = token alive and within its validity
       nodesCredLabel(n) {
         const s = n && n.credential ? n.credential.state : '';
-        if (s === 'ausente') return 'no credential (missing)';
-        if (s === 'revogada') return 'no credential (revoked)';
-        if (s === 'expirada') return 'credential expired';
+        if (s === 'absent') return 'no credential (missing)';
+        if (s === 'revoked') return 'no credential (revoked)';
+        if (s === 'expired') return 'credential expired';
         if (s === 'ok') return 'credential ok';
         return 'credential unknown';
       },
       nodesCredStyle(n) {
         const s = n && n.credential ? n.credential.state : '';
-        const c = s === 'ok' ? '#22c55e' : s === 'expirada' ? '#f59e0b' : '#ef4444';
+        const c = s === 'ok' ? '#22c55e' : s === 'expired' ? '#f59e0b' : '#ef4444';
         return `background:${c}22;color:${c};border:1px solid ${c}66`;
       },
 
@@ -232,7 +232,7 @@
             try {
               const r = await this.api('/api/nodes/' + n.id + '/credential', { method: 'DELETE' });
               const d = await r.json().catch(() => ({}));
-              this.showToast('credential revoked (' + (d.passos || []).join(' → ') + ')', 'ok');
+              this.showToast('credential revoked (' + (d.steps || []).join(' → ') + ')', 'ok');
             } catch (e) {
               // The error response NAMES the step that failed (pve.delete,
               // pve.confirm401, vault.delete, vault.recheck). Without it the

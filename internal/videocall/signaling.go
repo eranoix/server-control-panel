@@ -88,7 +88,7 @@ var (
 	ErrRateLimited     = errors.New("rate limit exceeded")
 	// ErrAlreadyJoined signals that the same user is already connected to the
 	// room from another tab/session. It avoids mutual echo and needless slot
-	// consumption in the mesh cap=4. The HTTP handler maps it to 409 + a PT-BR message.
+	// consumption in the mesh cap=4. The HTTP handler maps it to 409 + a user-facing message.
 	ErrAlreadyJoined = errors.New("user already in room")
 )
 

@@ -322,7 +322,7 @@ func (p *Poller) recordAttempt(now int64, cause error) {
 	}
 }
 
-// collectedCapacity is the result of the three capacity calls. The `tem*`
+// collectedCapacity is the result of the three capacity calls. The `has*`
 // flags are the point: `false` is not "it came back empty", it is "I DID NOT
 // ASK, or nobody answered me" — and only whoever answered has any claim to a
 // new timestamp (invariant 2).

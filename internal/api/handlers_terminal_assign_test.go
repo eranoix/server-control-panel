@@ -35,7 +35,7 @@ func assignReq(user, jsonBody string) *http.Request {
 	return req.WithContext(auth.WithUser(req.Context(), user))
 }
 
-// TestAssignSession_AdminToAll: an admin reassigns to "Todos" → 200 and
+// TestAssignSession_AdminToAll: an admin reassigns to "Everyone" → 200 and
 // ownership becomes "*".
 func TestAssignSession_AdminToAll(t *testing.T) {
 	r := newAssignRouter(t)

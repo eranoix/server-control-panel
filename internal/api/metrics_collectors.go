@@ -418,7 +418,7 @@ func (r *Router) dockerCollector() metrics.Collector {
 
 func sessionCollector() metrics.Collector {
 	desc := []metrics.MetricDescriptor{
-		{Key: "sessoes.ativas", Label: "Sessions (dtach)", Unit: "count", Category: catSystem, Kind: "gauge"},
+		{Key: "sessions.active", Label: "Sessions (dtach)", Unit: "count", Category: catSystem, Kind: "gauge"},
 	}
 	return metrics.NewFuncCollector(30*time.Second, desc, func(context.Context) map[string]float64 {
 		// Counts the dtach engine's sessions. The wire key is kept for the
@@ -427,6 +427,6 @@ func sessionCollector() metrics.Collector {
 		if err != nil {
 			return nil
 		}
-		return map[string]float64{"sessoes.ativas": float64(len(sessions))}
+		return map[string]float64{"sessions.active": float64(len(sessions))}
 	})
 }

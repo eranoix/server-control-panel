@@ -264,7 +264,7 @@ func originOf(source string) string {
 	}
 }
 
-// jobTitle builds a short PT-BR headline for the event.
+// jobTitle builds a short headline for the event.
 func jobTitle(j *queue.Job) string {
 	switch j.Status {
 	case queue.StatusDone:

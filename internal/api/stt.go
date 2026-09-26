@@ -151,12 +151,12 @@ type segState struct {
 	emittedFinal bool
 }
 
-// normalizeLang accepts "pt-BR", "pt-PT", "en-US" and returns "pt", "en" — the
+// normalizeLang accepts "en-US", "pt-BR", "es-ES" and returns "en", "pt", "es" — the
 // format faster-whisper consumes.
 func normalizeLang(l string) string {
 	l = strings.ToLower(strings.TrimSpace(l))
 	if l == "" {
-		return "pt"
+		return "en"
 	}
 	if idx := strings.IndexAny(l, "-_"); idx > 0 {
 		return l[:idx]
@@ -248,15 +248,13 @@ func (r *Router) handleSTTTranscribe(w http.ResponseWriter, req *http.Request) {
 	var randBytes [8]byte
 	_, _ = rand.Read(randBytes[:])
 	uid := fmt.Sprintf("panel-%x", randBytes[:])
-	// Initial prompt: biases the model towards Brazilian-Portuguese
-	// conversational context. Reduces hallucination during silence and improves
+	// Initial prompt: biases the model towards an English conversational
+	// context (other languages get no default prompt). Reduces hallucination during silence and improves
 	// punctuation. Replaceable by start.Prompt if the client sends its own (for
 	// instance, specific technical jargon).
 	initialPrompt := start.Prompt
 	if initialPrompt == "" {
-		if strings.HasPrefix(lang, "pt") {
-			initialPrompt = "Esta é uma conversa em português brasileiro, com pontuação correta."
-		} else if strings.HasPrefix(lang, "en") {
+		if strings.HasPrefix(lang, "en") {
 			initialPrompt = "This is a conversation in English, with proper punctuation."
 		}
 	}

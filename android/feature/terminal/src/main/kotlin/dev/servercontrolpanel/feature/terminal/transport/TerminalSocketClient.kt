@@ -395,10 +395,10 @@ class TerminalSocketClient(
         ): String {
             val base = "$wsBaseUrl$WS_SHELL_PATH?name=$name&ticket=$ticket"
             // `size=1`: this client understands the effective-size announcement
-            // (older clients would print the JSON). `quadro=1`: it accepts a
+            // (older clients would print the JSON). `frame=1`: it accepts a
             // rendered crop of the session screen when its window is smaller, so a
             // phone does not shrink the session for larger clients.
-            val withAttach = if (attach) "$base&attach=1&size=1&quadro=1" else "$base&size=1&quadro=1"
+            val withAttach = if (attach) "$base&attach=1&size=1&frame=1" else "$base&size=1&frame=1"
             return if (serverReplay) withAttach else "$withAttach&replay=0"
         }
     }

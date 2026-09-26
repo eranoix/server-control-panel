@@ -110,11 +110,11 @@ func TestMouseFilterDoesNotEatDeleteLine(t *testing.T) {
 // What the filter MUST keep eating: the SGR-1006 report, which is what really
 // turns up in the logs (a shell echoing in cooked mode).
 func TestMouseFilterStillEatsSGRReport(t *testing.T) {
-	output := stripMouseReports([]byte("antes\x1b[<35;80;24Mdepois\r\n"))
+	output := stripMouseReports([]byte("before\x1b[<35;80;24Mafter\r\n"))
 	if bytes.Contains(output, []byte("35;80;24")) {
 		t.Errorf("the SGR report got through: %q", output)
 	}
-	if !bytes.Contains(output, []byte("antesdepois")) {
+	if !bytes.Contains(output, []byte("beforeafter")) {
 		t.Errorf("the filter took content with it: %q", output)
 	}
 }

@@ -26,7 +26,7 @@ services:
       - ../grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
       - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
       - type: bind
-        source: ${PANEL_DATA_DIR:-/opt/projetos/servercontrolpanel/data}/.grafana_admin_pw
+        source: ${PANEL_DATA_DIR:-/opt/projects/servercontrolpanel/data}/.grafana_admin_pw
         target: /secrets/admin_pw
         read_only: true
     environment:

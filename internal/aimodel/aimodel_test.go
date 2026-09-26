@@ -16,10 +16,10 @@ func TestForPrecedence(t *testing.T) {
 	if got := For(JiraAI, "sonnet"); got != "sonnet" {
 		t.Fatalf("config JiraAI = %q, want sonnet", got)
 	}
-	// the "padrao" nickname normalizes to "" = "use THE TIER's default" (it does not
+	// the "default" nickname normalizes to "" = "use THE TIER's default" (it does not
 	// force Opus): for Suggest that is haiku; for JiraAI it is "" (inherits Opus).
-	if got := For(Suggest, "padrao"); got != "haiku" {
-		t.Fatalf("config Suggest=padrao = %q, want haiku (the tier default)", got)
+	if got := For(Suggest, "default"); got != "haiku" {
+		t.Fatalf("config Suggest=default = %q, want haiku (the tier default)", got)
 	}
 	if got := For(JiraAI, "inherit"); got != "" {
 		t.Fatalf("config JiraAI=inherit = %q, want \"\" (inherits Opus)", got)
@@ -72,7 +72,7 @@ func TestIntakeModel(t *testing.T) {
 // TestAllowed proves the anti-injection allowlist (Layer 3): only the canonical
 // ids plus "" get through; anything else (an injection attempt included) is blocked.
 func TestAllowed(t *testing.T) {
-	for _, ok := range []string{"", "haiku", "sonnet", "opus", "fable", "PADRAO", " opus "} {
+	for _, ok := range []string{"", "haiku", "sonnet", "opus", "fable", "DEFAULT", " opus "} {
 		if !Allowed(ok) {
 			t.Errorf("Allowed(%q) = false, want true", ok)
 		}

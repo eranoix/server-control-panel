@@ -177,7 +177,7 @@ open class ConversationViewModel(
         val media = failed.media ?: return
         val attachment = PickedAttachment(
             file = mediaFileFromUrl(media.url),
-            filename = media.filename ?: "arquivo",
+            filename = media.filename ?: "file",
             mimeType = media.mimeType,
             sizeBytes = media.size ?: 0L,
             msgType = failed.type,

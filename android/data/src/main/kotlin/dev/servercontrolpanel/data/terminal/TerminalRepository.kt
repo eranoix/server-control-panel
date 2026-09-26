@@ -149,7 +149,7 @@ class TerminalRepository(
     }
 
     override suspend fun history(name: String, bytes: Int): RawLogResult = try {
-        val response = mobileApi.getTerminalHistorico(name = name, bytes = bytes.toLong())
+        val response = mobileApi.getTerminalHistory(name = name, bytes = bytes.toLong())
         // Decode off the caller's dispatcher: a few MiB of base64 on the main
         // thread is a visible freeze.
         withContext(Dispatchers.Default) {

@@ -230,7 +230,7 @@ What runs on the phone, and why each piece sits where it does.
 :data/update/          network, disk and orchestration (the only place with network)
   InstalledApkReader   SHA-256 of the installed APK -> becomes base_sha256
   UpdateRepository     GET /app/update  +  Range download (resumable)
-  UpdateStaging        filesDir/atualizacoes/ + space reservation
+  UpdateStaging        filesDir/updates/ + space reservation
   UpdateCoordinator    the fallback ladder and the StateFlow the banner draws
   ApkInstaller         PackageInstaller (session, pre-approval, commit)
   UpdateInstallReceiver  system result -> UpdateDiagnostics

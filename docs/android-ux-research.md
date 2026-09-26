@@ -42,7 +42,7 @@ actions and destructive confirmation:
 alerts.rules       docker.compose     docker.containers  docker.images
 docker.networks    docker.prune       docker.volumes     ai.settings
 deploy.apps        jira.issues        queue.jobs         scheduler.jobs
-security.adguard   security.audit     security.devices   security.economia
+security.adguard   security.audit     security.devices   security.savings
 security.secrets   security.sessions  security.ufw       security.users
 system.history     system.metrics     system.ports       system.processes
 system.systemd

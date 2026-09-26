@@ -46,7 +46,7 @@ fun summaryOf(snapshot: DashboardSnapshot, nowMs: Long = System.currentTimeMilli
     val warning = snapshot.attention
     return ServerSummary(
         cpu = signals["cpu"]?.headline ?: "—",
-        memory = signals["memoria"]?.headline ?: "—",
+        memory = signals["memory"]?.headline ?: "—",
         // The disk is `disco:/mnt/x` — the first one to appear is the root,
         // which is the fixed order of `gradeResources`.
         disk = signals.entries.firstOrNull { it.key.startsWith("disco:") }?.value?.headline ?: "—",
@@ -63,31 +63,31 @@ fun summaryOf(snapshot: DashboardSnapshot, nowMs: Long = System.currentTimeMilli
  */
 object StoredSummary {
 
-    private const val FILE = "panel_resumo_widget"
+    private const val FILE = "panel_widget_summary"
 
     fun persist(context: Context, summary: ServerSummary) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putString("cpu", summary.cpu)
-            .putString("memoria", summary.memory)
+            .putString("memory", summary.memory)
             .putString("disco", summary.disk)
-            .putString("alerta", summary.alert)
-            .putString("pior", summary.worst.storedName)
-            .putLong("medidoEm", summary.measuredAt)
+            .putString("alert", summary.alert)
+            .putString("worst", summary.worst.storedName)
+            .putLong("measuredAt", summary.measuredAt)
             .apply()
     }
 
     fun read(context: Context): ServerSummary {
         val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-        val measuredAt = p.getLong("medidoEm", 0L)
+        val measuredAt = p.getLong("measuredAt", 0L)
         // With no reading ever written, hand back EMPTY instead of null
         // strings turned into "null" on screen.
         if (measuredAt == 0L) return ServerSummary.EMPTY
         return ServerSummary(
             cpu = p.getString("cpu", "—").orEmpty(),
-            memory = p.getString("memoria", "—").orEmpty(),
+            memory = p.getString("memory", "—").orEmpty(),
             disk = p.getString("disco", "—").orEmpty(),
-            alert = p.getString("alerta", null),
-            worst = runCatching { Severity.fromStoredName(p.getString("pior", "OK").orEmpty()) }
+            alert = p.getString("alert", null),
+            worst = runCatching { Severity.fromStoredName(p.getString("worst", "OK").orEmpty()) }
                 .getOrDefault(Severity.OK),
             measuredAt = measuredAt,
         )

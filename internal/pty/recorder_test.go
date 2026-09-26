@@ -68,7 +68,7 @@ func TestRecorderLeavesNoLogGapWithNobodyAttached(t *testing.T) {
 	c := dial("")
 	time.Sleep(1500 * time.Millisecond)
 	// Five markers, one every 2s — all AFTER I left.
-	cmd := `(for i in 1 2 3 4 5; do sleep 2; echo MARCA_$i; done) &` + "\r"
+	cmd := `(for i in 1 2 3 4 5; do sleep 2; echo MARK_$i; done) &` + "\r"
 	_ = c.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"type":"input","data":%q}`, cmd)))
 	time.Sleep(600 * time.Millisecond)
 	_ = c.Close()
@@ -78,7 +78,7 @@ func TestRecorderLeavesNoLogGapWithNobodyAttached(t *testing.T) {
 	data, _ := os.ReadFile(sessionLogPath(dir, "u", name))
 	var missing []string
 	for i := 1; i <= 5; i++ {
-		m := fmt.Sprintf("MARCA_%d", i)
+		m := fmt.Sprintf("MARK_%d", i)
 		if !strings.Contains(string(data), m) {
 			missing = append(missing, m)
 		}
@@ -129,7 +129,7 @@ func TestHistoryFlowsFromLiveSessionToPanelFetch(t *testing.T) {
 	time.Sleep(1500 * time.Millisecond)
 	// Write more lines than fit on the screen (24): the excess scrolls off and
 	// that is what becomes history.
-	cmd := `for i in $(seq 1 60); do echo LINHA_DE_HISTORICO_$i; done` + "\r"
+	cmd := `for i in $(seq 1 60); do echo LINE_DE_HISTORY_$i; done` + "\r"
 	_ = c.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"type":"input","data":%q}`, cmd)))
 	time.Sleep(3 * time.Second)
 	_ = c.Close()
@@ -142,7 +142,7 @@ func TestHistoryFlowsFromLiveSessionToPanelFetch(t *testing.T) {
 	text := stripANSI(string(data))
 	missing := 0
 	for i := 1; i <= 20; i++ { // the first ones have certainly scrolled out by now
-		if !strings.Contains(text, fmt.Sprintf("LINHA_DE_HISTORICO_%d", i)) {
+		if !strings.Contains(text, fmt.Sprintf("LINE_DE_HISTORY_%d", i)) {
 			missing++
 		}
 	}

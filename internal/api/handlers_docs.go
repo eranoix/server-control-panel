@@ -48,12 +48,12 @@ var knowledgeGraphs = map[string]graphViews{
 		"/opt/panel/graphify-out/server-control-panel-callflow.html",
 	},
 	"northwind-web": {
-		"/root/projetos/northwind-web/graphify-out/graph.html",
-		"/root/projetos/northwind-web/graphify-out/northwind-web-callflow.html",
+		"/root/projects/northwind-web/graphify-out/graph.html",
+		"/root/projects/northwind-web/graphify-out/northwind-web-callflow.html",
 	},
 	"acme-booking": {
-		"/root/projetos/acme-booking/graphify-out/graph.html",
-		"/root/projetos/acme-booking/graphify-out/acme-booking-callflow.html",
+		"/root/projects/acme-booking/graphify-out/graph.html",
+		"/root/projects/acme-booking/graphify-out/acme-booking-callflow.html",
 	},
 	"private-ai-api": {
 		"/opt/private-ai-api/graphify-out/graph.html",

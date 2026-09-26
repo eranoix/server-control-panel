@@ -52,7 +52,7 @@ func withAudit(ctx huma.Context, next func(huma.Context)) {
 	next(huma.WithValue(ctx, clientIPKey{}, auth.ClientIP(req)))
 }
 
-// auditar records an event with the IP captured by [withAudit].
+// recordAudit records an event with the IP captured by [withAudit].
 func recordAudit(ctx context.Context, log *auth.AuditLog, user, action, target string) {
 	if log == nil {
 		return

@@ -26,16 +26,16 @@ enum class TerminalLineSpacing(
 ) {
 
     /** The tightest that fits without clipping a letter; gains a few rows per screen. */
-    COMPACT("Compact", -3, "COMPACTA"),
+    COMPACT("Compact", -3, "COMPACT"),
 
     /** One pixel less: barely visible, one more row. */
-    TIGHT("Tight", -1, "JUSTA"),
+    TIGHT("Tight", -1, "TIGHT"),
 
     /** The usual grid. */
     NORMAL("Normal", 0, "NORMAL"),
 
     /** A little more room between rows, for long reading. */
-    RELAXED("Relaxed", 2, "FOLGADA"),
+    RELAXED("Relaxed", 2, "RELAXED"),
     ;
 
     companion object {

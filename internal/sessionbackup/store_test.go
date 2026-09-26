@@ -139,15 +139,15 @@ func TestGlobalPruneKeepsScheduled(t *testing.T) {
 
 	s.Prune("sam", 2)
 
-	viu := map[string]bool{}
+	seen := map[string]bool{}
 	for _, m := range s.List("sam") {
-		viu[m.ID] = true
+		seen[m.ID] = true
 	}
-	if !viu["900"] {
+	if !seen["900"] {
 		t.Error("the global prune deleted a scheduled backup")
 	}
-	if len(viu) != 3 { // 2 automatic ones + the scheduled one, untouched
-		t.Errorf("expected 3 backups after the prune, got %d: %v", len(viu), viu)
+	if len(seen) != 3 { // 2 automatic ones + the scheduled one, untouched
+		t.Errorf("expected 3 backups after the prune, got %d: %v", len(seen), seen)
 	}
 }
 
@@ -170,20 +170,20 @@ func TestPerSessionPruneTouchesOnlyItsSession(t *testing.T) {
 
 	s.PruneSession("sam", "web", 1)
 
-	viu := map[string]bool{}
+	seen := map[string]bool{}
 	for _, m := range s.List("sam") {
-		viu[m.ID] = true
+		seen[m.ID] = true
 	}
-	if !viu["700"] {
+	if !seen["700"] {
 		t.Error("the per-session prune deleted the scheduled backup of ANOTHER session")
 	}
-	if !viu["800"] {
+	if !seen["800"] {
 		t.Error("the per-session prune deleted a manual backup")
 	}
-	if !viu["300"] {
+	if !seen["300"] {
 		t.Error("the per-session prune should keep the session's most recent one")
 	}
-	if viu["100"] || viu["200"] {
+	if seen["100"] || seen["200"] {
 		t.Error("the per-session prune did not remove the session's own old ones")
 	}
 }

@@ -29,9 +29,9 @@ func defaultRepos() []config.GitRepo {
 		// converges — so it neither diverges nor clobbers.
 		{ID: "server-control-panel", Path: "/opt/panel", Name: "Server Control Panel", Policy: policyWrite,
 			ExpName: "northwind-dev", ExpEmail: "sam.rivera@personal.example"},
-		{ID: "northwind-web", Path: "/root/projetos/northwind-web", Name: "Northwind Web",
+		{ID: "northwind-web", Path: "/root/projects/northwind-web", Name: "Northwind Web",
 			Policy: policyWrite, ExpName: "Sam Rivera", ExpEmail: "sam@northwind.example"},
-		{ID: "css-lee", Path: "/root/projetos/acme-booking", Name: "Acme Booking",
+		{ID: "css-lee", Path: "/root/projects/acme-booking", Name: "Acme Booking",
 			Policy: policyWrite, ExpName: "northwind-dev", ExpEmail: "sam.rivera@personal.example"},
 		// venice-cli and supabase removed at the user's request (they do not show up in Git).
 	}

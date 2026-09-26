@@ -32,20 +32,20 @@ import androidx.core.content.FileProvider
 import java.io.File
 
 /** Test tag for the attachment source sheet. */
-const val ATTACHMENT_SHEET_TAG = "folha-origem-anexo"
+const val ATTACHMENT_SHEET_TAG = "attachment-source-sheet"
 
 /** Label of the item that opens the attachment sheet, in the terminal's options sheet. */
 const val ATTACH_LABEL = "Attach file or image"
 
 /** Test tag for the attachment item inside the options sheet. */
-const val ATTACH_TAG = "botao-anexar-terminal"
+const val ATTACH_TAG = "terminal-attach-button"
 
 internal const val CHOOSE_FILE_LABEL = "Choose file"
 internal const val CHOOSE_IMAGE_LABEL = "Choose image from gallery"
 internal const val TAKE_PHOTO_LABEL = "Take a photo now"
 
 /** The cache subfolder a freshly taken photo lands in before it uploads. */
-private const val PHOTOS_DIR = "anexos-terminal"
+private const val PHOTOS_DIR = "terminal-attachments"
 
 /**
  * The three ways to hand a reference to the agent on the other side of the session:
@@ -179,7 +179,7 @@ internal fun hasCameraPermission(context: Context): Boolean =
 
 private fun newPhotoFile(context: Context): File {
     val dir = File(context.cacheDir, PHOTOS_DIR).apply { mkdirs() }
-    return File(dir, "foto-${System.currentTimeMillis()}.jpg")
+    return File(dir, "photo-${System.currentTimeMillis()}.jpg")
 }
 
 /**

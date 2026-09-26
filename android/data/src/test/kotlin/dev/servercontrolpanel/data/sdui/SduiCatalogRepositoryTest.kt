@@ -73,7 +73,7 @@ class SduiCatalogRepositoryTest {
         respond(
             200,
             """{"sections":[{"id":"system.ports","group":"System","label":"Listening ports",
-               "icone":"radar","badge_count":7,"novidade":{"desde":"2026-09"}}]}""",
+               "icon":"radar","badge_count":7,"whats_new":{"since":"2026-09"}}]}""",
         )
 
         val result = repositoryFor().sections()

@@ -13,8 +13,8 @@ enum class Severity(
     val storedName: String,
 ) {
     OK("OK"),
-    WARNING("ATENCAO"),
-    CRITICAL("CRITICO"),
+    WARNING("WARNING"),
+    CRITICAL("CRITICAL"),
     ;
 
     companion object {
@@ -206,7 +206,7 @@ private fun memorySignal(system: SystemSnapshot): ResourceSignal {
     val mem = system.memory
     val severity = grade(mem.usedPercent, MEM_WARNING_PCT, MEM_CRITICAL_PCT)
     return ResourceSignal(
-        id = "memoria",
+        id = "memory",
         label = "Memory",
         headline = pct(mem.usedPercent),
         detail = "${mem.usedText} of ${mem.totalText}" + when (severity) {
@@ -265,7 +265,7 @@ private fun netSignal(net: dev.servercontrolpanel.data.ops.NetSnapshot): Resourc
     val rates = listOfNotNull(net.recvRateText?.let { "↓ $it" }, net.sentRateText?.let { "↑ $it" })
         .joinToString(" · ")
     return ResourceSignal(
-        id = "rede",
+        id = "network",
         label = "Network ${net.iface}",
         // Headline left empty: two rates with units do not fit the narrow right
         // column on a phone, so they go in the full-width detail.
@@ -291,12 +291,12 @@ fun attentionSignals(signals: List<ResourceSignal>): List<ResourceSignal> =
  */
 fun OpsAlert.toSignal(): ResourceSignal {
     val severity = when (severity.lowercase()) {
-        "critical", "crit", "critico", "crítico", "page" -> Severity.CRITICAL
+        "critical", "crit", "page" -> Severity.CRITICAL
         else -> Severity.WARNING
     }
     val unitSuffix = unit?.takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
     return ResourceSignal(
-        id = "alerta:$name",
+        id = "alert:$name",
         label = name,
         headline = trimNumber(currentValue) + unitSuffix,
         detail = "threshold ${trimNumber(threshold)}$unitSuffix · $state",

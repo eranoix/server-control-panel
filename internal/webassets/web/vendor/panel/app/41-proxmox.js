@@ -116,7 +116,7 @@
         disks: [],
         storage: null,      // { pools, datastore_audit:{value,observed_at}, age_seconds, stale }
         zfs: null,          // { pools, age_seconds, stale }
-        perms: null,        // { permissions, storage_visivel }
+        perms: null,        // { permissions, storage_visible }
         permsOpen: false,
         snaps: [],
         newSnap: '',       // name typed for the new snapshot
@@ -142,8 +142,8 @@
         // Remote console
         con: {
           guest: '',        // id of the guest with the console open ("lxc/204")
-          estado: 'closed',// closed | opening | ligado | erro
-          erro: '',
+          state: 'closed',// closed | opening | on | error
+          error: '',
         },
 
         // Master-detail. The operator chose layout A2 and ONLY it; A5 — which was A2
@@ -157,7 +157,7 @@
         // 🔴 STATE IS BORN WITH A SHAPE, NEVER NULL.
         //
         // The previous version initialised all of this with `null`, and the template
-        // dereferenced it (`pvx.series.pontos`, `pvx.sistema.network`). Before the
+        // dereferenced it (`pvx.series.points`, `pvx.system.network`). Before the
         // first load — which is the state the screen ALWAYS opens in — that throws, and
         // a throw inside Alpine takes down the WHOLE app: the Proxmox tab dragged the
         // terminal down with it, and the operator was locked out of the only remote
@@ -165,7 +165,7 @@
         //
         // Leaning on `?.` in every expression is fragile: the next expression somebody
         // writes may forget it. A stable shape in the state removes the entire class at
-        // the source — `pvx.series.pontos` becomes always safe.
+        // the source — `pvx.series.points` becomes always safe.
         //
         // "Has it loaded yet?" moved house: it used to be the nullness of the field
         // itself, now it is `loaded`. The two questions are different, and mixing
@@ -175,23 +175,23 @@
         // Maintenance. Born with a SHAPE, never null: the template reads
         // `pvx.clone.newID` before any load, which is the state the screen ALWAYS
         // opens in.
-        clone: { open: false, loading: false, origem: '', originName: '', newID: 0, nome: '', ligado: false,
-                 needsSnap: false, snapshots: [], snapshot: '', erro: '' },
-        bkp: { storage: '', modo: 'snapshot' },
-        // The note that EXPLAINS the node. Born with a shape; `loading` and `origem`
+        clone: { open: false, loading: false, origin: '', originName: '', newID: 0, name: '', on: false,
+                 needsSnap: false, snapshots: [], snapshot: '', error: '' },
+        bkp: { storage: '', mode: 'snapshot' },
+        // The note that EXPLAINS the node. Born with a shape; `loading` and `origin`
         // separate the three states the screen has to tell apart: I have not read it
         // yet, I read it and it is empty, I read it and it is not from this hypervisor.
-        nota: { node: '', markdown: '', origem: '', motivo: '', loading: false, erro: '',
-                editing: false, rascunho: '', saving: false },
+        note: { node: '', markdown: '', origin: '', reason: '', loading: false, error: '',
+                editing: false, draft: '', saving: false },
 
         backup: { datastores: [] },     // freshness per layer — see pvxBackups()
         topology: { pools: [] },       // pool topology
-        series: { pontos: [], escopo: '', janela: '' },
+        series: { points: [], scope: '', window: '' },
         seriesLoading: false,
-        janela: 'hour',
-        sistema: {},                    // network, DNS, time, certificates
-        pacotes: { pacotes: [] },
-        registry: { linhas: [] },       // syslog
+        window: 'hour',
+        system: {},                    // network, DNS, time, certificates
+        packages: { packages: [] },
+        registry: { lines: [] },       // syslog
         packageFilter: '',
       },
 
@@ -240,7 +240,7 @@
             try {
               const d = await (await this.api('/api/proxmox/power?command=' + encodeURIComponent(cmd),
                 { method: 'POST' })).json().catch(() => ({}));
-              const howMany = (d.guests_afetados || []).length;
+              const howMany = (d.guests_affected || []).length;
               this.showToast(
                 (cmd === 'reboot' ? 'restart' : 'power off') + ' accepted by the hypervisor' +
                 (howMany ? ` — ${howMany} guest(s) going down with it` : '') +
@@ -369,7 +369,7 @@
       },
       async pvxLoadSeries() {
         const target = this.pvxSeriesTarget();
-        const q = '?janela=' + encodeURIComponent(this.pvx.janela) + (target ? '&node=' + encodeURIComponent(target) : '');
+        const q = '?window=' + encodeURIComponent(this.pvx.window) + (target ? '&node=' + encodeURIComponent(target) : '');
         this.pvx.seriesLoading = true;
         try {
           const r = await this.api('/api/proxmox/rrd' + q, { raw: true });
@@ -380,12 +380,12 @@
         } catch (e) {
           this.pvx.lastError = this._errText(e);
           // Stable shape in the error path too: see pvxLoad.
-          this.pvx.series = { pontos: [], escopo: '', janela: this.pvx.janela };
+          this.pvx.series = { points: [], scope: '', window: this.pvx.window };
         } finally {
           this.pvx.seriesLoading = false;
         }
       },
-      pvxSwitchWindow(j) { this.pvx.janela = j; this.pvxLoadSeries(); },
+      pvxSwitchWindow(j) { this.pvx.window = j; this.pvxLoadSeries(); },
 
       // ── the drawing ───────────────────────────────────────────────────────
       //
@@ -406,11 +406,11 @@
         // "attribute cx: Unexpected end of attribute". The same disease as state born
         // null, one level down — in the return value of a function.
         const empty = {
-          hasData: false, area: '', stroke: '', pontos: '',
+          hasData: false, area: '', stroke: '', points: '',
           cap: 1, max: 0, min: 0, last: null, endX: 0, endY: 0, gaps: 0, n: 0,
         };
-        if (!d || !Array.isArray(d.pontos) || !d.pontos.length) return empty;
-        const pts = d.pontos;
+        if (!d || !Array.isArray(d.points) || !d.points.length) return empty;
+        const pts = d.points;
         const vals = pts.map((p) => {
           const v = p[metric.id];
           return v === undefined || v === null || Number.isNaN(Number(v)) ? null : Number(v);
@@ -484,7 +484,7 @@
         return {
           hasData: true,
           stroke,
-          pontos: points,
+          points: points,
           area,
           cap,
           max: Math.max(...present),
@@ -508,8 +508,8 @@
         }
       },
       pvxWindowLabel() {
-        const j = this.WINDOWS.find((x) => x.id === this.pvx.janela);
-        return j ? j.rot : this.pvx.janela;
+        const j = this.WINDOWS.find((x) => x.id === this.pvx.window);
+        return j ? j.rot : this.pvx.window;
       },
       // Grid marks at 25/50/75%. Faint on purpose: the grid orients, it does not
       // compete with the data.
@@ -525,7 +525,7 @@
       // "what do I lose if THIS disk dies?".
       pvxTopologyOf(name) {
         const ps = (this.pvx.topology && this.pvx.topology.pools) || [];
-        return ps.find((p) => p.nome === name) || null;
+        return ps.find((p) => p.name === name) || null;
       },
       // Matches physical disk ↔ pool by the serial embedded in the by-id path.
       //
@@ -549,9 +549,9 @@
         const findings = [];
         for (const p of ps) {
           for (const v of p.vdevs || []) {
-            for (const disp of v.dispositivos || []) {
-              const s = this.pvxSerialOfPath(disp.caminho);
-              if (s && serial && s === serial && !findings.includes(p.nome)) findings.push(p.nome);
+            for (const disp of v.devices || []) {
+              const s = this.pvxSerialOfPath(disp.path);
+              if (s && serial && s === serial && !findings.includes(p.name)) findings.push(p.name);
             }
           }
         }
@@ -564,13 +564,13 @@
       // between calm and panic.
       pvxLifespan(d) {
         if (!d || d.wearout_pct === null || d.wearout_pct === undefined) {
-          return { measured: false, text: 'not reported', motivo: 'this disk exposes no wear indicator (common on spinning disks and USB enclosures)' };
+          return { measured: false, text: 'not reported', reason: 'this disk exposes no wear indicator (common on spinning disks and USB enclosures)' };
         }
         const pct = Number(d.wearout_pct);
         return {
           measured: true, pct,
           text: pct.toFixed(0) + '% of life left',
-          motivo: 'SMART: ' + (100 - pct).toFixed(0) + '% of the endurance already used',
+          reason: 'SMART: ' + (100 - pct).toFixed(0) + '% of the endurance already used',
         };
       },
       pvxLifeStyle(d) {
@@ -587,29 +587,29 @@
       // fixed text. A screen that says "no mirror" by hardcode lies the day the
       // second NVMe goes in — and the day of the change is exactly when the operator
       // most needs the screen to be right.
-      pvxRedundancy(nomePool) {
-        const t = this.pvxTopologyOf(nomePool);
+      pvxRedundancy(namePool) {
+        const t = this.pvxTopologyOf(namePool);
         if (!t) return { known: false, text: 'topology not read', style: 'background:#64748b22;color:#94a3b8;border:1px solid #64748b66' };
-        if (t.redundante) {
-          const types = [...new Set((t.vdevs || []).filter((v) => v.redundante).map((v) => v.tipo))];
+        if (t.redundant) {
+          const types = [...new Set((t.vdevs || []).filter((v) => v.redundant).map((v) => v.type))];
           return { known: true, isProtected: true, text: types.join(' + ') + ' · survives the loss of one disk',
                    style: 'background:#22c55e22;color:#22c55e;border:1px solid #22c55e66' };
         }
         return { known: true, isProtected: false,
-                 text: t.n_dispositivos === 1 ? 'single disk · NO redundancy' : t.n_dispositivos + ' striped disks · NO redundancy',
+                 text: t.n_devices === 1 ? 'single disk · NO redundancy' : t.n_devices + ' striped disks · NO redundancy',
                  style: 'background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b66' };
       },
       // Error counters. In a pool with no mirror, any non-zero one is lost data:
       // there is no second copy to rebuild from.
-      pvxPoolErrors(nomePool) {
-        const t = this.pvxTopologyOf(nomePool);
+      pvxPoolErrors(namePool) {
+        const t = this.pvxTopologyOf(namePool);
         if (!t) return { known: false };
-        return { known: true, n: t.erros_contados || 0, text: t.erros || '' };
+        return { known: true, n: t.errors_counted || 0, text: t.errors || '' };
       },
-      pvxPoolDevices(nomePool) {
-        const t = this.pvxTopologyOf(nomePool);
+      pvxPoolDevices(namePool) {
+        const t = this.pvxTopologyOf(namePool);
         if (!t) return [];
-        return (t.vdevs || []).flatMap((v) => (v.dispositivos || []).map((d) => ({ ...d, vdev: v.nome, tipo: v.tipo })));
+        return (t.vdevs || []).flatMap((v) => (v.devices || []).map((d) => ({ ...d, vdev: v.name, type: v.type })));
       },
       // 🔴 THE FIELD NEVER GOES BACK TO NULL, not even on the error path. Zeroing it
       // to `null` in a catch would recreate exactly the defect the stable shape just
@@ -627,15 +627,15 @@
           this.pvx[field] = empty;
         }
       },
-      pvxLoadSystem()  { return this.pvxLoad('/api/proxmox/sistema', 'sistema', {}); },
-      pvxLoadPackages()  { return this.pvxLoad('/api/proxmox/pacotes', 'pacotes', { pacotes: [] }); },
-      pvxLoadRegistry() { return this.pvxLoad('/api/proxmox/syslog?limit=300', 'registry', { linhas: [] }); },
+      pvxLoadSystem()  { return this.pvxLoad('/api/proxmox/system', 'system', {}); },
+      pvxLoadPackages()  { return this.pvxLoad('/api/proxmox/packages', 'packages', { packages: [] }); },
+      pvxLoadRegistry() { return this.pvxLoad('/api/proxmox/syslog?limit=300', 'registry', { lines: [] }); },
 
       // ── reading the system ────────────────────────────────────────────────
-      pvxInterfaces() { return (this.pvx.sistema && this.pvx.sistema.network) || []; },
-      pvxDNS()        { return (this.pvx.sistema && this.pvx.sistema.dns) || null; },
-      pvxTime()       { return (this.pvx.sistema && this.pvx.sistema.time) || null; },
-      pvxCertificates(){ return (this.pvx.sistema && this.pvx.sistema.certificados) || []; },
+      pvxInterfaces() { return (this.pvx.system && this.pvx.system.network) || []; },
+      pvxDNS()        { return (this.pvx.system && this.pvx.system.dns) || null; },
+      pvxTime()       { return (this.pvx.system && this.pvx.system.time) || null; },
+      pvxCertificates(){ return (this.pvx.system && this.pvx.system.certificates) || []; },
       // 🔴 The difference between the hypervisor’s clock and the timezone IS the
       // information: one server in UTC and another in São Paulo produce backup
       // windows that never meet — that is how this lab’s off-site chain stayed dead
@@ -648,7 +648,7 @@
       // timestamps (notafter and observed_at), never with the browser’s
       // clock.
       pvxCertDays(c) {
-        const d = this.pvx.sistema;
+        const d = this.pvx.system;
         if (!c || !c.notafter || !d) return null;
         return Math.floor((Number(c.notafter) - Number(d.observed_at)) / 86400);
       },
@@ -659,26 +659,26 @@
         return `background:${color}22;color:${color};border:1px solid ${color}66`;
       },
       pvxFilteredPackages() {
-        const ps = (this.pvx.pacotes && this.pvx.pacotes.pacotes) || [];
+        const ps = (this.pvx.packages && this.pvx.packages.packages) || [];
         const t = (this.pvx.packageFilter || '').trim().toLowerCase();
         if (!t) return ps;
         return ps.filter((p) => (p.Package || '').toLowerCase().includes(t)
                              || (p.Version || '').toLowerCase().includes(t));
       },
-      pvxRegistryRows() { return (this.pvx.registry && this.pvx.registry.linhas) || []; },
+      pvxRegistryRows() { return (this.pvx.registry && this.pvx.registry.lines) || []; },
       // Severity highlighting read from the TEXT of the line. The journal does not
       // return a structured level over this route, so the highlighting is heuristic —
       // and because of that it never HIDES a line, it only emphasises.
       pvxLogLineStyle(t) {
         const s2 = String(t || '');
-        if (/\b(error|erro|failed|failure|fatal|panic|refused|denied)\b/i.test(s2)) return 'color:#ef4444';
-        if (/\b(warn|warning|aviso|degraded|timeout)\b/i.test(s2)) return 'color:#f59e0b';
+        if (/\b(error|error|failed|failure|fatal|panic|refused|denied)\b/i.test(s2)) return 'color:#ef4444';
+        if (/\b(warn|warning|warning|degraded|timeout)\b/i.test(s2)) return 'color:#f59e0b';
         return '';
       },
 
       async pvxLoadTopology() {
         try {
-          const r = await this.api('/api/proxmox/zfs/topologia', { raw: true });
+          const r = await this.api('/api/proxmox/zfs/topology', { raw: true });
           if (r.status === 403) { this.pvx.forbidden = true; return; }
           if (!r.ok) throw await this._apiError(r);
           this.pvx.topology = await r.json();
@@ -705,8 +705,8 @@
         node:    { abbrev: 'NODE',  label: 'hypervisor',        color: '#94a3b8' },
         lxc:     { abbrev: 'CT',  label: 'LXC container',     color: '#38bdf8' },
         qemu:    { abbrev: 'VM',  label: 'virtual machine',   color: '#a78bfa' },
-        externo: { abbrev: 'EXT', label: 'outside the hypervisor', color: '#2dd4bf' },
-        // 🔴 Do NOT use #64748b here: it is the colour of the "parado" state. The
+        external: { abbrev: 'EXT', label: 'outside the hypervisor', color: '#2dd4bf' },
+        // 🔴 Do NOT use #64748b here: it is the colour of the "stopped" state. The
         // collision pin caught it — an unknown type would show up in the same colour as
         // a powered-off guest, which is exactly the confusion that separating the two
         // palettes exists to prevent.
@@ -717,7 +717,7 @@
         const pre = String(n.id || '').split('/')[0];
         if (pre === 'lxc' || pre === 'qemu' || pre === 'node') return pre;
         if (n.kind === 'host') return 'node';
-        if (n.kind === 'externo') return 'externo';
+        if (n.kind === 'external') return 'external';
         // 🔴 The fallback does NOT guess "VM". An id that matches nothing
         // known is a type this panel cannot classify, and saying so is the only
         // honest answer — inventing a type makes the operator act on the wrong
@@ -726,7 +726,7 @@
       },
       pvxType(n) {
         const t = this.TYPES[this.pvxTypeKey(n)] || this.TYPES['?'];
-        return { ...t, key: this.pvxTypeKey(n), modelo: !!(n && n.template) };
+        return { ...t, key: this.pvxTypeKey(n), template: !!(n && n.template) };
       },
       pvxTypeStyle(n) {
         const c = this.pvxType(n).color;
@@ -738,7 +738,7 @@
       pvxTypeTitle(n) {
         const t = this.pvxType(n);
         const base = t.label + (n && n.vmid > 0 ? ` · vmid ${n.vmid}` : '');
-        return t.modelo ? base + ' · TEMPLATE (not a bootable guest)' : base;
+        return t.template ? base + ' · TEMPLATE (not a bootable guest)' : base;
       },
       // Count per type for the list header. Answers "what do I have?" without forcing
       // anyone to count row by row.
@@ -748,7 +748,7 @@
           const k = this.pvxTypeKey(n);
           count[k] = (count[k] || 0) + 1;
         }
-        return ['node', 'lxc', 'qemu', 'externo', '?']
+        return ['node', 'lxc', 'qemu', 'external', '?']
           .filter((k) => count[k])
           .map((k) => ({ key: k, abbrev: this.TYPES[k].abbrev, label: this.TYPES[k].label, n: count[k] }));
       },
@@ -764,21 +764,21 @@
       // The density follows the Proxmox menu, which groups System (network, DNS,
       // time, certificates) and keeps Disks apart from Storage. The operator CANNOT
       // reach that UI, so whatever is not here does not exist for him.
-      ABAS_HOST: [
+      TABS_HOST: [
         { id: 'summary',   rot: 'Summary' },
         { id: 'charts', rot: 'Charts' },
         { id: 'console',  rot: 'Shell' },
-        { id: 'tarefas',  rot: 'Tasks' },
-        { id: 'discos',   rot: 'Disks' },
+        { id: 'tasks',  rot: 'Tasks' },
+        { id: 'disks',   rot: 'Disks' },
         { id: 'storage',  rot: 'Storage' },
         { id: 'zfs',      rot: 'ZFS' },
-        { id: 'rede',     rot: 'Network' },
-        { id: 'sistema',  rot: 'System' },
-        { id: 'pacotes',  rot: 'Packages' },
+        { id: 'network',     rot: 'Network' },
+        { id: 'system',  rot: 'System' },
+        { id: 'packages',  rot: 'Packages' },
         { id: 'registry', rot: 'Log' },
         { id: 'perms',    rot: 'Permissions' },
       ],
-      ABAS_GUEST: [
+      TABS_GUEST: [
         { id: 'summary',   rot: 'Summary' },
         { id: 'charts', rot: 'Charts' },
         { id: 'console',  rot: 'Console' },
@@ -788,12 +788,12 @@
         // different tabs would force him to remember which of the three was where. And
         // one more tab on a screen that already has eleven is cost, not organisation.
         { id: 'snaps',    rot: 'Copies' },
-        { id: 'tarefas',  rot: 'Tasks' },
+        { id: 'tasks',  rot: 'Tasks' },
       ],
       pvxIsGuest(n) { return !!(n && n.kind === 'guest' && n.vmid > 0); },
       pvxNodeTabs(n) {
         if (!n) return [];
-        return this.pvxIsGuest(n) ? this.ABAS_GUEST : this.ABAS_HOST;
+        return this.pvxIsGuest(n) ? this.TABS_GUEST : this.TABS_HOST;
       },
       // A tab inherited from a node of ANOTHER type does not exist in the current
       // set. Without this normalisation, going from "Disks" (host) to a guest would
@@ -816,20 +816,20 @@
         // Loads on demand, the first time the tab is opened. That is what makes the
         // screen cheap: before, EVERY visit fetched tasks, disks, storage, ZFS and
         // permissions, even if all you wanted was to look at one guest.
-        if (tab === 'tarefas' && !this.pvx.tasks.length) this.pvxLoadTasks();
-        if (tab === 'discos' && !this.pvx.disks.length) this.pvxLoadDisks();
+        if (tab === 'tasks' && !this.pvx.tasks.length) this.pvxLoadTasks();
+        if (tab === 'disks' && !this.pvx.disks.length) this.pvxLoadDisks();
         if (tab === 'storage' && !this.pvx.storage) this.pvxLoadStorage();
         if (tab === 'zfs' && !this.pvx.zfs) this.pvxLoadZfs();
         // The topology serves ALL THREE storage tabs: it is what ties physical disk,
         // pool and datastore into a single story.
-        if ((tab === 'zfs' || tab === 'discos' || tab === 'storage') && !this.pvx.loaded.topology) this.pvxLoadTopology();
+        if ((tab === 'zfs' || tab === 'disks' || tab === 'storage') && !this.pvx.loaded.topology) this.pvxLoadTopology();
         if (tab === 'perms' && !this.pvx.perms && !this.pvx.permsOpen) this.pvxLoadPerms();
         if (tab === 'charts') this.pvxLoadSeries();
-        if ((tab === 'rede' || tab === 'sistema') && !this.pvx.loaded.sistema) this.pvxLoadSystem();
-        // The HOST Summary shows the timezone, and the timezone comes from /sistema.
+        if ((tab === 'network' || tab === 'system') && !this.pvx.loaded.system) this.pvxLoadSystem();
+        // The HOST Summary shows the timezone, and the timezone comes from /system.
         // Without this it would be born an em-dash and would only appear after the
         // operator visited another tab — a datum that exists, hidden by navigation order.
-        if (tab === 'summary' && !this.pvx.loaded.sistema && !this.pvxIsGuest(this.pvxOpenNode())) this.pvxLoadSystem();
+        if (tab === 'summary' && !this.pvx.loaded.system && !this.pvxIsGuest(this.pvxOpenNode())) this.pvxLoadSystem();
         // The note is the BODY of the summary, so it loads together with the tab — not
         // after a second click.
         if (tab === 'summary') this.pvxLoadNote(this.pvx.open);
@@ -838,7 +838,7 @@
         // and then the button said "no storage accepts backups", which is a lie about
         // the hypervisor.
         if (tab === 'snaps' && !this.pvx.storage) this.pvxLoadStorage();
-        if (tab === 'pacotes' && !this.pvx.loaded.pacotes) this.pvxLoadPackages();
+        if (tab === 'packages' && !this.pvx.loaded.packages) this.pvxLoadPackages();
         if (tab === 'registry' && !this.pvx.loaded.registry) this.pvxLoadRegistry();
       },
       pvxSelect(n) {
@@ -879,7 +879,7 @@
           // a more dangerous one: it would assert a state nobody observed. The right
           // answer is the third one — I DO NOT KNOW —, the only true one when you cannot
           // look.
-          const observed = !g.stale && !g.ausente_desde && !!(g.status && g.status.observed_at);
+          const observed = !g.stale && !g.absent_since && !!(g.status && g.status.observed_at);
           if (!observed) unknown++;
           else if (st === 'running' || st === 'online') running++;
           const mu = g.mem_used, mt = g.mem_total, cf = g.cpu_frac;
@@ -888,14 +888,14 @@
           if (cf && cf.observed_at && Number(cf.value) >= 0) { cpuSum += Number(cf.value); cpuN++; }
         }
         const pools = this.pvxZfsPools();
-        const poolBad = pools.filter((p) => p && !p.saudavel).length;
+        const poolBad = pools.filter((p) => p && !p.healthy).length;
         return {
           guests: guests.length, running, noData, unknown,
           memUsed: memU, memTotal: memT,
           memPct: memT > 0 ? (memU / memT) * 100 : null,
           cpuPct: cpuN ? (cpuSum / cpuN) * 100 : null,
           poolTotal: pools.length, poolBad,
-          poolState: !pools.length ? 'sem-medida' : (poolBad ? 'degraded' : 'ok'),
+          poolState: !pools.length ? 'unmeasured' : (poolBad ? 'degraded' : 'ok'),
         };
       },
       // Backup freshness — MEASURED as unavailable over the current route, not
@@ -929,10 +929,10 @@
       pvxBackupAge(ds) {
         const d = this.pvx.backup;
         if (!ds || !d) return { known: false };
-        if (ds.erro) return { known: false, erro: ds.erro };
-        if (!ds.total) return { known: true, vazio: true };
-        const seg = Math.max(0, Number(d.observed_at) - Number(ds.ultimo_ctime));
-        return { known: true, vazio: false, seg, text: this.pvxFormatAge(seg) };
+        if (ds.error) return { known: false, error: ds.error };
+        if (!ds.total) return { known: true, empty: true };
+        const seg = Math.max(0, Number(d.observed_at) - Number(ds.last_ctime));
+        return { known: true, empty: false, seg, text: this.pvxFormatAge(seg) };
       },
       // The threshold is per datastore because the layers have different cadences: PBS
       // runs every day, the external-HD rotation is "whenever I remember to swap the
@@ -946,24 +946,24 @@
       // was up, verify-by-content was running and a restore had been rehearsed.
       // Painting that red is being wrong about the FACT, not about the colour.
       //
-      // "fora-do-pve" is not a failure either: it means this panel does not know who
+      // "outside-pve" is not a failure either: it means this panel does not know who
       // schedules it. The `pbs` here gets a copy every day from a systemd timer on the
       // host, invisible to /cluster/backup — and the live proof caught that before
       // deploy, when a boolean would have painted the live layer as disarmed.
       pvxBackupState(ds) {
         const i = this.pvxBackupAge(ds);
-        if (ds.erro) return { key: 'erro', label: 'error', color: '#ef4444', nota: ds.erro };
-        if (ds.agendamento === 'desarmado') {
-          return { key: 'desarmado', label: 'disarmed', color: '#94a3b8',
-                   nota: 'schedule turned off' + (ds.schedule ? ' (was ' + ds.schedule + ')' : '') + ' — this is not a failure' };
+        if (ds.error) return { key: 'error', label: 'error', color: '#ef4444', note: ds.error };
+        if (ds.schedule_state === 'disarmed') {
+          return { key: 'disarmed', label: 'disarmed', color: '#94a3b8',
+                   note: 'schedule turned off' + (ds.schedule ? ' (was ' + ds.schedule + ')' : '') + ' — this is not a failure' };
         }
-        if (i.vazio) return { key: 'vazio', label: 'no copy yet', color: '#ef4444', nota: '' };
+        if (i.empty) return { key: 'empty', label: 'no copy yet', color: '#ef4444', note: '' };
         const limitH = ds.storage === 'pbs' ? 36 : 24 * 10;
         const h = i.seg / 3600;
         const color = h <= limitH ? '#22c55e' : h <= limitH * 2 ? '#f59e0b' : '#ef4444';
         return {
           key: 'active', label: i.text, color,
-          nota: ds.agendamento === 'fora-do-pve'
+          note: ds.schedule_state === 'outside-pve'
             ? 'scheduled outside PVE — the panel does not know by whom'
             : (ds.schedule ? 'daily at ' + ds.schedule : ''),
         };
@@ -1015,8 +1015,8 @@
         if (typeof this.loadNodes === 'function') this.loadNodes();
         this.pvxLoadHealth();
         const tab = this.pvxActiveTab();
-        if (tab === 'tarefas') this.pvxLoadTasks();
-        if (tab === 'discos') this.pvxLoadDisks();
+        if (tab === 'tasks') this.pvxLoadTasks();
+        if (tab === 'disks') this.pvxLoadDisks();
         if (tab === 'storage') this.pvxLoadStorage();
         if (tab === 'zfs') this.pvxLoadZfs();
       },
@@ -1249,17 +1249,17 @@
       // 🔴 pvxStorageState is the guard arriving on screen. `pools: []` has THREE
       // readings, and the screen has to say which one:
       //
-      //   'sem-medida'  — nobody has asked yet (timestamp 0). Do not accuse anything.
-      //   'sem-permissao' — asked, and the token cannot see datastores. The empty
+      //   'unmeasured'  — nobody has asked yet (timestamp 0). Do not accuse anything.
+      //   'no-permission' — asked, and the token cannot see datastores. The empty
       //                     list is the ACL filtering, not the absence of storage.
       //   'ok'          — asked, allowed to see. Empty here is genuinely empty.
       //
-      // Before the ACL was widened the state was 'sem-permissao'; today it is 'ok',
+      // Before the ACL was widened the state was 'no-permission'; today it is 'ok',
       // and the band disappears on its own. It comes back the day the privilege goes.
       pvxStorageState() {
         const d = this.pvx.storage && this.pvx.storage.datastore_audit;
-        if (!d || !d.observed_at) return 'sem-medida';
-        return d.value ? 'ok' : 'sem-permissao';
+        if (!d || !d.observed_at) return 'unmeasured';
+        return d.value ? 'ok' : 'no-permission';
       },
 
       pvxStoragePools() { return (this.pvx.storage && this.pvx.storage.pools) || []; },
@@ -1282,7 +1282,7 @@
       // are all red — the whole server lives in a pool with no redundancy, and
       // "amber" would invite leaving it for later.
       pvxZfsStyle(p) {
-        const c = (p && p.saudavel) ? '#22c55e' : '#ef4444';
+        const c = (p && p.healthy) ? '#22c55e' : '#ef4444';
         return `background:${c}22;color:${c};border:1px solid ${c}66`;
       },
       pvxZfsFrag(p) {
@@ -1304,7 +1304,7 @@
       },
       pvxPermRows() {
         const p = this.pvx.perms && this.pvx.perms.permissions ? this.pvx.perms.permissions : {};
-        return Object.keys(p).sort().map(k => ({ caminho: k, privs: Object.keys(p[k]).sort().join(', ') }));
+        return Object.keys(p).sort().map(k => ({ path: k, privs: Object.keys(p[k]).sort().join(', ') }));
       },
 
       // ---- snapshots -------------------------------------------------------
@@ -1450,17 +1450,17 @@
         // it — which is what happened in the first version of this change. A predicate
         // about a node does not need the component.
         if (g && g.kind === 'host') {
-          return { can: true, motivo: '', host: true };
+          return { can: true, reason: '', host: true };
         }
         const st = (g && g.credential && g.credential.state) || '';
-        if (st === 'ok') return { can: true, motivo: '' };
-        if (st === 'ausente') return { can: false, motivo: 'no node token in the vault — this guest has no console' };
-        if (st === 'revogada') return { can: false, motivo: 'credential revoked — console unavailable' };
-        if (st === 'expirada') return { can: false, motivo: 'credential expired — console unavailable' };
-        return { can: false, motivo: 'credential state unknown' };
+        if (st === 'ok') return { can: true, reason: '' };
+        if (st === 'absent') return { can: false, reason: 'no node token in the vault — this guest has no console' };
+        if (st === 'revoked') return { can: false, reason: 'credential revoked — console unavailable' };
+        if (st === 'expired') return { can: false, reason: 'credential expired — console unavailable' };
+        return { can: false, reason: 'credential state unknown' };
       },
       pvxConsoleCan(g) { return this.pvxConsoleGuestState(g).can; },
-      pvxConsoleReason(g) { return this.pvxConsoleGuestState(g).motivo; },
+      pvxConsoleReason(g) { return this.pvxConsoleGuestState(g).reason; },
 
       pvxOpenConsole(nodeId) {
         // 🔴 THE REFUSAL LIVES HERE, not in the widget. It used to be a `:disabled` on
@@ -1470,21 +1470,21 @@
         // A screen guard is a convenience; a function guard is the rule.
         const g = this.pvxNodes().find(x => x.id === nodeId);
         if (g && !this.pvxConsoleCan(g)) {
-          this.pvx.con = { guest: '', estado: 'erro', erro: this.pvxConsoleReason(g) };
+          this.pvx.con = { guest: '', state: 'error', error: this.pvxConsoleReason(g) };
           this.showToast(this.pvxConsoleReason(g), 'err');
           return;
         }
-        if (this.pvx.con.guest === nodeId && this.pvx.con.estado === 'ligado') return;
+        if (this.pvx.con.guest === nodeId && this.pvx.con.state === 'on') return;
         this.pvxCloseConsole();
-        this.pvx.con = { guest: nodeId, estado: 'opening', erro: '' };
+        this.pvx.con = { guest: nodeId, state: 'opening', error: '' };
 
         // The terminal is only mounted after Alpine’s next tick: before that the
         // container is still at x-show=false and the FitAddon would measure zero.
         this.$nextTick(() => {
           const el = document.getElementById('pvx-console');
           if (!el || typeof Terminal === 'undefined') {
-            this.pvx.con.estado = 'erro';
-            this.pvx.con.erro = 'xterm.js did not load';
+            this.pvx.con.state = 'error';
+            this.pvx.con.error = 'xterm.js did not load';
             return;
           }
           el.innerHTML = '';
@@ -1517,7 +1517,7 @@
           });
 
           ws.onopen = () => {
-            this.pvx.con.estado = 'ligado';
+            this.pvx.con.state = 'on';
             try { fit.fit(); } catch (_) {}
             ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
             term.focus();
@@ -1530,21 +1530,21 @@
               let m = null;
               try { m = JSON.parse(ev.data); } catch (_) { return; }
               if (m && m.type === 'error') {
-                this.pvx.con.estado = 'erro';
-                this.pvx.con.erro = m.message || 'the hypervisor refused the console';
-                term.write('\r\n\x1b[31m' + this.pvx.con.erro + '\x1b[0m\r\n');
+                this.pvx.con.state = 'error';
+                this.pvx.con.error = m.message || 'the hypervisor refused the console';
+                term.write('\r\n\x1b[31m' + this.pvx.con.error + '\x1b[0m\r\n');
               }
               return;
             }
             term.write(new Uint8Array(ev.data));
           };
           ws.onclose = () => {
-            if (this.pvx.con.estado !== 'erro') this.pvx.con.estado = 'closed';
+            if (this.pvx.con.state !== 'error') this.pvx.con.state = 'closed';
             term.write('\r\n\x1b[90m[session closed]\x1b[0m\r\n');
           };
           ws.onerror = () => {
-            this.pvx.con.estado = 'erro';
-            this.pvx.con.erro = this.pvx.con.erro || 'the connection to the panel dropped';
+            this.pvx.con.state = 'error';
+            this.pvx.con.error = this.pvx.con.error || 'the connection to the panel dropped';
           };
 
           // Application-level keepalive: termproxy closes an idle session, and the server
@@ -1568,19 +1568,19 @@
         if (this._pvxConObs) { try { this._pvxConObs.disconnect(); } catch (_) {} this._pvxConObs = null; }
         if (this._pvxConWs) { try { this._pvxConWs.close(); } catch (_) {} this._pvxConWs = null; }
         if (this._pvxConTerm) { try { this._pvxConTerm.dispose(); } catch (_) {} this._pvxConTerm = null; }
-        this.pvx.con = { guest: '', estado: 'closed', erro: '' };
+        this.pvx.con = { guest: '', state: 'closed', error: '' };
       },
 
       pvxConsoleLabel() {
-        const e = this.pvx.con.estado;
+        const e = this.pvx.con.state;
         if (e === 'opening') return 'opening…';
-        if (e === 'ligado') return 'live';
-        if (e === 'erro') return 'error';
+        if (e === 'on') return 'live';
+        if (e === 'error') return 'error';
         return 'closed';
       },
       pvxConsoleStyle() {
-        const e = this.pvx.con.estado;
-        const c = e === 'ligado' ? '#22c55e' : (e === 'erro' ? '#ef4444' : '#f59e0b');
+        const e = this.pvx.con.state;
+        const c = e === 'on' ? '#22c55e' : (e === 'error' ? '#ef4444' : '#f59e0b');
         return `background:${c}22;color:${c};border:1px solid ${c}66`;
       },
 
@@ -1589,7 +1589,7 @@
       // ══════════════════════════════════════════════════════════════════
       //
       // Everything from here to the poll is a PURE FUNCTION on purpose: `pvxNodeState`,
-      // `pvxTier`, `pvxFilterNodes`, `pvxReescopa`, `pvxSegments`, `pvxStep` and
+      // `pvxTier`, `pvxFilterNodes`, `pvxRescope`, `pvxSegments`, `pvxStep` and
       // `pvxActionState` do not read `this`, do not touch the network and hold no state.
       // That is what lets scripts/test-proxmox-tab.mjs EXTRACT each one from the served
       // file and actually run it — a test that reimplemented the rule would only prove
@@ -1604,38 +1604,38 @@
       //
       // The ORDER below is precedence, and each rung short-circuits the next:
       //
-      //   vencido        the data is past its TTL — I can no longer assert anything
-      //   sem-credencial I can see, but I cannot act; and that holds stopped or not
+      //   stale        the data is past its TTL — I can no longer assert anything
+      //   no-credential I can see, but I cannot act; and that holds stopped or not
       //   stopped        powered off is a STATE, not a defect; and a gauge on a
       //                  powered-off guest means nothing at all
-      //   critico        some gauge at the top of the scale
-      //   atencao        some gauge climbing, or a credential close to expiring
+      //   critical        some gauge at the top of the scale
+      //   warning        some gauge climbing, or a credential close to expiring
       //   ok             nothing to say
       pvxNodeState(n) {
         if (!n) return 'ok';
-        // 🔴 "GONE" COMES BEFORE "VENCIDO", and the two are not the same thing.
+        // 🔴 "GONE" COMES BEFORE "STALE", and the two are not the same thing.
         //
-        // `vencido` means the panel COULD NOT LOOK — the data aged
+        // `stale` means the panel COULD NOT LOOK — the data aged
         // out. `gone` means the panel DID look and the hypervisor no longer
         // listed this node. They are different silences and they ask for
         // different things: one is an observation problem, the other is news
         // about the laboratory.
         //
         // Mixing them is what the operator saw: a destroyed clone stayed
-        // counted forever as "vencido", spending the health band — which exists
+        // counted forever as "stale", spending the health band — which exists
         // to say whether there is something to do NOW.
-        if (n.ausente_desde) return 'gone';
-        if (n.stale) return 'vencido';
+        if (n.absent_since) return 'gone';
+        if (n.stale) return 'stale';
         const cred = (n.credential && n.credential.state) || '';
-        if (n.transport === 'pve-api' && cred !== 'ok') return 'sem-credencial';
+        if (n.transport === 'pve-api' && cred !== 'ok') return 'no-credential';
         const st = (n.status && n.status.value) || '';
-        if (st !== 'running' && st !== 'online') return 'parado';
+        if (st !== 'running' && st !== 'online') return 'stopped';
         let worst = 'ok';
         for (const which of ['cpu', 'ram', 'disco']) {
           const pct = pvxGaugePct(n, which);
           if (pct === null) continue;
-          if (pct >= 90) return 'critico';
-          if (pct >= 70) worst = 'atencao';
+          if (pct >= 90) return 'critical';
+          if (pct >= 70) worst = 'warning';
         }
         return worst;
       },
@@ -1643,18 +1643,18 @@
       pvxStateLabel(e) {
         return ({
           'gone': 'gone from the hypervisor',
-          'vencido': 'expired', 'sem-credencial': 'no credential', 'parado': 'stopped',
-          'critico': 'critical', 'atencao': 'warning', 'ok': 'ok',
+          'stale': 'expired', 'no-credential': 'no credential', 'stopped': 'stopped',
+          'critical': 'critical', 'warning': 'warning', 'ok': 'ok',
         })[e] || e;
       },
       pvxStateColor(e) {
         return ({
-          // Grey, like `parado`: vanishing from the hypervisor is NOT an incident.
+          // Grey, like `stopped`: vanishing from the hypervisor is NOT an incident.
           // Painting it red or amber is what spends the operator’s attention on something
           // he, most of the time, caused himself (he deleted a guest).
           'gone': '#64748b',
-          'vencido': '#f59e0b', 'sem-credencial': '#ef4444', 'parado': '#64748b',
-          'critico': '#ef4444', 'atencao': '#f59e0b', 'ok': '#22c55e',
+          'stale': '#f59e0b', 'no-credential': '#ef4444', 'stopped': '#64748b',
+          'critical': '#ef4444', 'warning': '#f59e0b', 'ok': '#22c55e',
         })[e] || '#64748b';
       },
       pvxStateStyle(e) {
@@ -1673,27 +1673,27 @@
       // The 3-point SLACK is what stops the colour flickering. A guest oscillating
       // between 89.7% and 90.2% would change colour on every 30 s tick; the flicker
       // informs nothing and teaches the operator to ignore the colour. Once in
-      // `critico`, you only leave below 87%.
+      // `critical`, you only leave below 87%.
       pvxTier(pct, anterior) {
         const WARN = 70, CRITICAL = 90, SLACK = 3;
         const v = Number(pct);
         if (!isFinite(v) || v < 0) return 'ok';
-        if (anterior === 'critico') {
-          if (v >= CRITICAL - SLACK) return 'critico';
-          return v >= WARN ? 'atencao' : 'ok';
+        if (anterior === 'critical') {
+          if (v >= CRITICAL - SLACK) return 'critical';
+          return v >= WARN ? 'warning' : 'ok';
         }
-        if (anterior === 'atencao') {
-          if (v >= CRITICAL) return 'critico';
-          return v >= WARN - SLACK ? 'atencao' : 'ok';
+        if (anterior === 'warning') {
+          if (v >= CRITICAL) return 'critical';
+          return v >= WARN - SLACK ? 'warning' : 'ok';
         }
-        if (v >= CRITICAL) return 'critico';
-        if (v >= WARN) return 'atencao';
+        if (v >= CRITICAL) return 'critical';
+        if (v >= WARN) return 'warning';
         return 'ok';
       },
 
       // ---- the `field:value` filter, ANDed -------------------------------
       //
-      // Fields: node:, status:, tipo:, estado:, cred:, id:. Terms are ANDed, and a term
+      // Fields: node:, status:, type:, state:, cred:, id:. Terms are ANDed, and a term
       // with no `:` is a free search over id/name/address/state.
       //
       // 🔴 `tag:` DOES NOT exist, and the absence is declared: the inventory model does
@@ -1714,38 +1714,38 @@
           return terms.every(function (t) {
             const i = t.indexOf(':');
             const field = i > 0 ? t.slice(0, i) : '';
-            const valor = i > 0 ? t.slice(i + 1) : t;
+            const value = i > 0 ? t.slice(i + 1) : t;
             switch (field) {
-              case 'node': return String(n.name || '').toLowerCase().includes(valor);
-              case 'status': return st.toLowerCase().includes(valor);
+              case 'node': return String(n.name || '').toLowerCase().includes(value);
+              case 'status': return st.toLowerCase().includes(value);
               // 🔴 The filter has to accept THE WORD THE SCREEN SHOWS. The badges say
-              // CT, VM, NÓ and EXT; if `tipo:ct` did not filter, the screen would be
+              // CT, VM, NODE and EXT; if `type:ct` did not filter, the screen would be
               // teaching a vocabulary it then refuses — and the operator would only find
               // out by typing and seeing an empty list.
-              case 'tipo': {
-                const canon = { ct: 'lxc', conteiner: 'lxc', contêiner: 'lxc', container: 'lxc',
-                                vm: 'qemu', maquina: 'qemu', 'máquina': 'qemu',
-                                no: 'node', 'nó': 'node', host: 'node', hipervisor: 'node' }[valor] || valor;
+              case 'type': {
+                const canon = { ct: 'lxc', container: 'lxc',
+                                vm: 'qemu', machine: 'qemu',
+                                node: 'node', host: 'node', hypervisor: 'node' }[value] || value;
                 return type.toLowerCase() === canon
                     || String(n.kind || '').toLowerCase() === canon
-                    || String(n.kind || '').toLowerCase() === valor;
+                    || String(n.kind || '').toLowerCase() === value;
               }
-              case 'estado': return stateOf(n) === valor;
-              case 'cred': return cred.toLowerCase().includes(valor);
-              case 'id': return String(n.id || '').toLowerCase().includes(valor);
+              case 'state': return stateOf(n) === value;
+              case 'cred': return cred.toLowerCase().includes(value);
+              case 'id': return String(n.id || '').toLowerCase().includes(value);
             }
             return [n.id, n.name, n.address, st, cred, type].join(' ').toLowerCase().includes(t);
           });
         });
       },
 
-      // 🔴 pvxReescopa is the fix for Portainer #4430 — "select all, FILTER,
+      // 🔴 pvxRescope is the fix for Portainer #4430 — "select all, FILTER,
       // delete" deleted containers that had never been on the operator’s screen
       // ("tragedy all containers have been deleted"). The selection does NOT
       // survive a change of filter: whoever is not visible is not selected, and
       // there is no path in this file that changes the filter without going
       // through here.
-      pvxReescopa(sel, visible) {
+      pvxRescope(sel, visible) {
         const seen = {};
         (visible || []).forEach(function (n) { seen[n.id] = true; });
         return (sel || []).filter(function (id) { return seen[id] === true; });
@@ -1763,10 +1763,10 @@
       // layout that changes width with the health of the laboratory moves the click
       // target precisely during an incident.
       pvxSegments(list, stateOf) {
-        // `gone` goes at the END, next to `parado`: the band is read left to right by
+        // `gone` goes at the END, next to `stopped`: the band is read left to right by
         // urgency, and a node that left the hypervisor does not compete with a critical
         // one.
-        const order = ['vencido', 'sem-credencial', 'critico', 'atencao', 'parado', 'gone', 'ok'];
+        const order = ['stale', 'no-credential', 'critical', 'warning', 'stopped', 'gone', 'ok'];
         const count = {};
         order.forEach(function (k) { count[k] = 0; });
         (list || []).forEach(function (n) {
@@ -1819,11 +1819,11 @@
       // silence is the worse of the two: there is no colleague to ask what happened to
       // the button.
       //
-      // One function for every control, and it always returns the pair {can, motivo} —
+      // One function for every control, and it always returns the pair {can, reason} —
       // never a naked boolean, because a naked boolean is exactly what produces a grey
       // button with no explanation.
       pvxActionState(n, action) {
-        if (!n) return { can: false, motivo: 'unknown node' };
+        if (!n) return { can: false, reason: 'unknown node' };
         const st = (n.status && n.status.value) || '';
         const cred = (n.credential && n.credential.state) || '';
         const on = st === 'running' || st === 'online';
@@ -1831,15 +1831,15 @@
         // A node the hypervisor no longer lists accepts no action at all — and the reason
         // says so, instead of letting the operator click and get back the Perl error PVE
         // returns for a vmid that does not exist.
-        if (n.ausente_desde) {
-          return { can: false, motivo: 'the hypervisor no longer lists this node — it was deleted, or the panel lost access to it' };
+        if (n.absent_since) {
+          return { can: false, reason: 'the hypervisor no longer lists this node — it was deleted, or the panel lost access to it' };
         }
         if (action === 'revoke') {
-          if (cred === 'ausente') return { can: false, motivo: 'there is no credential to revoke on this node' };
-          if (cred === 'revogada') return { can: false, motivo: 'the credential for this node has already been revoked' };
+          if (cred === 'absent') return { can: false, reason: 'there is no credential to revoke on this node' };
+          if (cred === 'revoked') return { can: false, reason: 'the credential for this node has already been revoked' };
           // An EXPIRED credential can still be revoked: revoking is cleanup, and the
           // expired token goes on existing on the hypervisor until somebody deletes it.
-          return { can: true, motivo: '' };
+          return { can: true, reason: '' };
         }
 
         // 🔴 CLONING AND STORING A COPY DO NOT DEPEND ON THE NODE’S CREDENTIAL.
@@ -1852,7 +1852,7 @@
         // the same).
         if (action === 'clone' || action === 'backup') {
           if (!this.pvxIsGuest(n)) {
-            return { can: false, motivo: n.kind === 'host'
+            return { can: false, reason: n.kind === 'host'
               ? 'the hypervisor is not a guest — there is nothing to copy here'
               : 'external node: not a guest of this hypervisor' };
           }
@@ -1865,35 +1865,35 @@
             // screen with `pbs` up and running on the other side — and it is the same disease
             // that makes absent data add up as zero.
             if (!this.pvx.storage) {
-              return { can: false, motivo: 'I have not read this hypervisor storage list yet' };
+              return { can: false, reason: 'I have not read this hypervisor storage list yet' };
             }
             if (!this.pvxBackupStorages().length) {
-              return { can: false, motivo: 'no storage on this hypervisor accepts backups' };
+              return { can: false, reason: 'no storage on this hypervisor accepts backups' };
             }
           }
-          return { can: true, motivo: '' };
+          return { can: true, reason: '' };
         }
 
         const power = action === 'start' || action === 'shutdown' || action === 'stop' || action === 'reboot';
         if (power && (n.kind !== 'guest' || !(n.vmid > 0))) {
           // 🔴 The two cases are NOT the same, and the message has to know that. Found by
-          // reading the live inventory: besides the host, there is the `canario` node (kind
-          // `externo`, transport `agente`), which is not a guest of any hypervisor. Telling
+          // reading the live inventory: besides the host, there is the `canary` node (kind
+          // `external`, transport `agent`), which is not a guest of any hypervisor. Telling
           // it "the hypervisor is not powered from the panel" would be explaining with the
           // wrong reason — and a wrong reason is worse than no reason, because it sends the
           // operator looking in the wrong place.
-          if (n.kind === 'externo') {
-            return { can: false, motivo: 'external node: not a guest of this hypervisor — powering on and off will depend on the lab agent (Phase 8)' };
+          if (n.kind === 'external') {
+            return { can: false, reason: 'external node: not a guest of this hypervisor — powering on and off will depend on the lab agent (Phase 8)' };
           }
-          return { can: false, motivo: 'the hypervisor does not power on or off from the panel — that is the physical button on the machine' };
+          return { can: false, reason: 'the hypervisor does not power on or off from the panel — that is the physical button on the machine' };
         }
         if (cred !== 'ok') {
           const reason = ({
-            ausente: 'no node token in the vault',
-            revogada: 'credential revoked',
-            expirada: 'credential expired',
+            absent: 'no node token in the vault',
+            revoked: 'credential revoked',
+            expired: 'credential expired',
           })[cred] || 'credential state unknown';
-          return { can: false, motivo: reason + ' — the panel has no way to act on this node' };
+          return { can: false, reason: reason + ' — the panel has no way to act on this node' };
         }
         // 🔴 These two guards were born from a MEASURED defect: the first wave found
         // `qmstart 208 — VM 208 already running` in the hypervisor’s trail, three times.
@@ -1903,15 +1903,15 @@
         // Restarting a powered-off guest is not "starting" it: PVE returns an error and
         // the trail gains noise. The right button for that already sits next to it.
         if (action === 'reboot' && !on) {
-          return { can: false, motivo: 'it is powered off — to start it, use "Turn on"' };
+          return { can: false, reason: 'it is powered off — to start it, use "Turn on"' };
         }
         if (action === 'start' && on) {
-          return { can: false, motivo: 'it is already running — asking again returns "already running" and pollutes the task trail' };
+          return { can: false, reason: 'it is already running — asking again returns "already running" and pollutes the task trail' };
         }
         if ((action === 'shutdown' || action === 'stop') && !on) {
-          return { can: false, motivo: 'it is already powered off' };
+          return { can: false, reason: 'it is already powered off' };
         }
-        return { can: true, motivo: '' };
+        return { can: true, reason: '' };
       },
 
       // ══ THE NOTE: what this box DOES ════════════════════════════════════
@@ -1925,33 +1925,33 @@
       // somebody edited the Proxmox one.
       async pvxLoadNote(id) {
         if (!id) return;
-        if (this.pvx.nota.node === id && !this.pvx.nota.erro) return; // already have it
-        this.pvx.nota = { node: id, markdown: '', origem: '', motivo: '', loading: true, erro: '',
-                          editing: false, rascunho: '', saving: false };
+        if (this.pvx.note.node === id && !this.pvx.note.error) return; // already have it
+        this.pvx.note = { node: id, markdown: '', origin: '', reason: '', loading: true, error: '',
+                          editing: false, draft: '', saving: false };
         try {
-          const r = await this.api('/api/nodes/' + id + '/nota', { raw: true });
+          const r = await this.api('/api/nodes/' + id + '/note', { raw: true });
           if (!r.ok) throw await this._apiError(r);
           const d = await r.json();
           // Only applies if the selection did not change in the meantime: with fast
           // clicking between nodes, the slow response from the first would arrive LATER and
           // paint the wrong node’s note onto the right node’s screen.
-          if (this.pvx.nota.node !== id) return;
-          this.pvx.nota.markdown = d.markdown || '';
-          this.pvx.nota.origem = d.origem || '';
-          this.pvx.nota.motivo = d.motivo || '';
+          if (this.pvx.note.node !== id) return;
+          this.pvx.note.markdown = d.markdown || '';
+          this.pvx.note.origin = d.origin || '';
+          this.pvx.note.reason = d.reason || '';
         } catch (e) {
-          if (this.pvx.nota.node !== id) return;
+          if (this.pvx.note.node !== id) return;
           // Stable shape on the error path: the field does NOT go back to null.
-          this.pvx.nota.erro = this._errText(e);
+          this.pvx.note.error = this._errText(e);
         } finally {
-          if (this.pvx.nota.node === id) this.pvx.nota.loading = false;
+          if (this.pvx.note.node === id) this.pvx.note.loading = false;
         }
       },
 
       // ── editing the note WITHOUT leaving the panel ──────────────────────
       //
-      // 🔴 THE DRAFT IS SEPARATE FROM THE TEXT IN FORCE. `pvx.nota.markdown` is what
-      // the hypervisor holds; `rascunho` is what is being typed. Editing the first one
+      // 🔴 THE DRAFT IS SEPARATE FROM THE TEXT IN FORCE. `pvx.note.markdown` is what
+      // the hypervisor holds; `draft` is what is being typed. Editing the first one
       // directly would make "cancel" lose the original — and would make the screen
       // show, while you type, a note nobody saved.
       pvxEditNote() {
@@ -1961,58 +1961,58 @@
         // only in the markup is a guard the next screen forgets. And the price here is
         // high: opening the draft before the note arrives gives an EMPTY text, and saving
         // that empty text WIPES the description that was on the hypervisor.
-        if (this.pvx.nota.loading) {
+        if (this.pvx.note.loading) {
           this.showToast('the note is still loading', 'err');
           return;
         }
-        if (this.pvx.nota.origem === 'fora-do-pve' || this.pvx.nota.origem === 'inexistente') {
-          this.showToast(this.pvx.nota.motivo || 'there is no note to edit on this node', 'err');
+        if (this.pvx.note.origin === 'outside-pve' || this.pvx.note.origin === 'nonexistent') {
+          this.showToast(this.pvx.note.reason || 'there is no note to edit on this node', 'err');
           return;
         }
-        this.pvx.nota.rascunho = this.pvx.nota.markdown || '';
-        this.pvx.nota.editing = true;
+        this.pvx.note.draft = this.pvx.note.markdown || '';
+        this.pvx.note.editing = true;
       },
       pvxCancelNote() {
-        this.pvx.nota.editing = false;
-        this.pvx.nota.rascunho = '';
+        this.pvx.note.editing = false;
+        this.pvx.note.draft = '';
       },
       pvxNoteChanged() {
-        return this.pvx.nota.editing && this.pvx.nota.rascunho !== (this.pvx.nota.markdown || '');
+        return this.pvx.note.editing && this.pvx.note.draft !== (this.pvx.note.markdown || '');
       },
       // The ceiling is the server’s own (the note size limit in the pve package). Duplicating a number
       // is debt, but the alternative — finding out the limit only after writing 9 KB
       // and pressing save — is worse. The server remains the one in charge.
       NOTE_MAX: 8192,
-      pvxNoteFits() { return (this.pvx.nota.rascunho || '').length <= this.NOTE_MAX; },
+      pvxNoteFits() { return (this.pvx.note.draft || '').length <= this.NOTE_MAX; },
 
       async pvxSaveNote() {
-        const n = this.pvx.nota;
+        const n = this.pvx.note;
         if (!n.node || n.saving) return;
         if (!this.pvxNoteFits()) {
           this.showToast('the note went past ' + this.NOTE_MAX + ' characters — a note is meant to be READ', 'err');
           return;
         }
         n.saving = true;
-        n.erro = '';
+        n.error = '';
         try {
-          const r = await this.api('/api/nodes/' + n.node + '/nota', {
-            method: 'PUT', body: JSON.stringify({ markdown: n.rascunho }),
+          const r = await this.api('/api/nodes/' + n.node + '/note', {
+            method: 'PUT', body: JSON.stringify({ markdown: n.draft }),
           });
           const d = await r.json().catch(() => ({}));
           // Only applies if we are still on the same node: with fast clicking, the slow
           // response would paint the saved note onto another guest’s screen.
-          if (this.pvx.nota.node !== n.node) return;
-          this.pvx.nota.markdown = d.markdown !== undefined ? d.markdown : n.rascunho;
-          this.pvx.nota.origem = d.origem || 'pve-notes';
-          this.pvx.nota.editing = false;
-          this.pvx.nota.rascunho = '';
+          if (this.pvx.note.node !== n.node) return;
+          this.pvx.note.markdown = d.markdown !== undefined ? d.markdown : n.draft;
+          this.pvx.note.origin = d.origin || 'pve-notes';
+          this.pvx.note.editing = false;
+          this.pvx.note.draft = '';
           this.showToast('note saved in Proxmox', 'ok');
         } catch (e) {
           const txt = this._errText(e);
-          this.pvx.nota.erro = txt;
+          this.pvx.note.error = txt;
           this.showToast('failed to save the note: ' + txt, 'err');
         } finally {
-          if (this.pvx.nota.node === n.node) this.pvx.nota.saving = false;
+          if (this.pvx.note.node === n.node) this.pvx.note.saving = false;
         }
       },
 
@@ -2083,7 +2083,7 @@
       //
       // A full clone of 14 GB takes minutes. Holding the request for minutes is the
       // same as having no button — the browser gives up first. The server returns
-      // `status: "aceita"` with the UPID, and here the screen OPENS THE TASK LOG right
+      // `status: "accepted"` with the UPID, and here the screen OPENS THE TASK LOG right
       // away. The operator follows the real outcome instead of reading a "done" nobody
       // verified.
 
@@ -2103,26 +2103,26 @@
       // clone.
       async pvxOpenClone(n) {
         const state = this.pvxActionState(n, 'clone');
-        if (!state.can) { this.showToast(state.motivo, 'err'); return; }
-        this.pvx.clone = { open: true, loading: true, origem: n.id, originName: n.name,
-                           newID: 0, nome: '', ligado: false,
-                           needsSnap: false, snapshots: [], snapshot: '', erro: '' };
+        if (!state.can) { this.showToast(state.reason, 'err'); return; }
+        this.pvx.clone = { open: true, loading: true, origin: n.id, originName: n.name,
+                           newID: 0, name: '', on: false,
+                           needsSnap: false, snapshots: [], snapshot: '', error: '' };
         try {
           const r = await this.api('/api/nodes/' + n.id + '/clone', { raw: true });
           if (!r.ok) throw await this._apiError(r);
           const d = await r.json();
           this.pvx.clone.newID = d.next_id || 0;
-          this.pvx.clone.nome = d.sugestao || '';
-          this.pvx.clone.ligado = !!d.ligado;
+          this.pvx.clone.name = d.suggestion || '';
+          this.pvx.clone.on = !!d.on;
           // 🔴 A RUNNING container only clones from a snapshot. A hypervisor rule,
           // discovered by live proof — not by reading the source.
-          this.pvx.clone.needsSnap = !!d.precisa_snapshot;
+          this.pvx.clone.needsSnap = !!d.needs_snapshot;
           this.pvx.clone.snapshots = Array.isArray(d.snapshots) ? d.snapshots : [];
           this.pvx.clone.snapshot = this.pvx.clone.snapshots[0] || '';
         } catch (e) {
           // The shape does NOT go back to null on the error path: the dialog stays open
           // showing the reason, instead of vanishing without explaining.
-          this.pvx.clone.erro = this._errText(e);
+          this.pvx.clone.error = this._errText(e);
         } finally {
           this.pvx.clone.loading = false;
         }
@@ -2148,12 +2148,12 @@
         if (c.snapshot) {
           warnOn = `\n\nThe copy comes from snapshot "${c.snapshot}", not from the current state: `
             + `anything written after it is NOT included.`;
-        } else if (c.ligado) {
+        } else if (c.on) {
           warnOn = `\n\n⚠ "${c.originName}" is RUNNING. The copy comes out crash-consistent: `
             + `the same state as an abrupt power cut. For a clean copy, shut it down first.`;
         }
         this.askConfirm('Clone ' + c.originName,
-          `Creates guest ${c.newID} ("${c.nome || 'unnamed'}") as a FULL COPY of "${c.originName}". `
+          `Creates guest ${c.newID} ("${c.name || 'unnamed'}") as a FULL COPY of "${c.originName}". `
           + `It takes up roughly as much disk as the source. `
           + `The source is NOT changed or interrupted.`
           + `\n\nThe task takes minutes and runs on the hypervisor: the panel does not wait for it, `
@@ -2164,11 +2164,11 @@
       async pvxCloneNow() {
         const c = this.pvx.clone;
         if (this.pvx.busy) return;
-        this.pvx.busy = c.origem;
+        this.pvx.busy = c.origin;
         this.pvx.lastError = '';
         try {
-          const r = await this.api('/api/nodes/' + c.origem + '/clone', {
-            method: 'POST', body: JSON.stringify({ novo_id: c.newID, nome: c.nome }),
+          const r = await this.api('/api/nodes/' + c.origin + '/clone', {
+            method: 'POST', body: JSON.stringify({ new_id: c.newID, name: c.name }),
           });
           const d = await r.json().catch(() => ({}));
           this.pvx.clone.open = false;
@@ -2177,7 +2177,7 @@
         } catch (e) {
           const txt = this._errText(e);
           this.pvx.lastError = txt;
-          this.pvx.clone.erro = txt;
+          this.pvx.clone.error = txt;
           this.showToast('failed to clone: ' + txt, 'err');
         } finally {
           this.pvx.busy = '';
@@ -2187,7 +2187,7 @@
 
       pvxBackupConfirm(n) {
         const state = this.pvxActionState(n, 'backup');
-        if (!state.can) { this.showToast(state.motivo, 'err'); return; }
+        if (!state.can) { this.showToast(state.reason, 'err'); return; }
         const st = this.pvx.bkp.storage || (this.pvxBackupStorages()[0] || {}).id || '';
         if (!st) { this.showToast('no storage accepts backups', 'err'); return; }
         this.pvx.bkp.storage = st;
@@ -2205,7 +2205,7 @@
         try {
           const r = await this.api('/api/nodes/' + n.id + '/backup', {
             method: 'POST',
-            body: JSON.stringify({ storage, modo: this.pvx.bkp.modo || 'snapshot' }),
+            body: JSON.stringify({ storage, mode: this.pvx.bkp.mode || 'snapshot' }),
           });
           const d = await r.json().catch(() => ({}));
           this.showToast(`copy of ${n.name} requested on ${storage} — follow the task`, 'ok');
@@ -2237,14 +2237,14 @@
       // be forgotten on one of the paths: there is no second path.
       pvxSetFilter(text) {
         this.pvx.filter = text;
-        this.pvx.sel = this.pvxReescopa(this.pvx.sel, this.pvxFilteredNodes());
+        this.pvx.sel = this.pvxRescope(this.pvx.sel, this.pvxFilteredNodes());
       },
       pvxSetSegment(key) {
         // Clicking the segment ALREADY ACTIVE turns the filter off (cast from Portainer:
         // `value === key ? null : key`). Without it, the operator who filtered by
         // "critical" has to hunt for a clear button he does not know exists.
         this.pvx.segment = (this.pvx.segment === key) ? '' : key;
-        this.pvx.sel = this.pvxReescopa(this.pvx.sel, this.pvxFilteredNodes());
+        this.pvx.sel = this.pvxRescope(this.pvx.sel, this.pvxFilteredNodes());
       },
       // 🔴 pvxClearFilter exists even when the filtered value has vanished from
       // the dataset — it is the fix for Portainer #12938, where the filter chip
@@ -2254,7 +2254,7 @@
       pvxClearFilter() {
         this.pvx.filter = '';
         this.pvx.segment = '';
-        this.pvx.sel = this.pvxReescopa(this.pvx.sel, this.pvxFilteredNodes());
+        this.pvx.sel = this.pvxRescope(this.pvx.sel, this.pvxFilteredNodes());
       },
       pvxHasFilter() {
         // Note that it looks ONLY at the filter state. Consulting the data here ("are
@@ -2290,7 +2290,7 @@
         const pct = pvxGaugePct(n, which);
         const live = this.pvxGaugeLive(n);
         if (pct === null) {
-          return { measured: false, live, pct: 0, tier: 'ok', text: '—', motivo: pvxNoMeasureReason(n, which) };
+          return { measured: false, live, pct: 0, tier: 'ok', text: '—', reason: pvxNoMeasureReason(n, which) };
         }
         // 🔴 The hysteresis memory does NOT live in Alpine’s state, and that is no
         // detail: `pvxGauge` is called from inside rendering expressions (x-text,
@@ -2302,11 +2302,11 @@
         const key = (n.id || '') + ':' + which;
         const tier = this.pvxTier(pct, hysteresisTiers.get(key));
         hysteresisTiers.set(key, tier);
-        return { measured: true, live, pct, tier, text: pvxGaugeText(this, n, which, pct), motivo: '' };
+        return { measured: true, live, pct, tier, text: pvxGaugeText(this, n, which, pct), reason: '' };
       },
       pvxGaugeColor(m) {
         if (!m || !m.measured || !m.live) return '#64748b';
-        return m.tier === 'critico' ? '#ef4444' : (m.tier === 'atencao' ? '#f59e0b' : '#22c55e');
+        return m.tier === 'critical' ? '#ef4444' : (m.tier === 'warning' ? '#f59e0b' : '#22c55e');
       },
       pvxGaugeStyle(m) {
         const v = Math.max(0, Math.min(100, Number(m && m.pct) || 0));
@@ -2432,7 +2432,7 @@
         }
         const names = targets.map(n => `${n.name} (${n.id})`).join(', ');
         const skipped = fora.length
-          ? `\n\nLEFT OUT (${fora.length}): ` + fora.map(n => `${n.name} — ${this.pvxActionState(n, action).motivo}`).join('; ')
+          ? `\n\nLEFT OUT (${fora.length}): ` + fora.map(n => `${n.name} — ${this.pvxActionState(n, action).reason}`).join('; ')
           : '';
         const step = this.pvxStep(action, targets.length);
         const warning = (action === 'stop'
@@ -2455,7 +2455,7 @@
       // trains the operator to confirm without reading.
       pvxPower(n, action) {
         const state = this.pvxActionState(n, action);
-        if (!state.can) { this.showToast(state.motivo, 'err'); return; }
+        if (!state.can) { this.showToast(state.reason, 'err'); return; }
         const step = this.pvxStep(action, 1);
         if (step <= 1) { this.pvxPowerNow(n, action); return; }
         const labels = { shutdown: 'Shut down gracefully', stop: 'Cut the power', reboot: 'Restart' };
@@ -2509,7 +2509,7 @@
       // (the token leaves the hypervisor AND the vault). Rung 3, by definition.
       pvxRevoke(n) {
         const state = this.pvxActionState(n, 'revoke');
-        if (!state.can) { this.showToast(state.motivo, 'err'); return; }
+        if (!state.can) { this.showToast(state.reason, 'err'); return; }
         this.askConfirm('Revoke the credential',
           `Deletes the token for "${n.name}" on the hypervisor AND in the vault, in that order. `
           + `Irreversible: the node is left with no credential until someone runs the applier again — `
@@ -2522,7 +2522,7 @@
             try {
               const r = await this.api('/api/nodes/' + n.id + '/credential', { method: 'DELETE' });
               const d = await r.json().catch(() => ({}));
-              this.showToast('credential revoked (' + (d.passos || []).join(' → ') + ')', 'ok');
+              this.showToast('credential revoked (' + (d.steps || []).join(' → ') + ')', 'ok');
             } catch (e) {
               // The error response NAMES the step that failed (pve.delete, pve.confirm401,
               // vault.delete, vault.recheck). Without that the operator does not know whether
@@ -2542,7 +2542,7 @@
       async pvxReload() {
         if (typeof this.loadNodes === 'function') await this.loadNodes();
         const open = this.pvx.open;
-        this.pvx.sel = this.pvxReescopa(this.pvx.sel, this.pvxFilteredNodes());
+        this.pvx.sel = this.pvxRescope(this.pvx.sel, this.pvxFilteredNodes());
         if (open && this.pvx.guestSel) await this.pvxLoadSnaps(this.pvx.guestSel);
       },
 
@@ -2557,7 +2557,7 @@
           // `gone` deliberately does NOT enter here: there is nothing to do about a node
           // the hypervisor no longer lists, and counting it as pending is exactly the noise
           // the operator complained about.
-          return e === 'vencido' || e === 'sem-credencial' || e === 'critico';
+          return e === 'stale' || e === 'no-credential' || e === 'critical';
         });
       },
 
@@ -2568,10 +2568,10 @@
       // results" turns a network failure into a conclusion about the
       // laboratory.
       pvxEmpty() {
-        if (this.pvx.forbidden || (this.nodes && this.nodes.forbidden)) return 'sem-permissao';
-        if (this.nodes && this.nodes.lastError) return 'falhou';
-        if (!this.pvxNodes().length) return 'nada';
-        if (!this.pvxFilteredNodes().length) return 'filtrado';
+        if (this.pvx.forbidden || (this.nodes && this.nodes.forbidden)) return 'no-permission';
+        if (this.nodes && this.nodes.lastError) return 'failed';
+        if (!this.pvxNodes().length) return 'nothing';
+        if (!this.pvxFilteredNodes().length) return 'filtered';
         return '';
       },
 

@@ -116,7 +116,7 @@ func TestTerminalWSTicket_OwnedByOtherUser_404NotFound(t *testing.T) {
 	}
 }
 
-// TestTerminalWSTicket_AudienceAllSession_AllowsAnyUser proves that "Todos"
+// TestTerminalWSTicket_AudienceAllSession_AllowsAnyUser proves that "Everyone"
 // stays attachable by any authenticated user — the exception the threat
 // model's "(non-AudienceAll)" parenthesis asks for.
 func TestTerminalWSTicket_AudienceAllSession_AllowsAnyUser(t *testing.T) {
@@ -195,7 +195,7 @@ func TestTerminalRawLog_Unauthenticated(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/terminal/log-bruto?name=main", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/terminal/raw-log?name=main", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -212,7 +212,7 @@ func TestTerminalRawLog_NotOwned_404NotFound(t *testing.T) {
 	mux := http.NewServeMux()
 	Mount(mux, Deps{SessionOwn: own})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/terminal/log-bruto?name=jordans-session", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/mobile/v1/terminal/raw-log?name=jordans-session", nil)
 	req = req.WithContext(auth.WithUser(req.Context(), "sam"))
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)

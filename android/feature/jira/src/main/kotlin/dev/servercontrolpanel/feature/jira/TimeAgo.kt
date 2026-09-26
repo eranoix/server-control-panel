@@ -69,7 +69,7 @@ internal fun dueLabel(timestamp: String?, today: LocalDate): String {
     val data = parseTimestamp(timestamp)?.toLocalDate() ?: return ""
     val days = java.time.temporal.ChronoUnit.DAYS.between(today, data)
     return when {
-        days < 0 -> "venceu"
+        days < 0 -> "overdue"
         days == 0L -> "due today"
         days == 1L -> "due tomorrow"
         days < 30 -> "due in $days d"

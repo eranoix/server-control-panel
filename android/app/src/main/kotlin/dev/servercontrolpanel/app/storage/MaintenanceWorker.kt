@@ -44,8 +44,8 @@ class MaintenanceWorker(
     }
 
     companion object {
-        private const val TAG = "PanelManutencao"
-        private const val WORK_NAME = "manutencao-de-armazenamento"
+        private const val TAG = "PanelMaintenance"
+        private const val WORK_NAME = "storage-maintenance"
 
         fun enqueue(context: Context) {
             val request = PeriodicWorkRequestBuilder<MaintenanceWorker>(1, TimeUnit.DAYS)

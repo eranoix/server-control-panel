@@ -52,7 +52,7 @@ pin() {
     local name="$1" want_rc="$2" fragment="$3" file="$4"
     total=$((total+1))
     local output rc
-    output="$("$DEPLOY" --conf "$file" --validar 2>&1)"; rc=$?
+    output="$("$DEPLOY" --conf "$file" --validate 2>&1)"; rc=$?
     if [[ "$rc" != "$want_rc" ]]; then
         echo "  ✗ $name: expected rc=$want_rc, got rc=$rc"
         echo "    output: $output"
@@ -71,7 +71,7 @@ echo "═══ deploy contract pins ═══"
 
 # Negative control FIRST: if this fails, every other pin is a false positive.
 valid_conf "$TMP/ok.conf"
-pin "NEGATIVE CONTROL: a complete, valid conf PASSES" 0 "configuração válida" "$TMP/ok.conf"
+pin "NEGATIVE CONTROL: a complete, valid conf PASSES" 0 "valid configuration" "$TMP/ok.conf"
 
 # Missing conf.
 pin "a missing conf names the file" 2 "$TMP/does-not-exist.conf" "$TMP/does-not-exist.conf"
@@ -99,17 +99,17 @@ pin "HEALTH_MODE=cmd with HEALTH_CMD is valid" 0 "cmd" "$TMP/cmd-ok.conf"
 
 # KEEP_BINARIES
 valid_conf "$TMP/keep1.conf" "KEEP_BINARIES=1"
-pin "KEEP_BINARIES=1 explains that rollback needs 2" 2 "pelo menos 2" "$TMP/keep1.conf"
+pin "KEEP_BINARIES=1 explains that rollback needs 2" 2 "at least 2" "$TMP/keep1.conf"
 
 valid_conf "$TMP/keep2.conf" "KEEP_BINARIES=2"
-pin "KEEP_BINARIES=2 is the minimum accepted" 0 "válida" "$TMP/keep2.conf"
+pin "KEEP_BINARIES=2 is the minimum accepted" 0 "valid" "$TMP/keep2.conf"
 
 valid_conf "$TMP/keepx.conf" "KEEP_BINARIES=abc"
-pin "a non-numeric KEEP_BINARIES is refused" 2 "não é número" "$TMP/keepx.conf"
+pin "a non-numeric KEEP_BINARIES is refused" 2 "is not a number" "$TMP/keepx.conf"
 
 # An empty BUILD_CMD is NOT an error.
 valid_conf "$TMP/no-build.conf" "BUILD_CMD="
-pin "an empty BUILD_CMD is a SUPPORTED case, not an error" 0 "válida" "$TMP/no-build.conf"
+pin "an empty BUILD_CMD is a SUPPORTED case, not an error" 0 "valid" "$TMP/no-build.conf"
 
 # swap_symlink with LINK OUTSIDE BIN_DIR: the target must be resolved relative to
 # where the LINK lives, otherwise the symlink points at a missing sibling.
@@ -141,7 +141,7 @@ fi
 for conf in "$ROOT"/deploy/*.conf; do
     [[ -e "$conf" ]] || continue
     total=$((total+1))
-    if BUILD_DIR="$TMP" "$DEPLOY" --conf "$conf" --validar >/dev/null 2>&1; then
+    if BUILD_DIR="$TMP" "$DEPLOY" --conf "$conf" --validate >/dev/null 2>&1; then
         echo "  ✓ deploy/$(basename "$conf") (production) is valid"
     else
         echo "  ✗ deploy/$(basename "$conf") (production) does NOT validate"

@@ -53,7 +53,7 @@ func TestAttachReplay(t *testing.T) {
 	}
 
 	// (3) missing log → nil, no panic.
-	if rep := attachReplay(dir, "naoexiste", "naoexiste"); rep != nil {
+	if rep := attachReplay(dir, "nonexistent", "nonexistent"); rep != nil {
 		t.Errorf("log missing: expected nil, got %q", string(rep))
 	}
 

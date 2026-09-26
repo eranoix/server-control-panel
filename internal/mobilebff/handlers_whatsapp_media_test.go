@@ -68,7 +68,7 @@ func TestWhatsAppMedia_Get_DownloadErrorBecomesRightStatus(t *testing.T) {
 	}
 	_, mux := newWhatsappMediaTestAPI(svc)
 
-	req := newAuthedRequest(http.MethodGet, "/api/mobile/v1/whatsapp/chats/jid/media/naoexiste", nil)
+	req := newAuthedRequest(http.MethodGet, "/api/mobile/v1/whatsapp/chats/jid/media/nonexistent", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 

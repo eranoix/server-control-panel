@@ -142,9 +142,9 @@ class ResourceSignalsTest {
 
     @Test
     fun `memory at 63 percent is ok, at 90 a warning, at 96 critical`() {
-        assertEquals(Severity.OK, signal("memoria").severity)
-        assertEquals(Severity.WARNING, signal("memoria", productionLike(memUsedPercent = 90.0)).severity)
-        assertEquals(Severity.CRITICAL, signal("memoria", productionLike(memUsedPercent = 96.0)).severity)
+        assertEquals(Severity.OK, signal("memory").severity)
+        assertEquals(Severity.WARNING, signal("memory", productionLike(memUsedPercent = 90.0)).severity)
+        assertEquals(Severity.CRITICAL, signal("memory", productionLike(memUsedPercent = 96.0)).severity)
     }
 
     @Test
@@ -162,7 +162,7 @@ class ResourceSignalsTest {
 
     @Test
     fun `network is never graded because there is no honest traffic threshold`() {
-        val network = signal("rede")
+        val network = signal("network")
         assertEquals(Severity.OK, network.severity)
         assertTrue("got: ${network.detail}", network.detail.contains("147.5 KiB/s"))
         assertTrue("got: ${network.detail}", network.detail.contains("256.3 KiB/s"))
@@ -171,8 +171,8 @@ class ResourceSignalsTest {
     @Test
     fun `network leaves the value column empty because two rates do not fit`() {
         // Two rates wrap badly at phone width; an empty headline hides the column.
-        assertEquals("", signal("rede").headline)
-        assertTrue(gradeResources(productionLike()).filter { it.id != "rede" }.all { it.headline.isNotBlank() })
+        assertEquals("", signal("network").headline)
+        assertTrue(gradeResources(productionLike()).filter { it.id != "network" }.all { it.headline.isNotBlank() })
     }
 
     @Test
@@ -185,7 +185,7 @@ class ResourceSignalsTest {
         assertEquals(Severity.CRITICAL, warning.first().severity)
         assertTrue(
             "both critical signals must be on top: ${warning.map { it.id }}",
-            warning.take(2).map { it.id }.containsAll(listOf("memoria", "swap")),
+            warning.take(2).map { it.id }.containsAll(listOf("memory", "swap")),
         )
     }
 

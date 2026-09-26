@@ -31,5 +31,5 @@ file defines.
 above 90% of a container's limit, so neither sees a full swap: RAM can be
 plentiful, and a container started with `--memory` but no `--memory-swap` may
 fill swap while staying well under its limit. The three swap alerts
-(`HostSwapAlmostFull`, `HostSwapParado`, `HostSwapThrashing`) plus
+(`HostSwapAlmostFull`, `HostSwapStopped`, `HostSwapThrashing`) plus
 `ContainerSwapHeavy` cover that case.

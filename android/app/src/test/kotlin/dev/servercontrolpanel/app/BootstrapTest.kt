@@ -46,12 +46,12 @@ class BootstrapTest {
 
     @Test
     fun `a throwing step records its name and the exception in initFailures`() {
-        Bootstrap.step("registro de conta telefonica (Telecom)") {
+        Bootstrap.step("phone account registration (Telecom)") {
             throw SecurityException("Neither user 10472 nor current process has READ_PHONE_NUMBERS")
         }
 
         assertEquals(1, Bootstrap.initFailures.size)
-        assertTrue(Bootstrap.initFailures[0].contains("registro de conta telefonica (Telecom)"))
+        assertTrue(Bootstrap.initFailures[0].contains("phone account registration (Telecom)"))
         assertTrue(Bootstrap.initFailures[0].contains("SecurityException"))
     }
 
@@ -64,13 +64,13 @@ class BootstrapTest {
 
     @Test
     fun `multiple failing steps each get their own entry, in order`() {
-        Bootstrap.step("um") { throw RuntimeException("falha um") }
-        Bootstrap.step("dois") { /* ok */ }
-        Bootstrap.step("tres") { throw RuntimeException("falha tres") }
+        Bootstrap.step("one") { throw RuntimeException("failure one") }
+        Bootstrap.step("two") { /* ok */ }
+        Bootstrap.step("three") { throw RuntimeException("failure three") }
 
         assertEquals(2, Bootstrap.initFailures.size)
-        assertTrue(Bootstrap.initFailures[0].startsWith("um:"))
-        assertTrue(Bootstrap.initFailures[1].startsWith("tres:"))
+        assertTrue(Bootstrap.initFailures[0].startsWith("one:"))
+        assertTrue(Bootstrap.initFailures[1].startsWith("three:"))
     }
 
     @Test
@@ -86,11 +86,11 @@ class BootstrapTest {
 
         Bootstrap.installCrashReporter(context)
         Bootstrap.step("step that is reported but does not fail") { /* ok, just populates initFailures with nothing */ }
-        val crashError = IllegalStateException("EncryptedSharedPreferences.create falhou apos rotacao de chave")
+        val crashError = IllegalStateException("EncryptedSharedPreferences.create failed after key rotation")
         Thread.getDefaultUncaughtExceptionHandler()!!.uncaughtException(Thread.currentThread(), crashError)
 
         val persisted = Bootstrap.lastCrash(context)
-        assertTrue(persisted != null && persisted.contains("EncryptedSharedPreferences.create falhou"))
+        assertTrue(persisted != null && persisted.contains("EncryptedSharedPreferences.create failed"))
         assertTrue(
             "the crash report must be readable text, including the thread name",
             persisted!!.contains("thread: ${Thread.currentThread().name}"),
@@ -106,14 +106,14 @@ class BootstrapTest {
         Thread.setDefaultUncaughtExceptionHandler(null)
 
         Bootstrap.installCrashReporter(context)
-        Bootstrap.step("canais de notificacao") { throw RuntimeException("channel refused by the manufacturer") }
+        Bootstrap.step("notification channels") { throw RuntimeException("channel refused by the manufacturer") }
         Thread.getDefaultUncaughtExceptionHandler()!!.uncaughtException(
             Thread.currentThread(),
             RuntimeException("fatal crash"),
         )
 
         val persisted = Bootstrap.lastCrash(context)
-        assertTrue(persisted != null && persisted.contains("canais de notificacao"))
+        assertTrue(persisted != null && persisted.contains("notification channels"))
     }
 
     @Test

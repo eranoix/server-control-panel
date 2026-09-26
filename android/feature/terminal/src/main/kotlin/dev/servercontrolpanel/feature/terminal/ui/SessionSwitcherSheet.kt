@@ -32,16 +32,16 @@ import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.data.terminal.TerminalSession
 
 /** Test tag for the sessions sheet. */
-const val SESSIONS_SHEET_TAG = "sessoes-sheet"
+const val SESSIONS_SHEET_TAG = "sessions-sheet"
 
 /** Test tag for the sheet's filter field. */
-const val SESSIONS_FILTER_TAG = "sessoes-filtro"
+const val SESSIONS_FILTER_TAG = "sessions-filter"
 
 /** Test tag for the new-session name field. */
-const val SESSIONS_NEW_TAG = "sessoes-nova"
+const val SESSIONS_NEW_TAG = "sessions-nova"
 
 /** Prefix of the test tag on each session row. */
-fun sessionTag(name: String): String = "sessao-$name"
+fun sessionTag(name: String): String = "session-$name"
 
 /**
  * The session-switching sheet, opened by the "Session" button in the top bar.

@@ -59,7 +59,7 @@ func TestCapabilitiesFor_NonAdmin(t *testing.T) {
 
 func TestCapabilitiesFor_UnknownUsername_NeverAdmin(t *testing.T) {
 	cfg := capsTestCfg()
-	isAdmin, caps := CapabilitiesFor(cfg, "quemsabe")
+	isAdmin, caps := CapabilitiesFor(cfg, "whoknows")
 	if isAdmin {
 		t.Fatalf("isAdmin = true for an unknown username, want false")
 	}

@@ -30,7 +30,7 @@ catch {
   process.exit(1);
 }
 
-const SCREENS = ['manutencao', 'agendamentos', 'ai', 'gamesettings'];
+const SCREENS = ['maintenance', 'schedules', 'ai', 'gamesettings'];
 const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 
 // Cut each <template x-if="_mounted.X"> … </template> out of the real markup,

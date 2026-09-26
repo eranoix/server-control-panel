@@ -16,7 +16,7 @@ import org.robolectric.RobolectricTestRunner
 
 /**
  * An admin's catalog: five sections in three groups, in server order. It
- * includes a section the app has never seen ("futuro.inventado"), which must
+ * includes a section the app has never seen ("future.invented"), which must
  * still be shown.
  */
 private val ADMIN_CATALOG = listOf(
@@ -24,7 +24,7 @@ private val ADMIN_CATALOG = listOf(
     SduiSection("docker.prune", "Docker", "Docker cleanup"),
     SduiSection("system.processes", "System", "Processes"),
     SduiSection("security.audit", "Security", "Audit log"),
-    SduiSection("futuro.inventado", "System", "A section this app has never seen"),
+    SduiSection("future.invented", "System", "A section this app has never seen"),
 )
 
 /**
@@ -55,7 +55,7 @@ class AdminCatalogViewModelTest {
         assertEquals(ADMIN_CATALOG.map { it.id }, ready.sections.map { it.id })
         assertTrue(
             "a section unknown to the client must still appear",
-            ready.sections.any { it.id == "futuro.inventado" },
+            ready.sections.any { it.id == "future.invented" },
         )
     }
 

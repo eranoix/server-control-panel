@@ -17,7 +17,7 @@ import java.io.StringWriter
 object Bootstrap {
 
     private const val TAG = "PanelBootstrap"
-    private const val CRASH_FILE = "ultimo-crash.txt"
+    private const val CRASH_FILE = "last-crash.txt"
 
     /** Startup failures accumulated in this process, in the order they happened. */
     val initFailures = mutableListOf<String>()

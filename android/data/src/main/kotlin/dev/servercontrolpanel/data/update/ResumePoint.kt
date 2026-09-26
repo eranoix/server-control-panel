@@ -50,9 +50,9 @@ class ResumePoint(
     }
 
     private companion object {
-        const val FILE = "onde_eu_estava"
-        const val KEY_ROUTE = "rota"
-        const val KEY_WHEN = "quando"
+        const val FILE = "resume_point"
+        const val KEY_ROUTE = "route"
+        const val KEY_WHEN = "when"
 
         /**
          * Ten minutes: covers a slow device or a postponed install, yet short

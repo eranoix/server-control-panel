@@ -106,15 +106,15 @@ if (iAnchor < 0) {
   process.exit(1);
 }
 
-const ABRE_TEMPLATE = `<template x-if="currentView==='proxmox'`;
-const realBlock = extractBalancedTemplate(html, ABRE_TEMPLATE, iAnchor);
+const OPEN_TEMPLATE = `<template x-if="currentView==='proxmox'`;
+const realBlock = extractBalancedTemplate(html, OPEN_TEMPLATE, iAnchor);
 if (!realBlock) { console.error('FAILED: could not find the <template x-if> holding the real content of the Proxmox tab in index.html'); process.exit(1); }
 if (!/typeof pvxStaleStyle==='function'/.test(realBlock.html)) {
   console.error('FAILED: the first <template x-if> of the Proxmox tab is no longer the one with the real content (the pvxStaleStyle gate is gone) — the structure changed, update this test');
   process.exit(1);
 }
 
-const fallbackBlock = extractBalancedTemplate(html, ABRE_TEMPLATE, realBlock.end);
+const fallbackBlock = extractBalancedTemplate(html, OPEN_TEMPLATE, realBlock.end);
 if (!fallbackBlock) { console.error('FAILED: could not find the fallback <template x-if> (module not loaded) of the Proxmox tab in index.html'); process.exit(1); }
 
 const section = realBlock.html + '\n' + fallbackBlock.html;
@@ -230,15 +230,15 @@ if (total < 20) {
 
 let rejected = 0, measured = 0;
 for (let i = 0; i < total; i++) {
-  const name = await page.evaluate((k) => window.__script[k].nome, i);
+  const name = await page.evaluate((k) => window.__script[k].name, i);
   await page.evaluate((k) => window.__script[k].step(), i);
   await page.waitForTimeout(180);
   let note = '';
   if (await page.evaluate((k) => !!window.__script[k].expect, i)) {
     measured++;
     const r = await page.evaluate((k) => window.__script[k].expect(), i);
-    if (r && r.erro) errors.push('measurement: ' + r.erro);
-    if (r && r.nota) note = '  [' + r.nota + ']';
+    if (r && r.error) errors.push('measurement: ' + r.error);
+    if (r && r.note) note = '  [' + r.note + ']';
   }
   const newOnes = errors.splice(0);
   if (newOnes.length) { rejected++; console.log('  FAIL ' + name + '\n        ' + newOnes.join('\n        ')); }

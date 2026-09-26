@@ -110,23 +110,23 @@ func (r *Router) nodeClone(w http.ResponseWriter, req *http.Request, st *invento
 			}
 		}
 		writeJSON(w, map[string]any{
-			"precisa_snapshot": needsSnap,
-			"snapshots":        snaps,
-			"origem":           id,
-			"origem_nome":      no.Name,
-			"tipo":             kind,
-			"next_id":          nextID,
-			"sugestao":         suggestName(no.Name),
+			"needs_snapshot": needsSnap,
+			"snapshots":      snaps,
+			"origin":         id,
+			"origin_name":    no.Name,
+			"type":           kind,
+			"next_id":        nextID,
+			"suggestion":     suggestName(no.Name),
 			// The warning travels with the data because it depends on the guest's
 			// STATE, and the screen must not recompute a consistency rule on its own.
-			"ligado": isGuestRunning(no),
+			"on": isGuestRunning(no),
 		})
 		return
 	}
 
 	var body struct {
-		NewID    int    `json:"novo_id"`
-		Name     string `json:"nome"`
+		NewID    int    `json:"new_id"`
+		Name     string `json:"name"`
 		Snapshot string `json:"snapshot"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -134,7 +134,7 @@ func (r *Router) nodeClone(w http.ResponseWriter, req *http.Request, st *invento
 		return
 	}
 	if body.NewID <= 0 {
-		writeErr(w, 400, "novo_id missing — ask for the next free one with GET first")
+		writeErr(w, 400, "new_id missing — ask for the next free one with GET first")
 		return
 	}
 
@@ -163,7 +163,7 @@ func (r *Router) nodeClone(w http.ResponseWriter, req *http.Request, st *invento
 
 	// Reported as accepted, never "ok": see the file header.
 	writeJSON(w, map[string]any{
-		"origem": id, "destino": body.NewID, "upid": upid, "status": "aceita",
+		"origin": id, "destination": body.NewID, "upid": upid, "status": "accepted",
 		"node": node,
 	})
 }
@@ -176,7 +176,7 @@ func (r *Router) nodeBackup(w http.ResponseWriter, req *http.Request, st *invent
 	}
 	var body struct {
 		Storage  string `json:"storage"`
-		Mode     string `json:"modo"`
+		Mode     string `json:"mode"`
 		Compress string `json:"compress"`
 	}
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
@@ -216,8 +216,8 @@ func (r *Router) nodeBackup(w http.ResponseWriter, req *http.Request, st *invent
 		fmt.Sprintf("node=%s storage=%s upid=%s status=accepted", id, body.Storage, upid))
 
 	writeJSON(w, map[string]any{
-		"node_id": id, "storage": body.Storage, "modo": body.Mode,
-		"upid": upid, "status": "aceita", "node": node,
+		"node_id": id, "storage": body.Storage, "mode": body.Mode,
+		"upid": upid, "status": "accepted", "node": node,
 	})
 }
 
@@ -257,8 +257,8 @@ func (r *Router) nodeNote(w http.ResponseWriter, req *http.Request, st *inventor
 	// An external node has no PVE config to read: an absent source, not a failure.
 	if no.Transport != inventory.TransportPVEAPI {
 		writeJSON(w, map[string]any{
-			"node": id, "markdown": "", "origem": "fora-do-pve",
-			"motivo": "this node is not a guest of this hypervisor, so the PVE note does not apply to it",
+			"node": id, "markdown": "", "origin": "outside-pve",
+			"reason": "this node is not a guest of this hypervisor, so the PVE note does not apply to it",
 		})
 		return
 	}
@@ -309,21 +309,21 @@ func (r *Router) nodeNote(w http.ResponseWriter, req *http.Request, st *inventor
 		}
 		// Audit the size and target, never the content: the note may describe the
 		// network, and the audit trail is kept longer and read more widely.
-		r.auditEvent(req, auth.UserFrom(req), "pve.nota",
+		r.auditEvent(req, auth.UserFrom(req), "pve.note",
 			fmt.Sprintf("node=%s bytes=%d status=requested", id, len(body.Markdown)))
 		if err := cli.SetDescription(req.Context(), node, vmid, kind, body.Markdown); err != nil {
-			r.auditEvent(req, auth.UserFrom(req), "pve.nota",
+			r.auditEvent(req, auth.UserFrom(req), "pve.note",
 				fmt.Sprintf("node=%s status=refused error=%s", id, err.Error()))
 			writeErr(w, pveErrorCode(err), "hypervisor refused to write the note: "+err.Error())
 			return
 		}
-		r.auditEvent(req, auth.UserFrom(req), "pve.nota",
+		r.auditEvent(req, auth.UserFrom(req), "pve.note",
 			fmt.Sprintf("node=%s bytes=%d status=ok", id, len(body.Markdown)))
 		origin := "pve-notes"
 		if strings.TrimSpace(body.Markdown) == "" {
-			origin = "vazia"
+			origin = "empty"
 		}
-		writeJSON(w, map[string]any{"node": id, "markdown": body.Markdown, "origem": origin, "status": "ok"})
+		writeJSON(w, map[string]any{"node": id, "markdown": body.Markdown, "origin": origin, "status": "ok"})
 		return
 	}
 
@@ -335,8 +335,8 @@ func (r *Router) nodeNote(w http.ResponseWriter, req *http.Request, st *inventor
 		// a hypervisor that is down.
 		if strings.Contains(err.Error(), "does not exist") {
 			writeJSON(w, map[string]any{
-				"node": id, "markdown": "", "origem": "inexistente",
-				"motivo": "this node no longer exists on the hypervisor — the panel still lists it because " +
+				"node": id, "markdown": "", "origin": "nonexistent",
+				"reason": "this node no longer exists on the hypervisor — the panel still lists it because " +
 					"the inventory is refreshed once per cycle, and the next cycle removes it",
 			})
 			return
@@ -347,9 +347,9 @@ func (r *Router) nodeNote(w http.ResponseWriter, req *http.Request, st *inventor
 	origin := "pve-notes"
 	if strings.TrimSpace(txt) == "" {
 		// Empty is not an error: nobody has described this guest yet.
-		origin = "vazia"
+		origin = "empty"
 	}
-	writeJSON(w, map[string]any{"node": id, "markdown": txt, "origem": origin})
+	writeJSON(w, map[string]any{"node": id, "markdown": txt, "origin": origin})
 }
 
 // suggestName builds the clone's name from the source's name, already valid as

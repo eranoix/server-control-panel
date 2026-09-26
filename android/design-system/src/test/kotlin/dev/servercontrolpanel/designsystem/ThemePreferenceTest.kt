@@ -29,7 +29,7 @@ class ThemePreferenceTest {
     }
 
     private fun newFile() =
-        context.getSharedPreferences("teste-aparencia-${counter++}", Context.MODE_PRIVATE)
+        context.getSharedPreferences("test-appearance-${counter++}", Context.MODE_PRIVATE)
 
     @Test
     fun `with no prior choice the default is to follow the system`() {
@@ -71,7 +71,7 @@ class ThemePreferenceTest {
     @Test
     fun `an unknown stored value falls back to the default instead of crashing`() {
         val file = newFile()
-        file.edit().putString("modo_tema", "sepia-de-uma-versao-futura").commit()
+        file.edit().putString("theme_mode", "sepia-from-a-future-version").commit()
 
         assertEquals(ThemeMode.SYSTEM, ThemePreference(file).current())
     }
@@ -109,8 +109,8 @@ class ThemePreferenceTest {
     @Test
     fun `stored ids are stable`() {
         // Changing an id would silently reset existing users' saved choice to SYSTEM.
-        assertEquals("claro", ThemeMode.LIGHT.id)
-        assertEquals("escuro", ThemeMode.DARK.id)
-        assertEquals("sistema", ThemeMode.SYSTEM.id)
+        assertEquals("light", ThemeMode.LIGHT.id)
+        assertEquals("dark", ThemeMode.DARK.id)
+        assertEquals("system", ThemeMode.SYSTEM.id)
     }
 }

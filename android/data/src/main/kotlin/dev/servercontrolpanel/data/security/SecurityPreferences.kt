@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 internal val Context.securityPrefsDataStore: DataStore<Preferences> by
-    preferencesDataStore(name = "seguranca_prefs")
+    preferencesDataStore(name = "security_prefs")
 
 /**
  * The two defences that depend on the device rather than the server. Whoever
@@ -52,7 +52,7 @@ class SecurityPreferences(
     }
 
     private companion object {
-        val LOCK_KEY = booleanPreferencesKey("seguranca_bloqueio_ao_abrir")
-        val CAPTURE_KEY = booleanPreferencesKey("seguranca_proteger_captura")
+        val LOCK_KEY = booleanPreferencesKey("security_lock_on_open")
+        val CAPTURE_KEY = booleanPreferencesKey("security_block_capture")
     }
 }

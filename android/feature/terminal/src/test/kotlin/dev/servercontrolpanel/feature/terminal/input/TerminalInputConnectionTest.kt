@@ -236,20 +236,20 @@ class TerminalInputConnectionTest {
     fun `in TEXT mode autocorrect sees the composition`() {
         // Autocorrect needs to see the composition, or it corrects against nothing.
         val connection = newConnection(mode = TypingMode.TEXT)
-        connection.setComposingText("comec", 1)
+        connection.setComposingText("begin", 1)
 
         // The composition ends the text before the cursor; the sentinel before it is not
         // a letter, so it does not join the word.
-        assertTrue(connection.getTextBeforeCursor(10, 0).toString().endsWith("comec"))
-        assertEquals("ec", connection.getTextBeforeCursor(2, 0).toString())
+        assertTrue(connection.getTextBeforeCursor(10, 0).toString().endsWith("begin"))
+        assertEquals("in", connection.getTextBeforeCursor(2, 0).toString())
 
         val extracted = connection.getExtractedText(null, 0)!!
         assertTrue(
             "the composition must appear in the extracted text",
-            extracted.text.toString().contains("comec"),
+            extracted.text.toString().contains("begin"),
         )
         // The cursor sits after the composition and before the right sentinel.
-        assertEquals("comec", extracted.text.toString().substring(1, extracted.selectionStart))
+        assertEquals("begin", extracted.text.toString().substring(1, extracted.selectionStart))
     }
 
     @Test
@@ -257,7 +257,7 @@ class TerminalInputConnectionTest {
         // Samsung keyboards ignore `TYPE_NULL` and swallow arrow keys when the cursor
         // looks like it is at a boundary, so expose sentinels but no text.
         val connection = newConnection(mode = TypingMode.TERMINAL)
-        connection.setComposingText("comec", 1)
+        connection.setComposingText("begin", 1)
 
         val before = connection.getTextBeforeCursor(10, 0).toString()
         assertEquals("no letter may appear here", "", before.filter { it.isLetterOrDigit() })

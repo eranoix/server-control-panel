@@ -21,10 +21,10 @@ import androidx.compose.ui.unit.dp
 const val THEME_SELECTOR_LABEL = "Appearance"
 
 /** Test tag for the whole selector. */
-const val THEME_SELECTOR_TAG = "seletor-de-aparencia"
+const val THEME_SELECTOR_TAG = "appearance-selector"
 
 /** Test tag for one option of the selector. */
-fun themeOptionTag(mode: ThemeMode): String = "aparencia-${mode.id}"
+fun themeOptionTag(mode: ThemeMode): String = "appearance-${mode.id}"
 
 /**
  * The three appearances as a segmented selector: all visible at once, the

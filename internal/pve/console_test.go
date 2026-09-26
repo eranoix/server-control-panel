@@ -29,8 +29,8 @@ import (
 
 const (
 	fakeConsoleTicket = "PVEVNC:AAAAAA==::ticket-measured-at-361-bytes"
-	fakeConsoleUser   = "lab@pve!node-lab"
-	fakeConsoleUPID   = "UPID:pve:003D8997:0492E623:6A868978:vncproxy:204:lab@pve!node-lab:"
+	fakeConsoleUser   = "panel@pve!node-lab"
+	fakeConsoleUPID   = "UPID:pve:003D8997:0492E623:6A868978:vncproxy:204:panel@pve!node-lab:"
 )
 
 // consoleServer builds the complete fake hypervisor (termproxy +

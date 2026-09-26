@@ -45,13 +45,13 @@ const (
 )
 
 // Tags of the inbounds that carry per-device users (the ones a device link can
-// reach). The legacy vless-ws-casa inbound is intentionally excluded.
+// reach). The legacy vless-ws-home inbound is intentionally excluded.
 var deviceInbounds = map[string]bool{"vless-ws-in": true, "vless-reality-in": true}
 
 // Exit values.
 const (
 	ExitVPS  = "vps"  // default outbound (direct) — leaves through the VPS
-	ExitHome = "casa" // home outbound — leaves through the house (residential)
+	ExitHome = "home" // home outbound — leaves through the house (residential)
 )
 
 // Data-saver proxy outbound tags (defined in config.json). A device with
@@ -59,7 +59,7 @@ const (
 // exit; the proxy (mitmproxy) recompresses and leaves through the right exit.
 const (
 	outProxyVPS  = "proxy-vps"
-	outProxyHome = "proxy-casa"
+	outProxyHome = "proxy-home"
 )
 
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}[a-z0-9]$`)
@@ -157,7 +157,7 @@ func outbounds(doc map[string]any) []map[string]any {
 }
 
 // ProxyEndpoint returns the "host:port" of the data-saver proxy outbound for an
-// exit (proxy-vps for ExitVPS, proxy-casa for ExitHome). The handler probes this
+// exit (proxy-vps for ExitVPS, proxy-home for ExitHome). The handler probes this
 // before turning data-saver on, so enabling never routes a device through a
 // proxy that is down/unreachable (that was the NXDOMAIN outage — PANEL-ds-safe).
 func (m *Manager) ProxyEndpoint(exit string) (string, error) {
@@ -234,7 +234,7 @@ func authUsersFor(doc map[string]any, match func(rm map[string]any) bool) map[st
 }
 
 // homeMembers: names whose exit is home (auth_user in ANY rule bound to the
-// home outbound — the plain home rule or the proxy-casa rule).
+// home outbound — the plain home rule or the proxy-home rule).
 func homeMembers(doc map[string]any) map[string]bool {
 	return authUsersFor(doc, func(rm map[string]any) bool {
 		out, _ := rm["outbound"].(string)
@@ -252,12 +252,12 @@ func dsMembers(doc map[string]any) map[string]bool {
 
 // setManagedRules rewrites the auth_user-keyed route rules deterministically
 // from the desired home/datasaver sets, preserving every other rule (the
-// leading resolve rule, the http-casa-in bridge — neither carries auth_user).
+// leading resolve rule, the http-home-in bridge — neither carries auth_user).
 //
 // Order (first match wins), appended after the preserved rules:
 //  1. QUIC reject for datasaver devices — forces the browser to fall back to TCP,
 //     otherwise HTTP/3 escapes the transformation.
-//  2. proxy-casa: web (80/443) of datasaver ∩ home.
+//  2. proxy-home: web (80/443) of datasaver ∩ home.
 //  3. proxy-vps:  web (80/443) of datasaver ∩ vps.
 //  4. home: all the remaining traffic of the home devices (other ports).
 //

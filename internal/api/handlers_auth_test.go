@@ -41,7 +41,7 @@ type fakeGoTrueUser struct {
 // /auth/v1/factors/{id}/challenge, POST /auth/v1/factors/{id}/verify.
 type fakeGoTrue struct {
 	mu    sync.Mutex
-	users map[string]*fakeGoTrueUser // por email
+	users map[string]*fakeGoTrueUser // by email
 }
 
 func newFakeGoTrue() *fakeGoTrue {

@@ -31,10 +31,10 @@ let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
 
-const FONTE_VC = path.join(WEB, 'vendor', 'panel', 'videocall.js');
-const FONTE_SHELL = path.join(WEB, 'vendor', 'panel', 'app', '00-shell.js');
-const srcVC = fs.readFileSync(FONTE_VC, 'utf8');
-const srcShell = fs.readFileSync(FONTE_SHELL, 'utf8');
+const SOURCE_VC = path.join(WEB, 'vendor', 'panel', 'videocall.js');
+const SOURCE_SHELL = path.join(WEB, 'vendor', 'panel', 'app', '00-shell.js');
+const srcVC = fs.readFileSync(SOURCE_VC, 'utf8');
+const srcShell = fs.readFileSync(SOURCE_SHELL, 'utf8');
 
 // Hardware stub: decides what getUserMedia does per requested kind. Reproduces the
 // real browser semantics — a COMBINED request fails if EITHER side is missing.
@@ -151,18 +151,18 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
         onState: (ev) => events.push(ev),
       });
     } catch (e) { err = e.message; }
-    return { events, erro: err, gum: window.__gumCalls };
+    return { events, error: err, gum: window.__gumCalls };
   });
   await page.close();
   const degraded = r.events.some(e => e.type === 'devices-degraded');
   degraded ? ok('engine: emitted devices-degraded') : no('engine: no devices-degraded — events=' + JSON.stringify(r.events.map(e=>e.type)));
   const note = (r.events.find(e => e.type === 'devices-degraded') || {}).note || '';
-  /c.mera/i.test(note) ? ok('engine: the note says the camera was missing ("' + note + '")') : no('engine: unexpected note: ' + note);
+  /camera/i.test(note) ? ok('engine: the note says the camera was missing ("' + note + '")') : no('engine: unexpected note: ' + note);
   // The last gUM attempt has to have been audio-without-video.
   const last = r.gum[r.gum.length - 1] || {};
   (last.audio === true && last.video === false) ? ok('engine: fell back to audio-only') : no('engine: the last attempt was ' + JSON.stringify(last));
   // The final error must NOT be the getUserMedia one — it has to have got past it.
-  !/getUserMedia|camera or microphone/i.test(r.erro) ? ok('engine: got past getUserMedia (it failed later, at the signalling)') : no('engine: stuck at getUserMedia: ' + r.erro);
+  !/getUserMedia|camera or microphone/i.test(r.error) ? ok('engine: got past getUserMedia (it failed later, at the signalling)') : no('engine: stuck at getUserMedia: ' + r.error);
 }
 
 // ── 6. Counter-check of the original bug, in the lobby source ────────────
@@ -213,13 +213,13 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
       await page.waitForTimeout(200);
       const r = await page.evaluate(() => {
         const el = document.querySelector('.vc-lobby-warning');
-        if (!el) return { existe: false };
-        return { existe: true, display: getComputedStyle(el).display, className: el.className,
+        if (!el) return { exists: false };
+        return { exists: true, display: getComputedStyle(el).display, className: el.className,
                  text: ((el.querySelector('.txt') || {}).textContent || '').trim(),
                  height: Math.round(el.getBoundingClientRect().height),
                  button: !!el.querySelector('.action') };
       });
-      const visible = r.existe && r.display !== 'none';
+      const visible = r.exists && r.display !== 'none';
       if (!c.ver) {
         !visible ? ok('notice/' + c.n + ': the band does not appear') : no('notice/' + c.n + ': an empty band of ' + r.height + 'px went live');
         continue;
@@ -271,14 +271,14 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
     const labels = [...document.querySelectorAll('.vc-room label')].map(l => Math.round(l.getBoundingClientRect().width));
     const level = document.querySelector('.vc-pill .level');
     const mic = level && level.parentElement;
-    return { n: pills.length, linhas: tops.length,
+    return { n: pills.length, lines: tops.length,
              visibleLabel: labels.filter(w => w > 2).length,
              levelWidth: level ? level.getBoundingClientRect().width : -1,
              micWidth: mic ? mic.getBoundingClientRect().width : -1,
              joinOff: document.querySelector('.vc-btn-join').disabled };
   });
   r.n === 3 ? ok('lobby: 3 device pills') : no('lobby: ' + r.n + ' pills');
-  r.linhas === 1 ? ok('lobby: control bar on a single line') : no('lobby: pills across ' + r.linhas + ' lines — it is no longer a bar');
+  r.lines === 1 ? ok('lobby: control bar on a single line') : no('lobby: pills across ' + r.lines + ' lines — it is no longer a bar');
   r.visibleLabel === 0 ? ok('lobby: labels for the screen reader only') : no('lobby: ' + r.visibleLabel + ' label(s) rendering as text (was .sr-only purged?)');
   (r.levelWidth > 0 && r.levelWidth < r.micWidth) ? ok('lobby: the mic level fills the pill (' + Math.round(r.levelWidth) + '/' + Math.round(r.micWidth) + 'px)')
                                                         : no('lobby: the meter inside the pill does not follow the level (' + r.levelWidth + ')');

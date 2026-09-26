@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	testTokenID = "lab@pve!t"
+	testTokenID = "panel@pve!t"
 	testSecret  = "s3cr3t"
 )
 
@@ -135,7 +135,7 @@ func TestAuthHeader(t *testing.T) {
 	if err := c.do(context.Background(), http.MethodGet, "/api2/json/version", &out); err != nil {
 		t.Fatalf("do: %v", err)
 	}
-	if got, want := seen.Get("Authorization"), "PVEAPIToken=lab@pve!t=s3cr3t"; got != want {
+	if got, want := seen.Get("Authorization"), "PVEAPIToken=panel@pve!t=s3cr3t"; got != want {
 		t.Errorf("Authorization = %q, want %q", got, want)
 	}
 	if v := seen.Get("CSRFPreventionToken"); v != "" {
@@ -187,15 +187,15 @@ func TestTimeoutFloor(t *testing.T) {
 // call). A bare secret, with no "!" in the id, MUST become an error in New,
 // never a silently broken header.
 func TestTokenFromVault(t *testing.T) {
-	id, secret, err := SplitTokenValue("lab@pve!audit=1234-abcd")
+	id, secret, err := SplitTokenValue("panel@pve!audit=1234-abcd")
 	if err != nil {
 		t.Fatalf("a valid value from the vault was refused: %v", err)
 	}
-	if id != "lab@pve!audit" || secret != "1234-abcd" {
+	if id != "panel@pve!audit" || secret != "1234-abcd" {
 		t.Fatalf("split = (%q,%q)", id, secret)
 	}
 
-	bad := []string{"", "1234-abcd", "lab@pve!audit", "lab@pve=1234", "=1234", "lab@pve!audit="}
+	bad := []string{"", "1234-abcd", "panel@pve!audit", "panel@pve=1234", "=1234", "panel@pve!audit="}
 	for _, v := range bad {
 		if _, _, err := SplitTokenValue(v); err == nil {
 			t.Errorf("SplitTokenValue(%q) accepted an invalid value", v)
@@ -203,12 +203,12 @@ func TestTokenFromVault(t *testing.T) {
 	}
 
 	// New accepts the whole vault value in TokenID, with Secret empty.
-	c, err := New(Config{BaseURL: "http://127.0.0.1:1", TokenID: "lab@pve!audit=1234-abcd"})
+	c, err := New(Config{BaseURL: "http://127.0.0.1:1", TokenID: "panel@pve!audit=1234-abcd"})
 	if err != nil {
 		t.Fatalf("New with the vault value: %v", err)
 	}
-	if c.tokenID != "lab@pve!audit" || c.secret != "1234-abcd" {
-		t.Errorf("the client assembled (%q,…) — expected lab@pve!audit", c.tokenID)
+	if c.tokenID != "panel@pve!audit" || c.secret != "1234-abcd" {
+		t.Errorf("the client assembled (%q,…) — expected panel@pve!audit", c.tokenID)
 	}
 	if _, err := New(Config{BaseURL: "http://127.0.0.1:1", TokenID: "1234-abcd"}); err == nil {
 		t.Error("New accepted a bare secret with no tokenid — that is the 07-01 defect")

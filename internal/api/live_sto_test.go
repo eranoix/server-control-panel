@@ -24,9 +24,9 @@ func TestLivePoolTopology(t *testing.T) {
 	r, cancel := liveRouter(t)
 	defer cancel()
 
-	w, out := pvxGET(t, r, "/api/proxmox/zfs/topologia")
+	w, out := pvxGET(t, r, "/api/proxmox/zfs/topology")
 	if w.Code != http.StatusOK {
-		t.Fatalf("GET /api/proxmox/zfs/topologia = %d: %s", w.Code, w.Body.String())
+		t.Fatalf("GET /api/proxmox/zfs/topology = %d: %s", w.Code, w.Body.String())
 	}
 	pools, _ := out["pools"].([]any)
 	if len(pools) == 0 {
@@ -34,11 +34,11 @@ func TestLivePoolTopology(t *testing.T) {
 	}
 	for _, p := range pools {
 		m, _ := p.(map[string]any)
-		name, _ := m["nome"].(string)
-		state, _ := m["estado"].(string)
-		red, _ := m["redundante"].(bool)
-		nDisp, _ := m["n_dispositivos"].(float64)
-		errs, _ := m["erros_contados"].(float64)
+		name, _ := m["name"].(string)
+		state, _ := m["state"].(string)
+		red, _ := m["redundant"].(bool)
+		nDisp, _ := m["n_devices"].(float64)
+		errs, _ := m["errors_counted"].(float64)
 
 		if nDisp == 0 {
 			t.Errorf("pool %s: no device read — the tree was not decoded", name)
@@ -49,16 +49,16 @@ func TestLivePoolTopology(t *testing.T) {
 			t.Errorf("pool %s has 1 device and came out as redundant", name)
 		}
 		t.Logf("%-8s %-9s redundant=%-5v %.0f avail · errors=%.0f · %v",
-			name, state, red, nDisp, errs, m["erros"])
+			name, state, red, nDisp, errs, m["errors"])
 
 		vdevs, _ := m["vdevs"].([]any)
 		for _, v := range vdevs {
 			vm, _ := v.(map[string]any)
-			disps, _ := vm["dispositivos"].([]any)
+			disps, _ := vm["devices"].([]any)
 			for _, d := range disps {
 				dm, _ := d.(map[string]any)
 				t.Logf("           %v [%v] r=%v w=%v ck=%v",
-					dm["caminho"], dm["estado"], dm["read"], dm["write"], dm["cksum"])
+					dm["path"], dm["state"], dm["read"], dm["write"], dm["cksum"])
 			}
 		}
 	}
@@ -84,19 +84,19 @@ func TestLiveBackupFreshness(t *testing.T) {
 		m, _ := d.(map[string]any)
 		st, _ := m["storage"].(string)
 		total, _ := m["total"].(float64)
-		last, _ := m["ultimo_ctime"].(float64)
+		last, _ := m["last_ctime"].(float64)
 		guests, _ := m["guests"].([]any)
-		if e, _ := m["erro"].(string); e != "" {
+		if e, _ := m["error"].(string); e != "" {
 			t.Logf("%-12s ERROR: %s", st, e)
 			continue
 		}
 		if total > 0 {
 			withCopy++
-			// 🔴 If there is a backup, there MUST be a timestamp. `ultimo_ctime`
+			// 🔴 If there is a backup, there MUST be a timestamp. `last_ctime`
 			// at zero with total>0 would be the screen saying "there is a backup,
 			// from 1970" — worse than saying it does not know.
 			if last == 0 {
-				t.Errorf("%s: %d backups and ultimo_ctime=0 — timestamp lost", st, int(total))
+				t.Errorf("%s: %d backups and last_ctime=0 — timestamp lost", st, int(total))
 			}
 			t.Logf("%-12s %3d copies · %d guests · last %.1f h ago",
 				st, int(total), len(guests), time.Since(time.Unix(int64(last), 0)).Hours())
@@ -119,11 +119,11 @@ func TestLiveParityWithProxmox(t *testing.T) {
 	defer cancel()
 
 	t.Run("node series", func(t *testing.T) {
-		w, out := pvxGET(t, r, "/api/proxmox/rrd?janela=hour")
+		w, out := pvxGET(t, r, "/api/proxmox/rrd?window=hour")
 		if w.Code != http.StatusOK {
 			t.Fatalf("= %d: %s", w.Code, w.Body.String())
 		}
-		pts, _ := out["pontos"].([]any)
+		pts, _ := out["points"].([]any)
 		if len(pts) < 10 {
 			t.Fatalf("only %d points — without coverage, the graph proves nothing", len(pts))
 		}
@@ -133,21 +133,21 @@ func TestLiveParityWithProxmox(t *testing.T) {
 	})
 
 	t.Run("invalid window falls back to the default, does not become a path", func(t *testing.T) {
-		w, out := pvxGET(t, r, "/api/proxmox/rrd?janela=../../access/users")
+		w, out := pvxGET(t, r, "/api/proxmox/rrd?window=../../access/users")
 		if w.Code != http.StatusOK {
 			t.Fatalf("= %d", w.Code)
 		}
-		if j, _ := out["janela"].(string); j != "hour" {
+		if j, _ := out["window"].(string); j != "hour" {
 			t.Errorf("window = %q, expected the default 'hour' — the allowlist did not hold", j)
 		}
 	})
 
 	t.Run("series for a single guest", func(t *testing.T) {
-		w, out := pvxGET(t, r, "/api/proxmox/rrd?node=qemu/208&janela=hour")
+		w, out := pvxGET(t, r, "/api/proxmox/rrd?node=qemu/208&window=hour")
 		if w.Code != http.StatusOK {
 			t.Fatalf("= %d: %s", w.Code, w.Body.String())
 		}
-		pts, _ := out["pontos"].([]any)
+		pts, _ := out["points"].([]any)
 		if len(pts) < 10 {
 			t.Fatalf("only %d points for the guest", len(pts))
 		}
@@ -155,27 +155,27 @@ func TestLiveParityWithProxmox(t *testing.T) {
 	})
 
 	t.Run("system", func(t *testing.T) {
-		w, out := pvxGET(t, r, "/api/proxmox/sistema")
+		w, out := pvxGET(t, r, "/api/proxmox/system")
 		if w.Code != http.StatusOK {
 			t.Fatalf("= %d: %s", w.Code, w.Body.String())
 		}
-		for _, k := range []string{"network", "dns", "time", "certificados"} {
+		for _, k := range []string{"network", "dns", "time", "certificates"} {
 			if _, ok := out[k]; !ok {
-				t.Errorf("block %q missing (error: %v)", k, out[k+"_erro"])
+				t.Errorf("block %q missing (error: %v)", k, out[k+"_error"])
 			}
 		}
 		ifaces, _ := out["network"].([]any)
 		tm, _ := out["time"].(map[string]any)
-		certs, _ := out["certificados"].([]any)
+		certs, _ := out["certificates"].([]any)
 		t.Logf("%d interfaces · timezone=%v · %d certificates", len(ifaces), tm["timezone"], len(certs))
 	})
 
 	t.Run("packages", func(t *testing.T) {
-		w, out := pvxGET(t, r, "/api/proxmox/pacotes")
+		w, out := pvxGET(t, r, "/api/proxmox/packages")
 		if w.Code != http.StatusOK {
 			t.Fatalf("= %d: %s", w.Code, w.Body.String())
 		}
-		ps, _ := out["pacotes"].([]any)
+		ps, _ := out["packages"].([]any)
 		if len(ps) == 0 {
 			t.Fatal("no package — the route responded empty")
 		}
@@ -187,7 +187,7 @@ func TestLiveParityWithProxmox(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("= %d: %s", w.Code, w.Body.String())
 		}
-		ls, _ := out["linhas"].([]any)
+		ls, _ := out["lines"].([]any)
 		if len(ls) == 0 {
 			t.Fatal("empty syslog — the route responded without a single line")
 		}
@@ -252,9 +252,9 @@ func TestLiveDisarmedIsNotFailure(t *testing.T) {
 	for _, d := range ds {
 		m, _ := d.(map[string]any)
 		st, _ := m["storage"].(string)
-		ag, _ := m["agendamento"].(string)
+		ag, _ := m["schedule_state"].(string)
 		sch, _ := m["schedule"].(string)
-		if ag == "ativo" {
+		if ag == "active" {
 			withSchedule++
 		}
 		t.Logf("%-12s scheduling=%-12s schedule=%q", st, ag, sch)

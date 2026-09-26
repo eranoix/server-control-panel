@@ -1,7 +1,7 @@
 {
   "sdui_version": 1,
   "screen": {
-    "id": "security.economia",
+    "id": "security.savings",
     "title": "Network usage",
     "components": [
       {
@@ -35,7 +35,7 @@
           }
         ],
         "rows_source": {
-          "endpoint": "/api/mobile/v1/security/economia"
+          "endpoint": "/api/mobile/v1/security/savings"
         },
         "empty_state": {
           "text": "How much of the tunnel each paired device has used, measured by conntrack. Empty means no traffic since the last reading — a collector that is down shows up as a load error, not as an empty table. Start by pairing a device under Devices (VLESS)."

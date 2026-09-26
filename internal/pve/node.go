@@ -11,9 +11,9 @@ package pve
 //     nothing that has to be kept between calls.
 //
 //  2. Tasks, disks and permissions ONLY work with the AUDIT token. Measured:
-//     GET /nodes/pve/tasks?limit=50 with the node token (lab@pve!node-apps)
+//     GET /nodes/pve/tasks?limit=50 with the node token (panel@pve!node-apps)
 //     returns 200 with len=0 — Tasks.pm:40-45 requires Sys.Audit on /nodes,
-//     which the LabOperador role does not have. It is not an error: it is an
+//     which the PanelOperator role does not have. It is not an error: it is an
 //     empty list telling a lie. internal/api is what picks the token, and there
 //     is a test there that fails by naming the key it read.
 //

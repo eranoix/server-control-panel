@@ -141,11 +141,11 @@ func TestGoldenScreens_RoleOmissionIsReasoned(t *testing.T) {
 	for _, screen := range RegisteredScreens() {
 		adminOut, err := buildGoldenBytes(ctx, screen, viewers["admin"])
 		if err != nil {
-			t.Fatalf("buildando %q (admin): %v", screen, err)
+			t.Fatalf("building %q (admin): %v", screen, err)
 		}
 		nonAdminOut, err := buildGoldenBytes(ctx, screen, viewers["nonadmin"])
 		if err != nil {
-			t.Fatalf("buildando %q (nonadmin): %v", screen, err)
+			t.Fatalf("building %q (nonadmin): %v", screen, err)
 		}
 
 		identical := bytes.Equal(adminOut, nonAdminOut)
@@ -183,7 +183,7 @@ func TestGoldenScreens_NonAdminNeverContainsForbiddenStrings(t *testing.T) {
 
 		nonAdminOut, err := buildGoldenBytes(ctx, screen, viewers["nonadmin"])
 		if err != nil {
-			t.Fatalf("buildando %q (nonadmin): %v", screen, err)
+			t.Fatalf("building %q (nonadmin): %v", screen, err)
 		}
 
 		for _, forbidden := range forbiddenFn() {

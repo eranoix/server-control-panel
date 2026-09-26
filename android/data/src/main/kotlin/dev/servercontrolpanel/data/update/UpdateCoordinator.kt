@@ -505,22 +505,22 @@ class UpdateCoordinator(
         const val RESPONSE_DURATION_MS = 6_000L
 
         // Same unit and locale as formatDownloadSize, so all sizes shown match.
-        fun megabytes(bytes: Long): String = String.format(PT_BR, "%.1f", bytes / 1_000_000.0)
+        fun megabytes(bytes: Long): String = String.format(SIZE_LOCALE, "%.1f", bytes / 1_000_000.0)
     }
 }
 
-/** Fixed pt-BR locale, so sizes use a decimal comma ("1,4 MB"). */
-private val PT_BR: Locale = Locale.forLanguageTag("pt-BR")
+/** Fixed en-US locale, so sizes use a decimal point ("1.4 MB"). */
+private val SIZE_LOCALE: Locale = Locale.US
 
 /**
- * The download size shown in the banner, with one decimal place ("1,4 MB") and
+ * The download size shown in the banner, with one decimal place ("1.4 MB") and
  * KB below 1 MB. Decimal MB (10^6), the unit Android Settings and the update
  * notes use.
  */
 fun formatDownloadSize(bytes: Long): String = when {
     bytes < 1_000 -> "$bytes B"
-    bytes < 1_000_000 -> String.format(PT_BR, "%d KB", bytes / 1_000)
-    else -> String.format(PT_BR, "%.1f MB", bytes / 1_000_000.0)
+    bytes < 1_000_000 -> String.format(SIZE_LOCALE, "%d KB", bytes / 1_000)
+    else -> String.format(SIZE_LOCALE, "%.1f MB", bytes / 1_000_000.0)
 }
 
 /**

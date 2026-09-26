@@ -10,8 +10,8 @@ import (
 // plus the two SOLO screens — `dashboard` and `config` — which belong to no
 // group at all because they do not live in a tab bar.
 var knownGroups = map[string]struct{}{
-	"dashboard": {}, "sistema": {}, "jogos": {}, "docker": {},
-	"dev": {}, "seguranca": {}, "apps": {}, "operacoes": {},
+	"dashboard": {}, "system": {}, "games": {}, "docker": {},
+	"dev": {}, "security": {}, "apps": {}, "operations": {},
 	"config": {},
 }
 
@@ -81,11 +81,11 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 	// Anchors: the sub-actions that motivated the inventory ("screen inside a dead screen").
 	t.Run("sub-action-anchors", func(t *testing.T) {
 		for _, id := range []string{
-			"operacoes.tarefas.jira.detalhe.worklog",
-			"operacoes.git.reflog",
+			"operations.tasks.jira.detail.worklog",
+			"operations.git.reflog",
 			"docker.containers.logs",
 			"dev.ai.routing",
-			"sistema.ventoinhas", // the exception documented above — only exists in this fork
+			"system.fans", // the exception documented above — only exists in this fork
 		} {
 			if !IsKnownScreen(id) {
 				t.Errorf("anchor id %q missing from the canonical list", id)
@@ -98,10 +98,10 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 	t.Run("list-re-edition", func(t *testing.T) {
 		for _, id := range []string{
 			"config",
-			"operacoes.proxmox",
-			"operacoes.nos",
-			"operacoes.backup",
-			"operacoes.embutidas",
+			"operations.proxmox",
+			"operations.nodes",
+			"operations.backup",
+			"operations.embedded",
 		} {
 			if !IsKnownScreen(id) {
 				t.Errorf("id %q missing from the canonical list — was the re-edition undone?", id)
@@ -124,10 +124,10 @@ func TestScreenIDsMatchInventory(t *testing.T) {
 			pref string
 			want int
 		}{
-			{"operacoes.tarefas.jira.detalhe.", 7},
+			{"operations.tasks.jira.detail.", 7},
 			{"docker.containers.", 8},
 			{"dev.ai.", 5},
-			{"operacoes.git.", 7},
+			{"operations.git.", 7},
 		} {
 			if got := account(c.pref); got != c.want {
 				t.Errorf("prefix %q: expected=%d observed=%d", c.pref, c.want, got)
@@ -157,7 +157,7 @@ func TestUnknownScreenIsNotAllowlisted(t *testing.T) {
 		"DOCKER.CONTAINERS",
 		" dashboard",
 		"dashboard ",
-		"dev.codigo\r",
+		"dev.code\r",
 		`{"screen":"x"}`,
 		"no-such-screen",
 	} {

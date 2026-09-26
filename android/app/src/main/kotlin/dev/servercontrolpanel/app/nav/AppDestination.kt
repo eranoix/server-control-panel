@@ -6,13 +6,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 // the tests; a typo would only show up as a tap that does nothing.
 
 internal const val ROUTE_TERMINAL = "terminal"
-internal const val ROUTE_FILES = "arquivos"
+internal const val ROUTE_FILES = "files"
 internal const val ROUTE_JIRA = "jira"
 internal const val ROUTE_WHATSAPP = "whatsapp"
-internal const val ROUTE_CALL = "chamada"
-internal const val ROUTE_NOTIFICATIONS = "notificacoes"
-internal const val ROUTE_LICENSES = "licencas"
-internal const val ROUTE_SETTINGS = "configuracoes"
+internal const val ROUTE_CALL = "call"
+internal const val ROUTE_NOTIFICATIONS = "notifications"
+internal const val ROUTE_LICENSES = "licenses"
+internal const val ROUTE_SETTINGS = "settings"
 
 /** The route of a parent page's grid. */
 internal fun parentRoute(id: String) = "mae/$id"

@@ -20,9 +20,9 @@ import (
 // Cost: about 5-20μs per segment. No perceptible impact on latency.
 
 // hallucinationPhrases is the BoH compiled from the literature + empirical
-// Brazilian-Portuguese observation. Comparison is case-insensitive + trimmed.
-// Covers EN, PT and FR (Whisper was trained on YouTube subtitles, which are
-// full of Amara.org and "thanks for watching").
+// observation. Comparison is case-insensitive + trimmed. Whisper was trained on
+// YouTube subtitles, which are full of Amara.org credits and "thanks for
+// watching".
 var hallucinationPhrases = []string{
 	// English — YouTube video boilerplate
 	"thank you for watching",
@@ -41,37 +41,27 @@ var hallucinationPhrases = []string{
 	"bye bye",
 	"goodbye",
 
-	// Portuguese — the cultural equivalents common in the training data
-	"obrigado por assistir",
-	"obrigado por assistir!",
-	"obrigada por assistir",
-	"obrigado pela atenção",
-	"obrigada pela atenção",
-	"inscreva-se no canal",
-	"se inscreva no canal",
-	"curta e compartilhe",
-	"deixe seu like",
-	"até a próxima",
-	"até o próximo vídeo",
-	"tchau tchau",
+	// More sign-off boilerplate common in the training data
+	"thank you for your attention",
+	"thanks for your attention",
+	"subscribe to the channel",
+	"like and share",
+	"leave a like",
+	"see you soon",
+	"see you in the next one",
 
-	// French — Amara.org subtitle credits (extremely common)
-	"sous-titres réalisés par la communauté d'amara.org",
-	"sous-titres réalisés par la communauté d'amara",
-	"sous-titres faits par la communauté d'amara.org",
-	"sous-titrage st' 501",
-	"sous-titrage société radio-canada",
+	// Amara.org subtitle credits (extremely common)
+	"subtitles by the amara.org community",
+	"subtitles by the amara community",
+	"subtitles made by the amara.org community",
 
-	// Music markers (Whisper transcribes silence + noise as [Música])
-	"[música]",
-	"[musica]",
+	// Music and silence markers (Whisper transcribes silence + noise as [Music])
 	"[music]",
 	"♪♪",
-	"♪ música ♪",
 	"♪ music ♪",
-	"(música)",
-	"(musica)",
 	"(music)",
+	"[silence]",
+	"[blank_audio]",
 
 	// Other Whisper boilerplate during silence
 	"you",

@@ -30,16 +30,16 @@ internal fun sectionIcon(sectionId: String): ImageVector {
         // Docker, most specific first: image, container and compose each get a distinct icon.
         "image" in id -> PanelIcons.Layers
         "volume" in id -> PanelIcons.Disk
-        "network" in id || "rede" in id -> PanelIcons.Swap
+        "network" in id -> PanelIcons.Swap
         "compose" in id -> Icons.Filled.Build
-        "prune" in id || "limpeza" in id -> Icons.Filled.Refresh
+        "prune" in id || "cleanup" in id -> Icons.Filled.Refresh
         "docker" in id || "container" in id -> PanelIcons.Box
 
-        "metric" in id || "metrica" in id -> PanelIcons.Speedometer
+        "metric" in id -> PanelIcons.Speedometer
         // Processes get their own icon, distinct from metrics.
-        "process" in id || "processo" in id -> PanelIcons.Cpu
+        "process" in id -> PanelIcons.Cpu
         "memor" in id || "ram" in id -> PanelIcons.Memory
-        "disk" in id || "disco" in id || "storage" in id -> PanelIcons.Disk
+        "disk" in id || "storage" in id -> PanelIcons.Disk
         "systemd" in id || "unit" in id || "servic" in id -> Icons.Filled.Build
         // Ports get a plug, distinct from the network's arrows.
         "port" in id -> PanelIcons.Plug
@@ -48,28 +48,28 @@ internal fun sectionIcon(sectionId: String): ImageVector {
         // Security: a distinct icon per concern (shield for firewall, key for
         // secrets, person for accounts, phone for devices, monitor for sessions).
         "firewall" in id || "ufw" in id -> PanelIcons.Shield
-        "secret" in id || "vault" in id || "cofre" in id -> PanelIcons.Key
-        "user" in id || "usuario" in id -> Icons.Filled.Person
-        "session" in id || "sessao" in id -> PanelIcons.ActiveSession
-        "audit" in id || "auditoria" in id -> Icons.Filled.Warning
-        "device" in id || "aparelho" in id -> PanelIcons.Phone
+        "secret" in id || "vault" in id -> PanelIcons.Key
+        "user" in id -> Icons.Filled.Person
+        "session" in id -> PanelIcons.ActiveSession
+        "audit" in id -> Icons.Filled.Warning
+        "device" in id -> PanelIcons.Phone
         "adguard" in id || "dns" in id -> PanelIcons.Globe
-        "netusage" in id || "uso de rede" in id || "consumo" in id -> PanelIcons.Chart
-        "securit" in id || "seguranca" in id -> Icons.Filled.Lock
+        "netusage" in id || "network usage" in id || "usage" in id -> PanelIcons.Chart
+        "securit" in id -> Icons.Filled.Lock
 
-        "deploy" in id || "entrega" in id -> PanelIcons.Delivery
-        "queue" in id || "fila" in id -> Icons.Filled.List
-        "schedul" in id || "agenda" in id || "cron" in id -> Icons.Filled.DateRange
+        "deploy" in id || "delivery" in id -> PanelIcons.Delivery
+        "queue" in id -> Icons.Filled.List
+        "schedul" in id || "cron" in id -> Icons.Filled.DateRange
         "backup" in id -> PanelIcons.Disk
         "job" in id -> Icons.Filled.PlayArrow
-        "alert" in id || "alerta" in id -> Icons.Filled.Notifications
-        "health" in id || "saude" in id -> PanelIcons.Health
+        "alert" in id -> Icons.Filled.Notifications
+        "health" in id -> PanelIcons.Health
 
         "whatsapp" in id || "chat" in id -> PanelIcons.Chat
         "mail" in id || "email" in id || "gmail" in id -> Icons.Filled.Email
         "jira" in id -> Icons.Filled.Info
         "terminal" in id || "shell" in id -> PanelIcons.Terminal
-        "file" in id || "arquivo" in id -> PanelIcons.Folder
+        "file" in id -> PanelIcons.Folder
 
         else -> Icons.Filled.Settings
     }

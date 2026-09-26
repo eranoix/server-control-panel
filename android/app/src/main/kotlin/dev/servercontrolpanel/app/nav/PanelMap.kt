@@ -25,13 +25,13 @@ internal enum class ParentPage(
     val icon: ImageVector,
     val iconDescription: String,
 ) {
-    Home("inicio", "Home", Icons.Filled.Home, "Home"),
-    System("sistema", "System", PanelIcons.Cpu, "System"),
+    Home("home", "Home", Icons.Filled.Home, "Home"),
+    System("system", "System", PanelIcons.Cpu, "System"),
     Docker("docker", "Docker", PanelIcons.Box, "Docker"),
     Dev("dev", "Dev", PanelIcons.Terminal, "Development"),
-    Security("seguranca", "Security", PanelIcons.Shield, "Security"),
+    Security("security", "Security", PanelIcons.Shield, "Security"),
     Apps("apps", "Apps", PanelIcons.Chat, "Apps"),
-    Operations("operacoes", "Operations", PanelIcons.Board, "Operations"),
+    Operations("operations", "Operations", PanelIcons.Board, "Operations"),
     Settings("config", "Settings", Icons.Filled.Settings, "Settings"),
 }
 
@@ -97,7 +97,7 @@ internal fun childrenOf(parent: ParentPage): List<ChildPage> = when (parent) {
         ChildPage("Firewall", PanelIcons.Shield, ChildDestination.Sdui("security.ufw")),
         ChildPage("DNS", PanelIcons.Globe, ChildDestination.Sdui("security.adguard")),
         ChildPage("Devices", PanelIcons.Phone, ChildDestination.Sdui("security.devices")),
-        ChildPage("Network usage", PanelIcons.Chart, ChildDestination.Sdui("security.economia")),
+        ChildPage("Network usage", PanelIcons.Chart, ChildDestination.Sdui("security.savings")),
         // From the DEVICE, not the server: app lock and protected screen.
         ChildPage("This device", Icons.Filled.Lock, ChildDestination.Native(ROUTE_SECURITY)),
     )

@@ -111,37 +111,37 @@ const receivedScope = "\x00received"
 // decoded; the HTTP back-end does not know them (it forwards bytes), and it is
 // precisely by not knowing them that it cannot diverge from them.
 //
-// Convention: every envelope that speaks of a server carries `servidor` (wire
+// Convention: every envelope that speaks of a server carries `server_id` (wire
 // key) with the inventory ID. NEVER a path: that is the whole boundary.
 
 type reqServer struct {
-	ServerID string `json:"servidor"`
+	ServerID string `json:"server_id"`
 }
 
 type reqAction struct {
-	ServerID string `json:"servidor"`
-	Verb     Verb   `json:"verbo"`
+	ServerID string `json:"server_id"`
+	Verb     Verb   `json:"verb"`
 }
 
 type reqLogs struct {
-	ServerID string `json:"servidor"`
+	ServerID string `json:"server_id"`
 	Tail     string `json:"tail"`
 }
 
 type reqWorld struct {
-	ServerID string `json:"servidor"`
-	World    string `json:"mundo"`
+	ServerID string `json:"server_id"`
+	World    string `json:"world"`
 }
 
 type reqRename struct {
-	ServerID string `json:"servidor"`
-	De       string `json:"de"`
-	To       string `json:"para"`
+	ServerID string `json:"server_id"`
+	From     string `json:"from"`
+	To       string `json:"to"`
 }
 
 type reqImport struct {
-	ServerID string `json:"servidor"`
-	Name     string `json:"nome"`
+	ServerID string `json:"server_id"`
+	Name     string `json:"name"`
 	// Handle of a zip that is ALREADY on the node (typically coming from
 	// world.export). Sending the zip from the panel to the node is an upload, it
 	// needs a route of its own with a limit and came later — it was declared as a
@@ -157,28 +157,28 @@ type reqImport struct {
 // the two cases are the same value, and wiping every ban by accident would be
 // indistinguishable from not sending the section at all.
 type reqSettingsPatch struct {
-	ServerID string                 `json:"servidor"`
-	Game     map[string]interface{} `json:"jogo,omitempty"`
+	ServerID string                 `json:"server_id"`
+	Game     map[string]interface{} `json:"game,omitempty"`
 	Server   map[string]interface{} `json:"server,omitempty"`
-	Group    map[string]interface{} `json:"grupo,omitempty"`
-	Groups   *[]Group               `json:"grupos,omitempty"`
-	Banned   *[]string              `json:"banidos,omitempty"`
-	Restart  bool                   `json:"reiniciar,omitempty"`
+	Group    map[string]interface{} `json:"group,omitempty"`
+	Groups   *[]Group               `json:"groups,omitempty"`
+	Banned   *[]string              `json:"banned,omitempty"`
+	Restart  bool                   `json:"restart,omitempty"`
 }
 
 type reqRuntimePatch struct {
-	ServerID string            `json:"servidor"`
+	ServerID string            `json:"server_id"`
 	Patch    map[string]string `json:"patch"`
 }
 
 type reqBackupFile struct {
-	ServerID string `json:"servidor"`
-	File     string `json:"arquivo"`
+	ServerID string `json:"server_id"`
+	File     string `json:"file"`
 }
 
 type reqHistory struct {
-	ServerID string `json:"servidor"`
-	Hours    int    `json:"horas"`
+	ServerID string `json:"server_id"`
+	Hours    int    `json:"hours"`
 }
 
 // DISPATCH
@@ -234,12 +234,12 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 			if err := b.m.UpdateNow(ctx, s); err != nil {
 				return nil, err
 			}
-			return pack(map[string]interface{}{"ok": true, "verbo": string(r.Verb)})
+			return pack(map[string]interface{}{"ok": true, "verb": string(r.Verb)})
 		}
 		if err := b.m.Action(ctx, s, string(r.Verb)); err != nil {
 			return nil, err
 		}
-		return pack(map[string]interface{}{"ok": true, "verbo": string(r.Verb)})
+		return pack(map[string]interface{}{"ok": true, "verb": string(r.Verb)})
 
 	case OpServerLogs:
 		var r reqLogs
@@ -285,7 +285,7 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		if err := b.m.SwitchWorld(s, r.World); err != nil {
 			return nil, err
 		}
-		return pack(map[string]interface{}{"ok": true, "mundo": r.World})
+		return pack(map[string]interface{}{"ok": true, "world": r.World})
 
 	case OpWorldExport:
 		var r reqWorld
@@ -307,7 +307,7 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		if err != nil {
 			return nil, err
 		}
-		return pack(map[string]interface{}{"handle": string(h), "nome": r.World + ".zip"})
+		return pack(map[string]interface{}{"handle": string(h), "name": r.World + ".zip"})
 
 	case OpWorldImport:
 		var r reqImport
@@ -330,7 +330,7 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		if err := b.m.ImportWorld(s, r.Name, a.path); err != nil {
 			return nil, err
 		}
-		return pack(map[string]interface{}{"ok": true, "nome": r.Name})
+		return pack(map[string]interface{}{"ok": true, "name": r.Name})
 
 	case OpWorldRename:
 		var r reqRename
@@ -341,7 +341,7 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		if !ok {
 			return nil, serverNotFound(r.ServerID)
 		}
-		if err := b.m.RenameWorld(s, r.De, r.To); err != nil {
+		if err := b.m.RenameWorld(s, r.From, r.To); err != nil {
 			return nil, err
 		}
 		return pack(map[string]interface{}{"ok": true})
@@ -355,7 +355,7 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		if !ok {
 			return nil, serverNotFound(r.ServerID)
 		}
-		if err := b.m.DuplicateWorld(s, r.De, r.To); err != nil {
+		if err := b.m.DuplicateWorld(s, r.From, r.To); err != nil {
 			return nil, err
 		}
 		return pack(map[string]interface{}{"ok": true})
@@ -443,7 +443,7 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		if err != nil {
 			return nil, err
 		}
-		return pack(map[string]interface{}{"ok": true, "arquivo": name})
+		return pack(map[string]interface{}{"ok": true, "file": name})
 
 	case OpBackupRestore:
 		var r reqBackupFile
@@ -471,7 +471,7 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		if startErr != nil {
 			warning = "restored, but the server failed to start: " + startErr.Error()
 		}
-		return pack(map[string]interface{}{"ok": true, "aviso": warning})
+		return pack(map[string]interface{}{"ok": true, "warning": warning})
 
 	case OpBackupDownload:
 		var r reqBackupFile
@@ -492,7 +492,7 @@ func (b *BackendLocal) Execute(ctx context.Context, op OpName, body json.RawMess
 		if err != nil {
 			return nil, err
 		}
-		return pack(map[string]interface{}{"handle": string(h), "nome": r.File})
+		return pack(map[string]interface{}{"handle": string(h), "name": r.File})
 
 	case OpTrainerStatus:
 		if !b.m.TrainerAvailable() {
@@ -579,7 +579,7 @@ func (b *BackendLocal) readSettings(s Server) (json.RawMessage, error) {
 		banned = []string{}
 	}
 	return pack(map[string]interface{}{
-		"jogo": game, "server": srv, "grupos": groups, "banidos": banned,
+		"game": game, "server": srv, "groups": groups, "banned": banned,
 	})
 }
 
@@ -618,7 +618,7 @@ func (b *BackendLocal) writeSettings(ctx context.Context, s Server, r reqSetting
 			restarted = true
 		}
 	}
-	return pack(map[string]interface{}{"ok": true, "reiniciado": restarted})
+	return pack(map[string]interface{}{"ok": true, "restarted": restarted})
 }
 
 // nowStamp is the same format the panel uses today (stampNow).

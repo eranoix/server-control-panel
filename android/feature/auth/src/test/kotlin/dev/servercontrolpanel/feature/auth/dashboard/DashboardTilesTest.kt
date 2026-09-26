@@ -31,11 +31,11 @@ class DashboardTilesTest {
     fun `a CRITICAL tile joins the grid even if not chosen`() {
         val catalog = listOf(
             tile("cpu"),
-            tile("memoria"),
+            tile("memory"),
             tile("disco", severity = Severity.CRITICAL),
         )
 
-        val visible = visibleTiles(catalog, chosen = listOf("cpu", "memoria"))
+        val visible = visibleTiles(catalog, chosen = listOf("cpu", "memory"))
 
         assertTrue("the critical disk must appear", visible.any { it.id == "disco" })
     }
@@ -45,22 +45,22 @@ class DashboardTilesTest {
     fun `a critical tile goes to the front of the grid`() {
         val catalog = listOf(
             tile("cpu"),
-            tile("memoria"),
+            tile("memory"),
             tile("disco", severity = Severity.CRITICAL),
         )
 
-        val visible = visibleTiles(catalog, chosen = listOf("cpu", "memoria"))
+        val visible = visibleTiles(catalog, chosen = listOf("cpu", "memory"))
 
         assertEquals("disco", visible.first().id)
     }
 
     @Test
     fun `a chosen critical tile appears only once`() {
-        val catalog = listOf(tile("cpu", severity = Severity.CRITICAL), tile("memoria"))
+        val catalog = listOf(tile("cpu", severity = Severity.CRITICAL), tile("memory"))
 
-        val visible = visibleTiles(catalog, chosen = listOf("cpu", "memoria"))
+        val visible = visibleTiles(catalog, chosen = listOf("cpu", "memory"))
 
-        assertEquals(listOf("cpu", "memoria"), visible.map { it.id })
+        assertEquals(listOf("cpu", "memory"), visible.map { it.id })
     }
 
     /** WARNING is not forced in, or long-lived warnings would clutter the grid. */

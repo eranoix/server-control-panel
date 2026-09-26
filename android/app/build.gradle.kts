@@ -93,7 +93,7 @@ android {
             create("dev") {
                 storeFile = file(devKeystorePath)
                 storePassword = project.findProperty("servercontrolpanel.devKeystorePassword") as String?
-                    ?: "devkey-nao-secreta"
+                    ?: "devkey-not-secret"
                 keyAlias = "servercontrolpanel-dev"
                 keyPassword = storePassword
             }

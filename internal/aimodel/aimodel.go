@@ -97,7 +97,7 @@ func IntakeModel(configured string) string {
 		pick = c
 	}
 	switch strings.ToLower(pick) {
-	case "", "inherit", "default", "padrao", "padrão", "opus-default":
+	case "", "inherit", "default", "opus-default":
 		return intakeDefaultModel
 	}
 	if full, ok := intakeAliasToFullID[strings.ToLower(pick)]; ok {
@@ -112,7 +112,7 @@ func IntakeModel(configured string) string {
 func normalize(m string) string {
 	m = strings.ToLower(strings.TrimSpace(m))
 	switch m {
-	case "inherit", "default", "padrao", "padrão", "opus-default":
+	case "inherit", "default", "opus-default":
 		return ""
 	}
 	return m

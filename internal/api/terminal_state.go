@@ -46,7 +46,7 @@ import (
 const (
 	termStateFile     = "terminal-state.json"
 	termStateMaxFile  = 1 << 20   // 1 MiB total — caps growth on disk
-	termBodyMaxBytes  = 256 << 10 // 256 KiB por request — snapshot real ~5KB
+	termBodyMaxBytes  = 256 << 10 // 256 KiB per request — a real snapshot is ~5KB
 	termMaxWorkspaces = 100
 )
 

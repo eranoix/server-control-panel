@@ -15,7 +15,7 @@ data class LocalAttachment(
 )
 
 /** Name used when the content provider exposes no `DISPLAY_NAME` at all. */
-private const val DEFAULT_NAME = "anexo"
+private const val DEFAULT_NAME = "attachment"
 
 private val STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
 

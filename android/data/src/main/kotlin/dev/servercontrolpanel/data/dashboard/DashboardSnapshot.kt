@@ -89,7 +89,7 @@ data class DashboardSnapshot(
             if (!ops.healthOk && health.all { it.severity == Severity.OK }) {
                 add(
                     ResourceSignal(
-                        id = "saude:health_ok",
+                        id = "health:health_ok",
                         label = "Overall health",
                         headline = "not ok",
                         detail = "the server reports health_ok = false, but no subsystem reports the problem",
@@ -101,7 +101,7 @@ data class DashboardSnapshot(
             health.filter { it.severity != Severity.OK }.forEach { entry ->
                 add(
                     ResourceSignal(
-                        id = "saude:${entry.name}",
+                        id = "health:${entry.name}",
                         label = entry.name,
                         headline = entry.status,
                         detail = "subsystem outside its healthy state",
@@ -125,7 +125,7 @@ data class DashboardSnapshot(
             brokenScheduled.forEach { job ->
                 add(
                     ResourceSignal(
-                        id = "agendado:${job.name}",
+                        id = "scheduled:${job.name}",
                         label = job.name,
                         headline = job.lastStatus,
                         detail = "last run at ${job.lastFire}",
@@ -144,7 +144,7 @@ data class DashboardSnapshot(
  * The list holds the healthy values on purpose, so any new server state shows up
  * as a deviation instead of passing as green.
  */
-private val HEALTHY_STATES = setOf("ok", "connected", "running", "healthy", "ativo")
+private val HEALTHY_STATES = setOf("ok", "connected", "running", "healthy", "active")
 
 /** States the BFF uses for "I am trying" — bad, but not down. */
 private val DEGRADED_STATES = setOf("degraded", "connecting", "reconnecting", "starting", "pending", "unknown")
@@ -160,7 +160,7 @@ internal fun classifyDeploy(status: String): Severity = when (status.trim().lowe
     // Rollback: the machine recovered, but the live version is not the intended
     // one, and nobody notices without looking. A warning, not critical.
     "rolled_back", "rolledback", "rollback" -> Severity.WARNING
-    "failed", "error", "erro" -> Severity.CRITICAL
+    "failed", "error" -> Severity.CRITICAL
     // A deploy in flight is not a failure; it is movement, and the "Now" card already reports it.
     "running", "queued", "pending", "in_progress" -> Severity.OK
     else -> Severity.OK

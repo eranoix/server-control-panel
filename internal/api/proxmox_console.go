@@ -215,7 +215,7 @@ func (r *Router) handleProxmoxConsole(w http.ResponseWriter, req *http.Request) 
 		// operator saw as a screen spinning with no explanation.
 		sendControl(map[string]any{
 			"type":    "error",
-			"code":    "console-indisponivel",
+			"code":    "console-unavailable",
 			"fatal":   true,
 			"message": "the hypervisor refused the console for " + id + ": " + pveErrorDetail(err),
 		})

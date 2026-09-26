@@ -44,7 +44,7 @@ class AuthTokenInterceptorTest {
         }
     }
 
-    private fun sessionWith(refresher: SessionRefresher, access: String = "velho") = SessionManager(
+    private fun sessionWith(refresher: SessionRefresher, access: String = "old") = SessionManager(
         tokenStore = InMemoryTokenStore(
             SessionTokens(accessToken = access, refreshToken = "r1", expiresAtEpochMillis = clock + 900_000L),
         ),
@@ -67,28 +67,28 @@ class AuthTokenInterceptorTest {
 
         get(clientFor(session), "/api/mobile/v1/me").use { assertEquals(200, it.code) }
 
-        assertEquals("Bearer velho", server.takeRequest().getHeader("Authorization"))
+        assertEquals("Bearer old", server.takeRequest().getHeader("Authorization"))
     }
 
     @Test
     fun `a 401 renews the session and replays the request with the new token`() {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse =
-                if (request.getHeader("Authorization") == "Bearer novo") {
+                if (request.getHeader("Authorization") == "Bearer new") {
                     MockResponse().setResponseCode(200).setBody("{}")
                 } else {
                     MockResponse().setResponseCode(401)
                 }
         }
-        val refresher = StubRefresher(RefreshOutcome.Renewed("novo", "r2", 900))
+        val refresher = StubRefresher(RefreshOutcome.Renewed("new", "r2", 900))
         val session = sessionWith(refresher)
 
         get(clientFor(session), "/api/mobile/v1/me").use { assertEquals(200, it.code) }
 
         assertEquals(1, refresher.calls.get())
         assertEquals(2, server.requestCount)
-        assertEquals("Bearer velho", server.takeRequest().getHeader("Authorization"))
-        assertEquals("Bearer novo", server.takeRequest().getHeader("Authorization"))
+        assertEquals("Bearer old", server.takeRequest().getHeader("Authorization"))
+        assertEquals("Bearer new", server.takeRequest().getHeader("Authorization"))
     }
 
     @Test
@@ -120,13 +120,13 @@ class AuthTokenInterceptorTest {
         // Uses real OkHttp dispatcher threads, not the runTest virtual scheduler.
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse =
-                if (request.getHeader("Authorization") == "Bearer novo") {
+                if (request.getHeader("Authorization") == "Bearer new") {
                     MockResponse().setResponseCode(200).setBody("{}")
                 } else {
                     MockResponse().setResponseCode(401)
                 }
         }
-        val refresher = StubRefresher(RefreshOutcome.Renewed("novo", "r2", 900))
+        val refresher = StubRefresher(RefreshOutcome.Renewed("new", "r2", 900))
         val session = sessionWith(refresher)
         val client = clientFor(session)
 
@@ -148,7 +148,7 @@ class AuthTokenInterceptorTest {
     fun `the refresh route skips 401 handling to avoid recursion`() {
         // Otherwise a dead refresh token would trigger renewals of the renewal forever.
         server.enqueue(MockResponse().setResponseCode(401))
-        val refresher = StubRefresher(RefreshOutcome.Renewed("novo", "r2", 900))
+        val refresher = StubRefresher(RefreshOutcome.Renewed("new", "r2", 900))
         val session = sessionWith(refresher)
 
         get(clientFor(session), "/api/mobile/v1/auth/refresh").use { assertEquals(401, it.code) }

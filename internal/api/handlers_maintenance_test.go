@@ -21,12 +21,12 @@ func maintenanceRouter(t *testing.T, nodes []inventory.Node, withPanel bool) (*R
 	var seen []string
 	r, _ := newNodesRouter(t, nodes)
 	data := map[string]string{
-		"pve_token_audit":     "lab@pve!audit=a",
-		"pve_token_node_apps": "lab@pve!node-apps=s",
-		"pve_token_node_lab":  "lab@pve!node-lab=s",
+		"pve_token_audit":     "panel@pve!audit=a",
+		"pve_token_node_apps": "panel@pve!node-apps=s",
+		"pve_token_node_lab":  "panel@pve!node-lab=s",
 	}
 	if withPanel {
-		data["pve_token_painel"] = "lab@pve!painel=p"
+		data["pve_token_panel"] = "panel@pve!panel=p"
 	}
 	r.nodeVaultFn = func() (nodeVault, error) { return &fakeVault{seen: &seen, data: data}, nil }
 	r.pveDial = func(value string) (hypervisorOps, error) {
@@ -45,23 +45,23 @@ func testGuest() []inventory.Node {
 // /vms/<newid> nor Datastore.AllocateSpace, so using it would yield an opaque 403.
 func TestCloneUsesPanelTokenNotNodeToken(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
-	w, out := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"apps-copy","snapshot":"base"}`)
+	w, out := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"new_id":991,"name":"apps-copy","snapshot":"base"}`)
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
 	used := strings.Join(*seen, " ")
-	if !strings.Contains(used, "token=lab@pve!painel") {
+	if !strings.Contains(used, "token=panel@pve!panel") {
 		t.Errorf("the clone did not use the panel's credential — calls: %v", *seen)
 	}
-	if strings.Contains(used, "token=lab@pve!node-apps") {
+	if strings.Contains(used, "token=panel@pve!node-apps") {
 		t.Errorf("the clone used the NODE's token, which has no VM.Allocate — calls: %v", *seen)
 	}
 	if !strings.Contains(used, "pve.clone:lxc/207->991:apps-copy:snap=base") {
 		t.Errorf("the clone did not reach the hypervisor with source, destination and name: %v", *seen)
 	}
 	// Accepted, never "ok": the clone was not waited for.
-	if out["status"] != "aceita" {
-		t.Errorf("status = %v, want \"aceita\" — the task was not awaited", out["status"])
+	if out["status"] != "accepted" {
+		t.Errorf("status = %v, want \"accepted\" — the task was not awaited", out["status"])
 	}
 	if out["upid"] == "" || out["upid"] == nil {
 		t.Error("response without UPID — without it the operator has no way to follow along")
@@ -71,11 +71,11 @@ func TestCloneUsesPanelTokenNotNodeToken(t *testing.T) {
 // TestCloneWithoutPanelCredentialExplainsWhy: the refusal names the missing key.
 func TestCloneWithoutPanelCredentialExplainsWhy(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), false)
-	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"snapshot":"base"}`)
+	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"new_id":991,"snapshot":"base"}`)
 	if w.Code != 409 {
 		t.Fatalf("status = %d, want 409", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "pve_token_painel") {
+	if !strings.Contains(w.Body.String(), "pve_token_panel") {
 		t.Errorf("the body does not name the missing key: %s", w.Body)
 	}
 	for _, c := range *seen {
@@ -96,11 +96,11 @@ func TestCloneGETFiresNothing(t *testing.T) {
 	if out["next_id"] == nil {
 		t.Error("GET did not return next_id — the operator would have to TYPE the id")
 	}
-	if out["sugestao"] != "apps-copy" {
-		t.Errorf("suggestion = %v, want apps-copy", out["sugestao"])
+	if out["suggestion"] != "apps-copy" {
+		t.Errorf("suggestion = %v, want apps-copy", out["suggestion"])
 	}
-	if out["ligado"] != true {
-		t.Errorf("ligado = %v — the crash-consistent-copy warning depends on this", out["ligado"])
+	if out["on"] != true {
+		t.Errorf("on = %v — the crash-consistent-copy warning depends on this", out["on"])
 	}
 	for _, c := range *seen {
 		if strings.HasPrefix(c, "pve.clone") {
@@ -114,7 +114,7 @@ func TestCloneGETFiresNothing(t *testing.T) {
 // that says what to do (take a snapshot, or shut the guest down).
 func TestCloneOfRunningContainerRequiresSnapshot(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
-	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"x"}`)
+	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"new_id":991,"name":"x"}`)
 	if w.Code != 409 {
 		t.Fatalf("status = %d, want 409", w.Code)
 	}
@@ -129,7 +129,7 @@ func TestCloneOfRunningContainerRequiresSnapshot(t *testing.T) {
 
 	// With a snapshot it goes through — and the snapname REACHES the hypervisor.
 	r2, seen2 := maintenanceRouter(t, testGuest(), true)
-	w2, _ := callAPI(t, r2, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"x","snapshot":"before-upgrade"}`)
+	w2, _ := callAPI(t, r2, http.MethodPost, "/api/nodes/lxc/207/clone", `{"new_id":991,"name":"x","snapshot":"before-upgrade"}`)
 	if w2.Code != 200 {
 		t.Fatalf("with snapshot: status = %d: %s", w2.Code, w2.Body)
 	}
@@ -144,7 +144,7 @@ func TestCloneOfStoppedGuestNeedsNoSnapshot(t *testing.T) {
 	n := testNode("lxc/207", "apps", 207, testNow)
 	n.Status.Value = "stopped"
 	r, seen := maintenanceRouter(t, []inventory.Node{n}, true)
-	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"novo_id":991,"nome":"x"}`)
+	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"new_id":991,"name":"x"}`)
 	if w.Code != 200 {
 		t.Fatalf("guest stopped: status = %d: %s", w.Code, w.Body)
 	}
@@ -158,8 +158,8 @@ func TestCloneOfStoppedGuestNeedsNoSnapshot(t *testing.T) {
 func TestCloneGETWarnsSnapshotNeeded(t *testing.T) {
 	r, _ := maintenanceRouter(t, testGuest(), true)
 	_, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/clone", "")
-	if out["precisa_snapshot"] != true {
-		t.Errorf("precisa_snapshot = %v for a running CT, want true", out["precisa_snapshot"])
+	if out["needs_snapshot"] != true {
+		t.Errorf("needs_snapshot = %v for a running CT, want true", out["needs_snapshot"])
 	}
 	if out["snapshots"] == nil {
 		t.Error("without the snapshot list the screen has nothing to offer")
@@ -170,7 +170,7 @@ func TestCloneGETWarnsSnapshotNeeded(t *testing.T) {
 // is fired.
 func TestCloneRejectsWithoutDestination(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
-	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"nome":"x"}`)
+	w, _ := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/clone", `{"name":"x"}`)
 	if w.Code != 400 {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
@@ -183,7 +183,7 @@ func TestCloneRejectsWithoutDestination(t *testing.T) {
 
 func TestBackupPassesModeAndCompressionAndUsesPanel(t *testing.T) {
 	r, seen := maintenanceRouter(t, testGuest(), true)
-	w, out := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/backup", `{"storage":"pbs","modo":"snapshot","compress":"zstd"}`)
+	w, out := callAPI(t, r, http.MethodPost, "/api/nodes/lxc/207/backup", `{"storage":"pbs","mode":"snapshot","compress":"zstd"}`)
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
@@ -191,11 +191,11 @@ func TestBackupPassesModeAndCompressionAndUsesPanel(t *testing.T) {
 	if !strings.Contains(used, "pve.vzdump:207:pbs:snapshot:zstd") {
 		t.Errorf("vzdump did not receive the parameters: %v", *seen)
 	}
-	if !strings.Contains(used, "token=lab@pve!painel") {
+	if !strings.Contains(used, "token=panel@pve!panel") {
 		t.Errorf("backup did not use the panel's credential: %v", *seen)
 	}
-	if out["status"] != "aceita" {
-		t.Errorf("status = %v, want \"aceita\"", out["status"])
+	if out["status"] != "accepted" {
+		t.Errorf("status = %v, want \"accepted\"", out["status"])
 	}
 }
 
@@ -232,7 +232,7 @@ func TestMaintenanceRejectsHostWithDistinctReason(t *testing.T) {
 	host.Kind = inventory.NodeKindHost
 	r, seen := maintenanceRouter(t, []inventory.Node{host}, true)
 	for _, route := range []string{"/api/nodes/node/pve/clone", "/api/nodes/node/pve/backup"} {
-		w, _ := callAPI(t, r, http.MethodPost, route, `{"storage":"pbs","novo_id":991}`)
+		w, _ := callAPI(t, r, http.MethodPost, route, `{"storage":"pbs","new_id":991}`)
 		if w.Code != 400 {
 			t.Errorf("%s: status = %d, want 400", route, w.Code)
 		}
@@ -263,7 +263,7 @@ func TestRebootGoesThroughWaitTask(t *testing.T) {
 		t.Errorf("reboot did NOT wait for the task — a guest that ignores ACPI would be reported as rebooted: %v", *seen)
 	}
 	// Reboot uses the NODE's token, not the panel's: it is the node acting on itself.
-	if !strings.Contains(used, "token=lab@pve!node-apps") {
+	if !strings.Contains(used, "token=panel@pve!node-apps") {
 		t.Errorf("reboot did not use the node's token: %v", *seen)
 	}
 	if out["action"] != "reboot" || out["status"] != "ok" {
@@ -311,8 +311,8 @@ func noteRouter(t *testing.T, nodes []inventory.Node, text string) (*Router, *[]
 	r, _ := newNodesRouter(t, nodes)
 	r.nodeVaultFn = func() (nodeVault, error) {
 		return &fakeVault{seen: &seen, data: map[string]string{
-			"pve_token_painel": "lab@pve!painel=p",
-			"pve_token_audit":  "lab@pve!audit=a",
+			"pve_token_panel": "panel@pve!panel=p",
+			"pve_token_audit": "panel@pve!audit=a",
 		}}, nil
 	}
 	r.pveDial = func(value string) (hypervisorOps, error) {
@@ -326,15 +326,15 @@ func noteRouter(t *testing.T, nodes []inventory.Node, text string) (*Router, *[]
 func TestGuestNoteComesFromPVE(t *testing.T) {
 	const text = "## apps: the applications\n\n**What it does:** nothing yet."
 	r, seen := noteRouter(t, testGuest(), text)
-	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/note", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
 	if out["markdown"] != text {
 		t.Errorf("markdown = %q", out["markdown"])
 	}
-	if out["origem"] != "pve-notes" {
-		t.Errorf("origem = %v, want pve-notes — the screen needs to know WHERE it came from", out["origem"])
+	if out["origin"] != "pve-notes" {
+		t.Errorf("origin = %v, want pve-notes — the screen needs to know WHERE it came from", out["origin"])
 	}
 	if !strings.Contains(strings.Join(*seen, " "), "pve.description:lxc/207") {
 		t.Errorf("did not read the right guest's description: %v", *seen)
@@ -348,7 +348,7 @@ func TestHOSTNoteReadsNODEConfig(t *testing.T) {
 	host := testNode("node/pve", "pve", 999, testNow)
 	host.Kind = inventory.NodeKindHost
 	r, seen := noteRouter(t, []inventory.Node{host}, "# pve: the home server")
-	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/node/pve/nota", "")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/node/pve/note", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
@@ -369,12 +369,12 @@ func TestHOSTNoteReadsNODEConfig(t *testing.T) {
 // TestEmptyNoteIsNotError: "empty" must stay distinct from "could not be read".
 func TestEmptyNoteIsNotError(t *testing.T) {
 	r, _ := noteRouter(t, testGuest(), "   \n  ")
-	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/note", "")
 	if w.Code != 200 {
 		t.Fatalf("empty note turned into an error: status = %d", w.Code)
 	}
-	if out["origem"] != "vazia" {
-		t.Errorf("origem = %v, want \"vazia\"", out["origem"])
+	if out["origin"] != "empty" {
+		t.Errorf("origin = %v, want \"empty\"", out["origin"])
 	}
 }
 
@@ -385,14 +385,14 @@ func TestNoteOfEXTERNALNodeSkipsPVE(t *testing.T) {
 	ext.Kind = inventory.NodeKindExternal
 	ext.Transport = inventory.TransportAgent
 	r, seen := noteRouter(t, []inventory.Node{ext}, "should not be read")
-	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/canary/nota", "")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/canary/note", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
-	if out["origem"] != "fora-do-pve" {
-		t.Errorf("origem = %v, want fora-do-pve", out["origem"])
+	if out["origin"] != "outside-pve" {
+		t.Errorf("origin = %v, want outside-pve", out["origin"])
 	}
-	if out["motivo"] == nil || out["motivo"] == "" {
+	if out["reason"] == nil || out["reason"] == "" {
 		t.Error("without a reason — the screen would show a blank with no explanation")
 	}
 	for _, c := range *seen {
@@ -408,19 +408,19 @@ func TestNoteOfNodeGoneFromHypervisor(t *testing.T) {
 	r, _ := noteRouter(t, testGuest(), "")
 	r.pveDial = func(value string) (hypervisorOps, error) {
 		return &fakePVE{verbErr: errors.New(
-			"pve /api2/json/nodes/pve/lxc/207/config: erro_hipervisor (500) " +
+			"pve /api2/json/nodes/pve/lxc/207/config: hypervisor_error (500) " +
 				`{"data":null,"message":"Configuration file 'nodes/pve/lxc/207.conf' does not exist\n"}`)}, nil
 	}
-	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/note", "")
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
-	if out["origem"] != "inexistente" {
-		t.Errorf("origem = %v, want \"inexistente\"", out["origem"])
+	if out["origin"] != "nonexistent" {
+		t.Errorf("origin = %v, want \"nonexistent\"", out["origin"])
 	}
-	reason, _ := out["motivo"].(string)
+	reason, _ := out["reason"].(string)
 	if !strings.Contains(reason, "no longer exists") {
-		t.Errorf("motivo = %q — does not say what happened", reason)
+		t.Errorf("reason = %q — does not say what happened", reason)
 	}
 	if strings.Contains(reason, "Configuration file") || strings.Contains(reason, ".conf") {
 		t.Errorf("the raw PVE message leaked to the screen: %q", reason)
@@ -434,9 +434,9 @@ func TestNoteWithHypervisorDownIsStillError(t *testing.T) {
 	r.pveDial = func(value string) (hypervisorOps, error) {
 		return &fakePVE{verbErr: errors.New("pve: dial tcp 198.51.100.20:8006: i/o timeout")}, nil
 	}
-	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/nota", "")
+	w, out := callAPI(t, r, http.MethodGet, "/api/nodes/lxc/207/note", "")
 	if w.Code == 200 {
-		t.Fatalf("unreachable hypervisor responded 200 with origem=%v — failure turned into 'vanished'", out["origem"])
+		t.Fatalf("unreachable hypervisor responded 200 with origin=%v — failure turned into 'vanished'", out["origin"])
 	}
 }
 
@@ -446,7 +446,7 @@ func TestWriteNoteUsesWRITECredential(t *testing.T) {
 	const text = "## apps\n\n**What it does:** serves the applications."
 	r, seen := noteRouter(t, testGuest(), "")
 	body, _ := json.Marshal(map[string]string{"markdown": text})
-	w, out := callAPI(t, r, http.MethodPut, "/api/nodes/lxc/207/nota", string(body))
+	w, out := callAPI(t, r, http.MethodPut, "/api/nodes/lxc/207/note", string(body))
 	if w.Code != 200 {
 		t.Fatalf("status = %d: %s", w.Code, w.Body)
 	}
@@ -454,11 +454,11 @@ func TestWriteNoteUsesWRITECredential(t *testing.T) {
 	if !strings.Contains(used, "pve.set-description:lxc/207") {
 		t.Errorf("did not write: %v", *seen)
 	}
-	if !strings.Contains(used, "token=lab@pve!painel") {
+	if !strings.Contains(used, "token=panel@pve!panel") {
 		t.Errorf("wrote with the wrong credential: %v", *seen)
 	}
-	if out["origem"] != "pve-notes" {
-		t.Errorf("origem = %v", out["origem"])
+	if out["origin"] != "pve-notes" {
+		t.Errorf("origin = %v", out["origin"])
 	}
 
 	// hypervisorReadSecret() prefers the panel token when present, so the paths
@@ -466,19 +466,19 @@ func TestWriteNoteUsesWRITECredential(t *testing.T) {
 	// refused and names the missing key.
 	r2, seen2 := noteRouter(t, testGuest(), text)
 	r2.nodeVaultFn = func() (nodeVault, error) {
-		return &fakeVault{seen: seen2, data: map[string]string{"pve_token_audit": "lab@pve!audit=a"}}, nil
+		return &fakeVault{seen: seen2, data: map[string]string{"pve_token_audit": "panel@pve!audit=a"}}, nil
 	}
-	if w, out := callAPI(t, r2, http.MethodGet, "/api/nodes/lxc/207/nota", ""); w.Code != 200 || out["markdown"] != text {
+	if w, out := callAPI(t, r2, http.MethodGet, "/api/nodes/lxc/207/note", ""); w.Code != 200 || out["markdown"] != text {
 		t.Errorf("without the panel token, READING stopped working: %d %s", w.Code, w.Body)
 	}
-	if !strings.Contains(strings.Join(*seen2, " "), "token=lab@pve!audit") {
+	if !strings.Contains(strings.Join(*seen2, " "), "token=panel@pve!audit") {
 		t.Errorf("READING did not fall back to the audit credential: %v", *seen2)
 	}
-	w2, _ := callAPI(t, r2, http.MethodPut, "/api/nodes/lxc/207/nota", string(body))
+	w2, _ := callAPI(t, r2, http.MethodPut, "/api/nodes/lxc/207/note", string(body))
 	if w2.Code != 409 {
 		t.Errorf("without the panel token, WRITING returned %d — want 409", w2.Code)
 	}
-	if !strings.Contains(w2.Body.String(), "pve_token_painel") {
+	if !strings.Contains(w2.Body.String(), "pve_token_panel") {
 		t.Errorf("the refusal does not name the missing key: %s", w2.Body)
 	}
 }
@@ -488,7 +488,7 @@ func TestWriteNoteUsesWRITECredential(t *testing.T) {
 func TestWriteNoteRejectsHugeText(t *testing.T) {
 	r, seen := noteRouter(t, testGuest(), "")
 	body, _ := json.Marshal(map[string]string{"markdown": strings.Repeat("a", pve.MaxNoteSize+1)})
-	w, _ := callAPI(t, r, http.MethodPut, "/api/nodes/lxc/207/nota", string(body))
+	w, _ := callAPI(t, r, http.MethodPut, "/api/nodes/lxc/207/note", string(body))
 	if w.Code != 400 {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
@@ -510,7 +510,7 @@ func TestNoteTrailOmitsCONTENT(t *testing.T) {
 	}
 	r.audit = al
 	body, _ := json.Marshal(map[string]string{"markdown": "## x\n\n" + secret})
-	if w, _ := callAPI(t, r, http.MethodPut, "/api/nodes/lxc/207/nota", string(body)); w.Code != 200 {
+	if w, _ := callAPI(t, r, http.MethodPut, "/api/nodes/lxc/207/note", string(body)); w.Code != 200 {
 		t.Fatalf("status = %d", w.Code)
 	}
 	var lines []string
@@ -521,7 +521,7 @@ func TestNoteTrailOmitsCONTENT(t *testing.T) {
 	if strings.Contains(joined, secret) {
 		t.Errorf("the note's content leaked into the trail: %s", joined)
 	}
-	if !strings.Contains(joined, "pve.nota") || !strings.Contains(joined, "bytes=") {
+	if !strings.Contains(joined, "pve.note") || !strings.Contains(joined, "bytes=") {
 		t.Errorf("the trail did not record the write: %s", joined)
 	}
 }

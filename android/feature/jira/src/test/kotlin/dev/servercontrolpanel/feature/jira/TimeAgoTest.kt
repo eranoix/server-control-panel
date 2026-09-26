@@ -78,7 +78,7 @@ class DueLabelTest {
 
     @Test
     fun `overdue is distinct from due soon`() {
-        assertEquals("venceu", dueLabel("2026-09-01", today))
+        assertEquals("overdue", dueLabel("2026-09-01", today))
         assertEquals("due today", dueLabel("2026-09-09", today))
         assertEquals("due tomorrow", dueLabel("2026-09-10", today))
         assertEquals("due in 5 d", dueLabel("2026-09-14", today))

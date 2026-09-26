@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const fakeUPID = "UPID:pve:00001F2A:03C4D5E6:68A3B1C0:vzstart:207:lab@pve!admin:"
+const fakeUPID = "UPID:pve:00001F2A:03C4D5E6:68A3B1C0:vzstart:207:panel@pve!admin:"
 
 // TestPowerOps proves the exact path per type (lxc vs qemu) and the verb, and
 // that the function returns the RAW UPID. The UPID is not decoration: it is the

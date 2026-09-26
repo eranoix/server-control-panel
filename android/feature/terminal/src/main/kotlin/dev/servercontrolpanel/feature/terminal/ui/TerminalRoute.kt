@@ -131,7 +131,7 @@ import kotlinx.coroutines.launch
 const val BACK_DESCRIPTION = "Back"
 
 /** Test tag for the session button in the top bar. */
-const val SESSIONS_TAG = "sessoes-terminal"
+const val SESSIONS_TAG = "sessions-terminal"
 
 /** What the session button says in the top bar. */
 const val LABEL_SESSIONS = "Session"

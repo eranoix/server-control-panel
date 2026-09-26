@@ -91,6 +91,6 @@ class TerminalScrollbackPreference(
     }
 
     companion object {
-        private val SCROLLBACK_KEY = intPreferencesKey("terminal_scrollback_linhas")
+        private val SCROLLBACK_KEY = intPreferencesKey("terminal_scrollback_lines")
     }
 }

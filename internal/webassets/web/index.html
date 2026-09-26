@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, viewport-fit=cover, interactive-widget=resizes-content" />
@@ -246,7 +246,7 @@
 
   html,body {
     height:100%;
-    /* The scrollbar reservation lives in #conteudo, not here — see the rule
+    /* The scrollbar reservation lives in #content, not here — see the rule
        just below. html and body have overflow:hidden (further down in this
        file), so they NEVER scroll: reserving a gutter here meant 10px + 10px
        of dead band on every page, for a bar that cannot appear. Measured in a
@@ -263,11 +263,11 @@
      History: the rule was born as `scrollbar-gutter: stable` on html,body, which
      have overflow:hidden and never scroll — it protected no column at all and ate
      10px+10px of the width of EVERY page (measured: 1303 window -> 1283 body).
-     It moved to #conteudo, the only element with overflow-auto, and there the
+     It moved to #content, the only element with overflow-auto, and there the
      reservation did work — but it cost 10px of dead band on every card page.
 
      Today the guarantee is stronger and costs no pixel at all: on the terminal
-     screen #conteudo cannot scroll. The section is absolute (out of flow) and the
+     screen #content cannot scroll. The section is absolute (out of flow) and the
      in-flow sibling only carries hidden sections, so there is genuinely nothing to
      scroll; overflow:hidden merely makes that impossible to change by accident.
      With no bar possible, the usable width is CONSTANT and `cols` never moves —
@@ -3280,12 +3280,12 @@
     }
 
     /* Embedded browser: tabs scroll horizontally + responsive URL bar */
-    section[x-show*="navegador"] .browser-tabs,
-    section[x-show*="navegador"] [class*="flex"][class*="gap"] {
+    section[x-show*="browser"] .browser-tabs,
+    section[x-show*="browser"] [class*="flex"][class*="gap"] {
       overflow-x: auto;
       scrollbar-width: none;
     }
-    section[x-show*="navegador"] [class*="flex"][class*="gap"]::-webkit-scrollbar { display: none; }
+    section[x-show*="browser"] [class*="flex"][class*="gap"]::-webkit-scrollbar { display: none; }
 
     /* Reduced empty-state padding on mobile */
     .empty-state { padding: 32px 16px !important; }
@@ -4322,7 +4322,7 @@
      @click.outside="claudeVer.open = false">
   <div class="flex items-center gap-2 px-3 py-2 border-b border-[var(--border-default)]">
     <span class="font-semibold">Claude Code is out of date</span>
-    <span class="text-muted" x-text="'installed: ' + (claudeVer.instalada || '?')"></span>
+    <span class="text-muted" x-text="'installed: ' + (claudeVer.installed || '?')"></span>
     <button class="ml-auto text-muted hover:text-white" @click="claudeVer.open=false" aria-label="Close">✕</button>
   </div>
   <div class="px-3 py-2 text-muted" style="font-size:11px">
@@ -4331,33 +4331,33 @@
     whatever task is running — which is why nothing happens unless you say so.
   </div>
   <div style="max-height:16rem;overflow:auto">
-    <template x-for="p in claudeVer.processos.filter(x => !x.atual)" :key="p.pid">
+    <template x-for="p in claudeVer.processes.filter(x => !x.current)" :key="p.pid">
       <div class="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--border-default)]">
         <div class="min-w-0 flex-1">
-          <div class="truncate" x-text="p.alvo === 'recovery' ? 'Recovery Claude (/recovery)' : (p.sessao || ('pid ' + p.pid))"></div>
+          <div class="truncate" x-text="p.target === 'recovery' ? 'Recovery Claude (/recovery)' : (p.session || ('pid ' + p.pid))"></div>
           <!-- The recovery row shows ITS OWN reference: the container has its own
                install of the CLI, and comparing against the host's has already
                called a Claude NEWER than the host's outdated. -->
           <div class="text-muted truncate" style="font-size:10px"
-               x-text="p.versao + (p.ref ? ' → ' + p.ref + ' (in the container)' : '') + (p.cwd ? ' · ' + p.cwd : '')"></div>
+               x-text="p.version + (p.ref ? ' → ' + p.ref + ' (in the container)' : '') + (p.cwd ? ' · ' + p.cwd : '')"></div>
         </div>
         <!-- With no owning session the panel CANNOT restart it: the flow types into
              a visible pane, and there is no pane for a process outside the
              backend's sessions (e.g. a stray multiplexer created by hand). So the
              title says where the process is, instead of the useless "restart it
              from the terminal" — with the cwd you can find the owner. -->
-        <button class="btn btn-ghost btn-sm" :disabled="!(p.sessao || p.alvo === 'recovery') || claudeVer.restarting === p.pid"
-                :title="p.alvo === 'recovery' ? 'Restart the recovery Claude container' : (p.sessao ? ('Restart the Claude in session ' + p.sessao + ' (--continue resumes the conversation)') : ('This Claude does not belong to any session of the panel' + (p.cwd ? ' — it runs in ' + p.cwd : '') + '. Restart it from where it was opened.'))"
+        <button class="btn btn-ghost btn-sm" :disabled="!(p.session || p.target === 'recovery') || claudeVer.restarting === p.pid"
+                :title="p.target === 'recovery' ? 'Restart the recovery Claude container' : (p.session ? ('Restart the Claude in session ' + p.session + ' (--continue resumes the conversation)') : ('This Claude does not belong to any session of the panel' + (p.cwd ? ' — it runs in ' + p.cwd : '') + '. Restart it from where it was opened.'))"
                 @click="restartPanelClaude(p)"
                 x-text="claudeVer.restarting === p.pid ? 'restarting…' : 'Restart'"></button>
       </div>
     </template>
-    <div x-show="claudeVer.processos.filter(x => !x.atual).length === 0" class="px-3 py-3 text-muted">
+    <div x-show="claudeVer.processes.filter(x => !x.current).length === 0" class="px-3 py-3 text-muted">
       All up to date.
     </div>
   </div>
 </div>
-<a href="#conteudo" class="skip-link">Skip to content</a>
+<a href="#content" class="skip-link">Skip to content</a>
 
 <template x-if="!token && !guestMode">
   <div class="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
@@ -4642,10 +4642,10 @@
            avatar and logout in the sidebar-foot. -->
 
       <!-- TAB BAR (sticky, glass).
-           Shown only when inside a group that has tabs (system|docker|dev|security|apps|operations|jogos).
+           Shown only when inside a group that has tabs (system|docker|dev|security|apps|operations|games).
            The counters reuse Alpine data. A click calls setTab(), which changes tabs[page] + the URL hash. -->
       <div id="grp-tabbar"
-           x-show="['system','docker','dev','security','apps','operations','jogos'].includes(page) && !chromeCollapsed"
+           x-show="['system','docker','dev','security','apps','operations','games'].includes(page) && !chromeCollapsed"
            x-transition.opacity
            style="background: var(--surface-glass); backdrop-filter: blur(14px); border-bottom: 1px solid var(--border-default); position: sticky; top: 0; z-index: 20;"
            class="page-gutter-x">
@@ -4678,25 +4678,25 @@
             </div>
           </template>
 
-          <!-- GAMES tabs (page 'jogos') -->
-          <template x-if="page==='jogos'">
+          <!-- GAMES tabs (page 'games') -->
+          <template x-if="page==='games'">
             <div class="tabbar-row flex items-center gap-1 w-full">
-              <button class="tab-btn" :class="(tabs.jogos||'gs-dash')==='gs-dash'?'active':''" @click="setTab('gs-dash')" :aria-current="(tabs.jogos||'gs-dash')==='gs-dash' ? 'page' : false">Overview</button>
-              <button class="tab-btn" :class="tabs.jogos==='gs-servers'?'active':''" @click="setTab('gs-servers')" :aria-current="tabs.jogos==='gs-servers' ? 'page' : false">
+              <button class="tab-btn" :class="(tabs.games||'gs-dash')==='gs-dash'?'active':''" @click="setTab('gs-dash')" :aria-current="(tabs.games||'gs-dash')==='gs-dash' ? 'page' : false">Overview</button>
+              <button class="tab-btn" :class="tabs.games==='gs-servers'?'active':''" @click="setTab('gs-servers')" :aria-current="tabs.games==='gs-servers' ? 'page' : false">
                 Servers <span class="ml-1 text-[10px]" style="color:var(--text-muted)" x-text="games.servers.length"></span>
               </button>
-              <button class="tab-btn" :class="tabs.jogos==='gs-worlds'?'active':''" @click="setTab('gs-worlds')" :aria-current="tabs.jogos==='gs-worlds' ? 'page' : false">
+              <button class="tab-btn" :class="tabs.games==='gs-worlds'?'active':''" @click="setTab('gs-worlds')" :aria-current="tabs.games==='gs-worlds' ? 'page' : false">
                 Worlds <span class="ml-1 text-[10px]" style="color:var(--text-muted)" x-text="games.worlds.length||''"></span>
               </button>
-              <button class="tab-btn" :class="tabs.jogos==='gs-settings'?'active':''" @click="setTab('gs-settings')" :aria-current="tabs.jogos==='gs-settings' ? 'page' : false">Settings</button>
-              <button class="tab-btn" :class="tabs.jogos==='gs-access'?'active':''" @click="setTab('gs-access')" :aria-current="tabs.jogos==='gs-access' ? 'page' : false">
+              <button class="tab-btn" :class="tabs.games==='gs-settings'?'active':''" @click="setTab('gs-settings')" :aria-current="tabs.games==='gs-settings' ? 'page' : false">Settings</button>
+              <button class="tab-btn" :class="tabs.games==='gs-access'?'active':''" @click="setTab('gs-access')" :aria-current="tabs.games==='gs-access' ? 'page' : false">
                 Access <span class="ml-1 text-[10px]" style="color:var(--text-muted)" x-text="games.groups.length||''"></span>
               </button>
-              <button class="tab-btn" :class="tabs.jogos==='gs-console'?'active':''" @click="setTab('gs-console')" :aria-current="tabs.jogos==='gs-console' ? 'page' : false">Console</button>
-              <button class="tab-btn" :class="tabs.jogos==='gs-backups'?'active':''" @click="setTab('gs-backups')" :aria-current="tabs.jogos==='gs-backups' ? 'page' : false">
+              <button class="tab-btn" :class="tabs.games==='gs-console'?'active':''" @click="setTab('gs-console')" :aria-current="tabs.games==='gs-console' ? 'page' : false">Console</button>
+              <button class="tab-btn" :class="tabs.games==='gs-backups'?'active':''" @click="setTab('gs-backups')" :aria-current="tabs.games==='gs-backups' ? 'page' : false">
                 Backups <span class="ml-1 text-[10px]" style="color:var(--text-muted)" x-text="games.backups.length||''"></span>
               </button>
-              <button class="tab-btn" :class="tabs.jogos==='gs-trainer'?'active':''" @click="setTab('gs-trainer')" :aria-current="tabs.jogos==='gs-trainer' ? 'page' : false">Trainer</button>
+              <button class="tab-btn" :class="tabs.games==='gs-trainer'?'active':''" @click="setTab('gs-trainer')" :aria-current="tabs.games==='gs-trainer' ? 'page' : false">Trainer</button>
             </div>
           </template>
 
@@ -4761,7 +4761,7 @@
               <button class="tab-btn" :class="tabs.security==='users'?'active':''" @click="setTab('users')" :aria-current="tabs.security==='users' ? 'page' : false">Users</button>
               <button class="tab-btn" :class="tabs.security==='secrets'?'active':''" @click="setTab('secrets')" :aria-current="tabs.security==='secrets' ? 'page' : false">Secrets</button>
               <button class="tab-btn" :class="tabs.security==='sessions'?'active':''" @click="setTab('sessions')" :aria-current="tabs.security==='sessions' ? 'page' : false">Sessions</button>
-              <button class="tab-btn" :class="tabs.security==='rede'?'active':''" @click="setTab('rede')" :aria-current="tabs.security==='rede' ? 'page' : false">Network &amp; Privacy</button>
+              <button class="tab-btn" :class="tabs.security==='network'?'active':''" @click="setTab('network')" :aria-current="tabs.security==='network' ? 'page' : false">Network &amp; Privacy</button>
               <div class="ml-auto flex items-center gap-1">
                 <button class="btn-icon" @click="toggleChromeCollapsed()"
                         :title="'Hide the top bar (Ctrl+Shift+H) — gains '+(chromeCollapsed?'':'more ')+'space'"
@@ -4828,7 +4828,7 @@
           <!-- OPERATIONS tabs -->
           <template x-if="page==='operations'">
             <div class="tabbar-row flex items-center gap-1 w-full">
-              <button class="tab-btn relative inline-flex items-center gap-1.5" :class="(tabs.operations||'tarefas')==='tarefas'?'active':''" @click="setTab('tarefas')" :aria-current="(tabs.operations||'tarefas')==='tarefas' ? 'page' : false">
+              <button class="tab-btn relative inline-flex items-center gap-1.5" :class="(tabs.operations||'tasks')==='tasks'?'active':''" @click="setTab('tasks')" :aria-current="(tabs.operations||'tasks')==='tasks' ? 'page' : false">
                 <!-- Status dot: green=connected · red=token but no health · gray=no token. -->
                 <span x-show="jiraConfig.has_token && jiraHealth.ok"
                       class="inline-block w-2 h-2 rounded-full bg-green-400"
@@ -4848,7 +4848,7 @@
                 <span x-show="jobsCounts.running>0" class="ml-1 text-[9px] bg-cyan-500 text-black rounded-full px-1.5 py-px font-bold" x-text="jobsCounts.running"></span>
                 <span x-show="jobsCounts.running===0 && jobsCounts.failed>0" class="ml-1 text-[9px] bg-red-500 text-white rounded-full px-1.5 py-px font-bold" x-text="jobsCounts.failed"></span>
               </button>
-              <button class="tab-btn" :class="tabs.operations==='agendamentos'?'active':''" @click="setTab('agendamentos')" :aria-current="tabs.operations==='agendamentos' ? 'page' : false">Schedules</button>
+              <button class="tab-btn" :class="tabs.operations==='schedules'?'active':''" @click="setTab('schedules')" :aria-current="tabs.operations==='schedules' ? 'page' : false">Schedules</button>
               <button class="tab-btn" :class="tabs.operations==='proxmox'?'active':''" @click="setTab('proxmox')" title="Hypervisor: health, tasks, disks and snapshots" :aria-current="tabs.operations==='proxmox' ? 'page' : false">Proxmox</button>
               <button class="tab-btn" :class="tabs.operations==='deploy'?'active':''" @click="setTab('deploy')" :aria-current="tabs.operations==='deploy' ? 'page' : false">Deploy</button>
               <button class="tab-btn inline-flex items-center gap-1.5" :class="tabs.operations==='git'?'active':''" @click="setTab('git')" title="Visual Git client (GitGraph)" :aria-current="tabs.operations==='git' ? 'page' : false" aria-label="Visual Git client (GitGraph)">
@@ -5224,7 +5224,7 @@
             </div>
           </div>
           <div class="text-[11px] text-muted mt-2">
-            Dashboards provisioned in <span class="mono">/opt/projetos/servercontrolpanel/deploy/grafana/dashboards/</span>. To add one, create a new JSON file there — it shows up in the dropdown on the next reload (↻).
+            Dashboards provisioned in <span class="mono">/opt/projects/servercontrolpanel/deploy/grafana/dashboards/</span>. To add one, create a new JSON file there — it shows up in the dropdown on the next reload (↻).
           </div>
         </section>
 
@@ -6876,7 +6876,7 @@
               <div x-show="(termWorkspaces||[]).length===0" class="text-[11px] text-muted italic">No workspace saved. Arrange your panes and click "Save current layout".</div>
               <template x-for="ws in _skl(termWorkspaces,'name')" :key="ws.name">
                 <div class="flex items-center gap-1 mb-1">
-                  <button @click="loadWorkspace(ws)" class="flex-1 text-left text-xs px-2 py-1.5 bg-[var(--surface-2)] hover:bg-[var(--border-default)] rounded truncate" :title="((ws.panes||ws.tabs||[]).length)+' pane(s) · '+new Date(ws.savedAt).toLocaleString('pt-BR')" :aria-label="((ws.panes||ws.tabs||[]).length)+' pane(s) · '+new Date(ws.savedAt).toLocaleString('pt-BR')">
+                  <button @click="loadWorkspace(ws)" class="flex-1 text-left text-xs px-2 py-1.5 bg-[var(--surface-2)] hover:bg-[var(--border-default)] rounded truncate" :title="((ws.panes||ws.tabs||[]).length)+' pane(s) · '+new Date(ws.savedAt).toLocaleString('en-US')" :aria-label="((ws.panes||ws.tabs||[]).length)+' pane(s) · '+new Date(ws.savedAt).toLocaleString('en-US')">
                     <span class="text-emerald-400" x-text="ws.name"></span>
                     <span class="text-muted ml-2" x-text="((ws.panes||ws.tabs||[]).length)+' pane(s)'"></span>
                   </button>
@@ -7027,11 +7027,11 @@
                 <div>
                   <label for="f-hostTermEco" class="text-gray-400 uppercase">Predictive echo (slow network)</label>
                   <select id="f-hostTermEco" x-model="hostTermPredictiveEcho"
-                          @change="localStorage.setItem('panel_term_eco_preditivo', hostTermPredictiveEcho)"
+                          @change="localStorage.setItem('panel_term_predictive_echo', hostTermPredictiveEcho)"
                           class="input w-full mt-1" aria-label="Terminal predictive echo">
                     <option value="auto">Automatic — only when the network is slow</option>
-                    <option value="sempre">Always</option>
-                    <option value="nunca">Never</option>
+                    <option value="always">Always</option>
+                    <option value="never">Never</option>
                   </select>
                   <p class="text-[10px] text-muted mt-1">
                     Shows the keystroke dimmed straight away, without waiting for the server to answer, and corrects it
@@ -7041,7 +7041,7 @@
                 <div x-show="hostTermPredictiveEcho === 'auto'">
                   <label for="f-hostTermEchoThreshold" class="text-gray-400 uppercase">Echo threshold (ms)</label>
                   <input id="f-hostTermEchoThreshold" type="number" x-model.number="hostTermEchoThreshold"
-                         @change="localStorage.setItem('panel_term_eco_limiar', String(hostTermEchoThreshold))"
+                         @change="localStorage.setItem('panel_term_echo_threshold', String(hostTermEchoThreshold))"
                          min="0" max="2000" step="10" class="input w-full mt-1" aria-label="Latency threshold for predictive echo"/>
                   <p class="text-[10px] text-muted mt-1">Above this measured latency, local echo kicks in. Default 60 ms.</p>
                 </div>
@@ -7094,7 +7094,7 @@
             <!-- Latency measured in the pane itself (ping/pong + echo). It only
                  appears when it is bad enough to explain the sluggish typing —
                  on a good network it steals neither space nor attention. -->
-            <span x-show="activePane() && (activePane().netLevel==='medio' || activePane().netLevel==='bad')" x-cloak
+            <span x-show="activePane() && (activePane().netLevel==='medium' || activePane().netLevel==='bad')" x-cloak
                   class="term-latency"
                   :class="activePane()?.netLevel==='bad' ? 'term-latency--bad' : ''"
                   :title="'Terminal echo latency: ' + (activePane()?.netLabel||'') + '. It is the time between the key leaving and coming back from the session.'"
@@ -7103,13 +7103,13 @@
                  warns "Update installed - Restart to update" and the warning stays
                  forever, without saying WHICH sessions need restarting. Here the
                  number is clickable and leads to the action. It only shows up when there is a lag. -->
-            <button x-show="claudeVer.defasados > 0" x-cloak
+            <button x-show="claudeVer.outdated > 0" x-cloak
                     @click="claudeVer.open = !claudeVer.open; if (claudeVer.open) loadClaudeVersions()"
                     class="ts-btn" style="color:var(--warning)"
-                    :title="claudeVer.defasados + ' session(s) running an old version of Claude (installed: ' + (claudeVer.instalada||'?') + '). Click to see them and restart whenever you want.'"
-                    :aria-label="claudeVer.defasados + ' sessions with an outdated Claude'">
+                    :title="claudeVer.outdated + ' session(s) running an old version of Claude (installed: ' + (claudeVer.installed||'?') + '). Click to see them and restart whenever you want.'"
+                    :aria-label="claudeVer.outdated + ' sessions with an outdated Claude'">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 9 15 9"/></svg>
-              <span class="ts-lbl" x-text="claudeVer.defasados + ' Claude'"></span>
+              <span class="ts-lbl" x-text="claudeVer.outdated + ' Claude'"></span>
             </button>
             <div class="ts-sep"></div>
 
@@ -7580,8 +7580,8 @@
 
         <!-- NETWORK & PRIVACY · unified tab (AdGuard + Devices + Data saver) -->
         <!-- It replaces the 3 old tabs: one screen centred on the device.
-             currentView==='rede' + PAGE_REMAP rede/adguard/dispositivos/economia. -->
-        <section x-show="currentView==='rede'" x-cloak data-panel="net-unified">
+             currentView==='network' + PAGE_REMAP network/adguard/devices/savings. -->
+        <section x-show="currentView==='network'" x-cloak data-panel="net-unified">
           <style>
             .net-kpi{position:relative;overflow:hidden}
             .net-kpi.on::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--focus,#22d3ee)}
@@ -7607,12 +7607,12 @@
             <div class="card net-kpi p-4" :class="adguardLoaded && adguard.protection_enabled ? 'on':''">
               <div class="flex items-center gap-2 text-xs font-semibold text-gray-400" style="text-transform:uppercase;letter-spacing:.05em"><span class="kic" style="background:rgba(52,211,153,.13);color:#34d399">🛡️</span> DNS filter</div>
               <div class="text-2xl font-bold mt-2" style="line-height:1" x-text="!adguardLoaded ? '—' : (adguard.protection_enabled ? 'On' : 'Paused')"></div>
-              <div class="text-xs text-gray-500 mt-1"><span x-show="adguardLoaded"><b class="text-gray-300" x-text="(adguard.blocked_pct||0).toFixed(1)+'%'"></b> blocked · <span x-text="(adguard.num_queries||0).toLocaleString('pt-BR')"></span> queries</span></div>
+              <div class="text-xs text-gray-500 mt-1"><span x-show="adguardLoaded"><b class="text-gray-300" x-text="(adguard.blocked_pct||0).toFixed(1)+'%'"></b> blocked · <span x-text="(adguard.num_queries||0).toLocaleString('en-US')"></span> queries</span></div>
             </div>
             <div class="card net-kpi p-4" :class="dsLoaded ? 'on':''">
               <div class="flex items-center gap-2 text-xs font-semibold text-gray-400" style="text-transform:uppercase;letter-spacing:.05em"><span class="kic" style="background:rgba(34,211,238,.14);color:#22d3ee">📉</span> Data saver</div>
               <div class="text-2xl font-bold mt-2" style="line-height:1;font-variant-numeric:tabular-nums" x-text="(Number(dsStatus.saved?.pct) || 0).toFixed(0)+'%'"></div>
-              <div class="text-xs text-gray-500 mt-1"><b class="text-gray-300" x-text="fmtBytes(Math.max(0, (Number(dsStatus.saved?.orig) || 0) - (Number(dsStatus.saved?.out) || 0)))"></b> saved · <span x-text="(Number(dsStatus.saved?.imgs) || 0).toLocaleString('pt-BR')"></span> images</div>
+              <div class="text-xs text-gray-500 mt-1"><b class="text-gray-300" x-text="fmtBytes(Math.max(0, (Number(dsStatus.saved?.orig) || 0) - (Number(dsStatus.saved?.out) || 0)))"></b> saved · <span x-text="(Number(dsStatus.saved?.imgs) || 0).toLocaleString('en-US')"></span> images</div>
             </div>
             <div class="card net-kpi p-4">
               <div class="flex items-center gap-2 text-xs font-semibold text-gray-400" style="text-transform:uppercase;letter-spacing:.05em"><span class="kic" style="background:rgba(139,92,246,.14);color:#a78bfa">📱</span> Devices</div>
@@ -7621,7 +7621,7 @@
             </div>
             <div class="card net-kpi p-4">
               <div class="flex items-center gap-2 text-xs font-semibold text-gray-400" style="text-transform:uppercase;letter-spacing:.05em"><span class="kic" style="background:rgba(251,113,133,.12);color:#fb7185">🚫</span> Trackers</div>
-              <div class="text-2xl font-bold mt-2" style="line-height:1;font-variant-numeric:tabular-nums" x-text="(Number(dsStatus.saved?.reqs_cut) || 0).toLocaleString('pt-BR')"></div>
+              <div class="text-2xl font-bold mt-2" style="line-height:1;font-variant-numeric:tabular-nums" x-text="(Number(dsStatus.saved?.reqs_cut) || 0).toLocaleString('en-US')"></div>
               <div class="text-xs text-gray-500 mt-1">truncated in the body</div>
             </div>
           </div>
@@ -7652,13 +7652,13 @@
                       <div class="text-xs" style="display:flex;align-items:center;gap:6px">
                         <span :style="devUsage(d.name).rate_bps > 0 ? 'color:#34d399' : 'color:#63707d'" x-text="'⇅ ' + fmtRate(devUsage(d.name).rate_bps)"></span>
                         <span class="text-gray-500" x-text="'· ' + fmtBytes(devUsage(d.name).total_bytes) + ' total'"></span>
-                        <span class="text-gray-600" x-show="devUsage(d.name).active_conns" x-text="'· ' + devUsage(d.name).active_conns + ' conex.'"></span>
+                        <span class="text-gray-600" x-show="devUsage(d.name).active_conns" x-text="'· ' + devUsage(d.name).active_conns + ' conn.'"></span>
                       </div>
                     </div>
                   </div>
                   <div class="net-segc">
                     <div class="net-seg">
-                      <button :class="d.exit==='casa'?'active':''" @click="setDeviceExit(d,'casa')">🏠 Home</button>
+                      <button :class="d.exit==='home'?'active':''" @click="setDeviceExit(d,'home')">🏠 Home</button>
                       <button :class="d.exit==='vps'?'active':''" @click="setDeviceExit(d,'vps')">☁️ VPS</button>
                     </div>
                   </div>
@@ -7703,8 +7703,8 @@
               <template x-if="adguardLoaded">
                 <div>
                   <div class="grid grid-cols-2 gap-2 mb-4">
-                    <div class="rounded-lg p-3" style="background:rgba(255,255,255,.03)"><div class="text-base font-semibold" style="font-variant-numeric:tabular-nums" x-text="(adguard.num_queries||0).toLocaleString('pt-BR')"></div><div class="text-xs text-gray-400">queries (24h)</div></div>
-                    <div class="rounded-lg p-3" style="background:rgba(255,255,255,.03)"><div class="text-base font-semibold" style="font-variant-numeric:tabular-nums" x-text="(adguard.num_blocked||0).toLocaleString('pt-BR')"></div><div class="text-xs text-gray-400">blocked</div></div>
+                    <div class="rounded-lg p-3" style="background:rgba(255,255,255,.03)"><div class="text-base font-semibold" style="font-variant-numeric:tabular-nums" x-text="(adguard.num_queries||0).toLocaleString('en-US')"></div><div class="text-xs text-gray-400">queries (24h)</div></div>
+                    <div class="rounded-lg p-3" style="background:rgba(255,255,255,.03)"><div class="text-base font-semibold" style="font-variant-numeric:tabular-nums" x-text="(adguard.num_blocked||0).toLocaleString('en-US')"></div><div class="text-xs text-gray-400">blocked</div></div>
                     <div class="rounded-lg p-3" style="background:rgba(255,255,255,.03)"><div class="text-base font-semibold" x-text="(adguard.blocked_pct||0).toFixed(1)+'%'"></div><div class="text-xs text-gray-400">% blocked</div></div>
                     <div class="rounded-lg p-3" style="background:rgba(255,255,255,.03)"><div class="text-base font-semibold" x-text="(adguard.avg_processing_ms||0).toFixed(1)+' ms'"></div><div class="text-xs text-gray-400">average time</div></div>
                   </div>
@@ -8002,8 +8002,8 @@
              the browser does not build this DOM and Alpine does not scan these directives
              at boot; the _mounted latch never goes back to false, so after the
              first visit the screen stays alive (scroll/state preserved). -->
-        <template x-if="_mounted.manutencao">
-        <section x-show="currentView==='manutencao'" x-cloak
+        <template x-if="_mounted.maintenance">
+        <section x-show="currentView==='maintenance'" x-cloak
                  class="absolute inset-x-0 bottom-0 flex flex-col page-gutter-x pt-4 pb-2 overflow-hidden"
                  style="top: var(--section-top, 52px)">
 
@@ -9139,8 +9139,8 @@
              the browser does not build this DOM and Alpine does not scan these directives
              at boot; the _mounted latch never goes back to false, so after the
              first visit the screen stays alive (scroll/state preserved). -->
-        <template x-if="_mounted.agendamentos">
-        <section x-show="currentView==='agendamentos'" x-cloak>
+        <template x-if="_mounted.schedules">
+        <section x-show="currentView==='schedules'" x-cloak>
           <div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
             <div>
               <h2 class="text-2xl font-bold">Schedules</h2>
@@ -10143,7 +10143,7 @@
                   <td data-label="Files" x-text="s.files"></td>
                   <td data-label="Size" x-text="s.size_kb+' KB'"></td>
                   <td class="text-[11px] text-gray-400" data-label="Activity" x-text="timeAgo(s.modified)"></td>
-                  <td class="text-[11px] text-muted" data-label="Fork">(use a aba terminal · resume via claude --resume &lt;uuid&gt;)</td>
+                  <td class="text-[11px] text-muted" data-label="Fork">(use the terminal tab · resume via claude --resume &lt;uuid&gt;)</td>
                 </tr>
               </template>
             </tbody>
@@ -10540,7 +10540,7 @@
             </div>
             <div x-show="pvx.lastError" class="p-3 mb-3 rounded text-xs font-mono"
                  style="background:#ef444422;color:#ef4444;border:1px solid #ef444466" x-text="pvx.lastError"></div>
-            <div x-show="!pvx.forbidden && nodes.vault === 'inalcancavel'" class="p-3 mb-3 rounded text-sm"
+            <div x-show="!pvx.forbidden && nodes.vault === 'unreachable'" class="p-3 mb-3 rounded text-sm"
                  style="background:#ef444422;color:#ef4444;border:1px solid #ef444466">
               Vault unreachable — the credential states below are the last known ones, not a reading from now.
             </div>
@@ -10617,10 +10617,10 @@
             <div x-show="!pvx.forbidden" class="flex flex-wrap items-center gap-3 mb-3">
               <label class="text-xs opacity-60" for="pvx-filter">Filter</label>
               <input id="pvx-filter" @focus="pvx.focusFilter=true" @blur="pvx.focusFilter=false" class="input input-sm" style="min-width:320px"
-                     placeholder="e.g. estado:critico  tipo:ct  node:games"
+                     placeholder="e.g. state:critical  type:ct  node:games"
                      :value="pvx.filter" @input="pvxSetFilter($event.target.value)"
-                     aria-describedby="pvx-filter-ajuda">
-              <span id="pvx-filter-ajuda" class="text-[11px] opacity-50">
+                     aria-describedby="pvx-filter-help">
+              <span id="pvx-filter-help" class="text-[11px] opacity-50">
                 fields: <code>node:</code> <code>status:</code> <code>type:</code> <code>state:</code> <code>cred:</code> <code>id:</code> — ANDed
               </span>
               <span class="text-xs opacity-70 ml-auto" role="status" aria-atomic="true" x-text="pvxCount() + ' node(s)'"></span>
@@ -10663,25 +10663,25 @@
                    WHOLE table — header included. Leaving the header standing makes the
                    screen reader announce six columns of a table with
                    no rows at all before it reaches the explanation. -->
-              <template x-if="!pvx.firstLoad && pvxEmpty() === 'sem-permissao'">
+              <template x-if="!pvx.firstLoad && pvxEmpty() === 'no-permission'">
                 <div class="p-8 text-center text-sm opacity-70">
                   <div class="font-semibold mb-1">Not permitted to see the inventory</div>
                   <div>This is not "there are no nodes": it is your session unable to see them.</div>
                 </div>
               </template>
-              <template x-if="!pvx.firstLoad && pvxEmpty() === 'falhou'">
+              <template x-if="!pvx.firstLoad && pvxEmpty() === 'failed'">
                 <div class="p-8 text-center text-sm">
                   <div class="font-semibold mb-1" style="color:#ef4444">Could not fetch the nodes</div>
                   <div class="font-mono text-xs opacity-80" x-text="nodes.lastError"></div>
                   <div class="opacity-60 mt-2">The lab may be perfectly fine — what failed is the path to it.</div>
                 </div>
               </template>
-              <template x-if="!pvx.firstLoad && pvxEmpty() === 'nada'">
+              <template x-if="!pvx.firstLoad && pvxEmpty() === 'nothing'">
                 <div class="p-8 text-center text-sm opacity-70">
                   No node in the inventory yet — the poller stamps one on the next tick.
                 </div>
               </template>
-              <template x-if="!pvx.firstLoad && pvxEmpty() === 'filtrado'">
+              <template x-if="!pvx.firstLoad && pvxEmpty() === 'filtered'">
                 <div class="p-8 text-center text-sm opacity-70">
                   <div class="mb-2">No node with <strong x-text="pvxShowing()"></strong>.</div>
                   <button class="btn btn-ghost btn-sm" @click="pvxClearFilter()">Clear filter</button>
@@ -10750,7 +10750,7 @@
                           <span class="font-semibold truncate" x-text="n.name || n.id"></span>
                           <span class="opacity-50 font-mono truncate shrink" x-text="n.id"></span>
                           <!-- A model is not a guest you can power on. It disappears when it is not one. -->
-                          <span x-show="pvxType(n).modelo" x-cloak
+                          <span x-show="pvxType(n).template" x-cloak
                                 class="text-[10px] px-1 py-px rounded shrink-0 opacity-70"
                                 style="border:1px dashed currentColor">model</span>
                           <!-- An `ok` node gets no badge: what is fine does not announce itself. And now
@@ -10783,7 +10783,7 @@
                           <template x-for="which in ['cpu','ram','disco']" :key="n.id + which">
                             <template x-if="true">
                               <span class="contents"
-                                    :title="(pvxGauge(n, which).measured ? pvxGauge(n, which).text : pvxGauge(n, which).motivo)">
+                                    :title="(pvxGauge(n, which).measured ? pvxGauge(n, which).text : pvxGauge(n, which).reason)">
                                 <span class="text-[10px] uppercase tracking-wider opacity-50 self-center"
                                       x-text="which === 'disco' ? 'disco' : which"></span>
                                 <span class="font-mono tabular-nums text-[11px] self-center text-right pr-1.5"
@@ -10793,7 +10793,7 @@
                                       role="progressbar" aria-valuemin="0" aria-valuemax="100"
                                       :aria-label="which + ' of ' + (n.name || n.id)"
                                       :aria-valuenow="pvxGauge(n, which).measured ? Math.round(pvxGauge(n, which).pct) : 0"
-                                      :aria-valuetext="pvxGauge(n, which).measured ? pvxGauge(n, which).text : pvxGauge(n, which).motivo">
+                                      :aria-valuetext="pvxGauge(n, which).measured ? pvxGauge(n, which).text : pvxGauge(n, which).reason">
                                   <span class="block h-full" :style="pvxGaugeStyle(pvxGauge(n, which))"></span>
                                 </span>
                               </span>
@@ -10884,15 +10884,15 @@
                           <span class="font-mono font-semibold" style="min-width:6rem" x-text="ds.storage"></span>
                           <span class="px-1.5 py-px rounded" :style="pvxBackupStyle(ds)"
                                 x-text="pvxBackupState(ds).label"></span>
-                          <span x-show="!ds.erro && !pvxBackupAge(ds).vazio" x-cloak class="opacity-60"
+                          <span x-show="!ds.error && !pvxBackupAge(ds).empty" x-cloak class="opacity-60"
                                 x-text="ds.total + ' copies · ' + (ds.guests || []).length + ' guests'"></span>
                           <!-- The NOTE is what prevents the permanent red: it says
                                WHY the layer is the way it is. "disarmed" with the
                                reason is information; "340h ago" in red, without the
                                reason, is an alarm that never switches off. -->
                           <span class="opacity-50 text-[11px] w-full"
-                                x-show="pvxBackupState(ds).nota" x-cloak
-                                x-text="pvxBackupState(ds).nota"></span>
+                                x-show="pvxBackupState(ds).note" x-cloak
+                                x-text="pvxBackupState(ds).note"></span>
                         </div>
                       </template>
                     </div>
@@ -11027,7 +11027,7 @@
                               <span class="opacity-60 ml-auto text-right"
                                     x-text="pvxGauge(pvxOpenNode(), which).measured
                                             ? pvxGauge(pvxOpenNode(), which).text
-                                            : pvxGauge(pvxOpenNode(), which).motivo"></span>
+                                            : pvxGauge(pvxOpenNode(), which).reason"></span>
                             </div>
                             <div class="h-2 rounded overflow-hidden" style="background:var(--surface-2)"
                                  role="progressbar" aria-valuemin="0" aria-valuemax="100"
@@ -11035,7 +11035,7 @@
                                  :aria-valuenow="pvxGauge(pvxOpenNode(), which).measured ? Math.round(pvxGauge(pvxOpenNode(), which).pct) : 0"
                                  :aria-valuetext="pvxGauge(pvxOpenNode(), which).measured
                                                   ? pvxGauge(pvxOpenNode(), which).text
-                                                  : pvxGauge(pvxOpenNode(), which).motivo">
+                                                  : pvxGauge(pvxOpenNode(), which).reason">
                               <span class="block h-full" :style="pvxGaugeStyle(pvxGauge(pvxOpenNode(), which))"></span>
                             </div>
                           </div>
@@ -11104,15 +11104,15 @@
                              navigation and reading. -->
                         <button class="btn btn-primary btn-sm" :disabled="!pvxActionState(pvxOpenNode(),'start').can || pvxBusy()"
                                 :aria-disabled="!pvxActionState(pvxOpenNode(),'start').can"
-                                :title="pvxActionState(pvxOpenNode(),'start').motivo || 'Starts the guest'"
+                                :title="pvxActionState(pvxOpenNode(),'start').reason || 'Starts the guest'"
                                 @click="pvxPower(pvxOpenNode(),'start')">▶ Start</button>
                         <button class="btn btn-warn btn-sm" :disabled="!pvxActionState(pvxOpenNode(),'reboot').can || pvxBusy()"
                                 :aria-disabled="!pvxActionState(pvxOpenNode(),'reboot').can"
-                                :title="pvxActionState(pvxOpenNode(),'reboot').motivo || 'Asks the guest system to reboot itself'"
+                                :title="pvxActionState(pvxOpenNode(),'reboot').reason || 'Asks the guest system to reboot itself'"
                                 @click="pvxPower(pvxOpenNode(),'reboot')">↻ Restart</button>
                         <button class="btn btn-warn btn-sm" :disabled="!pvxActionState(pvxOpenNode(),'shutdown').can || pvxBusy()"
                                 :aria-disabled="!pvxActionState(pvxOpenNode(),'shutdown').can"
-                                :title="pvxActionState(pvxOpenNode(),'shutdown').motivo || 'Asks the guest system to shut down'"
+                                :title="pvxActionState(pvxOpenNode(),'shutdown').reason || 'Asks the guest system to shut down'"
                                 @click="pvxPower(pvxOpenNode(),'shutdown')">⏻ Graceful shutdown</button>
                         <button class="btn btn-ghost btn-sm" :disabled="!pvxConsoleCan(pvxOpenNode())"
                                 :aria-disabled="!pvxConsoleCan(pvxOpenNode())"
@@ -11123,11 +11123,11 @@
                         <span class="text-[11px] opacity-50 w-full">irreversible — you must type the node name</span>
                         <button class="btn btn-danger btn-sm" :disabled="!pvxActionState(pvxOpenNode(),'stop').can || pvxBusy()"
                                 :aria-disabled="!pvxActionState(pvxOpenNode(),'stop').can"
-                                :title="pvxActionState(pvxOpenNode(),'stop').motivo || 'The same as pulling the cable'"
+                                :title="pvxActionState(pvxOpenNode(),'stop').reason || 'The same as pulling the cable'"
                                 @click="pvxPower(pvxOpenNode(),'stop')">Cut the power</button>
                         <button class="btn btn-danger btn-sm" :disabled="!pvxActionState(pvxOpenNode(),'revoke').can || pvxBusy()"
                                 :aria-disabled="!pvxActionState(pvxOpenNode(),'revoke').can"
-                                :title="pvxActionState(pvxOpenNode(),'revoke').motivo || 'Erases the token on the hypervisor AND in the vault'"
+                                :title="pvxActionState(pvxOpenNode(),'revoke').reason || 'Erases the token on the hypervisor AND in the vault'"
                                 @click="pvxRevoke(pvxOpenNode())">Revoke the credential</button>
                       </div>
                       <!-- The reason spelled out, for every control that is
@@ -11135,7 +11135,7 @@
                       <div class="mt-3 space-y-1 text-[11px] opacity-70">
                         <template x-for="a in ['start','reboot','shutdown','stop','revoke','clone','backup']" :key="'mot-' + a">
                           <div x-show="!pvxActionState(pvxOpenNode(), a).can"
-                               x-text="a + ': ' + pvxActionState(pvxOpenNode(), a).motivo"></div>
+                               x-text="a + ': ' + pvxActionState(pvxOpenNode(), a).reason"></div>
                         </template>
                         <div x-show="!pvxConsoleCan(pvxOpenNode())" x-text="'console: ' + pvxConsoleReason(pvxOpenNode())"></div>
                       </div>
@@ -11173,8 +11173,8 @@
                         <span class="text-xs opacity-70 font-mono" x-text="pvx.con.guest"></span>
                         <button class="btn btn-ghost btn-sm ml-auto" @click="pvxCloseConsole()">Close</button>
                       </div>
-                      <div x-show="pvx.con.erro" class="px-4 py-2 text-xs font-mono"
-                           style="background:#ef444422;color:#ef4444" x-text="pvx.con.erro"></div>
+                      <div x-show="pvx.con.error" class="px-4 py-2 text-xs font-mono"
+                           style="background:#ef444422;color:#ef4444" x-text="pvx.con.error"></div>
                       <div class="p-2">
                         <div id="pvx-console" style="height:320px;background:#000;border-radius:4px"></div>
                         <div class="text-[11px] opacity-60 mt-2">
@@ -11226,15 +11226,15 @@
                           <button class="btn btn-primary btn-sm ml-auto"
                                   :disabled="!pvxActionState(pvxOpenNode(),'clone').can || pvxBusy()"
                                   :aria-disabled="!pvxActionState(pvxOpenNode(),'clone').can"
-                                  :title="pvxActionState(pvxOpenNode(),'clone').motivo || 'Creates a new guest as a copy of this one'"
+                                  :title="pvxActionState(pvxOpenNode(),'clone').reason || 'Creates a new guest as a copy of this one'"
                                   @click="pvxOpenClone(pvxOpenNode())">⧉ Clone…</button>
                         </div>
 
                         <div x-show="pvx.clone.open" x-cloak class="mt-3 rounded p-3"
                              style="background:var(--surface-1);border:1px solid var(--border)">
                           <div x-show="pvx.clone.loading" class="text-xs opacity-60">asking the hypervisor which id is free…</div>
-                          <div x-show="pvx.clone.erro" x-cloak class="text-xs mb-2" style="color:var(--danger)"
-                               x-text="pvx.clone.erro"></div>
+                          <div x-show="pvx.clone.error" x-cloak class="text-xs mb-2" style="color:var(--danger)"
+                               x-text="pvx.clone.error"></div>
                           <div x-show="!pvx.clone.loading" x-cloak class="flex flex-wrap items-end gap-3">
                             <div>
                               <!-- 🔴 THE ID IS READ, NOT TYPED. The one who knows which
@@ -11248,7 +11248,7 @@
                             </div>
                             <div class="flex-1" style="min-width:160px">
                               <div class="text-[10px] uppercase tracking-wider opacity-60 mb-1">clone name</div>
-                              <input class="input input-sm w-full" x-model="pvx.clone.nome"
+                              <input class="input input-sm w-full" x-model="pvx.clone.name"
                                      placeholder="letters, digits and hyphens">
                             </div>
                             <!-- 🔴 A RUNNING CONTAINER ONLY CLONES FROM A SNAPSHOT.
@@ -11277,7 +11277,7 @@
                                     @click="pvxCloneConfirm()">Clone now</button>
                             <button class="btn btn-ghost btn-sm" @click="pvxCloseClone()">Cancel</button>
                           </div>
-                          <div x-show="pvx.clone.ligado" x-cloak class="text-[11px] mt-2" style="color:var(--warn)">
+                          <div x-show="pvx.clone.on" x-cloak class="text-[11px] mt-2" style="color:var(--warn)">
                             ⚠ this guest is running — the copy comes out crash-consistent, like an abrupt power-off
                           </div>
                         </div>
@@ -11299,7 +11299,7 @@
                               <option :value="p.id" x-text="p.id + ' — ' + pvxBytes(p.free) + ' free'"></option>
                             </template>
                           </select>
-                          <select class="input input-sm" style="max-width:150px" x-model="pvx.bkp.modo" aria-label="dump mode">
+                          <select class="input input-sm" style="max-width:150px" x-model="pvx.bkp.mode" aria-label="dump mode">
                             <option value="snapshot">a snapshot — it does not stop</option>
                             <option value="suspend">suspend — freezes</option>
                             <option value="stop">stop: powers off and back on</option>
@@ -11307,7 +11307,7 @@
                           <button class="btn btn-primary btn-sm"
                                   :disabled="!pvxActionState(pvxOpenNode(),'backup').can || pvxBusy()"
                                   :aria-disabled="!pvxActionState(pvxOpenNode(),'backup').can"
-                                  :title="pvxActionState(pvxOpenNode(),'backup').motivo || 'Tells the hypervisor to store a copy now'"
+                                  :title="pvxActionState(pvxOpenNode(),'backup').reason || 'Tells the hypervisor to store a copy now'"
                                   @click="pvxBackupConfirm(pvxOpenNode())">⭳ Take a copy</button>
                         </div>
                         <div class="text-[11px] opacity-60 mt-2">
@@ -11365,8 +11365,8 @@
                          class="px-4 py-3 border-b" style="border-color:var(--border)">
                       <div class="flex items-center gap-2 mb-2">
                         <span class="text-[10px] uppercase tracking-wider opacity-50">What this box does</span>
-                        <span x-show="pvx.nota.loading" x-cloak class="text-[11px] opacity-50">reading…</span>
-                        <span x-show="pvx.nota.origem === 'pve-notes' && !pvx.nota.editing" x-cloak
+                        <span x-show="pvx.note.loading" x-cloak class="text-[11px] opacity-50">reading…</span>
+                        <span x-show="pvx.note.origin === 'pve-notes' && !pvx.note.editing" x-cloak
                               class="text-[10px] opacity-40 ml-auto">Proxmox note</span>
                         <!-- 🔴 The edit button closes the flow INSIDE the panel:
                              before, writing the note meant opening Proxmox in
@@ -11374,9 +11374,9 @@
                              outside PVE, a node that vanished), because offering to edit
                              what does not exist is an invitation to error. -->
                         <button class="btn btn-ghost btn-sm"
-                                :class="pvx.nota.origem === 'pve-notes' ? '' : 'ml-auto'"
-                                x-show="!pvx.nota.editing && !pvx.nota.loading
-                                        && pvx.nota.origem !== 'fora-do-pve' && pvx.nota.origem !== 'inexistente'"
+                                :class="pvx.note.origin === 'pve-notes' ? '' : 'ml-auto'"
+                                x-show="!pvx.note.editing && !pvx.note.loading
+                                        && pvx.note.origin !== 'outside-pve' && pvx.note.origin !== 'nonexistent'"
                                 x-cloak @click="pvxEditNote()"
                                 title="Writes to the Proxmox Notes field, without leaving here">✎ Edit</button>
                       </div>
@@ -11386,23 +11386,23 @@
                            gives back the original intact, and what is on screen
                            while you type is never confused with what the
                            hypervisor holds. -->
-                      <div x-show="pvx.nota.editing" x-cloak class="space-y-2">
-                        <textarea x-model="pvx.nota.rascunho" rows="14" spellcheck="false"
+                      <div x-show="pvx.note.editing" x-cloak class="space-y-2">
+                        <textarea x-model="pvx.note.draft" rows="14" spellcheck="false"
                                   class="input w-full font-mono text-xs" style="line-height:1.5"
                                   aria-label="note text, in Markdown"
                                   placeholder="## name — what it is&#10;&#10;**What it does:** …&#10;&#10;**If it goes down:** …"></textarea>
                         <div class="flex flex-wrap items-center gap-2">
                           <span class="text-[11px] font-mono tabular-nums"
                                 :style="pvxNoteFits() ? 'opacity:.5' : 'color:var(--danger)'"
-                                x-text="(pvx.nota.rascunho || '').length + ' / ' + NOTE_MAX"></span>
+                                x-text="(pvx.note.draft || '').length + ' / ' + NOTE_MAX"></span>
                           <span x-show="!pvxNoteFits()" x-cloak class="text-[11px]" style="color:var(--danger)">
                             over the cap — a note is meant to be READ
                           </span>
-                          <span x-show="pvx.nota.saving" x-cloak class="text-[11px] opacity-60">saving…</span>
+                          <span x-show="pvx.note.saving" x-cloak class="text-[11px] opacity-60">saving…</span>
                           <button class="btn btn-primary btn-sm ml-auto"
-                                  :disabled="pvx.nota.saving || !pvxNoteFits()"
+                                  :disabled="pvx.note.saving || !pvxNoteFits()"
                                   @click="pvxSaveNote()">Save to Proxmox</button>
-                          <button class="btn btn-ghost btn-sm" :disabled="pvx.nota.saving"
+                          <button class="btn btn-ghost btn-sm" :disabled="pvx.note.saving"
                                   @click="pvxCancelNote()">Cancel</button>
                         </div>
                         <div class="text-[11px] opacity-60">
@@ -11421,27 +11421,27 @@
                            (fix the access); it is empty (write one); it is not a
                            guest of this hypervisor (there is no source). A single blank
                            for all four would be the screen hiding which one it is. -->
-                      <div x-show="pvx.nota.markdown && !pvx.nota.editing" x-cloak
-                           class="pvx-md" x-html="pvxMd(pvx.nota.markdown)"></div>
+                      <div x-show="pvx.note.markdown && !pvx.note.editing" x-cloak
+                           class="pvx-md" x-html="pvxMd(pvx.note.markdown)"></div>
 
-                      <div x-show="!pvx.nota.loading && pvx.nota.erro" x-cloak
+                      <div x-show="!pvx.note.loading && pvx.note.error" x-cloak
                            class="text-xs" style="color:var(--danger)">
-                        could not read the note from the hypervisor — <span x-text="pvx.nota.erro"></span>
+                        could not read the note from the hypervisor — <span x-text="pvx.note.error"></span>
                       </div>
-                      <div x-show="!pvx.nota.loading && !pvx.nota.erro && !pvx.nota.editing && pvx.nota.origem === 'vazia'" x-cloak
+                      <div x-show="!pvx.note.loading && !pvx.note.error && !pvx.note.editing && pvx.note.origin === 'empty'" x-cloak
                            class="text-xs opacity-70">
                         This node has no description yet. It is read from the field <span class="font-mono">Notes</span>
                         in Proxmox — write it there and it shows here.
                       </div>
-                      <div x-show="!pvx.nota.loading && !pvx.nota.erro && !pvx.nota.editing && pvx.nota.origem === 'fora-do-pve'" x-cloak
-                           class="text-xs opacity-70" x-text="pvx.nota.motivo"></div>
+                      <div x-show="!pvx.note.loading && !pvx.note.error && !pvx.note.editing && pvx.note.origin === 'outside-pve'" x-cloak
+                           class="text-xs opacity-70" x-text="pvx.note.reason"></div>
                     </div>
 
                   </div>
                 </template>
               </div>
             </template>
-            <div x-show="!pvx.forbidden && pvxActiveTab()==='tarefas'" class="rounded mb-5" style="background:var(--surface-1);border:1px solid var(--border)">
+            <div x-show="!pvx.forbidden && pvxActiveTab()==='tasks'" class="rounded mb-5" style="background:var(--surface-1);border:1px solid var(--border)">
               <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b" style="border-color:var(--border)">
                 <span class="font-semibold">Hypervisor tasks</span>
                 <label class="text-xs flex items-center gap-1.5 cursor-pointer">
@@ -11467,7 +11467,7 @@
             </div>
 
             <!-- DISKS --------------------------------------------------- -->
-                <div x-show="!pvx.forbidden && pvxActiveTab()==='discos'" x-cloak
+                <div x-show="!pvx.forbidden && pvxActiveTab()==='disks'" x-cloak
                      class="rounded" style="background:var(--surface-1);border:1px solid var(--border)">
                   <div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b" style="border-color:var(--border)">
                     <span class="font-semibold">Physical disks</span>
@@ -11497,7 +11497,7 @@
                                would invert the meaning and make a brand-new disk
                                look like it was at the end of its life. -->
                           <span class="px-1.5 py-px rounded" :style="pvxLifeStyle(d)"
-                                :title="pvxLifespan(d).motivo" x-text="pvxLifespan(d).text"></span>
+                                :title="pvxLifespan(d).reason" x-text="pvxLifespan(d).text"></span>
 
                           <span x-show="d.used" x-cloak class="opacity-70"
                                 x-text="'usage: ' + d.used"></span>
@@ -11543,12 +11543,12 @@
                          not return 403. "No storage" and "no permission to see
                          storage" are the same answer on the wire, and only the second one tells
                          the operator to act. -->
-                    <span x-show="pvxStorageState() === 'sem-permissao'" x-cloak
+                    <span x-show="pvxStorageState() === 'no-permission'" x-cloak
                           class="text-[11px] px-1.5 py-px rounded"
                           style="background:#ef444422;color:#ef4444;border:1px solid #ef444466">
                       without Datastore.Audit — the list may be incomplete
                     </span>
-                    <span x-show="pvxStorageState() === 'sem-medida'" x-cloak
+                    <span x-show="pvxStorageState() === 'unmeasured'" x-cloak
                           class="text-[11px] opacity-60">privilege not measured yet</span>
                     <span class="ml-auto text-[11px] opacity-50"
                           x-text="pvxFormatAge(pvx.storage ? pvx.storage.age_seconds : null)"></span>
@@ -11641,20 +11641,20 @@
                              It is the sign of silent rot, and it is the only thing the
                              monthly scrub exists to hunt. -->
                         <div class="mt-2 pl-3 space-y-1" style="border-left:2px solid var(--border)">
-                          <template x-for="d in pvxPoolDevices(p.name)" :key="d.caminho">
+                          <template x-for="d in pvxPoolDevices(p.name)" :key="d.path">
                             <div class="text-[11px]">
                               <div class="flex flex-wrap items-center gap-2">
                                 <span class="text-[10px] px-1 py-px rounded"
-                                      :style="d.estado === 'ONLINE'
+                                      :style="d.state === 'ONLINE'
                                         ? 'background:#22c55e22;color:#22c55e;border:1px solid #22c55e66'
                                         : 'background:#ef444422;color:#ef4444;border:1px solid #ef444466'"
-                                      x-text="d.estado"></span>
-                                <span class="opacity-50" x-text="d.tipo"></span>
+                                      x-text="d.state"></span>
+                                <span class="opacity-50" x-text="d.type"></span>
                                 <span class="font-mono tabular-nums ml-auto"
                                       :style="(d.read + d.write + d.cksum) > 0 ? 'color:#ef4444' : 'opacity:.6'"
                                       x-text="'r ' + d.read + ' · w ' + d.write + ' · cksum ' + d.cksum"></span>
                               </div>
-                              <div class="font-mono opacity-40 truncate mt-0.5" x-text="d.caminho"></div>
+                              <div class="font-mono opacity-40 truncate mt-0.5" x-text="d.path"></div>
                             </div>
                           </template>
                           <div x-show="!pvx.topology" x-cloak class="text-[11px] opacity-50">reading the topology…</div>
@@ -11677,20 +11677,20 @@
               </div>
               <div x-show="pvx.permsOpen" class="px-4 pb-4 border-t" style="border-color:var(--border)">
                 <div class="text-xs my-3" x-show="pvx.perms">
-                  <span x-show="!pvx.perms || !pvx.perms.storage_visivel">
+                  <span x-show="!pvx.perms || !pvx.perms.storage_visible">
                     This token <strong>does not have <code>Datastore.Audit</code></strong> — measured now, not assumed. That is why the
                     capacity and zpool blocks come up empty: the hypervisor ACL filters the list before it answers,
                     and the hypervisor returns <code>200</code> with an empty list, never <code>403</code>.
                   </span>
-                  <span x-show="pvx.perms && pvx.perms.storage_visivel">
+                  <span x-show="pvx.perms && pvx.perms.storage_visible">
                     This token has <code>Datastore.Audit</code> — storage capacity and zpool state are live readings.
                     Still out: datastore contents, backup evidence and <code>apt</code>, which requires
                     <code>Sys.Modify</code>.
                   </span>
                 </div>
-                <template x-for="l in pvxPermRows()" :key="l.caminho">
+                <template x-for="l in pvxPermRows()" :key="l.path">
                   <div class="flex gap-3 text-xs py-1 font-mono">
-                    <span class="opacity-80 w-48 shrink-0" x-text="l.caminho"></span>
+                    <span class="opacity-80 w-48 shrink-0" x-text="l.path"></span>
                     <span class="opacity-60" x-text="l.privs"></span>
                   </div>
                 </template>
@@ -11711,14 +11711,14 @@
                   <div class="flex flex-wrap items-center gap-2">
                     <span class="text-[11px] uppercase tracking-wider opacity-60">Window</span>
                     <template x-for="j in WINDOWS" :key="j.id">
-                      <button class="pvx-chip" :class="pvx.janela === j.id ? 'pvx-chip-on' : ''"
-                              :aria-pressed="pvx.janela === j.id"
+                      <button class="pvx-chip" :class="pvx.window === j.id ? 'pvx-chip-on' : ''"
+                              :aria-pressed="pvx.window === j.id"
                               @click="pvxSwitchWindow(j.id)" x-text="j.rot"></button>
                     </template>
                     <span x-show="pvx.seriesLoading" x-cloak class="text-[11px] opacity-50 ml-2">reading…</span>
                     <span x-show="pvx.series && !pvx.seriesLoading" x-cloak
                           class="text-[11px] opacity-50 ml-auto font-mono"
-                          x-text="(pvx.series?.pontos || []).length + ' samples · ' + (pvx.series?.escopo ?? '')"></span>
+                          x-text="(pvx.series?.points || []).length + ' samples · ' + (pvx.series?.scope ?? '')"></span>
                   </div>
 
                   <div class="grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
@@ -11773,7 +11773,7 @@
                                   stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
                             <!-- Isolated samples: zero-length subpaths
                                  with a round cap become dots. -->
-                            <path :d="pvxDrawing(m).pontos" fill="none" :stroke="m.color" stroke-width="4"
+                            <path :d="pvxDrawing(m).points" fill="none" :stroke="m.color" stroke-width="4"
                                   stroke-linecap="round" vector-effect="non-scaling-stroke"></path>
                             <!-- highlighted end point: where the series IS right now -->
                             <circle :cx="pvxDrawing(m).endX" :cy="pvxDrawing(m).endY" r="3"
@@ -11803,12 +11803,12 @@
                 <!-- ══ NETWORK ════════════════════════════════════════════════
                      "What is the bridge's IP?" was a question with no answer for
                      someone who works 100% remotely and cannot reach the Proxmox UI. -->
-                <div x-show="pvxActiveTab()==='rede'" x-cloak class="rounded"
+                <div x-show="pvxActiveTab()==='network'" x-cloak class="rounded"
                      style="background:var(--surface-1);border:1px solid var(--border)">
                   <div class="px-4 py-3 border-b flex flex-wrap items-center gap-2" style="border-color:var(--border)">
                     <span class="font-semibold">Interfaces</span>
-                    <span x-show="pvx.sistema && pvx.sistema.network_erro" x-cloak
-                          class="text-[11px]" style="color:#ef4444" x-text="pvx.sistema?.network_erro"></span>
+                    <span x-show="pvx.system && pvx.system.network_error" x-cloak
+                          class="text-[11px]" style="color:#ef4444" x-text="pvx.system?.network_error"></span>
                     <span class="ml-auto text-[11px] opacity-50 font-mono" x-text="pvxInterfaces().length + ' iface(s)'"></span>
                   </div>
                   <div class="divide-y" style="border-color:var(--border)">
@@ -11836,13 +11836,13 @@
                       </div>
                     </template>
                   </div>
-                  <div x-show="pvx.sistema && !pvxInterfaces().length" x-cloak class="px-4 py-6 text-xs opacity-60">
+                  <div x-show="pvx.system && !pvxInterfaces().length" x-cloak class="px-4 py-6 text-xs opacity-60">
                     No interface reported.
                   </div>
                 </div>
 
                 <!-- ══ SYSTEM ═════════════════════════════════════════════════ -->
-                <div x-show="pvxActiveTab()==='sistema'" x-cloak class="space-y-3">
+                <div x-show="pvxActiveTab()==='system'" x-cloak class="space-y-3">
                   <div class="grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">
                     <div class="rounded px-4 py-3" style="background:var(--surface-1);border:1px solid var(--border)">
                       <div class="text-[11px] uppercase tracking-wider opacity-60 mb-2">Time and timezone</div>
@@ -11853,8 +11853,8 @@
                       <div class="text-lg font-semibold font-mono" x-text="pvxNodeTimezone()"></div>
                       <div class="text-[11px] opacity-60 mt-1" x-show="pvxTime()" x-cloak
                            x-text="'hypervisor clock: ' + new Date((pvxTime()?.time || 0) * 1000).toISOString().replace('T',' ').slice(0,19) + ' UTC'"></div>
-                      <div x-show="pvx.sistema && pvx.sistema.time_erro" x-cloak class="text-[11px]" style="color:#ef4444"
-                           x-text="pvx.sistema?.time_erro"></div>
+                      <div x-show="pvx.system && pvx.system.time_error" x-cloak class="text-[11px]" style="color:#ef4444"
+                           x-text="pvx.system?.time_error"></div>
                     </div>
 
                     <div class="rounded px-4 py-3" style="background:var(--surface-1);border:1px solid var(--border)">
@@ -11894,14 +11894,14 @@
                         </div>
                       </template>
                     </div>
-                    <div x-show="pvx.sistema && !pvxCertificates().length" x-cloak class="px-4 py-6 text-xs opacity-60">
+                    <div x-show="pvx.system && !pvxCertificates().length" x-cloak class="px-4 py-6 text-xs opacity-60">
                       No certificate reported.
                     </div>
                   </div>
                 </div>
 
                 <!-- ══ PACKAGES ═══════════════════════════════════════════════ -->
-                <div x-show="pvxActiveTab()==='pacotes'" x-cloak class="rounded"
+                <div x-show="pvxActiveTab()==='packages'" x-cloak class="rounded"
                      style="background:var(--surface-1);border:1px solid var(--border)">
                   <div class="px-4 py-3 border-b flex flex-wrap items-center gap-2" style="border-color:var(--border)">
                     <span class="font-semibold">Installed packages</span>
@@ -11909,7 +11909,7 @@
                            x-model="pvx.packageFilter" @focus="pvx.focusFilter=true" @blur="pvx.focusFilter=false"
                            aria-label="Filter packages">
                     <span class="text-[11px] opacity-50 font-mono tabular-nums"
-                          x-text="pvxFilteredPackages().length + ' of ' + ((pvx.pacotes?.pacotes || []).length)"></span>
+                          x-text="pvxFilteredPackages().length + ' of ' + ((pvx.packages?.packages || []).length)"></span>
                   </div>
                   <div class="divide-y overflow-x-auto" style="border-color:var(--border);max-height:60vh;overflow-y:auto">
                     <template x-for="p in pvxFilteredPackages()" :key="p.Package">
@@ -11925,7 +11925,7 @@
                       </div>
                     </template>
                   </div>
-                  <div x-show="pvx.pacotes && !pvxFilteredPackages().length" x-cloak class="px-4 py-6 text-xs opacity-60">
+                  <div x-show="pvx.packages && !pvxFilteredPackages().length" x-cloak class="px-4 py-6 text-xs opacity-60">
                     No package matches the filter.
                   </div>
                 </div>
@@ -14418,7 +14418,7 @@
                     </template>
                   </div>
                   <div class="text-[10px] mt-2" style="color:var(--text-muted)"
-                       x-show="cat==='Dano e Defesa'">
+                       x-show="cat==='Damage &amp; Defense'">
                     In the damage fields the number is a percentage of the original value: 100 = double, 0 = off.
                   </div>
                 </div>
@@ -14724,7 +14724,7 @@
                   <span class="inline-block w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="Awaiting approval"></span>
                   <div class="flex-1 min-w-0">
                     <div class="text-sm text-amber-100 truncate" x-text="d.label || 'Unnamed device'"></div>
-                    <div class="text-[11px] text-amber-300/70" x-text="'requested pairing at ' + new Date(d.created_at).toLocaleString('pt-BR')"></div>
+                    <div class="text-[11px] text-amber-300/70" x-text="'requested pairing at ' + new Date(d.created_at).toLocaleString('en-US')"></div>
                   </div>
                   <button @click="mobileDeviceApprove(d.id)" :disabled="mobileDevicesUI.busy" class="btn btn-primary btn-sm" title="Approve — lets this device sign in with a passkey" aria-label="Approve the device">Approve</button>
                   <button @click="mobileDeviceDeny(d.id)" :disabled="mobileDevicesUI.busy" class="btn btn-ghost btn-sm text-rose-300" title="Deny — if you were not the one pairing" aria-label="Deny the device">Deny</button>
@@ -14735,7 +14735,7 @@
                   <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" title="Approved — can sign in with a passkey"></span>
                   <div class="flex-1 min-w-0">
                     <div class="text-sm text-gray-100 truncate" x-text="d.label || 'Unnamed device'"></div>
-                    <div class="text-[11px] text-muted" x-text="'approved at ' + (d.approved_at ? new Date(d.approved_at).toLocaleString('pt-BR') : '—')"></div>
+                    <div class="text-[11px] text-muted" x-text="'approved at ' + (d.approved_at ? new Date(d.approved_at).toLocaleString('en-US') : '—')"></div>
                   </div>
                   <button @click="mobileDeviceRevoke(d.id)" :disabled="mobileDevicesUI.busy" class="btn btn-ghost btn-sm text-rose-400" title="Revoke this device's access" aria-label="Revoke the device">Revoke</button>
                 </div>
@@ -14756,7 +14756,7 @@
              via mustPrimary). Lazy iframe: the <template x-if> only mounts the iframe when
              the tab is active, so it fires no fetch (and no spurious 401) when visiting
              other Operations tabs. /_docs requires the current binary (make deploy). -->
-        <section x-show="currentView==='documentacao'" x-cloak
+        <section x-show="currentView==='documentation'" x-cloak
                  class="absolute inset-x-0 bottom-0 flex flex-col page-gutter-x pb-3 pt-2"
                  style="top: var(--section-top, 52px)">
           <div class="flex items-center justify-between mb-2">
@@ -14781,7 +14781,7 @@
             </div>
           </div>
           <div class="flex-1 relative bg-[var(--surface-0)] rounded" style="border:1px solid var(--border-default); min-height:200px;">
-            <template x-if="currentView==='documentacao'">
+            <template x-if="currentView==='documentation'">
               <iframe src="/_docs" title="Technical documentation — Server Control Panel"
                       class="absolute inset-0"
                       style="width:100%;height:100%;border:0;display:block;background:var(--surface-0);"></iframe>
@@ -14794,7 +14794,7 @@
              (<template x-if>) only mounts with the tab active — no spurious fetch/401
              on the other Dev tabs. The vis-network of graph.html is rewritten to the
              local vendor copy by the handler (the CSP blocks an external CDN). -->
-        <section x-show="currentView==='grafos'" x-cloak
+        <section x-show="currentView==='graphs'" x-cloak
                  class="absolute inset-x-0 bottom-0 flex flex-col page-gutter-x pb-3 pt-2"
                  style="top: var(--section-top, 52px)"
                  x-data="{ gp:'server-control-panel', gview:'force', graphs:[
@@ -14837,7 +14837,7 @@
             </a>
           </div>
           <div class="flex-1 relative bg-[var(--surface-0)] rounded" style="border:1px solid var(--border-default); min-height:200px;">
-            <template x-if="currentView==='grafos'">
+            <template x-if="currentView==='graphs'">
               <iframe :src="'/_graph?project='+encodeURIComponent(gp)+'&view='+gview" title="Knowledge graph — Graphify"
                       class="absolute inset-0"
                       style="width:100%;height:100%;border:0;display:block;background:var(--surface-0);"></iframe>
@@ -14944,7 +14944,7 @@
           </template>
         </section>
 
-        <section x-show="currentView==='navegador'" x-cloak>
+        <section x-show="currentView==='browser'" x-cloak>
 
           <!-- Service down: diagnostics, without mounting iframes -->
           <div class="card p-6" x-show="browserHealth===false">
@@ -16072,7 +16072,7 @@
                           <button @click="navigator.clipboard.writeText(videocall.selectedRoom.pin); $event.target.textContent='✓'; setTimeout(()=>$event.target.textContent='📋',1500)" title="Copy" style="background:var(--surface-3);border:0;color:var(--text-primary);padding:8px 10px;border-radius:6px;cursor:pointer;font-size:14px;">📋</button>
                         </div>
                         <div class="text-[11px] text-muted mb-3" x-show="videocall.selectedRoom.pin_expires_at">
-                          Expires in <span x-text="new Date(videocall.selectedRoom.pin_expires_at*1000).toLocaleString('pt-BR')"></span>
+                          Expires in <span x-text="new Date(videocall.selectedRoom.pin_expires_at*1000).toLocaleString('en-US')"></span>
                         </div>
                         <div class="vc-field-label" style="margin-top:8px;">Share</div>
                         <div class="grid grid-cols-2 gap-2 mb-3">
@@ -16390,7 +16390,7 @@
                       <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.04em;">Backend STT</div>
                       <div style="display:flex;gap:4px;">
                         <button class="vc-quality-pill vc-layout-btn" :class="videocall.sttBackend==='web-speech' ? 'is-active' : ''" @click="vcSetSttBackend('web-speech')" style="flex:1;font-size:10px;">⚡ Web Speech</button>
-                        <button class="vc-quality-pill vc-layout-btn" :class="videocall.sttBackend==='whisper-local' ? 'is-active' : ''" @click="vcSetSttBackend('whisper-local')" :disabled="!videocall.whisperLocalAvailable" style="flex:1;font-size:10px;" :title="videocall.whisperLocalAvailable ? 'WhisperLive (Collabora) — high pt-BR accuracy, ~400 ms latency' : 'WhisperLive offline'" :aria-label="videocall.whisperLocalAvailable ? 'WhisperLive (Collabora) — high pt-BR accuracy, ~400 ms latency' : 'WhisperLive offline'">🧠 Whisper</button>
+                        <button class="vc-quality-pill vc-layout-btn" :class="videocall.sttBackend==='whisper-local' ? 'is-active' : ''" @click="vcSetSttBackend('whisper-local')" :disabled="!videocall.whisperLocalAvailable" style="flex:1;font-size:10px;" :title="videocall.whisperLocalAvailable ? 'WhisperLive (Collabora) — high accuracy, ~400 ms latency' : 'WhisperLive offline'" :aria-label="videocall.whisperLocalAvailable ? 'WhisperLive (Collabora) — high accuracy, ~400 ms latency' : 'WhisperLive offline'">🧠 Whisper</button>
                       </div>
                       <div style="font-size:9px;color:var(--text-muted);line-height:1.3;">
                         <span x-show="videocall.sttBackend==='web-speech'">⚡ Instant, uses the browser's on-device model (Chrome/Edge)</span>
@@ -16414,7 +16414,7 @@
                     </div>
                     <button class="vc-popover-item" @click.stop="videocall.subtitlesLangPickerOpen = !videocall.subtitlesLangPickerOpen" :disabled="!videocall.subtitlesSupported" style="position:relative;"><span class="vc-popover-icon">🌐</span>Caption language<span class="vc-popover-meta" x-text="vcSubtitlesLangLabel()"></span></button>
                     <div x-show="videocall.subtitlesLangPickerOpen" class="vc-popover" style="bottom:auto;left:100%;top:auto;margin-left:8px;min-width:200px;" @click.stop>
-                      <template x-for="opt in [{c:'pt-BR',n:'Português (BR)'},{c:'en-US',n:'English (US)'},{c:'es-ES',n:'Español'},{c:'fr-FR',n:'Français'},{c:'it-IT',n:'Italiano'},{c:'de-DE',n:'Deutsch'},{c:'ja-JP','n':'日本語'}]" :key="opt.c">
+                      <template x-for="opt in [{c:'en-US',n:'English (US)'},{c:'pt-BR',n:'Portuguese (BR)'},{c:'es-ES',n:'Spanish'},{c:'fr-FR',n:'French'},{c:'it-IT',n:'Italian'},{c:'de-DE',n:'German'},{c:'ja-JP','n':'日本語'}]" :key="opt.c">
                         <button class="vc-popover-item" :class="videocall.subtitlesLang===opt.c ? 'is-active' : ''" @click="vcSetSubtitlesLang(opt.c)"><span class="vc-popover-icon" x-text="videocall.subtitlesLang===opt.c ? '✓' : ''"></span><span x-text="opt.n"></span></button>
                       </template>
                     </div>
@@ -16629,7 +16629,7 @@
                           🌐 <span x-text="vcSubtitlesLangLabel().split(' ')[0]"></span> ▾
                         </button>
                         <div x-show="videocall.subtitlesLangPickerOpen" class="vc-popover" style="bottom:auto;right:0;top:100%;margin-top:4px;min-width:180px;" @click.stop>
-                          <template x-for="opt in [{c:'pt-BR',n:'Português (BR)'},{c:'en-US',n:'English (US)'},{c:'es-ES',n:'Español'},{c:'fr-FR',n:'Français'},{c:'it-IT',n:'Italiano'},{c:'de-DE',n:'Deutsch'},{c:'ja-JP','n':'日本語'}]" :key="opt.c">
+                          <template x-for="opt in [{c:'en-US',n:'English (US)'},{c:'pt-BR',n:'Portuguese (BR)'},{c:'es-ES',n:'Spanish'},{c:'fr-FR',n:'French'},{c:'it-IT',n:'Italian'},{c:'de-DE',n:'German'},{c:'ja-JP','n':'日本語'}]" :key="opt.c">
                             <button class="vc-popover-item" :class="videocall.subtitlesLang===opt.c ? 'is-active' : ''" @click="vcSetSubtitlesLang(opt.c)"><span class="vc-popover-icon" x-text="videocall.subtitlesLang===opt.c ? '✓' : ''"></span><span x-text="opt.n"></span></button>
                           </template>
                         </div>
@@ -16717,7 +16717,7 @@
                     <div>
                       <div class="text-sm font-medium" x-text="rec.room_name || rec.room_id"></div>
                       <div class="text-[10px] text-muted">
-                        <span x-text="new Date(rec.created_at*1000).toLocaleString('pt-BR')"></span>
+                        <span x-text="new Date(rec.created_at*1000).toLocaleString('en-US')"></span>
                         · <span x-text="Math.floor((rec.duration_s||0)/60)+'m '+((rec.duration_s||0)%60)+'s'"></span>
                         · <span x-text="vcFmtBytes(rec.size_bytes||0)"></span>
                         <span x-show="rec.has_summary" class="ml-1 text-emerald-400">· 🧠 summary</span>
@@ -17186,7 +17186,7 @@
                     <button @click="navigator.clipboard.writeText(videocall.selectedRoom.pin); $event.target.textContent='✓'; setTimeout(()=>$event.target.textContent='📋',1500)" title="Copy the PIN" style="background:var(--surface-3);border:0;color:var(--text-primary);padding:10px 12px;border-radius:6px;cursor:pointer;font-size:14px;">📋</button>
                   </div>
                   <div class="text-[11px] text-gray-400 mb-3" x-show="videocall.selectedRoom.pin_expires_at">
-                    Expires in <span x-text="new Date(videocall.selectedRoom.pin_expires_at*1000).toLocaleString('pt-BR')"></span>
+                    Expires in <span x-text="new Date(videocall.selectedRoom.pin_expires_at*1000).toLocaleString('en-US')"></span>
                   </div>
                   <div class="vc-field-label" style="margin-top:8px;">Share</div>
                   <div class="grid grid-cols-2 gap-2 mb-3">
@@ -17262,7 +17262,7 @@
         </div>
 
         <!-- Browser context menu (outside the section, positioned fixed so it floats over everything) -->
-        <div x-show="browserCtxMenu.open && currentView==='navegador'"
+        <div x-show="browserCtxMenu.open && currentView==='browser'"
              @click.outside="closeTabContextMenu()"
              @keydown.escape.window="closeTabContextMenu()"
              class="fixed z-50 bg-[var(--surface-1)] border border-[var(--surface-3)] rounded-md shadow-xl py-1 text-[12px] min-w-[200px]"

@@ -67,7 +67,7 @@ type sessionPreviewInput struct {
 
 // SessionPreviewResponse — the last lines, already stripped of escapes.
 //
-// Plain text and not raw bytes, unlike `/terminal/log-bruto`: that one feeds a
+// Plain text and not raw bytes, unlike `/terminal/raw-log`: that one feeds a
 // terminal emulator and needs the escapes; this one feeds a preview card, where an
 // escape is just garbage on screen.
 type SessionPreviewResponse struct {
@@ -237,7 +237,7 @@ func previewSessionHandler(
 		lines := in.Lines
 		// Clamped on both sides: 0 or negative would return empty and look like a
 		// session with no output; above the cap it becomes a log transfer disguised
-		// as a preview — and `/terminal/log-bruto` exists for that.
+		// as a preview — and `/terminal/raw-log` exists for that.
 		if lines <= 0 {
 			lines = 20
 		}

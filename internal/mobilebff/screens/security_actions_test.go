@@ -500,7 +500,7 @@ func TestSecurityDeviceSetDatasaver_RequiresCaAckAndHealthyProbe(t *testing.T) {
 
 	// ca_ack true but probe fails.
 	deps2 := backend.networkDeps()
-	deps2.ProbeDatasaverHealthy = func(context.Context, string) (string, error) { return "", errors.New("proxy indisponível") }
+	deps2.ProbeDatasaverHealthy = func(context.Context, string) (string, error) { return "", errors.New("proxy unavailable") }
 	handler2 := handleSecurityDeviceSetDatasaver(deps2)
 	body, _ = json.Marshal(securityDeviceSetDatasaverInput{On: true, CaAck: true})
 	_, err = handler2(context.Background(), admin, map[string]string{"id": "uuid-1"}, body)

@@ -78,7 +78,7 @@ in_canon "$A" "case A invariant" \
   && ok "the invariant landed ON THE CANONICAL branch" \
   || no "the invariant did NOT reach the canonical branch (the bug is back)"
 
-echo "$out" | grep -q "commitado no canônico" \
+echo "$out" | grep -q "committed to the canonical" \
   && ok "announces success" || no "did not announce success: $out"
 
 [ -z "$(git -C "$A" status --porcelain)" ] \
@@ -135,10 +135,10 @@ D="$TMP/d"; mk_repo "$D"
 git -C "$D" checkout -q -b feat/alone
 git -C "$D" branch -D "$CANON" >/dev/null 2>&1
 out="$(add_inv "$D" "case D invariant")"
-echo "$out" | grep -q "NÃO registrado no canônico" \
+echo "$out" | grep -q "NOT registered in the canonical" \
   && ok "warns it did not record on the canonical branch" \
   || no "lied or stayed silent when recording was impossible: $out"
-echo "$out" | grep -q "commitado no canônico" \
+echo "$out" | grep -q "committed to the canonical" \
   && no "CRITICAL: announced success without recording (the original bug)" \
   || ok "no false success"
 grep -q "case D invariant" "$D/.claude/coord/invariants.txt" \

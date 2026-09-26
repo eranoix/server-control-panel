@@ -248,14 +248,14 @@ const rec = await page.evaluate(`(async () => {
   await wait(450);
   const end = t.cols;
   prop = { cols: 40, rows: 30 }; safeFit();
-  return { logo, end, grande: t.cols };
+  return { logo, end, large: t.cols };
 })()`);
 rec.logo === 56 && rec.end === 56
   ? ok('recovery: a ±1 column oscillation does not reach xterm')
   : no('recovery: the oscillation got through (immediate=' + rec.logo + ', final=' + rec.end + ')');
-rec.grande === 40
+rec.large === 40
   ? ok('recovery: a change of ≥2 columns goes through at once')
-  : no('recovery: a real change got stuck (cols=' + rec.grande + ')');
+  : no('recovery: a real change got stuck (cols=' + rec.large + ')');
 
 await browser.close();
 srv.close();

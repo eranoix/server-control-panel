@@ -10,7 +10,7 @@ import (
 
 // screensRaw is the canonical list of screen ids: tab-level ids, sub-actions
 // and the `unknown` bucket. The ids are a wire contract with the clients, and
-// some (for example `sistema.ventoinhas` and the `jogos.*` group) are never
+// some (for example `system.fans` and the `games.*` group) are never
 // emitted by this build and report 0 by design.
 //
 // The file must stay byte-identical to the list used by the other deployment,

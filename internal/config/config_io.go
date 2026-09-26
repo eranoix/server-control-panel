@@ -133,7 +133,7 @@ func applyDefaults(c *Config, path string) {
 		c.DatasaverCAPath = "/opt/datasaver/ca/mitmproxy-ca-cert.pem"
 	}
 	if len(c.DatasaverContainers) == 0 {
-		c.DatasaverContainers = []string{"datasaver-vps", "datasaver-casa"}
+		c.DatasaverContainers = []string{"datasaver-vps", "datasaver-home"}
 	}
 	// File-based JWT secret: when JWTSecretFile is set AND JWTSecret is empty,
 	// read the file. Failing silently here (log + JWTSecret stays empty) lets

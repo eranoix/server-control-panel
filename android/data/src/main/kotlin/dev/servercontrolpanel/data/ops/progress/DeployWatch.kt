@@ -93,7 +93,7 @@ class DeployWatchWorker(
         /** Three failures in a row (~9 s) is no longer a network blink. */
         private const val FAILED_READS_BEFORE_GIVING_UP = 3
 
-        private const val WORK_NAME = "acompanha-deploy"
+        private const val WORK_NAME = "deploy-watch"
 
         /**
          * Starts following [jobId]. `REPLACE`, not `APPEND`: two deploys followed at
@@ -123,7 +123,7 @@ class DeployWatchWorker(
     }
 }
 
-private const val CHANNEL = "panel_progresso"
+private const val CHANNEL = "panel_progress"
 private const val END_ID = 0x0DEB
 
 private fun ensureChannel(context: Context) {

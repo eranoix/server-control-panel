@@ -182,7 +182,7 @@ func TestZFSListDegradedPoolIsNotOnline(t *testing.T) {
 		t.Fatalf("pools = %+v, want health DEGRADED preserved literally", ps)
 	}
 	if ps[0].Healthy() {
-		t.Error("Saudavel() = true for DEGRADED — only ONLINE counts as healthy")
+		t.Error("Healthy() = true for DEGRADED — only ONLINE counts as healthy")
 	}
 }
 

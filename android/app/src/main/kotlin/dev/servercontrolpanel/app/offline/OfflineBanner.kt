@@ -71,7 +71,7 @@ internal fun bannerText(lastMs: Long?, nowMs: Long): String {
     val whenText = when {
         minutes < 1 -> "just now"
         minutes < 60 -> "$minutes min ago"
-        minutes < 60 * 24 -> String.format(Locale.forLanguageTag("pt-BR"), "%d h ago", minutes / 60)
+        minutes < 60 * 24 -> String.format(Locale.US, "%d h ago", minutes / 60)
         else -> "over a day ago"
     }
     return "Offline — last server response $whenText"

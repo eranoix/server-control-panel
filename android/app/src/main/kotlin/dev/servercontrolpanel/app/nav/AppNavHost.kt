@@ -86,13 +86,13 @@ private fun terminalSessionRoute(name: String) = "terminal/$name"
 private const val VIDEOCALL_ROOM_ID_ARG = "roomId"
 
 /** Nested detail route below the call lobby: one active call per room. */
-private fun videocallRoomRoute(roomId: String) = "chamada/$roomId"
+private fun videocallRoomRoute(roomId: String) = "call/$roomId"
 
 /** Nav argument name carrying the tapped file's server path, URL-encoded (paths contain `/`). */
 private const val FILE_EDITOR_PATH_ARG = "path"
 
 /** Nested detail route below the file browser: one file editor per opened path. */
-private fun fileEditorRoute(path: String) = "arquivos/edit/${URLEncoder.encode(path, "UTF-8")}"
+private fun fileEditorRoute(path: String) = "files/edit/${URLEncoder.encode(path, "UTF-8")}"
 
 /** Nav argument name carrying the opaque SDUI section id; see [AdminScreen]. */
 private const val ADMIN_SECTION_ID_ARG = "sectionId"
@@ -113,8 +113,8 @@ private const val DEBUG_SDUI_PREVIEW_ROUTE = "debug/sdui-preview"
  * Detail route for the diagnostic report. The update banner sends the user here when an
  * install fails, because the `PackageInstaller` message does not fit in a banner.
  */
-internal const val DIAGNOSTICS_ROUTE = "diagnostico"
-internal const val ROUTE_STORAGE = "armazenamento"
+internal const val DIAGNOSTICS_ROUTE = "diagnostics"
+internal const val ROUTE_STORAGE = "storage"
 
 /**
  * A tapped notification's deep link, resolved to a concrete [AppNavHost] route.
@@ -440,11 +440,11 @@ fun AppNavHost(
                         )
                     }
                     composable(
-                        route = "chamada/{$VIDEOCALL_ROOM_ID_ARG}",
+                        route = "call/{$VIDEOCALL_ROOM_ID_ARG}",
                         arguments = listOf(navArgument(VIDEOCALL_ROOM_ID_ARG) { type = NavType.StringType }),
                     ) { entry ->
                         val roomId = checkNotNull(entry.arguments?.getString(VIDEOCALL_ROOM_ID_ARG)) {
-                            "chamada/{$VIDEOCALL_ROOM_ID_ARG} route requires a '$VIDEOCALL_ROOM_ID_ARG' argument"
+                            "call/{$VIDEOCALL_ROOM_ID_ARG} route requires a '$VIDEOCALL_ROOM_ID_ARG' argument"
                         }
                         CallScreen(roomId = roomId, onLeaveCall = { navController.popBackStack() })
                     }
@@ -456,11 +456,11 @@ fun AppNavHost(
                         )
                     }
                     composable(
-                        route = "arquivos/edit/{$FILE_EDITOR_PATH_ARG}",
+                        route = "files/edit/{$FILE_EDITOR_PATH_ARG}",
                         arguments = listOf(navArgument(FILE_EDITOR_PATH_ARG) { type = NavType.StringType }),
                     ) { entry ->
                         val encodedPath = checkNotNull(entry.arguments?.getString(FILE_EDITOR_PATH_ARG)) {
-                            "arquivos/edit route requires a '$FILE_EDITOR_PATH_ARG' argument"
+                            "files/edit route requires a '$FILE_EDITOR_PATH_ARG' argument"
                         }
                         FileEditorScreen(
                             path = URLDecoder.decode(encodedPath, "UTF-8"),
@@ -595,4 +595,4 @@ private fun ConnectTerminalBridge(navController: NavHostController) {
 }
 
 /** Route of the device security screen. */
-internal const val ROUTE_SECURITY = "seguranca"
+internal const val ROUTE_SECURITY = "security"

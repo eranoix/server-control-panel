@@ -98,10 +98,10 @@ func (s *Service) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	existing, err := s.Hub.Join(peer)
 	if err != nil {
-		// Map the Hub's errors to user-facing PT-BR messages. It also keeps the
+		// Map the Hub's errors to user-facing messages. It also keeps the
 		// specific type ("error-full", "error-conflict") so the UI can act
 		// distinctly (e.g. offer to close the other tab).
-		errMsg, errType := mapJoinErrorPT(err)
+		errMsg, errType := mapJoinError(err)
 		_ = writeJSON(conn, SignalingMsg{Type: errType, Error: errMsg})
 		return
 	}
@@ -155,9 +155,9 @@ func pushTo(p *Peer, msg SignalingMsg) error {
 	}
 }
 
-// mapJoinErrorPT maps Hub errors to user-facing PT-BR messages. It returns
+// mapJoinError maps Hub errors to user-facing messages. It returns
 // (message, type). The specific type lets the UI act distinctly.
-func mapJoinErrorPT(err error) (string, string) {
+func mapJoinError(err error) (string, string) {
 	switch {
 	case errors.Is(err, ErrRoomFull):
 		return "Room is full — the 4-person limit was reached.", "error-full"
@@ -250,7 +250,7 @@ func (s *Service) HandleGuestWS(w http.ResponseWriter, r *http.Request) {
 	}
 	existing, err := s.Hub.Join(peer)
 	if err != nil {
-		errMsg, errType := mapJoinErrorPT(err)
+		errMsg, errType := mapJoinError(err)
 		_ = writeJSON(conn, SignalingMsg{Type: errType, Error: errMsg})
 		return
 	}

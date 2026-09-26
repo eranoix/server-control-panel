@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,7 +11,7 @@
      overlapping on /recovery.
      `hidden` is an HTML attribute, and the browser implements it with a
      USER-AGENT rule (`[hidden] { display: none }`). Any AUTHOR rule that
-     sets `display` beats that origin — so `.aviso { display: flex }` and
+     sets `display` beats that origin — so `.warning { display: flex }` and
      `.action-bar { display: flex }` made `el.hidden = true` NOT hide
      anything: the Claude notice and the host bar stayed on screen next to the
      terminal, splitting the height, and neither screen was usable.
@@ -81,27 +81,27 @@
   .tabs button.on { background: #0a0e1a; border-color: #1f2937; color: #e5e7eb; }
   .tabs .hint { margin-left: auto; font-size: .68rem; color: #6b7280; padding-bottom: .35rem; }
   .panel { flex: 1; padding: .5rem; overflow: hidden; }
-  .aviso { flex: 1; display: flex; flex-direction: column; align-items: center;
+  .warning { flex: 1; display: flex; flex-direction: column; align-items: center;
            justify-content: center; gap: .9rem; text-align: center; padding: 2rem; }
-  .aviso h3 { margin: 0; font-size: 1rem; }
-  .aviso p { margin: 0; max-width: 42rem; font-size: .82rem; color: #9ca3af; line-height: 1.6; }
-  .aviso button {
+  .warning h3 { margin: 0; font-size: 1rem; }
+  .warning p { margin: 0; max-width: 42rem; font-size: .82rem; color: #9ca3af; line-height: 1.6; }
+  .warning button {
     background: #1f2937; border: 1px solid #374151; color: #e5e7eb;
     padding: .45rem .9rem; border-radius: 6px; cursor: pointer; font: inherit; font-size: .8rem;
   }
-  .aviso code { background: #111827; border: 1px solid #1f2937; border-radius: 4px;
+  .warning code { background: #111827; border: 1px solid #1f2937; border-radius: 4px;
                 padding: .1rem .35rem; font-size: .78rem; }
   /* Notices about the SESSION live here, not inside the terminal —
      writing them into xterm dirtied the scrollback of the conversation with Claude. */
   #banner { padding: .45rem 1rem; font-size: .76rem; border-bottom: 1px solid #1f2937; }
-  #banner[data-tom="erro"]  { background: #7f1d1d33; color: #fca5a5; }
-  #banner[data-tom="aviso"] { background: #78350f33; color: #fcd34d; }
+  #banner[data-tom="error"]  { background: #7f1d1d33; color: #fca5a5; }
+  #banner[data-tom="warning"] { background: #78350f33; color: #fcd34d; }
   #banner[data-tom="ok"]    { background: #14532d33; color: #86efac; }
   /* How much session is left, ALWAYS visible. Finding out the limit by being
      disconnected halfway through a rollback is the worst way to find out. */
   .clock { font-size: .68rem; color: #6b7280; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .clock[data-tom="aviso"] { color: #fcd34d; }
-  .clock[data-tom="erro"]  { color: #fca5a5; }
+  .clock[data-tom="warning"] { color: #fcd34d; }
+  .clock[data-tom="error"]  { color: #fca5a5; }
   /* The output of the quick actions gets its OWN panel. Writing it inside
      xterm interrupted the drawing of a command in flight (a repaint mid-way
      = corrupted screen) and wiped the evidence on the first `clear`. Here it
@@ -122,7 +122,7 @@
      The whole page died in that case, because `new Terminal()` threw at the top
      of the module, taking tabs, quick actions and the sign-out button with it. */
   .simple { height: 100%; display: flex; flex-direction: column; gap: .4rem; }
-  .simple-aviso { background: #78350f33; color: #fcd34d; border: 1px solid #78350f;
+  .simple-warning { background: #78350f33; color: #fcd34d; border: 1px solid #78350f;
                    border-radius: 6px; padding: .45rem .7rem; font-size: .74rem; line-height: 1.5; }
   .simple-output { flex: 1; margin: 0; overflow: auto; background: #0a0e1a; border: 1px solid #1f2937;
                    border-radius: 6px; padding: .5rem .7rem; font-size: .8rem; line-height: 1.45;
@@ -185,7 +185,7 @@
 <!-- Shown when the Claude container is not up. In an emergency,
      "it will not connect" without saying why is the worst possible outcome — so
      the tab says what happened and offers the action that fixes it. -->
-<div id="claude-off" class="aviso" hidden>
+<div id="claude-off" class="warning" hidden>
   <h3>The recovery Claude is not running</h3>
   <p id="claude-off-txt">
     It runs in its own container (<code>panel-recovery-claude</code>), alongside
@@ -260,7 +260,7 @@ function degraded(e) {
   alreadyDegraded = true;
   notifySession('The terminal emulator (/vendor/xterm) did not load — the page fell back to simple mode: '
     + 'the connection and the quick actions still work, without colours and with line-by-line input. '
-    + 'Detail: ' + ((e && e.message) || e || 'unknown'), 'aviso');
+    + 'Detail: ' + ((e && e.message) || e || 'unknown'), 'warning');
 }
 
 function hasXterm() {
@@ -283,7 +283,7 @@ function createSimpleEngine() {
   const box = document.createElement('div');
   box.className = 'simple';
   const warning = document.createElement('div');
-  warning.className = 'simple-aviso';
+  warning.className = 'simple-warning';
   warning.textContent = 'Simple mode: the terminal emulator (xterm) did not load. '
     + 'The connection, the commands and the quick actions still work — the output comes without colours '
     + 'and input is line by line (Enter sends; Ctrl+C, Ctrl+D and Ctrl+Z work). '
@@ -500,17 +500,17 @@ function conn(state, text) {
   // tabs left the pill frozen on the OTHER tab's state until the next event —
   // in an emergency, reading "connected" from a terminal that went down is worse
   // than reading nothing. With the state stored, showTab() can repaint at once.
-  st.estado = state; st.text = text;
+  st.state = state; st.text = text;
   if (!elConn) return;
-  if (cfg.ativo && !cfg.ativo()) return;
+  if (cfg.active && !cfg.active()) return;
   paint();
 }
 function paint() {
-  if (!elConn || !st.estado) return;
+  if (!elConn || !st.state) return;
   // The pending typing queue goes into the pill: without this, what was typed
   // during the outage stayed invisible and looked lost.
   const queue = st.outbox.length ? ' · ' + st.outboxBytes + ' queued' : '';
-  elConn.dataset.e = st.estado;
+  elConn.dataset.e = st.state;
   elConn.textContent = (cfg.label ? cfg.label + ': ' : '') + st.text + queue;
 }
 
@@ -558,7 +558,7 @@ function looksLikePassword() {
     if (!line) return true;
     const txt = line.translateToString(true);
     if (!/[:?]$/.test(txt)) return false;
-    return /(senha|password|passwd|passphrase|palavra[- ]passe|\bpin\b|token|secret|segredo)/i.test(txt);
+    return /(password|passwd|passphrase|\bpin\b|token|secret)/i.test(txt);
   } catch (_) { return true; }
 }
 function canPredict(d) {
@@ -629,7 +629,7 @@ function send(d) {
   if (d == null || d === '') return;
   if (ws && ws.readyState === 1) {
     // Raw binary frame: the server writes every binary frame straight into the PTY.
-    try { ws.send(enc.encode(d)); } catch (_) { enfileira(d); return; }
+    try { ws.send(enc.encode(d)); } catch (_) { enqueue(d); return; }
     if (/^[\x20-\x7e\u00a0-\uffff]+$/.test(d)) {
       if (!st.sentAt) st.sentAt = Date.now();
       if (!st.echoTimer) {
@@ -643,12 +643,12 @@ function send(d) {
     predict(d);
     return;
   }
-  enfileira(d);
+  enqueue(d);
 }
-function enfileira(d) {
+function enqueue(d) {
   if (st.outboxBytes + d.length > 128 * 1024) return;  // ceiling: does not grow forever
   st.outbox.push(d); st.outboxBytes += d.length;
-  if (!cfg.ativo || cfg.ativo()) paint();
+  if (!cfg.active || cfg.active()) paint();
   echoOffline(d);
 }
 
@@ -660,7 +660,7 @@ function open() {
   if (cfg.canOpen && !cfg.canOpen()) return;
   if (st.timerRecon) { clearTimeout(st.timerRecon); st.timerRecon = 0; }
   conn('wait', st.attempts ? 'reconnecting…' : 'connecting…');
-  const s = new WebSocket(wsProto + '//' + location.host + cfg.caminho);
+  const s = new WebSocket(wsProto + '//' + location.host + cfg.path);
   s.binaryType = 'arraybuffer';
   ws = s;
 
@@ -817,9 +817,9 @@ return {
   term, fit: fitAddon, st, open, send, assertSize, reconcileSize,
   adjust() { safeFit(); },
   focus() { try { term.focus(); } catch (_) {} },
-  ligado() { return !!(ws && ws.readyState === 1); },
+  on() { return !!(ws && ws.readyState === 1); },
   // Repaints the pill with the stored state — used when switching tabs.
-  repinta() { paint(); },
+  repaint() { paint(); },
   // Reconnect NOW, without waiting for the backoff: when the operator knows the
   // network is back, spending 5 s staring at "no connection" is wasted time at the worst moment.
   alreadyGoing() { st.attempts = 0; if (st.timerRecon) { clearTimeout(st.timerRecon); st.timerRecon = 0; } open(); },
@@ -844,20 +844,20 @@ return {
 // ── the two tabs ────────────────────────────────────────────────────────────
 const pill = document.getElementById('conn');
 const host = createTerminal({
-  caminho: '/recovery/ws/pty',
+  path: '/recovery/ws/pty',
   element: document.getElementById('term'),
   pill, label: 'host',
-  ativo: () => currentTab === 'host',
+  active: () => currentTab === 'host',
 });
 // The Claude one is born without connecting: first we ask whether the container is
 // up (canOpen), otherwise the WebSocket would die on upgrade explaining nothing.
 let claudeUnlocked = false;
 const claude = createTerminal({
-  caminho: '/recovery/ws/claude',
+  path: '/recovery/ws/claude',
   element: document.getElementById('term-claude'),
   pill, label: 'claude',
   canOpen: () => claudeUnlocked,
-  ativo: () => currentTab === 'claude',
+  active: () => currentTab === 'claude',
 });
 
 let currentTab = 'host';
@@ -873,7 +873,7 @@ function showTab(which) {
   document.querySelector('.action-bar').hidden = which !== 'host';
   // The pill is shared: without repainting here, it would keep showing the
   // state of the tab that has just left the stage.
-  (which === 'host' ? host : claude).repinta();
+  (which === 'host' ? host : claude).repaint();
   if (which === 'host') {
     host.adjust(); host.focus();
     document.getElementById('tab-hint').textContent = '';
@@ -911,30 +911,30 @@ async function checkClaude() {
     const r = await fetch('/recovery/claude/status', { cache: 'no-store' });
     d = await r.json().catch(() => ({}));
   } catch (_) { d = {}; }
-  claudeUnlocked = !!d.rodando;
+  claudeUnlocked = !!d.running;
   if (currentTab !== 'claude') return;
   document.getElementById('term-claude').hidden = !claudeUnlocked;
   document.getElementById('claude-off').hidden = claudeUnlocked;
   if (!claudeUnlocked) {
-    hint.textContent = d.existe ? 'container stopped' : 'container does not exist yet';
-    document.getElementById('claude-off-txt').textContent = d.existe
+    hint.textContent = d.exists ? 'container stopped' : 'container does not exist yet';
+    document.getElementById('claude-off-txt').textContent = d.exists
       ? 'The panel-recovery-claude container exists but is not running. It is independent of server-control-panel and of claude-router — which is why it keeps serving even when they are down.'
       : 'The panel-recovery-claude container has not been created on this server yet. It runs alongside server-control-panel, with no claude-router in the path and with its own login.';
     return;
   }
-  hint.textContent = (d.versao ? d.versao + ' · ' : '')
-    + (d.autenticado ? 'no router, its own login' : 'NOT authenticated yet: run `claude` once here');
+  hint.textContent = (d.version ? d.version + ' · ' : '')
+    + (d.authenticated ? 'no router, its own login' : 'NOT authenticated yet: run `claude` once here');
   claude.open();
   claude.adjust(); claude.focus();
   // The status is otherwise queried only when the tab opens, so the hint would
   // stay "not authenticated" after a login in this tab. Re-query every 15s until
   // authenticated, then stop (the state only changes once).
-  if (!d.autenticado && !recheck) {
+  if (!d.authenticated && !recheck) {
     recheck = setInterval(() => {
       if (currentTab !== 'claude' || document.hidden) return;
       checkClaude();
     }, 15000);
-  } else if (d.autenticado && recheck) {
+  } else if (d.authenticated && recheck) {
     clearInterval(recheck); recheck = 0;
   }
 }
@@ -969,7 +969,7 @@ function notifySession(text, tom) {
   const el = document.getElementById('banner');
   if (!el) return;
   el.textContent = text;
-  el.dataset.tom = tom || 'erro';
+  el.dataset.tom = tom || 'error';
   el.hidden = false;
 }
 
@@ -1018,11 +1018,11 @@ async function renewSession() {
     if (r.ok) {
       const d = await r.json().catch(() => ({}));
       const el = document.getElementById('banner');
-      if (typeof d.restante_seg === 'number') capAt = Date.now() + d.restante_seg * 1000;
+      if (typeof d.remaining_seg === 'number') capAt = Date.now() + d.remaining_seg * 1000;
       // Less than 30 min of cap left: time to warn, there is still time.
-      if (typeof d.restante_seg === 'number' && d.restante_seg < 30 * 60) {
-        notifySession('The recovery session ends in ' + Math.max(1, Math.round(d.restante_seg / 60)) + ' min (the cap since sign-in). Authenticate again when you can.', 'aviso');
-      } else if (el && el.dataset.tom !== 'erro') {
+      if (typeof d.remaining_seg === 'number' && d.remaining_seg < 30 * 60) {
+        notifySession('The recovery session ends in ' + Math.max(1, Math.round(d.remaining_seg / 60)) + ' min (the cap since sign-in). Authenticate again when you can.', 'warning');
+      } else if (el && el.dataset.tom !== 'error') {
         el.hidden = true;
       }
       paintClock();
@@ -1050,7 +1050,7 @@ function paintClock() {
   const seg = Math.max(0, Math.round((capAt - Date.now()) / 1000));
   const mm = Math.floor(seg / 60), ss = seg % 60;
   el.textContent = 'session ' + mm + ':' + String(ss).padStart(2, '0');
-  el.dataset.tom = seg <= 300 ? 'erro' : (seg <= 1800 ? 'aviso' : '');
+  el.dataset.tom = seg <= 300 ? 'error' : (seg <= 1800 ? 'warning' : '');
 }
 setInterval(paintClock, 1000);
 
@@ -1075,8 +1075,8 @@ window.addEventListener('unhandledrejection', (ev) => {
 // ── quick actions console ──────────────────────────────────────────
 const consoleLines = [];
 function logConsole(title, body, tom) {
-  const time = new Date().toLocaleTimeString('pt-BR', { hour12: false });
-  consoleLines.push({ time, title, corpo: String(body == null ? '' : body).replace(/\s+$/, ''), tom });
+  const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+  consoleLines.push({ time, title, body: String(body == null ? '' : body).replace(/\s+$/, ''), tom });
   if (consoleLines.length > 200) consoleLines.shift();
   const pre = document.getElementById('console-txt');
   const cx = document.getElementById('console');
@@ -1091,9 +1091,9 @@ function logConsole(title, body, tom) {
     t.textContent = l.title;
     cab.append(h, t);
     pre.appendChild(cab);
-    if (l.corpo) {
+    if (l.body) {
       const c = document.createElement('div');
-      c.textContent = l.corpo;
+      c.textContent = l.body;
       pre.appendChild(c);
     }
   }
@@ -1103,7 +1103,7 @@ function logConsole(title, body, tom) {
   pre.scrollTop = pre.scrollHeight;
 }
 function consoleText() {
-  return consoleLines.map((l) => '[' + l.time + '] ' + l.title + (l.corpo ? '\n' + l.corpo : '')).join('\n');
+  return consoleLines.map((l) => '[' + l.time + '] ' + l.title + (l.body ? '\n' + l.body : '')).join('\n');
 }
 function copyConsole() {
   const t = consoleText();

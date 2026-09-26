@@ -26,7 +26,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 
 /** Test tag of the connection screen. */
-internal const val TAG_CONNECTION = "jira-conexao"
+internal const val TAG_CONNECTION = "jira-connection"
 
 /**
  * Jira account connection form. Not an error screen: the server returns `connected:false` with

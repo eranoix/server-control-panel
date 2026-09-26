@@ -119,5 +119,5 @@ func unauthorized(w http.ResponseWriter, _ string) {
 	w.Header().Set("WWW-Authenticate", `Bearer realm="node-agent"`)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	_, _ = w.Write([]byte(`{"erro":"unauthorized"}`))
+	_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
 }

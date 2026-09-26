@@ -159,8 +159,8 @@ class TerminalSocketClientTest {
         client.connect()
         runCurrent()
         assertFalse("the first connection never carries attach=1", factory.openedUrls[0].contains("attach=1"))
-        // Without `quadro=1` the phone would cap the session size and shrink the desktop.
-        assertTrue("every connection requests quadro", factory.openedUrls[0].contains("quadro=1"))
+        // Without `frame=1` the phone would cap the session size and shrink the desktop.
+        assertTrue("every connection requests frame", factory.openedUrls[0].contains("frame=1"))
 
         factory.listeners[0].onOpen()
         assertEquals(ConnectionState.Live, client.state.value)
@@ -169,7 +169,7 @@ class TerminalSocketClientTest {
     @Test
     fun `unexpected drop while Live reconnects with attach=1 and a fresh ticket, then recovers to Live`() = runTest {
         val factory = FakeWebSocketFactory()
-        val ticketSource = FakeTicketSource(mutableListOf("primeiro-ticket", "segundo-ticket"))
+        val ticketSource = FakeTicketSource(mutableListOf("first-ticket", "second-ticket"))
         val delays = mutableListOf<Long>()
         val client = TerminalSocketClient(
             name = "main",
@@ -193,9 +193,9 @@ class TerminalSocketClientTest {
         assertEquals(2, factory.openedUrls.size)
         assertFalse("the first attempt does not carry attach=1", factory.openedUrls[0].contains("attach=1"))
         assertTrue("every reconnect carries attach=1", factory.openedUrls[1].contains("attach=1"))
-        assertTrue(factory.openedUrls[0].contains("ticket=primeiro-ticket"))
-        assertTrue(factory.openedUrls[1].contains("ticket=segundo-ticket"))
-        assertFalse("a reconnect never reuses the previous ticket", factory.openedUrls[1].contains("ticket=primeiro-ticket"))
+        assertTrue(factory.openedUrls[0].contains("ticket=first-ticket"))
+        assertTrue(factory.openedUrls[1].contains("ticket=second-ticket"))
+        assertFalse("a reconnect never reuses the previous ticket", factory.openedUrls[1].contains("ticket=first-ticket"))
         assertEquals(ConnectionState.Reconnecting(1), client.state.value)
         assertEquals(listOf(500L), delays)
 

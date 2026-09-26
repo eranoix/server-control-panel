@@ -68,7 +68,7 @@ class TerminalAttachmentViewModel(application: Application) : AndroidViewModel(a
     fun attach(items: List<LocalAttachment>, now: Instant = Instant.now()) {
         items.forEach { item ->
             val destinationName = destinationNameFor(item.displayName, now)
-            val workName = "anexo:$destinationName"
+            val workName = "attachment:$destinationName"
             val request = OneTimeWorkRequestBuilder<AttachmentUploadWorker>()
                 .setConstraints(requiresNetwork)
                 .setInputData(

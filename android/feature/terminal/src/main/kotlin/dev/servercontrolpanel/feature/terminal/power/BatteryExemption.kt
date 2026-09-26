@@ -12,10 +12,10 @@ import androidx.core.content.getSystemService
 const val BATTERY_EXEMPTION_LABEL = "Keep the session when switching apps"
 
 /** Test tag for the sheet item. */
-const val BATTERY_EXEMPTION_TAG = "botao-isencao-bateria"
+const val BATTERY_EXEMPTION_TAG = "battery-exemption-button"
 
 /** Test tag for the dialog that explains before the system asks. */
-const val BATTERY_EXEMPTION_DIALOG_TAG = "dialogo-isencao-bateria"
+const val BATTERY_EXEMPTION_DIALOG_TAG = "battery-exemption-dialog"
 
 /**
  * The text shown BEFORE the system prompt. Honest about its reach: measured on an

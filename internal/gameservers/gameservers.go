@@ -502,7 +502,7 @@ type NodeTarget struct {
 // equal to inventory's, so the duplication does not turn into silent
 // divergence.
 const (
-	TransportAgent  = "agente"
+	TransportAgent  = "agent"
 	TransportPVEAPI = "pve-api"
 	TransportSSH    = "ssh"
 )

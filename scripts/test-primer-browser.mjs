@@ -70,7 +70,7 @@ function findBrowser() {
 // 127.0.0.1 on an ephemeral port and dies at the end of the test.
 const PASSWORD = 'primer-test-164';
 const HASH = '$2b$10$NNDNlUzV7QQA/nXilNQ8P.F7xwyH4sYn9BsMBkz9epA./5aF1nQpu';
-const SESSION = 'prova-primer';
+const SESSION = 'probe-primer';
 
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
@@ -157,12 +157,12 @@ try {
     console.error('FAILED: no chromium found. This pin RENDERS — skipping would be faking coverage.');
     process.exit(1);
   }
-  const navegador = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
+  const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
 
   // Enter the panel, sign in, and open the session in a pane. Returns the context
   // for the caller to close — closing the context is the "leaving one PC".
   async function openPanel(label) {
-    const ctx = await navegador.newContext({ viewport: { width: 1280, height: 800 } });
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const pag = await ctx.newPage();
     const routes = [];
     pag.on('request', r => { const u = r.url(); if (u.includes('/api/terminal/')) routes.push(u.replace(base, '')); });
@@ -202,13 +202,13 @@ try {
       return !!(p && p.ws && p.ws.readyState === 1 && p.term);
     }, { timeout: 30000 }).then(() => true).catch(() => false);
 
-    return { ctx, pag, routes, erros: errors, opened, label };
+    return { ctx, pag, routes, errors: errors, opened, label };
   }
 
   // ── 1) first computer: produce history ─────────────────────────────────
   const pc1 = await openPanel('PC 1');
   if (!pc1.opened) {
-    console.error('FAILED: the terminal did not connect on the first visit. Errors: ' + pc1.erros.join(' | '));
+    console.error('FAILED: the terminal did not connect on the first visit. Errors: ' + pc1.errors.join(' | '));
     console.error(serverLog.join('').slice(-2000));
     process.exit(1);
   }
@@ -217,7 +217,7 @@ try {
   await wait(1500);
   await pc1.pag.evaluate(() => {
     const p = document.body._x_dataStack[0].terms.panes[0];
-    p.ws.send(JSON.stringify({ type: 'input', data: 'for i in $(seq 1 120); do echo PROVA_$i; done\r' }));
+    p.ws.send(JSON.stringify({ type: 'input', data: 'for i in $(seq 1 120); do echo PROBE_$i; done\r' }));
   });
   await wait(4000);
 
@@ -228,7 +228,7 @@ try {
     for (let i = 0; i < b.length; i++) { const l = b.getLine(i); if (l) t += l.translateToString(true) + '\n'; }
     return t;
   });
-  (sawOnPc1.includes('PROVA_120'))
+  (sawOnPc1.includes('PROBE_120'))
     ? ok('PC 1 sees the output it has just produced')
     : no('PC 1 cannot see its own output — the test never got as far as producing history');
 
@@ -238,7 +238,7 @@ try {
   // ── 2) second computer: a new context, no cookie, no localStorage ──────
   const pc2 = await openPanel('PC 2');
   if (!pc2.opened) {
-    console.error('FAILED: the terminal did not connect on the second visit. Errors: ' + pc2.erros.join(' | '));
+    console.error('FAILED: the terminal did not connect on the second visit. Errors: ' + pc2.errors.join(' | '));
     process.exit(1);
   }
   await wait(2500);
@@ -251,9 +251,9 @@ try {
     return t;
   });
 
-  // THE ASSERTION THAT DID NOT EXIST. `PROVA_1` scrolled off a long time ago: it
+  // THE ASSERTION THAT DID NOT EXIST. `PROBE_1` scrolled off a long time ago: it
   // can only be here if the primer brought the history back.
-  const oldOnes = ['PROVA_1', 'PROVA_5', 'PROVA_20'].filter(m => {
+  const oldOnes = ['PROBE_1', 'PROBE_5', 'PROBE_20'].filter(m => {
     const re = new RegExp(m + '(?![0-9])');
     return re.test(sawOnPc2);
   });
@@ -261,18 +261,18 @@ try {
     ? ok('PC 2 sees the lines that HAD ALREADY SCROLLED OFF — the history crossed the change of computer')
     : no(`PC 2 only found ${oldOnes.length}/3 of the old lines (${oldOnes.join(',') || 'none'}) — the primer did not bring the history`);
 
-  (sawOnPc2.includes('PROVA_120'))
+  (sawOnPc2.includes('PROBE_120'))
     ? ok('PC 2 also sees the CURRENT screen (the attach repaint still does its part)')
     : no('PC 2 cannot see the current screen — the attach repaint stopped working');
 
-  const askedHistory = pc2.routes.some(u => u.startsWith('/api/terminal/historico'));
+  const askedHistory = pc2.routes.some(u => u.startsWith('/api/terminal/history'));
   askedHistory
-    ? ok('the primer asked for /api/terminal/historico (and not the raw log)')
+    ? ok('the primer asked for /api/terminal/history (and not the raw log)')
     : no('the primer did not ask for the rendered history; routes seen: ' + pc2.routes.join(', '));
 
-  (pc2.erros.length === 0)
+  (pc2.errors.length === 0)
     ? ok('no page error along the way')
-    : no('page errors: ' + pc2.erros.join(' | '));
+    : no('page errors: ' + pc2.errors.join(' | '));
 
   // ── 3) a SMALL window can no longer shrink the big one ─────────────────
   //
@@ -282,7 +282,7 @@ try {
   // receives a rendered crop.
   const colsOfLarge = await pc2.pag.evaluate(() => document.body._x_dataStack[0].terms.panes[0].term.cols);
 
-  const smallCtx = await navegador.newContext({ viewport: { width: 520, height: 420 } });
+  const smallCtx = await browser.newContext({ viewport: { width: 520, height: 420 } });
   const smallPage = await smallCtx.newPage();
   await smallPage.goto(base + '/', { waitUntil: 'domcontentloaded' });
   await smallPage.waitForSelector('#login-user', { timeout: 20000 });
@@ -340,7 +340,7 @@ try {
 
   await smallCtx.close();
   await pc2.ctx.close();
-  await navegador.close();
+  await browser.close();
 } catch (e) {
   console.error('FAILED (exception): ' + (e && e.stack || e));
   fail++;

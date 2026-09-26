@@ -8,9 +8,9 @@ import (
 
 func TestClaudeProjectDirSlug(t *testing.T) {
 	cases := map[string]string{
-		"/root":                                "-root",
+		"/root":                                 "-root",
 		"/opt/panel/.claude/worktrees/panel-47": "-opt-panel--claude-worktrees-panel-47",
-		"/root/projetos/acme-booking":          "-root-projetos-acme-booking",
+		"/root/projects/acme-booking":           "-root-projects-acme-booking",
 	}
 	for in, want := range cases {
 		if got := claudeProjectDirSlug(in); got != want {

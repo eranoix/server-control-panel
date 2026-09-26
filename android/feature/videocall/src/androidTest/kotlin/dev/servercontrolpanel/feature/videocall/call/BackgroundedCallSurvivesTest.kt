@@ -39,7 +39,7 @@ import org.webrtc.PeerConnection
 import org.webrtc.VideoTrack
 
 private val testJson = Json { ignoreUnknownKeys = true }
-private const val ROOM_ID = "sala-bg"
+private const val ROOM_ID = "room-bg"
 
 /** Fake signaling with no socket; duplicated because androidTest cannot see the `test` source set. */
 private class FakeSignaling : VideocallSignaling {

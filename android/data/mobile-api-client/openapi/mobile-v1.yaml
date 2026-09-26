@@ -31,13 +31,13 @@ components:
       additionalProperties: false
       properties:
         sha256:
-          description: SHA-256 (hex minúsculo) do próprio arquivo .hdiff
+          description: SHA-256 (lowercase hex) of the .hdiff file itself
           type: string
         size_bytes:
           format: int64
           type: integer
         url:
-          description: Caminho absoluto da rota de bytes (aceita Range, download retomável)
+          description: Absolute path of the bytes route (accepts Range, resumable download)
           type: string
       required:
         - url
@@ -48,10 +48,10 @@ components:
       additionalProperties: false
       properties:
         sha256:
-          description: SHA-256 (hex minúsculo) do APK assinado desta versão
+          description: SHA-256 (lowercase hex) of this version's signed APK
           type: string
         size_bytes:
-          description: Tamanho do APK assinado reconstruído, não do artefato baixado
+          description: Size of the reconstructed signed APK, not of the downloaded artifact
           format: int64
           type: integer
         version_code:
@@ -76,17 +76,17 @@ components:
           type: string
         full:
           $ref: "#/components/schemas/AppUpdateArtifact"
-          description: Reconstrução completa (hpatchz com base vazia); sempre disponível
+          description: Full reconstruction (hpatchz with an empty base); always available
         latest:
           $ref: "#/components/schemas/AppUpdateRelease"
         patch:
           $ref: "#/components/schemas/AppUpdateArtifact"
-          description: Patch incremental a partir de base_sha256; AUSENTE quando não há patch para essa base exata
+          description: Incremental patch from base_sha256; ABSENT when there is no patch for that exact base
         patch_tool:
-          description: Ferramenta e opções que geraram os artefatos, para diagnóstico de incompatibilidade
+          description: Tool and options that produced the artifacts, for diagnosing incompatibilities
           type: string
         up_to_date:
-          description: true quando base_sha256 já é o APK da versão mais nova
+          description: true when base_sha256 is already the newest version's APK
           type: boolean
       required:
         - latest
@@ -104,10 +104,10 @@ components:
           readOnly: true
           type: string
         name:
-          description: Nome da sessão
+          description: Session name
           type: string
         target:
-          description: Usuário dono, ou '*' para todos
+          description: Owner user, or '*' for everyone
           type: string
       required:
         - name
@@ -123,7 +123,7 @@ components:
           readOnly: true
           type: string
         targets:
-          description: Nomes de usuário, mais "*" para todos
+          description: User names, plus "*" for everyone
           items:
             type: string
           nullable: true
@@ -240,7 +240,7 @@ components:
           readOnly: true
           type: string
         name:
-          description: Sessão a salvar; vazio = todas num pacote
+          description: Session to save; empty = all of them in one bundle
           type: string
       type: object
     CreateBackupResponse:
@@ -469,10 +469,10 @@ components:
         content:
           type: string
         language:
-          description: Hint de linguagem derivado da extensão, para syntax highlighting
+          description: Language hint derived from the extension, for syntax highlighting
           type: string
         mtime:
-          description: mtime do arquivo em disco (unix) — devolver em write.expected_mtime para detectar conflito
+          description: File mtime on disk (unix); send it back in write.expected_mtime to detect conflicts
           format: int64
           type: integer
         size:
@@ -496,7 +496,7 @@ components:
         content:
           type: string
         expected_mtime:
-          description: mtime lido antes da edição; 0 ou omitido = sem leitura prévia, grava incondicionalmente
+          description: mtime read before editing; 0 or omitted = no previous read, writes unconditionally
           format: int64
           type: integer
         path:
@@ -515,7 +515,7 @@ components:
           readOnly: true
           type: string
         mtime:
-          description: Novo mtime do arquivo após a escrita
+          description: New file mtime after the write
           format: int64
           type: integer
         ok:
@@ -541,24 +541,24 @@ components:
       required:
         - rules
       type: object
-    HistoricoResponse:
+    HistoryResponse:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: /api/mobile/v1/schemas/HistoricoResponse.json
+          example: /api/mobile/v1/schemas/HistoryResponse.json
           format: uri
           readOnly: true
           type: string
         base64:
-          description: Histórico renderizado da sessão, codificado em base64
+          description: Rendered session history, base64-encoded
           type: string
         bytes:
-          description: Quantos bytes de histórico estão nesta resposta
+          description: How many history bytes are in this response
           format: int64
           type: integer
         total:
-          description: Tamanho total do histórico disponível no servidor
+          description: Total size of the history available on the server
           format: int64
           type: integer
       required:
@@ -576,7 +576,7 @@ components:
           readOnly: true
           type: string
         path:
-          description: Diretório onde um arquivo compartilhado por outro app pousa por padrão
+          description: Directory where a file shared from another app lands by default
           type: string
       required:
         - path
@@ -591,7 +591,7 @@ components:
           readOnly: true
           type: string
         account_id:
-          description: accountId do responsável; vazio desatribui
+          description: Assignee accountId; empty unassigns
           type: string
         key:
           type: string
@@ -609,7 +609,7 @@ components:
         avatar_url:
           type: string
         category:
-          description: new | indeterminate | done — o identificador ESTÁVEL da categoria
+          description: "new | indeterminate | done: the STABLE category identifier"
           type: string
         due_date:
           type: string
@@ -717,7 +717,7 @@ components:
           readOnly: true
           type: string
         account_id:
-          description: accountId; vazio desatribui
+          description: accountId; empty unassigns
           type: string
         issue_keys:
           items:
@@ -833,10 +833,10 @@ components:
         email:
           type: string
         project:
-          description: Projeto padrão (opcional)
+          description: Default project (optional)
           type: string
         site:
-          description: "Subdomínio ou host (ex.: suaempresa ou suaempresa.atlassian.net)"
+          description: Subdomain or host (e.g. yourcompany or yourcompany.atlassian.net)
           type: string
         token:
           description: Token de API do Atlassian
@@ -868,7 +868,7 @@ components:
           nullable: true
           type: array
         parent_key:
-          description: Épico ou issue-mãe
+          description: Epic or parent issue
           type: string
         priority:
           type: string
@@ -1020,7 +1020,7 @@ components:
         column:
           type: string
         name:
-          description: "Nome da transição no Jira (ex.: \"Iniciar revisão\")"
+          description: Transition name in Jira (e.g. "Start review")
           type: string
         status:
           type: string
@@ -1038,10 +1038,10 @@ components:
           readOnly: true
           type: string
         column:
-          description: Rótulo da coluna de destino
+          description: Label of the destination column
           type: string
         key:
-          description: "Chave da issue (ex.: PROJ-42)"
+          description: Issue key (e.g. PROJ-42)
           type: string
       required:
         - key
@@ -1132,7 +1132,7 @@ components:
           readOnly: true
           type: string
         name:
-          description: Nome da sessão a encerrar
+          description: Name of the session to kill
           type: string
       required:
         - name
@@ -1288,15 +1288,15 @@ components:
           readOnly: true
           type: string
         device_label:
-          description: "Rótulo do aparelho, usado na lista de sessões mobile (ex.: 'Pixel 8')."
+          description: Device label, used in the mobile sessions list (e.g. 'Pixel 8').
           type: string
         password:
           type: string
         totp_code:
-          description: Código do segundo fator (Supabase MFA/TOTP ou backup code). Omitir na primeira tentativa.
+          description: Second-factor code (Supabase MFA/TOTP or backup code). Omit on the first attempt.
           type: string
         username:
-          description: Username ou email cadastrado.
+          description: Registered username or email.
           type: string
       required:
         - username
@@ -1319,7 +1319,7 @@ components:
         refresh_token:
           type: string
         totp_required:
-          description: Quando true, nenhum token foi emitido — reenviar com totp_code preenchido.
+          description: "When true, no token was issued: resend with totp_code filled in."
           type: boolean
       type: object
     MobileLogoutOutputBody:
@@ -1365,7 +1365,7 @@ components:
           format: int64
           type: integer
         refresh_token:
-          description: Novo refresh token — o anterior já foi invalidado por esta chamada.
+          description: New refresh token; the previous one was already invalidated by this call.
           type: string
       required:
         - access_token
@@ -1445,7 +1445,7 @@ components:
           readOnly: true
           type: string
         ticket:
-          description: Ticket de pareamento mostrado no QR code do painel desktop/web (POST /api/auth/mobile-pair, one-shot, 5min).
+          description: Pairing ticket shown in the desktop/web panel QR code (POST /api/auth/mobile-pair, one-shot, 5min).
           type: string
       required:
         - ticket
@@ -1460,7 +1460,7 @@ components:
           readOnly: true
           type: string
         reg_token:
-          description: Token de autorização de UMA cerimônia de registro de passkey — enviar a /auth/passkey/register/begin.
+          description: "Authorization token for ONE passkey registration ceremony: send it to /auth/passkey/register/begin."
           type: string
       required:
         - reg_token
@@ -1475,10 +1475,10 @@ components:
           readOnly: true
           type: string
         continuation_token:
-          description: Enviar sem alteração em /login/finish.
+          description: Send unchanged to /login/finish.
           type: string
         options:
-          description: PublicKeyCredentialRequestOptions — repassar ao autenticador.
+          description: "PublicKeyCredentialRequestOptions: pass to the authenticator."
       required:
         - options
         - continuation_token
@@ -1495,7 +1495,7 @@ components:
         continuation_token:
           type: string
         credential:
-          description: Resposta bruta do autenticador (PublicKeyCredential serializado).
+          description: Raw authenticator response (serialized PublicKeyCredential).
       required:
         - continuation_token
         - credential
@@ -1510,20 +1510,20 @@ components:
           readOnly: true
           type: string
         access_token:
-          description: JWT de sessão — presente somente quando a credencial já está aprovada.
+          description: Session JWT, present only when the credential is already approved.
           type: string
         error:
-          description: "Código de erro estável (ex.: 'pending_approval'). Ausente em caso de sucesso."
+          description: Stable error code (e.g. 'pending_approval'). Absent on success.
           type: string
         expires_in:
-          description: Validade do access_token em segundos.
+          description: access_token lifetime in seconds.
           format: int64
           type: integer
         message:
-          description: Mensagem legível para exibir ao usuário. Ausente em caso de sucesso.
+          description: Human-readable message to show the user. Absent on success.
           type: string
         refresh_token:
-          description: Refresh token mobile rotativo — mesma família de auth_login.go, presente junto com access_token.
+          description: Rotating mobile refresh token (same family as auth_login.go), present together with access_token.
           type: string
       type: object
     PasskeyRegisterBeginInputBody:
@@ -1536,7 +1536,7 @@ components:
           readOnly: true
           type: string
         reg_token:
-          description: Token de autorização de UMA cerimônia de registro, emitido pelo pareamento por QR code (03-04).
+          description: Authorization token for ONE registration ceremony, issued by QR code pairing.
           type: string
       required:
         - reg_token
@@ -1551,10 +1551,10 @@ components:
           readOnly: true
           type: string
         continuation_token:
-          description: Enviar sem alteração em /register/finish.
+          description: Send unchanged to /register/finish.
           type: string
         options:
-          description: PublicKeyCredentialCreationOptions — repassar ao autenticador (navigator.credentials.create() / WebAuthn Android).
+          description: "PublicKeyCredentialCreationOptions: pass to the authenticator (navigator.credentials.create() / WebAuthn Android)."
       required:
         - options
         - continuation_token
@@ -1571,9 +1571,9 @@ components:
         continuation_token:
           type: string
         credential:
-          description: Resposta bruta do autenticador (PublicKeyCredential serializado).
+          description: Raw authenticator response (serialized PublicKeyCredential).
         label:
-          description: "Rótulo do dispositivo, mostrado na tela de aprovação (ex.: 'Pixel 8 — Chrome')."
+          description: Device label shown on the approval screen (e.g. 'Pixel 8 - Chrome').
           type: string
       required:
         - continuation_token
@@ -1637,14 +1637,14 @@ components:
           readOnly: true
           type: string
         base64:
-          description: Log cru da sessão, codificado em base64
+          description: Raw session log, base64-encoded
           type: string
         bytes:
-          description: Quantos bytes de log estão nesta resposta
+          description: How many log bytes are in this response
           format: int64
           type: integer
         total:
-          description: Tamanho total do log disponível no servidor
+          description: Total size of the log available on the server
           format: int64
           type: integer
       required:
@@ -1677,12 +1677,12 @@ components:
           readOnly: true
           type: string
         device_id:
-          description: "ID mintado pelo cliente (ex.: ANDROID_ID)"
+          description: ID minted by the client (e.g. ANDROID_ID)
           type: string
         fcm_token:
           type: string
         platform:
-          description: android hoje; aberto a mais no futuro
+          description: android today; open to more in the future
           type: string
       required:
         - device_id
@@ -1731,7 +1731,7 @@ components:
         id:
           type: string
         name:
-          description: Sessão a restaurar; vazio = todas as do backup
+          description: Session to restore; empty = every session in the backup
           type: string
       required:
         - id
@@ -1806,13 +1806,13 @@ components:
       additionalProperties: false
       properties:
         group:
-          description: "Grupo do seletor (ex.: Docker, Sistema, Segurança)"
+          description: Picker group (e.g. Docker, System, Security)
           type: string
         id:
-          description: Id da tela, para GET /screens/{id}
+          description: Screen id, for GET /screens/{id}
           type: string
         label:
-          description: Rótulo em português, legível fora do grupo
+          description: Human-readable label, understandable outside its group
           type: string
       required:
         - id
@@ -2028,7 +2028,7 @@ components:
           readOnly: true
           type: string
         received_bytes:
-          description: Total de bytes já gravados de forma durável nesta sessão
+          description: Total bytes already durably written in this session
           format: int64
           type: integer
       required:
@@ -2097,13 +2097,13 @@ components:
           readOnly: true
           type: string
         dest_dir:
-          description: Diretório de destino (já existente) onde o arquivo será gravado ao completar
+          description: Destination directory (must exist) where the file is written on completion
           type: string
         filename:
-          description: Nome do arquivo final; não pode conter '..' nem separador de caminho
+          description: Final file name; may not contain '..' or a path separator
           type: string
         total_size:
-          description: Tamanho total em bytes do arquivo a enviar
+          description: Total size in bytes of the file to upload
           format: int64
           type: integer
       required:
@@ -2174,7 +2174,7 @@ components:
   securitySchemes:
     bearerAuth:
       bearerFormat: JWT
-      description: "Access token emitido por POST /auth/login (ou renovado por POST /auth/refresh), enviado como `Authorization: Bearer <token>`. Quem valida é auth.Middleware, o mesmo de toda rota autenticada do painel."
+      description: "Access token issued by POST /auth/login (or renewed by POST /auth/refresh), sent as `Authorization: Bearer <token>`. It is validated by auth.Middleware, the same one used by every authenticated panel route."
       scheme: bearer
       type: http
 info:
@@ -2186,12 +2186,12 @@ paths:
     post:
       operationId: runAction
       parameters:
-        - description: "Id da ação registrada em internal/mobilebff/sdui (ex.: scheduler.jobs.run_now)"
+        - description: Id of an action registered in internal/mobilebff/sdui (e.g. scheduler.jobs.run_now)
           in: path
           name: action_id
           required: true
           schema:
-            description: "Id da ação registrada em internal/mobilebff/sdui (ex.: scheduler.jobs.run_now)"
+            description: Id of an action registered in internal/mobilebff/sdui (e.g. scheduler.jobs.run_now)
             type: string
       responses:
         "200":
@@ -2207,7 +2207,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Executa uma ação SDUI registrada, com confirmação destrutiva reforçada pelo servidor
+      summary: Runs a registered SDUI action, with destructive confirmation enforced by the server
       tags:
         - mobile
         - sdui
@@ -2228,7 +2228,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas da tabela alerts.rules — somente admin
+      summary: Rows of the alerts.rules table (admin only)
       tags:
         - mobile
         - sdui
@@ -2237,12 +2237,12 @@ paths:
     get:
       operationId: getAppUpdate
       parameters:
-        - description: SHA-256 (hex) do APK instalado no aparelho; omitir devolve só o caminho completo
+        - description: SHA-256 (hex) of the APK installed on the device; omitting it returns only the full path
           explode: false
           in: query
           name: base_sha256
           schema:
-            description: SHA-256 (hex) do APK instalado no aparelho; omitir devolve só o caminho completo
+            description: SHA-256 (hex) of the APK installed on the device; omitting it returns only the full path
             type: string
       responses:
         "200":
@@ -2277,20 +2277,20 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: "Manifesto de atualização do app: patch incremental para a base informada, ou reconstrução completa"
+      summary: "App update manifest: incremental patch for the given base, or a full reconstruction"
       tags:
         - mobile
   /app/update/artifact:
     get:
       operationId: downloadAppUpdateArtifact
       parameters:
-        - description: Campo 'file' do artefato, exatamente como veio no manifesto
+        - description: The artifact's 'file' field, exactly as it came in the manifest
           explode: false
           in: query
           name: file
           required: true
           schema:
-            description: Campo 'file' do artefato, exatamente como veio no manifesto
+            description: The artifact's 'file' field, exactly as it came in the manifest
             type: string
       responses:
         "200":
@@ -2327,12 +2327,12 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Baixa um artefato de atualização (.hdiff), com suporte a Range — download retomável
+      summary: Downloads an update artifact (.hdiff), with Range support for resumable downloads
       tags:
         - mobile
   /auth/login:
     post:
-      description: Sucesso devolve access_token + refresh_token. Quando o segundo fator está enrolado e totp_code não foi enviado, devolve {"totp_required":true} sem nenhum token.
+      description: Success returns access_token + refresh_token. When a second factor is enrolled and totp_code was not sent, returns {"totp_required":true} with no token.
       operationId: mobileLogin
       requestBody:
         content:
@@ -2353,13 +2353,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Login por senha + segundo fator (mesma política MFA do painel desktop)
+      summary: Password login + second factor (same MFA policy as the desktop panel)
       tags:
         - mobile
         - auth
   /auth/logout:
     post:
-      description: "Revoga SOMENTE o jti do token usado nesta chamada (mesmo internal/sessions.Store do painel web). Idempotente: chamar de novo com um token já revogado ainda responde 200."
+      description: "Revokes ONLY the jti of the token used in this call (same internal/sessions.Store as the web panel). Idempotent: calling again with an already revoked token still answers 200."
       operationId: mobileLogout
       responses:
         "200":
@@ -2376,13 +2376,13 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Encerra a sessão do dispositivo chamador — nunca as demais sessões do usuário
+      summary: Ends the calling device's session, never the user's other sessions
       tags:
         - mobile
         - auth
   /auth/pair:
     post:
-      description: Nunca devolve uma sessão. O reg_token só autoriza começar uma cerimônia de registro de passkey em /auth/passkey/register/begin, cujo sucesso ainda fica pendente de aprovação no painel.
+      description: Never returns a session. The reg_token only authorizes starting a passkey registration ceremony at /auth/passkey/register/begin, whose success still awaits approval in the panel.
       operationId: mobilePairConsume
       requestBody:
         content:
@@ -2403,7 +2403,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Troca um ticket de pareamento por QR code por um reg_token de passkey
+      summary: Exchanges a QR code pairing ticket for a passkey reg_token
       tags:
         - mobile
         - auth
@@ -2423,13 +2423,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Inicia um login sem senha (passkey discoverable)
+      summary: Starts a passwordless login (discoverable passkey)
       tags:
         - mobile
         - auth
   /auth/passkey/login/finish:
     post:
-      description: Sucesso devolve access_token + refresh_token (mesma forma de /auth/login). 403 {"error":"pending_approval"} quando a credencial existe mas ainda não foi aprovada no painel.
+      description: Success returns access_token + refresh_token (same shape as /auth/login). 403 {"error":"pending_approval"} when the credential exists but has not been approved in the panel yet.
       operationId: passkeyLoginFinish
       requestBody:
         content:
@@ -2450,7 +2450,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Conclui o login sem senha
+      summary: Finishes the passwordless login
       tags:
         - mobile
         - auth
@@ -2476,13 +2476,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Inicia o registro de uma passkey
+      summary: Starts registering a passkey
       tags:
         - mobile
         - auth
   /auth/passkey/register/finish:
     post:
-      description: Sucesso aqui SEMPRE devolve {"status":"pending_approval"}. A credencial nasce inerte e só pode logar depois de aprovada a partir de uma sessão desktop já autenticada.
+      description: Success here ALWAYS returns {"status":"pending_approval"}. The credential starts inert and can only log in after it is approved from an already authenticated desktop session.
       operationId: passkeyRegisterFinish
       requestBody:
         content:
@@ -2503,13 +2503,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Conclui o registro de uma passkey — NUNCA autentica
+      summary: Finishes registering a passkey (NEVER authenticates)
       tags:
         - mobile
         - auth
   /auth/refresh:
     post:
-      description: "Rotação obrigatória: o refresh_token enviado é invalidado por esta chamada, com sucesso ou sem. Reenviar um token já rotacionado, revogado ou nunca emitido falha da mesma forma (401)."
+      description: "Mandatory rotation: the refresh_token sent is invalidated by this call, whether it succeeds or not. Resending a token that was already rotated, revoked or never issued fails the same way (401)."
       operationId: mobileRefresh
       requestBody:
         content:
@@ -2530,7 +2530,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Troca um refresh token mobile por um novo par access+refresh
+      summary: Exchanges a mobile refresh token for a new access+refresh pair
       tags:
         - mobile
         - auth
@@ -2551,7 +2551,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de deploy.apps
+      summary: Rows of deploy.apps
       tags:
         - mobile
         - sdui
@@ -2573,7 +2573,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de docker.compose
+      summary: Rows of docker.compose
       tags:
         - mobile
         - sdui
@@ -2595,7 +2595,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de docker.containers
+      summary: Rows of docker.containers
       tags:
         - mobile
         - sdui
@@ -2617,7 +2617,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de docker.images
+      summary: Rows of docker.images
       tags:
         - mobile
         - sdui
@@ -2639,7 +2639,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de docker.networks
+      summary: Rows of docker.networks
       tags:
         - mobile
         - sdui
@@ -2661,7 +2661,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de docker.volumes
+      summary: Rows of docker.volumes
       tags:
         - mobile
         - sdui
@@ -2690,7 +2690,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Emite um ticket WS one-shot (60s) para anexar em /ws/mobile-events
+      summary: Issues a one-shot WS ticket (60s) to attach to /ws/mobile-events
       tags:
         - mobile
         - events
@@ -2698,13 +2698,13 @@ paths:
     get:
       operationId: downloadFile
       parameters:
-        - description: Caminho absoluto do arquivo a baixar
+        - description: Absolute path of the file to download
           explode: false
           in: query
           name: path
           required: true
           schema:
-            description: Caminho absoluto do arquivo a baixar
+            description: Absolute path of the file to download
             type: string
       responses:
         "200":
@@ -2741,7 +2741,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Baixa um arquivo do servidor, com suporte a Range (download parcial/retomável)
+      summary: Downloads a file from the server, with Range support (partial/resumable download)
       tags:
         - mobile
   /files/inbox:
@@ -2768,20 +2768,20 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Devolve o diretório padrão onde um arquivo compartilhado por outro app pousa
+      summary: Returns the default directory where a file shared from another app lands
       tags:
         - mobile
   /files/list:
     get:
       operationId: listFiles
       parameters:
-        - description: Caminho absoluto do diretório a listar
+        - description: Absolute path of the directory to list
           explode: false
           in: query
           name: path
           required: true
           schema:
-            description: Caminho absoluto do diretório a listar
+            description: Absolute path of the directory to list
             type: string
       responses:
         "200":
@@ -2822,20 +2822,20 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Lista o conteúdo de um diretório do servidor
+      summary: Lists the contents of a directory on the server
       tags:
         - mobile
   /files/read:
     get:
       operationId: readFile
       parameters:
-        - description: Caminho absoluto do arquivo a ler
+        - description: Absolute path of the file to read
           explode: false
           in: query
           name: path
           required: true
           schema:
-            description: Caminho absoluto do arquivo a ler
+            description: Absolute path of the file to read
             type: string
       responses:
         "200":
@@ -2888,7 +2888,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Lê um arquivo de texto do servidor com hint de linguagem para highlight
+      summary: Reads a text file from the server with a language hint for highlighting
       tags:
         - mobile
   /files/upload/chunk:
@@ -2901,13 +2901,13 @@ paths:
           required: true
           schema:
             type: string
-        - description: Posição, em bytes, de onde este pedaço começa no arquivo final
+        - description: Byte position where this chunk starts in the final file
           explode: false
           in: query
           name: offset
           required: true
           schema:
-            description: Posição, em bytes, de onde este pedaço começa no arquivo final
+            description: Byte position where this chunk starts in the final file
             format: int64
             type: integer
       requestBody:
@@ -2957,7 +2957,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Grava um pedaço do upload na posição indicada (offset), retomável fora de ordem
+      summary: Writes an upload chunk at the given offset; resumable and order-independent
       tags:
         - mobile
   /files/upload/complete:
@@ -2999,7 +2999,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UploadIncompleteResponse"
-          description: "Sessão incompleta: ainda faltam bytes para completar o upload"
+          description: "Incomplete session: bytes are still missing to complete the upload"
         "422":
           content:
             application/problem+json:
@@ -3014,7 +3014,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Finaliza o upload, movendo o arquivo montado para o destino; 409 se ainda faltam bytes
+      summary: Finishes the upload, moving the assembled file to its destination; 409 if bytes are still missing
       tags:
         - mobile
   /files/upload/init:
@@ -3065,7 +3065,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Inicia uma sessão de upload em pedaços, reservando o destino final
+      summary: Starts a chunked upload session, reserving the final destination
       tags:
         - mobile
   /files/write:
@@ -3107,7 +3107,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FileConflictResponse"
-          description: "Conflito: o arquivo mudou em disco desde a última leitura"
+          description: "Conflict: the file changed on disk since the last read"
         "422":
           content:
             application/problem+json:
@@ -3122,65 +3122,65 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Grava um arquivo; rejeita com 409 se o arquivo mudou em disco desde a leitura
+      summary: Writes a file; rejects with 409 if the file changed on disk since it was read
       tags:
         - mobile
   /jira/board:
     get:
-      description: Uma chamada devolve o quadro inteiro. `connected:false` é resposta normal para quem ainda não ligou a conta — o aplicativo mostra o formulário de conexão, não um erro.
+      description: "One call returns the whole board. `connected:false` is a normal response for a user who has not connected an account yet: the app shows the connection form, not an error."
       operationId: getJiraBoard
       parameters:
-        - description: Chave do projeto; vazio usa o projeto configurado
+        - description: Project key; empty uses the configured project
           explode: false
           in: query
           name: project
           schema:
-            description: Chave do projeto; vazio usa o projeto configurado
+            description: Project key; empty uses the configured project
             type: string
-        - description: "Filtro rápido: all, mine, todo, inprogress, last7, reported, custom"
+        - description: "Quick filter: all, mine, todo, inprogress, last7, reported, custom"
           explode: false
           in: query
           name: filter
           schema:
             default: all
-            description: "Filtro rápido: all, mine, todo, inprogress, last7, reported, custom"
+            description: "Quick filter: all, mine, todo, inprogress, last7, reported, custom"
             type: string
-        - description: JQL próprio — só vale com filter=custom
+        - description: Custom JQL, only used with filter=custom
           explode: false
           in: query
           name: jql
           schema:
-            description: JQL próprio — só vale com filter=custom
+            description: Custom JQL, only used with filter=custom
             type: string
-        - description: Busca livre sobre o que o JQL trouxe
+        - description: Free-text search over what the JQL returned
           explode: false
           in: query
           name: search
           schema:
-            description: Busca livre sobre o que o JQL trouxe
+            description: Free-text search over what the JQL returned
             type: string
-        - description: campo:direção — updated:desc, key:asc, name:asc, type:asc
+        - description: field:direction, e.g. updated:desc, key:asc, name:asc, type:asc
           explode: false
           in: query
           name: sort
           schema:
-            description: campo:direção — updated:desc, key:asc, name:asc, type:asc
+            description: field:direction, e.g. updated:desc, key:asc, name:asc, type:asc
             type: string
-        - description: Esconde concluídas há mais de N dias; 0 mostra todas
+        - description: Hides issues done more than N days ago; 0 shows all
           explode: false
           in: query
           name: hide_done_days
           schema:
-            description: Esconde concluídas há mais de N dias; 0 mostra todas
+            description: Hides issues done more than N days ago; 0 shows all
             format: int64
             type: integer
-        - description: Teto de issues buscadas
+        - description: Maximum number of issues fetched
           explode: false
           in: query
           name: max
           schema:
             default: 100
-            description: Teto de issues buscadas
+            description: Maximum number of issues fetched
             format: int64
             type: integer
       responses:
@@ -3216,13 +3216,13 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: "O quadro kanban: colunas, cartões, filtros e projetos"
+      summary: "The kanban board: columns, cards, filters and projects"
       tags:
         - mobile
         - jira
   /jira/board/move:
     post:
-      description: Recebe o RÓTULO da coluna e resolve a transição do lado do servidor. Responde 409 quando o fluxo de trabalho do projeto não permite o salto — o cartão volta para a coluna de origem.
+      description: Takes the column LABEL and resolves the transition on the server. Answers 409 when the project workflow does not allow the jump, and the card goes back to its original column.
       operationId: moveJiraIssue
       requestBody:
         content:
@@ -3275,7 +3275,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Move um cartão para uma coluna
+      summary: Moves a card to a column
       tags:
         - mobile
         - jira
@@ -3327,13 +3327,13 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Atribui várias issues à mesma pessoa
+      summary: Assigns several issues to the same person
       tags:
         - mobile
         - jira
   /jira/bulk/move:
     post:
-      description: "O resultado é por issue: o que foi e o que não foi, com o motivo. Lote não é atômico contra o Jira."
+      description: "The result is per issue: what moved and what did not, with the reason. A batch is not atomic against Jira."
       operationId: bulkMoveJiraIssues
       requestBody:
         content:
@@ -3380,13 +3380,13 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Move várias issues para a mesma coluna
+      summary: Moves several issues to the same column
       tags:
         - mobile
         - jira
   /jira/connect:
     post:
-      description: As credenciais vão para o cofre POR USUÁRIO, o mesmo que o painel web usa. O token nunca volta em nenhuma resposta.
+      description: The credentials go to the PER-USER vault, the same one the web panel uses. The token is never returned in any response.
       operationId: connectJira
       requestBody:
         content:
@@ -3433,7 +3433,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Liga a conta do Jira deste usuário
+      summary: Connects this user's Jira account
       tags:
         - mobile
         - jira
@@ -3441,13 +3441,13 @@ paths:
     get:
       operationId: getJiraIssue
       parameters:
-        - description: Chave da issue
+        - description: Issue key
           explode: false
           in: query
           name: key
           required: true
           schema:
-            description: Chave da issue
+            description: Issue key
             type: string
       responses:
         "200":
@@ -3488,7 +3488,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Uma issue com comentários e destinos possíveis
+      summary: An issue with its comments and possible destinations
       tags:
         - mobile
         - jira
@@ -3509,7 +3509,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Detalhe da issue selecionada de jira.issues
+      summary: Detail of the selected jira.issues issue
       tags:
         - mobile
         - sdui
@@ -3531,7 +3531,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Transições disponíveis para a issue selecionada
+      summary: Transitions available for the selected issue
       tags:
         - mobile
         - sdui
@@ -3584,7 +3584,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Troca o responsável por uma issue
+      summary: Changes the assignee of an issue
       tags:
         - mobile
         - jira
@@ -3636,7 +3636,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Comenta numa issue
+      summary: Comments on an issue
       tags:
         - mobile
         - jira
@@ -3688,7 +3688,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Cria uma issue
+      summary: Creates an issue
       tags:
         - mobile
         - jira
@@ -3709,7 +3709,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de jira.issues
+      summary: Rows of jira.issues
       tags:
         - mobile
         - sdui
@@ -3718,13 +3718,13 @@ paths:
     get:
       operationId: getJiraMeta
       parameters:
-        - description: Chave do projeto
+        - description: Project key
           explode: false
           in: query
           name: project
           required: true
           schema:
-            description: Chave do projeto
+            description: Project key
             type: string
       responses:
         "200":
@@ -3765,7 +3765,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Tipos de issue e prioridades do projeto
+      summary: Issue types and priorities of the project
       tags:
         - mobile
         - jira
@@ -3817,29 +3817,29 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Fixa o projeto padrão do quadro
+      summary: Sets the default project of the board
       tags:
         - mobile
         - jira
   /jira/users:
     get:
-      description: Existe para o aplicativo OFERECER a lista em vez de pedir que se digite um accountId — que ninguém sabe de cabeça.
+      description: Lets the app OFFER the list instead of asking the user to type an accountId, which nobody knows by heart.
       operationId: listJiraAssignableUsers
       parameters:
-        - description: Chave do projeto
+        - description: Project key
           explode: false
           in: query
           name: project
           required: true
           schema:
-            description: Chave do projeto
+            description: Project key
             type: string
-        - description: Filtro por nome/e-mail
+        - description: Filter by name/e-mail
           explode: false
           in: query
           name: q
           schema:
-            description: Filtro por nome/e-mail
+            description: Filter by name/e-mail
             type: string
       responses:
         "200":
@@ -3880,7 +3880,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: A quem uma issue deste projeto pode ser atribuída
+      summary: Who an issue of this project can be assigned to
       tags:
         - mobile
         - jira
@@ -3902,12 +3902,12 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Identidade, sessão e capacidades do usuário autenticado
+      summary: Identity, session and capabilities of the authenticated user
       tags:
         - mobile
   /notify/devices:
     post:
-      description: "device_id é mintado pelo próprio app (nunca pelo servidor). Upsert: chamar de novo com o mesmo device_id só atualiza o token. No primeiro registro de um device_id novo, semeia preferências default (apenas eventos críticos) em DevicePrefsStore."
+      description: "device_id is minted by the app itself (never by the server). Upsert: calling again with the same device_id only updates the token. On the first registration of a new device_id, seeds default preferences (critical events only) in DevicePrefsStore."
       operationId: registerPushDevice
       requestBody:
         content:
@@ -3948,7 +3948,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Registra (ou atualiza) o token FCM deste dispositivo
+      summary: Registers (or updates) this device's FCM token
       tags:
         - mobile
         - notify
@@ -3994,13 +3994,13 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: "Remove o registro de push nativo deste dispositivo (ex.: no logout)"
+      summary: Removes this device's native push registration (e.g. on logout)
       tags:
         - mobile
         - notify
   /notify/preferences:
     get:
-      description: "Default (sem preferência gravada): apenas Rules com severidade mínima crítica chegam por push — o restante fica só no inbox do app."
+      description: "Default (no saved preference): only Rules with critical minimum severity arrive by push; the rest stays in the app inbox."
       operationId: getNotifyPreferences
       parameters:
         - explode: false
@@ -4041,7 +4041,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Catálogo de Rules + o que este dispositivo recebe hoje
+      summary: Rules catalog plus what this device receives today
       tags:
         - mobile
         - notify
@@ -4086,7 +4086,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Define quais Rules este dispositivo recebe por push
+      summary: Sets which Rules this device receives by push
       tags:
         - mobile
         - notify
@@ -4138,7 +4138,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Dispara o pipeline agentctl deploy (primary-only, confirmação obrigatória)
+      summary: Triggers the agentctl deploy pipeline (primary only, confirmation required)
       tags:
         - mobile
         - ops
@@ -4190,7 +4190,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Status atual de um job self_deploy (paint inicial antes do WS)
+      summary: Current status of a self_deploy job (initial paint before the WS)
       tags:
         - mobile
         - ops
@@ -4218,7 +4218,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Saúde, fila, alertas ativos e recursos do servidor em uma chamada (admin)
+      summary: Server health, queue, active alerts and resources in one call (admin)
       tags:
         - mobile
         - ops
@@ -4239,7 +4239,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de queue.jobs
+      summary: Rows of queue.jobs
       tags:
         - mobile
         - sdui
@@ -4261,7 +4261,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas da tabela scheduler.jobs, filtradas por RBAC para o usuário autenticado
+      summary: Rows of the scheduler.jobs table, filtered by RBAC for the authenticated user
       tags:
         - mobile
         - sdui
@@ -4284,7 +4284,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Seções SDUI disponíveis para o usuário autenticado, agrupadas
+      summary: SDUI sections available to the authenticated user, grouped
       tags:
         - mobile
         - sdui
@@ -4292,12 +4292,12 @@ paths:
     get:
       operationId: getScreen
       parameters:
-        - description: "Id da tela registrada em internal/mobilebff/sdui (ex.: scheduler.jobs)"
+        - description: Id of a screen registered in internal/mobilebff/sdui (e.g. scheduler.jobs)
           in: path
           name: id
           required: true
           schema:
-            description: "Id da tela registrada em internal/mobilebff/sdui (ex.: scheduler.jobs)"
+            description: Id of a screen registered in internal/mobilebff/sdui (e.g. scheduler.jobs)
             type: string
       responses:
         "200":
@@ -4313,7 +4313,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Descritor de tela SDUI, filtrado por RBAC para o usuário autenticado
+      summary: SDUI screen descriptor, filtered by RBAC for the authenticated user
       tags:
         - mobile
         - sdui
@@ -4334,7 +4334,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Detalhe de security.adguard
+      summary: Detail of security.adguard
       tags:
         - mobile
         - sdui
@@ -4356,7 +4356,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de security.audit
+      summary: Rows of security.audit
       tags:
         - mobile
         - sdui
@@ -4378,14 +4378,14 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de security.devices
+      summary: Rows of security.devices
       tags:
         - mobile
         - sdui
         - security
-  /security/economia:
+  /security/savings:
     get:
-      operationId: getSecurityEconomiaRows
+      operationId: getSecuritySavingsRows
       responses:
         "200":
           content:
@@ -4400,7 +4400,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de security.economia
+      summary: Rows of security.savings
       tags:
         - mobile
         - sdui
@@ -4422,7 +4422,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de security.secrets
+      summary: Rows of security.secrets
       tags:
         - mobile
         - sdui
@@ -4444,7 +4444,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de security.sessions
+      summary: Rows of security.sessions
       tags:
         - mobile
         - sdui
@@ -4466,7 +4466,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Detalhe de security.ufw
+      summary: Detail of security.ufw
       tags:
         - mobile
         - sdui
@@ -4488,7 +4488,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de security.users
+      summary: Rows of security.users
       tags:
         - mobile
         - sdui
@@ -4510,7 +4510,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de system.history
+      summary: Rows of system.history
       tags:
         - mobile
         - sdui
@@ -4532,7 +4532,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Série de system.metrics (cpu)
+      summary: Series of system.metrics (cpu)
       tags:
         - mobile
         - sdui
@@ -4554,7 +4554,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Série de system.metrics (disk)
+      summary: Series of system.metrics (disk)
       tags:
         - mobile
         - sdui
@@ -4576,7 +4576,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Série de system.metrics (mem)
+      summary: Series of system.metrics (mem)
       tags:
         - mobile
         - sdui
@@ -4598,7 +4598,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de system.ports
+      summary: Rows of system.ports
       tags:
         - mobile
         - sdui
@@ -4620,7 +4620,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de system.processes
+      summary: Rows of system.processes
       tags:
         - mobile
         - sdui
@@ -4642,7 +4642,7 @@ paths:
           description: Error
       security:
         - bearerAuth: []
-      summary: Linhas de system.systemd
+      summary: Rows of system.systemd
       tags:
         - mobile
         - sdui
@@ -4674,18 +4674,18 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Backups de sessão do usuário, mais novos primeiro
+      summary: The user's session backups, newest first
       tags:
         - mobile
         - terminal
     post:
       operationId: createTerminalBackup
       parameters:
-        - description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+        - description: Key generated by the device; repeating the same key returns the first result without running again
           in: header
           name: Idempotency-Key
           schema:
-            description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+            description: Key generated by the device; repeating the same key returns the first result without running again
             type: string
       requestBody:
         content:
@@ -4732,7 +4732,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Salva o estado atual de uma sessão (ou de todas)
+      summary: Saves the current state of one session (or all of them)
       tags:
         - mobile
         - terminal
@@ -4740,11 +4740,11 @@ paths:
     post:
       operationId: restoreTerminalBackup
       parameters:
-        - description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+        - description: Key generated by the device; repeating the same key returns the first result without running again
           in: header
           name: Idempotency-Key
           schema:
-            description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+            description: Key generated by the device; repeating the same key returns the first result without running again
             type: string
       requestBody:
         content:
@@ -4791,7 +4791,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Recria as sessões de um backup (pula as que já existem)
+      summary: Recreates the sessions of a backup (skips the ones that already exist)
       tags:
         - mobile
         - terminal
@@ -4806,18 +4806,18 @@ paths:
           schema:
             description: Id do backup
             type: string
-        - description: Remove só esta sessão do backup; vazio = o backup inteiro
+        - description: Removes only this session from the backup; empty = the whole backup
           explode: false
           in: query
           name: name
           schema:
-            description: Remove só esta sessão do backup; vazio = o backup inteiro
+            description: Removes only this session from the backup; empty = the whole backup
             type: string
-        - description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+        - description: Key generated by the device; repeating the same key returns the first result without running again
           in: header
           name: Idempotency-Key
           schema:
-            description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+            description: Key generated by the device; repeating the same key returns the first result without running again
             type: string
       responses:
         "200":
@@ -4858,29 +4858,29 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Exclui um backup, ou só uma sessão de dentro dele
+      summary: Deletes a backup, or just one session inside it
       tags:
         - mobile
         - terminal
-  /terminal/historico:
+  /terminal/history:
     get:
-      operationId: getTerminalHistorico
+      operationId: getTerminalHistory
       parameters:
-        - description: Nome da sessão de terminal
+        - description: Terminal session name
           explode: false
           in: query
           name: name
           required: true
           schema:
-            description: Nome da sessão de terminal
+            description: Terminal session name
             type: string
-        - description: Teto de bytes do recorte final do histórico
+        - description: Byte cap for the final slice of the history
           explode: false
           in: query
           name: bytes
           schema:
             default: 2097152
-            description: Teto de bytes do recorte final do histórico
+            description: Byte cap for the final slice of the history
             format: int64
             type: integer
       responses:
@@ -4888,7 +4888,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/HistoricoResponse"
+                $ref: "#/components/schemas/HistoryResponse"
           description: OK
           headers:
             Cache-Control:
@@ -4920,29 +4920,29 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Histórico renderizado de uma sessão — o que a pessoa viu, uma vez cada
+      summary: "Rendered history of a session: what the person saw, once each"
       tags:
         - mobile
         - terminal
-  /terminal/log-bruto:
+  /terminal/raw-log:
     get:
       operationId: getTerminalRawLog
       parameters:
-        - description: Nome da sessão de terminal
+        - description: Terminal session name
           explode: false
           in: query
           name: name
           required: true
           schema:
-            description: Nome da sessão de terminal
+            description: Terminal session name
             type: string
-        - description: Teto de bytes do recorte final do log
+        - description: Byte cap for the final slice of the log
           explode: false
           in: query
           name: bytes
           schema:
             default: 4194304
-            description: Teto de bytes do recorte final do log
+            description: Byte cap for the final slice of the log
             format: int64
             type: integer
       responses:
@@ -4982,7 +4982,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Log cru (bytes do PTY) de uma sessão, para o app primar o próprio emulador
+      summary: Raw log (PTY bytes) of a session, so the app can prime its own emulator
       tags:
         - mobile
         - terminal
@@ -4990,29 +4990,29 @@ paths:
     get:
       operationId: getTerminalScrollback
       parameters:
-        - description: Nome da sessão de terminal
+        - description: Terminal session name
           explode: false
           in: query
           name: name
           required: true
           schema:
-            description: Nome da sessão de terminal
+            description: Terminal session name
             type: string
-        - description: Quantidade máxima de linhas de histórico
+        - description: Maximum number of history lines
           explode: false
           in: query
           name: lines
           schema:
             default: 5000
-            description: Quantidade máxima de linhas de histórico
+            description: Maximum number of history lines
             format: int64
             type: integer
-        - description: Se true, devolve texto sem escapes ANSI (para copiar)
+        - description: If true, returns text without ANSI escapes (for copying)
           explode: false
           in: query
           name: plain
           schema:
-            description: Se true, devolve texto sem escapes ANSI (para copiar)
+            description: If true, returns text without ANSI escapes (for copying)
             type: boolean
       responses:
         "200":
@@ -5051,7 +5051,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Histórico (tail) de uma sessão de terminal que o usuário possui
+      summary: History (tail) of a terminal session the user owns
       tags:
         - mobile
         - terminal
@@ -5082,7 +5082,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Sessões de terminal visíveis ao usuário autenticado
+      summary: Terminal sessions visible to the authenticated user
       tags:
         - mobile
         - terminal
@@ -5090,11 +5090,11 @@ paths:
     post:
       operationId: assignTerminalSession
       parameters:
-        - description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+        - description: Key generated by the device; repeating the same key returns the first result without running again
           in: header
           name: Idempotency-Key
           schema:
-            description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+            description: Key generated by the device; repeating the same key returns the first result without running again
             type: string
       requestBody:
         content:
@@ -5141,13 +5141,13 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Define para quem a sessão aparece
+      summary: Sets who the session is shown to
       tags:
         - mobile
         - terminal
   /terminal/sessions/assign-targets:
     get:
-      description: "Só admin. Existe para o aplicativo poder OFERECER a lista em vez de pedir que se digite um nome de usuário — digitar aqui erra em silêncio: um alvo inexistente é aceito e a sessão some da lista de todo mundo."
+      description: "Admin only. Lets the app OFFER the list instead of asking for a typed user name: a typo here fails silently, because a nonexistent target is accepted and the session disappears from everyone's list."
       operationId: listAssignTargets
       responses:
         "200":
@@ -5176,7 +5176,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Para quem uma sessão PODE ser atribuída
+      summary: Who a session CAN be assigned to
       tags:
         - mobile
         - terminal
@@ -5228,7 +5228,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Encerra uma sessão e os processos que rodam nela
+      summary: Kills a session and the processes running in it
       tags:
         - mobile
         - terminal
@@ -5236,21 +5236,21 @@ paths:
     get:
       operationId: previewTerminalSession
       parameters:
-        - description: Nome da sessão
+        - description: Session name
           explode: false
           in: query
           name: name
           required: true
           schema:
-            description: Nome da sessão
+            description: Session name
             type: string
-        - description: Quantas linhas do fim (1..200)
+        - description: How many lines from the end (1..200)
           explode: false
           in: query
           name: lines
           schema:
             default: 20
-            description: Quantas linhas do fim (1..200)
+            description: How many lines from the end (1..200)
             format: int64
             type: integer
       responses:
@@ -5292,7 +5292,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: As últimas linhas de uma sessão, sem anexar nela
+      summary: The last lines of a session, without attaching to it
       tags:
         - mobile
         - terminal
@@ -5300,11 +5300,11 @@ paths:
     post:
       operationId: renameTerminalSession
       parameters:
-        - description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+        - description: Key generated by the device; repeating the same key returns the first result without running again
           in: header
           name: Idempotency-Key
           schema:
-            description: Chave gerada pelo aparelho; repetir a mesma chave devolve o resultado da primeira vez, sem executar de novo
+            description: Key generated by the device; repeating the same key returns the first result without running again
             type: string
       requestBody:
         content:
@@ -5351,7 +5351,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Renomeia uma sessão, levando a posse junto
+      summary: Renames a session, carrying its ownership along
       tags:
         - mobile
         - terminal
@@ -5397,7 +5397,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Emite um ticket WS one-shot (60s) para anexar em /ws/shell
+      summary: Issues a one-shot WS ticket (60s) to attach to /ws/shell
       tags:
         - mobile
         - terminal
@@ -5428,7 +5428,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Lista as salas de videochamada do usuário autenticado (dono ou membro)
+      summary: Lists the authenticated user's video call rooms (owner or member)
       tags:
         - mobile
         - videocall
@@ -5456,7 +5456,7 @@ paths:
           description: Internal Server Error
       security:
         - bearerAuth: []
-      summary: Emite um ticket WS one-shot (60s) para anexar em /ws/videocall
+      summary: Issues a one-shot WS ticket (60s) to attach to /ws/videocall
       tags:
         - mobile
         - videocall
@@ -5493,7 +5493,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Lista de conversas do WhatsApp com preview e badge de não lidas
+      summary: WhatsApp chat list with preview and unread badge
       tags:
         - mobile
         - whatsapp
@@ -5535,7 +5535,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Foto de perfil do contato/grupo — proxy same-origin anti-SSRF
+      summary: Contact/group profile photo (same-origin anti-SSRF proxy)
       tags:
         - mobile
         - whatsapp
@@ -5565,22 +5565,22 @@ paths:
             schema:
               properties:
                 caption:
-                  description: Legenda opcional
+                  description: Optional caption
                   type: string
                 client_msg_id:
-                  description: ID gerado pelo cliente; reenviar com o mesmo id não duplica o envio
+                  description: Client-generated ID; resending with the same id does not duplicate the send
                   type: string
                 file:
-                  description: Arquivo de mídia a enviar
+                  description: Media file to send
                   format: binary
                   type: string
                   x-contentEncoding: binary
                   x-contentMediaType: application/octet-stream
                 msg_type:
-                  description: image|video|audio|document; inferido do mime/nome quando vazio
+                  description: image|video|audio|document; inferred from the mime/name when empty
                   type: string
                 quoted_id:
-                  description: ID da mensagem citada, se houver
+                  description: ID of the quoted message, if any
                   type: string
               required:
                 - file
@@ -5631,7 +5631,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Envia um arquivo de mídia; idempotente por client_msg_id, teto de 100 MiB (mesmo do painel)
+      summary: Sends a media file; idempotent by client_msg_id, 100 MiB cap (same as the panel)
       tags:
         - mobile
         - whatsapp
@@ -5696,7 +5696,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Baixa (sob demanda em cache miss) e serve os bytes de uma mídia, com suporte a Range
+      summary: Downloads (on demand on a cache miss) and serves a media item's bytes, with Range support
       tags:
         - mobile
         - whatsapp
@@ -5754,7 +5754,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Histórico de mensagens de uma conversa, com backfill automático
+      summary: Message history of a chat, with automatic backfill
       tags:
         - mobile
         - whatsapp
@@ -5811,7 +5811,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Envia uma mensagem de texto; idempotente por client_msg_id
+      summary: Sends a text message; idempotent by client_msg_id
       tags:
         - mobile
         - whatsapp
@@ -5859,7 +5859,7 @@ paths:
           description: Service Unavailable
       security:
         - bearerAuth: []
-      summary: Marca uma conversa como lida
+      summary: Marks a chat as read
       tags:
         - mobile
         - whatsapp

@@ -11,13 +11,13 @@ package dev.servercontrolpanel.designsystem
 enum class ThemeMode(val id: String, val label: String) {
 
     /** Always light, even with the system in dark mode. */
-    LIGHT("claro", "Light"),
+    LIGHT("light", "Light"),
 
     /** Always dark, even with the system in light mode. */
-    DARK("escuro", "Dark"),
+    DARK("dark", "Dark"),
 
     /** Whatever the device is using right now (the default). */
-    SYSTEM("sistema", "System"),
+    SYSTEM("system", "System"),
     ;
 
     /** Whether this mode renders dark; [systemDark] only matters for [SYSTEM]. */

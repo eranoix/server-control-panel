@@ -99,7 +99,7 @@ internal fun AdminLauncher(
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                     GroupHeader(ADMIN_RECENTS_LABEL)
                 }
-                items(recents, key = { "recente-${it.id}" }) { section ->
+                items(recents, key = { "recent-${it.id}" }) { section ->
                     SectionCard(section = section, onClick = { onSelect(section.id) })
                 }
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {

@@ -3,7 +3,7 @@
 Generated on 2026-09-05 **on this VPS**, at the operator's request: he had no
 access to his laptop and needed to unblock on-device verification.
 
-File: `data/android-dev-signing/servercontrolpanel-DEV-NAO-E-RELEASE.jks`
+File: `data/android-dev-signing/servercontrolpanel-DEV-NOT-RELEASE.jks`
 (outside git — `.gitignore:12` covers `/data/`; mode `600`).
 
 ## Why this key can never become the release key
@@ -17,9 +17,9 @@ It is disposable **by construction**, not by agreement:
 
 | | dev (this one) | release (future) |
 |---|---|---|
-| file | `servercontrolpanel-DEV-NAO-E-RELEASE.jks` | `servercontrolpanel-release.jks` |
+| file | `servercontrolpanel-DEV-NOT-RELEASE.jks` | `servercontrolpanel-release.jks` |
 | alias | `servercontrolpanel-dev` | `servercontrolpanel` |
-| CN | `... (DEV - NAO E RELEASE)` | `tech.northwind.servercontrolpanel` |
+| CN | `... (DEV - NOT RELEASE)` | `tech.northwind.servercontrolpanel` |
 | validity | 3650 days | 10000 days |
 | password | `example-not-a-secret` — **not a secret** | only in the operator's password manager |
 

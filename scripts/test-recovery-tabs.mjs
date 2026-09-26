@@ -51,7 +51,7 @@ const srv = http.createServer((req, res) => {
   // answers so the pin can measure LAYOUT without renewal becoming 404 noise.
   if (u === '/recovery/renew') {
     res.setHeader('content-type', 'application/json');
-    return res.end(JSON.stringify({ ok: true, restante_seg: 8 * 3600 }));
+    return res.end(JSON.stringify({ ok: true, remaining_seg: 8 * 3600 }));
   }
   if (u === '/recovery/term') {
     res.statusCode = 200;
@@ -59,7 +59,7 @@ const srv = http.createServer((req, res) => {
   }
   if (u === '/recovery/claude/status') {
     res.setHeader('content-type', 'application/json');
-    return res.end(JSON.stringify({ ok: true, existe: true, rodando: containerRunning, autenticado: false, versao: '2.1.241 (Claude Code)' }));
+    return res.end(JSON.stringify({ ok: true, exists: true, running: containerRunning, authenticated: false, version: '2.1.241 (Claude Code)' }));
   }
   const f = path.join(WEB, u);
   if (!f.startsWith(WEB) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.statusCode = 404; return res.end('not found'); }
@@ -101,7 +101,7 @@ const visible = (sel) => page.evaluate((s) => {
   const el = document.querySelector(s);
   return !!el && el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
 }, sel);
-const clica = async (sel) => { await page.click(sel); await page.waitForTimeout(250); };
+const click = async (sel) => { await page.click(sel); await page.waitForTimeout(250); };
 
 await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(400);
@@ -116,7 +116,7 @@ await page.waitForTimeout(400);
 // ── 2. the reported bug: Claude tab with the container DOWN ─────────────────
 // The screenshot showed the host terminal AND the Claude notice splitting the
 // height, with the host action bar present in the wrong tab.
-await clica('#tab-claude');
+await click('#tab-claude');
 {
   const t = await visible('#term'), off = await visible('#claude-off');
   (!t && off) ? ok('Claude tab (container down): shows the notice and HIDES the host terminal')
@@ -129,7 +129,7 @@ await clica('#tab-claude');
 }
 
 // ── 3. back to the host ─────────────────────────────────────────────────────
-await clica('#tab-host');
+await click('#tab-host');
 {
   const t = await visible('#term'), off = await visible('#claude-off'), bar = await visible('.action-bar');
   (t && !off && bar) ? ok('going back to the host restores terminal + bar and hides the notice')
@@ -138,7 +138,7 @@ await clica('#tab-host');
 
 // ── 4. with the container UP, the tab shows the Claude terminal ─────────────
 containerRunning = true;
-await clica('#tab-claude');
+await click('#tab-claude');
 await page.waitForTimeout(400);
 {
   const c = await visible('#term-claude'), off = await visible('#claude-off'), t = await visible('#term');
@@ -152,11 +152,11 @@ await page.waitForTimeout(400);
 {
   const heights = await page.evaluate(() => {
     const r = (s) => { const e = document.querySelector(s); return e ? e.getBoundingClientRect().height : 0; };
-    return { claude: r('#term-claude'), janela: window.innerHeight };
+    return { claude: r('#term-claude'), window: window.innerHeight };
   });
-  (heights.claude > heights.janela * 0.5)
-    ? ok(`active terminal fills the usable area (${Math.round(heights.claude)}px of ${heights.janela}px)`)
-    : no(`active terminal squeezed: ${Math.round(heights.claude)}px of ${heights.janela}px — another screen is stealing height`);
+  (heights.claude > heights.window * 0.5)
+    ? ok(`active terminal fills the usable area (${Math.round(heights.claude)}px of ${heights.window}px)`)
+    : no(`active terminal squeezed: ${Math.round(heights.claude)}px of ${heights.window}px — another screen is stealing height`);
 }
 
 errors.length === 0 ? ok('no console errors when switching tabs')

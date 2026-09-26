@@ -177,12 +177,12 @@ class MousePasteEncodingTest {
         try {
             assertFalse(engine.modes().bracketedPaste)
 
-            val bytes = engine.encodePaste("um\ndois")
+            val bytes = engine.encodePaste("one\ntwo")
 
             val text = String(bytes, Charsets.UTF_8)
             assertFalse("without 2004 the markers would be literal text on the line", text.contains("\u001b[200~"))
             assertFalse(text.contains("\u001b[201~"))
-            assertEquals("um\rdois", text)
+            assertEquals("one\rtwo", text)
         } finally {
             engine.close()
         }
@@ -195,9 +195,9 @@ class MousePasteEncodingTest {
             engine.feed("\u001b[?2004h")
             assertTrue("the program enabled bracketed paste", engine.modes().bracketedPaste)
 
-            val text = String(engine.encodePaste("um\ndois"), Charsets.UTF_8)
+            val text = String(engine.encodePaste("one\ntwo"), Charsets.UTF_8)
 
-            assertEquals("\u001b[200~um\ndois\u001b[201~", text)
+            assertEquals("\u001b[200~one\ntwo\u001b[201~", text)
         } finally {
             engine.close()
         }

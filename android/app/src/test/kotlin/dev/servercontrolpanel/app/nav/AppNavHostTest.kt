@@ -209,7 +209,7 @@ class AppNavHostTest {
     fun `a call answered on the lock screen still lands in the room`() {
         renderShell(pendingDeepLinkRoute = resolveVideocallDeepLink("room-7")?.navRoute)
 
-        assertEquals("chamada/{roomId}", currentRoute())
+        assertEquals("call/{roomId}", currentRoute())
         assertEquals("room-7", navController.currentBackStackEntry?.arguments?.getString("roomId"))
     }
 
@@ -279,11 +279,11 @@ class AppNavHostTest {
     @Test
     fun `a detail screen has back and it goes back`() {
         renderShell()
-        val editorRoute = "arquivos/edit/" + URLEncoder.encode("/etc/hosts", "UTF-8")
+        val editorRoute = "files/edit/" + URLEncoder.encode("/etc/hosts", "UTF-8")
         navController.navigate(editorRoute)
         composeRule.waitForIdle()
 
-        assertEquals("arquivos/edit/{path}", currentRoute())
+        assertEquals("files/edit/{path}", currentRoute())
         // Detail bar: arrow yes, hamburger no.
         composeRule.onNodeWithContentDescription(BACK_DESCRIPTION).assertExists()
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).assertDoesNotExist()

@@ -526,9 +526,9 @@ func TestRevokedCredentialOnlyForUnexpired(t *testing.T) {
 		for i := range inv.Nodes {
 			switch inv.Nodes[i].ID {
 			case "lxc/207":
-				inv.Nodes[i].Credential = Credential{TokenID: "lab@pve!a", Expire: now - 86400}
+				inv.Nodes[i].Credential = Credential{TokenID: "panel@pve!a", Expire: now - 86400}
 			case "qemu/208":
-				inv.Nodes[i].Credential = Credential{TokenID: "lab@pve!b", Expire: now + 30*86400}
+				inv.Nodes[i].Credential = Credential{TokenID: "panel@pve!b", Expire: now + 30*86400}
 			}
 		}
 	}); err != nil {
@@ -642,7 +642,7 @@ func TestSeedsLoad(t *testing.T) {
 		t.Fatalf("seeds missing: (%v, %v), want (empty, nil)", seeds, err)
 	}
 
-	writeSeeds(t, dir, `[{"id":"canary","name":"canary","transport":"agente","address":"127.0.0.1:9","kind":"externo"}]`)
+	writeSeeds(t, dir, `[{"id":"canary","name":"canary","transport":"agent","address":"127.0.0.1:9","kind":"external"}]`)
 	seeds, err = LoadSeeds(dir)
 	if err != nil {
 		t.Fatalf("LoadSeeds: %v", err)
@@ -661,11 +661,11 @@ func TestSeedsInvalid(t *testing.T) {
 		json   string
 		inText string
 	}{
-		{"transport outside the enum", `[{"id":"x","transport":"telnet","kind":"externo"}]`, "telnet"},
+		{"transport outside the enum", `[{"id":"x","transport":"telnet","kind":"external"}]`, "telnet"},
 		{"kind outside the enum", `[{"id":"x","transport":"ssh","kind":"container"}]`, "container"},
-		{"missing id", `[{"transport":"ssh","kind":"externo"}]`, "ID"},
-		{"duplicate id", `[{"id":"x","transport":"ssh","kind":"externo"},{"id":"x","transport":"ssh","kind":"externo"}]`, "duplicate"},
-		{"agent without address", `[{"id":"x","transport":"agente","kind":"externo"}]`, "address"},
+		{"missing id", `[{"transport":"ssh","kind":"external"}]`, "ID"},
+		{"duplicate id", `[{"id":"x","transport":"ssh","kind":"external"},{"id":"x","transport":"ssh","kind":"external"}]`, "duplicate"},
+		{"agent without address", `[{"id":"x","transport":"agent","kind":"external"}]`, "address"},
 		{"malformed json", `{this is not json}`, "malformed"},
 	}
 	for _, tc := range cases {
@@ -781,7 +781,7 @@ func TestPollerAppliesCredentials(t *testing.T) {
 		out := map[string]Credential{}
 		for _, n := range nodes {
 			if n.Transport == TransportPVEAPI && n.VMID > 0 {
-				out[n.ID] = Credential{TokenID: "lab@pve!node-" + n.Name, Expire: 1802645875}
+				out[n.ID] = Credential{TokenID: "panel@pve!node-" + n.Name, Expire: 1802645875}
 			}
 		}
 		return out, nil
@@ -791,7 +791,7 @@ func TestPollerAppliesCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	nodes := nodesByID(t, st)
-	if got := nodes["lxc/207"].Credential.TokenID; got != "lab@pve!node-apps" {
+	if got := nodes["lxc/207"].Credential.TokenID; got != "panel@pve!node-apps" {
 		t.Fatalf("token_id = %q — the node was left with no credential while the vault is full", got)
 	}
 	if got := nodes["lxc/207"].Credential.Expire; got != 1802645875 {
@@ -820,7 +820,7 @@ func TestPollerRevokedBeatsMissing(t *testing.T) {
 		if withKey {
 			for _, n := range nodes {
 				if n.VMID > 0 {
-					out[n.ID] = Credential{TokenID: "lab@pve!node-" + n.Name}
+					out[n.ID] = Credential{TokenID: "panel@pve!node-" + n.Name}
 				}
 			}
 		}
@@ -871,7 +871,7 @@ func TestPollerBrokenCredentialSourceDeletesNothing(t *testing.T) {
 		out := map[string]Credential{}
 		for _, n := range nodes {
 			if n.VMID > 0 {
-				out[n.ID] = Credential{TokenID: "lab@pve!node-" + n.Name, Expire: 99}
+				out[n.ID] = Credential{TokenID: "panel@pve!node-" + n.Name, Expire: 99}
 			}
 		}
 		return out, nil
@@ -884,7 +884,7 @@ func TestPollerBrokenCredentialSourceDeletesNothing(t *testing.T) {
 	if err := p.tick(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := nodesByID(t, st)["lxc/207"].Credential.TokenID; got != "lab@pve!node-apps" {
+	if got := nodesByID(t, st)["lxc/207"].Credential.TokenID; got != "panel@pve!node-apps" {
 		t.Fatalf("token_id = %q — the broken source erased the credential", got)
 	}
 }
@@ -984,7 +984,7 @@ func TestEmptyResponseMarksNobody(t *testing.T) {
 // /cluster/resources means nothing.
 func TestOtherTransportNodeNotMarked(t *testing.T) {
 	inv := Inventory{Nodes: []Node{
-		{ID: "canary", Kind: "externo", Transport: TransportAgent, Address: "127.0.0.1:9"},
+		{ID: "canary", Kind: "external", Transport: TransportAgent, Address: "127.0.0.1:9"},
 		{ID: "ssh-machine", Transport: TransportSSH},
 		{ID: "lxc/207", Kind: NodeKindGuest, Transport: TransportPVEAPI, VMID: 207},
 	}}

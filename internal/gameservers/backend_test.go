@@ -112,26 +112,26 @@ func backendPair(t *testing.T, m *Manager) (*BackendLocal, *BackendHTTP, *httpte
 		seenURLs = append(seenURLs, r.URL.String())
 		if r.Header.Get("Authorization") != "Bearer "+token {
 			w.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(w).Encode(map[string]any{"erro": "unauthorized"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "unauthorized"})
 			return
 		}
 		name := OpName(r.PathValue("op"))
 		if !knownOp(name) {
 			w.WriteHeader(http.StatusNotFound)
-			_ = json.NewEncoder(w).Encode(map[string]any{"erro": "unknown operation"})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "unknown operation"})
 			return
 		}
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 		res, err := local.Execute(r.Context(), name, json.RawMessage(body))
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			_ = json.NewEncoder(w).Encode(map[string]any{"erro": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(res)
 	})
-	mux.HandleFunc("GET /v1/artefato/{handle}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /v1/artifact/{handle}", func(w http.ResponseWriter, r *http.Request) {
 		seenURLs = append(seenURLs, r.URL.String())
 		if r.Header.Get("Authorization") != "Bearer "+token {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -140,7 +140,7 @@ func backendPair(t *testing.T, m *Manager) (*BackendLocal, *BackendHTTP, *httpte
 		rc, err := local.Open(r.Context(), Handle(r.PathValue("handle")))
 		if err != nil {
 			w.WriteHeader(http.StatusNotFound)
-			_ = json.NewEncoder(w).Encode(map[string]any{"erro": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 			return
 		}
 		defer rc.Close()
@@ -173,41 +173,41 @@ type contractCase struct {
 // The coverage is checked by TestContractCoversAllOps against AllOps —
 // not by a hand-written count, which is itself the defect.
 func contractCases() []contractCase {
-	const target = `"servidor":"test-game"`
+	const target = `"server_id":"test-game"`
 	return []contractCase{
 		{op: OpServerList, body: `{}`},
 		{op: OpServerStatus, body: `{` + target + `}`},
-		{op: OpServerAction, body: `{` + target + `,"verbo":"start"}`, mutating: true},
+		{op: OpServerAction, body: `{` + target + `,"verb":"start"}`, mutating: true},
 		{op: OpServerLogs, body: `{` + target + `}`},
 
 		{op: OpWorldList, body: `{` + target + `}`},
-		{op: OpWorldSwitch, body: `{` + target + `,"mundo":"alpha"}`, mutating: true},
-		{op: OpWorldExport, body: `{` + target + `,"mundo":"alpha"}`, mutating: true},
-		{op: OpWorldImport, body: `{` + target + `,"nome":"beta","handle":"missing"}`, mutating: true},
-		{op: OpWorldRename, body: `{` + target + `,"de":"alpha","para":"gamma"}`, mutating: true},
-		{op: OpWorldDuplicate, body: `{` + target + `,"de":"alpha","para":"copy"}`, mutating: true},
-		{op: OpWorldDelete, body: `{` + target + `,"mundo":"nonexistent"}`, mutating: true},
+		{op: OpWorldSwitch, body: `{` + target + `,"world":"alpha"}`, mutating: true},
+		{op: OpWorldExport, body: `{` + target + `,"world":"alpha"}`, mutating: true},
+		{op: OpWorldImport, body: `{` + target + `,"name":"beta","handle":"missing"}`, mutating: true},
+		{op: OpWorldRename, body: `{` + target + `,"from":"alpha","to":"gamma"}`, mutating: true},
+		{op: OpWorldDuplicate, body: `{` + target + `,"from":"alpha","to":"copy"}`, mutating: true},
+		{op: OpWorldDelete, body: `{` + target + `,"world":"nonexistent"}`, mutating: true},
 
 		{op: OpSettingsGet, body: `{` + target + `}`},
 		// settings.patch writes FOR REAL into enshrouded_server.json — the target of
 		// the round-trip criterion, and the file that was made to go through
 		// writeAtomic. A case that only proved the error path would leave the
 		// family that matters most here with no write parity.
-		{op: OpSettingsPatch, body: `{` + target + `,"jogo":{"playerHealthFactor":1.5}}`, mutating: true},
+		{op: OpSettingsPatch, body: `{` + target + `,"game":{"playerHealthFactor":1.5}}`, mutating: true},
 
 		{op: OpRuntimeGet, body: `{` + target + `}`},
 		{op: OpRuntimePatch, body: `{` + target + `,"patch":{"BACKUP_MAX_COUNT":"7"}}`, mutating: true},
 
 		{op: OpBackupList, body: `{` + target + `}`},
 		{op: OpBackupCreate, body: `{` + target + `}`, mutating: true},
-		{op: OpBackupRestore, body: `{` + target + `,"arquivo":"missing.zip"}`, mutating: true},
-		{op: OpBackupDownload, body: `{` + target + `,"arquivo":"missing.zip"}`},
+		{op: OpBackupRestore, body: `{` + target + `,"file":"missing.zip"}`, mutating: true},
+		{op: OpBackupDownload, body: `{` + target + `,"file":"missing.zip"}`},
 
 		{op: OpTrainerStatus, body: `{}`},
 		{op: OpTrainerApply, body: `{}`, mutating: true},
 		{op: OpTrainerDesired, body: `{}`, mutating: true},
 
-		{op: OpHistoryList, body: `{` + target + `,"horas":6}`},
+		{op: OpHistoryList, body: `{` + target + `,"hours":6}`},
 	}
 }
 
@@ -334,7 +334,7 @@ func normalize(v any) any {
 		switch k {
 		case "handle":
 			out[k] = "<opaque>"
-		case "arquivo":
+		case "file":
 			out[k] = "<stamped>"
 		default:
 			out[k] = normalize(val)
@@ -350,7 +350,7 @@ func TestHandleDoesNotRevealPath(t *testing.T) {
 	b := NewBackendLocal(m, "test-node")
 
 	res, err := b.Execute(context.Background(), OpWorldExport,
-		json.RawMessage(`{"servidor":"test-game","mundo":"alpha"}`))
+		json.RawMessage(`{"server_id":"test-game","world":"alpha"}`))
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestHandleIsScopedByServer(t *testing.T) {
 	b := NewBackendLocal(m, "test-node")
 
 	res, err := b.Execute(context.Background(), OpWorldExport,
-		json.RawMessage(`{"servidor":"test-game","mundo":"alpha"}`))
+		json.RawMessage(`{"server_id":"test-game","world":"alpha"}`))
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -487,7 +487,7 @@ func TestEphemeralHandleDeletedOnClose(t *testing.T) {
 	b := NewBackendLocal(m, "test-node")
 
 	res, err := b.Execute(context.Background(), OpWorldExport,
-		json.RawMessage(`{"servidor":"test-game","mundo":"alpha"}`))
+		json.RawMessage(`{"server_id":"test-game","world":"alpha"}`))
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
@@ -748,7 +748,7 @@ func TestDiskEffectParity(t *testing.T) {
 	mA, _ := setupEnvAt(t, rootA)
 	mB, _ := setupEnvAt(t, rootB)
 
-	const patch = `{"servidor":"test-game","jogo":{"playerHealthFactor":1.5}}`
+	const patch = `{"server_id":"test-game","game":{"playerHealthFactor":1.5}}`
 
 	local := NewBackendLocal(mA, "test-node")
 	if _, err := local.Execute(context.Background(), OpSettingsPatch, json.RawMessage(patch)); err != nil {

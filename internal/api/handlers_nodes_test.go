@@ -255,7 +255,7 @@ func (p *fakePVE) DatastoreBackups(ctx context.Context, node, storage string) (p
 	return p.freshness[storage], nil
 }
 func (p *fakePVE) ZFSTopology(ctx context.Context, node, pool string) (pve.ZPoolTopology, error) {
-	p.mark("pve.zfstopologia:" + pool)
+	p.mark("pve.zfstopology:" + pool)
 	if p.verbErr != nil {
 		return pve.ZPoolTopology{}, p.verbErr
 	}
@@ -376,7 +376,7 @@ func testNode(id, name string, vmid int, observedAt int64) inventory.Node {
 		Status:    inventory.Observe("running", observedAt),
 		Uptime:    inventory.Observe(int64(100), observedAt),
 		Credential: inventory.Credential{
-			TokenID: "lab@pve!node-" + name, Expire: testNow + 30*86400, State: inventory.CredOK,
+			TokenID: "panel@pve!node-" + name, Expire: testNow + 30*86400, State: inventory.CredOK,
 		},
 	}
 }
@@ -394,8 +394,8 @@ func TestNodesList(t *testing.T) {
 	})
 	r.nodeVaultFn = func() (nodeVault, error) {
 		return &fakeVault{data: map[string]string{
-			"pve_token_node_apps": "lab@pve!node-apps=s",
-			"pve_token_node_dev":  "lab@pve!node-dev=s",
+			"pve_token_node_apps": "panel@pve!node-apps=s",
+			"pve_token_node_dev":  "panel@pve!node-dev=s",
 		}}, nil
 	}
 
@@ -518,7 +518,7 @@ func TestPowerWaitsUPID(t *testing.T) {
 		var seen []string
 		r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
 		r.nodeVaultFn = func() (nodeVault, error) {
-			return &fakeVault{data: map[string]string{"pve_token_node_apps": "lab@pve!node-apps=s"}}, nil
+			return &fakeVault{data: map[string]string{"pve_token_node_apps": "panel@pve!node-apps=s"}}, nil
 		}
 		r.pveDial = func(string) (hypervisorOps, error) {
 			return &fakePVE{seen: &seen, upid: "UPID:pve:1:start"}, nil
@@ -539,7 +539,7 @@ func TestPowerWaitsUPID(t *testing.T) {
 	t.Run("a task that ends in error does NOT become 200", func(t *testing.T) {
 		r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
 		r.nodeVaultFn = func() (nodeVault, error) {
-			return &fakeVault{data: map[string]string{"pve_token_node_apps": "lab@pve!node-apps=s"}}, nil
+			return &fakeVault{data: map[string]string{"pve_token_node_apps": "panel@pve!node-apps=s"}}, nil
 		}
 		r.pveDial = func(string) (hypervisorOps, error) {
 			return &fakePVE{upid: "UPID:x", waitErr: &pve.Error{
@@ -566,13 +566,13 @@ func TestRevokeOrder(t *testing.T) {
 	var seen []string
 	r, st := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
 	vault := &fakeVault{seen: &seen, data: map[string]string{
-		"pve_token_admin":     "lab@pve!admin=a",
-		"pve_token_node_apps": "lab@pve!node-apps=s",
+		"pve_token_admin":     "panel@pve!admin=a",
+		"pve_token_node_apps": "panel@pve!node-apps=s",
 	}}
 	r.nodeVaultFn = func() (nodeVault, error) { return vault, nil }
 	r.pveDial = func(value string) (hypervisorOps, error) {
 		role := "operational"
-		if strings.HasPrefix(value, "lab@pve!admin") {
+		if strings.HasPrefix(value, "panel@pve!admin") {
 			role = "admin"
 		}
 		return &fakePVE{role: role, seen: &seen}, nil
@@ -592,8 +592,8 @@ func TestRevokeOrder(t *testing.T) {
 	if _, still := vault.data["pve_token_node_apps"]; still {
 		t.Error("the key is still in the vault")
 	}
-	if fmt.Sprint(out["passos"]) != fmt.Sprint([]any{"pve.delete", "pve.confirm401", "vault.delete", "vault.recheck"}) {
-		t.Errorf("steps in the response = %v", out["passos"])
+	if fmt.Sprint(out["steps"]) != fmt.Sprint([]any{"pve.delete", "pve.confirm401", "vault.delete", "vault.recheck"}) {
+		t.Errorf("steps in the response = %v", out["steps"])
 	}
 	// The screen shows the real state IMMEDIATELY, without waiting for the next tick.
 	inv, _ := st.Snapshot()
@@ -609,12 +609,12 @@ func TestRevokeRequiresProof401(t *testing.T) {
 	var seen []string
 	r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
 	vault := &fakeVault{seen: &seen, data: map[string]string{
-		"pve_token_admin":     "lab@pve!admin=a",
-		"pve_token_node_apps": "lab@pve!node-apps=s",
+		"pve_token_admin":     "panel@pve!admin=a",
+		"pve_token_node_apps": "panel@pve!node-apps=s",
 	}}
 	r.nodeVaultFn = func() (nodeVault, error) { return vault, nil }
 	r.pveDial = func(value string) (hypervisorOps, error) {
-		return &fakePVE{seen: &seen, stillAlive: !strings.HasPrefix(value, "lab@pve!admin")}, nil
+		return &fakePVE{seen: &seen, stillAlive: !strings.HasPrefix(value, "panel@pve!admin")}, nil
 	}
 
 	w, _ := callAPI(t, r, http.MethodDelete, "/api/nodes/lxc/207/credential", "")
@@ -635,8 +635,8 @@ func TestRevokeRequiresProof401(t *testing.T) {
 func TestRevokeResurrection(t *testing.T) {
 	r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
 	vault := &fakeVault{resurrect: true, data: map[string]string{
-		"pve_token_admin":     "lab@pve!admin=a",
-		"pve_token_node_apps": "lab@pve!node-apps=s",
+		"pve_token_admin":     "panel@pve!admin=a",
+		"pve_token_node_apps": "panel@pve!node-apps=s",
 	}}
 	r.nodeVaultFn = func() (nodeVault, error) { return vault, nil }
 	r.pveDial = func(string) (hypervisorOps, error) { return &fakePVE{}, nil }
@@ -655,8 +655,8 @@ func TestRevokeResurrection(t *testing.T) {
 func TestRevokePVEFailureKeepsVault(t *testing.T) {
 	r, _ := newNodesRouter(t, []inventory.Node{testNode("lxc/207", "apps", 207, testNow)})
 	vault := &fakeVault{data: map[string]string{
-		"pve_token_admin":     "lab@pve!admin=a",
-		"pve_token_node_apps": "lab@pve!node-apps=s",
+		"pve_token_admin":     "panel@pve!admin=a",
+		"pve_token_node_apps": "panel@pve!node-apps=s",
 	}}
 	r.nodeVaultFn = func() (nodeVault, error) { return vault, nil }
 	r.pveDial = func(string) (hypervisorOps, error) {
@@ -684,9 +684,9 @@ func TestRevokeIsolation(t *testing.T) {
 		testNode("qemu/208", "dev", 208, testNow),
 	})
 	vault := &fakeVault{data: map[string]string{
-		"pve_token_admin":     "lab@pve!admin=a",
-		"pve_token_node_apps": "lab@pve!node-apps=s",
-		"pve_token_node_dev":  "lab@pve!node-dev=s",
+		"pve_token_admin":     "panel@pve!admin=a",
+		"pve_token_node_apps": "panel@pve!node-apps=s",
+		"pve_token_node_dev":  "panel@pve!node-dev=s",
 	}}
 	r.nodeVaultFn = func() (nodeVault, error) { return vault, nil }
 	r.pveDial = func(string) (hypervisorOps, error) { return &fakePVE{}, nil }
@@ -824,10 +824,10 @@ func TestCredentialSourceFillsNode(t *testing.T) {
 	r, _ := newNodesRouter(t, nil)
 	r.nodeVaultFn = func() (nodeVault, error) {
 		return &fakeVault{data: map[string]string{
-			"pve_token_admin":     "lab@pve!admin=a",
-			"pve_token_audit":     "lab@pve!audit=a",
-			"pve_token_node_lab":  "lab@pve!node-lab=s",
-			"pve_token_node_apps": "lab@pve!node-apps=s",
+			"pve_token_admin":     "panel@pve!admin=a",
+			"pve_token_audit":     "panel@pve!audit=a",
+			"pve_token_node_lab":  "panel@pve!node-lab=s",
+			"pve_token_node_apps": "panel@pve!node-apps=s",
 		}}, nil
 	}
 	r.pveDial = func(string) (hypervisorOps, error) {
@@ -855,7 +855,7 @@ func TestCredentialSourceFillsNode(t *testing.T) {
 	if !ok {
 		t.Fatal("the node with a key in the vault did NOT receive a credential — that is the production defect")
 	}
-	if c.TokenID != "lab@pve!node-lab" {
+	if c.TokenID != "panel@pve!node-lab" {
 		t.Errorf("token_id = %q, want the WHOLE id from the vault", c.TokenID)
 	}
 	if c.Expire != 1802645875 {
@@ -863,7 +863,7 @@ func TestCredentialSourceFillsNode(t *testing.T) {
 	}
 	// The host is observed through the AUDIT token; reporting CredMissing on it
 	// would be lying about a node the panel can see perfectly well.
-	if h, ok := creds["node/pve"]; !ok || h.TokenID != "lab@pve!audit" {
+	if h, ok := creds["node/pve"]; !ok || h.TokenID != "panel@pve!audit" {
 		t.Errorf("host = %+v (ok=%v), want the audit credential", h, ok)
 	}
 	// A non-PVE transport has no per-node token.
@@ -912,7 +912,7 @@ func TestCredentialSourceDeadVaultDoesNotLie(t *testing.T) {
 func TestCredentialSourceWithoutExpireStillReportsToken(t *testing.T) {
 	r, _ := newNodesRouter(t, nil)
 	r.nodeVaultFn = func() (nodeVault, error) {
-		return &fakeVault{data: map[string]string{"pve_token_node_lab": "lab@pve!node-lab=s"}}, nil
+		return &fakeVault{data: map[string]string{"pve_token_node_lab": "panel@pve!node-lab=s"}}, nil
 	}
 	r.pveDial = func(string) (hypervisorOps, error) { return nil, errors.New("no descriptor") }
 
@@ -923,7 +923,7 @@ func TestCredentialSourceWithoutExpireStillReportsToken(t *testing.T) {
 		t.Fatalf("error: %v", err)
 	}
 	c := creds["lxc/204"]
-	if c.TokenID != "lab@pve!node-lab" {
+	if c.TokenID != "panel@pve!node-lab" {
 		t.Fatalf("token_id = %q — no expiry cannot turn into no credential", c.TokenID)
 	}
 	if c.Expire != 0 {
@@ -931,7 +931,7 @@ func TestCredentialSourceWithoutExpireStillReportsToken(t *testing.T) {
 	}
 }
 
-// 🔴 TestHostDoesNotContradictItself: the host held `lab@pve!audit` in the
+// 🔴 TestHostDoesNotContradictItself: the host held `panel@pve!audit` in the
 // inventory while the screen said it had no credential, because the source and
 // the read picked the vault key by DIFFERENT paths. The symptom was one row
 // showing an expiry date and CredMissing at the same time.
@@ -941,13 +941,13 @@ func TestHostDoesNotContradictItself(t *testing.T) {
 		Transport: inventory.TransportPVEAPI,
 		Status:    inventory.Observe("online", testNow),
 		Credential: inventory.Credential{
-			TokenID: "lab@pve!audit", Expire: testNow + 30*86400,
+			TokenID: "panel@pve!audit", Expire: testNow + 30*86400,
 		},
 	}
 	r, _ := newNodesRouter(t, []inventory.Node{host})
 	r.nodeVaultFn = func() (nodeVault, error) {
 		// The vault holds the AUDIT key — and no "pve_token_node_pve" at all.
-		return &fakeVault{data: map[string]string{"pve_token_audit": "lab@pve!audit=s"}}, nil
+		return &fakeVault{data: map[string]string{"pve_token_audit": "panel@pve!audit=s"}}, nil
 	}
 
 	_, out := callAPI(t, r, http.MethodGet, "/api/nodes", "")

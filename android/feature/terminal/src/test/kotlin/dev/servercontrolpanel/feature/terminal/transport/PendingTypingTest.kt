@@ -62,10 +62,10 @@ class PendingTypingTest {
         assertEquals("ls", typingSummary("ls", byteArrayOf(0x1B, 'O'.code.toByte())))
     }
 
-    /** Decoding byte by byte would turn "não" into "nÃ£o". */
+    /** Decoding byte by byte would turn "naïve" into "naÃ¯ve". */
     @Test
     fun `accents survive because UTF-8 is decoded whole`() {
-        assertEquals("não", until("n", "ã", "o"))
+        assertEquals("naïve", until("na", "ï", "ve"))
     }
 
     /** The end is where the cursor is, so long text is trimmed from the front. */

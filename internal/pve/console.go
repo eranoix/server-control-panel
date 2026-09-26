@@ -21,8 +21,8 @@ package pve
 // guest — `lxc/204`, `lxc/205`, `lxc/207` and `qemu/208`, all 200 on termproxy:
 //
 //	1) POST /api2/json/nodes/{no}/{lxc|qemu}/{vmid}/termproxy      [VM.Console]
-//	   → {"data":{"port":"5900","ticket":"PVEVNC:…","user":"lab@pve!node-lab",
-//	      "upid":"UPID:pve:…:vncproxy:204:lab@pve!node-lab:"}}
+//	   → {"data":{"port":"5900","ticket":"PVEVNC:…","user":"panel@pve!node-lab",
+//	      "upid":"UPID:pve:…:vncproxy:204:panel@pve!node-lab:"}}
 //
 //	2) GET /api2/json/nodes/{node}/{type}/{vmid}/vncwebsocket?port=&vncticket=
 //	   Upgrade: websocket · Sec-WebSocket-Protocol: binary   → 101

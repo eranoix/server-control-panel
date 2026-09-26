@@ -79,11 +79,11 @@ class InstalledApkReaderTest {
     /** An unidentifiable base is fine: without one the server sends only the full artifact. */
     @Test
     fun `an unreadable APK degrades to unavailable instead of crashing`() {
-        context.applicationInfo.sourceDir = File(temp.newFolder(), "nao-existe.apk").path
+        context.applicationInfo.sourceDir = File(temp.newFolder(), "does-not-exist.apk").path
 
         val result = InstalledApkReader(context).read()
 
         check(result is InstalledApkResult.Unavailable)
-        assertTrue(result.reason.contains("nao-existe.apk"))
+        assertTrue(result.reason.contains("does-not-exist.apk"))
     }
 }

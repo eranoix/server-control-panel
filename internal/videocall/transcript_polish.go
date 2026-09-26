@@ -98,7 +98,7 @@ func sanitizePromptContext(items []string) []string {
 // POST /api/videocall/transcript/polish
 // Body: { text, lang?, context?[], speaker? }
 //   - text: the raw utterance (required)
-//   - lang: BCP47 ("pt-BR", "en-US"...). Default "pt-BR".
+//   - lang: BCP47 ("en-US", "pt-BR"...). Default "en-US".
 //   - context: the last 3-5 previous utterances (any speaker), to keep
 //     coherence with the topic. Each item is an already-polished string.
 //   - speaker: the name of whoever spoke (helps the AI with direct speech).
@@ -155,7 +155,7 @@ func (s *Service) HandleTranscriptPolish(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if req.Lang == "" {
-		req.Lang = "pt-BR"
+		req.Lang = "en-US"
 	}
 	// Truncate context + sanitize against prompt injection (the client supplies
 	// the context; if we allowed newlines + markers like "```" or "<|" in the
@@ -214,12 +214,12 @@ func buildPolishPrompt(text, lang string, context []string, speaker string) stri
 }
 
 // extractPolished takes the model's answer and removes a possible "Polished
-// version:" prefix (in English or Portuguese) or surrounding quotes. If it comes back empty or suspicious,
+// version:" prefix or surrounding quotes. If it comes back empty or suspicious,
 // it returns the original text (defensive — better unpolished than ruined).
 func extractPolished(resp, original string) string {
 	r := strings.TrimSpace(resp)
 	// Strip common prefixes.
-	for _, prefix := range []string{"Polished version:", "POLISHED VERSION:", "Polida:", "Resposta:"} {
+	for _, prefix := range []string{"Polished version:", "POLISHED VERSION:", "Response:"} {
 		r = strings.TrimPrefix(r, prefix)
 		r = strings.TrimPrefix(r, strings.ToLower(prefix))
 	}

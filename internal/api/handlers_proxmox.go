@@ -15,17 +15,17 @@ package api
 //
 // Measured against the home hypervisor:
 //
-//	GET /nodes/pve/tasks?limit=50  with lab@pve!audit      → 200, 10 tasks
-//	GET /nodes/pve/tasks?limit=50  with lab@pve!node-apps  → 200, len=0
+//	GET /nodes/pve/tasks?limit=50  with panel@pve!audit      → 200, 10 tasks
+//	GET /nodes/pve/tasks?limit=50  with panel@pve!node-apps  → 200, len=0
 //
 // The second case is NOT an error. Tasks.pm:40-45 requires Sys.Audit on /nodes,
-// which the LabOperador role does not have, and PVE answers 200 with an empty
+// which the PanelOperator role does not have, and PVE answers 200 with an empty
 // list. Whoever reuses the node's token "because it owns the guest" gets no
 // 403, no 401 and no log: they get an empty screen that lies — the perfect
 // false green.
 //
 // Snapshot is the INVERSE: what acts on a guest is the NODE's credential, and a
-// live run proved it, with the UPID carrying `lab@pve!node-lab`.
+// live run proved it, with the UPID carrying `panel@pve!node-lab`.
 //
 // Two divergent sources for the same question have already produced a measured
 // defect in this codebase (see credentialKey in handlers_nodes.go). That is
@@ -52,9 +52,9 @@ package api
 //
 // The operator granted the ACL:
 //
-//	pveum acl modify / --roles PVEAuditor --tokens lab@pve!audit --propagate 1
+//	pveum acl modify / --roles PVEAuditor --tokens panel@pve!audit --propagate 1
 //
-// MEASURED effect with lab@pve!audit, the same day:
+// MEASURED effect with panel@pve!audit, the same day:
 //
 //	GET /nodes/pve/storage    200 with []  →  200 with 4 items
 //	GET /nodes/pve/disks/zfs  403          →  200 with 2 items
@@ -113,7 +113,7 @@ const (
 // that justifies it.
 //
 // It became a method because the choice of the READ token came to depend on the
-// vault (does `pve_token_painel` exist?), and a free function has no way to ask.
+// vault (does `pve_token_panel` exist?), and a free function has no way to ask.
 func (r *Router) keyForOp(op pvxOp, no inventory.Node) string {
 	if op == opGuest {
 		return nodeKey(no)
@@ -214,7 +214,7 @@ func (r *Router) handleProxmox(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		r.timeSeries(w, req, inv)
-	case "sistema":
+	case "system":
 		// Network, DNS, time, certificates — the answers to "what is the bridge's
 		// IP?" and "when does the certificate expire?" that the remote operator
 		// did not have.
@@ -222,7 +222,7 @@ func (r *Router) handleProxmox(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		r.nodeSystem(w, req, inv)
-	case "pacotes":
+	case "packages":
 		if !getOnly() {
 			return
 		}
@@ -240,7 +240,7 @@ func (r *Router) handleProxmox(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		r.backupFreshness(w, req, inv)
-	case "zfs/topologia":
+	case "zfs/topology":
 		// LIVE and on demand: pool topology rarely changes, and the tab is opened
 		// deliberately. Putting this in the poller would cost two calls per tick
 		// to answer a question that does not change between ticks.
@@ -424,9 +424,9 @@ func (r *Router) hypervisorPower(w http.ResponseWriter, req *http.Request, inv i
 	}
 	writeJSON(w, map[string]any{
 		"node": node, "command": string(cmd), "upid": upid,
-		"guests_afetados": affected,
+		"guests_affected": affected,
 		"observed_at":     r.now().Unix(),
-		"aviso":           "the command was accepted by the hypervisor; from here on the panel loses contact with it",
+		"warning":         "the command was accepted by the hypervisor; from here on the panel loses contact with it",
 	})
 }
 
@@ -447,7 +447,7 @@ func (r *Router) timeSeries(w http.ResponseWriter, req *http.Request, inv invent
 		return
 	}
 	q := req.URL.Query()
-	window, ok := pve.ValidRRDWindow(q.Get("janela"))
+	window, ok := pve.ValidRRDWindow(q.Get("window"))
 	if !ok {
 		window = pve.WindowHour
 	}
@@ -463,8 +463,8 @@ func (r *Router) timeSeries(w http.ResponseWriter, req *http.Request, inv invent
 			writeErr(w, pveErrorCode(err), "hypervisor refused the node series: "+pveErrorDetail(err))
 			return
 		}
-		writeJSON(w, map[string]any{"alvo": node, "escopo": "node", "janela": string(window),
-			"pontos": pts, "observed_at": r.now().Unix()})
+		writeJSON(w, map[string]any{"target": node, "scope": "node", "window": string(window),
+			"points": pts, "observed_at": r.now().Unix()})
 		return
 	}
 
@@ -483,8 +483,8 @@ func (r *Router) timeSeries(w http.ResponseWriter, req *http.Request, inv invent
 		writeErr(w, pveErrorCode(err), "hypervisor refused the guest series: "+pveErrorDetail(err))
 		return
 	}
-	writeJSON(w, map[string]any{"alvo": no.ID, "escopo": "guest", "janela": string(window),
-		"pontos": pts, "observed_at": r.now().Unix()})
+	writeJSON(w, map[string]any{"target": no.ID, "scope": "guest", "window": string(window),
+		"points": pts, "observed_at": r.now().Unix()})
 }
 
 // nodeSystem joins network, DNS, time and certificates into a single response.
@@ -506,24 +506,24 @@ func (r *Router) nodeSystem(w http.ResponseWriter, req *http.Request, inv invent
 	out := map[string]any{"node": node, "observed_at": r.now().Unix()}
 
 	if v, err := cli.Network(ctx, node); err != nil {
-		out["network_erro"] = pveErrorDetail(err)
+		out["network_error"] = pveErrorDetail(err)
 	} else {
 		out["network"] = v
 	}
 	if v, err := cli.DNS(ctx, node); err != nil {
-		out["dns_erro"] = pveErrorDetail(err)
+		out["dns_error"] = pveErrorDetail(err)
 	} else {
 		out["dns"] = v
 	}
 	if v, err := cli.Time(ctx, node); err != nil {
-		out["time_erro"] = pveErrorDetail(err)
+		out["time_error"] = pveErrorDetail(err)
 	} else {
 		out["time"] = v
 	}
 	if v, err := cli.Certificates(ctx, node); err != nil {
-		out["certificados_erro"] = pveErrorDetail(err)
+		out["certificates_error"] = pveErrorDetail(err)
 	} else {
-		out["certificados"] = v
+		out["certificates"] = v
 	}
 	writeJSON(w, out)
 }
@@ -543,7 +543,7 @@ func (r *Router) nodePackages(w http.ResponseWriter, req *http.Request, inv inve
 		writeErr(w, pveErrorCode(err), "hypervisor refused the package list: "+pveErrorDetail(err))
 		return
 	}
-	writeJSON(w, map[string]any{"node": node, "pacotes": ps, "observed_at": r.now().Unix()})
+	writeJSON(w, map[string]any{"node": node, "packages": ps, "observed_at": r.now().Unix()})
 }
 
 // nodeSyslog returns the last lines of the hypervisor's journal.
@@ -569,7 +569,7 @@ func (r *Router) nodeSyslog(w http.ResponseWriter, req *http.Request, inv invent
 		writeErr(w, pveErrorCode(err), "hypervisor refused the syslog: "+pveErrorDetail(err))
 		return
 	}
-	writeJSON(w, map[string]any{"node": node, "linhas": lines, "limite": limit,
+	writeJSON(w, map[string]any{"node": node, "lines": lines, "limit": limit,
 		"observed_at": r.now().Unix()})
 }
 
@@ -621,13 +621,13 @@ func (r *Router) backupFreshness(w http.ResponseWriter, req *http.Request, inv i
 				continue
 			}
 			if j.IsScheduled() {
-				jobs[j.Storage] = agenda{"ativo", j.Schedule}
+				jobs[j.Storage] = agenda{"active", j.Schedule}
 			} else {
 				// The job exists and is switched off: SOMEBODY decided that. It
 				// is different from there being no job at all, and it is the
 				// distinction that prevents permanent red over a layer that was
 				// disarmed on purpose.
-				jobs[j.Storage] = agenda{"desarmado", j.Schedule}
+				jobs[j.Storage] = agenda{"disarmed", j.Schedule}
 			}
 		}
 	}
@@ -635,7 +635,7 @@ func (r *Router) backupFreshness(w http.ResponseWriter, req *http.Request, inv i
 		if a, ok := jobs[st]; ok {
 			return a.state, a.schedule
 		}
-		return "fora-do-pve", ""
+		return "outside-pve", ""
 	}
 
 	output := make([]pve.BackupFreshness, 0, len(targets))
@@ -690,7 +690,7 @@ func (r *Router) zpoolTopology(w http.ResponseWriter, req *http.Request, inv inv
 			// An unreadable pool must not take the others down — nor turn into
 			// silence. It goes into the list saying it was not read, with the reason.
 			tops = append(tops, pve.ZPoolTopology{
-				Name: p.Name, State: "DESCONHECIDO",
+				Name: p.Name, State: "UNKNOWN",
 				Errors: "could not read the topology: " + pveErrorDetail(err),
 			})
 			continue
@@ -824,7 +824,7 @@ func (r *Router) hypervisorDisks(w http.ResponseWriter, req *http.Request, inv i
 // documents its PRESENCE — and the text on screen switches by itself, because
 // what changed was the measurement, not the code.
 //
-// `storage_visivel` comes from pve.CanAuditDatastore, the SAME function the
+// `storage_visible` comes from pve.CanAuditDatastore, the SAME function the
 // poller uses to stamp `datastore_audit`. A copy of the rule here would give two
 // truths about the same question, and the second would age in silence — the
 // defect credentialKey (handlers_nodes.go) has already cost this codebase.
@@ -844,7 +844,7 @@ func (r *Router) tokenPermissions(w http.ResponseWriter, req *http.Request, inv 
 	}
 	writeJSON(w, map[string]any{
 		"permissions":     perms,
-		"storage_visivel": storage,
+		"storage_visible": storage,
 		"observed_at":     r.now().Unix(),
 	})
 }
@@ -951,7 +951,7 @@ func (r *Router) guestSnapshots(w http.ResponseWriter, req *http.Request, inv in
 // 🔴 THE FINDING: the privilege WAS ALREADY GRANTED and the dashboard did not
 // show it.
 //
-// The LabOperador role has `VM.Snapshot`, and `Qemu.pm:6301` /
+// The PanelOperator role has `VM.Snapshot`, and `Qemu.pm:6301` /
 // `LXC/Snapshot.pm:275` accept `VM.Snapshot` for ROLLBACK — not only for create
 // and delete. Measured without touching a single ACL:
 //

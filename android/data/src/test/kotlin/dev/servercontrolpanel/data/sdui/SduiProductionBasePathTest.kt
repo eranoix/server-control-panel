@@ -34,33 +34,33 @@ class SduiProductionBasePathTest {
            "components":[
              {"type":"table","id":"jobs-table",
               "columns":[
-                {"key":"name","label":"Nome","kind":"text"},
+                {"key":"name","label":"Name","kind":"text"},
                 {"key":"schedule","label":"Agenda","kind":"text"},
-                {"key":"kind","label":"Tipo","kind":"text"},
-                {"key":"last_status","label":"Último status","kind":"badge",
+                {"key":"kind","label":"Type","kind":"text"},
+                {"key":"last_status","label":"Last status","kind":"badge",
                  "badge_map":{"ok":"success","failed":"danger","skipped":"neutral"}},
-                {"key":"next_fire","label":"Próxima execução","kind":"text"}],
+                {"key":"next_fire","label":"Next run","kind":"text"}],
               "rows_source":{"endpoint":"/api/mobile/v1/scheduler/jobs"},
               "row_actions":[
-                {"action_id":"scheduler.job.run_now","label":"Executar agora","style":"secondary"},
-                {"action_id":"scheduler.job.delete","label":"Excluir","style":"destructive"}],
-              "empty_state":{"text":"Nenhum job agendado ainda."}},
+                {"action_id":"scheduler.job.run_now","label":"Run now","style":"secondary"},
+                {"action_id":"scheduler.job.delete","label":"Delete","style":"destructive"}],
+              "empty_state":{"text":"No jobs scheduled yet."}},
              {"type":"form","id":"job-form",
               "fields":[
-                {"key":"name","label":"Nome","kind":"text","required":true},
+                {"key":"name","label":"Name","kind":"text","required":true},
                 {"key":"schedule","label":"Agenda (cron)","kind":"text","required":true,"placeholder":"*/15 * * * *"},
-                {"key":"kind","label":"Tipo","kind":"select","required":true,"options":["shell","backup"]},
-                {"key":"enabled","label":"Ativo","kind":"bool"},
-                {"key":"run_as_root","label":"Executar como root","kind":"bool"}],
-              "submit_action":{"action_id":"scheduler.job.save","label":"Salvar","style":"primary"}},
-             {"type":"action","id":"refresh-jobs","label":"Atualizar",
+                {"key":"kind","label":"Type","kind":"select","required":true,"options":["shell","backup"]},
+                {"key":"enabled","label":"Active","kind":"bool"},
+                {"key":"run_as_root","label":"Run as root","kind":"bool"}],
+              "submit_action":{"action_id":"scheduler.job.save","label":"Save","style":"primary"}},
+             {"type":"action","id":"refresh-jobs","label":"Refresh",
               "action_id":"scheduler.jobs.refresh","style":"secondary"},
              {"type":"confirm_destructive","id":"job-delete-confirm",
               "action_id":"scheduler.job.delete",
-              "message":"Este job será excluído permanentemente. Essa ação não pode ser desfeita."}]}}
+              "message":"This job will be deleted permanently. This action cannot be undone."}]}}
     """.trimIndent()
 
-    private val jobsRows = """[{"name":"backup-diario","schedule":"0 3 * * *","kind":"backup","last_status":"ok","next_fire":"03:00"}]"""
+    private val jobsRows = """[{"name":"backup-daily","schedule":"0 3 * * *","kind":"backup","last_status":"ok","next_fire":"03:00"}]"""
 
     @Before
     fun setUp() {

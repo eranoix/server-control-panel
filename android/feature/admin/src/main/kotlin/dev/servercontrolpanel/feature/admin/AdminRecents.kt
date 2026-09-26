@@ -14,7 +14,7 @@ internal object AdminRecents {
     /** Fits two grid rows without pushing the catalog off the first screen. */
     const val MAX = 6
 
-    private const val FILE = "panel_admin_recentes"
+    private const val FILE = "panel_admin_recents"
     private const val KEY = "ids"
     /** Unit separator (0x1F), which never occurs in a section id (`group.name`). */
     private const val SEPARATOR = "\u001F"

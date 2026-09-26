@@ -31,11 +31,11 @@ const no = (m) => { console.log('FAIL ' + m); fail++; };
 console.log('=== test-panel-primer ===');
 
 // The route exists on the server side — without it the primer fetches nothing.
-/\/api\/terminal\/log-bruto/.test(api)
-  ? ok('server: the /api/terminal/log-bruto route is registered (the fallback)')
+/\/api\/terminal\/raw-log/.test(api)
+  ? ok('server: the /api/terminal/raw-log route is registered (the fallback)')
   : no('server: the raw-log route is gone — the panel is left without a fallback');
-/\/api\/terminal\/historico/.test(api)
-  ? ok('server: the /api/terminal/historico route is registered')
+/\/api\/terminal\/history/.test(api)
+  ? ok('server: the /api/terminal/history route is registered')
   : no('server: the rendered-history route is gone');
 
 const m = shell.match(/const primeAndOpen = \(\) => \{([\s\S]*?)\n {6}\};/);
@@ -47,8 +47,8 @@ if (!m) {
   // THE ORDER OF THE SOURCES matters: the rendered history first (it is not a
   // replay, so it cannot duplicate or misalign), the raw log only as the fallback
   // for an old session that has no history file yet.
-  const iHist = body.indexOf("/api/terminal/historico");
-  const iRaw = body.indexOf("/api/terminal/log-bruto");
+  const iHist = body.indexOf("/api/terminal/history");
+  const iRaw = body.indexOf("/api/terminal/raw-log");
   (iHist >= 0 && iRaw > iHist)
     ? ok('panel: fetches the rendered history first and the raw log as the fallback')
     : no('panel: wrong source order — the raw log must not come before the history');

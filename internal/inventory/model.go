@@ -55,7 +55,7 @@ const (
 	// in this phase: the node-agent comes later. The value is accepted by the
 	// model and refused by whoever goes to dial it — faking support here would
 	// be lying to the planning of the stage that follows.
-	TransportAgent Transport = "agente"
+	TransportAgent Transport = "agent"
 	// TransportPVEAPI is the only transport with an implementation today
 	// (internal/pve): the Proxmox API with a privsep=1 token.
 	TransportPVEAPI Transport = "pve-api"
@@ -76,9 +76,9 @@ func (t Transport) Valid() bool {
 type NodeKind string
 
 const (
-	NodeKindHost     NodeKind = "host"    // the hypervisor itself
-	NodeKindGuest    NodeKind = "guest"   // LXC or QEMU managed by that hypervisor
-	NodeKindExternal NodeKind = "externo" // a machine outside the hypervisor (e.g. a rented VPS)
+	NodeKindHost     NodeKind = "host"     // the hypervisor itself
+	NodeKindGuest    NodeKind = "guest"    // LXC or QEMU managed by that hypervisor
+	NodeKindExternal NodeKind = "external" // a machine outside the hypervisor (e.g. a rented VPS)
 )
 
 // Valid reports whether k is one of the three node kinds.
@@ -121,17 +121,17 @@ const NotReported int64 = -1
 // `expire` kept locally that breaks the tie. The strings are a screen contract
 // — changing them here changes what the operator reads.
 const (
-	CredOK      = "ok"       // token present and within its validity
-	CredMissing = "ausente"  // there is no token for this node in the vault
-	CredRevoked = "revogada" // the panel deleted/revoked it (DELETE on the hypervisor + vault)
-	CredExpired = "expirada" // the token's `expire` has already passed — without calling the hypervisor
+	CredOK      = "ok"      // token present and within its validity
+	CredMissing = "absent"  // there is no token for this node in the vault
+	CredRevoked = "revoked" // the panel deleted/revoked it (DELETE on the hypervisor + vault)
+	CredExpired = "expired" // the token's `expire` has already passed — without calling the hypervisor
 )
 
 // Credential is what the panel KNOWS about a node's credential. The secret
 // never lives here: it stays in the vault (internal/secrets), and this record
 // only carries the identifier and the validity.
 type Credential struct {
-	TokenID string `json:"token_id"` // "lab@pve!<name>"; empty = absent
+	TokenID string `json:"token_id"` // "panel@pve!<name>"; empty = absent
 	Expire  int64  `json:"expire"`   // unix seconds; 0 = no declared expiry
 	State   string `json:"state"`    // one of the Cred* constants
 }
@@ -161,7 +161,7 @@ type Node struct {
 	// and deleting it would be amnesia presented as truth. What changes is that
 	// it stops being confused with a node that has merely aged: "stale" means
 	// the panel could not look; this means the panel looked and did not find it.
-	MissingSince int64 `json:"ausente_desde,omitempty"`
+	MissingSince int64 `json:"absent_since,omitempty"`
 
 	Status Observed[string] `json:"status"` // "running"|"stopped"|… as the hypervisor returns it
 	Uptime Observed[int64]  `json:"uptime"` // seconds
@@ -225,11 +225,11 @@ func (n Node) Validate() error {
 		return fmt.Errorf("node without ID: without a stable key the inventory merges entries")
 	}
 	if !n.Transport.Valid() {
-		return fmt.Errorf("node %q: transport %s outside the set {agente, pve-api, ssh}",
+		return fmt.Errorf("node %q: transport %s outside the set {agent, pve-api, ssh}",
 			n.ID, strconv.Quote(string(n.Transport)))
 	}
 	if !n.Kind.Valid() {
-		return fmt.Errorf("node %q: kind %s outside the set {host, guest, externo}",
+		return fmt.Errorf("node %q: kind %s outside the set {host, guest, external}",
 			n.ID, strconv.Quote(string(n.Kind)))
 	}
 	return nil

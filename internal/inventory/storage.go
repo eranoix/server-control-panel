@@ -52,17 +52,17 @@ type StoragePool struct {
 	Used      int64    `json:"used"`    // bytes
 	Avail     int64    `json:"avail"`   // bytes
 	UsedPct   float64  `json:"used_pct"`
-	IsActive  bool     `json:"ativo"`
-	IsEnabled bool     `json:"habilitado"`
-	IsShared  bool     `json:"compartilhado"`
+	IsActive  bool     `json:"active"`
+	IsEnabled bool     `json:"enabled"`
+	IsShared  bool     `json:"shared"`
 }
 
-// ZPool is a ZFS pool of the hypervisor. Saudavel is derived ONCE, here, so that
+// ZPool is a ZFS pool of the hypervisor. Healthy is derived ONCE, here, so that
 // no screen needs to know the list of ZFS states by heart.
 type ZPool struct {
 	Name    string  `json:"name"`
 	Health  string  `json:"health"` // literal do ZFS: ONLINE | DEGRADED | FAULTED | …
-	Healthy bool    `json:"saudavel"`
+	Healthy bool    `json:"healthy"`
 	Size    int64   `json:"size"`
 	Alloc   int64   `json:"alloc"`
 	Free    int64   `json:"free"`

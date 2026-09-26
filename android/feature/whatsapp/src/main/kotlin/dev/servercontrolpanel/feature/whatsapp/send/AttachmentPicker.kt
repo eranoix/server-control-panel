@@ -84,7 +84,7 @@ internal fun msgTypeFor(mimeType: String?): String = when {
 }
 
 private fun queryMetadata(contentResolver: ContentResolver, uri: Uri): AttachmentMetadata {
-    val fallback = uri.lastPathSegment?.substringAfterLast('/') ?: "arquivo"
+    val fallback = uri.lastPathSegment?.substringAfterLast('/') ?: "file"
     val mimeType = contentResolver.getType(uri)
     val cursor = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
     return cursor.use { resolveAttachmentMetadata(it, mimeType, fallback) }

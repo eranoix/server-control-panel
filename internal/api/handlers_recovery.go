@@ -357,8 +357,8 @@ func (r *Router) handleRecoveryClaudeStatus(w http.ResponseWriter, req *http.Req
 	running := strings.TrimSpace(string(state)) == "running"
 	resp := map[string]any{
 		"ok":        true,
-		"existe":    len(strings.TrimSpace(string(state))) > 0,
-		"rodando":   running,
+		"exists":    len(strings.TrimSpace(string(state))) > 0,
+		"running":   running,
 		"container": recoveryClaudeContainer,
 	}
 	if running {
@@ -367,10 +367,10 @@ func (r *Router) handleRecoveryClaudeStatus(w http.ResponseWriter, req *http.Req
 		// authentication, and the tab has to say so beforehand, not afterwards.
 		authed := exec.CommandContext(req.Context(), "/usr/bin/docker", "exec",
 			recoveryClaudeContainer, "test", "-f", "/config/.credentials.json").Run() == nil
-		resp["autenticado"] = authed
+		resp["authenticated"] = authed
 		if v, err := exec.CommandContext(req.Context(), "/usr/bin/docker", "exec",
 			recoveryClaudeContainer, "claude", "--version").Output(); err == nil {
-			resp["versao"] = strings.TrimSpace(string(v))
+			resp["version"] = strings.TrimSpace(string(v))
 		}
 	}
 	writeJSON(w, resp)
@@ -459,7 +459,7 @@ func (r *Router) handleRecoveryRenew(w http.ResponseWriter, req *http.Request) {
 	if rest := recoveryHardCap - time.Since(start); rest <= 0 {
 		// Deliberately does NOT renew: the cap exists so that a privileged
 		// session does not become permanent just because the tab was left open.
-		r.auditEvent(req, user, "recovery.renew.teto", "")
+		r.auditEvent(req, user, "recovery.renew.ceiling", "")
 		writeErr(w, 403, "recovery session hit the limit of "+recoveryHardCap.String()+" — authenticate again")
 		return
 	}
@@ -481,7 +481,7 @@ func (r *Router) handleRecoveryRenew(w http.ResponseWriter, req *http.Request) {
 		"ok": true,
 		// How much of the cap is left — the screen warns before it runs out,
 		// instead of letting the operator find out by being disconnected.
-		"restante_seg": int((recoveryHardCap - time.Since(start)).Seconds()),
+		"remaining_seg": int((recoveryHardCap - time.Since(start)).Seconds()),
 	})
 }
 

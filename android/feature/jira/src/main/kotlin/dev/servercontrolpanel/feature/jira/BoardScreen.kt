@@ -77,8 +77,8 @@ import dev.servercontrolpanel.data.jira.JiraBoard
 import kotlinx.coroutines.delay
 
 /** Test tags shared by the UI and the tests. */
-internal const val TAG_BOARD = "jira-quadro"
-internal const val TAG_DRAGGING = "jira-cartao-arrastando"
+internal const val TAG_BOARD = "jira-board"
+internal const val TAG_DRAGGING = "jira-card-dragging"
 
 /** How many columns fit on screen at once. */
 private const val VISIBLE_COLUMNS = 3

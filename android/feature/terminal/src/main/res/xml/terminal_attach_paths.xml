@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Scope of this module's FileProvider: only the "anexos-terminal" subfolder of
+    Scope of this module's FileProvider: only the "terminal-attachments" subfolder of
     the private cache, where AttachmentSourceSheet writes the photo just taken (and
     the copy of an image from the Photo Picker). Nothing outside it can be granted.
 -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path
-        name="anexos_terminal"
-        path="anexos-terminal/" />
+        name="attachments_terminal"
+        path="terminal-attachments/" />
 </paths>

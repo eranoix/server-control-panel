@@ -44,16 +44,16 @@ class ResumePointTest {
     fun `within the deadline the route is still valid`() {
         var clock = 1_000_000L
         val store = ResumePoint(app, now = { clock })
-        store.save("arquivos")
+        store.save("files")
 
         clock += 30_000L // thirty seconds, about one install
-        assertEquals("arquivos", store.consume())
+        assertEquals("files", store.consume())
     }
 
     @Test
     fun `forget clears without consuming`() {
         val store = ResumePoint(app)
-        store.save("notificacoes")
+        store.save("notifications")
         store.forget()
         assertNull(store.consume())
     }

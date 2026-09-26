@@ -97,8 +97,8 @@ class ReturnAfterUpdateReceiver : BroadcastReceiver() {
     }
 
     private companion object {
-        const val TAG = "VoltaDepoisDaAtualizacao"
-        const val CHANNEL = "atualizacao_concluida"
+        const val TAG = "ReturnAfterUpdate"
+        const val CHANNEL = "update_finished"
         const val NOTICE_ID = 4711
         const val REOPEN_CODE = 4712
     }

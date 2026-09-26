@@ -42,7 +42,7 @@ func TestBypassSanitize(t *testing.T) {
 func TestSavedTotals(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "stats-vps.json"), []byte(`{"orig":100,"out":25,"imgs":2,"reqs_cut":3}`), 0o644)
-	os.WriteFile(filepath.Join(dir, "stats-casa.json"), []byte(`{"orig":100,"out":25,"imgs":1,"reqs_cut":1}`), 0o644)
+	os.WriteFile(filepath.Join(dir, "stats-home.json"), []byte(`{"orig":100,"out":25,"imgs":1,"reqs_cut":1}`), 0o644)
 	m := New(dir, "")
 	s := m.SavedTotals()
 	if s.Orig != 200 || s.Out != 50 || s.Imgs != 3 || s.ReqsCut != 4 {

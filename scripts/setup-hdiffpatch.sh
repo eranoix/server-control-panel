@@ -18,8 +18,8 @@ VERSION="v5.1.3"
 ARCHIVE="hdiffpatch_${VERSION}_bin_linux64.zip"
 URL="https://github.com/sisong/HDiffPatch/releases/download/${VERSION}/${ARCHIVE}"
 EXPECTED_SHA256="628963bf2ee9108a97260fa5eef44acd9ec94369b76090a957c9182b3abbb558"
-# DESTINO is the install-dir override read from the environment.
-DEST="${DESTINO:-/usr/local/bin}"
+# DESTINATION is the install-dir override read from the environment.
+DEST="${DESTINATION:-/usr/local/bin}"
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 

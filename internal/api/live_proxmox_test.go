@@ -215,7 +215,7 @@ func TestLiveProxmoxWave1(t *testing.T) {
 		t.Errorf("no disk reports PASSED: %s", disksText)
 	}
 	if d, _ := disksBody["disks"].([]any); len(d) > 0 {
-		t.Logf("discos: %d", len(d))
+		t.Logf("disks: %d", len(d))
 	}
 
 	// ── 5. LIVE snapshot mutation, only on the guest named `lab` ────────────
@@ -260,8 +260,8 @@ func TestLiveProxmoxWave1(t *testing.T) {
 	t.Logf("snapshot created: %s · upid=%s", name, createUPID)
 	// 🔴 The token rule, live: what acted was the NODE's credential, and the UPID
 	// carries its name. If `audit` shows up here, the token choice has collapsed.
-	if !strings.Contains(createUPID, "lab@pve!node-"+targetGuest) {
-		t.Errorf("UPID = %q — want it to carry lab@pve!node-%s (the node is what acts)", createUPID, targetGuest)
+	if !strings.Contains(createUPID, "panel@pve!node-"+targetGuest) {
+		t.Errorf("UPID = %q — want it to carry panel@pve!node-%s (the node is what acts)", createUPID, targetGuest)
 	}
 
 	w, out = pvxGET(t, r, "/api/proxmox/snapshots?node="+target)
@@ -279,8 +279,8 @@ func TestLiveProxmoxWave1(t *testing.T) {
 	deleteUPID, _ := removed["upid"].(string)
 	deleted = true
 	t.Logf("snapshot deleted: %s · upid=%s", name, deleteUPID)
-	if !strings.Contains(deleteUPID, "lab@pve!node-"+targetGuest) {
-		t.Errorf("delete's UPID = %q — want it to carry lab@pve!node-%s", deleteUPID, targetGuest)
+	if !strings.Contains(deleteUPID, "panel@pve!node-"+targetGuest) {
+		t.Errorf("delete's UPID = %q — want it to carry panel@pve!node-%s", deleteUPID, targetGuest)
 	}
 
 	w, _ = pvxGET(t, r, "/api/proxmox/snapshots?node="+target)
@@ -307,8 +307,8 @@ func TestLiveProxmoxWave1(t *testing.T) {
 	if len(perms) == 0 {
 		t.Error("empty permissions map")
 	}
-	if out["storage_visivel"] != true {
-		t.Errorf("storage_visivel = %v — the 2026-08-20 ACL should have made the datastore auditable", out["storage_visivel"])
+	if out["storage_visible"] != true {
+		t.Errorf("storage_visible = %v — the 2026-08-20 ACL should have made the datastore auditable", out["storage_visible"])
 	}
 	hasStorage := false
 	for path := range perms {
@@ -319,7 +319,7 @@ func TestLiveProxmoxWave1(t *testing.T) {
 	if !hasStorage {
 		t.Error("no /storage path in the live map")
 	}
-	t.Logf("permissions: %d path(s), storage_visivel=%v", len(perms), out["storage_visivel"])
+	t.Logf("permissions: %d path(s), storage_visible=%v", len(perms), out["storage_visible"])
 
 	t1 := time.Now().UTC()
 	t.Logf("[t0=%s t1=%s] live-proof window (%.1fs)",
@@ -493,15 +493,15 @@ func TestLiveProxmoxWave2(t *testing.T) {
 		p := raw.(map[string]any)
 		name, _ := p["name"].(string)
 		names[name] = true
-		t.Logf("zpool %-8s %-9s frag=%v alloc=%s free=%s saudavel=%v",
-			name, p["health"], p["frag_pct"], human(p["alloc"]), human(p["free"]), p["saudavel"])
+		t.Logf("zpool %-8s %-9s frag=%v alloc=%s free=%s healthy=%v",
+			name, p["health"], p["frag_pct"], human(p["alloc"]), human(p["free"]), p["healthy"])
 		// 🔴 A pool out of ONLINE is the most expensive news in this house (a single
 		// disk, no redundancy). Failing here is the test doing its job.
 		if p["health"] != "ONLINE" {
 			t.Errorf("🔴 pool %q is %v — SINGLE DISK, no redundancy", name, p["health"])
 		}
-		if p["saudavel"] != (p["health"] == "ONLINE") {
-			t.Errorf("pool %q: saudavel=%v does not match health=%v", name, p["saudavel"], p["health"])
+		if p["healthy"] != (p["health"] == "ONLINE") {
+			t.Errorf("pool %q: healthy=%v does not match health=%v", name, p["healthy"], p["health"])
 		}
 	}
 	for _, n := range []string{"backup", "rpool"} {

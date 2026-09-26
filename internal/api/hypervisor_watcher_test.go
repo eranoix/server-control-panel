@@ -23,7 +23,7 @@ func sentinelRouter(t *testing.T) (*Router, *[]notify.Event) {
 
 func invOK() inventory.Inventory { return inventory.Inventory{LastPollError: ""} }
 func badInv() inventory.Inventory {
-	return inventory.Inventory{LastPollError: "pve /api2/json/cluster/resources?type=vm: inalcancavel: dial tcp 198.51.100.20:8006: i/o timeout"}
+	return inventory.Inventory{LastPollError: "pve /api2/json/cluster/resources?type=vm: unreachable: dial tcp 198.51.100.20:8006: i/o timeout"}
 }
 
 // 🔴 TestSentinelDoesNotTrustFirstTick — a tick that fails is routine: the

@@ -20,8 +20,8 @@ import (
 // Without it, the mutation this file exists to prevent would slip by unnoticed —
 // swapping `pve_token_audit` for `pve_token_node_*` on the tasks route
 // produces no error at all, it produces an EMPTY LIST. Measured:
-// GET /nodes/pve/tasks?limit=50 with lab@pve!node-apps returns 200 with len=0,
-// because Tasks.pm:40-45 requires Sys.Audit on /nodes and the LabOperador role does not.
+// GET /nodes/pve/tasks?limit=50 with panel@pve!node-apps returns 200 with len=0,
+// because Tasks.pm:40-45 requires Sys.Audit on /nodes and the PanelOperator role does not.
 // A test that only looked at the HTTP status would say "passed".
 
 // --------------------------------------------------------------- doubles ----
@@ -100,10 +100,10 @@ func newProxmoxRouter(t *testing.T, vault *spyVault, fake *fakePVE) (*Router, *i
 
 func defaultVault() *spyVault {
 	return &spyVault{data: map[string]string{
-		"pve_token_audit":     "lab@pve!audit=s3cr3t",
-		"pve_token_admin":     "lab@pve!admin=s3cr3t",
-		"pve_token_node_apps": "lab@pve!node-apps=s3cr3t",
-		"pve_token_node_lab":  "lab@pve!node-lab=s3cr3t",
+		"pve_token_audit":     "panel@pve!audit=s3cr3t",
+		"pve_token_admin":     "panel@pve!admin=s3cr3t",
+		"pve_token_node_apps": "panel@pve!node-apps=s3cr3t",
+		"pve_token_node_lab":  "panel@pve!node-lab=s3cr3t",
 	}}
 }
 
@@ -163,7 +163,7 @@ func TestHealthComesFromStoreWithoutCallingHypervisor(t *testing.T) {
 func TestTasksUseAuditToken(t *testing.T) {
 	routes := []string{
 		"/api/proxmox/tasks?errors=1&limit=10",
-		"/api/proxmox/tasks/log?upid=UPID:pve:1:2:3:vzsnapshot:204:lab@pve!node-lab:",
+		"/api/proxmox/tasks/log?upid=UPID:pve:1:2:3:vzsnapshot:204:panel@pve!node-lab:",
 		"/api/proxmox/disks",
 		"/api/proxmox/permissions",
 	}
@@ -194,7 +194,7 @@ func TestTasksUseAuditToken(t *testing.T) {
 
 // 🔴 TestSnapshotUsesNodeToken is the other half: a guest mutation uses the
 // NODE's credential (the token rule, proved live with the UPID carrying
-// lab@pve!node-lab). Using audit here would give a 403 — noisy, but wrong all the
+// panel@pve!node-lab). Using audit here would give a 403 — noisy, but wrong all the
 // same: what acts is not what audits.
 func TestSnapshotUsesNodeToken(t *testing.T) {
 	cases := []struct{ method, path string }{
@@ -205,7 +205,7 @@ func TestSnapshotUsesNodeToken(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.method, func(t *testing.T) {
 			vault := defaultVault()
-			fake := &fakePVE{upid: "UPID:pve:1:2:3:vzsnapshot:207:lab@pve!node-apps:"}
+			fake := &fakePVE{upid: "UPID:pve:1:2:3:vzsnapshot:207:panel@pve!node-apps:"}
 			r, _ := newProxmoxRouter(t, vault, fake)
 
 			w, _ := callPVX(t, r, tc.method, tc.path, "")
@@ -289,7 +289,7 @@ func TestInvalidNameNeverReachesHypervisor(t *testing.T) {
 // that does not exist call for OPPOSITE actions from the operator. Collapsing the
 // two into one empty answer is the collapse of handlers_ai.go:186, which already produced a defect.
 func TestUnreachableVaultIsNotEmptyList(t *testing.T) {
-	t.Run("inalcancavel = 503", func(t *testing.T) {
+	t.Run("unreachable = 503", func(t *testing.T) {
 		vault := defaultVault()
 		vault.unreachable = true
 		r, _ := newProxmoxRouter(t, vault, &fakePVE{})
@@ -370,8 +370,8 @@ func TestPermissionsExplainWave2(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("status = %d", w.Code)
 	}
-	if out["storage_visivel"] != false {
-		t.Errorf("storage_visivel = %v, want false — it's what explains wave 2 on the screen", out["storage_visivel"])
+	if out["storage_visible"] != false {
+		t.Errorf("storage_visible = %v, want false — it's what explains wave 2 on the screen", out["storage_visible"])
 	}
 	if m, _ := out["permissions"].(map[string]any); len(m) != 2 {
 		t.Errorf("permissions = %v", out["permissions"])
@@ -417,7 +417,7 @@ func TestHealthNeverObservedSaysSo(t *testing.T) {
 // most destructive route of the dashboard. Against the home hypervisor, a
 // rollback to a snapshot that DOES NOT EXIST returned:
 //
-//	HTTP 200 {"data":"UPID:pve:…:vzrollback:204:lab@pve!node-lab:"}
+//	HTTP 200 {"data":"UPID:pve:…:vzrollback:204:panel@pve!node-lab:"}
 //
 // and only the task status told the truth:
 //

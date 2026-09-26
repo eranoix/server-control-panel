@@ -347,7 +347,7 @@ with little content (5 lines at the top of a 46-line grid → 27 empty visible
 lines). Anchoring to the cursor solved that, but Claude Code's input box is
 **three lines with the cursor in the middle** — aligning the cursor with the
 bottom of the screen ate the lower border. Hence
-`LINHAS_ABAIXO_DO_CURSOR = 2`.
+`ROWS_BELOW_CURSOR = 2`.
 
 ### 5.4 The "self update" loop
 
@@ -454,7 +454,7 @@ arrived"**. A queue that resends against a route with no idempotency can
 restart the same container twice — and the app would have promised, on screen,
 that the action was saved.
 
-**Fix:** `enfileirar` now **requires** the caller to declare the proof
+**Fix:** `enqueue` now **requires** the caller to declare the proof
 (`IdempotencyProof`), **with no default value**. A default would make the
 question skippable, which is exactly how an action becomes a duplicate. Honest
 and recorded consequence: today the queue can only carry the WhatsApp send;
@@ -571,12 +571,12 @@ the Kotlin client was born with authentication dead.
 | subject | routes |
 |---|---|
 | authentication | `/auth/login`, `/auth/logout`, `/auth/refresh`, `/auth/pair`, `/auth/passkey/{register,login}/{begin,finish}`, `/me` |
-| terminal | `/terminal/sessions`, `/terminal/ws-ticket`, `/terminal/scrollback`, `/terminal/log-bruto`, `/terminal/sessions/rename`, `/terminal/backups`, `/terminal/backups/restore`, `/terminal/backups/{id}` |
+| terminal | `/terminal/sessions`, `/terminal/ws-ticket`, `/terminal/scrollback`, `/terminal/raw-log`, `/terminal/sessions/rename`, `/terminal/backups`, `/terminal/backups/restore`, `/terminal/backups/{id}` |
 | SDUI screens | `/screens`, `/screens/{id}`, `/actions/{action_id}` |
 | system | `/system/{metrics/cpu,metrics/mem,metrics/disk,ports,processes,units,history}` |
 | docker | `/docker/{containers,images,volumes,networks,compose}` |
 | operations | `/ops/status`, `/ops/deploy`, `/ops/deploy/{jobID}`, `/deploy/apps`, `/queue/jobs`, `/scheduler/jobs`, `/alerts/rules` |
-| security | `/security/{users,sessions,devices,audit,secrets,ufw/status,adguard/status,economia}` |
+| security | `/security/{users,sessions,devices,audit,secrets,ufw/status,adguard/status,savings}` |
 | files | `/files/{list,read,write,download,inbox}`, `/files/upload/{init,chunk,complete}` |
 | WhatsApp | `/whatsapp/chats`, `/whatsapp/chats/{jid}/{messages,media,read,avatar}` |
 | video call | `/videocall/rooms`, `/videocall/ws-ticket` |
@@ -920,7 +920,7 @@ See §5.1–5.3 for the story. The current state:
    inset chain (`padding` → `consumeWindowInsets` → `imePadding`), which makes
    the correction exact rather than heuristic.
 3. **Anchored to the CURSOR**, with two lines of slack
-   (`LINHAS_ABAIXO_DO_CURSOR = 2`). The grid is measured at full height and
+   (`ROWS_BELOW_CURSOR = 2`). The grid is measured at full height and
    *shifted* in the placement phase — reading state in `layout` repositions
    without re-measuring, and pointer coordinates follow the placement, so hit
    testing needs no correction.
@@ -942,7 +942,7 @@ previous generation — a 16 MiB ceiling). **The log only records while someone 
 attached.**
 
 ```
-GET /api/mobile/v1/terminal/log-bruto?name=<session>&bytes=<cap>
+GET /api/mobile/v1/terminal/raw-log?name=<session>&bytes=<cap>
       ↓  raw PTY bytes, in base64
   TerminalRepository.rawLog()     (decodes off the main thread)
       ↓
@@ -1101,8 +1101,8 @@ never runs here.
 
 For working builds there is a **development** key, disposable by construction
 and not by agreement: a file with a different name
-(`servercontrolpanel-DEV-NAO-E-RELEASE.jks`), a different alias, a CN that says
-"DEV - NAO E RELEASE", a shorter validity, and a deliberately public password
+(`servercontrolpanel-DEV-NOT-RELEASE.jks`), a different alias, a CN that says
+"DEV - NOT RELEASE", a shorter validity, and a deliberately public password
 (like the `android` of the SDK's own debug keystore — keeping the password of a
 disposable key in the vault would only teach people to treat the vault as a
 dumping ground).

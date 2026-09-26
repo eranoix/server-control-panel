@@ -30,8 +30,8 @@ import androidx.compose.ui.unit.dp
 import dev.servercontrolpanel.terminalengine.TerminalScrollState
 
 /** Test tags: the UI is checked through them, never through loose text. */
-internal const val TAG_POSITION_BAR = "terminal-barra-posicao"
-internal const val TAG_BACK_TO_END = "terminal-voltar-ao-fim"
+internal const val TAG_POSITION_BAR = "terminal-position-bar"
+internal const val TAG_BACK_TO_END = "terminal-back-to-end"
 
 /**
  * Shows where the user is while reading history and how to get back: a position

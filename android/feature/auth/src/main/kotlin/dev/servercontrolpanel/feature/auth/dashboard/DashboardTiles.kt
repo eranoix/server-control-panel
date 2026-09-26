@@ -138,10 +138,10 @@ fun visibleTiles(catalog: List<DashboardTile>, chosen: List<String>): List<Dashb
  * Default tiles before the user chooses any. "cpu" is left out on purpose: here
  * it shows hypervisor steal, which the user cannot act on; it stays in the catalog.
  */
-val INITIAL_TILES: List<String> = listOf("memoria", TILE_HEALTH, TILE_QUEUE)
+val INITIAL_TILES: List<String> = listOf("memory", TILE_HEALTH, TILE_QUEUE)
 
-const val TILE_QUEUE = "fila"
-const val TILE_HEALTH = "saude"
+const val TILE_QUEUE = "queue"
+const val TILE_HEALTH = "health"
 const val TILE_DEPLOYS = "deploys"
-const val TILE_SCHEDULED = "agendados"
+const val TILE_SCHEDULED = "scheduled"
 const val TILE_UPTIME = "uptime"

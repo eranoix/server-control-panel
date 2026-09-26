@@ -101,7 +101,7 @@ private fun AllQuiet(hadAlerts: Boolean) {
 @Composable
 private fun AlertRow(alert: OpsAlert, onMarkSeen: () -> Unit) {
     val statusColors = panelStatusColors
-    val critical = alert.severity.lowercase() in setOf("critical", "crit", "critico", "crítico", "page")
+    val critical = alert.severity.lowercase() in setOf("critical", "crit", "page")
     val par = if (critical) statusColors.critical else statusColors.warning
 
     Card(

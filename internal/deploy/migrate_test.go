@@ -275,7 +275,7 @@ func TestMigrateAppsConcurrentLock(t *testing.T) {
 	before := sha256Of(t, appsPath(dataDir))
 
 	child := exec.Command(os.Args[0], "-test.run=TestHelperHoldsLock", "-test.v")
-	child.Env = append(os.Environ(), "DEPLOY_TRAVA_DATADIR="+dataDir)
+	child.Env = append(os.Environ(), "DEPLOY_LOCK_DATADIR="+dataDir)
 	stdin, err := child.StdinPipe()
 	if err != nil {
 		t.Fatalf("child stdin: %v", err)
@@ -333,7 +333,7 @@ func TestMigrateAppsConcurrentLock(t *testing.T) {
 // TestHelperHoldsLock is not a test: it is TestMigrateAppsConcurrentLock's
 // child process. Without the environment variable, it skips.
 func TestHelperHoldsLock(t *testing.T) {
-	dataDir := os.Getenv("DEPLOY_TRAVA_DATADIR")
+	dataDir := os.Getenv("DEPLOY_LOCK_DATADIR")
 	if dataDir == "" {
 		t.Skip("helper for TestMigrateAppsConcurrentLock")
 	}
@@ -435,14 +435,14 @@ func TestGuardCLIRejectsShapes(t *testing.T) {
 //
 // Skipped by default — proving a migration with real data demands the real data:
 //
-//	DEPLOY_ENSAIO_APPS=/path/to/apps.json go test ./internal/deploy/ \
+//	DEPLOY_REHEARSAL_APPS=/path/to/apps.json go test ./internal/deploy/ \
 //	    -run TestMigrateAppsDryRunWithRealFile -v
 //
 // The file it points at is NOT modified: the test works on a copy.
 func TestMigrateAppsDryRunWithRealFile(t *testing.T) {
-	origin := os.Getenv("DEPLOY_ENSAIO_APPS")
+	origin := os.Getenv("DEPLOY_REHEARSAL_APPS")
 	if origin == "" {
-		t.Skip("set DEPLOY_ENSAIO_APPS=<path to the real apps.json> for the rehearsal")
+		t.Skip("set DEPLOY_REHEARSAL_APPS=<path to the real apps.json> for the rehearsal")
 	}
 	raw, err := os.ReadFile(origin)
 	if err != nil {

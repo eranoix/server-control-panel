@@ -41,8 +41,8 @@ class ThemePreference(
     }
 
     companion object {
-        private const val FILE_NAME = "panel_aparencia"
-        private const val KEY_MODE = "modo_tema"
+        private const val FILE_NAME = "panel_appearance"
+        private const val KEY_MODE = "theme_mode"
 
         @Volatile
         private var instance: ThemePreference? = null

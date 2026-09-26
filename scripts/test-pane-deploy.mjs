@@ -33,7 +33,7 @@ function method(name) {
 }
 
 // ── 1. _trySafeReload: the guard matrix ───────────────────────────────
-function scenario({ hidden, hiddenSince, lastTyping, outbox = [], dialog = false, ligado: on = true, nova = true }) {
+function scenario({ hidden, hiddenSince, lastTyping, outbox = [], dialog = false, on: on = true, nova = true }) {
   const now = 1_000_000_000;
   const doc = {
     get hidden(){ return hidden; },
@@ -96,7 +96,7 @@ scenario({ ...ALL_CLEAR, dialog: true }) === false
   ? ok('dialog open → does not reload')
   : no('would reload with a dialog open');
 
-scenario({ ...ALL_CLEAR, ligado: false }) === false
+scenario({ ...ALL_CLEAR, on: false }) === false
   ? ok('toggle off → does not reload')
   : no('ignored the user toggle');
 

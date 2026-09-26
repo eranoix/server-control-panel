@@ -108,7 +108,7 @@ internal fun BoardCard(
                         onCheckedChange = { onSelect() },
                         modifier = Modifier.size(20.dp),
                     )
-                } else if (due == "venceu") {
+                } else if (due == "overdue") {
                     // Overdue is the only badge kept on the compact card.
                     Text(
                         text = "!",

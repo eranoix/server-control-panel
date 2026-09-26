@@ -25,11 +25,11 @@ class BackupGroupsTest {
     @Test
     fun `a snapshot with several sessions becomes one group per session`() {
         val groups = groupBySession(
-            listOf(backup("b1", 100, "main" to "", "Panel" to "", "proxy" to "")),
+            listOf(backup("b1", 100, "main" to "", "Web" to "", "proxy" to "")),
         )
 
         assertEquals(3, groups.size)
-        assertEquals(listOf("main", "proxy", "Panel"), groups.map { it.session })
+        assertEquals(listOf("main", "proxy", "Web"), groups.map { it.session })
         // Each group has one version, from the snapshot the session was in.
         assertTrue(groups.all { it.versions.size == 1 })
     }
@@ -63,14 +63,14 @@ class BackupGroupsTest {
         assertEquals(listOf(300L, 200L, 100L), groups.single().versions.map { it.createdAt })
     }
 
-    /** Case-insensitive alphabetical order; plain `compareTo` would put "Panel" before "main". */
+    /** Case-insensitive alphabetical order; plain `compareTo` would put "Web" before "main". */
     @Test
     fun `groups are alphabetical ignoring case`() {
         val groups = groupBySession(
-            listOf(backup("b1", 100, "Panel" to "", "main" to "", "Aplicativo" to "")),
+            listOf(backup("b1", 100, "Web" to "", "main" to "", "App" to "")),
         )
 
-        assertEquals(listOf("Aplicativo", "main", "Panel"), groups.map { it.session })
+        assertEquals(listOf("App", "main", "Web"), groups.map { it.session })
     }
 
     /** The summary identifies a session with an unhelpful name, so an empty newest summary must not hide it. */
@@ -94,7 +94,7 @@ class BackupGroupsTest {
     @Test
     fun `each version knows how many sessions its snapshot had`() {
         val groups = groupBySession(
-            listOf(backup("b1", 100, "main" to "", "Panel" to "", bytes = 89_000L)),
+            listOf(backup("b1", 100, "main" to "", "Web" to "", bytes = 89_000L)),
         )
 
         assertTrue(groups.all { it.versions.single().sessionsInBackup == 2 })

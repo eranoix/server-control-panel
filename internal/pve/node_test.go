@@ -158,12 +158,12 @@ func TestTaskListClampsLimitServerSide(t *testing.T) {
 // two that the study measured as real failures nobody was seeing.
 func TestTaskListDecodes(t *testing.T) {
 	const body = `{"data":[
-	  {"upid":"UPID:pve:0000AAAA:00BBBB:68A00000:push_file:207:lab@pve!node-apps:",
-	   "node":"pve","type":"push_file","id":"207","user":"lab@pve!node-apps",
+	  {"upid":"UPID:pve:0000AAAA:00BBBB:68A00000:push_file:207:panel@pve!node-apps:",
+	   "node":"pve","type":"push_file","id":"207","user":"panel@pve!node-apps",
 	   "status":"failed to open /root/infra/nodes/apps/provision.sh","pid":43690,
 	   "starttime":1755600000,"endtime":1755600001},
-	  {"upid":"UPID:pve:0000BBBB:00CCCC:68A00001:vzsnapshot:201:lab@pve!node-games:",
-	   "node":"pve","type":"vzsnapshot","id":"201","user":"lab@pve!node-games",
+	  {"upid":"UPID:pve:0000BBBB:00CCCC:68A00001:vzsnapshot:201:panel@pve!node-games:",
+	   "node":"pve","type":"vzsnapshot","id":"201","user":"panel@pve!node-games",
 	   "status":"snapshot feature is not available","pid":43691,
 	   "starttime":1755600100,"endtime":1755600101}
 	]}`
@@ -181,7 +181,7 @@ func TestTaskListDecodes(t *testing.T) {
 	if !strings.Contains(ts[0].Status, "provision.sh") {
 		t.Errorf("status[0] = %q — the real reason is the operator's only clue", ts[0].Status)
 	}
-	if ts[1].User != "lab@pve!node-games" || ts[1].EndTime != 1755600101 {
+	if ts[1].User != "panel@pve!node-games" || ts[1].EndTime != 1755600101 {
 		t.Errorf("task[1] = %+v", ts[1])
 	}
 }
@@ -201,7 +201,7 @@ func TestTaskLogIgnoresCallerLimit(t *testing.T) {
 	}
 
 	c, seenURL := captureURL(t, `{"data":[{"n":2,"t":"second"},{"n":1,"t":"first"},{"n":3,"t":"third"}]}`)
-	upid := "UPID:pve:0000AAAA:00BBBB:68A00000:vzsnapshot:204:lab@pve!node-lab:"
+	upid := "UPID:pve:0000AAAA:00BBBB:68A00000:vzsnapshot:204:panel@pve!node-lab:"
 	lines, err := c.TaskLog(context.Background(), "pve", upid)
 	if err != nil {
 		t.Fatalf("TaskLog: %v", err)

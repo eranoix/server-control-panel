@@ -216,7 +216,7 @@ class UpdateCoordinatorTest {
         val state = lab.coordinator.state.value
         check(state is UpdateState.Failed)
         assertEquals(UpdateRecovery.FREE_SPACE, state.recovery)
-        assertTrue("the message must state the number: ${state.message}", state.message.contains("5,5"))
+        assertTrue("the message must state the number: ${state.message}", state.message.contains("5.5"))
     }
 
     /** Failing to QUERY free space must not block a perfectly good update. */
@@ -247,7 +247,7 @@ class UpdateCoordinatorTest {
 
     @Test
     fun `a failed install keeps the APK and logs the system message`() = withCoordinator(
-        installation = { InstallOutcome.Failed("INSTALL_FAILED_UPDATE_INCOMPATIBLE: assinaturas não conferem", blocked = false) },
+        installation = { InstallOutcome.Failed("INSTALL_FAILED_UPDATE_INCOMPATIBLE: signatures do not match", blocked = false) },
     ) { lab ->
         lab.coordinator.check()
         lab.coordinator.start()
@@ -257,7 +257,7 @@ class UpdateCoordinatorTest {
         check(state is UpdateState.Failed)
         assertTrue(state.canRetry)
         assertEquals(UpdateRecovery.SHOW_DIAGNOSTICS, state.recovery)
-        assertTrue(state.message.contains("assinaturas não conferem"))
+        assertTrue(state.message.contains("signatures do not match"))
         assertTrue("the APK must be kept for a retry", lab.staging.rebuiltApkFile(newApkSha).isFile)
     }
 
@@ -459,7 +459,7 @@ class UpdateCoordinatorTest {
         patches: (File, File) -> PatchResult? = { _, _ -> null },
         reservation: (Long) -> StorageReservation = { StorageReservation.Reserved },
         installation: () -> InstallOutcome = { InstallOutcome.Committed },
-        preaprovacao: PreapprovalOutcome = PreapprovalOutcome.Approved,
+        preapproval: PreapprovalOutcome = PreapprovalOutcome.Approved,
         canInstall: Boolean = true,
         knownSource: Boolean = true,
         systemAccepts: Boolean = false,
@@ -471,9 +471,9 @@ class UpdateCoordinatorTest {
             override fun reserve(bytes: Long): StorageReservation = reservation(bytes)
         }
         staging.sweep(emptySet())
-        val baseApk = File(staging.dir, "base-instalada.apk").apply { writeBytes(ByteArray(4096) { 0x5a }) }
+        val baseApk = File(staging.dir, "installed-base.apk").apply { writeBytes(ByteArray(4096) { 0x5a }) }
         val source = FakeSource(check ?: UpdateCheckResult.Success(manifest()), downloads)
-        val installer = FakeInstaller(canInstall, preaprovacao, installation, knownSource, systemAccepts)
+        val installer = FakeInstaller(canInstall, preapproval, installation, knownSource, systemAccepts)
         val patcher = FakePatcher(patches, newApkContent)
         val diagnostics = mutableListOf<String>()
 
@@ -520,7 +520,7 @@ class UpdateCoordinatorTest {
 
     private class FakeInstaller(
         private val canInstall: Boolean,
-        private val preaprovacao: PreapprovalOutcome,
+        private val preapproval: PreapprovalOutcome,
         private val result: () -> InstallOutcome,
         private val knownSource: Boolean = true,
         private val systemAccepts: Boolean = false,
@@ -555,7 +555,7 @@ class UpdateCoordinatorTest {
 
         override suspend fun requestPreapproval(sessionId: Int, label: CharSequence): PreapprovalOutcome {
             requestedLabel = label.toString()
-            return preaprovacao
+            return preapproval
         }
 
         override suspend fun commit(sessionId: Int, apk: File): InstallOutcome {

@@ -29,7 +29,7 @@ class UpdateCheckWorker(
     }
 
     companion object {
-        private const val WORK_NAME = "panel-verificacao-de-atualizacao"
+        private const val WORK_NAME = "panel-update-check"
 
         /** Idempotent: `KEEP` preserves the existing schedule across app restarts. */
         fun enqueue(context: Context) {

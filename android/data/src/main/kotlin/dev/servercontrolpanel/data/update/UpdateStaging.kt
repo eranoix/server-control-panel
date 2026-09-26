@@ -36,7 +36,7 @@ open class UpdateStaging(context: Context) {
 
     private val appContext = context.applicationContext
 
-    /** `filesDir/atualizacoes`, created on demand. */
+    /** `filesDir/updates`, created on demand. */
     val dir: File
         get() = File(appContext.filesDir, DIR_NAME).also { if (!it.isDirectory) it.mkdirs() }
 
@@ -99,7 +99,7 @@ open class UpdateStaging(context: Context) {
     }
 
     private companion object {
-        const val DIR_NAME = "atualizacoes"
-        const val EMPTY_BASE_NAME = "base-vazia"
+        const val DIR_NAME = "updates"
+        const val EMPTY_BASE_NAME = "empty-base"
     }
 }

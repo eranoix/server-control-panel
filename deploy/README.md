@@ -5,12 +5,12 @@
 `deploy/<project>.conf` file.
 
 ```sh
-scripts/deploy.sh --conf deploy/painel.conf <new-binary>   # deploy
-scripts/deploy.sh --conf deploy/painel.conf --rollback     # back to the previous one
-scripts/deploy.sh --conf deploy/painel.conf --validar      # validate the conf only
+scripts/deploy.sh --conf deploy/panel.conf <new-binary>   # deploy
+scripts/deploy.sh --conf deploy/panel.conf --rollback     # back to the previous one
+scripts/deploy.sh --conf deploy/panel.conf --validate      # validate the conf only
 ```
 
-Without `--conf` the default is `deploy/painel.conf`. The file must still exist:
+Without `--conf` the default is `deploy/panel.conf`. The file must still exist:
 a default is not permission to run without configuration.
 
 ## Two rules
@@ -100,7 +100,7 @@ repository, not deploy.
 key, an invalid `HEALTH_MODE`, `KEEP_BINARIES < 2`, an empty `BUILD_CMD`, and
 `HEALTH_MODE=cmd` both ways. It includes a **negative control**: a complete valid
 conf must pass. They run inside `agentctl gate` and never touch a real service:
-they use `--validar`, which exits before the first side effect.
+they use `--validate`, which exits before the first side effect.
 
 ## Coverage per project
 

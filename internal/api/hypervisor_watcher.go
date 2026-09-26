@@ -53,7 +53,7 @@ const (
 	// dedupHypervisor keeps both ends under the SAME dedup identity: a "went
 	// down" followed by a "came back" is a single story, and the router needs to
 	// be able to treat it as such.
-	dedupHypervisor = "hypervisor:alcance"
+	dedupHypervisor = "hypervisor:reach"
 )
 
 type hypervisorSentinel struct {
@@ -68,7 +68,7 @@ type hypervisorSentinel struct {
 // needs 3 — and a `time.Sleep` in the test would mean waiting on the clock,
 // which is exactly what is forbidden here.
 func (r *Router) ticksToBelieve() int {
-	if v := os.Getenv("PANEL_SENTINELA_CICLOS"); v != "" {
+	if v := os.Getenv("PANEL_SENTINEL_CYCLES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
 		}
@@ -77,7 +77,7 @@ func (r *Router) ticksToBelieve() int {
 }
 
 func (r *Router) sentinelInterval() time.Duration {
-	if v := os.Getenv("PANEL_SENTINELA_INTERVALO_S"); v != "" {
+	if v := os.Getenv("PANEL_SENTINEL_INTERVAL_S"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return time.Duration(n) * time.Second
 		}
@@ -157,7 +157,7 @@ func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
 			r.dispatchSentinel(notify.Event{
 				Type:     TypeHypervisorRecovered,
 				Severity: "info",
-				Source:   "sentinela:hipervisor",
+				Source:   "sentinel:hypervisor",
 				Owner:    r.primaryUser(),
 				Title:    "Home hypervisor is back",
 				Body: fmt.Sprintf(
@@ -169,7 +169,7 @@ func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
 					r.hypervisorAddr(), humanDuration(outside)),
 				TS:       now,
 				DedupKey: dedupHypervisor,
-				Labels:   map[string]string{"alvo": "hipervisor", "estado": "voltou"},
+				Labels:   map[string]string{"target": "hypervisor", "state": "recovered"},
 			})
 		}
 		return
@@ -189,7 +189,7 @@ func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
 	r.dispatchSentinel(notify.Event{
 		Type:     TypeHypervisorUnreachable,
 		Severity: "critical",
-		Source:   "sentinela:hipervisor",
+		Source:   "sentinel:hypervisor",
 		Owner:    r.primaryUser(),
 		Title:    "Home hypervisor unreachable",
 		Body: fmt.Sprintf(
@@ -209,7 +209,7 @@ func (r *Router) checkReachability(inv inventory.Inventory, now int64) {
 			firstErrorLine(inv.LastPollError)),
 		TS:       now,
 		DedupKey: dedupHypervisor,
-		Labels:   map[string]string{"alvo": "hipervisor", "estado": "inalcancavel"},
+		Labels:   map[string]string{"target": "hypervisor", "state": "unreachable"},
 	})
 }
 

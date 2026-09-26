@@ -22,10 +22,10 @@ object DeviceStorageAreas {
     private const val WHATSAPP_MEDIA = "whatsapp_media"
 
     /** `AttachmentSourceSheet.PHOTOS_DIR`: photos taken to attach. */
-    private const val TERMINAL_ATTACHMENTS = "anexos-terminal"
+    private const val TERMINAL_ATTACHMENTS = "terminal-attachments"
 
     /** `UpdateStaging.DIR_NAME`: the download in progress and leftovers. */
-    private const val UPDATES = "atualizacoes"
+    private const val UPDATES = "updates"
 
     fun from(context: Context): List<StorageArea> {
         val app = context.applicationContext

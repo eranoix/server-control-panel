@@ -62,11 +62,11 @@ func NewServer(ag *Agent, secret Secret, met *Metrics) *Server {
 	// random, it is not a path; whoever did not receive one from an earlier
 	// operation has nothing to send here. A real path sent in place of the
 	// handle is simply not in the vault.
-	mux.Handle("GET /v1/artefato/{handle}", RequireBearer(secret, http.HandlerFunc(s.openArtifact)))
+	mux.Handle("GET /v1/artifact/{handle}", RequireBearer(secret, http.HandlerFunc(s.openArtifact)))
 	// The INBOUND side of the artefact, closing the gap the read side declared:
 	// without it, importing a world would require the dashboard to know the
 	// node's disk. The body is the file; no name and no path cross over.
-	mux.Handle("POST /v1/artefato", RequireBearer(secret, http.HandlerFunc(s.receiveArtifact)))
+	mux.Handle("POST /v1/artifact", RequireBearer(secret, http.HandlerFunc(s.receiveArtifact)))
 
 	s.handler = mux
 	return s
@@ -102,22 +102,22 @@ func (s *Server) runOp(w http.ResponseWriter, r *http.Request) {
 		// 404, never 400 or 500: "does not exist" and "failed" must never get
 		// confused in a diagnosis — it is the difference between hunting a bug in
 		// the agent and hunting a typo in the client.
-		s.Met.Count(string(name), "desconhecida")
-		respond(w, http.StatusNotFound, map[string]any{"erro": "unknown operation", "op": string(name)})
+		s.Met.Count(string(name), "unknown")
+		respond(w, http.StatusNotFound, map[string]any{"error": "unknown operation", "op": string(name)})
 		return
 	}
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
 	if err != nil {
-		s.Met.Count(string(name), "erro")
-		respond(w, http.StatusBadRequest, map[string]any{"erro": "unreadable body"})
+		s.Met.Count(string(name), "error")
+		respond(w, http.StatusBadRequest, map[string]any{"error": "unreadable body"})
 		return
 	}
 	if len(body) > maxBody {
 		// 413 BEFORE calling the handler: the limit is worth nothing if the work
 		// has already happened.
-		s.Met.Count(string(name), "grande")
-		respond(w, http.StatusRequestEntityTooLarge, map[string]any{"erro": "body above the limit"})
+		s.Met.Count(string(name), "large")
+		respond(w, http.StatusRequestEntityTooLarge, map[string]any{"error": "body above the limit"})
 		return
 	}
 	if len(body) == 0 {
@@ -126,8 +126,8 @@ func (s *Server) runOp(w http.ResponseWriter, r *http.Request) {
 
 	res, err := op.Handler(s.Ag, r.Context(), json.RawMessage(body))
 	if err != nil {
-		s.Met.Count(string(name), "erro")
-		respond(w, http.StatusInternalServerError, map[string]any{"erro": err.Error()})
+		s.Met.Count(string(name), "error")
+		respond(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
 	s.Met.Count(string(name), "ok")
@@ -143,16 +143,16 @@ func (s *Server) runOp(w http.ResponseWriter, r *http.Request) {
 func (s *Server) openArtifact(w http.ResponseWriter, r *http.Request) {
 	h := gameservers.Handle(r.PathValue("handle"))
 	if s.Ag == nil || s.Ag.Back == nil {
-		s.Met.Count("artefato", "erro")
-		respond(w, http.StatusInternalServerError, map[string]any{"erro": "agent has no back end configured"})
+		s.Met.Count("artifact", "error")
+		respond(w, http.StatusInternalServerError, map[string]any{"error": "agent has no back end configured"})
 		return
 	}
 	rc, err := s.Ag.Back.Open(r.Context(), h)
 	if err != nil {
 		// 404 for a handle that does not resolve: the same "does not exist"
 		// silence the vault already gives, forged and expired alike.
-		s.Met.Count("artefato", "desconhecida")
-		respond(w, http.StatusNotFound, map[string]any{"erro": err.Error()})
+		s.Met.Count("artifact", "unknown")
+		respond(w, http.StatusNotFound, map[string]any{"error": err.Error()})
 		return
 	}
 	defer rc.Close()
@@ -162,10 +162,10 @@ func (s *Server) openArtifact(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(w, rc); err != nil {
 		// The header has already gone out. Only the counter records it — writing
 		// an error body here would produce a corrupt file that LOOKS complete.
-		s.Met.Count("artefato", "erro")
+		s.Met.Count("artifact", "error")
 		return
 	}
-	s.Met.Count("artefato", "ok")
+	s.Met.Count("artifact", "ok")
 }
 
 // receiveArtifact accepts bytes and returns the Handle that refers to them.
@@ -174,17 +174,17 @@ func (s *Server) openArtifact(w http.ResponseWriter, r *http.Request) {
 // here is that the body is not read without a ceiling before it gets there.
 func (s *Server) receiveArtifact(w http.ResponseWriter, r *http.Request) {
 	if s.Ag == nil || s.Ag.Back == nil {
-		s.Met.Count("artefato-in", "erro")
-		respond(w, http.StatusInternalServerError, map[string]any{"erro": "agent has no back end configured"})
+		s.Met.Count("artifact-in", "error")
+		respond(w, http.StatusInternalServerError, map[string]any{"error": "agent has no back end configured"})
 		return
 	}
 	h, err := s.Ag.Back.Receive(r.Context(), r.Body)
 	if err != nil {
-		s.Met.Count("artefato-in", "erro")
-		respond(w, http.StatusBadRequest, map[string]any{"erro": err.Error()})
+		s.Met.Count("artifact-in", "error")
+		respond(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return
 	}
-	s.Met.Count("artefato-in", "ok")
+	s.Met.Count("artifact-in", "ok")
 	respond(w, http.StatusOK, map[string]any{"handle": string(h)})
 }
 

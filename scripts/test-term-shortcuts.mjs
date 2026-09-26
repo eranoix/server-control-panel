@@ -38,13 +38,13 @@ const build = ({ selection, ctrlV }) => {
   const fn = new Function('ev', 'term', 'self', 'state', 'c', 'navigator',
     block[0] + '\n return "FELL_THROUGH";');
   const run = (ev) => fn(ev, term, self, state, ev.ctrlKey || ev.metaKey, navigator);
-  return { run, estado: termState };
+  return { run, state: termState };
 };
 const ev = (key, extra = {}) => ({ type: 'keydown', key, ctrlKey: true, shiftKey: false, altKey: false, preventDefault(){}, ...extra });
 
 // 1) Ctrl+C WITHOUT a selection → does NOT intercept (the ^C must be SIGINT)
 {
-  const { run, estado: state } = build({ selection: '', ctrlV: true });
+  const { run, state: state } = build({ selection: '', ctrlV: true });
   const r = run(ev('c'));
   (r === 'FELL_THROUGH' || r === true) && state.copied === null
     ? ok('Ctrl+C with no selection → passes through as SIGINT (does not swallow the ^C)')
@@ -52,7 +52,7 @@ const ev = (key, extra = {}) => ({ type: 'keydown', key, ctrlKey: true, shiftKey
 }
 // 2) Ctrl+C WITH a selection → copies and CLEARS the selection
 {
-  const { run, estado: state } = build({ selection: 'copied text', ctrlV: true });
+  const { run, state: state } = build({ selection: 'copied text', ctrlV: true });
   const r = run(ev('c'));
   r === false && state.copied === 'copied text'
     ? ok('Ctrl+C with a selection → copies')
@@ -75,7 +75,7 @@ const ev = (key, extra = {}) => ({ type: 'keydown', key, ctrlKey: true, shiftKey
 // neither text NOR image. Only FALSE makes _keyDown return before cancel(),
 // letting the browser run the default paste. `true` here is a bug, not a detail.
 {
-  const { run, estado: state } = build({ selection: '', ctrlV: true });
+  const { run, state: state } = build({ selection: '', ctrlV: true });
   let blocked = false;
   const e = ev('v'); e.preventDefault = () => { blocked = true; };
   const r = run(e);
@@ -93,7 +93,7 @@ const ev = (key, extra = {}) => ({ type: 'keydown', key, ctrlKey: true, shiftKey
 }
 // 4) Ctrl+V with the toggle off → passes through (literal ^V for vim/readline)
 {
-  const { run, estado: state } = build({ selection: '', ctrlV: false });
+  const { run, state: state } = build({ selection: '', ctrlV: false });
   const r = run(ev('v'));
   (r === 'FELL_THROUGH' || r === true) && !state.pasted
     ? ok('Ctrl+V (toggle off) → the literal ^V reaches the app (vim visual-block)')
@@ -109,7 +109,7 @@ const ev = (key, extra = {}) => ({ type: 'keydown', key, ctrlKey: true, shiftKey
 }
 // 6) Cmd+C (macOS) copies too
 {
-  const { run, estado: state } = build({ selection: 'mac', ctrlV: true });
+  const { run, state: state } = build({ selection: 'mac', ctrlV: true });
   const r = run({ type:'keydown', key:'c', ctrlKey:false, metaKey:true, shiftKey:false, altKey:false, preventDefault(){} });
   r === false && state.copied === 'mac' ? ok('Cmd+C (macOS) copies') : no('Cmd+C did not copy');
 }

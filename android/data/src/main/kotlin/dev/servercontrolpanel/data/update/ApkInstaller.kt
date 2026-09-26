@@ -187,7 +187,7 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
             PackageInstaller.PreapprovalDetails.Builder()
                 .setPackageName(appContext.packageName)
                 .setLabel(label)
-                .setLocale(ULocale.forLanguageTag("pt-BR"))
+                .setLocale(ULocale.US)
                 .build()
         } catch (e: IllegalArgumentException) {
             return PreapprovalOutcome.Unsupported(e.message ?: "pre-approval details rejected")
@@ -298,10 +298,10 @@ class ApkInstaller(context: Context) : ApkInstallerPort {
          * `android:authorities` in the :data manifest, or `getUriForFile` throws
          * and the system-installer fallback silently disappears.
          */
-        private const val AUTHORITY_SUFFIX = ".atualizacao"
+        private const val AUTHORITY_SUFFIX = ".update"
 
-        const val PHASE_PREAPPROVAL = "preaprovacao"
-        const val PHASE_COMMIT = "instalacao"
+        const val PHASE_PREAPPROVAL = "preapproval"
+        const val PHASE_COMMIT = "install"
         private const val APK_ENTRY_NAME = "base.apk"
         private const val COPY_BUFFER_BYTES = 64 * 1024
     }

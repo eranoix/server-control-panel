@@ -51,10 +51,10 @@ class BoardViewModelTest {
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-1", "Em andamento")
+        vm.move("TASK-1", "In Progress")
         // No dispatcher advance: the state must already have changed.
-        assertEquals(listOf("TASK-1"), keysIn(vm, "Em andamento"))
-        assertTrue(keysIn(vm, "A fazer").isEmpty())
+        assertEquals(listOf("TASK-1"), keysIn(vm, "In Progress"))
+        assertTrue(keysIn(vm, "To Do").isEmpty())
     }
 
     @Test
@@ -70,11 +70,11 @@ class BoardViewModelTest {
             val vm = BoardViewModel(source)
             advanceUntilIdle()
 
-            vm.move("TASK-2", "Concluído")
+            vm.move("TASK-2", "Done")
             advanceUntilIdle()
 
-            assertEquals(listOf("TASK-1", "TASK-2", "TASK-3"), keysIn(vm, "A fazer"))
-            assertTrue(keysIn(vm, "Concluído").isEmpty())
+            assertEquals(listOf("TASK-1", "TASK-2", "TASK-3"), keysIn(vm, "To Do"))
+            assertTrue(keysIn(vm, "Done").isEmpty())
         }
 
     @Test
@@ -88,7 +88,7 @@ class BoardViewModelTest {
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-1", "Concluído")
+        vm.move("TASK-1", "Done")
         advanceUntilIdle()
 
         assertEquals(reason, vm.notice.value)
@@ -103,10 +103,10 @@ class BoardViewModelTest {
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-1", "Em andamento")
+        vm.move("TASK-1", "In Progress")
         advanceUntilIdle()
 
-        assertEquals(listOf("TASK-1"), keysIn(vm, "A fazer"))
+        assertEquals(listOf("TASK-1"), keysIn(vm, "To Do"))
     }
 
     @Test
@@ -116,7 +116,7 @@ class BoardViewModelTest {
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-1", "A fazer")
+        vm.move("TASK-1", "To Do")
         advanceUntilIdle()
 
         assertTrue("should not have called the server: ${source.moves}", source.moves.isEmpty())
@@ -128,10 +128,10 @@ class BoardViewModelTest {
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-1", "Em andamento")
+        vm.move("TASK-1", "In Progress")
         advanceUntilIdle()
 
-        assertEquals(listOf("TASK-1" to "Em andamento"), source.moves)
+        assertEquals(listOf("TASK-1" to "In Progress"), source.moves)
     }
 
     @Test
@@ -140,11 +140,11 @@ class BoardViewModelTest {
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-404", "Concluído")
+        vm.move("TASK-404", "Done")
         advanceUntilIdle()
 
         assertTrue(source.moves.isEmpty())
-        assertEquals(listOf("TASK-1"), keysIn(vm, "A fazer"))
+        assertEquals(listOf("TASK-1"), keysIn(vm, "To Do"))
     }
 
     @Test
@@ -224,7 +224,7 @@ class BoardViewModelTest {
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.moveSelection("Concluído")
+        vm.moveSelection("Done")
         advanceUntilIdle()
 
         assertTrue(source.bulkMoves.isEmpty())
@@ -250,9 +250,9 @@ class BoardViewModelTest {
         val vm = BoardViewModel(source)
         advanceUntilIdle()
 
-        vm.move("TASK-1", "Em andamento")
+        vm.move("TASK-1", "In Progress")
         advanceUntilIdle()
-        assertEquals("TASK-1 → Em andamento", vm.notice.value)
+        assertEquals("TASK-1 → In Progress", vm.notice.value)
 
         vm.consumeNotice()
         assertNull(vm.notice.value)

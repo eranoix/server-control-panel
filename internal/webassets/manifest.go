@@ -15,7 +15,7 @@ func HandleManifest(w http.ResponseWriter, _ *http.Request) {
   "description": "VPS control panel",
   "start_url": "/",
   "scope": "/",
-  "lang": "pt-BR",
+  "lang": "en",
   "dir": "ltr",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],

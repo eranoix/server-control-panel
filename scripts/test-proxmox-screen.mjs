@@ -40,11 +40,11 @@ const idsGuest = comp.pvxNodeTabs(guest).map((a) => a.id);
 
 ok('both lists open on the Summary', idsHost[0] === 'summary' && idsGuest[0] === 'summary');
 ok('the host has the infrastructure tabs',
-   ['discos', 'storage', 'zfs'].every((x) => idsHost.includes(x)), idsHost.join(','));
+   ['disks', 'storage', 'zfs'].every((x) => idsHost.includes(x)), idsHost.join(','));
 ok('the guest has console and snapshots',
    ['console', 'snaps'].every((x) => idsGuest.includes(x)), idsGuest.join(','));
 ok('no infrastructure tab leaks into the guest',
-   !['discos', 'storage', 'zfs', 'rede', 'sistema', 'pacotes', 'registry', 'perms']
+   !['disks', 'storage', 'zfs', 'network', 'system', 'packages', 'registry', 'perms']
      .some((x) => idsGuest.includes(x)), idsGuest.join(','));
 // 🔴 `console` LEFT this list: the host gained a Shell once the operator granted
 // Sys.Console, and the pin — correctly — failed over the change. `snaps` stays:
@@ -57,7 +57,7 @@ ok('and the guest has a console too', idsGuest.includes('console'));
 ok('no repeated id in either list',
    new Set(idsHost).size === idsHost.length && new Set(idsGuest).size === idsGuest.length);
 ok('no host tab shows up with a guest selected',
-   !comp.pvxNodeTabs(guest).some(a=>['discos','storage','zfs','perms'].includes(a.id)));
+   !comp.pvxNodeTabs(guest).some(a=>['disks','storage','zfs','perms'].includes(a.id)));
 
 // a tab inherited from another type falls back to Summary, not an empty panel
 comp.pvx.open = 'qemu/208'; comp.pvx.tab = 'zfs';
@@ -99,10 +99,10 @@ ok('the memory percentage matches the sum of the observed ones',
   comp.pvx.backup = {
     observed_at: 1_000_000,
     datastores: [
-      { storage: 'pbs', total: 65, ultimo_ctime: 1_000_000 - 3 * 3600, guests: [100, 201, 202, 203, 204, 205, 206, 207, 208], agendamento: 'active' },
-      { storage: 'backupusb', total: 5, ultimo_ctime: 1_000_000 - 340 * 3600, guests: [100, 201, 204], agendamento: 'active' },
-      { storage: 'local', total: 0, ultimo_ctime: 0, guests: [], agendamento: 'fora-do-pve' },
-      { storage: 'broken', erro: 'the hypervisor refused' },
+      { storage: 'pbs', total: 65, last_ctime: 1_000_000 - 3 * 3600, guests: [100, 201, 202, 203, 204, 205, 206, 207, 208], schedule_state: 'active' },
+      { storage: 'backupusb', total: 5, last_ctime: 1_000_000 - 340 * 3600, guests: [100, 201, 204], schedule_state: 'active' },
+      { storage: 'local', total: 0, last_ctime: 0, guests: [], schedule_state: 'outside-pve' },
+      { storage: 'broken', error: 'the hypervisor refused' },
     ],
   };
   const items = comp.pvxBackups().items;
@@ -111,15 +111,15 @@ ok('the memory percentage matches the sum of the observed ones',
 
   const pbs = comp.pvxBackupAge(items[0]);
   const usb = comp.pvxBackupAge(items[1]);
-  ok('the age comes from the SERVER timestamp (observed_at − ultimo_ctime)',
+  ok('the age comes from the SERVER timestamp (observed_at − last_ctime)',
      pbs.seg === 3 * 3600 && usb.seg === 340 * 3600, `pbs=${pbs.seg}s usb=${usb.seg}s`);
 
   // 🔴 Zero is ABSENCE, not 1970. An empty datastore and one with an ancient copy
   // call for opposite actions.
   const empty = comp.pvxBackupAge(items[2]);
   ok('an empty datastore says "no copy yet", not an age counted from 1970',
-     empty.vazio === true && empty.seg === undefined);
-  ok('a datastore with an error does not become silence', !!comp.pvxBackupAge(items[3]).erro);
+     empty.empty === true && empty.seg === undefined);
+  ok('a datastore with an error does not become silence', !!comp.pvxBackupAge(items[3]).error);
 
   // The threshold is PER datastore: PBS runs every day, the external-disk rotation
   // is "whenever I remember to swap the disk". A single threshold would paint a
@@ -130,7 +130,7 @@ ok('the memory percentage matches the sum of the observed ones',
   ok('an empty datastore NEVER comes out green', !isGreen(comp.pvxBackupStyle(items[2])));
 
   // Negative control for the per-layer threshold.
-  const pbsStale = { storage: 'pbs', total: 1, ultimo_ctime: 1_000_000 - 200 * 3600, guests: [1], agendamento: 'active' };
+  const pbsStale = { storage: 'pbs', total: 1, last_ctime: 1_000_000 - 200 * 3600, guests: [1], schedule_state: 'active' };
   ok('PBS at 200 h fails, even though that is a normal age for the rotation',
      !isGreen(comp.pvxBackupStyle(pbsStale)));
 
@@ -142,29 +142,29 @@ ok('the memory percentage matches the sum of the observed ones',
   // was standing, verify-by-content was running and a restore had been rehearsed.
   // Permanent red trains people to ignore, which is the disease that already cost
   // this lab the credibility of its alarm channel.
-  const disarmed = { storage: 'backupusb', total: 5, ultimo_ctime: 1_000_000 - 340 * 3600,
-                      guests: [1, 2, 3], agendamento: 'desarmado', schedule: '03:30' };
+  const disarmed = { storage: 'backupusb', total: 5, last_ctime: 1_000_000 - 340 * 3600,
+                      guests: [1, 2, 3], schedule_state: 'disarmed', schedule: '03:30' };
   const eD = comp.pvxBackupState(disarmed);
   ok('a DISARMED layer does not come out red', !isRed(comp.pvxBackupStyle(disarmed)), eD.color);
   ok('and it says the label "disarmed", not an alarming age', eD.label === 'disarmed', eD.label);
-  ok('and it explains WHY, with the time it used to run', /schedule turned off/.test(eD.nota) && /03:30/.test(eD.nota), eD.nota);
-  ok('and it says outright that this is not a failure', /this is not a failure/.test(eD.nota));
+  ok('and it explains WHY, with the time it used to run', /schedule turned off/.test(eD.note) && /03:30/.test(eD.note), eD.note);
+  ok('and it says outright that this is not a failure', /this is not a failure/.test(eD.note));
 
   // ── "outside PVE" is not a failure either ──────────────────────────────────
   //
   // The live run caught this BEFORE the deploy: the `pbs` of this lab receives a
   // copy every day from a systemd timer on the host, invisible to /cluster/backup.
   // A boolean "scheduled" would paint it disarmed — wrong in the other direction.
-  const outsidePve = { storage: 'pbs', total: 65, ultimo_ctime: 1_000_000 - 3 * 3600,
-                      guests: [1], agendamento: 'fora-do-pve' };
+  const outsidePve = { storage: 'pbs', total: 65, last_ctime: 1_000_000 - 3 * 3600,
+                      guests: [1], schedule_state: 'outside-pve' };
   const eF = comp.pvxBackupState(outsidePve);
   ok('a fresh layer with NO job in PVE stays green', isGreen(comp.pvxBackupStyle(outsidePve)), eF.color);
-  ok('and the screen admits it does not know who schedules it', /does not know by whom/.test(eF.nota), eF.nota);
+  ok('and the screen admits it does not know who schedules it', /does not know by whom/.test(eF.note), eF.note);
 
   // A layer that is ACTIVE and old is still a failure — otherwise the fix would
   // have erased the real alarm along with the false one.
-  const staleActive = { storage: 'pbs', total: 1, ultimo_ctime: 1_000_000 - 400 * 3600,
-                       guests: [1], agendamento: 'active', schedule: '03:30' };
+  const staleActive = { storage: 'pbs', total: 1, last_ctime: 1_000_000 - 400 * 3600,
+                       guests: [1], schedule_state: 'active', schedule: '03:30' };
   ok('an ACTIVE and old layer stays red (the real alarm did not vanish)',
      isRed(comp.pvxBackupStyle(staleActive)));
   comp.pvx.backup = { datastores: [] };
@@ -173,7 +173,7 @@ ok('the memory percentage matches the sum of the observed ones',
 
 // ── automatic pause ───────────────────────────────────────────────────────
 let loaded = 0; comp.loadNodes = () => { loaded++; };
-comp.pvx.con = {guest:'', estado:'closed', erro:''}; comp.pvx.focusFilter = false;
+comp.pvx.con = {guest:'', state:'closed', error:''}; comp.pvx.focusFilter = false;
 comp.pvxTick();
 ok('no console and no focus: the cycle FETCHES', loaded===1, 'fetches='+loaded);
 comp.pvx.con.guest = 'lxc/204'; comp.pvxTick();
@@ -275,8 +275,8 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
     if (/^\s*(\(?[\w\s,)]+\)?)\s+in\s+/.test(e)) e = e.replace(/^\s*\(?[\w\s,)]+\)?\s+in\s+/, '');
     // 🔴 NO STATE ALLOWLIST. The previous version only evaluated expressions that
     // mentioned pvxOpenNode, pvx.detail, pvx.health, pvx.taskLog or pvx.con — and
-    // all the state born afterwards (pvx.series, pvx.sistema, pvx.backup,
-    // pvx.topology, pvx.pacotes, pvx.registry) fell OUTSIDE. The pin stayed green
+    // all the state born afterwards (pvx.series, pvx.system, pvx.backup,
+    // pvx.topology, pvx.packages, pvx.registry) fell OUTSIDE. The pin stayed green
     // while ignoring exactly the expressions that froze the screen and locked the
     // operator out of the terminal.
     //
@@ -348,10 +348,10 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 
     // The missing link: the class has to be in the GENERATED CSS, not only in the HTML.
     const css = read('internal/webassets/web/tailwind.css');
-    const valor = `minmax(${m[2]}px,${m[3]}px)`;
-    ok('the arbitrary class was emitted into tailwind.css', css.includes(valor),
-       css.includes(valor) ? valor : `${valor} MISSING — run "make tailwind"`);
-    const idx = css.indexOf(valor);
+    const value = `minmax(${m[2]}px,${m[3]}px)`;
+    ok('the arbitrary class was emitted into tailwind.css', css.includes(value),
+       css.includes(value) ? value : `${value} MISSING — run "make tailwind"`);
+    const idx = css.indexOf(value);
     const before = css.slice(Math.max(0, idx - 4000), idx);
     const mq = [...before.matchAll(/min-width: *(\d+)px/g)].pop();
     ok('and under a media query of at most 768px',
@@ -465,8 +465,8 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   ok('qemu/208 is a virtual machine', typeOf('qemu/208').abbrev === 'VM', typeOf('qemu/208').label);
   ok('node/pve is the hypervisor',
      typeOf('node/pve', { kind: 'host' }).abbrev === 'NODE', typeOf('node/pve', { kind: 'host' }).label);
-  ok('canario (no prefix) is external',
-     typeOf('canario', { kind: 'externo' }).abbrev === 'EXT', typeOf('canario', { kind: 'externo' }).label);
+  ok('canary (no prefix) is external',
+     typeOf('canary', { kind: 'external' }).abbrev === 'EXT', typeOf('canary', { kind: 'external' }).label);
 
   // 🔴 The fallback cannot guess. Inventing "VM" would make the operator act on the
   // wrong category — starting, stopping or snapshotting something that is not what
@@ -478,15 +478,15 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   // A template is not a startable guest, and the difference has to show up BEFORE
   // somebody tries to start it.
   const model = typeOf('lxc/900', { template: true });
-  ok('a template is marked as a template', model.modelo === true);
+  ok('a template is marked as a template', model.template === true);
   ok('and the title warns that it is not startable',
      /TEMPLATE/.test(comp.pvxTypeTitle({ id: 'lxc/900', kind: 'guest', vmid: 900, template: true })));
 
   // Colour = state; letter = type. If the two palettes collided, neither would be
   // trustworthy — the green "ok" badge and a green type would fight over the same
   // visual channel.
-  const typeColors = ['node', 'lxc', 'qemu', 'externo', '?'].map((k) => comp.TYPES[k].color.toLowerCase());
-  const stateColors = ['ok', 'atencao', 'critico', 'vencido', 'sem-credencial', 'parado']
+  const typeColors = ['node', 'lxc', 'qemu', 'external', '?'].map((k) => comp.TYPES[k].color.toLowerCase());
+  const stateColors = ['ok', 'warning', 'critical', 'stale', 'no-credential', 'stopped']
     .map((e) => comp.pvxStateColor(e).toLowerCase());
   const collision = typeColors.filter((c) => stateColors.includes(c));
   ok('the TYPE palette does not collide with the STATE one', collision.length === 0,
@@ -497,7 +497,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
     { id: 'node/pve', kind: 'host', name: 'pve' },
     ...[201, 202, 203, 204, 205, 206, 207].map((v) => ({ id: `lxc/${v}`, kind: 'guest', vmid: v })),
     { id: 'qemu/100', kind: 'guest', vmid: 100 }, { id: 'qemu/208', kind: 'guest', vmid: 208 },
-    { id: 'canario', kind: 'externo', name: 'canario' },
+    { id: 'canary', kind: 'external', name: 'canary' },
   ];
   const compReal = Object.assign(Object.create(null), comp, { nodes: { list: realList, poll: {} } });
   const counts = compReal.pvxCountByType();
@@ -509,13 +509,13 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 
   // The filter has to accept the word the badge shows.
   const filter = (txt) => compReal.pvxFilterNodes(realList, txt, '', () => 'ok');
-  ok('the filter accepts "tipo:ct" (the short form the screen shows)', filter('tipo:ct').length === 7,
-     filter('tipo:ct').length + ' nodes');
-  ok('the filter accepts "tipo:vm"', filter('tipo:vm').length === 2, filter('tipo:vm').length + ' nodes');
-  ok('the filter accepts "tipo:conteiner"', filter('tipo:conteiner').length === 7);
-  ok('and it still accepts "tipo:lxc" (the old vocabulary did not break)',
-     filter('tipo:lxc').length === 7);
-  ok('the filter accepts "tipo:externo"', filter('tipo:externo').length === 1);
+  ok('the filter accepts "type:ct" (the short form the screen shows)', filter('type:ct').length === 7,
+     filter('type:ct').length + ' nodes');
+  ok('the filter accepts "type:vm"', filter('type:vm').length === 2, filter('type:vm').length + ' nodes');
+  ok('the filter accepts "type:container"', filter('type:container').length === 7);
+  ok('and it still accepts "type:lxc" (the old vocabulary did not break)',
+     filter('type:lxc').length === 7);
+  ok('the filter accepts "type:external"', filter('type:external').length === 1);
 
   // The screen shows the badge in the three places that matter.
   ok('the type badge shows up on the list row', /:style="pvxTypeStyle\(n\)"/.test(section));
@@ -523,7 +523,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
      /:style="pvxTypeStyle\(pvxOpenNode\(\)\)"/.test(section));
   ok('and the count per type is in the list header',
      /pvxCountByType\(\)/.test(section));
-  ok('the filter hint states the short form the screen shows', /tipo:ct/.test(section));
+  ok('the filter hint states the short form the screen shows', /type:ct/.test(section));
 }
 
 
@@ -534,7 +534,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 // with no error at all. Here the tab list grew from 6 to 11 at once — exactly the
 // kind of change where one of them ends up with no markup and nobody notices.
 {
-  const all = [...new Set([...comp.ABAS_HOST, ...comp.ABAS_GUEST].map((a) => a.id))];
+  const all = [...new Set([...comp.TABS_HOST, ...comp.TABS_GUEST].map((a) => a.id))];
   ok('the pin harvested the declared tabs', all.length >= 8, all.length + ': ' + all.join(','));
   const noPanel = all.filter((id) => !section.includes(`pvxActiveTab()==='${id}'`)
                                       && !section.includes(`pvxActiveTab() === '${id}'`));
@@ -560,8 +560,8 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   const host = { id: 'node/pve', kind: 'host', name: 'pve' };
   ok('the host can open a Shell', comp.pvxConsoleCan(host) === true);
   ok('and a guest with no credential is still refused, with a reason',
-     comp.pvxConsoleCan({ id: 'lxc/202', kind: 'guest', vmid: 202, credential: { state: 'ausente' } }) === false
-     && /node token/.test(comp.pvxConsoleReason({ id: 'lxc/202', kind: 'guest', vmid: 202, credential: { state: 'ausente' } })));
+     comp.pvxConsoleCan({ id: 'lxc/202', kind: 'guest', vmid: 202, credential: { state: 'absent' } }) === false
+     && /node token/.test(comp.pvxConsoleReason({ id: 'lxc/202', kind: 'guest', vmid: 202, credential: { state: 'absent' } })));
   ok('the screen states what the hypervisor Shell is BEFORE opening it',
      /pvxIsHost\(pvxOpenNode\(\)\)[\s\S]{0,400}root on/.test(section));
 }
@@ -634,8 +634,8 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 // ── no state dereferenced by the template is born NULL ──────────────────────
 //
 // 🔴 The defect that locked the operator out of the terminal. `pvx.series`,
-// `pvx.sistema` and the others were born `null`, and the template dereferenced
-// them — `pvx.series.pontos` — before the first load, which is the state the screen
+// `pvx.system` and the others were born `null`, and the template dereferenced
+// them — `pvx.series.points` — before the first load, which is the state the screen
 // ALWAYS opens in. A throw in Alpine takes down the WHOLE app, and the terminal
 // lives in the same app.
 //
@@ -671,7 +671,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 
   // And the fields created in this pass have a stable shape at the source — that is
   // what stops the next expression having to remember the `?.`.
-  for (const c of ['series', 'sistema', 'backup', 'topology', 'pacotes', 'registry']) {
+  for (const c of ['series', 'system', 'backup', 'topology', 'packages', 'registry']) {
     ok(`pvx.${c} is born with a shape, not null`, comp.pvx[c] !== null && comp.pvx[c] !== undefined,
        String(comp.pvx[c] === null ? 'null' : typeof comp.pvx[c]));
   }

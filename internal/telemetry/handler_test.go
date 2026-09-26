@@ -65,7 +65,7 @@ func TestHandler(t *testing.T) {
 		h, p := newHandler(t)
 		before := time.Now().Add(-time.Second)
 		rec := post(h, "application/json",
-			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.codigo","origin":"nav"},{"screen":"docker.containers.logs","origin":"default"}],"dropped":0}`)
+			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.code","origin":"nav"},{"screen":"docker.containers.logs","origin":"default"}],"dropped":0}`)
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("expected=204 observed=%d", rec.Code)
 		}
@@ -73,7 +73,7 @@ func TestHandler(t *testing.T) {
 		if n := countLines(c); n != 2 {
 			t.Fatalf("expected=2 observed=%d lines; content=%q", n, c)
 		}
-		wantSc := []string{"dev.codigo", "docker.containers.logs"}
+		wantSc := []string{"dev.code", "docker.containers.logs"}
 		wantOr := []string{"nav", "default"}
 		for i, l := range strings.Split(strings.TrimSuffix(c, "\n"), "\n") {
 			var m map[string]any
@@ -131,7 +131,7 @@ func TestHandler(t *testing.T) {
 		h, p := newHandler(t)
 		evs := make([]string, 201)
 		for i := range evs {
-			evs[i] = `{"screen":"dev.codigo","origin":"nav"}`
+			evs[i] = `{"screen":"dev.code","origin":"nav"}`
 		}
 		rec := post(h, "application/json",
 			`{"v":1,"s":"9f3a1c72","e":[`+strings.Join(evs, ",")+`]}`)
@@ -148,7 +148,7 @@ func TestHandler(t *testing.T) {
 		h, p := newHandler(t)
 		evs := make([]string, 200)
 		for i := range evs {
-			evs[i] = `{"screen":"dev.codigo","origin":"nav"}`
+			evs[i] = `{"screen":"dev.code","origin":"nav"}`
 		}
 		rec := post(h, "application/json",
 			`{"v":1,"s":"9f3a1c72","e":[`+strings.Join(evs, ",")+`]}`)
@@ -166,7 +166,7 @@ func TestHandler(t *testing.T) {
 			h, p := newHandler(t)
 			b, _ := json.Marshal(map[string]any{
 				"v": 1, "s": "9f3a1c72",
-				"e": []map[string]string{{"screen": "dev.codigo", "origin": org}},
+				"e": []map[string]string{{"screen": "dev.code", "origin": org}},
 			})
 			rec := post(h, "application/json", string(b))
 			if rec.Code != http.StatusBadRequest {
@@ -187,7 +187,7 @@ func TestHandler(t *testing.T) {
 			h, p := newHandler(t)
 			b, _ := json.Marshal(map[string]any{
 				"v": 1, "s": sid,
-				"e": []map[string]string{{"screen": "dev.codigo", "origin": "nav"}},
+				"e": []map[string]string{{"screen": "dev.code", "origin": "nav"}},
 			})
 			rec := post(h, "application/json", string(b))
 			if rec.Code != http.StatusBadRequest {
@@ -202,7 +202,7 @@ func TestHandler(t *testing.T) {
 			h, _ := newHandler(t)
 			b, _ := json.Marshal(map[string]any{
 				"v": 1, "s": sid,
-				"e": []map[string]string{{"screen": "dev.codigo", "origin": "nav"}},
+				"e": []map[string]string{{"screen": "dev.code", "origin": "nav"}},
 			})
 			if rec := post(h, "application/json", string(b)); rec.Code != http.StatusNoContent {
 				t.Errorf("valid sid %q: expected=204 observed=%d", sid, rec.Code)
@@ -236,7 +236,7 @@ func TestHandler(t *testing.T) {
 		for _, sc := range []string{
 			`<script>alert(1)</script>`,
 			`../../etc/passwd`,
-			`dev.codigo","injected":"yes`,
+			`dev.code","injected":"yes`,
 			`DOCKER.CONTAINERS`,
 		} {
 			h, p := newHandler(t)
@@ -274,7 +274,7 @@ func TestHandler(t *testing.T) {
 	t.Run("extra-field-in-the-event", func(t *testing.T) {
 		h, p := newHandler(t)
 		rec := post(h, "application/json",
-			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.codigo","origin":"nav","evil":"<script>"}]}`)
+			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.code","origin":"nav","evil":"<script>"}]}`)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected=400 observed=%d", rec.Code)
 		}
@@ -291,7 +291,7 @@ func TestHandler(t *testing.T) {
 	t.Run("extra-field-in-the-batch", func(t *testing.T) {
 		h, p := newHandler(t)
 		rec := post(h, "application/json",
-			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.codigo","origin":"nav"}],"evil":"x"}`)
+			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.code","origin":"nav"}],"evil":"x"}`)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected=400 observed=%d", rec.Code)
 		}
@@ -365,7 +365,7 @@ func TestHandler(t *testing.T) {
 		} {
 			h, p := newHandler(t)
 			rec := post(h, ct,
-				`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.codigo","origin":"nav"}]}`)
+				`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.code","origin":"nav"}]}`)
 			if rec.Code != http.StatusNoContent {
 				t.Errorf("Content-Type=%q: expected=204 observed=%d", ct, rec.Code)
 			}
@@ -379,7 +379,7 @@ func TestHandler(t *testing.T) {
 	t.Run("unsupported-content-type", func(t *testing.T) {
 		h, p := newHandler(t)
 		rec := post(h, "multipart/form-data; boundary=x",
-			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.codigo","origin":"nav"}]}`)
+			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.code","origin":"nav"}]}`)
 		if rec.Code != http.StatusUnsupportedMediaType {
 			t.Fatalf("expected=415 observed=%d", rec.Code)
 		}
@@ -405,7 +405,7 @@ func TestHandler(t *testing.T) {
 	t.Run("partially-invalid-batch-writes-zero", func(t *testing.T) {
 		h, p := newHandler(t)
 		rec := post(h, "application/json",
-			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.codigo","origin":"nav"},{"screen":"dashboard","origin":"nav"},{"screen":"dev.terminal","origin":"XXX"}]}`)
+			`{"v":1,"s":"9f3a1c72","e":[{"screen":"dev.code","origin":"nav"},{"screen":"dashboard","origin":"nav"},{"screen":"dev.terminal","origin":"XXX"}]}`)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("expected=400 observed=%d", rec.Code)
 		}

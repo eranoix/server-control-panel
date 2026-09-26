@@ -198,7 +198,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	owner := own.Owner(sessionName)
 	switch {
 	case owner == user || owner == AudienceAll:
-		// ours, or shared to everyone ("Todos") — proceed. We do NOT
+		// ours, or shared to everyone ("Everyone") — proceed. We do NOT
 		// re-Claim here: that would overwrite the audience and steal posse.
 	case owner != "" && owner != user:
 		// owned by another profile: an admin (master session manager) may
@@ -398,7 +398,7 @@ func HostShell(w http.ResponseWriter, r *http.Request, user string, primary bool
 	//
 	// This is what lets the session sit at the LARGEST client instead of the
 	// smallest — that is, the phone stops shrinking the desktop.
-	acceptsFrame := r.URL.Query().Get("quadro") == "1"
+	acceptsFrame := r.URL.Query().Get("frame") == "1"
 	var (
 		frameMu          sync.Mutex
 		frame            *clientFrame

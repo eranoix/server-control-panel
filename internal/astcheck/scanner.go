@@ -337,9 +337,9 @@ func binaryIndex(call *ast.CallExpr, execName string) (int, bool) {
 
 // symbol is what is known about a local identifier.
 type symbol struct {
-	// valor is the string literal when it is known and unique.
+	// value is the string literal when it is known and unique.
 	value string
-	// literal indicates that valor is usable.
+	// literal indicates that value is usable.
 	literal bool
 	// isString indicates that the identifier is declared to be of type string.
 	// Without type information, it is what allows telling a "command verb" apart

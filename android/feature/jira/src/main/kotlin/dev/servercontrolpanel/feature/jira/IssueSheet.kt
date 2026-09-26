@@ -41,7 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /** Test tag for the detail sheet. */
-internal const val TAG_ISSUE_SHEET = "jira-folha-issue"
+internal const val TAG_ISSUE_SHEET = "jira-issue-sheet"
 
 /**
  * The open issue on a bottom sheet, so the board stays in context behind it.

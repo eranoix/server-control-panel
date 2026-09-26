@@ -39,7 +39,7 @@ const (
 	leakFailBefore = 3 // consecutive cycles before trusting the outage
 	leakDedup      = "tunnel:leak"
 	TypeTunnelLeak = "tunnel.leak"      // home traffic leaving through the VPS
-	TypeTunnelDown = "tunnel.casa_down" // home exit unreachable
+	TypeTunnelDown = "tunnel.home_down" // home exit unreachable
 	TypeTunnelOK   = "tunnel.recovered" // back to normal
 )
 
@@ -229,7 +229,7 @@ func readHomeSOCKS(configPath string) (host, port, user, pass string, err error)
 		return "", "", "", "", err
 	}
 	for _, o := range doc.Outbounds {
-		if o.Tag == "casa" && o.Type == "socks" {
+		if o.Tag == "home" && o.Type == "socks" {
 			return o.Server, fmt.Sprintf("%d", o.Port), o.Username, o.Password, nil
 		}
 	}

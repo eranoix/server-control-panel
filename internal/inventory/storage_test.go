@@ -248,7 +248,7 @@ func TestZPoolsArriveWithLiteralHealth(t *testing.T) {
 		t.Errorf("Health = %q", p.Health)
 	}
 	if p.Healthy {
-		t.Error("Saudavel = true for DEGRADED — on a single-disk pool that is the most expensive news in the lab")
+		t.Error("Healthy = true for DEGRADED — on a single-disk pool that is the most expensive news in the lab")
 	}
 	if p.FragPct != 3 {
 		t.Errorf("FragPct = %d, want 3", p.FragPct)

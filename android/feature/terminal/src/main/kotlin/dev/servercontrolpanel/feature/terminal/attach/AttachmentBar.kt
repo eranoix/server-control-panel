@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import java.util.UUID
 
 /** Test tag of the attachments bar. */
-const val ATTACHMENT_BAR_TAG = "barra-anexos-terminal"
+const val ATTACHMENT_BAR_TAG = "bar-terminal-attachments"
 
 /** Label of the button that puts the path of ONE ready attachment on the command line. */
 const val INSERT_LABEL = "Insert"

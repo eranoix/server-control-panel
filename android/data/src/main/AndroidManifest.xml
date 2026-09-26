@@ -59,7 +59,7 @@
         -->
         <provider
             android:name="dev.servercontrolpanel.data.update.UpdateFileProvider"
-            android:authorities="${applicationId}.atualizacao"
+            android:authorities="${applicationId}.update"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

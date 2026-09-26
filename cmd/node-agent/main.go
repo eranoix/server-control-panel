@@ -114,10 +114,10 @@ var stamp = "unstamped"
 
 func main() {
 	var (
-		no        = flag.String("no", envOr("NODE_AGENT_NO", "unknown"), "node name (label in /metrics)")
+		no        = flag.String("no", envOr("NODE_AGENT_NODE", "unknown"), "node name (label in /metrics)")
 		tokenFile = flag.String("token-file", envOr("NODE_AGENT_TOKEN_FILE", "/etc/node-agent/token"), "0600 file holding this node's bearer token")
 		bridge    = flag.String("bridge-ip", envOr("NODE_AGENT_BRIDGE_IP", ""), "internal bridge IP to listen on (required; a wildcard is refused)")
-		port      = flag.Int("porta", envInt("NODE_AGENT_PORTA", 8710), "port for both listeners")
+		port      = flag.Int("port", envInt("NODE_AGENT_PORT", 8710), "port for both listeners")
 		dataDir   = flag.String("data-dir", envOr("NODE_AGENT_DATA_DIR", ""), "node data directory (game inventory and history)")
 	)
 	flag.Parse()

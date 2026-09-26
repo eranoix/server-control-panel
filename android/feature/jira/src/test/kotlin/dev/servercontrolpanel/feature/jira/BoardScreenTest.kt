@@ -56,9 +56,9 @@ class BoardScreenTest {
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 
         compose.onNodeWithTag(TAG_BOARD).assertIsDisplayed()
-        compose.onNodeWithText("A fazer").assertIsDisplayed()
-        compose.onNodeWithText("Em andamento").assertIsDisplayed()
-        compose.onNodeWithText("Concluído").assertIsDisplayed()
+        compose.onNodeWithText("To Do").assertIsDisplayed()
+        compose.onNodeWithText("In Progress").assertIsDisplayed()
+        compose.onNodeWithText("Done").assertIsDisplayed()
 
         // Cards from three different columns drawn at once, which a pager cannot do.
         compose.onNodeWithText("TASK-1").assertIsDisplayed()
@@ -117,7 +117,7 @@ class BoardScreenTest {
 
         compose.onNodeWithText("invalid JQL near 'ORDER'").assertIsDisplayed()
         compose.onNodeWithText("PANEL").assertIsDisplayed()
-        compose.onNodeWithText("Todas").assertIsDisplayed()
+        compose.onNodeWithText("All").assertIsDisplayed()
     }
 
     @Test
@@ -126,8 +126,8 @@ class BoardScreenTest {
         val source = FakeSource(JiraResult.Ok(testBoard()))
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
 
-        compose.onNodeWithText("Todas").assertIsDisplayed()
-        compose.onNodeWithText("Minhas").assertIsDisplayed()
+        compose.onNodeWithText("All").assertIsDisplayed()
+        compose.onNodeWithText("Mine").assertIsDisplayed()
     }
 
     @Test
@@ -136,7 +136,7 @@ class BoardScreenTest {
         compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
         val before = source.boardsRequested
 
-        compose.onNodeWithText("Minhas").performClick()
+        compose.onNodeWithText("Mine").performClick()
         compose.waitForIdle()
 
         assert(source.boardsRequested > before) { "tapping the filter should have requested the board again" }

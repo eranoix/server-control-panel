@@ -16,7 +16,7 @@ import (
 
 type testOutput struct {
 	Body struct {
-		Value int `json:"valor"`
+		Value int `json:"value"`
 	}
 }
 
@@ -187,8 +187,8 @@ func TestDeleteBackup_RetryReturnsFirst200(t *testing.T) {
 func TestIdempotency_FileInDataDir(t *testing.T) {
 	dir := t.TempDir()
 	idem := NewIdempotency(dir)
-	idem.Remember("sam:k1", `{"Body":{"valor":1}}`, http.StatusOK)
-	if _, err := os.Stat(filepath.Join(dir, "mobile-idempotencia.json")); err != nil {
+	idem.Remember("sam:k1", `{"Body":{"value":1}}`, http.StatusOK)
+	if _, err := os.Stat(filepath.Join(dir, "mobile-idempotency.json")); err != nil {
 		t.Fatalf("table was not written to dataDir: %v", err)
 	}
 }

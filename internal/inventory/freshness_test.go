@@ -94,13 +94,13 @@ func TestCredentialStates(t *testing.T) {
 		cred Credential
 		want string
 	}{
-		{"bom", Credential{TokenID: "lab@pve!audit", Expire: t0.Add(30 * 24 * time.Hour).Unix()}, "ok"},
-		{"no-declared-expire", Credential{TokenID: "lab@pve!audit"}, "ok"},
-		{"missing-from-vault", Credential{}, "ausente"},
-		{"expired", Credential{TokenID: "lab@pve!audit", Expire: t0.Add(-time.Second).Unix()}, "expirada"},
-		{"revoked", Credential{TokenID: "lab@pve!audit", State: CredRevoked}, "revogada"},
-		{"revoked-and-expired", Credential{TokenID: "lab@pve!audit", State: CredRevoked,
-			Expire: t0.Add(-time.Hour).Unix()}, "revogada"},
+		{"bom", Credential{TokenID: "panel@pve!audit", Expire: t0.Add(30 * 24 * time.Hour).Unix()}, "ok"},
+		{"no-declared-expire", Credential{TokenID: "panel@pve!audit"}, "ok"},
+		{"missing-from-vault", Credential{}, "absent"},
+		{"expired", Credential{TokenID: "panel@pve!audit", Expire: t0.Add(-time.Second).Unix()}, "expired"},
+		{"revoked", Credential{TokenID: "panel@pve!audit", State: CredRevoked}, "revoked"},
+		{"revoked-and-expired", Credential{TokenID: "panel@pve!audit", State: CredRevoked,
+			Expire: t0.Add(-time.Hour).Unix()}, "revoked"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -119,7 +119,7 @@ func TestCredentialStates(t *testing.T) {
 		}
 		seen[s] = true
 	}
-	if CredOK != "ok" || CredMissing != "ausente" || CredRevoked != "revogada" || CredExpired != "expirada" {
+	if CredOK != "ok" || CredMissing != "absent" || CredRevoked != "revoked" || CredExpired != "expired" {
 		t.Fatalf("the literals changed: %q %q %q %q — the screen depends on them",
 			CredOK, CredMissing, CredRevoked, CredExpired)
 	}
@@ -128,7 +128,7 @@ func TestCredentialStates(t *testing.T) {
 	c := NewClock()
 	c.now = func() time.Time { return t0 }
 	inv := Inventory{Nodes: []Node{{ID: "lxc/207", Name: "apps", Transport: TransportPVEAPI,
-		Kind: NodeKindGuest, Credential: Credential{TokenID: "lab@pve!audit", Expire: t0.Add(-time.Second).Unix()}}}}
+		Kind: NodeKindGuest, Credential: Credential{TokenID: "panel@pve!audit", Expire: t0.Add(-time.Second).Unix()}}}}
 	if got := c.View(inv, time.Minute)[0].Credential.State; got != CredExpired {
 		t.Fatalf("View did not resolve the credential state: %q", got)
 	}

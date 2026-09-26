@@ -741,5 +741,5 @@ internal fun SessionChips(names: List<String>, onTap: (String) -> Unit) {
     }
 }
 
-internal const val SAVE_ALL_TAG = "sessoes-salvar-tudo"
-internal const val BACKUPS_TAG = "sessoes-backups"
+internal const val SAVE_ALL_TAG = "sessions-save-all"
+internal const val BACKUPS_TAG = "sessions-backups"

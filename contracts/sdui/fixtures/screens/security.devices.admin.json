@@ -18,7 +18,7 @@
             "label": "Exit",
             "kind": "badge",
             "badge_map": {
-              "casa": "success",
+              "home": "success",
               "vps": "neutral"
             }
           },

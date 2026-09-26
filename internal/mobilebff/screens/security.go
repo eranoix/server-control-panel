@@ -36,7 +36,7 @@ const (
 	securityUFWScreenID       = "security.ufw"
 	securityAdGuardScreenID   = "security.adguard"
 	securityDevicesScreenID   = "security.devices"
-	securityDataSaverScreenID = "security.economia"
+	securityDataSaverScreenID = "security.savings"
 )
 
 // Rows/detail endpoints — one per table or detail screen. Absolute paths
@@ -51,7 +51,7 @@ const (
 	securityUFWDetailEndpoint     = mobilebff.Prefix + "/security/ufw/status"
 	securityAdGuardDetailEndpoint = mobilebff.Prefix + "/security/adguard/status"
 	securityDevicesRowsEndpoint   = mobilebff.Prefix + "/security/devices"
-	securityDataSaverRowsEndpoint = mobilebff.Prefix + "/security/economia"
+	securityDataSaverRowsEndpoint = mobilebff.Prefix + "/security/savings"
 )
 
 // securityTimestampFormat mirrors dockerTimestampFormat/schedulerTimestampFormat
@@ -537,7 +537,7 @@ func RegisterNetwork(deps NetworkDeps) {
 
 	// Catalog entries: the same four network screens, all `...ForViewer` and
 	// therefore adminOnly. The data saver screen keeps its historical id
-	// (security.economia) but is labelled "Network usage".
+	// (security.savings) but is labelled "Network usage".
 	sdui.RegisterCatalog(securityUFWScreenID, sdui.GroupSecurity, "Firewall (UFW)", adminOnly)
 	sdui.RegisterCatalog(securityAdGuardScreenID, sdui.GroupSecurity, "AdGuard DNS", adminOnly)
 	sdui.RegisterCatalog(securityDevicesScreenID, sdui.GroupSecurity, "Devices (VLESS)", adminOnly)
@@ -554,7 +554,7 @@ func RegisterNetwork(deps NetworkDeps) {
 	mobilebff.Register("security.devices.rows", func(api huma.API, mbDeps mobilebff.Deps) {
 		registerSecurityDevicesRows(api, deps, mbDeps)
 	})
-	mobilebff.Register("security.economia.rows", func(api huma.API, mbDeps mobilebff.Deps) {
+	mobilebff.Register("security.savings.rows", func(api huma.API, mbDeps mobilebff.Deps) {
 		registerSecurityDataSaverRows(api, deps, mbDeps)
 	})
 
@@ -749,7 +749,7 @@ func buildSecurityDevicesScreen() *sdui.Envelope {
 		Columns: []sdui.TableColumn{
 			{Key: "name", Label: "Name", Kind: "text"},
 			{Key: "exit", Label: "Exit", Kind: "badge", BadgeMap: map[string]string{
-				"vps": "neutral", "casa": "success",
+				"vps": "neutral", "home": "success",
 			}},
 			{Key: "datasaver", Label: "Datasaver", Kind: "badge", BadgeMap: map[string]string{
 				"yes": "warning", "no": "neutral",
@@ -821,7 +821,7 @@ func securityDeviceRow(d DeviceRow) map[string]any {
 	}
 }
 
-// security.economia (data saver) screen.
+// security.savings (data saver) screen.
 
 func buildSecurityDataSaverScreenForViewer(v sdui.Viewer) (*sdui.Envelope, error) {
 	if !v.IsAdmin() {
@@ -850,7 +850,7 @@ func buildSecurityDataSaverScreen() *sdui.Envelope {
 }
 
 func registerSecurityDataSaverRows(api huma.API, deps NetworkDeps, mbDeps mobilebff.Deps) {
-	registerSecurityRows(api, "getSecurityEconomiaRows", "/security/economia", "Rows of security.economia", mbDeps.Cfg,
+	registerSecurityRows(api, "getSecuritySavingsRows", "/security/savings", "Rows of security.savings", mbDeps.Cfg,
 		func(_ context.Context, _ sdui.Viewer) ([]map[string]any, error) {
 			list, err := deps.UsageSnapshot()
 			if err != nil {

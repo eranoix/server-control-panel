@@ -52,7 +52,7 @@ class ScrollCaptureTest {
 
     private fun outputDir(): File {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
-        val dir = File(ctx.getExternalFilesDir(null), "capturas-rolagem")
+        val dir = File(ctx.getExternalFilesDir(null), "scroll-captures")
         dir.mkdirs()
         return dir
     }
@@ -162,28 +162,28 @@ class ScrollCaptureTest {
 
             // 1. Pinned to the bottom: no indicator at all.
             show(engine)
-            save("01-no-fim-sem-indicador.png")
+            save("01-at-end-no-indicator.png")
 
             // 2. Mid-history: position bar and "Back to the end" with the distance.
             engine.scrollViewport(-120)
             show(engine)
-            save("02-rolado-para-cima.png")
+            save("02-scrolled-up.png")
 
             // 3. Top of history: the bar touches the top.
             engine.scrollToTop()
             show(engine)
-            save("03-no-topo-do-historico.png")
+            save("03-at-top-of-history.png")
 
             // 4. New output while reading: the screen does not jump and the button
             //    announces it.
             engine.scrollViewport(60)
             engine.write("new-command-just-arrived\r\n".toByteArray(Charsets.UTF_8))
             show(engine, hasNewOutput = true)
-            save("04-saida-nova-sem-saltar.png")
+            save("04-new-output-no-jump.png")
 
             // 5. Same state in the light theme.
             show(engine, light = true)
-            save("05-tema-claro.png")
+            save("05-light-theme.png")
         } finally {
             engine.close()
         }
@@ -214,7 +214,7 @@ class ScrollCaptureTest {
 
             buildOnce()
             show(engine)
-            save("06-tela-alternativa-htop.png")
+            save("06-alternate-screen-htop.png")
 
             assertTrue("on the alternate screen the viewport stays pinned", engine.scrollState().atEnd)
         } finally {

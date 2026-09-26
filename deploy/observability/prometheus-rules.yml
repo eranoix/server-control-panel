@@ -90,7 +90,7 @@ groups:
           summary: "Swap above 75% on {{ $labels.instance }}"
           description: "A full swap leaves no headroom for the next memory spike, even with RAM to spare. See ContainerSwapHeavy for WHO is in there."
 
-      - alert: HostSwapParado
+      - alert: HostSwapStopped
         # High swap WITH plenty of free RAM: leftovers of a past memory crisis.
         # The other swap alerts never fire for it (below 75%, and idle pages
         # are not read), yet interactive sessions stall for seconds when their

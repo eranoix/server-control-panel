@@ -96,7 +96,7 @@ type ZPool struct {
 	Dedup  float64 `json:"dedup"`
 }
 
-// Saudavel is the only verdict this package emits about a pool: ONLINE, and
+// Healthy is the only verdict this package emits about a pool: ONLINE, and
 // nothing else. DEGRADED, FAULTED, SUSPENDED, UNAVAIL and REMOVED are all "no" —
 // and none of them may be normalised to green anywhere along the path.
 func (p ZPool) Healthy() bool { return p.Health == "ONLINE" }
@@ -182,8 +182,8 @@ func coversStorage(path string) bool {
 
 // ZDevice is a leaf of the vdev tree: a real physical device.
 type ZDevice struct {
-	Path  string `json:"caminho"` // /dev/disk/by-id/nvme-eui.…-part3
-	State string `json:"estado"`  // ONLINE | DEGRADED | FAULTED | UNAVAIL | REMOVED
+	Path  string `json:"path"`  // /dev/disk/by-id/nvme-eui.…-part3
+	State string `json:"state"` // ONLINE | DEGRADED | FAULTED | UNAVAIL | REMOVED
 	Read  int64  `json:"read"`
 	Write int64  `json:"write"`
 	Cksum int64  `json:"cksum"`
@@ -192,24 +192,24 @@ type ZDevice struct {
 // ZVdev is a group of devices: `mirror-0`, `raidz1-0`, or the pool itself when
 // the disks hang off the root with no group at all.
 type ZVdev struct {
-	Name      string    `json:"nome"`
-	Type      string    `json:"tipo"` // mirror | raidz1 | raidz2 | raidz3 | listra (stripe) | especial (special); values are wire contract
-	Redundant bool      `json:"redundante"`
-	Devices   []ZDevice `json:"dispositivos"`
+	Name      string    `json:"name"`
+	Type      string    `json:"type"` // mirror | raidz1 | raidz2 | raidz3 | stripe | special; values are wire contract
+	Redundant bool      `json:"redundant"`
+	Devices   []ZDevice `json:"devices"`
 }
 
 // ZPoolTopology is the complete verdict about a pool.
 type ZPoolTopology struct {
-	Name      string  `json:"nome"`
-	State     string  `json:"estado"`
-	Errors    string  `json:"erros"` // "No known data errors" | a description
+	Name      string  `json:"name"`
+	State     string  `json:"state"`
+	Errors    string  `json:"errors"` // "No known data errors" | a description
 	Vdevs     []ZVdev `json:"vdevs"`
-	Redundant bool    `json:"redundante"`
-	NDisp     int     `json:"n_dispositivos"`
+	Redundant bool    `json:"redundant"`
+	NDisp     int     `json:"n_devices"`
 	// ErrorCount sums read+write+cksum across ALL devices. In a pool with no
 	// mirror, any one of them different from zero is lost data — there is no second
 	// copy to rebuild from.
-	ErrorCount int64 `json:"erros_contados"`
+	ErrorCount int64 `json:"errors_counted"`
 }
 
 // zfsNode is the raw shape of a tree node as the hypervisor returns it.
@@ -233,7 +233,7 @@ type zfsRawDetail struct {
 
 // vdevType classifies a group by its name, the way `zpool status` writes it.
 //
-// Only mirror and raidz survive the loss of one device. `listra` (stripe: the pool
+// Only mirror and raidz survive the loss of one device. `stripe` (the pool
 // hanging disks straight off the root) and anything unknown do NOT count as
 // redundancy: when in doubt the verdict is "does not protect", because the error
 // in the other direction makes the operator trust a mirror that does not exist.
@@ -249,9 +249,9 @@ func vdevType(name string) (string, bool) {
 		return "raidz1", true
 	case strings.HasPrefix(name, "log"), strings.HasPrefix(name, "cache"),
 		strings.HasPrefix(name, "spare"), strings.HasPrefix(name, "special"):
-		return "especial", false
+		return "special", false
 	default:
-		return "listra", false
+		return "stripe", false
 	}
 }
 
@@ -283,7 +283,7 @@ func (c *Client) ZFSTopology(ctx context.Context, node, pool string) (ZPoolTopol
 		if n.Leaf == 1 {
 			// A disk hanging straight off the root: it is a stripe, with no protection.
 			out.Vdevs = append(out.Vdevs, ZVdev{
-				Name: n.Name, Type: "listra", Redundant: false,
+				Name: n.Name, Type: "stripe", Redundant: false,
 				Devices: []ZDevice{{Path: n.Name, State: n.State,
 					Read: n.Read, Write: n.Write, Cksum: n.Cksum}},
 			})
@@ -303,7 +303,7 @@ func (c *Client) ZFSTopology(ctx context.Context, node, pool string) (ZPoolTopol
 	}
 
 	for _, v := range out.Vdevs {
-		if v.Type == "especial" {
+		if v.Type == "special" {
 			continue // log/cache/spare do not hold the pool's data
 		}
 		if v.Redundant {
@@ -378,27 +378,27 @@ type BackupFreshness struct {
 	// LastCTime is 0 when THERE IS NO BACKUP AT ALL — and zero here is absence,
 	// not "1970". Whoever consumes it has to tell the two apart: an empty datastore
 	// and a datastore with an ancient backup call for opposite actions.
-	LastCTime int64  `json:"ultimo_ctime"`
+	LastCTime int64  `json:"last_ctime"`
 	Guests    []int  `json:"guests"`
-	Error     string `json:"erro,omitempty"`
+	Error     string `json:"error,omitempty"`
 
 	// Scheduler separates "deliberately disarmed" from "failed", in THREE states
 	// (the values are wire contract):
 	//
-	//   "ativo"       active: the hypervisor job exists and is on
-	//   "desarmado"   disarmed: the hypervisor job exists and is OFF
-	//   "fora-do-pve" outside PVE: no hypervisor job for this datastore (e.g. a
+	//   "active"       active: the hypervisor job exists and is on
+	//   "disarmed"   disarmed: the hypervisor job exists and is OFF
+	//   "outside-pve" outside PVE: no hypervisor job for this datastore (e.g. a
 	//                 copy fed by a systemd timer on the host)
 	//
 	// A boolean would paint a layer fed from outside the hypervisor as disarmed.
-	Scheduler string `json:"agendamento"`
+	Scheduler string `json:"schedule_state"`
 	Schedule  string `json:"schedule,omitempty"`
 
 	// SameDiskAs names the other layers that share the physical disk. Two layers
 	// on the same disk are ONE layer with two names: the disk failing takes both
 	// together, and that is what the operator needs to see before trusting a count
 	// of "two copies".
-	SameDiskAs []string `json:"mesmo_disco_que,omitempty"`
+	SameDiskAs []string `json:"same_disk_as,omitempty"`
 }
 
 // DatastoreBackups lists a datastore's copies and summarises freshness.

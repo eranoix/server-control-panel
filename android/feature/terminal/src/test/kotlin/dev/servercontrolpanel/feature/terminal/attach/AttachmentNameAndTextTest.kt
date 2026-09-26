@@ -35,8 +35,8 @@ class AttachmentNameAndTextTest {
     fun `spaces in the name are preserved`() {
         // Spaces are handled by shell quoting at insertion time; the file keeps the
         // name the user saw in the picker.
-        val name = destinationNameFor("Captura de tela.png", instant, utc)
-        assertTrue(name.endsWith("-Captura de tela.png"))
+        val name = destinationNameFor("Capture de screen.png", instant, utc)
+        assertTrue(name.endsWith("-Capture de screen.png"))
     }
 
     @Test
@@ -48,7 +48,7 @@ class AttachmentNameAndTextTest {
 
     @Test
     fun `an empty name gets a default name instead of just the timestamp`() {
-        assertEquals("20260906-193045-anexo", destinationNameFor("   ", instant, utc))
+        assertEquals("20260906-193045-attachment", destinationNameFor("   ", instant, utc))
     }
 
     private fun attachment(state: AttachmentState, name: String = "x") =

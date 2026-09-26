@@ -38,7 +38,7 @@ import (
 )
 
 // Vault keys written by the credential provisioning tool (the pve credential tool).
-// Each value is the WHOLE token in the form "lab@pve!<name>=<secret>", which is
+// Each value is the WHOLE token in the form "panel@pve!<name>=<secret>", which is
 // what the PVEAPIToken header requires — storing the bare secret was the defect
 // that only a live call revealed.
 const (
@@ -47,9 +47,9 @@ const (
 	// pveSecretPanel is the full-access token. It replaces the audit token on
 	// hypervisor reads when present; the audit token stays the fallback so a
 	// machine without it only loses the routes that need it.
-	pveSecretPanel      = "pve_token_painel"
+	pveSecretPanel      = "pve_token_panel"
 	pveSecretNodePrefix = "pve_token_node_"
-	pveTokenUser        = "lab@pve"
+	pveTokenUser        = "panel@pve"
 	pveTokenNodePrefix  = "node-"
 )
 
@@ -57,8 +57,8 @@ const (
 // file exists in order not to repeat.
 const (
 	vaultOK          = "ok"
-	vaultMissing     = "ausente"
-	vaultUnreachable = "inalcancavel"
+	vaultMissing     = "absent"
+	vaultUnreachable = "unreachable"
 )
 
 // hypervisorOps is the slice of the PVE client these handlers use. A local
@@ -287,7 +287,7 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 	verb := ""
 	if n := len(parts); n > 1 {
 		switch parts[n-1] {
-		case "power", "credential", "clone", "backup", "nota":
+		case "power", "credential", "clone", "backup", "note":
 			verb = parts[n-1]
 			parts = parts[:n-1]
 		}
@@ -307,7 +307,7 @@ func (r *Router) handleNodes(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		r.nodePower(w, req, st, id)
-	case "nota":
+	case "note":
 		// GET reads, PUT writes. PUT and not POST because the note is a field of
 		// a resource that already exists — and it is the verb PVE itself requires
 		// further down.
@@ -605,7 +605,7 @@ func (r *Router) nodePower(w http.ResponseWriter, req *http.Request, st *invento
 		fmt.Sprintf("node=%s action=%s upid=%s status=ok warnings=%s", id, action, upid, warnings))
 	// The warning does NOT disappear: it travels together with the success,
 	// because whoever does not see it here will not see it anywhere.
-	writeJSON(w, map[string]any{"node": id, "action": action, "upid": upid, "status": "ok", "avisos": warnings})
+	writeJSON(w, map[string]any{"node": id, "action": action, "upid": upid, "status": "ok", "warnings": warnings})
 }
 
 // kindAndHost returns the guest's type ("lxc"|"qemu") and the hypervisor node,
@@ -747,10 +747,10 @@ func (r *Router) revokeCredential(w http.ResponseWriter, req *http.Request, st *
 
 	r.auditEvent(req, auth.UserFrom(req), "pve.token.revoked", fmt.Sprintf("node=%s token=%s", id, nodeTokenID(no)))
 	writeJSON(w, map[string]any{
-		"node":   id,
-		"token":  nodeTokenID(no),
-		"state":  inventory.CredRevoked,
-		"passos": []string{"pve.delete", "pve.confirm401", "vault.delete", "vault.recheck"},
+		"node":  id,
+		"token": nodeTokenID(no),
+		"state": inventory.CredRevoked,
+		"steps": []string{"pve.delete", "pve.confirm401", "vault.delete", "vault.recheck"},
 	})
 }
 
@@ -897,7 +897,7 @@ func (r *Router) credentialSource() func([]inventory.Node) (map[string]inventory
 	}
 }
 
-// tokenName extracts the token name from the full id: "lab@pve!node-lab" →
+// tokenName extracts the token name from the full id: "panel@pve!node-lab" →
 // "node-lab", which is how PVE returns it in /access/users/{u}/token.
 func tokenName(tokenID string) string {
 	if i := strings.Index(tokenID, "!"); i >= 0 {

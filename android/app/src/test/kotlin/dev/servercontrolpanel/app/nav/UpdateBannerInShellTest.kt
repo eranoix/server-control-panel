@@ -56,7 +56,7 @@ class UpdateBannerInShellTest {
     fun `the banner shows in the shell next to the hamburger without hiding content`() {
         renderShell(UpdateState.Available(versionName = "0.1.7", downloadBytes = 1_400_329, incremental = true))
 
-        composeRule.onNodeWithText("Version 0.1.7 available — 1,4 MB").assertIsDisplayed()
+        composeRule.onNodeWithText("Version 0.1.7 available — 1.4 MB").assertIsDisplayed()
         // The banner is added below the bar, not in its place.
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).assertIsDisplayed()
     }
@@ -72,12 +72,12 @@ class UpdateBannerInShellTest {
     @Test
     fun `the banner disappears on detail screens`() {
         renderShell(UpdateState.Available(versionName = "0.1.7", downloadBytes = 1_400_329, incremental = true))
-        composeRule.onNodeWithText("Version 0.1.7 available — 1,4 MB").assertIsDisplayed()
+        composeRule.onNodeWithText("Version 0.1.7 available — 1.4 MB").assertIsDisplayed()
 
-        navController.navigate("arquivos/edit/" + URLEncoder.encode("/etc/hosts", "UTF-8"))
+        navController.navigate("files/edit/" + URLEncoder.encode("/etc/hosts", "UTF-8"))
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Version 0.1.7 available — 1,4 MB").assertDoesNotExist()
+        composeRule.onNodeWithText("Version 0.1.7 available — 1.4 MB").assertDoesNotExist()
     }
 
     @Test
@@ -113,7 +113,7 @@ class UpdateBannerInShellTest {
         composeRule.onNodeWithText("Diagnostics").performClick()
         composeRule.waitForIdle()
 
-        assertEquals("diagnostico", navController.currentBackStackEntry?.destination?.route)
+        assertEquals("diagnostics", navController.currentBackStackEntry?.destination?.route)
         assertEquals("this must not leave the app", 0, exitsToSystem)
         composeRule.onNodeWithText("INSTALL_FAILED_UPDATE_INCOMPATIBLE", substring = true).assertExists()
     }

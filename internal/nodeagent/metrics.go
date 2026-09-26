@@ -33,7 +33,7 @@ func NewMetrics(no string) *Metrics {
 }
 
 // Count records one execution by operation name and outcome. The outcome
-// label values (ok / erro / desconhecida / grande: ok, error, unknown, too
+// label values (ok / error / unknown / large: ok, error, unknown, too
 // large) are part of the published metrics.
 func (m *Metrics) Count(name, result string) {
 	if m == nil {
@@ -79,7 +79,7 @@ func (m *Metrics) Render() string {
 		return keys[i].result < keys[j].result
 	})
 	for _, k := range keys {
-		fmt.Fprintf(&b, "node_agent_ops_total{no=%q,op=%q,resultado=%q} %d\n", m.No, k.name, k.result, m.ops[k])
+		fmt.Fprintf(&b, "node_agent_ops_total{no=%q,op=%q,result=%q} %d\n", m.No, k.name, k.result, m.ops[k])
 	}
 	m.mu.Unlock()
 

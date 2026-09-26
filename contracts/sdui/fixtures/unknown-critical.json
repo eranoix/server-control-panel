@@ -2,7 +2,7 @@
   "sdui_version": 1,
   "screen": {
     "id": "fixture.unknown-critical",
-    "title": "Tipo desconhecido, crítico",
+    "title": "Unknown type, critical",
     "components": [
       {
         "type": "action",

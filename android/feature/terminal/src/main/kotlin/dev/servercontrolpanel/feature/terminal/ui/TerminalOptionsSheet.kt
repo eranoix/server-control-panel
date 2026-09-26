@@ -46,7 +46,7 @@ import dev.servercontrolpanel.feature.terminal.prefs.TerminalScrollback
 import dev.servercontrolpanel.feature.terminal.prefs.TerminalFontSizePreference
 
 /** Test tag for the options sheet, which must cost no height while closed. */
-const val OPTIONS_SHEET_TAG = "folha-opcoes-terminal"
+const val OPTIONS_SHEET_TAG = "terminal-options-sheet"
 
 /** Label of the button that opens the sheet, on the top bar. */
 const val OPTIONS_DESCRIPTION = "Terminal options"
@@ -55,21 +55,21 @@ const val OPTIONS_DESCRIPTION = "Terminal options"
 const val SHOW_KEYBOARD_LABEL = "Show keyboard"
 
 /** Test tag for the sheet's keyboard button. */
-const val SHOW_KEYBOARD_TAG = "botao-mostrar-teclado"
+const val SHOW_KEYBOARD_TAG = "show-keyboard-button"
 
 /** Label of the sheet's paste button, the paste path that needs no selection. */
 const val PASTE_LABEL = "Paste"
 
 /** Test tag for the sheet's paste button. */
-const val PASTE_TAG = "botao-colar"
+const val PASTE_TAG = "paste-button"
 
 // There is deliberately no "clear history" button: erasing the user's history
 // is never an acceptable way out of a display defect.
 /** Test tag for each line-spacing step. */
-fun lineSpacingTag(step: TerminalLineSpacing): String = "entrelinha-${step.name}"
+fun lineSpacingTag(step: TerminalLineSpacing): String = "line-spacing-${step.name}"
 
 /** Tag for each input mode's chip, for the test that proves the switch. */
-fun typingModeTag(mode: TypingMode): String = "modo-digitacao-${mode.name}"
+fun typingModeTag(mode: TypingMode): String = "mode-typing-${mode.name}"
 
 /** Tag for each history-size chip. */
 fun scrollbackTag(step: TerminalScrollback): String = "scrollback-${step.name}"
@@ -377,4 +377,4 @@ internal fun TerminalOptionsContent(
 }
 
 /** Test tag for each visible-lines step. */
-internal fun visibleRowsTag(option: VisibleRows): String = "linhas-visiveis-${option.lines}"
+internal fun visibleRowsTag(option: VisibleRows): String = "lines-visible-${option.lines}"

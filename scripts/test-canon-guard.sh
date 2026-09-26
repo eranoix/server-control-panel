@@ -64,8 +64,8 @@ output="$(git -C "$A" fetch . "feat/work:$CANON" 2>&1)"
 [ "$(canon_at "$A")" = "$before" ] \
   && ok "raw git fetch did NOT move the canonical branch" \
   || no "CRITICAL: raw git moved the canonical branch, the guard is not active"
-echo "$output" | grep -q "BLOQUEADO" && ok "the refusal is explicit" || no "refused without explaining: $output"
-echo "$output" | grep -q "promoveria 3 commit" \
+echo "$output" | grep -q "BLOCKED" && ok "the refusal is explicit" || no "refused without explaining: $output"
+echo "$output" | grep -q "would promote 3 commit" \
   && ok "the refusal SAYS HOW MANY commits would be promoted" \
   || no "the refusal did not report the size of the delta"
 echo "$output" | grep -q "canon-sync" && ok "points to the sanctioned path" || no "does not point to the alternative"
@@ -85,7 +85,7 @@ output="$(sync_cmd "$B" feat/work)"
 git -C "$B" merge-base --is-ancestor "$tip" "$CANON" \
   && ok "canon-sync advances the canonical branch" \
   || no "canon-sync did not advance: $output"
-echo "$output" | grep -q "promove 2 commit" \
+echo "$output" | grep -q "promotes 2 commit" \
   && ok "lists the delta BEFORE acting" \
   || no "did not show the delta"
 echo "$output" | grep -q "✓ $CANON" && ok "confirms the resulting state" || no "did not confirm the resulting state"

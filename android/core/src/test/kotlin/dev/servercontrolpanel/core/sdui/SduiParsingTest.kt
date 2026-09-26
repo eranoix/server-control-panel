@@ -27,7 +27,7 @@ class SduiParsingTest {
             listOf("container.restart", "container.kill"),
             table.rowActions?.map { it.actionId },
         )
-        assertEquals("Nenhum container em execução", table.emptyState?.text)
+        assertEquals("No running containers", table.emptyState?.text)
 
         val form = components[1] as SduiComponent.Form
         assertEquals("notify-rule-form", form.id)
@@ -56,7 +56,7 @@ class SduiParsingTest {
         val confirm = components[6] as SduiComponent.ConfirmDestructive
         assertEquals("kill-container-confirm", confirm.id)
         assertEquals("container.kill", confirm.actionId)
-        assertEquals("meu-container", confirm.requireTypedConfirmation)
+        assertEquals("my-container", confirm.requireTypedConfirmation)
     }
 
     @Test
@@ -65,7 +65,7 @@ class SduiParsingTest {
 
         assertEquals(1, envelope.sduiVersion)
         assertEquals("fixture.all", envelope.screen.id)
-        assertEquals("Todos os componentes", envelope.screen.title)
+        assertEquals("All components", envelope.screen.title)
     }
 
     @Test

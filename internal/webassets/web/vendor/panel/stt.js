@@ -20,7 +20,7 @@
     try { if (l) localStorage.setItem(LS_KEY, l); } catch (_) {}
   }
   function defaultLang() {
-    return getLastLang() || (navigator.language || 'pt-BR');
+    return getLastLang() || (navigator.language || 'en-US');
   }
 
   // ---- Web Speech driver ----------------------------------------------------
@@ -229,7 +229,7 @@
           console.log('[panel:stt] whisper-local WS open, sending start...');
           ws.send(JSON.stringify({
             type: 'start',
-            lang: (opts.lang || PanelSTT.defaultLang() || 'pt').slice(0, 5),
+            lang: (opts.lang || PanelSTT.defaultLang() || 'en').slice(0, 5),
             prompt: opts.prompt || '',
           }));
           while (pending.length) { try { ws.send(pending.shift()); } catch (_) {} }
@@ -255,7 +255,7 @@
               buffer,
               startMs: msg.startMs || 0,
               endMs: msg.endMs || 0,
-              lang: msg.lang || (opts.lang || 'pt'),
+              lang: msg.lang || (opts.lang || 'en'),
               words: msg.words || [],
               confidence: typeof msg.confidence === 'number' ? msg.confidence : 1.0,
             });

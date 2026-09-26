@@ -115,7 +115,7 @@ func TestLoad_MalformedManifest(t *testing.T) {
 	if err := os.MkdirAll(Dir(dataDir), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(Dir(dataDir), ManifestName), []byte("{nao e json"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(Dir(dataDir), ManifestName), []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(dataDir); err == nil {

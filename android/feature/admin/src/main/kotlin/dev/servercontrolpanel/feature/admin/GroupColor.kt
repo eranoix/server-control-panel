@@ -18,15 +18,15 @@ internal fun groupColor(group: String): Color {
     val scheme = MaterialTheme.colorScheme
     return when (group.lowercase().trim()) {
         // Blue: the machine itself.
-        "system", "sistema" -> Color(0xFF4F8FD9)
+        "system" -> Color(0xFF4F8FD9)
         // Cyan: what runs on the machine.
         "docker" -> Color(0xFF3BA9B4)
         // Amber, not red: red means urgency.
-        "security", "segurança", "seguranca" -> Color(0xFFC98A2E)
+        "security" -> Color(0xFFC98A2E)
         // Violet: things that run on their own.
-        "automation", "automação", "automacao" -> Color(0xFF8B72D0)
+        "automation" -> Color(0xFF8B72D0)
         // Desaturated green, so it is not read as "healthy".
-        "integrations", "integrações", "integracoes" -> Color(0xFF5E9E76)
+        "integrations" -> Color(0xFF5E9E76)
         else -> scheme.primary
     }
 }

@@ -84,7 +84,7 @@ func TestNewRunnersPrimaryOnly(t *testing.T) {
 
 // validDBName guards db_backup against injection in the database name.
 func TestValidDBName(t *testing.T) {
-	for _, s := range []string{"meuapp", "wordpress", "app_prod", "db-1", "site.db"} {
+	for _, s := range []string{"myapp", "wordpress", "app_prod", "db-1", "site.db"} {
 		if !validDBName(s) {
 			t.Errorf("expected valid db: %q", s)
 		}

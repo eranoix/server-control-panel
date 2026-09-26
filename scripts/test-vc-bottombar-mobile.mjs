@@ -160,25 +160,25 @@ for (const larg of [320, 380, 430, 700]) {
       close: rx ? Math.min(Math.round(rx.width), Math.round(rx.height)) : 0,
     };
     const lines = [...wide.querySelectorAll('.vc-popover-item')].filter((el) => el.closest('.vc-popover') === wide);
-    sheet.linhas = lines.length;
+    sheet.lines = lines.length;
     sheet.low = lines.filter((el) => el.getBoundingClientRect().height < 44).length;
     sheet.content = Math.round(wide.scrollHeight);
     wide.style.display = 'none';
     return { pops: out, toolbar: toolbar.length, small, narrow, covered, leaking, sheet,
              panel: Math.round(panel.width), bar: Math.round(bar.width),
-             barHeight: Math.round(bar.height), linhas: bar.height > 80 ? 2 : 1 };
+             barHeight: Math.round(bar.height), lines: bar.height > 80 ? 2 : 1 };
   });
 
   const totOthers = r.pops.reduce((a, p) => a + p.others, 0);
   const totOthersClipped = r.pops.reduce((a, p) => a + p.othersClipped, 0);
   const totItems = r.pops.reduce((a, p) => a + p.items, 0);
-  const totCort = r.pops.reduce((a, p) => a + p.clipped, 0);
+  const totalClipped = r.pops.reduce((a, p) => a + p.clipped, 0);
   const totOver = r.pops.reduce((a, p) => a + p.overlapping, 0);
   const tag = larg + 'px';
   totItems > 20 ? ok(tag + ': ' + totItems + ' menu items measured across ' + r.pops.length + ' popovers')
                 : no(tag + ': only ' + totItems + ' items — materialising the lists failed');
-  totCort === 0 ? ok(tag + ': no item with text overflowing its own box')
-                : no(tag + ': ' + totCort + ' item(s) with clipped text — e.g.: "' + (r.pops.find((p) => p.sample) || {}).sample + '"');
+  totalClipped === 0 ? ok(tag + ': no item with text overflowing its own box')
+                : no(tag + ': ' + totalClipped + ' item(s) with clipped text — e.g.: "' + (r.pops.find((p) => p.sample) || {}).sample + '"');
   totOver === 0 ? ok(tag + ': no item invading the one below')
                  : no(tag + ': ' + totOver + ' overlap(s) between menu items');
   totOthersClipped === 0 ? ok(tag + ': os ' + totOthers + ' other popover controls (pills, primaries, accordion) fit their own text')
@@ -187,7 +187,7 @@ for (const larg of [320, 380, 430, 700]) {
     ? ok(tag + ': as ' + r.pops.length + ' sheets fill the panel (' + r.panel + 'px), not the little bar (' + r.bar + 'px)')
     : no(tag + ': ' + r.narrow.length + ' sheet(s) pinned to the width of the little bar — ' + r.narrow.join('/') + 'px inside a panel of ' + r.panel + 'px');
   r.covered.length === 0
-    ? ok(tag + ': no sheet covers the bar controls (bar of ' + r.barHeight + 'px, ' + r.linhas + '+ rows)')
+    ? ok(tag + ': no sheet covers the bar controls (bar of ' + r.barHeight + 'px, ' + r.lines + '+ rows)')
     : no(tag + ': ' + r.covered.length + ' sheet(s) covering controls — up to ' + Math.max(...r.covered) + ' button(s) buried under the sheet');
   r.leaking.length === 0
     ? ok(tag + ': no sheet overflows the top of the panel')
@@ -199,8 +199,8 @@ for (const larg of [320, 380, 430, 700]) {
     ? ok(tag + ': the close X is in the touch target (' + r.sheet.close + 'px)')
     : no(tag + ': the close X at ' + r.sheet.close + 'px — below the 44px floor');
   r.sheet.low === 0
-    ? ok(tag + ': as ' + r.sheet.linhas + ' sheet rows are >=44px tall')
-    : no(tag + ': ' + r.sheet.low + ' of ' + r.sheet.linhas + ' rows below 44px');
+    ? ok(tag + ': as ' + r.sheet.lines + ' sheet rows are >=44px tall')
+    : no(tag + ': ' + r.sheet.low + ' of ' + r.sheet.lines + ' rows below 44px');
   r.small === 0 ? ok(tag + ': os ' + r.toolbar + ' round bar buttons keep a touch target >=44px')
                    : no(tag + ': ' + r.small + ' bar button(s) below 44px — the fix until the touch target');
   await page.close();

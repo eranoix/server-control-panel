@@ -26,7 +26,7 @@ STAGE_DIR="$MODULE_DIR/.build/apks"
 # x86_64 by default because tests run on the emulator. Releases are
 # arm64-v8a, but to the patcher an APK is just bytes, so the cycle is the same.
 ABI="${ABI:-x86_64}"
-KEYSTORE="${KEYSTORE:-/opt/panel/data/android-dev-signing/servercontrolpanel-DEV-NAO-E-RELEASE.jks}"
+KEYSTORE="${KEYSTORE:-/opt/panel/data/android-dev-signing/servercontrolpanel-DEV-NOT-RELEASE.jks}"
 
 OLD_VERSION_NAME="${OLD_VERSION_NAME:-0.1.5}"
 OLD_VERSION_CODE="${OLD_VERSION_CODE:-105}"

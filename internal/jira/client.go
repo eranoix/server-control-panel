@@ -48,7 +48,7 @@ type Config struct {
 // BoardColumn lets the operator override the default category-based
 // kanban with explicit columns. Status names are matched case-insensitive
 // against issue.fields.status.name — useful for workflows that have
-// extra states like "EM REVISÃO" or "Code Review" that all fall under
+// extra states like "IN REVIEW" or "Code Review" that all fall under
 // statusCategory=indeterminate.
 type BoardColumn struct {
 	Label       string   `json:"label"`

@@ -139,7 +139,7 @@ func doSecurityDetailRequest(t *testing.T, mux *http.ServeMux, path, username st
 
 var securityAllRowsPaths = []string{
 	"/security/users", "/security/secrets", "/security/sessions", "/security/audit",
-	"/security/devices", "/security/economia",
+	"/security/devices", "/security/savings",
 }
 
 var securityAllDetailPaths = []string{
@@ -392,7 +392,7 @@ func TestSecurityDevicesRows_WireShape(t *testing.T) {
 // proving bytes/rate are pre-formatted strings, never raw numbers.
 func TestSecurityDataSaverRows_WireShape(t *testing.T) {
 	mux := newSecurityRowsMux(fakeSecurityRowsDeps(), fakeNetworkRowsDeps())
-	rec, body := doSecurityRowsRequest(t, mux, "/security/economia", "sec-admin")
+	rec, body := doSecurityRowsRequest(t, mux, "/security/savings", "sec-admin")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rec.Code, rec.Body.String())
 	}
@@ -438,7 +438,7 @@ func TestSecurityRows_UnavailableDoesNotBecomeEmptyTable(t *testing.T) {
 			return nil, errors.New("measurement unavailable")
 		}
 		mux := newSecurityRowsMux(fakeSecurityRowsDeps(), net)
-		rec, _ := doSecurityRowsRequest(t, mux, "/security/economia", "sec-admin")
+		rec, _ := doSecurityRowsRequest(t, mux, "/security/savings", "sec-admin")
 		if rec.Code == http.StatusOK {
 			t.Fatalf("200 with the collector down — the screen would say 'no traffic' (body=%s)", rec.Body.String())
 		}

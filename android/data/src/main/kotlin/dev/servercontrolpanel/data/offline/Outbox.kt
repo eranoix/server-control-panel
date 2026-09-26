@@ -55,12 +55,12 @@ enum class IdempotencyProof {
 @Serializable
 data class PendingSend(
     val id: String,
-    @SerialName("metodo") val method: String,
-    @SerialName("caminho") val path: String,
-    @SerialName("corpoJson") val bodyJson: String,
-    @SerialName("criadoEm") val createdAt: Long,
-    @SerialName("descricao") val description: String,
-    @SerialName("tentativas") val attempts: Int = 0,
+    @SerialName("method") val method: String,
+    @SerialName("path") val path: String,
+    @SerialName("bodyJson") val bodyJson: String,
+    @SerialName("createdAt") val createdAt: Long,
+    @SerialName("description") val description: String,
+    @SerialName("attempts") val attempts: Int = 0,
 )
 
 /**
@@ -80,8 +80,8 @@ data class PendingSend(
  */
 object Outbox {
 
-    private const val FILE = "fila-de-envio.json"
-    private const val WORK = "panel-fila-de-envio"
+    private const val FILE = "send-queue.json"
+    private const val WORK = "panel-send-queue"
 
     /**
      * Above this the queue stops accepting. A hundred pending actions mean

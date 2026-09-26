@@ -52,7 +52,7 @@ enum class TypingMode(
     TEXT(
         label = "Text",
         description = "Autocorrect and suggestions from your keyboard. The word being composed appears above the keys.",
-        storedName = "TEXTO",
+        storedName = "TEXT",
     ) {
         override fun inputType(): Int =
             InputType.TYPE_CLASS_TEXT or
@@ -95,6 +95,6 @@ class TypingModePreference(
     }
 
     companion object {
-        private val MODE_KEY = stringPreferencesKey("terminal_modo_digitacao")
+        private val MODE_KEY = stringPreferencesKey("terminal_typing_mode")
     }
 }

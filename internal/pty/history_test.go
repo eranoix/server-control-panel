@@ -142,7 +142,7 @@ func TestHistoryIgnoresAlternateScreen(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		screen.feed([]byte(fmt.Sprintf("scratch %d\r\n", i)))
 	}
-	screen.feed([]byte("\x1b[?1049l")) // sai
+	screen.feed([]byte("\x1b[?1049l")) // leave the alternate screen
 	for i := 0; i < 10; i++ {
 		screen.feed([]byte("\r\n"))
 	}

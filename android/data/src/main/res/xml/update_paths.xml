@@ -5,5 +5,5 @@
   receives the Uri.
 -->
 <paths>
-    <files-path name="atualizacao" path="atualizacoes/" />
+    <files-path name="update" path="updates/" />
 </paths>

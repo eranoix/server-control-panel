@@ -23,7 +23,7 @@
 # index keeps the MEMORY of the versions; the public disk keeps only the current one.
 #
 # Environment overrides (for tests): FDROID_REPO_DIR, UPDATES_DIR, PACKAGE_ID,
-# JANELA (window size), APKSIGNER.
+# WINDOW (window size), APKSIGNER.
 set -euo pipefail
 
 fail_early() { echo "ERROR: $*" >&2; exit 1; }
@@ -42,7 +42,7 @@ PANEL_HOME="${PANEL_HOME:-/opt/panel}"
 [ -d "$PANEL_HOME/data" ] || fail_early "PANEL_HOME=$PANEL_HOME has no data/; point PANEL_HOME at the served installation"
 FDROID_REPO_DIR="${FDROID_REPO_DIR:-$PANEL_HOME/data/fdroid/repo}"
 UPDATES_DIR="${UPDATES_DIR:-$PANEL_HOME/data/android-updates}"
-WINDOW="${JANELA:-5}"
+WINDOW="${WINDOW:-5}"
 APKSIGNER="${APKSIGNER:-apksigner}"
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
@@ -107,7 +107,7 @@ def sha256(path):
 # The registry is the memory of the versions, independent of what is on disk.
 # Without it every publication would drop the patch window together with the
 # old binaries. The file name is kept as is: it is persisted in the repo dir.
-registry_path = os.path.join(repo, "versoes.json")
+registry_path = os.path.join(repo, "versions.json")
 registry = []
 if os.path.exists(registry_path):
     with io.open(registry_path, encoding="utf-8") as fh:

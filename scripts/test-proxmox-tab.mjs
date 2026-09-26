@@ -150,8 +150,8 @@ check('🔴 every sub-action in TEL_SUB is in the screens.txt allowlist', subNot
   subNotInList.join(' '));
 
 const idOf = (key) => (paresTel.find(([k]) => k === key) || [])[1];
-check('TEL_IDS HAS the proxmox key, and it points at operacoes.proxmox',
-  idOf('proxmox') === 'operacoes.proxmox', idOf('proxmox'),
+check('TEL_IDS HAS the proxmox key, and it points at operations.proxmox',
+  idOf('proxmox') === 'operations.proxmox', idOf('proxmox'),
 );
 check('TEL_IDS HAS the config key, and it points at config',
   idOf('config') === 'config', idOf('config'),
@@ -162,11 +162,11 @@ check('TEL_IDS HAS the config key, and it points at config',
 // whose ids are already in the canonical list but whose tab does not exist yet.
 // An undeclared absence is an absence somebody "fixes" later.
 const comment = shell.slice(shell.indexOf('DELIBERATE absences'), shell.indexOf('TEL_IDS: {'));
-for (const key of ['nodes', 'operacoes.backup', 'operacoes.embutidas']) {
+for (const key of ['nodes', 'operations.backup', 'operations.embedded']) {
   check(`the absence of ${key} is DECLARED in the comment`, comment.includes(key),
     'an undeclared absence is an absence somebody "fixes" later');
 }
-for (const key of ['nodes', 'backup', 'embutidas']) {
+for (const key of ['nodes', 'backup', 'embedded']) {
   check(`TEL_IDS really does NOT have the key ${key} (the declaration does not lie)`,
     !paresTel.some(([k]) => k === key));
 }
@@ -193,10 +193,10 @@ check('capacity and zpool are in the 30 s poll (they are a heartbeat)',
   poll.includes('pvxLoadStorage()') && poll.includes('pvxLoadZfs()'),
   'without the poll the age never grows and the block lies in green');
 
-// The guard, in its three readings. `sem-medida` is the third, and it is the
+// The guard, in its three readings. `unmeasured` is the third, and it is the
 // one that stops the screen accusing a lack of permission nobody measured.
 const state = extract(pvxJs, '41-proxmox.js', 'pvxStorageState', '');
-for (const st of ['sem-medida', 'sem-permissao', 'ok']) {
+for (const st of ['unmeasured', 'no-permission', 'ok']) {
   check(`pvxStorageState distinguishes '${st}'`, state.includes(`'${st}'`));
 }
 check('pvxStorageState demands the TIMESTAMP before accusing (observed_at)',
@@ -207,15 +207,15 @@ check('pvxStorageState demands the TIMESTAMP before accusing (observed_at)',
 // only the read of component state is swapped for the argument. Rewriting the
 // logic here would prove the copy, not what goes to the browser.
 const guardFn = new Function('panelStorage', state.replace(/this\.pvx\.storage/g, 'panelStorage'));
-check('guard: no timestamp → sem-medida', guardFn({ datastore_audit: { value: false, observed_at: 0 } }) === 'sem-medida');
-check('🔴 guard: measured and DENIED → sem-permissao (the banner COMES BACK)',
-  guardFn({ datastore_audit: { value: false, observed_at: 1787000000 } }) === 'sem-permissao');
+check('guard: no timestamp → unmeasured', guardFn({ datastore_audit: { value: false, observed_at: 0 } }) === 'unmeasured');
+check('🔴 guard: measured and DENIED → no-permission (the banner COMES BACK)',
+  guardFn({ datastore_audit: { value: false, observed_at: 1787000000 } }) === 'no-permission');
 check('🔴 guard: measured and granted → ok (the banner GOES on its own)',
   guardFn({ datastore_audit: { value: true, observed_at: 1787000000 } }) === 'ok');
 
 // And the banner has to keep EXISTING in the HTML, tied to the verdict.
 check('index.html: the no-permission banner is still in the HTML',
-  /x-show="pvxStorageState\(\) === 'sem-permissao'"/.test(index),
+  /x-show="pvxStorageState\(\) === 'no-permission'"/.test(index),
   'deleting the banner is removing the detector because the alarm stopped ringing');
 // 🔴 THESE TWO PINS USED TO LOCK THE TITLE, and the title is the cheapest part
 // to change and the one that matters least. The block was renamed from "Storage
@@ -238,8 +238,8 @@ check('index.html: zpool has an age OF ITS OWN on screen',
 // in amber, because amber invites you to leave it for later.
 const zfsStyle = extract(pvxJs, '41-proxmox.js', 'pvxZfsStyle', 'p');
 const zfsStyleFn = new Function('p', zfsStyle);
-check('🔴 DEGRADED is not green', !zfsStyleFn({ health: 'DEGRADED', saudavel: false }).includes('#22c55e'));
-check('ONLINE is green', zfsStyleFn({ health: 'ONLINE', saudavel: true }).includes('#22c55e'));
+check('🔴 DEGRADED is not green', !zfsStyleFn({ health: 'DEGRADED', healthy: false }).includes('#22c55e'));
+check('ONLINE is green', zfsStyleFn({ health: 'ONLINE', healthy: true }).includes('#22c55e'));
 
 // The usage bar saturates, and the red band starts at 85% — filling a pool with
 // no redundancy is one of the few ways to lose data with no hardware failing.
@@ -302,11 +302,11 @@ check('🔴 leaving the tab CLOSES the console', /pvxCloseConsole\(\)/.test(stop
 const conState = extract(pvxJs, '41-proxmox.js', 'pvxConsoleGuestState', 'g');
 const conStateFn = new Function('g', conState);
 check('🔴 missing credential → console unavailable WITH A REASON',
-  conStateFn({ credential: { state: 'ausente' } }).can === false &&
-  /node token/.test(conStateFn({ credential: { state: 'ausente' } }).motivo));
+  conStateFn({ credential: { state: 'absent' } }).can === false &&
+  /node token/.test(conStateFn({ credential: { state: 'absent' } }).reason));
 check('credential ok → console available', conStateFn({ credential: { state: 'ok' } }).can === true);
 check('credential expired → unavailable (a 401 is indistinguishable from revocation)',
-  conStateFn({ credential: { state: 'expirada' } }).can === false);
+  conStateFn({ credential: { state: 'expired' } }).can === false);
 check('a node with no credential field does not become "can"', conStateFn({}).can === false);
 
 check('index.html: the console block, now in the side panel of the node',
@@ -337,7 +337,7 @@ check('🔴 the rollback warning says what is lost AND that there is no mirror',
 check('index.html: rollback button on the snapshot row',
   /pvxRollbackSnap\(pvx\.guestSel, sn\.name\)/.test(index));
 check('🔴 there is NO suspend button (vzsuspend fails on the CRIU of this host)',
-  !/pvxSuspende|vzsuspend|Suspender/.test(pvxCode) && !/pvxSuspende/.test(index),
+  !/pvxSuspend|vzsuspend/.test(pvxCode) && !/pvxSuspend/.test(index),
   'a button that always errors trains the operator to ignore errors');
 check('the reason suspend is left out is WRITTEN in the code',
   /CRIU|criu/.test(pvxJs) && /lxc-checkpoint/.test(pvxJs),
@@ -389,9 +389,9 @@ check('🔴 the Proxmox tab resolves to a section that exists',
 check('🔴 PAGE_REMAP keeps `nodes` REDIRECTING to proxmox',
   /^\s*nodes:\s*\['operations',\s*'proxmox'\],$/m.test(shell),
   'deleting the key would send old links, bookmarks and the palette nowhere');
-check('🔴 the command palette still finds "nos"/"inventario"',
-  /kind:'page',\s*page:'proxmox',\s*kw:'nos nodes inventario/.test(shell),
-  'whoever types "nos" wants the inventory — it changed address, not subject');
+check('🔴 the command palette still finds "nodes"/"inventory"',
+  /kind:'page',\s*page:'proxmox',\s*kw:'nodes inventory/.test(shell),
+  'whoever types "nodes" wants the inventory — it changed address, not subject');
 // 🔴 The check is about CODE, not about prose: the comment that explains the
 // removal names the removed function, and a raw grep would fail precisely
 // because of the explanation. It is the same trap, and it has caught us before.
@@ -429,29 +429,29 @@ check('🔴 an `ok` node draws NO state badge on the row',
 check('🔴 nor in the side panel',
   /x-show="pvxNodeState\(pvxOpenNode\(\)\) !== 'ok'"/.test(pvxSection));
 check('🔴 state: STALE data beats everything — nothing else can be asserted',
-  nodeState(live({ stale: true, credential: { state: 'ausente' }, __pct: { ram: 99 } })) === 'vencido');
-check('state: no credential beats "parado" (it is what explains why it will not start)',
-  nodeState(live({ status: { value: 'stopped' }, credential: { state: 'ausente' } })) === 'sem-credencial');
+  nodeState(live({ stale: true, credential: { state: 'absent' }, __pct: { ram: 99 } })) === 'stale');
+check('state: no credential beats "stopped" (it is what explains why it will not start)',
+  nodeState(live({ status: { value: 'stopped' }, credential: { state: 'absent' } })) === 'no-credential');
 check('🔴 state: a STOPPED guest is not judged by a gauge',
-  nodeState(live({ status: { value: 'stopped' }, __pct: { ram: 99 } })) === 'parado',
+  nodeState(live({ status: { value: 'stopped' }, __pct: { ram: 99 } })) === 'stopped',
   'a gauge on a switched-off guest means nothing at all');
-check('state: 90% on any gauge is critical', nodeState(live({ __pct: { ram: 90 } })) === 'critico');
-check('state: 70% is attention', nodeState(live({ __pct: { ram: 70 } })) === 'atencao');
+check('state: 90% on any gauge is critical', nodeState(live({ __pct: { ram: 90 } })) === 'critical');
+check('state: 70% is attention', nodeState(live({ __pct: { ram: 70 } })) === 'warning');
 check('state: 69.9% is still ok', nodeState(live({ __pct: { ram: 69.9 } })) === 'ok');
 check('state: the WORST gauge wins (cpu ok + disk critical = critical)',
-  nodeState(live({ __pct: { cpu: 1, disco: 95 } })) === 'critico');
+  nodeState(live({ __pct: { cpu: 1, disco: 95 } })) === 'critical');
 
 // ── thresholds with hysteresis ────────────────────────────────────────────
 const tier = new Function('pct', 'anterior', extract(pvxJs, '41-proxmox.js', 'pvxTier', 'pct, anterior'));
-check('threshold: 91% with no history is critical', tier(91, undefined) === 'critico');
-check('threshold: 75% with no history is attention', tier(75, undefined) === 'atencao');
+check('threshold: 91% with no history is critical', tier(91, undefined) === 'critical');
+check('threshold: 75% with no history is attention', tier(75, undefined) === 'warning');
 check('🔴 hysteresis: what was critical at 88% STAYS critical (3 points of slack)',
-  tier(88, 'critico') === 'critico',
+  tier(88, 'critical') === 'critical',
   'without slack, a guest oscillating around 90% changes colour every tick and colour stops informing');
-check('hysteresis: critical only lets go below 87%', tier(86.9, 'critico') === 'atencao');
-check('hysteresis: attention at 68% stays attention', tier(68, 'atencao') === 'atencao');
-check('hysteresis: attention lets go below 67%', tier(66.9, 'atencao') === 'ok');
-check('hysteresis: attention does NOT stop a climb to critical', tier(95, 'atencao') === 'critico');
+check('hysteresis: critical only lets go below 87%', tier(86.9, 'critical') === 'warning');
+check('hysteresis: attention at 68% stays attention', tier(68, 'warning') === 'warning');
+check('hysteresis: attention lets go below 67%', tier(66.9, 'warning') === 'ok');
+check('hysteresis: attention does NOT stop a climb to critical', tier(95, 'warning') === 'critical');
 check('threshold: a missing value (-1) does not become an alarm', tier(-1, undefined) === 'ok');
 
 // ── a missing measurement NEVER becomes zero ──────────────────────────────
@@ -482,9 +482,9 @@ check('🔴 the gauge of a STALE/stopped node goes GREY, even with a low value',
   color({ measured: true, live: false, tier: 'ok' }) === GRAY,
   'a coloured bar over dead data asserts a measurement nobody made');
 check('🔴 the gauge of a stale node goes grey even while CRITICAL',
-  color({ measured: true, live: false, tier: 'critico' }) === GRAY);
+  color({ measured: true, live: false, tier: 'critical' }) === GRAY);
 check('a gauge with no measurement goes grey', color({ measured: false, live: true, tier: 'ok' }) === GRAY);
-check('a live and critical gauge is red', color({ measured: true, live: true, tier: 'critico' }) === '#ef4444');
+check('a live and critical gauge is red', color({ measured: true, live: true, tier: 'critical' }) === '#ef4444');
 check('a live and ok gauge is green', color({ measured: true, live: true, tier: 'ok' }) === '#22c55e');
 
 // 🔴 No RENDERING expression may write to reactive state.
@@ -510,43 +510,43 @@ const filter = new Function('list', 'text', 'segment', 'stateOf',
 // credential from whatever speaks over the PVE API.
 const LIST = [
   { id: 'lxc/201', name: 'games', kind: 'guest', transport: 'pve-api', status: { value: 'running' }, credential: { state: 'ok' } },
-  { id: 'lxc/202', name: 'pbs', kind: 'guest', transport: 'pve-api', status: { value: 'running' }, credential: { state: 'ausente' } },
+  { id: 'lxc/202', name: 'pbs', kind: 'guest', transport: 'pve-api', status: { value: 'running' }, credential: { state: 'absent' } },
   { id: 'qemu/208', name: 'dev', kind: 'guest', transport: 'pve-api', status: { value: 'stopped' }, credential: { state: 'ok' } },
   { id: 'node/pve', name: 'pve', kind: 'host', transport: 'pve-api', status: { value: 'online' }, credential: { state: 'ok' } },
 ];
-const fakeState = (n) => (n.credential.state !== 'ok' ? 'sem-credencial'
-  : (n.status.value === 'stopped' ? 'parado' : 'ok'));
+const fakeState = (n) => (n.credential.state !== 'ok' ? 'no-credential'
+  : (n.status.value === 'stopped' ? 'stopped' : 'ok'));
 const ids = (r) => r.map(n => n.id).join(',');
 
 check('an empty filter returns everything', filter(LIST, '', '', fakeState).length === 4);
 check('a free-text filter matches name and id', ids(filter(LIST, 'games', '', fakeState)) === 'lxc/201');
-check('filter tipo:lxc', ids(filter(LIST, 'tipo:lxc', '', fakeState)) === 'lxc/201,lxc/202');
+check('filter type:lxc', ids(filter(LIST, 'type:lxc', '', fakeState)) === 'lxc/201,lxc/202');
 check('filter status:stopped', ids(filter(LIST, 'status:stopped', '', fakeState)) === 'qemu/208');
-check('filter cred:ausente', ids(filter(LIST, 'cred:ausente', '', fakeState)) === 'lxc/202');
+check('filter cred:absent', ids(filter(LIST, 'cred:absent', '', fakeState)) === 'lxc/202');
 check('🔴 two terms are ANDed, not ORed',
-  ids(filter(LIST, 'tipo:lxc cred:ausente', '', fakeState)) === 'lxc/202',
+  ids(filter(LIST, 'type:lxc cred:absent', '', fakeState)) === 'lxc/202',
   'OR would return MORE rows than the operator asked for — silently');
 check('🔴 an UNKNOWN field becomes a literal search, it is not ignored',
   filter(LIST, 'tag:production', '', fakeState).length === 0,
   'dropping the constraint nobody understood returns more rows than were asked for');
 check('the segment of the health band filters together with the text',
-  ids(filter(LIST, 'tipo:lxc', 'sem-credencial', fakeState)) === 'lxc/202');
+  ids(filter(LIST, 'type:lxc', 'no-credential', fakeState)) === 'lxc/202');
 check('a segment with no match returns empty (and empty is not an error)',
-  filter(LIST, '', 'critico', fakeState).length === 0);
+  filter(LIST, '', 'critical', fakeState).length === 0);
 
 // ── 🔴 re-scoping the selection — Portainer #4430 ─────────────────────────
-const reescopa = new Function('sel', 'visible', extract(pvxJs, '41-proxmox.js', 'pvxReescopa', 'sel, visible'));
+const rescope = new Function('sel', 'visible', extract(pvxJs, '41-proxmox.js', 'pvxRescope', 'sel, visible'));
 check('🔴 the selection is RE-SCOPED when the filter changes',
-  reescopa(['lxc/201', 'lxc/202', 'qemu/208'], filter(LIST, 'tipo:lxc', '', fakeState)).join(',') === 'lxc/201,lxc/202',
+  rescope(['lxc/201', 'lxc/202', 'qemu/208'], filter(LIST, 'type:lxc', '', fakeState)).join(',') === 'lxc/201,lxc/202',
   'Portainer #4430: select all → filter → delete deleted what was never on the screen');
 check('re-scoping empties the selection when nothing visible is left',
-  reescopa(['lxc/201'], filter(LIST, 'status:stopped', '', fakeState)).length === 0);
+  rescope(['lxc/201'], filter(LIST, 'status:stopped', '', fakeState)).length === 0);
 check('re-scoping preserves the order and invents no id',
-  reescopa(['qemu/208'], LIST).join(',') === 'qemu/208');
+  rescope(['qemu/208'], LIST).join(',') === 'qemu/208');
 // 🔴 This is the check that EXECUTES the three paths, and it exists because the
 // previous version was BLIND — measured by mutation in that same session.
 //
-// The previous version looked for the string `pvxReescopa(this.pvx.sel` inside
+// The previous version looked for the string `pvxRescope(this.pvx.sel` inside
 // each of the three methods. The mutation "pvxSetSegment returns early, before
 // re-scoping" WALKED PAST it: the new `return` made the line unreachable, and
 // an unreachable line is still text in the file. It is the exact sibling of the
@@ -568,7 +568,7 @@ const fakeComponent = () => {
   };
   turnOn('pvxNodeState', ['n']);
   turnOn('pvxFilterNodes', ['list', 'text', 'segment', 'stateOf']);
-  turnOn('pvxReescopa', ['sel', 'visible']);
+  turnOn('pvxRescope', ['sel', 'visible']);
   turnOn('pvxNodes', []);
   turnOn('pvxFilteredNodes', []);
   turnOn('pvxSetFilter', ['text']);
@@ -581,22 +581,22 @@ const fakeComponent = () => {
 // path 1 — change the filter TEXT
 let c = fakeComponent();
 c.pvx.sel = ['lxc/201', 'lxc/202', 'qemu/208'];
-c.pvxSetFilter('tipo:lxc');
+c.pvxSetFilter('type:lxc');
 check('🔴 EXECUTED: pvxSetFilter re-scopes the selection',
   c.pvx.sel.join(',') === 'lxc/201,lxc/202', c.pvx.sel.join(','));
 
 // path 2 — change the SEGMENT of the health band
 c = fakeComponent();
 c.pvx.sel = ['lxc/201', 'lxc/202', 'qemu/208'];
-c.pvxSetSegment('sem-credencial');
+c.pvxSetSegment('no-credential');
 check('🔴 EXECUTED: pvxSetSegment re-scopes the selection',
   c.pvx.sel.join(',') === 'lxc/202', c.pvx.sel.join(','));
 check('EXECUTED: clicking the ALREADY ACTIVE segment turns the filter off',
-  (() => { c.pvxSetSegment('sem-credencial'); return c.pvx.segment === ''; })());
+  (() => { c.pvxSetSegment('no-credential'); return c.pvx.segment === ''; })());
 
 // path 3 — clear
 c = fakeComponent();
-c.pvxSetSegment('parado');
+c.pvxSetSegment('stopped');
 c.pvx.sel = ['qemu/208'];
 c.pvxClearFilter();
 check('EXECUTED: pvxClearFilter clears text AND segment',
@@ -604,7 +604,7 @@ check('EXECUTED: pvxClearFilter clears text AND segment',
 
 // "select all" — the VISIBLE ones, never the existing ones
 c = fakeComponent();
-c.pvxSetFilter('tipo:lxc');
+c.pvxSetFilter('type:lxc');
 c.pvxSelAll();
 check('🔴 EXECUTED: "all" means the VISIBLE ones, never the existing ones',
   c.pvx.sel.join(',') === 'lxc/201,lxc/202', c.pvx.sel.join(','));
@@ -618,7 +618,7 @@ check('🔴 "Showing: X ×" comes from the FILTER STATE, not from the data',
 const hasFilter = new Function('pvx', extract(pvxJs, '41-proxmox.js', 'pvxHasFilter', '')
   .replace(/this\.pvx/g, 'pvx'));
 check('🔴 a filter on a state MISSING from the dataset is still announced',
-  hasFilter({ filter: '', segment: 'critico' }) === true,
+  hasFilter({ filter: '', segment: 'critical' }) === true,
   'this is exactly the case where the last critical node recovered and the chip has to survive');
 check('with no filter at all, nothing is announced', hasFilter({ filter: '', segment: '' }) === false);
 check('the health band IS the filter (a radiogroup, not decorative text)',
@@ -671,7 +671,7 @@ const R = segs(LIST, fakeState);
 // incident. That is what is asserted now, and it holds for six, seven or twenty.
 {
   const declared = [...new Set([...pvxJs.matchAll(/return '([a-z-]+)';/g)]
-    .map((m) => m[1]))].filter((e) => /^(vencido|sem-credencial|critico|atencao|parado|gone|ok)$/.test(e));
+    .map((m) => m[1]))].filter((e) => /^(stale|no-credential|critical|warning|stopped|gone|ok)$/.test(e));
   check('the band draws EVERY declared state, always',
     declared.length >= 6 && declared.every((e) => R.some((x) => x.key === e)),
     `declared: ${declared.join(', ')} — in the band: ${R.map((x) => x.key).join(', ')}`);
@@ -680,10 +680,10 @@ const R = segs(LIST, fakeState);
     R.map((x) => x.key).join(', '));
 }
 check('🔴 a zeroed segment is still drawn, with its zero',
-  R.some(x => x.key === 'critico' && x.n === 0),
+  R.some(x => x.key === 'critical' && x.n === 0),
   'a band that shrinks with the health moves the click target during the incident');
 check('the segment counts match the list',
-  R.find(x => x.key === 'sem-credencial').n === 1 && R.find(x => x.key === 'parado').n === 1);
+  R.find(x => x.key === 'no-credential').n === 1 && R.find(x => x.key === 'stopped').n === 1);
 
 // ── the confirmation ladder ───────────────────────────────────────────────
 const step = new Function('action', 'howMany', extract(pvxJs, '41-proxmox.js', 'pvxStep', 'action, howMany'));
@@ -706,9 +706,9 @@ check('the bulk confirmation ENUMERATES who will be affected AND who is left out
 
 // ── a control without permission: DISABLED WITH A REASON, never gone ──────
 const action = new Function('n', 'action', extract(pvxJs, '41-proxmox.js', 'pvxActionState', 'n, action'));
-const noCred = { kind: 'guest', vmid: 202, status: { value: 'running' }, credential: { state: 'ausente' } };
+const noCred = { kind: 'guest', vmid: 202, status: { value: 'running' }, credential: { state: 'absent' } };
 check('🔴 no credential: the control closes WITH A REASON',
-  action(noCred, 'start').can === false && /no node token in the vault/.test(action(noCred, 'start').motivo),
+  action(noCred, 'start').can === false && /no node token in the vault/.test(action(noCred, 'start').reason),
   'Portainer removes the button (`if (!authorized) return null`); Coolify disables it and explains');
 // 🔴 The list of actions being walked has to be FULL. Measured by mutation:
 // swapping the `x-for` for an empty list kept the reason expression in the file
@@ -730,7 +730,7 @@ check('🔴 no credential: the control closes WITH A REASON',
   const missing = [...offered].filter((a) => !covered.has(a));
   check('🔴 the reason shows up as VISIBLE TEXT, not only in title=',
     offered.size >= 5 && covered.size > 0 && missing.length === 0 &&
-    /x-text="a \+ ': ' \+ pvxActionState\(pvxOpenNode\(\), a\)\.motivo"/.test(pvxSection),
+    /x-text="a \+ ': ' \+ pvxActionState\(pvxOpenNode\(\), a\)\.reason"/.test(pvxSection),
     missing.length
       ? `actions with no visible reason: ${missing.join(', ')} — a disabled button takes no focus, and a hint only in title is unreachable by keyboard`
       : 'a disabled button takes no focus: a hint only on hover is unreachable by keyboard');
@@ -742,12 +742,12 @@ check('🔴 the control still exists in the HTML (there is no v-if erasing it)',
   !/x-show="pvxActionState[^"]*can"/.test(index));
 check('the host neither starts nor stops from the panel, and the screen SAYS why',
   action({ kind: 'host', vmid: 0, status: { value: 'online' }, credential: { state: 'ok' } }, 'start').can === false &&
-  /physical button/.test(action({ kind: 'host', vmid: 0, status: { value: 'online' }, credential: { state: 'ok' } }, 'start').motivo));
-// 🔴 The `canario` node (kind `externo`, transport `agente`) exists in the live
+  /physical button/.test(action({ kind: 'host', vmid: 0, status: { value: 'online' }, credential: { state: 'ok' } }, 'start').reason));
+// 🔴 The `canary` node (kind `external`, transport `agent`) exists in the live
 // inventory, and its reason is a DIFFERENT one. A wrong reason is worse than a
 // missing reason: it sends the operator looking in the wrong place.
 check('🔴 an EXTERNAL node gets its own reason, not the hypervisor one',
-  /lab agent/.test(action({ kind: 'externo', vmid: 0, transport: 'agente', status: { value: '' }, credential: { state: 'ok' } }, 'start').motivo));
+  /lab agent/.test(action({ kind: 'external', vmid: 0, transport: 'agent', status: { value: '' }, credential: { state: 'ok' } }, 'start').reason));
 check('🔴 something already on refuses "start" — the `VM 208 already running` defect, measured',
   action({ kind: 'guest', vmid: 208, status: { value: 'running' }, credential: { state: 'ok' } }, 'start').can === false,
   'a useless order fills the trail with noise where the real failure is being looked for');
@@ -756,9 +756,9 @@ check('something already off refuses "cut the power"',
 check('a stopped guest WITH a credential accepts start',
   action({ kind: 'guest', vmid: 208, status: { value: 'stopped' }, credential: { state: 'ok' } }, 'start').can === true);
 check('an EXPIRED credential can still be revoked (revoking is cleanup)',
-  action({ kind: 'guest', vmid: 208, status: { value: 'running' }, credential: { state: 'expirada' } }, 'revoke').can === true);
+  action({ kind: 'guest', vmid: 208, status: { value: 'running' }, credential: { state: 'expired' } }, 'revoke').can === true);
 check('a MISSING credential has nothing to revoke, and the screen says so',
-  action(noCred, 'revoke').can === false && /there is no credential to revoke/.test(action(noCred, 'revoke').motivo));
+  action(noCred, 'revoke').can === false && /there is no credential to revoke/.test(action(noCred, 'revoke').reason));
 
 // ── the TWO clocks on the screen ──────────────────────────────────────────
 check('🔴 the screen shows the POLLER clock (when it last tried)',
@@ -809,12 +809,12 @@ const empty = new Function('pvx', 'nodes', 'list', 'filtered',
     .replace(/this\.pvx\./g, 'pvx.')
     .replace(/this\.nodes/g, 'nodes'));
 check('🔴 empty: no permission is a diagnosis of its own',
-  empty({ forbidden: false }, { forbidden: true }, [], []) === 'sem-permissao');
+  empty({ forbidden: false }, { forbidden: true }, [], []) === 'no-permission');
 check('🔴 empty: a fetch failure is another one (the lab may be perfectly fine)',
-  empty({ forbidden: false }, { forbidden: false, lastError: 'connection refused' }, [], []) === 'falhou');
-check('empty: "there is nothing" is the third', empty({ forbidden: false }, { forbidden: false }, [], []) === 'nada');
+  empty({ forbidden: false }, { forbidden: false, lastError: 'connection refused' }, [], []) === 'failed');
+check('empty: "there is nothing" is the third', empty({ forbidden: false }, { forbidden: false }, [], []) === 'nothing');
 check('empty: a filter with no match is distinct from "there is nothing"',
-  empty({ forbidden: false }, { forbidden: false }, [1], []) === 'filtrado');
+  empty({ forbidden: false }, { forbidden: false }, [1], []) === 'filtered');
 check('with data, there is no empty state at all',
   empty({ forbidden: false }, { forbidden: false }, [1], [1]) === '');
 check('🔴 the empty state replaces the WHOLE TABLE, header included',

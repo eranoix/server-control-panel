@@ -37,7 +37,7 @@ class RoomLobbyScreenTest {
     fun `success lists every room and clicking one navigates into it`() {
         val source = FakeRoomsSource {
             VideocallRoomsResult.Success(
-                listOf(VideocallRoom(id = "sala-1", name = "Team meeting", memberCount = 3)),
+                listOf(VideocallRoom(id = "room-1", name = "Team meeting", memberCount = 3)),
             )
         }
         var selectedRoomId: String? = null
@@ -51,7 +51,7 @@ class RoomLobbyScreenTest {
         composeRule.onNodeWithText("Team meeting").assertExists()
         composeRule.onNodeWithText("3 participant(s)").assertExists()
         composeRule.onNodeWithText("Team meeting").performClick()
-        assert(selectedRoomId == "sala-1")
+        assert(selectedRoomId == "room-1")
     }
 
     @Test
@@ -71,7 +71,7 @@ class RoomLobbyScreenTest {
         val source = FakeRoomsSource {
             calls += 1
             if (calls == 1) VideocallRoomsResult.Error("Could not reach the signalling server.")
-            else VideocallRoomsResult.Success(listOf(VideocallRoom(id = "sala-1", name = "Meeting", memberCount = 1)))
+            else VideocallRoomsResult.Success(listOf(VideocallRoom(id = "room-1", name = "Meeting", memberCount = 1)))
         }
         // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = RoomLobbyViewModel(source)

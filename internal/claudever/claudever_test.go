@@ -21,7 +21,7 @@ func TestOnlyOutdatedNeedRestart(t *testing.T) {
 		{"2.1.10", "2.1.9", false, "ahead for the same reason"},
 		{"3.0.0", "2.9.9", false, "major ahead"},
 		{"", "2.1.240", false, "no version: cannot claim it is behind"},
-		{"2.1.240", "", false, "sem referência: idem"},
+		{"2.1.240", "", false, "no reference: same"},
 	}
 	for _, c := range cases {
 		if got := isOlder(c.version, c.installed); got != c.behind {

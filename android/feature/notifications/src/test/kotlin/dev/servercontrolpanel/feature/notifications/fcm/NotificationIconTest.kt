@@ -132,11 +132,11 @@ class NotificationIconTest {
     @Test
     fun `the artwork is written out for visual review`() {
         // No assert can detect a blurry 24dp icon, so write PNGs for checking by eye.
-        val output = File("build/reports/icone-notificacao").apply { mkdirs() }
+        val output = File("build/reports/notification-icon").apply { mkdirs() }
         File(output, "ic-notification-24dp.png").outputStream().use {
             rasterizeSmallIcon(scale = 24).compress(Bitmap.CompressFormat.PNG, 100, it)
         }
-        File(output, "ic-notification-tamanho-real.png").outputStream().use {
+        File(output, "ic-notification-actual-size.png").outputStream().use {
             rasterizeSmallIcon(scale = 1).compress(Bitmap.CompressFormat.PNG, 100, it)
         }
     }

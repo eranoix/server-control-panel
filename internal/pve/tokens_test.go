@@ -19,7 +19,7 @@ import (
 // why.
 func TestListTokens(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if want := "/api2/json/access/users/lab@pve/token"; r.URL.Path != want {
+		if want := "/api2/json/access/users/panel@pve/token"; r.URL.Path != want {
 			t.Errorf("path = %q, want %q", r.URL.Path, want)
 		}
 		if r.Method != http.MethodGet {
@@ -30,7 +30,7 @@ func TestListTokens(t *testing.T) {
 			{"tokenid":"admin","privsep":0,"expire":0}
 		]}`))
 	})
-	toks, err := c.ListTokens(context.Background(), "lab@pve")
+	toks, err := c.ListTokens(context.Background(), "panel@pve")
 	if err != nil {
 		t.Fatalf("ListTokens: %v", err)
 	}
@@ -57,12 +57,12 @@ func TestListTokens(t *testing.T) {
 // to patch around it.
 func TestTokenInfo(t *testing.T) {
 	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if want := "/api2/json/access/users/lab@pve/token/node-apps"; r.URL.Path != want {
+		if want := "/api2/json/access/users/panel@pve/token/node-apps"; r.URL.Path != want {
 			t.Errorf("path = %q, want %q", r.URL.Path, want)
 		}
 		_, _ = w.Write([]byte(`{"data":{"privsep":1,"expire":1802000000,"comment":"no apps"}}`))
 	})
-	info, err := c.TokenInfo(context.Background(), "lab@pve", "node-apps")
+	info, err := c.TokenInfo(context.Background(), "panel@pve", "node-apps")
 	if err != nil {
 		t.Fatalf("TokenInfo: %v", err)
 	}
@@ -116,10 +116,10 @@ func TestDeleteToken(t *testing.T) {
 		seen = r.Method + " " + r.URL.Path
 		_, _ = w.Write([]byte(`{"data":null}`))
 	})
-	if err := c.DeleteToken(context.Background(), "lab@pve", "node-apps"); err != nil {
+	if err := c.DeleteToken(context.Background(), "panel@pve", "node-apps"); err != nil {
 		t.Fatalf("DeleteToken: %v", err)
 	}
-	if want := "DELETE /api2/json/access/users/lab@pve/token/node-apps"; seen != want {
+	if want := "DELETE /api2/json/access/users/panel@pve/token/node-apps"; seen != want {
 		t.Fatalf("call = %q, want %q", seen, want)
 	}
 }
@@ -143,7 +143,7 @@ func TestDeleteTokenSeparateKinds(t *testing.T) {
 				w.WriteHeader(tc.status)
 				_, _ = w.Write([]byte("pve error"))
 			})
-			err := c.DeleteToken(context.Background(), "lab@pve", "x")
+			err := c.DeleteToken(context.Background(), "panel@pve", "x")
 			pe, ok := err.(*Error)
 			if !ok || pe.Kind != tc.want {
 				t.Fatalf("status %d → %v (%T), want %v", tc.status, err, err, tc.want)
@@ -161,9 +161,9 @@ func TestTokenIDInvalid(t *testing.T) {
 	})
 	for _, tc := range []struct{ user, tok string }{
 		{"", "audit"},
-		{"lab@pve", ""},
-		{"lab@pve", "a/b"},
-		{"lab@pve", "../../access/users"},
+		{"panel@pve", ""},
+		{"panel@pve", "a/b"},
+		{"panel@pve", "../../access/users"},
 		{"lab", "audit"}, // no realm
 	} {
 		if err := c.DeleteToken(context.Background(), tc.user, tc.tok); err == nil {

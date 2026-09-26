@@ -73,11 +73,11 @@ var allowedRoutes = []string{
 	// over the network, and the round-trip the acceptance criterion demands has
 	// no way to happen. It does NOT widen the execution surface — what it accepts
 	// is an opaque vault token, never a path (see internal/gameservers/handles.go).
-	"GET /v1/artefato/{handle}",
+	"GET /v1/artifact/{handle}",
 	// The inbound side. Same justification as the read route: what crosses is
 	// anonymous bytes, and what comes back is an opaque token — no name and no
 	// path.
-	"POST /v1/artefato",
+	"POST /v1/artifact",
 }
 
 // watchedWrappers are the IN-HOUSE functions that run a process without going

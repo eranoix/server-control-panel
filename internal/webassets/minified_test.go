@@ -99,9 +99,9 @@ func TestStaleMinifiedIsNotServed(t *testing.T) {
 	right := hex.EncodeToString(sum[:])
 
 	cases := []struct {
-		name     string
-		min      string
-		aceitavl bool
+		name       string
+		min        string
+		acceptable bool
 	}{
 		{"correct stamp", "var x=1;\n" + stampPrefix + right + "\n", true},
 		{"stamp from another source", "var x=2;\n" + stampPrefix + strings.Repeat("a", 64) + "\n", false},
@@ -115,9 +115,9 @@ func TestStaleMinifiedIsNotServed(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			stamp, ok := readStamp([]byte(c.min))
 			valid := ok && stamp == right
-			if valid != c.aceitavl {
+			if valid != c.acceptable {
 				t.Errorf("valid=%v, expected %v: a minified file without proven "+
-					"provenance must not replace the source", valid, c.aceitavl)
+					"provenance must not replace the source", valid, c.acceptable)
 			}
 		})
 	}

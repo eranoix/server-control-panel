@@ -24,7 +24,7 @@ var FS embed.FS
 // route. It lives in a SEPARATE embed from web/* on purpose: the public
 // FileServer mounts only web/*, so this file is NEVER servable without going
 // through the mustPrimary gate. report.html is a GENERATED artifact — copied
-// from ".docs/Documentacao Tecnica - Server Control Panel.html" by `make build` (the
+// from ".docs/Technical Documentation - Server Control Panel.html" by `make build` (the
 // docs-embed target). Do not edit it by hand.
 //
 //go:embed docs/report.html

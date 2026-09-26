@@ -20,7 +20,7 @@ import (
 //   - cluster-resources.json ....... the root's view (pvesh, on the host): 15
 //     entries, including storage and network, which the inventory has to
 //     ignore.
-//   - cluster-resources-token.json . the view of the lab@pve!audit token, which
+//   - cluster-resources-token.json . the view of the panel@pve!audit token, which
 //     is the one the panel actually receives: 10 entries — the token's ACL
 //     (PVEAuditor on /vms and /nodes, without /storage) filters storage and
 //     network BEFORE the response.

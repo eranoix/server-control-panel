@@ -142,7 +142,7 @@ type RawLogResponse struct {
 	Total  int    `json:"total" doc:"Total size of the log available on the server"`
 }
 
-// HistoricoResponse delivers the session's RENDERED history — the lines that
+// HistoryResponse delivers the session's RENDERED history — the lines that
 // have already scrolled off the screen, as append-only text.
 //
 // The difference from the raw log is not one of format, it is one of nature:
@@ -164,7 +164,7 @@ type RawLogResponse struct {
 // the stream.
 // The type name is the OpenAPI schema name the Android client is generated
 // from, so it stays until the client is regenerated.
-type HistoricoResponse struct {
+type HistoryResponse struct {
 	Base64 string `json:"base64" doc:"Rendered session history, base64-encoded"`
 	Bytes  int    `json:"bytes" doc:"How many history bytes are in this response"`
 	Total  int    `json:"total" doc:"Total size of the history available on the server"`
@@ -178,7 +178,7 @@ type historyInput struct {
 type historyOutput struct {
 	// NEVER CACHE, for the same reason as the raw log.
 	CacheControl string `header:"Cache-Control"`
-	Body         HistoricoResponse
+	Body         HistoryResponse
 }
 
 type rawLogInput struct {
@@ -231,7 +231,7 @@ func registerTerminal(api huma.API, deps Deps) {
 	huma.Register(api, huma.Operation{
 		OperationID: "getTerminalRawLog",
 		Method:      http.MethodGet,
-		Path:        "/terminal/log-bruto",
+		Path:        "/terminal/raw-log",
 		Summary:     "Raw log (PTY bytes) of a session, so the app can prime its own emulator",
 		Tags:        []string{"mobile", "terminal"},
 		Middlewares: huma.Middlewares{requireAuth},
@@ -239,9 +239,9 @@ func registerTerminal(api huma.API, deps Deps) {
 	}, terminalRawLogHandler(cfg, own))
 
 	huma.Register(api, huma.Operation{
-		OperationID: "getTerminalHistorico",
+		OperationID: "getTerminalHistory",
 		Method:      http.MethodGet,
-		Path:        "/terminal/historico",
+		Path:        "/terminal/history",
 		Summary:     "Rendered history of a session: what the person saw, once each",
 		Tags:        []string{"mobile", "terminal"},
 		Middlewares: huma.Middlewares{requireAuth},
@@ -281,7 +281,7 @@ func terminalWSTicketHandler(cfg *config.Config, own *ptysvc.Ownership) func(ctx
 			// internal/pty/pty.go) already applies on attach — not a new rule.
 			// owner == "" (a name never claimed) always passes: /ws/shell creates the
 			// session on the first connection and whoever connects becomes the owner (no
-			// privilege gained). owner == user or owner == AudienceAll ("Todos")
+			// privilege gained). owner == user or owner == AudienceAll ("Everyone")
 			// also pass — that is attaching to something already yours or
 			// shared. Only owner != "" && owner != user (a name already
 			// claimed by ANOTHER specific user) denies, and only when the
@@ -352,7 +352,7 @@ func terminalHistoryHandler(cfg *config.Config, own *ptysvc.Ownership) func(ctx 
 			return nil, huma.Error404NotFound("session not found")
 		}
 		data, total := ptysvc.SessionHistory(user, name, in.Bytes)
-		return &historyOutput{CacheControl: noCache, Body: HistoricoResponse{
+		return &historyOutput{CacheControl: noCache, Body: HistoryResponse{
 			Base64: base64.StdEncoding.EncodeToString(data),
 			Bytes:  len(data),
 			Total:  total,

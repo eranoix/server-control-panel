@@ -40,7 +40,7 @@ class TerminalChromeHeightTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private val bannerTag = "faixa-conexao"
+    private val bannerTag = "strip-connection"
     private val gridTag = "grade-terminal"
 
     @Test

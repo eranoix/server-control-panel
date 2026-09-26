@@ -90,13 +90,13 @@ func (k Kind) String() string {
 	case KindOK:
 		return "ok"
 	case KindNoCredential:
-		return "sem_credencial"
+		return "no_credential"
 	case KindForbidden:
-		return "sem_permissao"
+		return "sem_permission"
 	case KindUnreachable:
-		return "inalcancavel"
+		return "unreachable"
 	case KindHypervisor:
-		return "erro_hipervisor"
+		return "hypervisor_error"
 	default:
 		return fmt.Sprintf("kind(%d)", int(k))
 	}
@@ -141,7 +141,7 @@ type Config struct {
 	Resolve    string        // 198.51.100.20 — the address to dial; SNI and verification follow ServerName
 	ServerName string        // hypervisor.local — the cert's SAN does NOT cover .250 nor 100.x
 	CAFile     string        // data/pve/pve-root-ca.pem
-	TokenID    string        // lab@pve!audit, or the whole value from the vault "lab@pve!audit=<secret>"
+	TokenID    string        // panel@pve!audit, or the whole value from the vault "panel@pve!audit=<secret>"
 	Secret     string        // empty when TokenID already carries the whole value
 	Timeout    time.Duration // 0 = floor of 10 s; a value below the floor is RAISED
 }

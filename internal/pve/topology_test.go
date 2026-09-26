@@ -25,12 +25,12 @@ func TestVdevType(t *testing.T) {
 		{"raidz1-0", "raidz1", true},
 		{"raidz2-0", "raidz2", true},
 		{"raidz3-0", "raidz3", true},
-		{"cache", "especial", false},
-		{"logs", "especial", false},
+		{"cache", "special", false},
+		{"logs", "special", false},
 		// 🔴 Unknown does NOT become redundant. The error in the other direction makes
 		// the operator trust a mirror that does not exist.
-		{"new-thing-99", "listra", false},
-		{"/dev/sda", "listra", false},
+		{"new-thing-99", "stripe", false},
+		{"/dev/sda", "stripe", false},
 	}
 	for _, c := range cases {
 		kind, red := vdevType(c.name)

@@ -220,7 +220,7 @@ private fun DashboardContent(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item("carimbo") {
+        item("stamp") {
             FreshnessLine(
                 fetchedAtEpochMs = snapshot.fetchedAtEpochMs,
                 staleError = staleError,
@@ -229,7 +229,7 @@ private fun DashboardContent(
         }
         // The tile grid comes first (the at-a-glance answer); the attention card
         // below explains what is wrong and where to go.
-        item("painel") {
+        item("panel") {
             TileDashboard(
                 tiles = visible,
                 editing = editing,
@@ -242,15 +242,15 @@ private fun DashboardContent(
         }
         // Routes crossed thresholds and failed deploys to the right screen; must stay.
         if (warning.isNotEmpty()) {
-            item("atencao") { AttentionCard(signals = warning, onTarget = onTarget) }
+            item("warning") { AttentionCard(signals = warning, onTarget = onTarget) }
         }
         // No permanent health or resources cards: the grid and the attention card
         // cover them. Anything added here should appear only when something is wrong.
         if (snapshot.resourceSignals.isEmpty()) {
-            item("recursos-ausentes") { ResourcesUnavailableCard() }
+            item("resources-missing") { ResourcesUnavailableCard() }
         }
-        item("acoes") { QuickActionsCard(onTarget = onTarget) }
-        item("sessao") {
+        item("actions") { QuickActionsCard(onTarget = onTarget) }
+        item("session") {
             SessionCard(
                 snapshot = snapshot,
                 driftText = clockDriftText(snapshot),

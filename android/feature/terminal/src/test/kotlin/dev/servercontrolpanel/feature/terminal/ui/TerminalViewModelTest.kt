@@ -259,7 +259,7 @@ class TerminalViewModelTest {
     @Test
     fun `the primer uses the rendered history when it exists`() = runViewModelTest {
         val source = FakeRawLogSource(mutableListOf())
-        source.fromHistory += RawLogResult.Success("HISTORICO\r\n".toByteArray(), 11)
+        source.fromHistory += RawLogResult.Success("HISTORY\r\n".toByteArray(), 11)
         val factory = FakeWebSocketFactory()
         val (viewModel, engine) = buildViewModel(factory, rawLogSource = source)
         viewModel.onGridSizeChanged(80, 24)
@@ -271,14 +271,14 @@ class TerminalViewModelTest {
         assertEquals("and did not need the raw log", 0, source.requestedBytes.size)
         assertTrue(
             "the history was replayed into the engine",
-            engine.writes.any { String(it).contains("HISTORICO") },
+            engine.writes.any { String(it).contains("HISTORY") },
         )
     }
 
     // Older sessions have no history file, so the primer falls back to the raw log.
     @Test
     fun `without rendered history the primer falls back to the raw log`() = runViewModelTest {
-        val source = FakeRawLogSource(mutableListOf(RawLogResult.Success("CRU\r\n".toByteArray(), 5)))
+        val source = FakeRawLogSource(mutableListOf(RawLogResult.Success("RAW\r\n".toByteArray(), 5)))
         val factory = FakeWebSocketFactory()
         val (viewModel, engine) = buildViewModel(factory, rawLogSource = source)
         viewModel.onGridSizeChanged(80, 24)
@@ -290,7 +290,7 @@ class TerminalViewModelTest {
         assertEquals("and fell back to the raw log", 1, source.requestedBytes.size)
         assertTrue(
             "the fallback was replayed",
-            engine.writes.any { String(it).contains("CRU") },
+            engine.writes.any { String(it).contains("RAW") },
         )
     }
 

@@ -9,7 +9,7 @@ import (
 )
 
 // TestTransportValidation — the set of transports is CLOSED.
-// Any value outside {agente, pve-api, ssh} fails, and the error quotes the value
+// Any value outside {agent, pve-api, ssh} fails, and the error quotes the value
 // received (without that, a wrong transport becomes a "generic error" in the log and vanishes).
 func TestTransportValidation(t *testing.T) {
 	for _, tr := range []Transport{TransportAgent, TransportPVEAPI, TransportSSH} {
@@ -47,7 +47,7 @@ func TestTransportValidation(t *testing.T) {
 // literal that the panel and the live verifier compare against.
 func TestNodeTransportRoundTrip(t *testing.T) {
 	cases := map[Transport]string{
-		TransportAgent:  "agente",
+		TransportAgent:  "agent",
 		TransportPVEAPI: "pve-api",
 		TransportSSH:    "ssh",
 	}

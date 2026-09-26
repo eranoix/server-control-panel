@@ -107,7 +107,7 @@ func (securityGoldenBackend) networkDeps() screens.NetworkDeps {
 // audit/UFW/AdGuard/singbox/netusage. This is what makes RegisteredScreens()
 // (used by TestGoldenScreens and its two role-omission checks) see
 // security.users, security.secrets, security.sessions, security.audit,
-// security.ufw, security.adguard, security.devices and security.economia at
+// security.ufw, security.adguard, security.devices and security.savings at
 // all when running `go test ./internal/mobilebff/sdui/...`.
 func init() {
 	backend := securityGoldenBackend{}

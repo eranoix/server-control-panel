@@ -31,7 +31,7 @@ import dev.servercontrolpanel.designsystem.ThemeMode
 import dev.servercontrolpanel.designsystem.ThemeModeSelector
 
 /** Test tag for the settings screen. */
-internal const val TAG_SETTINGS = "tela-configuracoes"
+internal const val TAG_SETTINGS = "settings-screen"
 
 /** Label of the manual update check. The UI and the test read it from here. */
 internal const val CHECK_UPDATE_LABEL = "Check for updates"

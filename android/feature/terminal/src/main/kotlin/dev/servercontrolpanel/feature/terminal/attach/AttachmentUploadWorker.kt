@@ -15,13 +15,13 @@ import dev.servercontrolpanel.data.files.UploadResumeStore
 import dev.servercontrolpanel.data.files.UploadSessionResult
 
 /** Keys of the `Data` exchanged between [TerminalAttachmentViewModel] and this worker. */
-internal const val KEY_WORK_NAME = "anexo_nome_do_trabalho"
-internal const val KEY_SOURCE_URI = "anexo_uri_de_origem"
-internal const val KEY_DESTINATION_NAME = "anexo_nome_de_destino"
-internal const val KEY_TOTAL_BYTES = "anexo_total_bytes"
-internal const val KEY_PERCENT = "anexo_percentual"
-internal const val KEY_RESULT_PATH = "anexo_caminho_resultante"
-internal const val KEY_ERROR_REASON = "anexo_motivo_do_erro"
+internal const val KEY_WORK_NAME = "attachment_work_name"
+internal const val KEY_SOURCE_URI = "attachment_source_uri"
+internal const val KEY_DESTINATION_NAME = "attachment_destination_name"
+internal const val KEY_TOTAL_BYTES = "attachment_total_bytes"
+internal const val KEY_PERCENT = "attachment_percent"
+internal const val KEY_RESULT_PATH = "attachment_result_path"
+internal const val KEY_ERROR_REASON = "attachment_error_reason"
 
 /** `-1` = unknown percentage (the provider did not report the size). */
 internal const val UNKNOWN_PERCENT = -1

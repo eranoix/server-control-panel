@@ -19,7 +19,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 
 /** Node tag, for the tests that check the strip's height behaviour. */
-const val COMPOSITION_STRIP_TAG = "faixa-composicao"
+const val COMPOSITION_STRIP_TAG = "composition-strip"
 
 /**
  * The strip's fixed height (one monospaced `bodyMedium` line plus 4 dp). Fixed

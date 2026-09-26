@@ -71,10 +71,10 @@ class SduiScreenTest {
         renderInertly(envelope)
 
         // LazyColumn only composes visible items, so scroll each one into view first.
-        composeRule.onNodeWithText("Nenhum container em execução").assertExists() // table (index 0)
+        composeRule.onNodeWithText("No running containers").assertExists() // table (index 0)
 
         composeRule.onNode(hasScrollAction()).performScrollToIndex(1)
-        composeRule.onNodeWithText("Nome da regra").assertExists() // form (index 1)
+        composeRule.onNodeWithText("Rule name").assertExists() // form (index 1)
 
         composeRule.onNode(hasScrollAction()).performScrollToIndex(4)
         composeRule.onNodeWithText("Deploy").assertExists() // action (index 4)

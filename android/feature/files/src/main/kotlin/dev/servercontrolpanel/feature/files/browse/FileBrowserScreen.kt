@@ -97,7 +97,7 @@ fun FileBrowserScreen(
             transferViewModel.startUpload(
                 sourceUri = pickedUri.toString(),
                 destDir = viewModel.currentPath,
-                filename = pickedName ?: pickedUri.lastPathSegment ?: "arquivo",
+                filename = pickedName ?: pickedUri.lastPathSegment ?: "file",
                 totalSize = pickedSize,
             )
         }

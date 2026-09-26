@@ -12,7 +12,7 @@ import java.io.IOException
  */
 object UpdateDiagnostics {
 
-    private const val FILE_NAME = "atualizacao-diagnostico.txt"
+    private const val FILE_NAME = "update-diagnostics.txt"
     private const val MAX_ENTRIES = 10
     private const val SEPARATOR = "\n---\n"
 

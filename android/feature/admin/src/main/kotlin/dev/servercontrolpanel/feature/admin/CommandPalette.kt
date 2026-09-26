@@ -89,7 +89,7 @@ internal fun CommandPalette(
         ) {
             if (empty && recents.isNotEmpty()) {
                 item { Header(ADMIN_RECENTS_LABEL) }
-                items(recents, key = { "p-recente-${it.id}" }) { section ->
+                items(recents, key = { "p-recent-${it.id}" }) { section ->
                     PaletteRow(section = section, onClick = { onSelect(section.id) })
                 }
                 item { HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp)) }

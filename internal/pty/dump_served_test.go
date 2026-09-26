@@ -11,12 +11,12 @@ import (
 // instrument.
 //
 //	go test ./internal/pty/ -run TestDumpsServedCrop -v \
-//	  (no args: use the env PANEL_DUMP_SESSAO for the session and PANEL_DUMP_SAIDA for the output)
+//	  (no args: use the env PANEL_DUMP_SESSION for the session and PANEL_DUMP_OUTPUT for the output)
 func TestDumpsServedCrop(t *testing.T) {
-	session := os.Getenv("PANEL_DUMP_SESSAO")
-	output := os.Getenv("PANEL_DUMP_SAIDA")
+	session := os.Getenv("PANEL_DUMP_SESSION")
+	output := os.Getenv("PANEL_DUMP_OUTPUT")
 	if session == "" || output == "" {
-		t.Skip("set PANEL_DUMP_SESSAO and PANEL_DUMP_SAIDA")
+		t.Skip("set PANEL_DUMP_SESSION and PANEL_DUMP_OUTPUT")
 	}
 	data, total := rawLogTail("/opt/panel/data", "sam", session, 4194304)
 	t.Logf("session %q: total log %d B, served slice %d B", session, total, len(data))

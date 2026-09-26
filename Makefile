@@ -57,7 +57,7 @@ tools: ## Install the local tooling into .tools/ (esbuild to minify, playwright-
 minify: ## Generate <x>.min.js for the app assets (best-effort; without esbuild the originals are served)
 	@# PROVENANCE STAMP: every .min.js ends with the sha256 of the .js that
 	@# produced it. The server only swaps the original for the minified file when the
-	@# stamp matches (internal/webassets/minificado.go). Without it, the .min.js — which
+	@# stamp matches (internal/webassets/minified.go). Without it, the .min.js — which
 	@# is GENERATED and UNTRACKED — survives a change to its source and keeps being
 	@# served: that is how a bundle from 08/26 erased AdGuard from the app on
 	@# 08/30 and took down the whole SPA with a ReferenceError during Alpine boot.
@@ -81,11 +81,11 @@ minify: ## Generate <x>.min.js for the app assets (best-effort; without esbuild 
 	fi
 
 docs-embed: docs-check ## Copy the technical report (.docs/) into the gated /_docs embed (generated artifact)
-	@cp ".docs/Documentacao Tecnica - Server Control Panel.html" internal/webassets/docs/report.html
+	@cp ".docs/Technical Documentation - Server Control Panel.html" internal/webassets/docs/report.html
 	@echo "✓ internal/webassets/docs/report.html synced with .docs/"
 
 docs-check: ## Validate the nesting of the doc pages (blocks content outside .page)
-	@python3 scripts/check-docs-structure.py ".docs/Documentacao Tecnica - Server Control Panel.html"
+	@python3 scripts/check-docs-structure.py ".docs/Technical Documentation - Server Control Panel.html"
 
 docs-data: ## Regenerate the report's metrics/routes from the repo (GEN blocks)
 	@./scripts/gen-docs-data.sh
@@ -140,7 +140,7 @@ backup-containers: build ## backup + tarball /var/lib/panel-whatsapp/
 stt-test: ## Run the STT E2E suite (needs a running server-control-panel + WhisperLive)
 	@python3 /tmp/stt_e2e_suite.py
 
-DOCS_HTML := .docs/Documentacao Tecnica - Server Control Panel.html
+DOCS_HTML := .docs/Technical Documentation - Server Control Panel.html
 
 docs: ## Open the HTML technical report
 	@test -f "$(DOCS_HTML)" || { echo "✗ $(DOCS_HTML) does not exist; regenerate it with make docs-data"; exit 1; }

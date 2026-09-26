@@ -29,7 +29,7 @@ class ViewportScrollTest {
     /** Writes [lines] numbered lines to become history. */
     private fun fillHistory(engine: TerminalEngine, lines: Int) {
         val sb = StringBuilder()
-        for (i in 1..lines) sb.append("linha-").append(i).append("\r\n")
+        for (i in 1..lines) sb.append("line-").append(i).append("\r\n")
         engine.write(sb.toString().toByteArray(Charsets.UTF_8))
     }
 
@@ -42,7 +42,7 @@ class ViewportScrollTest {
             // End of history: the last lines written are in view.
             assertTrue(
                 "expected the last lines on screen, got: ${row(snap, 0)}",
-                (0 until snap.rows).any { row(snap, it) == "linha-100" },
+                (0 until snap.rows).any { row(snap, it) == "line-100" },
             )
             assertTrue(engine.scrollState().atEnd)
         } finally {
@@ -64,7 +64,7 @@ class ViewportScrollTest {
             // 100 lines written, 10 visible, up 50: we land in the 40s.
             assertTrue(
                 "expected past lines, got: $after",
-                after.any { it.startsWith("linha-4") || it.startsWith("linha-5") },
+                after.any { it.startsWith("line-4") || it.startsWith("line-5") },
             )
         } finally {
             engine.close()
@@ -166,11 +166,11 @@ class ViewportScrollTest {
         val engine = TerminalEngine.create(cols = 40, rows = 10)
         try {
             fillHistory(engine, 100)
-            engine.write("recem-chegada\r\n".toByteArray(Charsets.UTF_8))
+            engine.write("just-arrived\r\n".toByteArray(Charsets.UTF_8))
             val snap = engine.snapshot()
             assertTrue(
                 "pinned to the end, new output must appear",
-                (0 until snap.rows).any { row(snap, it) == "recem-chegada" },
+                (0 until snap.rows).any { row(snap, it) == "just-arrived" },
             )
             assertTrue(engine.scrollState().atEnd)
         } finally {

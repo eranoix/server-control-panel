@@ -85,8 +85,8 @@ object ReadCache {
      * respects; this list covers older servers and routes someone forgets to mark.
      */
     private val VOLATILE_ROUTES = listOf(
-        "/terminal/log-bruto",
-        "/terminal/historico",
+        "/terminal/raw-log",
+        "/terminal/history",
         "/terminal/scrollback",
     )
 

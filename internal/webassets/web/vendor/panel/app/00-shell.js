@@ -904,7 +904,7 @@ function app() {
       polishBusy: false,   // worker running right now
       showOriginalIds: {}, // {entryId: true} — the user clicked to see the original (toggle)
       // Language for Web Speech recognition.
-      subtitlesLang: localStorage.getItem('panel_vc_subtitles_lang') || 'pt-BR',
+      subtitlesLang: localStorage.getItem('panel_vc_subtitles_lang') || 'en-US',
       subtitlesLangPickerOpen: false,
       // Outgoing mic volume (1.0 = 100%), what the others hear. Transcription
       // reads the raw mic and is not affected. Persisted across sessions.
@@ -929,7 +929,7 @@ function app() {
       // up over the video). The transcript stays in the side panel. The user can turn
       // it back on with the "Captions visible" toggle in the settings.
       subtitlesShow: localStorage.getItem('panel_vc_subtitles_show') === '1',
-      // Preferred STT backend. Default whisper-local (more accurate for pt-BR, and
+      // Preferred STT backend. Default whisper-local (more accurate, and
       // after the CTranslate2 optimisation it is viable in real time with ~3-5s lag).
       // web-speech becomes the automatic fallback if whisper-local is unavailable.
       sttBackend: localStorage.getItem('panel_vc_stt_backend') || 'whisper-local',
@@ -1437,7 +1437,7 @@ function app() {
     hostTermCursorBlink: localStorage.getItem('panel_term_cursor_blink') !== '0',
     // GPU rendering (WebGL). Default OFF: on some GPUs/drivers the WebGL glyph
     // atlas corrupts (it renders the WRONG glyph for some characters — "faZer",
-    // "mudançps"). The DOM renderer (the default) draws real HTML text, with no
+    // "chanqes"). The DOM renderer (the default) draws real HTML text, with no
     // atlas → immune to that failure mode. GPU becomes opt-in (performance on a
     // huge scrollback) for people who do not hit the problem. Ligatures OFF (glyph
     // artefacts plus low value in a terminal). See buildTerminal/loadGpuAddons.
@@ -1482,9 +1482,9 @@ function app() {
     // to update" and the notice sits there forever without saying WHICH sessions
     // need restarting; without this the operator has no way to act and the notice
     // becomes permanent noise.
-    claudeVer: { instalada: '', defasados: 0, processos: [], open: false, loading: false, restarting: 0 },
-    hostTermPredictiveEcho: localStorage.getItem('panel_term_eco_preditivo') || 'auto',
-    hostTermEchoThreshold: parseInt(localStorage.getItem('panel_term_eco_limiar') || '60', 10),
+    claudeVer: { installed: '', outdated: 0, processes: [], open: false, loading: false, restarting: 0 },
+    hostTermPredictiveEcho: localStorage.getItem('panel_term_predictive_echo') || 'auto',
+    hostTermEchoThreshold: parseInt(localStorage.getItem('panel_term_echo_threshold') || '60', 10),
     // Help overlay (Ctrl+/ or ?)
     termHelpOpen: false,
     hostNotifyEnabled: localStorage.getItem('panel_term_notify') === '1',
@@ -1574,47 +1574,47 @@ function app() {
       // installGlobalHotkeys(). Announcing a g+X that is not there (or that leads to
       // a different screen) makes the palette lie, so never edit one without the other.
       // kw: aliases concatenated to the label at match time (getPaletteItems).
-      // They resolve synonyms/terms the label does not have: 'limpeza'->Prune,
-      // 'dev/shell'->Terminal, 'senhas'->Secrets. Accents are already handled by _norm.
+      // They resolve synonyms/terms the label does not have: 'cleanup'->Prune,
+      // 'dev/shell'->Terminal, 'passwords'->Secrets. Accents are already handled by _norm.
       pages: [
-        {label:'Dashboard',           kind:'page', page:'dashboard',  hint:'g+d', kw:'inicio home visao geral panel'},
+        {label:'Dashboard',           kind:'page', page:'dashboard',  hint:'g+d', kw:'home overview panel'},
         {label:'History',           kind:'page', page:'history',    hint:'g+h', kw:'history charts series'},
-        {label:'Alerts',             kind:'page', page:'alerts',     hint:'g+l', kw:'alerts alarmes avisos rules'},
-        {label:'Metrics',            kind:'page', page:'metrics',                kw:'metrics cpu memoria ram disco carga'},
-        {label:'Containers',          kind:'page', page:'containers', hint:'g+c', kw:'docker conteiner conteineres'},
-        {label:'Compose',             kind:'page', page:'compose',                kw:'docker-compose stack projeto'},
+        {label:'Alerts',             kind:'page', page:'alerts',     hint:'g+l', kw:'alerts alarms warnings rules'},
+        {label:'Metrics',            kind:'page', page:'metrics',                kw:'metrics cpu memory ram disk load'},
+        {label:'Containers',          kind:'page', page:'containers', hint:'g+c', kw:'docker container'},
+        {label:'Compose',             kind:'page', page:'compose',                kw:'docker-compose stack project'},
         {label:'Images',             kind:'page', page:'images',     hint:'g+i', kw:'images docker image'},
-        {label:'Volumes',             kind:'page', page:'volumes',    hint:'g+v', kw:'storage docker armazenamento'},
-        {label:'Networks',               kind:'page', page:'networks',   hint:'g+n', kw:'networks network rede docker'},
-        {label:'Prune / Pull',        kind:'page', page:'prune',                  kw:'limpeza faxina docker prune pull clear'},
+        {label:'Volumes',             kind:'page', page:'volumes',    hint:'g+v', kw:'storage docker disk'},
+        {label:'Networks',               kind:'page', page:'networks',   hint:'g+n', kw:'networks network docker'},
+        {label:'Prune / Pull',        kind:'page', page:'prune',                  kw:'cleanup docker prune pull clear'},
         {label:'Processes',           kind:'page', page:'processes',              kw:'processes ps top htop'},
-        {label:'Ports / Connections',   kind:'page', page:'ports',                  kw:'ports connections sockets netstat rede'},
-        {label:'Systemd / journalctl',kind:'page', page:'systemd',    hint:'g+s', kw:'services servicos unidades logs journal journalctl'},
-        {label:'Files',            kind:'page', page:'files',      hint:'g+f', kw:'files explorer gerenciador pastas'},
+        {label:'Ports / Connections',   kind:'page', page:'ports',                  kw:'ports connections sockets netstat network'},
+        {label:'Systemd / journalctl',kind:'page', page:'systemd',    hint:'g+s', kw:'services units logs journal journalctl'},
+        {label:'Files',            kind:'page', page:'files',      hint:'g+f', kw:'files explorer manager folders'},
         {label:'Terminal',            kind:'page', page:'terminal',   hint:'g+t', kw:'dev shell console bash ssh'},
-        {label:'AI',                  kind:'page', page:'ai',                     kw:'ia claude inteligencia artificial assistente'},
-        {label:'Documentation',        kind:'page', page:'documentacao',           kw:'docs ajuda help manual'},
-        {label:'Graphs',              kind:'page', page:'grafos',                 kw:'graphs grafo dependencias graphify'},
+        {label:'AI',                  kind:'page', page:'ai',                     kw:'ai claude artificial intelligence assistant'},
+        {label:'Documentation',        kind:'page', page:'documentation',           kw:'docs help manual'},
+        {label:'Graphs',              kind:'page', page:'graphs',                 kw:'graphs graph dependencies graphify'},
         {label:'VSCode (code-server)',kind:'page', page:'code',                   kw:'code editor vscode ide code-server'},
-        {label:'Secrets',             kind:'page', page:'secrets',                kw:'segredos senhas vault credenciais'},
-        {label:'Audit',               kind:'page', page:'audit',      hint:'g+a', kw:'auditoria logs events rastro'},
-        {label:'Users',            kind:'page', page:'users',      hint:'g+u', kw:'users contas acesso permissoes'},
-        {label:'Operations · Tasks',      kind:'page', page:'manutencao',  hint:'g+m', kw:'jira tasks tarefas manutencao kanban'},
-        {label:'Operations · Jobs (queue)',  kind:'page', page:'jobs',        hint:'g+j', kw:'queue queue trabalhos jobs'},
-        {label:'Operations · Schedules', kind:'page', page:'agendamentos',hint:'g+e', kw:'schedule cron agenda recorrente'},
-        {label:'Operations · Git',          kind:'page', page:'git',                    kw:'versionamento repo repositorio commit branch'},
+        {label:'Secrets',             kind:'page', page:'secrets',                kw:'secrets passwords vault credentials'},
+        {label:'Audit',               kind:'page', page:'audit',      hint:'g+a', kw:'audit logs events trail'},
+        {label:'Users',            kind:'page', page:'users',      hint:'g+u', kw:'users accounts access permissions'},
+        {label:'Operations · Tasks',      kind:'page', page:'maintenance',  hint:'g+m', kw:'jira tasks maintenance kanban'},
+        {label:'Operations · Jobs (queue)',  kind:'page', page:'jobs',        hint:'g+j', kw:'queue jobs'},
+        {label:'Operations · Schedules', kind:'page', page:'schedules',hint:'g+e', kw:'schedule cron recurring'},
+        {label:'Operations · Git',          kind:'page', page:'git',                    kw:'versioning repo repository commit branch'},
         // The "Nodes" entry still exists and leads to the merged screen: whoever types
-        // "nos" in the palette is looking for the inventory, and it did not change
+        // "nodes" in the palette is looking for the inventory, and it did not change
         // subject, it changed address. Removing the entry would make the search fail
         // for the word the operator has in mind.
-        {label:'Operations · Nodes (on the Proxmox screen)', kind:'page', page:'proxmox', kw:'nos nodes inventario no eixo guest lxc qemu credencial revoke turnOn turnOff console'},
-        {label:'Operations · Proxmox',      kind:'page', page:'proxmox',     kw:'proxmox pve hipervisor tarefas upid discos smart snapshot ram load cpu memoria disco rede filter health'},
-        {label:'Operations · Deploy',       kind:'page', page:'deploy',      hint:'g+p', kw:'deploy paas publicar release rollback apps'},
-        {label:'Apps · WhatsApp',          kind:'page', page:'whatsapp',    hint:'g+w', kw:'zap whats mensagens'},
-        {label:'Apps · Video call',      kind:'page', page:'videocall',              kw:'video call reuniao meet chamada'},
-        {label:'Apps · Browser',         kind:'page', page:'navegador',   hint:'g+b', kw:'browser web navegar'},
-        {label:'Apps · Persistent browser',kind:'page',page:'persistent',             kw:'browser persistente vnc navegador sessao'},
-        {label:'Settings',            kind:'page', page:'config',      hint:'g+r', kw:'settings config preferencias ajustes'},
+        {label:'Operations · Nodes (on the Proxmox screen)', kind:'page', page:'proxmox', kw:'nodes inventory guest lxc qemu credential revoke turnOn turnOff console'},
+        {label:'Operations · Proxmox',      kind:'page', page:'proxmox',     kw:'proxmox pve hypervisor tasks upid disks smart snapshot ram load cpu memory disk network filter health'},
+        {label:'Operations · Deploy',       kind:'page', page:'deploy',      hint:'g+p', kw:'deploy paas publish release rollback apps'},
+        {label:'Apps · WhatsApp',          kind:'page', page:'whatsapp',    hint:'g+w', kw:'zap whats messages'},
+        {label:'Apps · Video call',      kind:'page', page:'videocall',              kw:'video call meeting meet'},
+        {label:'Apps · Browser',         kind:'page', page:'browser',   hint:'g+b', kw:'browser web browse'},
+        {label:'Apps · Persistent browser',kind:'page',page:'persistent',             kw:'browser persistent vnc session'},
+        {label:'Settings',            kind:'page', page:'config',      hint:'g+r', kw:'settings config preferences'},
       ],
       actions: [
         {label:'Focus mode',         kind:'action', do:'toggleFocusMode'},
@@ -1641,8 +1641,8 @@ function app() {
         {label:'Terminal: reconnect the active pane',           kind:'action', do:'paletteTermReconnect'},
         // Jumps straight to the MFA/TOTP card in Config. There is no password change of
         // our own (it is federated through Supabase/northwind); the only security
-        // control on the account is MFA. kw covers senha/2fa/totp.
-        {label:'Settings · Account security (MFA / 2FA)', kind:'action', do:'paletteOpenSecurityMFA', kw:'senha password mfa 2fa totp autenticador seguranca backup codes'},
+        // control on the account is MFA. kw covers password/2fa/totp.
+        {label:'Settings · Account security (MFA / 2FA)', kind:'action', do:'paletteOpenSecurityMFA', kw:'password password mfa 2fa totp autenticador security backup codes'},
       ],
     },
     shortcutsOpen: false,
@@ -1781,7 +1781,7 @@ function app() {
       { key:'search',    icon:'🔍',     label:'Search the terminal' },
       { key:'kill',      icon:'🗑',     label:'Kill session' },
       { key:'focus',     icon:'⤢',      label:'Focus mode' },
-      { key:'sessoes',   icon:'🪟',     label:'Sessions' },
+      { key:'sessions',   icon:'🪟',     label:'Sessions' },
       { key:'snippets',  icon:'⌘',      label:'Snippets' },
       { key:'hide',      icon:'▾',      label:'Hide the top bar' },
     ],
@@ -1789,9 +1789,9 @@ function app() {
     // saved from back then carries that name in localStorage; without migrating it
     // ON READ, the button disappears from their bar (the saved list beats the
     // default). Map it and move on.
-    termBarButtons: (function(){ const DEFAULTS = ['aa','clear','reconnect','sessoes','hide'];
+    termBarButtons: (function(){ const DEFAULTS = ['aa','clear','reconnect','sessions','hide'];
       try { const v = JSON.parse(localStorage.getItem('panel_term_bar')||'null');
-        return Array.isArray(v) ? v.map(k => k === 'tmux' ? 'sessoes' : k) : DEFAULTS.slice();
+        return Array.isArray(v) ? v.map(k => k === 'tmux' ? 'sessions' : k) : DEFAULTS.slice();
       } catch(_) { return DEFAULTS.slice(); } })(),
     // PWA: captures beforeinstallprompt so we can show a custom "Install app" button.
     // On iOS the native prompt does not exist — we show manual instructions instead.
@@ -1990,7 +1990,7 @@ function app() {
       // sub-tab of AI. Resets stale localStorage so we do not land on an orphaned
       // Operations tab.
       if (this.tabs.operations === 'docs' || this.tabs.operations === 'prompts') {
-        this.tabs.operations = 'tarefas';
+        this.tabs.operations = 'tasks';
         try { localStorage.setItem('panel_tabs', JSON.stringify(this.tabs)); } catch(_){}
       }
 
@@ -2085,7 +2085,7 @@ function app() {
       // Bandwidth poll: every 10s (it used to be 3s = 20 req/min just for a counter)
       // and paused while the tab is in the background. Increments accumulate on the server.
       this.loadBandwidth();
-      this.bwPollTimer = setInterval(() => { if (!document.hidden && !this._skipPoll('banda')) this.loadBandwidth(); }, 10000);
+      this.bwPollTimer = setInterval(() => { if (!document.hidden && !this._skipPoll('bandwidth')) this.loadBandwidth(); }, 10000);
       this.pollTimer = setInterval(()=>{ if(document.hidden || this._skipPoll('stats')) return; this.loadStats(); if(['containers','dashboard'].includes(this.page)) this.loadContainers(); if(this.currentView==='alerts') { this.loadMetricSnapshot(); if(!this.alertFormOpen) this.loadAlertRules(); } if(this.currentView==='history') { this.loadAlertRules(); this.loadHistory().then(()=>this.drawCharts()); } }, 5000);
       // A 1s clock only for the live countdown on the state pills (Alerts tab).
       // It touches a single reactive integer; it does not refetch or re-render lists.
@@ -2243,7 +2243,7 @@ function app() {
     },
 
     // Valid pages — used by the hash router to validate deep links.
-    validPages: ['dashboard','history','alerts','containers','compose','images','volumes','networks','prune','processes','ports','systemd','files','terminal','navegador','persistent','ai','users','secrets','audit','manutencao','jobs','agendamentos','prompts','config','whatsapp','videocall'],
+    validPages: ['dashboard','history','alerts','containers','compose','images','volumes','networks','prune','processes','ports','systemd','files','terminal','browser','persistent','ai','users','secrets','audit','maintenance','jobs','schedules','prompts','config','whatsapp','videocall'],
 
     // Set of inline SVG icons in DUOTONE style (Phosphor-like): each icon has a
     // translucent filled shape (`.icon-fill`) under a crisp stroke
@@ -2373,7 +2373,7 @@ function app() {
           '<path d="M3 7h4M11 7h10"/><circle cx="9" cy="7" r="2.4"/><path d="M3 17h11M18 17h3"/><circle cx="16" cy="17" r="2.4"/>'
         ),
         // Browser — a globe with an orbit (egress tunnelled through the VPS)
-        navegador: D(
+        browser: D(
           '<circle cx="12" cy="12" r="9"/>',
           '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.5 3.8 5.6 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.6-3.8-9S9.5 5.5 12 3z"/>'
         ),
@@ -3396,8 +3396,7 @@ function app() {
 
     // Categories in the order that makes sense to a player, not alphabetically.
     gameTrainerCategories() {
-      const order = ['Jogador', 'Dano e Defesa', 'Inventário', 'Inventario',
-                     'Estatísticas', 'Estatisticas'];
+      const order = ['Player', 'Damage & Defense', 'Inventory', 'Statistics'];
       const cats = [];
       for (const c of this.games.trCatalog) {
         if (c.hidden || c.patchType === 'group') continue;
@@ -3694,7 +3693,7 @@ function app() {
     // ---------- per-tab orchestration ----------
     // Called by _triggerViewLoaders (page/tab switch, deep link and hash restore).
     async refreshGamesTab() {
-      if (this.page !== 'jogos') return;
+      if (this.page !== 'games') return;
       if (!this.games.loaded) await this.loadGames();
       const v = this.currentView;
 
@@ -3702,7 +3701,7 @@ function app() {
       if (v === 'gamedash' || v === 'gameservers') {
         // A 5s poll only on the tabs that show live state.
         this._gamesPollTimer = setInterval(() => {
-          if (!document.hidden && this.page === 'jogos') {
+          if (!document.hidden && this.page === 'games') {
             this.loadGames().then(() => { if (this.currentView === 'gamedash') this.gsDrawCharts(); });
           }
         }, 5000);
@@ -3755,18 +3754,18 @@ function app() {
       users:             ['security', 'users'],
       secrets:           ['security', 'secrets'],
       sessions:          ['security', 'sessions'],
-      rede:              ['security', 'rede'],
+      network:              ['security', 'network'],
       // AdGuard + Devices + Data saver were merged into a single tab. The old keys
       // become ALIASES → old links/favourites/palette entries land on the unified tab
       // (same pattern as nodes→proxmox). Deleting them would send the old ones nowhere.
-      adguard:           ['security', 'rede'],
-      dispositivos:      ['security', 'rede'],
-      economia:          ['security', 'rede'],
-      manutencao:        ['operations', 'tarefas'],
+      adguard:           ['security', 'network'],
+      devices:      ['security', 'network'],
+      savings:          ['security', 'network'],
+      maintenance:        ['operations', 'tasks'],
       jobs:              ['operations', 'jobs'],
-      agendamentos:      ['operations', 'agendamentos'],
-      documentacao:      ['dev', 'docs'],
-      grafos:            ['dev', 'graphs'],
+      schedules:      ['operations', 'schedules'],
+      documentation:      ['dev', 'docs'],
+      graphs:            ['dev', 'graphs'],
       code:              ['dev', 'code'],
       git:               ['operations', 'git'],
       // 🔴 `nodes` was NOT deleted, and that is the point.
@@ -3779,16 +3778,16 @@ function app() {
       deploy:            ['operations', 'deploy'],
       whatsapp:          ['apps', 'whatsapp'],
       videocall:         ['apps', 'videocall'],
-      navegador:         ['apps', 'browser'],
+      browser:         ['apps', 'browser'],
       persistent:        ['apps', 'persistent'],
-      gamedash:          ['jogos', 'gs-dash'],
-      gameservers:       ['jogos', 'gs-servers'],
-      gameworlds:        ['jogos', 'gs-worlds'],
-      gamesettings:      ['jogos', 'gs-settings'],
-      gameaccess:        ['jogos', 'gs-access'],
-      gameconsole:       ['jogos', 'gs-console'],
-      gamebackups:       ['jogos', 'gs-backups'],
-      gametrainer:       ['jogos', 'gs-trainer'],
+      gamedash:          ['games', 'gs-dash'],
+      gameservers:       ['games', 'gs-servers'],
+      gameworlds:        ['games', 'gs-worlds'],
+      gamesettings:      ['games', 'gs-settings'],
+      gameaccess:        ['games', 'gs-access'],
+      gameconsole:       ['games', 'gs-console'],
+      gamebackups:       ['games', 'gs-backups'],
+      gametrainer:       ['games', 'gs-trainer'],
     },
     // Default tab per group (used when entering group without specific tab).
     GROUP_DEFAULTS: {
@@ -3797,8 +3796,8 @@ function app() {
       dev: 'host',
       security: 'audit',
       apps: 'whatsapp',
-      operations: 'tarefas',
-      jogos: 'gs-dash',
+      operations: 'tasks',
+      games: 'gs-dash',
     },
     // sectionTopOffset: the height of the "chrome" (peek bar OR tab bar) that
     // stays sticky at the top of <main>. Fullbleed sections
@@ -3818,7 +3817,7 @@ function app() {
       // Persistent Browser in hidden mode: zero the offset so the iframe pulls up to
       // the top; the internal peek bar of the section takes the place of the tabs row.
       if (this.page === 'apps' && this.tabs.apps === 'persistent' && this.bpHeaderHidden) return 0;
-      const groupsWithTabs = ['system', 'docker', 'dev', 'security', 'apps', 'operations', 'jogos'];
+      const groupsWithTabs = ['system', 'docker', 'dev', 'security', 'apps', 'operations', 'games'];
       if (groupsWithTabs.includes(this.page)) return this.tabBarH || 52; // measured; 52 = desktop fallback
       return 0;
     },
@@ -4019,17 +4018,17 @@ function app() {
       users:        'Users',
       secrets:      'Secrets',
       sessions:     'Active sessions',
-      manutencao:   'Tasks',
+      maintenance:   'Tasks',
       jobs:         'Jobs',
-      agendamentos: 'Schedules',
-      documentacao: 'Documentation',
-      grafos:       'Graphs',
+      schedules: 'Schedules',
+      documentation: 'Documentation',
+      graphs:       'Graphs',
       code:         'VSCode',
       git:          'Git',
       deploy:       'Deploy',
       whatsapp:     'WhatsApp',
       videocall:    'Video call',
-      navegador:    'Browser',
+      browser:    'Browser',
       persistent:   'Persistent browser',
     },
 
@@ -4043,20 +4042,20 @@ function app() {
     // enters the JSONL raw).
     //
     // DELIBERATE absences, and why:
-    //   `sistema.ventoinhas` — a sub-tab of the fanhub proxy, it only exists in the
+    //   `system.fans` — a sub-tab of the fanhub proxy, it only exists in the
     //      panel of the VM. It stays in the canonical list (the file has to be
     //      byte-identical) and comes out as 0 in the report of this fork.
     //   `nodes` (the Nodes screen) — the screen stopped existing: it was MERGED into
     //      the Proxmox tab, and `nodes` today is only a remap to `proxmox` (see
     //      PAGE_REMAP), which never becomes `currentView`. The canonical id
-    //      `operacoes.nos` IS ALREADY in the allowlist since the re-edit — what is
+    //      `operations.nodes` IS ALREADY in the allowlist since the re-edit — what is
     //      missing is the screen, not the list. A key here would be dead code: it
     //      could never be read, and it would give the impression of instrumentation
     //      that does not exist. It goes in together with the node axis, when `nodes`
     //      becomes a view in its own right again.
-    //   `operacoes.backup` and `operacoes.embutidas` — ids already in the canonical
+    //   `operations.backup` and `operations.embedded` — ids already in the canonical
     //      list, but the tabs do not exist in this fork yet. Same contract as
-    //      `sistema.ventoinhas`: they come out as 0 until the screen exists, and the
+    //      `system.fans`: they come out as 0 until the screen exists, and the
     //      key lands in the same commit that grafts the tab in (the per-node backup
     //      and restore screen, and the embedded-tools proxy). Until then there is no
     //      view to map.
@@ -4073,46 +4072,46 @@ function app() {
     //   `unknown` bucket; scripts/test-proxmox-tab.mjs fails first.
     TEL_IDS: {
       dashboard:    'dashboard',
-      history:      'sistema.historico',
-      processes:    'sistema.processos',
-      ports:        'sistema.portas',
-      systemd:      'sistema.systemd',
-      files:        'sistema.arquivos',
-      metrics:      'sistema.metricas',
-      alerts:       'sistema.alertas',
-      gamedash:     'jogos.visao-geral',
-      gameservers:  'jogos.servidores',
-      gameworlds:   'jogos.mundos',
-      gamesettings: 'jogos.configuracoes',
-      gameaccess:   'jogos.acesso',
-      gameconsole:  'jogos.console',
-      gamebackups:  'jogos.backups',
-      gametrainer:  'jogos.trainer',
+      history:      'system.history',
+      processes:    'system.processes',
+      ports:        'system.ports',
+      systemd:      'system.systemd',
+      files:        'system.files',
+      metrics:      'system.metrics',
+      alerts:       'system.alerts',
+      gamedash:     'games.overview',
+      gameservers:  'games.servers',
+      gameworlds:   'games.worlds',
+      gamesettings: 'games.settings',
+      gameaccess:   'games.access',
+      gameconsole:  'games.console',
+      gamebackups:  'games.backups',
+      gametrainer:  'games.trainer',
       containers:   'docker.containers',
       compose:      'docker.compose',
-      images:       'docker.imagens',
+      images:       'docker.images',
       volumes:      'docker.volumes',
-      networks:     'docker.redes',
-      prune:        'docker.limpeza',
+      networks:     'docker.networks',
+      prune:        'docker.cleanup',
       terminal:     'dev.terminal',
-      code:         'dev.codigo',
-      documentacao: 'dev.documentacao',
-      grafos:       'dev.grafos',
+      code:         'dev.code',
+      documentation: 'dev.documentation',
+      graphs:       'dev.graphs',
       ai:           'dev.ai',
-      audit:        'seguranca.audit',
-      users:        'seguranca.usuarios',
-      secrets:      'seguranca.secrets',
-      sessions:     'seguranca.sessoes',
+      audit:        'security.audit',
+      users:        'security.users',
+      secrets:      'security.secrets',
+      sessions:     'security.sessions',
       whatsapp:     'apps.whatsapp',
-      videocall:    'apps.videochamada',
-      navegador:    'apps.navegador',
-      persistent:   'apps.browser-persistente',
-      manutencao:   'operacoes.tarefas',
-      jobs:         'operacoes.jobs',
-      agendamentos: 'operacoes.agendamentos',
-      deploy:       'operacoes.deploy',
-      git:          'operacoes.git',
-      proxmox:      'operacoes.proxmox',
+      videocall:    'apps.videocall',
+      browser:    'apps.browser',
+      persistent:   'apps.browser-persistent',
+      maintenance:   'operations.tasks',
+      jobs:         'operations.jobs',
+      schedules: 'operations.schedules',
+      deploy:       'operations.deploy',
+      git:          'operations.git',
+      proxmox:      'operations.proxmox',
       config:       'config',
     },
     // The 29 sub-actions — a screen inside a screen, which is where the hidden
@@ -4120,14 +4119,14 @@ function app() {
     // purpose: the front end NEVER emits an id outside it.
     TEL_SUB: [
       'dev.ai.agents','dev.ai.prompts','dev.ai.routing','dev.ai.tokens','dev.ai.usage',
-      'operacoes.tarefas.jira.board','operacoes.tarefas.jira.backlog',
-      'operacoes.tarefas.jira.detalhe.overview','operacoes.tarefas.jira.detalhe.comments',
-      'operacoes.tarefas.jira.detalhe.attachments','operacoes.tarefas.jira.detalhe.subtasks',
-      'operacoes.tarefas.jira.detalhe.links','operacoes.tarefas.jira.detalhe.worklog',
-      'operacoes.tarefas.jira.detalhe.history',
-      'operacoes.git.branches','operacoes.git.blame','operacoes.git.reflog',
-      'operacoes.git.hunks','operacoes.git.filelog',
-      'operacoes.git.prs.list','operacoes.git.prs.detail',
+      'operations.tasks.jira.board','operations.tasks.jira.backlog',
+      'operations.tasks.jira.detail.overview','operations.tasks.jira.detail.comments',
+      'operations.tasks.jira.detail.attachments','operations.tasks.jira.detail.subtasks',
+      'operations.tasks.jira.detail.links','operations.tasks.jira.detail.worklog',
+      'operations.tasks.jira.detail.history',
+      'operations.git.branches','operations.git.blame','operations.git.reflog',
+      'operations.git.hunks','operations.git.filelog',
+      'operations.git.prs.list','operations.git.prs.detail',
       'docker.containers.overview','docker.containers.logs','docker.containers.shell',
       'docker.containers.stats','docker.containers.top','docker.containers.inspect',
       'docker.containers.sessions','docker.containers.backups',
@@ -4155,7 +4154,7 @@ function app() {
     //
     // Only the cases where the third level IS in fact what is on screen on entry:
     //   ai         -> the AI page always shows a sub-tab
-    //   manutencao -> Jira always shows either the board or the backlog
+    //   maintenance -> Jira always shows either the board or the backlog
     //   containers -> only when a container is OPEN (otherwise the list has no tab)
     // `git` is deliberately left out: its default view is 'changes', which is not a
     // canonical sub-action, and prView='list' only means something with the PR panel
@@ -4164,7 +4163,7 @@ function app() {
       try {
         const v = this.currentView;
         if (v === 'ai')         return 'dev.ai.' + this.aiTab;
-        if (v === 'manutencao') return 'operacoes.tarefas.jira.' + this.jiraView;
+        if (v === 'maintenance') return 'operations.tasks.jira.' + this.jiraView;
         if (v === 'containers' && this.detail && this.detail.open) {
           return 'docker.containers.' + this.detail.tab;
         }
@@ -4188,11 +4187,11 @@ function app() {
       const w = (expr, fn) => { try { self.$watch(expr, fn); } catch (_) {} };
 
       w('aiTab',         (v) => { if (self.currentView === 'ai')         self._telSub('dev.ai.' + v); });
-      w('jiraView',      (v) => { if (self.currentView === 'manutencao') self._telSub('operacoes.tarefas.jira.' + v); });
-      w('jiraDetailTab', (v) => { if (self.currentView === 'manutencao') self._telSub('operacoes.tarefas.jira.detail.' + v); });
-      w('git.view',      (v) => { self._telSub('operacoes.git.' + v); });
-      w('git.inspect.kind', (v) => { self._telSub('operacoes.git.' + v); });
-      w('git.prView',    (v) => { self._telSub('operacoes.git.prs.' + v); });
+      w('jiraView',      (v) => { if (self.currentView === 'maintenance') self._telSub('operations.tasks.jira.' + v); });
+      w('jiraDetailTab', (v) => { if (self.currentView === 'maintenance') self._telSub('operations.tasks.jira.detail.' + v); });
+      w('git.view',      (v) => { self._telSub('operations.git.' + v); });
+      w('git.inspect.kind', (v) => { self._telSub('operations.git.' + v); });
+      w('git.prView',    (v) => { self._telSub('operations.git.prs.' + v); });
       w('detail.tab',    (v) => { if (self.currentView === 'containers') self._telSub('docker.containers.' + v); });
     },
     _updateTitle() {
@@ -4242,7 +4241,7 @@ function app() {
       const sp = server['panel_page'];
       if (typeof sp === 'string' && sp) {
         window.panelPrefs.setLocal('panel_page', sp);
-        const allowed = ['dashboard','system','docker','dev','security','apps','operations','config','git','jogos'];
+        const allowed = ['dashboard','system','docker','dev','security','apps','operations','config','git','games'];
         if (!this._bootHadHashNav && allowed.includes(sp) && sp !== this.page) {
           this._navApplying = true;
           try { this.setPage(sp, { silent: true }); } finally { this._navApplying = false; }
@@ -4283,7 +4282,7 @@ function app() {
         this._prefPersist('panel_tabs', JSON.stringify(this.tabs));
         p = group;
       }
-      const allowed = ['dashboard','system','docker','dev','security','apps','operations','config','git','jogos'];
+      const allowed = ['dashboard','system','docker','dev','security','apps','operations','config','git','games'];
       if (!allowed.includes(p)) p = 'dashboard';
       this.page = p;
       this._prefPersist('panel_page', p);
@@ -4329,7 +4328,7 @@ function app() {
       if (p==='networks')   this.loadNetworks();
       if (p==='processes')  { this.loadStats(); this.procsStart(); }
       else if (this.procsLive)              { this.procsStop(); }
-      if (p==='manutencao') this.jiraInit();
+      if (p==='maintenance') this.jiraInit();
       if (p==='jobs')       { this.jobsNow = Math.floor(Date.now()/1000); this.loadJobs(); }
       // 🔴 There is no `nodes` branch here any more. The screen was merged into the
       // Proxmox tab, and `pvxInit` already loads the nodes; the own timer of 40-nodes.js
@@ -4339,7 +4338,7 @@ function app() {
       if (p==='proxmox')    { this.pvxInit(); this.pvxStartPoll(); }
       else                  { this.pvxStopPoll(); }
       if (p==='deploy')     { this.loadDeployApps(); this.loadDevPorts(); }
-      if (p==='agendamentos') { this.loadSchedCatalog(); this.loadSchedJobs(); this.loadSchedRemotes(); this.loadSchedNotifyChannels(); }
+      if (p==='schedules') { this.loadSchedCatalog(); this.loadSchedJobs(); this.loadSchedRemotes(); this.loadSchedNotifyChannels(); }
       if (p==='ports')      { this.loadPorts(); this.loadConns(); }
       if (p==='systemd')    { this.loadUnits(); this.loadSystemLogs(); this.loadUFW(); this.loadCron(); }
       if (p==='files')      this.browseFiles(this.filePath);
@@ -4381,7 +4380,7 @@ function app() {
       if (p==='history')    { this.loadAlertRules(); this.loadHistory().then(()=>this.drawCharts()); }
       if (p==='config')     { this.loadConfig(); }
       if (p==='sessions')   this.loadSessions();
-      if (p==='rede')       { this.loadTunnelDevices(); this.loadAdguard(); this.loadDatasaver(); this.loadUsage(); }
+      if (p==='network')       { this.loadTunnelDevices(); this.loadAdguard(); this.loadDatasaver(); this.loadUsage(); }
       if (p==='terminal') {
         // Persist the state before swapping the pointer.
         try { this.saveState(); } catch(_){}
@@ -4415,7 +4414,7 @@ function app() {
           this.$nextTick(()=>this.openHostTerminal());
         }
       }
-      if (p==='navegador')  this.checkBrowserHealth();
+      if (p==='browser')  this.checkBrowserHealth();
       if (p==='videocall')  {
         // Guest mode: a kind=videocall_guest token does not pass these protected routes
         // → noisy 401s in the console. Skip everything.
@@ -4644,7 +4643,7 @@ function app() {
     // contentDocument/contentWindow. The try/catch defends against transient cases.
     snapBrowserState() {
       if (!this.browserMounted) return;
-      if (this.currentView !== 'navegador') return;  // saves CPU while off the tab
+      if (this.currentView !== 'browser') return;  // saves CPU while off the tab
       let changed = false;
       for (const tab of this.browserTabs) {
         tab.panes.forEach((pane, idx) => {
@@ -4718,7 +4717,7 @@ function app() {
     // Pasting an image DIRECTLY into the code-server terminal. The /_code/ iframe
     // is same-origin, so we inject the listeners into its document. Pasting an
     // IMAGE while the terminal (xterm) has focus uploads the image to the backend
-    // (/api/terminal/paste-image), which writes the paste-inbox; the panel-sessoes
+    // (/api/terminal/paste-image), which writes the paste-inbox; the panel-sessions
     // extension watches the inbox and injects "@<path>" into the active terminal.
     //
     // TWO paths, because in VSCode-web the Ctrl+V of the terminal is a COMMAND
@@ -4733,7 +4732,7 @@ function app() {
     onVscodeFrameLoad(frame) {
       if (!frame) return;
       // Persistence (login/refresh): pings the backend to write the restore trigger.
-      // The panel-sessoes extension watches for it and reopens the sessions that
+      // The panel-sessions extension watches for it and reopens the sessions that
       // disappear when code-server reloads (the native restore fails and the
       // activate() of the extension does not re-fire on a browser reload). Fire-and-forget, debounced.
       this._codeRestorePing();
@@ -5009,7 +5008,7 @@ function app() {
     bwSince() {
       if (!this.bw.since) return '—';
       const d = new Date(this.bw.since * 1000);
-      return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     },
     async loadBrowserInstances() {
       try {
@@ -7100,7 +7099,7 @@ function app() {
     },
     boardJobStep(j) { return j && j.step ? j.step : ''; },
     // statusToColLabel: translates Jira's raw status NAME (Backlog, EM
-    // REVISÃO…) into the LABEL of the column where the issue renders (To Do,
+    // REVIEW…) into the LABEL of the column where the issue renders (To Do,
     // In Progress, Done). The backend keeps using the real statuses with
     // the Jira API; the frontend only shows the columns' vocabulary.
     statusToColLabel(statusName, statusCatKey) {
@@ -7476,7 +7475,7 @@ function app() {
         case 'mine':       jql = where + 'assignee = currentUser() AND statusCategory != Done ORDER BY rank ASC'; break;
         case 'todo':       jql = where + 'statusCategory = "To Do" ORDER BY rank ASC'; break;
         case 'inprogress': jql = where + 'statusCategory = "In Progress" ORDER BY updated DESC'; break;
-        case 'review':     jql = where + 'status = "EM REVISÃO" ORDER BY updated DESC'; break;
+        case 'review':     jql = where + 'status = "IN REVIEW" ORDER BY updated DESC'; break;
         case 'last7':      jql = where + 'updated >= -7d ORDER BY updated DESC'; break;
         case 'reported':   jql = where + 'reporter = currentUser() ORDER BY updated DESC'; break;
         case 'all':        jql = where + 'ORDER BY updated DESC'; jql = jql.replace('AND ORDER','ORDER'); break;
@@ -7966,14 +7965,14 @@ function app() {
       const cmp = (a, b) => {
         switch (s.key) {
           case 'name':
-            return (a.summary || '').localeCompare(b.summary || '', 'pt', { sensitivity: 'base' });
+            return (a.summary || '').localeCompare(b.summary || '', 'en', { sensitivity: 'base' });
           case 'key': {
             const na = parseInt((a.key || '').split('-')[1] || '0', 10) || 0;
             const nb = parseInt((b.key || '').split('-')[1] || '0', 10) || 0;
             return na - nb;
           }
           case 'type':
-            return (a.issuetype?.name || '').localeCompare(b.issuetype?.name || '', 'pt', { sensitivity: 'base' });
+            return (a.issuetype?.name || '').localeCompare(b.issuetype?.name || '', 'en', { sensitivity: 'base' });
           case 'updated': {
             const ta = new Date(a.updated || a.created || 0).getTime() || 0;
             const tb = new Date(b.updated || b.created || 0).getTime() || 0;
@@ -10853,7 +10852,7 @@ function app() {
               // It REMEMBERS, does not merely apply: the ResizeObserver wakes up on the
               // very term.resize below and schedules a fit, and without this memory the
               // FitAddon undid the announcement ~140ms later. See _safeFit.
-              state._gradeSessao = { cols: _av.cols, rows: _av.rows };
+              state._gradeSession = { cols: _av.cols, rows: _av.rows };
               try {
                 if (state.term.cols !== _av.cols || state.term.rows !== _av.rows) {
                   state.term.resize(_av.cols, _av.rows);
@@ -11082,11 +11081,11 @@ function app() {
         }, 6000);
         // TWO SOURCES, IN THIS ORDER.
         //
-        //   /historico  = what the person SAW, once each. The server keeps
+        //   /history  = what the person SAW, once each. The server keeps
         //                 an emulator fed live and pours into it the
         //                 lines that scroll off the screen; it is not replay, so
         //                 there is no way to duplicate.
-        //   /log-bruto  = everything that went over the wire. Replayed on a fresh
+        //   /raw-log  = everything that went over the wire. Replayed on a fresh
         //                 grid, a program that repaints duplicates — the ESC[nA
         //                 saturates at the top of the SCREEN and never reaches the scrollback.
         //
@@ -11096,9 +11095,9 @@ function app() {
                                       { credentials: 'same-origin' })
           .then(r => r.ok ? r.arrayBuffer() : null)
           .then(b => (b && b.byteLength) ? b : null);
-        search('/api/terminal/historico')
+        search('/api/terminal/history')
           .catch(() => null)
-          .then(b => b || search('/api/terminal/log-bruto'))
+          .then(b => b || search('/api/terminal/raw-log'))
           .then(buf => {
             if (!buf || opened || !state.term) return;
             const u8 = new Uint8Array(buf);
@@ -11868,8 +11867,8 @@ function app() {
             'i':'images',    'v':'volumes',  'n':'networks',   'r':'config',
             // Added: g+j and g+m were already announced by the palette without existing;
             // g+e (agEndamentos, the schedules page) replaces the g+s the palette announced wrongly.
-            'j':'jobs',      'm':'manutencao', 'e':'agendamentos',
-            'p':'deploy',    'u':'users',      'w':'whatsapp', 'b':'navegador',
+            'j':'jobs',      'm':'maintenance', 'e':'schedules',
+            'p':'deploy',    'u':'users',      'w':'whatsapp', 'b':'browser',
           };
           const target = map[ev.key.toLowerCase()];
           if (target) { ev.preventDefault(); this.setPage(target); }
@@ -11888,7 +11887,7 @@ function app() {
     },
     closePalette(){ this.palette.open = false; },
     // _norm: normalizes for accent-insensitive search. Applied to BOTH sides of the
-    // palette filter. 'documentacao' now matches 'Documentation', 'limpeza'
+    // palette filter. 'documentation' now matches 'Documentation', 'cleanup'
     // matches 'Prune / Pull' (via kw). \u0300-\u036f = combining diacritics.
     _norm(s){ return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim(); },
     // pushRecentView: records the legacy view visited (called from setPage/setTab).
@@ -12563,7 +12562,7 @@ function app() {
     _armAdguardPoll(){
       if (this._adguardTimer) return;
       this._adguardTimer = setInterval(async () => {
-        if (this.currentView !== 'rede') { clearInterval(this._adguardTimer); this._adguardTimer = null; return; }
+        if (this.currentView !== 'network') { clearInterval(this._adguardTimer); this._adguardTimer = null; return; }
         if (document.hidden) return;
         try { const r = await this.api('/api/adguard/status'); this.adguard = await r.json(); } catch(_){}
       }, 5000);
@@ -12598,7 +12597,7 @@ function app() {
     _armUsagePoll(){
       if (this._usageTimer) return;
       this._usageTimer = setInterval(async () => {
-        if (this.currentView !== 'rede') { clearInterval(this._usageTimer); this._usageTimer=null; return; }
+        if (this.currentView !== 'network') { clearInterval(this._usageTimer); this._usageTimer=null; return; }
         if (document.hidden) return;
         try { const r = await this.api('/api/tunnel/usage'); const j = await r.json(); const m={}; (j.usage||[]).forEach(u=>{m[u.name]=u;}); this.deviceUsage = m; } catch(_){}
       }, 2500);
@@ -12623,7 +12622,7 @@ function app() {
     _armTunnelPoll(){
       if (this._tunnelTimer) return;
       this._tunnelTimer = setInterval(async () => {
-        if (this.currentView !== 'rede') { clearInterval(this._tunnelTimer); this._tunnelTimer=null; return; }
+        if (this.currentView !== 'network') { clearInterval(this._tunnelTimer); this._tunnelTimer=null; return; }
         if (document.hidden || this.tunnelBusy) return;
         try { const r = await this.api('/api/tunnel/devices'); const d = await r.json(); this.tunnelDevices = d.devices||[]; this.tunnelSummary = d.summary||null; } catch(_){}
       }, 5000);
@@ -12647,7 +12646,7 @@ function app() {
       if (exit === d.exit) return;
       try {
         await this.api('/api/tunnel/devices/'+encodeURIComponent(d.uuid)+'/exit', {method:'POST', body: JSON.stringify({exit})});
-        this.showToast('exit for '+d.name+' → '+(exit==='casa'?'home':'VPS')+' (reconnects in ~2s)','ok');
+        this.showToast('exit for '+d.name+' → '+(exit==='home'?'home':'VPS')+' (reconnects in ~2s)','ok');
         await this.loadTunnelDevices();
       } catch(e){ this.showToast(e.message,'err'); await this.loadTunnelDevices(); }
     },
@@ -12772,7 +12771,7 @@ function app() {
     _armDatasaverPoll(){
       if (this._dsTimer) return;
       this._dsTimer = setInterval(async () => {
-        if (this.currentView !== 'rede') { clearInterval(this._dsTimer); this._dsTimer=null; return; }
+        if (this.currentView !== 'network') { clearInterval(this._dsTimer); this._dsTimer=null; return; }
         if (document.hidden) return;
         try { const r = await this.api('/api/datasaver/status'); const s = await r.json(); this.dsStatus = this._dsShape(s); } catch(_){}
       }, 6000);
@@ -13113,12 +13112,12 @@ function app() {
         // `size=1`: this client UNDERSTANDS the announcement of the effective session
         // size and draws ITS grid, not that of the window. Without asking, the server does not
         // send it — an old client would write the JSON on screen.
-        // `quadro=1`: this client accepts a RENDERED CROP of the session screen
+        // `frame=1`: this client accepts a RENDERED CROP of the session screen
         // when its own window is smaller than it. That is what
         // lets the session sit at the LARGEST of the clients instead of the
         // smallest — that is, the phone stops shrinking the desktop. Whoever does not
         // ask remains a ceiling on the session size.
-        wsPath: '/ws/shell?size=1&quadro=1&name=' + encodeURIComponent(pane.sessionName) +
+        wsPath: '/ws/shell?size=1&frame=1&name=' + encodeURIComponent(pane.sessionName) +
                 (pane.aiProvider && pane.aiProvider !== 'oauth' ? '&ai=' + encodeURIComponent(pane.aiProvider) : ''),
         fontSize: this._termFontSize(),
         themeOverride: this.termThemes[this.hostTermTheme],
@@ -13796,7 +13795,7 @@ function app() {
         this._predictEcho(pane, d);
         return true;
       }
-      return this._paneEnfileiraOffline(pane, d);
+      return this._paneEnqueueOffline(pane, d);
     },
     _paneTxFlush(pane){
       const q = pane._txQ; pane._txQ = [];
@@ -13804,13 +13803,13 @@ function app() {
       const txt = q.join('');
       if (!txt) return;
       const ws = pane.ws;
-      if (!ws || ws.readyState !== 1) { this._paneEnfileiraOffline(pane, txt); return; }
+      if (!ws || ws.readyState !== 1) { this._paneEnqueueOffline(pane, txt); return; }
       try {
         this._txEnc || (this._txEnc = new TextEncoder());
         ws.send(this._txEnc.encode(txt));
-      } catch(_) { this._paneEnfileiraOffline(pane, txt); }
+      } catch(_) { this._paneEnqueueOffline(pane, txt); }
     },
-    _paneEnfileiraOffline(pane, d){
+    _paneEnqueueOffline(pane, d){
       if (!pane._outbox) { pane._outbox = []; pane._outboxBytes = 0; }
       if (pane._outboxBytes + d.length > 128 * 1024) { pane._outboxDropped = true; return false; }
       pane._outbox.push(d);
@@ -13875,7 +13874,7 @@ function app() {
         // from the end. Requiring the word glued to the colon — the first guess
         // here — let through exactly the sudo prompt, which is the most common one.
         if (!/[:?]$/.test(txt)) return false;
-        return /(senha|password|passwd|passphrase|palavra[- ]passe|\bpin\b|token|secret|segredo)/i.test(txt);
+        return /(password|passwd|passphrase|\bpin\b|token|secret)/i.test(txt);
       } catch(_) { return true; }
     },
     // ══ Predictive echo ═════════════════════════════════════════
@@ -13920,7 +13919,7 @@ function app() {
     _canPredict(pane, d){
       if (!pane || !pane.term) return false;
       const mode = this.hostTermPredictiveEcho || 'auto';
-      if (mode === 'nunca') return false;
+      if (mode === 'never') return false;
       // Printable characters only: Enter, arrows and Ctrl-* have an effect that only the
       // program on the other side knows.
       if (!/^[\x20-\x7e\u00a0-\uffff]+$/.test(d)) return false;
@@ -13929,7 +13928,7 @@ function app() {
       if (!buf || buf.type === 'alternate') return false;
       if (pane._serverEchoes === false) return false;
       if (this._looksLikePasswordLine(pane)) return false;
-      if (mode === 'sempre') return true;
+      if (mode === 'always') return true;
       const ms = pane.eco || pane.rtt || 0;
       return ms >= (this.hostTermEchoThreshold || 60);
     },
@@ -13994,7 +13993,7 @@ function app() {
       if (pane._qualityAt && (now - pane._qualityAt) < 1000) return;
       pane._qualityAt = now;
       const ms = pane.eco || pane.rtt || 0;
-      const level = !ms ? '' : (ms < 120 ? 'ok' : (ms < 350 ? 'medio' : 'bad'));
+      const level = !ms ? '' : (ms < 120 ? 'ok' : (ms < 350 ? 'medium' : 'bad'));
       const label = ms ? (ms < 1000 ? ms + ' ms' : (ms/1000).toFixed(1) + ' s') : '';
       if (pane.netLabel !== label) pane.netLabel = label;
       if (pane.netLevel !== level) pane.netLevel = level;
@@ -14032,14 +14031,14 @@ function app() {
       if (this.claudeVer.loading) return;
       this.claudeVer.loading = true;
       try {
-        const r = await this.api('/api/claude/versoes');
+        const r = await this.api('/api/claude/versions');
         if (!r || !r.ok) return;
         const d = await r.json();
-        this.claudeVer.instalada = d.instalada || '';
-        this.claudeVer.defasados = d.defasados || 0;
+        this.claudeVer.installed = d.installed || '';
+        this.claudeVer.outdated = d.outdated || 0;
         // Sorts by what matters: the outdated ones first, with the session name.
-        this.claudeVer.processos = (d.processos || []).sort((a, b) =>
-          (a.atual === b.atual) ? String(a.sessao||'').localeCompare(String(b.sessao||'')) : (a.atual ? 1 : -1));
+        this.claudeVer.processes = (d.processes || []).sort((a, b) =>
+          (a.current === b.current) ? String(a.session||'').localeCompare(String(b.session||'')) : (a.current ? 1 : -1));
       } catch(_){} finally { this.claudeVer.loading = false; }
     },
     // Dispatcher for the "Restart" button of the version panel. There are TWO ways to
@@ -14049,7 +14048,7 @@ function app() {
     // restarts it. Before, the absence of that second path left the row inert.
     async restartPanelClaude(proc){
       if (!proc) return;
-      if (proc.alvo === 'recovery') return this.restartRecoveryClaude(proc);
+      if (proc.target === 'recovery') return this.restartRecoveryClaude(proc);
       return this.restartSessionClaude(proc);
     },
     // Restarts the container of the recovery Claude.
@@ -14059,12 +14058,12 @@ function app() {
     // there is no conversation to resume, and whichever one is open is lost. The confirm
     // text says so, because that is the difference that matters to the operator.
     async restartRecoveryClaude(proc){
-      const target = proc.ref || this.claudeVer.instalada || '?';
+      const target = proc.ref || this.claudeVer.installed || '?';
       const ok = await this.confirmAsync(
         'Restart the recovery Claude?\n'
         + 'Restarts the container and Claude comes up on the version it already downloaded. '
         + 'Unlike the sessions, there is NO --continue here: a recovery conversation in progress is lost.\n\n'
-        + 'Running version: ' + proc.versao + '  →  in the container: ' + target,
+        + 'Running version: ' + proc.version + '  →  in the container: ' + target,
         { danger: true });
       if (!ok) return;
       this.claudeVer.restarting = proc.pid;
@@ -14090,21 +14089,21 @@ function app() {
     // would do by hand — and `claude --continue` resumes the conversation instead of starting
     // from scratch.
     async restartSessionClaude(proc){
-      if (!proc || !proc.sessao) return;
+      if (!proc || !proc.session) return;
       // confirmAsync(message, opts) — the 1st line becomes the title when it is short.
       const ok = await this.confirmAsync(
-        'Restart Claude in "' + proc.sessao + '"?\n'
+        'Restart Claude in "' + proc.session + '"?\n'
         + 'Ends Claude in this session and reopens it with --continue, resuming the conversation. '
         + 'If a task is running in it, that task is interrupted.\n\n'
-        + 'Session version: ' + proc.versao + '  →  installed: ' + (this.claudeVer.instalada || '?'),
+        + 'Session version: ' + proc.version + '  →  installed: ' + (this.claudeVer.installed || '?'),
         { danger: true });
       if (!ok) return;
       // Opens/focuses the session so the operator can SEE what happens — nothing runs in an
       // invisible session.
-      let pane = (this.terms.panes||[]).find(p => p.sessionName === proc.sessao);
-      if (!pane) { this.newPane(proc.sessao); await this.$nextTick(); pane = (this.terms.panes||[]).find(p => p.sessionName === proc.sessao); }
+      let pane = (this.terms.panes||[]).find(p => p.sessionName === proc.session);
+      if (!pane) { this.newPane(proc.session); await this.$nextTick(); pane = (this.terms.panes||[]).find(p => p.sessionName === proc.session); }
       else { this.focusPane(pane.id); }
-      if (!pane) { this.showToast('could not open the session ' + proc.sessao, 'err'); return; }
+      if (!pane) { this.showToast('could not open the session ' + proc.session, 'err'); return; }
       this.setPage('dev'); this.setTab('host');
       // Ctrl-C aborts whatever is running; /exit closes Claude cleanly; then it
       // reopens with --continue. The intervals give the CLI time to process each step.
@@ -14113,7 +14112,7 @@ function app() {
         this._paneSendInput(pane, txt);
         await new Promise(r => setTimeout(r, wait));
       }
-      this.showToast('restarting Claude in ' + proc.sessao, 'ok');
+      this.showToast('restarting Claude in ' + proc.session, 'ok');
       setTimeout(() => this.loadClaudeVersions(), 8000);
     },
     // Redoes the fit and reasserts the size of ALL panes. Called when the
@@ -14297,7 +14296,7 @@ function app() {
         // from then on the program wrapped its lines at one width while the
         // xterm drew at another — text in the wrong place and repainting that does not
         // erase the previous copy.
-        const gs = fit._panelState && fit._panelState._gradeSessao;
+        const gs = fit._panelState && fit._panelState._gradeSession;
         if (gs && (gs.cols !== d.cols || gs.rows !== d.rows)) {
           if (term.cols !== gs.cols || term.rows !== gs.rows) {
             try { term.resize(gs.cols, gs.rows); } catch (_) {}
@@ -15065,7 +15064,7 @@ function app() {
     // Formats a unix-seconds value as a short date/time. 0/undefined → "—".
     sessionMgrFmtTime(unixSec){
       if (!unixSec) return '—';
-      try { return new Date(unixSec * 1000).toLocaleString('pt-BR'); } catch(e){ return '—'; }
+      try { return new Date(unixSec * 1000).toLocaleString('en-US'); } catch(e){ return '—'; }
     },
     // Cockpit: label for the state of the agent (state coming from session-status.json).
     sessionMgrStateLabel(s){
@@ -15395,7 +15394,7 @@ function app() {
         case 'search':    this.hostTermSearch(); break;
         case 'kill':      this.killActiveSession(); break;
         case 'focus':     this.toggleFocusMode(); break;
-        case 'sessoes':   this.sessionMgrOpen = true; this.sessionMgr.tab = 'sessions'; this.sessionMgrLoad(); break;
+        case 'sessions':   this.sessionMgrOpen = true; this.sessionMgr.tab = 'sessions'; this.sessionMgrLoad(); break;
         case 'snippets':  this.hostTermSnippetsOpen = !this.hostTermSnippetsOpen; break;
         case 'hide':      this.hideTermChrome(); break;
       }
@@ -17561,7 +17560,7 @@ function app() {
         const names = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
         return names[d.getDay()];
       }
-      return d.toLocaleDateString('pt-BR');
+      return d.toLocaleDateString('en-US');
     },
     // The message time inside the bubble — always HH:MM (not the relative one).
     fmtMsgTime(ts) {
@@ -18148,7 +18147,7 @@ function app() {
       if (d.toDateString() === y.toDateString()) {
         return 'yesterday at ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
       }
-      return d.toLocaleDateString('pt-BR') + ' at ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+      return d.toLocaleDateString('en-US') + ' at ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
     },
     whatsappFmtLastSeen(ts) {
       if (!ts) return '—';
@@ -20312,7 +20311,7 @@ function app() {
       }
     },
     vcSubtitlesLangLabel() {
-      const map = { 'pt-BR':'Português (BR)','en-US':'English (US)','es-ES':'Español','fr-FR':'Français','it-IT':'Italiano','de-DE':'Deutsch','ja-JP':'日本語' };
+      const map = { 'en-US':'English (US)','pt-BR':'Portuguese (BR)','es-ES':'Spanish','fr-FR':'French','it-IT':'Italian','de-DE':'German','ja-JP':'Japanese' };
       return map[this.videocall.subtitlesLang] || this.videocall.subtitlesLang;
     },
     // ---- Transcript panel (Tactiq style) ----
@@ -20510,7 +20509,7 @@ function app() {
               headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + this.token },
               body: JSON.stringify({
                 text: e.text,
-                lang: this.videocall.subtitlesLang || 'pt-BR',
+                lang: this.videocall.subtitlesLang || 'en-US',
                 context: ctx,
                 speaker: this.vcPeerLabel(e.from),
               }),
@@ -21568,7 +21567,7 @@ function app() {
       if (!dev.ring) return 'does not ring';
       if (dev.mute_until && dev.mute_until > now) {
         const d = new Date(dev.mute_until * 1000);
-        return 'muted until ' + d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        return 'muted until ' + d.toLocaleString('en-US', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
       }
       return 'rings';
     },
@@ -21579,7 +21578,7 @@ function app() {
     },
     vcDeviceLastSeen(dev) {
       if (!dev || !dev.last_seen) return '';
-      try { return this.timeAgo ? this.timeAgo(dev.last_seen) : new Date(dev.last_seen * 1000).toLocaleString('pt-BR'); }
+      try { return this.timeAgo ? this.timeAgo(dev.last_seen) : new Date(dev.last_seen * 1000).toLocaleString('en-US'); }
       catch (_) { return ''; }
     },
 
@@ -21597,7 +21596,7 @@ function app() {
       if (!canvas) return;
       if (!(await this._ensureChart())) return;
       const data = (this.videocall.history || []).slice().reverse(); // oldest left
-      const labels = data.map(h => new Date(h.started_at * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }));
+      const labels = data.map(h => new Date(h.started_at * 1000).toLocaleString('en-US', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }));
       const totals = data.map(h => (h.bytes_sent + h.bytes_recv) / 1024 / 1024); // MB per call
       const prev = __panelCharts.get('vc-history-chart');
       if (prev) { try { prev.destroy(); } catch (_) {} }

@@ -43,7 +43,7 @@ class TransferScreenTest {
 
         // TransferScreen returns early on an empty map, so nothing should be composed.
         val tree = composeRule.onRoot().printToString()
-        assertFalse(tree.contains("Transferência em andamento"))
-        assertFalse(tree.contains("Cancelar"))
+        assertFalse(tree.contains("Transfer in progress"))
+        assertFalse(tree.contains("Cancel"))
     }
 }

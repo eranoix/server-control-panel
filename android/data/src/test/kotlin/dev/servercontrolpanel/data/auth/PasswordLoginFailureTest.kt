@@ -76,9 +76,9 @@ class PasswordLoginFailureTest {
             translateLoginFailure(429, null, sentCode = false),
         )
 
-        val unknown = translateLoginFailure(418, """{"detail":"segredo do servidor"}""", sentCode = false)
+        val unknown = translateLoginFailure(418, """{"detail":"server secret"}""", sentCode = false)
         val reason = (unknown as PasswordLoginResult.Failed).reason
-        assertTrue("must not echo the body: $reason", !reason.contains("segredo"))
+        assertTrue("must not echo the body: $reason", !reason.contains("secret"))
         assertTrue(reason.contains("418"))
     }
 }

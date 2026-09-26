@@ -2,13 +2,13 @@
   "sdui_version": 1,
   "screen": {
     "id": "fixture.all",
-    "title": "Todos os componentes",
+    "title": "All components",
     "components": [
       {
         "type": "table",
         "id": "containers-table",
         "columns": [
-          { "key": "name", "label": "Nome", "kind": "text" },
+          { "key": "name", "label": "Name", "kind": "text" },
           {
             "key": "status",
             "label": "Status",
@@ -21,16 +21,16 @@
           { "action_id": "container.restart" },
           { "action_id": "container.kill" }
         ],
-        "empty_state": { "text": "Nenhum container em execução" }
+        "empty_state": { "text": "No running containers" }
       },
       {
         "type": "form",
         "id": "notify-rule-form",
         "fields": [
-          { "key": "name", "label": "Nome da regra", "kind": "text", "required": true },
+          { "key": "name", "label": "Rule name", "kind": "text", "required": true },
           {
             "key": "channel",
-            "label": "Canal",
+            "label": "Channel",
             "kind": "select",
             "options_source": { "endpoint": "/api/mobile/v1/notify/channels" }
           }
@@ -48,8 +48,8 @@
         "id": "container-detail",
         "data_source": { "endpoint": "/api/mobile/v1/docker/containers/{id}" },
         "fields": [
-          { "key": "image", "label": "Imagem" },
-          { "key": "created_at", "label": "Criado em", "kind": "datetime" }
+          { "key": "image", "label": "Image" },
+          { "key": "created_at", "label": "Created at", "kind": "datetime" }
         ]
       },
       {
@@ -71,8 +71,8 @@
         "type": "confirm_destructive",
         "id": "kill-container-confirm",
         "action_id": "container.kill",
-        "message": "Isso vai matar o container permanentemente.",
-        "require_typed_confirmation": "meu-container"
+        "message": "This will kill the container permanently.",
+        "require_typed_confirmation": "my-container"
       }
     ]
   }

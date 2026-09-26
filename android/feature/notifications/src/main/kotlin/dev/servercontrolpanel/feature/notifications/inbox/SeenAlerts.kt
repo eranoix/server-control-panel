@@ -14,8 +14,8 @@ import dev.servercontrolpanel.data.ops.OpsAlert
  */
 internal object SeenAlerts {
 
-    private const val FILE = "panel_alertas_vistos"
-    private const val KEY = "marcas"
+    private const val FILE = "panel_seen_alerts"
+    private const val KEY = "marks"
     /** Unit separator (US, 0x1F), written escaped. */
     private const val SEPARATOR = "\u001F"
 

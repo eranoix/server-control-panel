@@ -296,8 +296,8 @@ type Config struct {
 	//   - IntakeClientRoster: known canonical names (prompt grounding).
 	//   - IntakeClientExclusions: names/domains that are NEVER a client (Acme,
 	//     vendors, generic providers). Case-insensitive.
-	IntakeClientRoster     []string `json:"intake_cliente_roster,omitempty"`
-	IntakeClientExclusions []string `json:"intake_cliente_exclusions,omitempty"`
+	IntakeClientRoster     []string `json:"intake_client_roster,omitempty"`
+	IntakeClientExclusions []string `json:"intake_client_exclusions,omitempty"`
 
 	// SessionCollectorEnabled turns on the Claude Code session collector — Flow B
 	// piece 1. It ingests RAW sessions (CLI + VS Code extension) from N of Jordan's
