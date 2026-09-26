@@ -1,0 +1,218 @@
+groups:
+  - name: vpsmanager
+    interval: 30s
+    rules:
+      - alert: BinaryDown
+        expr: up{job="vpsmanager"} == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "vps-manager binary down"
+          description: "Instance {{ $labels.instance }} has been down for > 3 minutes."
+
+      - alert: LoginFailuresHigh
+        expr: sum(rate(vpsm_login_failures_total[5m])) > 0.0833
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Login failures elevated"
+          description: "Rate > 5/min for 2m."
+
+      - alert: SubsystemDown
+        expr: vpsm_subsystem_up == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Subsystem {{ $labels.subsystem }} reporting down"
+          description: "Subsystem reported down for > 5 minutes."
+
+      - alert: WSCliff
+        expr: |
+          (vpsm_ws_connections_active - vpsm_ws_connections_active offset 30s)
+          / (vpsm_ws_connections_active offset 30s + 1) < -0.5
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "WebSocket connections cliff"
+          description: "WS connections dropped > 50% in 30s."
+
+  - name: host
+    interval: 30s
+    rules:
+      - alert: HostCPUHigh
+        # Considera o steal time: % do CPU realmente usado pelo nosso tenant.
+        # >85% sustentado significa saturação genuína (não throttle do hypervisor).
+        expr: 100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) - avg(rate(node_cpu_seconds_total{mode="steal"}[5m]))) > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host CPU > 85% por 10min (excl. steal)"
+          description: "CPU usage real (descontando steal time): {{ $value | printf \"%.1f\" }}%."
+
+      - alert: HostStealHigh
+        # Steal time > 30% sustentado = hypervisor está nos sufocando.
+        # Reportar pra Hostinger (TTW relacionado a hospedagem).
+        expr: 100 * avg(rate(node_cpu_seconds_total{mode="steal"}[10m])) > 30
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU steal > 30% por 30min"
+          description: "Hypervisor está consumindo {{ $value | printf \"%.1f\" }}% do CPU contratado. Possivelmente overcommit do provider."
+
+      - alert: HostMemoryLow
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Memória disponível < 10%"
+          description: "Apenas {{ $value | printf \"%.1f\" }}% da RAM disponível."
+
+      # --- swap -------------------------------------------------------------
+      # PONTO CEGO CORRIGIDO EM 2026-09-06. O swap desta VPS chegou a 100%
+      # (7,9 GiB de 8,0 GiB) e NENHUM alerta disparou, porque as duas regras
+      # que existiam eram estruturalmente incapazes de ver isso:
+      #   · HostMemoryLow olha MemAvailable, que ficou em ~15 GiB o tempo todo
+      #     — a RAM estava folgada, quem encheu foi o swap;
+      #   · ContainerMemoryNearLimit só dispara acima de 90% do limite, e o
+      #     container culpado estava em 56% do limite dele (4,5 GiB de 8 GiB)
+      #     justamente porque tinha licença para despejar o resto no swap.
+      # Causa-raiz: `docker run --memory=8g` SEM `--memory-swap` faz o Docker
+      # assumir `memory-swap = 2 × memory`, ou seja RAM + swap de mesmo
+      # tamanho. Com swapfile de 8 GiB, um container sozinho podia consumir o
+      # swap inteiro do host. Ver /opt/whisperlive/docker-compose.yml.
+      #
+      # Não dá para alertar sobre a CONFIGURAÇÃO: o cAdvisor exporta
+      # `container_spec_memory_swap_limit_bytes` = 0 tanto para "swap
+      # desligado" quanto para "swap ilimitado" (medido — o cgroup distingue
+      # `0` de `max`, o cAdvisor não). Então alertamos sobre o EFEITO, que é
+      # observável e é o que de fato dói.
+      - alert: HostSwapAlmostFull
+        expr: |
+          node_memory_SwapTotal_bytes > 0
+          and
+          (1 - node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes) * 100 > 75
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Swap acima de 75% em {{ $labels.instance }}"
+          description: "Swap cheio deixa a máquina sem folga para o próximo pico de memória, mesmo com RAM sobrando. Ver ContainerSwapHeavy para saber QUEM está lá dentro."
+
+      - alert: HostSwapParado
+        # O BURACO QUE ESTA REGRA FECHA, medido em 08/09/2026.
+        #
+        # A máquina estava com 5,6 GB em swap (69%) e 22 GB de RAM disponíveis.
+        # Nenhum dos outros dois alertas dispara nessa situação, e é uma
+        # situação ruim de verdade:
+        #
+        #   - HostSwapAlmostFull  exige 75%; 69% passa por baixo para sempre.
+        #   - HostSwapThrashing   exige leitura sustentada; páginas paradas não
+        #                         são lidas — por definição, não há sintoma.
+        #
+        # O que dói: essas páginas são de processos INTERATIVOS (sessões de
+        # terminal, o CLI do Claude). Elas não incomodam enquanto ninguém as
+        # toca; no instante em que se volta àquela sessão, centenas de MB voltam
+        # do disco e a sessão trava por segundos. O usuário sente isso como
+        # "o terminal está lento", nunca como "o swap está cheio".
+        #
+        # A conjunção com `available` é o que torna a regra específica em vez de
+        # barulhenta: swap alto COM pouca RAM é pressão de memória legítima (e
+        # os outros alertas cobrem), swap alto COM RAM sobrando é resíduo de uma
+        # crise que já passou e nunca foi devolvido.
+        #
+        # 6h de `for` porque a condição é lenta por natureza: nada aqui é
+        # urgente, e um alerta que grita por uma flutuação de minutos numa
+        # métrica que leva dias para mudar é um alerta que se aprende a ignorar.
+        expr: |
+          node_memory_SwapTotal_bytes > 0
+          and
+          (1 - node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes) * 100 > 25
+          and
+          node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100 > 50
+        for: 6h
+        labels:
+          severity: info
+        annotations:
+          summary: "Swap parado em {{ $labels.instance }} com RAM sobrando"
+          description: "Páginas estacionadas no swap de uma crise de memória antiga, com mais da metade da RAM livre. Elas não custam nada até alguém tocar naquele processo — aí a sessão trava enquanto voltam do disco. Recuperar com scripts/recuperar-swap.sh (confere a folga antes e devolve tudo à RAM em ~3 min)."
+
+      - alert: HostSwapThrashing
+        # pswpin conta PÁGINAS lidas do swap; ×4096 dá bytes/s. Leitura
+        # sustentada de swap é o sintoma que realmente degrada a máquina —
+        # swap ocupado mas frio não machuca, swap sendo lido o tempo todo sim.
+        expr: rate(node_vmstat_pswpin[5m]) * 4096 > 1048576
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Lendo do swap a {{ $value | humanize1024 }}B/s em {{ $labels.instance }}"
+          description: "Páginas voltando do swap de forma sustentada por 10min — a máquina está trocando memória por disco."
+
+      - alert: HostDiskAlmostFull
+        # Filesystem root. Threshold conservador: 85% = warning, 95% via outra regra se quiser.
+        expr: (1 - node_filesystem_avail_bytes{mountpoint="/rootfs",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/rootfs",fstype!~"tmpfs|overlay"}) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disco / acima de 85%"
+          description: "Uso do filesystem root: {{ $value | printf \"%.1f\" }}%."
+
+      - alert: HostLoadHigh
+        # Load avg 5min > 2x nº de cores. Em 8 cores, > 16.
+        expr: node_load5 > 2 * count(count by (cpu)(node_cpu_seconds_total))
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Load5 > 2x CPU count"
+          description: "Load avg (5min) = {{ $value | printf \"%.2f\" }} em host de {{ with query \"count(count by (cpu)(node_cpu_seconds_total))\" }}{{ . | first | value }}{{ end }} cores."
+
+  - name: containers
+    interval: 30s
+    rules:
+      - alert: ContainerCPUHogging
+        # Container consumindo > 200% CPU (2 cores inteiros) sustentado.
+        expr: |
+          sum by (container_name)(
+            rate(container_cpu_usage_seconds_total{container_id!=""}[5m])
+            * on(container_id) group_left(container_name) container_info
+          ) * 100 > 200
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.container_name }} consumindo > 200% CPU"
+          description: "{{ $value | printf \"%.0f\" }}% CPU sustentado por 10min — investigar loop ou config."
+
+      - alert: ContainerMemoryNearLimit
+        # Container usando > 90% do limite (quando definido). Sem limite, não dispara.
+        expr: |
+          (container_memory_working_set_bytes{container_id!=""} / container_spec_memory_limit_bytes{container_id!=""}) * 100 > 90
+          and container_spec_memory_limit_bytes{container_id!=""} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.container_id }} próximo do limite de memória"
+          description: "{{ $value | printf \"%.1f\" }}% do limite usado."
+
+      - alert: ContainerSwapHeavy
+        # Responde "quem encheu o swap?" — a pergunta que faltou em 2026-09-06,
+        # quando levou uma varredura manual de /proc/*/status para descobrir
+        # que era o whisperlive. 512 MiB é alto o bastante para não ligar por
+        # respingo de página fria e baixo o bastante para pegar o culpado cedo.
+        expr: container_memory_swap{container_id!="", name!=""} > 536870912
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} com {{ $value | humanize1024 }}B em swap"
+          description: "Container residente no swap. Se for serviço de modelo/ML, conferir se recebeu `--memory` sem `--memory-swap` (o Docker então permite swap do mesmo tamanho da RAM)."

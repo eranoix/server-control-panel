@@ -1,0 +1,54 @@
+# coturn config — written by `vpsmctl videocall init`. Variables in {{...}}
+# are substituted; everything else is verbatim. See man turnserver(1) for the
+# full reference.
+
+# UDP/TCP listen port for STUN+TURN. 3478 is the IANA-assigned standard.
+listening-port={{TURN_PORT}}
+
+# Allocate relay ports from this range. The narrower the range, the smaller
+# the firewall hole that must be open. Each active call uses ONE port per
+# peer per direction, so ~40 ports easily supports a household.
+min-port={{TURN_MIN_PORT}}
+max-port={{TURN_MAX_PORT}}
+
+# The public IP clients reach us on. coturn auto-detects in most cases, but
+# setting it explicitly avoids surprises behind cloud-provider NAT (where the
+# default-route IP isn't the public IP). Set to "auto" to let coturn detect.
+{{EXTERNAL_IP_LINE}}
+
+# Realm — shown in WebRTC stats; pick something descriptive but stable.
+realm={{TURN_REALM}}
+
+# Long-Term Credential MECH is what enables coturn to honor the time-limited
+# usernames our backend mints (format <expiration>:<user>). The HMAC secret
+# below MUST match TURN_SECRET in /etc/vpsm/coturn.env.
+lt-cred-mech
+use-auth-secret
+static-auth-secret={{TURN_SECRET}}
+
+# Hard quotas to bound abuse if the TURN URLs leak. user-quota is per-user
+# bandwidth ceiling in kbps; total-quota caps simultaneous allocations.
+total-quota=100
+user-quota=10
+
+# Drop privileges after binding the listening port.
+proc-user=nobody
+proc-group=nogroup
+
+# Send a stable fingerprint in STUN replies — required for some browser
+# implementations (Chrome) when the candidate-pair check happens.
+fingerprint
+
+# Don't listen on the well-known plaintext admin telnet port. We've never
+# enabled it; this is belt-and-suspenders.
+no-cli
+
+# Don't act as an open relay. Loopback peers and link-local addresses are
+# blocked outright; only legitimate clients reach us.
+no-loopback-peers
+no-multicast-peers
+
+# Logfile — rotated by Docker's json-file driver, but keep coturn's own log
+# at info level for now.
+log-file=stdout
+verbose

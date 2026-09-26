@@ -1,0 +1,61 @@
+# WAHA WhatsApp gateway — per-user template managed by vpsm-whatsapp@{{.User}}
+#
+# Renderizado por internal/whatsapp/manager.go pra cada perfil. WAHA Core é
+# hardcoded session=default, então rodamos N containers (um por perfil) ao
+# invés de 1 container com N sessions (Plus, US$19/mês). RAM ~150 MB/perfil.
+#
+# Substituições do template (text/template):
+#   .User → safe username (validado por scope.New)
+#   .Port → porta alocada por Registry (3100-3199)
+#
+# Secrets vêm do .env per-perfil (gerado pelo Manager, lido do vault
+# namespaced):
+#   - WAHA_API_KEY       (32-byte hex; salvo em "{{.User}}:waha_api_key")
+#   - WAHA_HMAC_SECRET   (assinatura webhook; "{{.User}}:waha_hmac_secret")
+
+services:
+  waha:
+    image: devlikeapro/waha:latest
+    container_name: vpsm-whatsapp-{{.User}}
+    restart: unless-stopped
+    # network_mode: host → webhook chega em 127.0.0.1:8765 sem bridge.
+    # Cada container expõe sua API em WHATSAPP_API_PORT do range 3100-3199.
+    network_mode: host
+    environment:
+      - WHATSAPP_API_KEY=${WAHA_API_KEY}
+      - WHATSAPP_API_PORT={{.Port}}
+      - WAHA_API_HOSTNAME=127.0.0.1
+
+      - WHATSAPP_DEFAULT_ENGINE=GOWS
+
+      # Webhook por path — vps-manager extrai {{.User}} do path e valida
+      # o HMAC do user correto. Vazamento do segredo de A não permite
+      # forjar evento de B.
+      - WHATSAPP_HOOK_URL=http://127.0.0.1:8765/api/whatsapp/webhook/{{.User}}
+      - WHATSAPP_HOOK_EVENTS=session.status,message,message.any,message.ack,message.revoked
+      - WHATSAPP_HOOK_HMAC_KEY=${WAHA_HMAC_SECRET}
+
+      - WAHA_PRINT_QR=false
+      - WAHA_LOG_LEVEL=info
+      - WAHA_LOG_FORMAT=json
+
+      - WHATSAPP_START_SESSION=default
+      - WHATSAPP_RESTART_ALL_SESSIONS=true
+
+      - WAHA_DASHBOARD_ENABLED=false
+      - WAHA_SWAGGER_ENABLED=false
+    volumes:
+      - /var/lib/vpsm-whatsapp/{{.User}}/sessions:/app/.sessions
+      - /var/lib/vpsm-whatsapp/{{.User}}/media:/app/.media
+      - /var/lib/vpsm-whatsapp/{{.User}}/files:/app/.files
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- --header=\"X-Api-Key: $${WHATSAPP_API_KEY}\" http://127.0.0.1:{{.Port}}/api/server/version || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

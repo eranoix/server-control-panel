@@ -1,0 +1,32 @@
+# /etc/systemd/system/vpsm-whatsapp@.service
+#
+# Templated unit — uma instância por perfil (vpsm-whatsapp@sam,
+# vpsm-whatsapp@jordan, ...). Instalado por scripts/whatsapp/install.sh.
+#
+# Cada instância roda um docker-compose em /var/lib/vpsm-whatsapp/%i renderizado
+# por internal/whatsapp/manager.go a partir de docker-compose.tmpl.yml.
+#
+# %i = o user (após o "@" no nome da unit). systemd troca pelo argumento.
+
+[Unit]
+Description=vps-manager WhatsApp gateway for %i (WAHA + GOWS)
+Documentation=https://github.com/devlikeapro/waha
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+# Restart throttle — MUST be in [Unit] (systemd 255 ignores in [Service]).
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/var/lib/vpsm-whatsapp/%i
+EnvironmentFile=/var/lib/vpsm-whatsapp/%i/.env
+ExecStartPre=/usr/bin/docker compose pull --quiet
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

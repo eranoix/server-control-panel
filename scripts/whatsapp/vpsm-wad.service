@@ -1,0 +1,38 @@
+# vps-manager WhatsApp daemon (wad) — embeds whatsmeow (the lib WAHA's GOWS
+# engine wraps) to send/receive WhatsApp for free, replacing the paywalled WAHA
+# media endpoints. Hosts one whatsmeow session per migrated user, reusing the
+# device already paired in a COPY of gows.db (no re-pairing).
+#
+# PERSISTENT (Restart=always): survives vps-manager deploys — WhatsApp sessions
+# stay connected across server restarts (by design).
+#
+# Install: cp this to /etc/systemd/system/vpsm-wad.service && systemctl daemon-reload
+#          && systemctl enable --now vpsm-wad
+[Unit]
+Description=vps-manager WhatsApp daemon (whatsmeow)
+After=network-online.target
+Wants=network-online.target
+# SEM limite de taxa de start. Com o default do systemd (5 starts / 10s) uma
+# rajada de `systemctl restart` — boot provisionando N usuarios, um deploy no
+# meio, um operador — deixava a unit em `start-limit-hit`, e desse estado o
+# Restart=always NAO recupera: o daemon fica MORTO ate alguem reiniciar a mao.
+# Foi o que aconteceu em 2026-08-25 20:31→21:05 (34 min sem WhatsApp, com o
+# painel ainda dizendo "connected"). Pra um daemon que segura as sessoes do
+# WhatsApp, seguir tentando e' sempre melhor que desistir em silencio.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=root
+# State (per-user session DBs + meta.json) and where to push inbound events.
+Environment=WAD_STATE_DIR=/var/lib/vpsm-wad
+Environment=WAD_LISTEN=127.0.0.1:8769
+Environment=WAD_WEBHOOK_BASE=http://127.0.0.1:8765
+ExecStart=/opt/panel/bin/wad
+Restart=always
+RestartSec=3
+# whatsmeow keeps long-lived sockets; give it room.
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

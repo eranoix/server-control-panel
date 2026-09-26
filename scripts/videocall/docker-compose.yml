@@ -1,0 +1,41 @@
+# coturn — TURN/STUN server for vps-manager videocall.
+#
+# Managed by `vpsmctl videocall init` (writes /etc/vpsm/coturn.env and
+# /etc/coturn/turnserver.conf from the templates next to this file). Restarts
+# automatically; healthchecks via the coturn admin port loopback ping.
+#
+# network_mode: host is REQUIRED. coturn's relay needs to allocate a port
+# inside [TURN_MIN_PORT, TURN_MAX_PORT] on the host IP and advertise it back
+# to clients. Docker bridge networking breaks that — the advertised IP would
+# be the bridge address, unreachable from outside. With host networking the
+# container shares the host stack and relays are reachable on the public IP.
+#
+# UDP 3478 (control + relay) MUST be exposed to the internet for TURN to work
+# behind hostile NAT. Plus the UDP range [TURN_MIN_PORT..TURN_MAX_PORT] for
+# the relays themselves. If `ufw` is on, see the post-install hint printed by
+# `vpsmctl videocall init`.
+
+services:
+  coturn:
+    image: coturn/coturn:4.6
+    container_name: vpsm-coturn
+    restart: unless-stopped
+    network_mode: host
+    env_file: /etc/vpsm/coturn.env
+    volumes:
+      - /etc/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - /var/lib/vpsm-coturn:/var/lib/coturn
+    healthcheck:
+      # The coturn binary itself runs the test via its admin loopback. If the
+      # process is alive and responding to local STUN binding requests, we're
+      # good.
+      test: ["CMD-SHELL", "turnutils_stunclient 127.0.0.1 -p 3478 >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,35 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: vps-manager
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # Critical em batch separado: notifica imediato, repete mais frequente.
+    - matchers:
+        - severity = "critical"
+      receiver: vps-manager
+      group_wait: 10s
+      repeat_interval: 1h
+
+receivers:
+  - name: vps-manager
+    webhook_configs:
+      # Loopback-only — vps-manager valida origem via isLoopback() no handler.
+      # Sem HMAC/auth: o app valida que RemoteAddr é 127.0.0.1, e a rota
+      # /_internal/alert não está protegida pelo auth middleware. Mesma
+      # postura do padrão anterior (/_internal/audit).
+      - url: http://127.0.0.1:8765/_internal/alert
+        send_resolved: true
+
+inhibit_rules:
+  # BinaryDown silencia todas as outras enquanto firing — evita storm quando
+  # o app cai e métricas dependentes (DBLatency, WS, etc.) vão a zero.
+  - source_matchers:
+      - alertname = BinaryDown
+    target_matchers:
+      - alertname =~ .+
+    equal:
+      - instance

@@ -1,0 +1,124 @@
+services:
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /var/lib/prometheus/data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus-rules.yml:/etc/prometheus/rules/vpsmanager.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=2GB
+      - --web.listen-address=127.0.0.1:9090
+      - --web.external-url=/prometheus
+      - --web.enable-lifecycle
+
+  grafana:
+    image: grafana/grafana-oss:13.0.1
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /var/lib/grafana/data:/var/lib/grafana
+      - ../grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ../grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - type: bind
+        source: ${VPSM_DATA_DIR:-/opt/projetos/vpsmanager/data}/.grafana_admin_pw
+        target: /secrets/admin_pw
+        read_only: true
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # Login form do Grafana fica DISPONÍVEL como fallback (login direto via
+      # /grafana/login com senha admin) — útil pra emergência se SSO quebrar.
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /secrets/admin_pw
+      GF_SERVER_ROOT_URL: "https://panel.northwind.example/grafana"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # Permite o painel vps-manager (mesma origem) embarcar o Grafana via
+      # iframe. Sem isso o Grafana manda X-Frame-Options: DENY e o browser
+      # bloqueia o iframe na aba Métricas.
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      # SSO via auth proxy: Traefik forwarda X-WEBAUTH-USER do vps-manager.
+      # Sem isso o user precisaria logar de novo no Grafana.
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: "X-WEBAUTH-USER"
+      GF_AUTH_PROXY_HEADER_PROPERTY: "username"
+      GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+      GF_AUTH_PROXY_HEADERS: "Email:X-WEBAUTH-EMAIL Name:X-WEBAUTH-NAME Role:X-WEBAUTH-ROLE"
+      # Whitelist do upstream que pode setar o header (Traefik no docker bridge).
+      # Sem isso Grafana ignora o header por segurança.
+      GF_AUTH_PROXY_WHITELIST: "127.0.0.1, 172.17.0.0/16, 172.18.0.0/16"
+      GF_AUTH_PROXY_SYNC_TTL: "60"
+      # Cookie cross-site: pro iframe same-origin propagar a sessão do Grafana
+      # depois do SSO. SameSite=Lax já permite, mas explicito é melhor.
+      GF_SECURITY_COOKIE_SAMESITE: "lax"
+      GF_SECURITY_COOKIE_SECURE: "true"
+
+  alertmanager:
+    image: prom/alertmanager:v0.29.0
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /var/lib/alertmanager/data:/alertmanager
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=127.0.0.1:9093
+      - --web.external-url=http://127.0.0.1:9093
+
+  # node_exporter: métricas do HOST (CPU, RAM, disco, rede, file descriptors,
+  # load avg, systemd units). Escuta 127.0.0.1:9100. Os mounts ro pra /proc,
+  # /sys e / são necessários pra ler estatísticas do host real, não do container.
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.8.2
+    network_mode: host
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      # textfile collector: lê /etc/node_exporter/textfile/*.prom e exporta.
+      # Usado pra expor container_info{container_id, container_name} regenerado
+      # por systemd timer no host (ver /usr/local/bin/observability-container-names.sh).
+      - /etc/node_exporter/textfile:/textfile:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --web.listen-address=127.0.0.1:9100
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|var/lib/docker/.+|run/user/.+)($$|/)
+      - --collector.systemd
+      - --collector.processes
+      - --collector.textfile.directory=/textfile
+
+  # cAdvisor: métricas POR container Docker (CPU%, memória, IO de disco/rede,
+  # uptime). Escuta 127.0.0.1:8082 (não 8080 que tem conflitos comuns).
+  # Privileged pra ler cgroups + Docker socket.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    network_mode: host
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      # /var/lib/docker NÃO é mapeado: Docker 28+ usa storage driver `overlayfs`
+      # que cAdvisor v0.49.2 não reconhece. Sem esse mount perdemos métricas
+      # de filesystem POR container, mas CPU/mem/IO/net (via cgroups + sys)
+      # seguem funcionando que é o que importa.
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /dev/disk/:/dev/disk:ro
+    command:
+      - --listen_ip=127.0.0.1
+      - --port=8082
+      # --docker_only=false (default): pega via cgroups (sem depender da API do Docker
+      # que com overlayfs storage driver não consegue resolver layer IDs).
+      - --housekeeping_interval=15s
+      - --disable_metrics=cpu_topology,resctrl,udp,advtcp,sched,hugetlb,memory_numa,tcp,process,disk,diskIO
