@@ -1,0 +1,168 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- Editor Monaco ISOLADO em iframe. O DOM do Monaco vive neste
+     documento separado, que o MutationObserver do Alpine (no documento pai)
+     NÃO observa — elimina de vez o freeze causado pelo Alpine percorrer a
+     árvore do editor. O pai chama window.gitEditor* via contentWindow
+     (same-origin); a prontidão é sinalizada por postMessage. -->
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background: #1e1e1e; }
+  #ed { position: absolute; inset: 0; }
+  #boot { font: 13px system-ui, sans-serif; color: #888; padding: 12px; }
+  /* blame inline (estilo GitLens): anotação discreta ao fim da linha do cursor */
+  .git-blame-inline { color: #6e7681; font-style: italic; opacity: .85; }
+</style>
+<script src="/vendor/monaco/vs/loader.js"></script>
+</head>
+<body>
+<div id="boot">Carregando editor…</div>
+<div id="ed"></div>
+<script>
+(function () {
+  'use strict';
+  var editor = null, diffEditor = null, monacoRef = null;
+  var blameMap = null, blameDecos = [], blameListener = null;
+
+  function clearBlame() {
+    try { if (blameListener) { blameListener.dispose(); blameListener = null; } } catch (e) {}
+    try { if (editor && blameDecos.length) blameDecos = editor.deltaDecorations(blameDecos, []); } catch (e) {}
+    blameDecos = []; blameMap = null;
+  }
+
+  // dispõe QUALQUER editor ativo (normal ou diff) + seus modelos + blame.
+  function disposeAll() {
+    clearBlame();
+    try { if (editor) { var m = editor.getModel(); editor.dispose(); if (m) m.dispose(); } } catch (e) {}
+    editor = null;
+    try {
+      if (diffEditor) {
+        var dm = diffEditor.getModel(); diffEditor.dispose();
+        if (dm) { if (dm.original) dm.original.dispose(); if (dm.modified) dm.modified.dispose(); }
+      }
+    } catch (e) {}
+    diffEditor = null;
+  }
+
+  function signal(kind, extra) {
+    try { parent.postMessage(Object.assign({ __giteditor: kind }, extra || {}), location.origin); } catch (e) {}
+  }
+
+  try {
+    window.require.config({ paths: { vs: '/vendor/monaco/vs' } });
+    window.require(['vs/editor/editor.main'], function () {
+      monacoRef = window.monaco;
+      var boot = document.getElementById('boot'); if (boot) boot.style.display = 'none';
+      signal('ready');
+    });
+  } catch (e) { signal('error', { message: String(e) }); }
+
+  // API chamada pelo pai (same-origin) via iframe.contentWindow.*
+  window.gitEditorReady = function () { return !!monacoRef; };
+
+  window.gitEditorOpen = function (o) {
+    if (!monacoRef) return false;
+    o = o || {};
+    try {
+      disposeAll();
+      var model = monacoRef.editor.createModel(o.content || '', o.language || 'plaintext');
+      editor = monacoRef.editor.create(document.getElementById('ed'), {
+        model: model,
+        theme: o.theme || 'vs-dark',
+        fontSize: o.fontSize || 13,
+        readOnly: !!o.readOnly,
+        automaticLayout: true,
+        minimap: { enabled: !!o.minimap },
+        wordWrap: o.wordWrap || 'off',
+        tabSize: 2,
+        scrollBeyondLastLine: false,
+      });
+      return true;
+    } catch (e) { signal('error', { message: String(e) }); return false; }
+  };
+
+  window.gitEditorGetValue = function () { return editor ? editor.getValue() : ''; };
+
+  // Diff lado-a-lado: Monaco DiffEditor com original vs
+  // modificado — realce de sintaxe + diff por palavra (intra-linha) nativos.
+  // sideBySide=false → diff inline (unified). readOnly sempre (visualização).
+  window.gitEditorOpenDiff = function (o) {
+    if (!monacoRef) return false;
+    o = o || {};
+    try {
+      disposeAll();
+      diffEditor = monacoRef.editor.createDiffEditor(document.getElementById('ed'), {
+        theme: o.theme || 'vs-dark',
+        fontSize: o.fontSize || 13,
+        automaticLayout: true,
+        readOnly: true,
+        originalEditable: false,
+        renderSideBySide: o.sideBySide !== false,
+        minimap: { enabled: false },
+        wordWrap: o.wordWrap || 'off',
+        scrollBeyondLastLine: false,
+        ignoreTrimWhitespace: false,
+      });
+      diffEditor.setModel({
+        original: monacoRef.editor.createModel(o.original || '', o.language || 'plaintext'),
+        modified: monacoRef.editor.createModel(o.modified || '', o.language || 'plaintext'),
+      });
+      return true;
+    } catch (e) { signal('error', { message: String(e) }); return false; }
+  };
+
+  // alterna lado-a-lado ↔ inline sem recriar (mantém posição).
+  window.gitEditorSetDiffLayout = function (sideBySide) {
+    try { if (diffEditor) diffEditor.updateOptions({ renderSideBySide: !!sideBySide }); } catch (e) {}
+  };
+
+  window.gitEditorUpdateOptions = function (o) {
+    if (!o) return;
+    try {
+      if (o.theme && monacoRef) monacoRef.editor.setTheme(o.theme);
+      var u = {};
+      if (typeof o.fontSize === 'number') u.fontSize = o.fontSize;
+      if (typeof o.wordWrap === 'string') u.wordWrap = o.wordWrap;
+      if (typeof o.minimap === 'boolean') u.minimap = { enabled: o.minimap };
+      if (editor) editor.updateOptions(u);
+      if (diffEditor) diffEditor.updateOptions(u);
+    } catch (e) {}
+  };
+
+  // Blame inline: recebe as linhas anotadas e mostra, ao fim
+  // da linha do cursor, "autor • data • resumo" via injected-text do Monaco.
+  // Passar null/[] desliga. Reanexa o listener de cursor a cada chamada.
+  window.gitEditorSetBlame = function (lines) {
+    clearBlame();
+    if (!lines || !lines.length || !editor || !monacoRef) return;
+    blameMap = {};
+    for (var i = 0; i < lines.length; i++) blameMap[lines[i].line] = lines[i];
+    var render = function () {
+      try {
+        var pos = editor.getPosition(); if (!pos) return;
+        var info = blameMap[pos.lineNumber];
+        var next = [];
+        if (info) {
+          var label = '    ' + (info.author || '?') +
+            (info.date ? ' • ' + info.date.slice(0, 10) : '') +
+            (info.summary ? ' • ' + info.summary : '');
+          var model = editor.getModel();
+          var col = model ? model.getLineMaxColumn(pos.lineNumber) : 1;
+          next.push({
+            range: new monacoRef.Range(pos.lineNumber, col, pos.lineNumber, col),
+            options: { after: { content: label, inlineClassName: 'git-blame-inline' }, showIfCollapsed: true },
+          });
+        }
+        blameDecos = editor.deltaDecorations(blameDecos, next);
+      } catch (e) {}
+    };
+    blameListener = editor.onDidChangeCursorPosition(render);
+    render();
+  };
+
+  window.gitEditorDispose = function () { disposeAll(); };
+})();
+</script>
+</body>
+</html>

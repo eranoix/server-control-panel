@@ -1,0 +1,98 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Architecture · Server Control Panel</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { max-width: 52rem; margin: 3rem auto; padding: 0 1.25rem;
+         font: 15px/1.65 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  h1 { font-size: 1.6rem; margin-bottom: .25rem; }
+  h2 { font-size: 1.1rem; margin-top: 2.25rem; border-bottom: 1px solid #8884;
+       padding-bottom: .3rem; }
+  .sub { opacity: .7; margin-top: 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+         font-size: .9em; background: #8882; padding: .1em .35em; border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; margin: .75rem 0; }
+  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #8883;
+           vertical-align: top; }
+  th { font-weight: 600; opacity: .8; }
+  .note { border-left: 3px solid #8886; padding: .4rem 0 .4rem .9rem; opacity: .85; }
+</style>
+
+<h1>Architecture</h1>
+<p class="sub">A single-binary Linux control plane — what it is made of and why.</p>
+
+<h2>Shape</h2>
+<p>
+  One statically linked Go binary. The entire front end is compiled into it with
+  <code>go:embed</code>, so there is no asset directory to deploy, no reverse proxy
+  required to serve static files, and no version skew between the API and the UI
+  that talks to it. Deployment is copying one file.
+</p>
+
+<table>
+  <tr><th>Layer</th><th>Choice</th><th>Reason</th></tr>
+  <tr>
+    <td>HTTP</td><td>standard library <code>net/http</code></td>
+    <td>The routing needs are modest; a framework would add a dependency and a
+        migration burden without removing any real work.</td>
+  </tr>
+  <tr>
+    <td>Front end</td><td>Alpine.js, xterm.js, Monaco, Chart.js</td>
+    <td>No build step for application code. The page is served as written, which
+        keeps the debugging loop short.</td>
+  </tr>
+  <tr>
+    <td>State</td><td>JSON files + SQLite (pure-Go driver)</td>
+    <td><code>CGO_ENABLED=0</code> holds, so the binary stays static and the
+        container image stays small.</td>
+  </tr>
+  <tr>
+    <td>Auth</td><td>JWT (HS256) in an HttpOnly cookie, WebAuthn passkeys</td>
+    <td>Bearer tokens in JavaScript-readable storage are an XSS liability.</td>
+  </tr>
+</table>
+
+<h2>Terminal sessions</h2>
+<p>
+  Sessions outlive both the browser tab and the server process. A PTY is allocated
+  per session and attached to a detached multiplexer, so a restart of the control
+  plane does not kill a running job — reattaching replays the live screen rather
+  than starting a blank one.
+</p>
+<p class="note">
+  Rendering is per-client. Two viewers of the same session at different window
+  sizes each get output composed for their own viewport, instead of the whole
+  session collapsing to the smallest connected screen.
+</p>
+
+<h2>Degradation as a design rule</h2>
+<p>
+  Every subsystem — containers, hypervisor inventory, messaging, video, speech —
+  is opened lazily and fails soft. A missing dependency logs a line and disables
+  one panel; it never prevents the process from starting. A control plane that
+  refuses to boot because a monitored service is down is the opposite of useful,
+  since that is exactly when you need to open it.
+</p>
+
+<h2>Demo mode</h2>
+<p>
+  The public demo runs the real binary with <code>DEMO_MODE</code> enabled. That flag
+  installs a single wrapper around the HTTP mux and denies everything by default,
+  allowing only an explicit list of read paths. Mutating verbs, terminal
+  WebSocket upgrades, container exec and the recovery console are outside that
+  list by construction.
+</p>
+<p class="note">
+  The allowlist sits at the one point every request passes through, rather than
+  being applied per route. A denylist would have been the obvious mistake: with
+  266 routes registered, a single new one added later would silently reopen a
+  shell to the public internet.
+</p>
+
+<h2>Recovery path</h2>
+<p>
+  A separate command-line tool administers the same data directory without the web
+  UI — resetting credentials, inspecting state, rotating secrets. The failure mode
+  it exists for is the one where the panel itself will not start, which is
+  precisely when a web-only administration story leaves you locked out.
+</p>

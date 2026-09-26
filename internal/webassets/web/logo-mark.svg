@@ -1,0 +1,13 @@
+<svg width="256" height="256" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">VPS Manager mark</title>
+  <desc id="desc">A geometric control socket: a hexagonal operator mark with a negative-space command spine.</desc>
+  <defs>
+    <mask id="vm-cutouts">
+      <rect width="64" height="64" fill="white"/>
+      <rect x="29" y="16" width="6" height="32" rx="3" fill="black"/>
+      <path d="M17 20 L27 20 L27 26 L21 30 L15 27 Z" fill="black"/>
+      <path d="M47 44 L37 44 L37 38 L43 34 L49 37 Z" fill="black"/>
+    </mask>
+  </defs>
+  <path d="M32 4 L52 15 L56 32 L52 49 L32 60 L12 49 L8 32 L12 15 Z" fill="currentColor" mask="url(#vm-cutouts)"/>
+</svg>

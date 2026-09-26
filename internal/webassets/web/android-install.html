@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Install the Android app — VPS Manager</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232563eb'/%3E%3Ctext x='32' y='42' font-family='sans-serif' font-size='28' font-weight='700' fill='white' text-anchor='middle'%3EVM%3C/text%3E%3C/svg%3E">
+<style>
+  body {
+    background: radial-gradient(ellipse at top, #0c1424 0%, #050811 100%);
+    color: #e5e7eb;
+    font-family: -apple-system, system-ui, sans-serif;
+    min-height: 100vh; min-height: 100dvh;
+    margin: 0; display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .card {
+    width: 100%; max-width: 480px;
+    background: linear-gradient(180deg, #0e1525 0%, #0a1322 100%);
+    border: 1px solid #1f2a40; border-radius: 16px;
+    padding: 32px 28px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  .logo { width: 56px; height: 56px; border-radius: 14px; background: linear-gradient(135deg, #4678f9, #a78bfa); display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800;color:#fff;margin:0 auto 18px; }
+  h1 { font-size: 20px; font-weight: 700; text-align: center; margin: 0 0 6px; color: #f8fafc; }
+  .sub { text-align: center; color: #94a3b8; font-size: 13px; margin-bottom: 24px; line-height: 1.5; }
+  .qr-frame {
+    background: #fff; border-radius: 12px; padding: 14px;
+    width: 240px; height: 240px; margin: 0 auto 16px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .qr-frame img { width: 100%; height: 100%; }
+  .pending {
+    text-align: center; padding: 28px 16px; color: #94a3b8; font-size: 13px;
+    border: 1px dashed #2a3650; border-radius: 12px; margin-bottom: 20px; line-height: 1.6;
+  }
+  .field { margin-bottom: 18px; }
+  .label { display:block; font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+  .mono {
+    font-family: ui-monospace, monospace; font-size: 12px; color: #cbd5e1;
+    background: #0c1424; border: 1px solid #1f2a40; border-radius: 8px;
+    padding: 10px 12px; word-break: break-all; user-select: all;
+  }
+  ol.steps { margin: 0; padding-left: 20px; color: #cbd5e1; font-size: 13px; line-height: 1.9; }
+  ol.steps li.done-elsewhere { color: #6b7280; }
+  ol.steps b { color: #f8fafc; }
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; box-sizing: border-box;
+    background: linear-gradient(180deg, #10b981 0%, #059669 100%);
+    color: #fff; border: 0; border-radius: 10px; text-decoration: none;
+    padding: 13px; font-size: 14px; font-weight: 600;
+    box-shadow: 0 4px 14px rgba(16,185,129,.35);
+  }
+  .btn.disabled { background: #1f2937; color: #6b7280; box-shadow: none; pointer-events: none; }
+  .version { text-align: center; font-size: 12px; color: #6b7280; margin-top: 14px; }
+  .foot { text-align: center; font-size: 11px; color: #6b7280; margin-top: 22px; line-height: 1.6; }
+  .foot a { color: #94a3b8; text-decoration: none; }
+  .foot a:hover { color: #cbd5e1; text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">VM</div>
+  <h1>Install the Android app</h1>
+  <p class="sub">Scan this with the F-Droid app (Settings → Repositories → scan QR) to add this self-hosted repository and install vps-manager on your device.</p>
+
+  {{if .RepoPublished}}
+  <div class="qr-frame">
+    <img src="{{.QRDataURL}}" alt="QR code for the vps-manager F-Droid repository">
+  </div>
+
+  <div class="field">
+    <span class="label">Repository address (manual fallback)</span>
+    <div class="mono">{{.AddRepoURL}}</div>
+  </div>
+
+  <div class="field">
+    <span class="label">Repository key fingerprint</span>
+    <div class="mono">{{.Fingerprint}}</div>
+  </div>
+
+  {{if .HasRelease}}
+  <a class="btn" href="{{.ApkURL}}">⬇ Download the APK directly (sideload)</a>
+  <div class="version">Published version: {{.VersionName}} (versionCode {{.VersionCode}})</div>
+  {{else}}
+  <a class="btn disabled" href="#" aria-disabled="true">⬇ No version published yet</a>
+  <div class="version">The repository exists, but no version of the app has been published to it yet.</div>
+  {{end}}
+
+  <div class="field" style="margin-top:24px">
+    <span class="label">The complete first-run sequence</span>
+    <ol class="steps">
+      <li><b>Install the F-Droid app</b> on the device, if you do not have it yet (f-droid.org).</li>
+      <li><b>Scan the QR code above</b> in F-Droid → Settings → Repositories → QR icon — it confirms the fingerprint and adds this repository.</li>
+      <li><b>Install vps-manager</b> from the F-Droid app list, inside the repository you have just added.</li>
+      <li class="done-elsewhere"><b>Pair the device</b> — open vps-manager in this browser (the computer, not the phone), go to Settings → Mobile devices and generate the pairing QR there; it is a different code from this one, specific to the device.</li>
+    </ol>
+  </div>
+  {{else}}
+  <div class="pending">
+    <strong>Repository not published yet.</strong><br>
+    The F-Droid repository signing key is generated offline by the operator
+    (never on this VPS) and has not been provisioned yet. As soon as the fingerprint is
+    published to the secrets vault, this page starts showing the install QR
+    automatically — nothing else has to be done here.
+  </div>
+  {{end}}
+
+  <div class="foot">
+    <a href="/">Back to the main panel</a>
+  </div>
+</div>
+</body>
+</html>

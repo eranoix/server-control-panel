@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>VPS Manager · Recovery</title>
+<link rel="stylesheet" href="/vendor/xterm/xterm.css">
+<style>
+  /* Recovery is INTENTIONALLY independent of the main SPA's tailwind.css.
+     Inline styles guarantee this page renders even if the Tailwind build
+     breaks or /tailwind.css falls out of the binary. */
+  * { box-sizing: border-box; }
+  body {
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    margin: 0; min-height: 100vh; background: #0a1120; color: #e5e7eb;
+    display: flex; align-items: center; justify-content: center; padding: 1rem;
+  }
+  .card {
+    background: #111827; border: 1px solid #1f2937; border-radius: 12px;
+    padding: 1.75rem 2rem; width: 100%; max-width: 480px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  }
+  h1 { margin: 0 0 .25rem; font-size: 1.15rem; color: #fff; display: flex; align-items: center; gap: .5rem; }
+  .badge { font-size: .65rem; background: #f43f5e22; color: #fda4af; padding: .15rem .5rem; border-radius: 999px; font-weight: 600; letter-spacing: .03em; }
+  p.sub { margin: 0 0 1.25rem; color: #9ca3af; font-size: .82rem; line-height: 1.5; }
+  label { font-size: .68rem; text-transform: uppercase; color: #9ca3af; letter-spacing: .06em; display: block; margin-top: .9rem; }
+  input {
+    width: 100%; padding: .65rem .8rem; margin-top: .3rem;
+    background: #0a1120; border: 1px solid #1f2937; border-radius: 8px;
+    color: #e5e7eb; font: inherit;
+  }
+  input[name=totp] { font-family: ui-monospace, monospace; letter-spacing: .25em; text-align: center; font-size: 1.05rem; }
+  input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px #3b82f622; }
+  button.primary {
+    width: 100%; margin-top: 1.25rem; padding: .7rem;
+    background: linear-gradient(90deg, #ef4444, #f43f5e); border: 0;
+    border-radius: 8px; color: #fff; font-weight: 600; cursor: pointer;
+    font-size: .92rem;
+  }
+  button.primary:hover { opacity: .92; }
+  button.primary:disabled { opacity: .5; cursor: not-allowed; }
+  .err {
+    background: #f43f5e15; border: 1px solid #f43f5e44;
+    color: #fda4af; padding: .55rem .75rem; border-radius: 6px;
+    margin-top: 1rem; font-size: .82rem;
+  }
+  .footer { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #1f2937; font-size: .72rem; color: #6b7280; line-height: 1.55; }
+  code { background: #0a1120; padding: .1rem .35rem; border-radius: 4px; font-size: .75rem; }
+  /* /recovery/term page (post-login terminal) — full-screen */
+  body.term { display: block; padding: 0; }
+  .topbar { background: #0a1120; border-bottom: 1px solid #1f2937; padding: .55rem 1rem; display: flex; align-items: center; gap: .75rem; }
+  .topbar .badge { font-size: .65rem; }
+  .topbar h2 { margin: 0; font-size: .85rem; flex: 1; }
+  .topbar button { background: #1f2937; border: 1px solid #374151; color: #e5e7eb; padding: .35rem .75rem; border-radius: 6px; cursor: pointer; font-size: .78rem; }
+  .topbar button:hover { background: #374151; }
+  .topbar button.danger { background: #f43f5e22; border-color: #f43f5e55; color: #fda4af; }
+  #term { height: calc(100vh - 48px); padding: .5rem; background: #0a0e1a; }
+  .action-bar { padding: .55rem 1rem; background: #111827; border-bottom: 1px solid #1f2937; display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+  .action-bar .label { font-size: .7rem; color: #9ca3af; margin-right: .25rem; }
+  .action-bar input[type=text] { width: 8rem; margin: 0; padding: .3rem .55rem; font-size: .8rem; }
+  .action-bar button { font-size: .78rem; padding: .3rem .65rem; }
+</style>
+</head>
+<body>
+<style>
+  /* Enroll UI: QR + secret for the initial sign-up. */
+  .enroll-box {
+    background: #0a1120; border: 1px solid #1f2937; border-radius: 8px;
+    padding: 1rem; margin-top: 1rem; text-align: center;
+  }
+  .enroll-box img { width: 200px; height: 200px; display: block; margin: 0 auto .75rem; border-radius: 6px; background: #fff; padding: 6px; }
+  .enroll-box .secret-row { font-size: .78rem; color: #9ca3af; margin: .25rem 0 .5rem; }
+  .enroll-box .secret-row code { font-size: .8rem; padding: .2rem .45rem; user-select: all; word-break: break-all; }
+  .enroll-box .hint { font-size: .72rem; color: #6b7280; margin-top: .5rem; line-height: 1.5; text-align: left; }
+  .copy-btn {
+    background: #1f2937; border: 1px solid #374151; color: #e5e7eb;
+    padding: .25rem .55rem; border-radius: 4px; cursor: pointer; font-size: .7rem;
+    margin-left: .35rem;
+  }
+  .copy-btn:hover { background: #374151; }
+  .enroll-banner {
+    background: #3b82f615; border: 1px solid #3b82f644; color: #93c5fd;
+    padding: .6rem .8rem; border-radius: 6px; margin-top: 1rem; font-size: .82rem; line-height: 1.5;
+  }
+</style>
+<!-- LOGIN MODE -->
+<div class="card" id="login-card">
+  <h1>Server Control Panel <span class="badge">RECOVERY</span></h1>
+  <p class="sub">
+    Recovery mode. Use it when the main panel stops responding. Auth requires <b>password</b> + <b>recovery TOTP</b> (a secret separate from the normal login TOTP).
+  </p>
+  <form id="login-form" onsubmit="return doSubmit(event)">
+    <label for="username">User</label>
+    <input id="username" name="username" autocomplete="username" autofocus required>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+    <!-- Banner shown when the backend asked for an inline enroll. -->
+    <div class="enroll-banner" id="enroll-banner" style="display:none">
+      <b>First time in Recovery.</b> Add the secret below to your authenticator app
+      (Aegis, Google Authenticator, 1Password) and then type the current code to confirm.
+      This TOTP is SEPARATE from the main panel's 2FA.
+    </div>
+
+    <!-- QR + secret. Visible only during enroll. -->
+    <div class="enroll-box" id="enroll-box" style="display:none">
+      <img id="enroll-qr" alt="QR code for the recovery TOTP">
+      <div class="secret-row">
+        Manual secret: <code id="enroll-secret"></code>
+        <button type="button" class="copy-btn" onclick="copySecret()">copy</button>
+      </div>
+      <div class="hint">
+        Label it in the app as <b>vps-manager recovery</b> to tell it apart from the normal TOTP.<br>
+        Algorithm: SHA1 · 6 digits · 30s.
+      </div>
+    </div>
+
+    <label for="totp" id="totp-label">Recovery TOTP code</label>
+    <input id="totp" name="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>
+    <button type="submit" class="primary" id="login-btn">Sign in</button>
+    <div class="err" id="err" style="display:none"></div>
+  </form>
+  <div class="footer" id="footer-default">
+    To roll back the last deploy without the UI: <code>vpsmctl rollback</code>.
+  </div>
+</div>
+
+<script>
+// Inline enrollment state. When the backend answers {enroll_required},
+// we hold the ephemeral secret here and switch the UI to ask for confirmation.
+// The next submit sends enrolling_secret + totp to confirm.
+let enrollingSecret = '';
+
+function copySecret() {
+  const el = document.getElementById('enroll-secret');
+  navigator.clipboard?.writeText(el.textContent || '').catch(()=>{});
+}
+
+function showEnroll(data) {
+  enrollingSecret = data.secret || '';
+  document.getElementById('enroll-qr').src = data.qr;
+  document.getElementById('enroll-secret').textContent = data.secret;
+  document.getElementById('enroll-box').style.display = 'block';
+  document.getElementById('enroll-banner').style.display = 'block';
+  document.getElementById('totp-label').textContent = 'Current code in the app';
+  document.getElementById('login-btn').textContent = 'Confirm and sign in';
+  const totp = document.getElementById('totp');
+  totp.value = '';
+  totp.focus();
+}
+
+async function doSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('err');
+  btn.disabled = true; err.style.display = 'none';
+  try {
+    const r = await fetch('/recovery/auth', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        username: document.getElementById('username').value,
+        password: document.getElementById('password').value,
+        totp: document.getElementById('totp').value,
+        enrolling_secret: enrollingSecret,
+      }),
+    });
+    const d = await r.json().catch(()=>({error:'failed'}));
+    if (r.ok) {
+      // enroll_required comes back with 200 but has no cookie yet — show the UI.
+      if (d.enroll_required) { showEnroll(d); return; }
+      // Normal login OK.
+      location.href = '/recovery/term';
+      return;
+    }
+    err.textContent = d.error || ('HTTP ' + r.status);
+    err.style.display = 'block';
+  } catch(ex) {
+    err.textContent = ex.message;
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
