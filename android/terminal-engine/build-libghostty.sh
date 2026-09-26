@@ -9,7 +9,11 @@
 # Idempotent: re-running reproduces identical checksums because the source is
 # a pinned commit and the flags are fixed here.
 #
-# Usage: ./build-libghostty.sh   (from anywhere)
+# Needs git, curl, python3, JDK 17 and the Android SDK (ANDROID_HOME or sdk.dir
+# in android/local.properties). Zig and the NDK are fetched when missing, see
+# toolchain-env.sh. Takes a few minutes and about 2 GB of disk.
+#
+# Usage: android/terminal-engine/build-libghostty.sh   (from anywhere)
 
 set -euo pipefail
 
@@ -17,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # shellcheck source=./toolchain-env.sh
-. ./toolchain-env.sh
+. ./toolchain-env.sh || exit 1
 
 PROPS_FILE="$SCRIPT_DIR/toolchain.properties"
 prop() { grep -E "^$1=" "$PROPS_FILE" | tail -1 | cut -d= -f2-; }
@@ -85,7 +89,7 @@ for abi in "${ABIS[@]}"; do
   out_dir="$BUILD_DIR/out-$abi"
   rm -rf "$out_dir"
 
-  echo "build-libghostty: building $abi (zig target $target, bare triple, no API-level suffix; see docs/android-toolchain.md)" >&2
+  echo "build-libghostty: building $abi (zig target $target, bare triple with no API-level suffix)" >&2
   (
     cd "$SRC_DIR"
     zig build -Demit-lib-vt -Dtarget="$target" -Doptimize=ReleaseFast --prefix "$out_dir"

@@ -12,7 +12,8 @@ set(VENDOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../vendor)
 set(VENDOR_LIB ${VENDOR_DIR}/${ANDROID_ABI}/libghostty-vt.a)
 
 if(NOT EXISTS ${VENDOR_LIB})
-    message(FATAL_ERROR "libghostty-vt.a missing for ${ANDROID_ABI}: ${VENDOR_LIB}")
+    message(FATAL_ERROR "libghostty-vt.a missing for ${ANDROID_ABI}: ${VENDOR_LIB}\n"
+        "It is built from pinned sources, not committed. Run android/terminal-engine/build-libghostty.sh once.")
 endif()
 
 add_library(ghostty_vt STATIC IMPORTED)

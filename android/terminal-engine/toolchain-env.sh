@@ -1,96 +1,84 @@
 #!/usr/bin/env bash
-# Exports and verifies the Android/Zig toolchain for building libghostty-vt.
+# Exports and checks the toolchain build-libghostty.sh needs: Zig, the Android
+# NDK and JDK 17. Sourced, not executed.
 #
-# Non-interactive shells (including GitHub Actions steps) do not load
-# /etc/profile.d/android-toolchain.sh, so every build invocation must source
-# this file explicitly rather than assume the environment is already set up.
-# See docs/android-toolchain.md.
+# Zig is taken from $ZIG when set, else from PATH if it is the pinned version,
+# else downloaded once into .build/zig and checked against the sha256 in
+# toolchain.properties. The NDK is looked up under $ANDROID_HOME and installed
+# with sdkmanager when missing.
 #
-# Usage: `. ./toolchain-env.sh` from android/terminal-engine/, or
-#        `. android/terminal-engine/toolchain-env.sh` from anywhere.
-#
-# On any missing piece, this exits (or returns, when sourced) with a message
-# prefixed `TOOLCHAIN-ENV:` so callers can tell an environment defect apart
-# from an actual Zig/Ghostty build failure — the two are budgeted differently
-# by the Plan B fallback trigger in 04-PLAN.md.
+# Every failure is prefixed `TOOLCHAIN-ENV:` so a missing tool is easy to tell
+# apart from a Zig or Ghostty build failure.
 
 _toolchain_env_fail() {
   echo "TOOLCHAIN-ENV: $1" >&2
-  # Use return when sourced, exit when executed directly.
-  if [ -n "${BASH_SOURCE:-}" ] && [ "${BASH_SOURCE[0]}" != "${0}" ]; then
-    return 1
+  return 1
+}
+
+_toolchain_env() {
+  local dir props zig_version ndk_version arch sha zig_dir tarball
+  dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  props="$dir/toolchain.properties"
+  [ -f "$props" ] || { _toolchain_env_fail "toolchain.properties not found at $props"; return 1; }
+  _prop() { grep -E "^$1=" "$props" | tail -1 | cut -d= -f2-; }
+
+  zig_version="$(_prop ZIG_VERSION)"
+  ndk_version="$(_prop NDK_VERSION)"
+  [ -n "$zig_version" ] && [ -n "$ndk_version" ] ||
+    { _toolchain_env_fail "ZIG_VERSION or NDK_VERSION missing from toolchain.properties"; return 1; }
+
+  if [ -z "${ANDROID_HOME:-}" ] && [ -f "$dir/../local.properties" ]; then
+    ANDROID_HOME="$(grep -E '^sdk.dir=' "$dir/../local.properties" | cut -d= -f2-)"
   fi
-  exit 1
+  [ -n "${ANDROID_HOME:-}" ] && [ -d "$ANDROID_HOME" ] ||
+    { _toolchain_env_fail "set ANDROID_HOME (or sdk.dir in android/local.properties) to your Android SDK"; return 1; }
+  export ANDROID_HOME ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+  export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$ndk_version"
+  export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
+
+  if [ -n "${JAVA_HOME:-}" ]; then
+    export PATH="$JAVA_HOME/bin:$PATH"
+  fi
+
+  if [ ! -x "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" ]; then
+    local sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+    [ -x "$sdkmanager" ] ||
+      { _toolchain_env_fail "NDK $ndk_version is missing and sdkmanager was not found at $sdkmanager"; return 1; }
+    echo "toolchain-env: installing NDK $ndk_version with sdkmanager" >&2
+    (yes || true) | "$sdkmanager" --install "ndk;$ndk_version" >/dev/null ||
+      { _toolchain_env_fail "sdkmanager could not install ndk;$ndk_version"; return 1; }
+  fi
+
+  if [ -n "${ZIG:-}" ]; then
+    zig_dir="$(dirname "$ZIG")"
+  elif command -v zig >/dev/null 2>&1 && [ "$(zig version 2>/dev/null)" = "$zig_version" ]; then
+    zig_dir="$(dirname "$(command -v zig)")"
+  else
+    case "$(uname -m)" in
+      x86_64) arch=x86_64; sha="$(_prop ZIG_SHA256_X86_64_LINUX)" ;;
+      aarch64) arch=aarch64; sha="$(_prop ZIG_SHA256_AARCH64_LINUX)" ;;
+      *) _toolchain_env_fail "no pinned Zig download for $(uname -m); install Zig $zig_version and set ZIG"; return 1 ;;
+    esac
+    zig_dir="$dir/.build/zig-$zig_version"
+    if [ ! -x "$zig_dir/zig" ]; then
+      tarball="$dir/.build/zig-$zig_version.tar.xz"
+      mkdir -p "$zig_dir"
+      echo "toolchain-env: downloading Zig $zig_version" >&2
+      curl -fsSL -o "$tarball" "https://ziglang.org/download/$zig_version/zig-$arch-linux-$zig_version.tar.xz" ||
+        { _toolchain_env_fail "Zig download failed"; return 1; }
+      echo "$sha  $tarball" | sha256sum -c --quiet - ||
+        { rm -f "$tarball"; _toolchain_env_fail "Zig tarball does not match the pinned sha256"; return 1; }
+      tar -xJf "$tarball" -C "$zig_dir" --strip-components=1 && rm -f "$tarball"
+    fi
+  fi
+  export PATH="$zig_dir:$PATH"
+
+  [ "$(zig version 2>/dev/null)" = "$zig_version" ] ||
+    { _toolchain_env_fail "zig in $zig_dir is not version $zig_version"; return 1; }
+  javac -version 2>&1 | grep -q ' 17' ||
+    { _toolchain_env_fail "JDK 17 is required (javac -version: $(javac -version 2>&1)); set JAVA_HOME"; return 1; }
+
+  echo "toolchain-env: zig $zig_version, NDK $ndk_version, JDK 17" >&2
 }
 
-_TOOLCHAIN_ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-_TOOLCHAIN_PROPS="$_TOOLCHAIN_ENV_DIR/toolchain.properties"
-
-if [ ! -f "$_TOOLCHAIN_PROPS" ]; then
-  _toolchain_env_fail "toolchain.properties not found at $_TOOLCHAIN_PROPS"
-  return 1 2>/dev/null || exit 1
-fi
-
-# Parse KEY=VALUE lines, ignoring comments and blanks, without sourcing the
-# file directly (it deliberately has no shell-executable content).
-_toolchain_prop() {
-  grep -E "^$1=" "$_TOOLCHAIN_PROPS" | tail -1 | cut -d= -f2-
-}
-
-ZIG_VERSION="$(_toolchain_prop ZIG_VERSION)"
-NDK_VERSION="$(_toolchain_prop NDK_VERSION)"
-
-if [ -z "$ZIG_VERSION" ]; then
-  _toolchain_env_fail "ZIG_VERSION missing from toolchain.properties"
-  return 1 2>/dev/null || exit 1
-fi
-if [ -z "$NDK_VERSION" ]; then
-  _toolchain_env_fail "NDK_VERSION missing from toolchain.properties"
-  return 1 2>/dev/null || exit 1
-fi
-
-export ANDROID_HOME="${ANDROID_HOME:-/opt/android-sdk}"
-export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
-export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/$NDK_VERSION}"
-export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}"
-
-_ZIG_DIR="/opt/zig/zig-x86_64-linux-$ZIG_VERSION"
-
-export PATH="$_ZIG_DIR:$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
-
-# --- Verification: fail loudly and specifically rather than let the build
-# --- fail later with a confusing "command not found" or ABI mismatch.
-
-if [ ! -x "$_ZIG_DIR/zig" ]; then
-  _toolchain_env_fail "zig $ZIG_VERSION not found at $_ZIG_DIR (checked toolchain.properties ZIG_VERSION=$ZIG_VERSION)"
-  return 1 2>/dev/null || exit 1
-fi
-
-_ACTUAL_ZIG_VERSION="$("$_ZIG_DIR/zig" version 2>/dev/null || true)"
-if [ "$_ACTUAL_ZIG_VERSION" != "$ZIG_VERSION" ]; then
-  _toolchain_env_fail "zig at $_ZIG_DIR reports version '$_ACTUAL_ZIG_VERSION', expected '$ZIG_VERSION'"
-  return 1 2>/dev/null || exit 1
-fi
-
-_NDK_CLANG="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
-if [ ! -x "$_NDK_CLANG" ]; then
-  _toolchain_env_fail "NDK clang not executable at $_NDK_CLANG (ANDROID_NDK_HOME=$ANDROID_NDK_HOME, NDK_VERSION=$NDK_VERSION)"
-  return 1 2>/dev/null || exit 1
-fi
-
-if ! command -v javac >/dev/null 2>&1; then
-  _toolchain_env_fail "javac not found on PATH after exporting JAVA_HOME=$JAVA_HOME"
-  return 1 2>/dev/null || exit 1
-fi
-
-_JAVAC_VERSION="$(javac -version 2>&1)"
-case "$_JAVAC_VERSION" in
-  *" 17."*|*" 17"|*"javac 17"*)
-    ;;
-  *)
-    _toolchain_env_fail "javac -version reports '$_JAVAC_VERSION', expected 17 (JAVA_HOME=$JAVA_HOME)"
-    return 1 2>/dev/null || exit 1
-    ;;
-esac
-
-echo "toolchain-env: zig $ZIG_VERSION, NDK $NDK_VERSION, javac 17 — OK" >&2
+_toolchain_env
