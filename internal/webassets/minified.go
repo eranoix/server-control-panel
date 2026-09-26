@@ -118,12 +118,12 @@ func readStamp(b []byte) (string, bool) {
 	return "", false
 }
 
-// MinificadoDe returns the path of the minified file to serve in place of
+// MinifiedOf returns the path of the minified file to serve in place of
 // `fonte` (both relative to the SubFS, e.g. "vendor/vpsm/app/00-shell.js").
 //
 // ok=false when there is no minified file, when it carries no stamp, or when the
 // stamp does not match the current source — in those cases the caller serves the original.
-func MinificadoDe(source string) (string, bool) {
+func MinifiedOf(source string) (string, bool) {
 	min, ok := validMinified()[source]
 	return min, ok
 }

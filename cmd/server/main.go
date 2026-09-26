@@ -168,7 +168,7 @@ func main() {
 	// deploy happens dozens of times a day here; without this warm-up, the
 	// first person to load after each one would get the gzip version, which is
 	// 22% bigger — and that is exactly the person who is in a hurry.
-	go webassets.WarmPrecompression()
+	go webassets.AquecePreCompressao()
 
 	go func() {
 		switch {

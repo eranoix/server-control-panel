@@ -47,7 +47,7 @@ func TestServedMinifiedMatchesCurrentSource(t *testing.T) {
 		expected := path.Join(dirDoApp, strings.TrimSuffix(nome, ".js")+".min.js")
 		_, exists := fs.Stat(sub, expected)
 
-		min, ok := MinificadoDe(source)
+		min, ok := MinifiedOf(source)
 		if !ok {
 			if exists == nil {
 				// Runtime is safe (it falls back to the original), but this is a BUILD
@@ -64,7 +64,7 @@ func TestServedMinifiedMatchesCurrentSource(t *testing.T) {
 
 		bMin, err := fs.ReadFile(sub, min)
 		if err != nil {
-			t.Errorf("%s: MinificadoDe approved %s, but it is not in the embed: %v", source, min, err)
+			t.Errorf("%s: MinifiedOf approved %s, but it is not in the embed: %v", source, min, err)
 			continue
 		}
 		bSource, err := fs.ReadFile(sub, source)
@@ -141,7 +141,7 @@ func TestAdguardStateReachesServedBundle(t *testing.T) {
 
 	source := path.Join(dirDoApp, "00-shell.js")
 	served := source
-	if min, ok := MinificadoDe(source); ok {
+	if min, ok := MinifiedOf(source); ok {
 		served = min
 	}
 	b, err := fs.ReadFile(sub, served)
