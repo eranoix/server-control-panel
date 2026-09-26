@@ -13,15 +13,15 @@ import (
 // + the build ETag, not max-age) and not re-download ~260 KB on every reload
 // when nothing changed (hence 304, not no-store). A cheap reload is what makes
 // the tab usable on a bad link.
-func servidorDoIndex() http.Handler {
+func indexServer() http.Handler {
 	return IndexInjector(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "index não deveria cair no next", http.StatusNotFound)
 	}))
 }
 
-func TestIndexRevalidaComETagEmVezDeProibirCache(t *testing.T) {
+func TestIndexRevalidatesWithETagInsteadOfNoCache(t *testing.T) {
 	rec := httptest.NewRecorder()
-	servidorDoIndex().ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	indexServer().ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET / = %d, wanted 200", rec.Code)
@@ -37,34 +37,34 @@ func TestIndexRevalidaComETagEmVezDeProibirCache(t *testing.T) {
 	}
 }
 
-func TestIndexDevolve304QuandoOBuildNaoMudou(t *testing.T) {
+func TestIndexReturns304WhenBuildUnchanged(t *testing.T) {
 	primeira := httptest.NewRecorder()
-	servidorDoIndex().ServeHTTP(primeira, httptest.NewRequest("GET", "/", nil))
+	indexServer().ServeHTTP(primeira, httptest.NewRequest("GET", "/", nil))
 	etag := primeira.Header().Get("ETag")
 	if etag == "" {
 		t.Fatal("the first response came with no ETag")
 	}
 
-	for _, enviado := range []string{etag, "W/" + etag, `"outro", ` + etag, "*"} {
+	for _, sent := range []string{etag, "W/" + etag, `"outro", ` + etag, "*"} {
 		req := httptest.NewRequest("GET", "/", nil)
-		req.Header.Set("If-None-Match", enviado)
+		req.Header.Set("If-None-Match", sent)
 		rec := httptest.NewRecorder()
-		servidorDoIndex().ServeHTTP(rec, req)
+		indexServer().ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusNotModified {
-			t.Errorf("If-None-Match %q → %d, wanted 304", enviado, rec.Code)
+			t.Errorf("If-None-Match %q → %d, wanted 304", sent, rec.Code)
 		}
 		if rec.Body.Len() != 0 {
-			t.Errorf("If-None-Match %q returned %d bytes of body — a 304 has no body", enviado, rec.Body.Len())
+			t.Errorf("If-None-Match %q returned %d bytes of body — a 304 has no body", sent, rec.Body.Len())
 		}
 	}
 }
 
-func TestIndexRebaixaOCorpoQuandoOETagEDeOutroBuild(t *testing.T) {
+func TestIndexResendsBodyWhenETagIsFromAnotherBuild(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("If-None-Match", `"build-de-ontem"`)
 	rec := httptest.NewRecorder()
-	servidorDoIndex().ServeHTTP(rec, req)
+	indexServer().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK || rec.Body.Len() == 0 {
 		t.Fatalf("old ETag → %d with %d bytes; wanted 200 with the new HTML", rec.Code, rec.Body.Len())
@@ -76,35 +76,35 @@ func TestIndexRebaixaOCorpoQuandoOETagEDeOutroBuild(t *testing.T) {
 // counts if the compressed body really is smaller, if the client that does NOT
 // ask for br still gets the original, and if the ETag distinguishes the two
 // variants (otherwise a cache returns a 304 for a body the client cannot read).
-// pedeComBrotli insists until the background compression is ready. It fails the
+// requestWithBrotli insists until the background compression is ready. It fails the
 // test if it never arrives — a brotli that never warms up is an optimization
 // that does not exist, and passing like that would hide it.
-func pedeComBrotli(t *testing.T) *httptest.ResponseRecorder {
+func requestWithBrotli(t *testing.T) *httptest.ResponseRecorder {
 	t.Helper()
-	prazo := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(20 * time.Second)
 	for {
 		req := httptest.NewRequest("GET", "/", nil)
 		req.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
 		rec := httptest.NewRecorder()
-		servidorDoIndex().ServeHTTP(rec, req)
+		indexServer().ServeHTTP(rec, req)
 		if rec.Header().Get("Content-Encoding") == "br" {
 			return rec
 		}
-		if time.Now().After(prazo) {
+		if time.Now().After(deadline) {
 			t.Fatal("brotli was never ready: the background compression did not warm up")
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 }
 
-func TestIndexServeBrotliQuandoOClienteAceita(t *testing.T) {
+func TestIndexServesBrotliWhenClientAccepts(t *testing.T) {
 	// The compression runs off the request path (otherwise the first load after
 	// each deploy would pay ~2.3 s), so the test waits for the warm-up instead of
 	// assuming the first response already comes compressed.
-	comBr := pedeComBrotli(t)
+	comBr := requestWithBrotli(t)
 
 	semBr := httptest.NewRecorder()
-	servidorDoIndex().ServeHTTP(semBr, httptest.NewRequest("GET", "/", nil))
+	indexServer().ServeHTTP(semBr, httptest.NewRequest("GET", "/", nil))
 
 	if enc := comBr.Header().Get("Content-Encoding"); enc != "br" {
 		t.Fatalf("Content-Encoding = %q, wanted \"br\"", enc)
@@ -123,23 +123,23 @@ func TestIndexServeBrotliQuandoOClienteAceita(t *testing.T) {
 	}
 }
 
-func TestIndexBrotliRevalidaContraOProprioETag(t *testing.T) {
-	etag := pedeComBrotli(t).Header().Get("ETag")
+func TestIndexBrotliRevalidatesAgainstItsOwnETag(t *testing.T) {
+	etag := requestWithBrotli(t).Header().Get("ETag")
 
 	segunda := httptest.NewRequest("GET", "/", nil)
 	segunda.Header.Set("Accept-Encoding", "br")
 	segunda.Header.Set("If-None-Match", etag)
 	rec2 := httptest.NewRecorder()
-	servidorDoIndex().ServeHTTP(rec2, segunda)
+	indexServer().ServeHTTP(rec2, segunda)
 	if rec2.Code != http.StatusNotModified {
 		t.Fatalf("br revalidation → %d, wanted 304", rec2.Code)
 	}
 
 	// And the br variant's ETag must NOT be worth a 304 to a client asking for gzip.
-	cruzada := httptest.NewRequest("GET", "/", nil)
-	cruzada.Header.Set("If-None-Match", etag)
+	crossed := httptest.NewRequest("GET", "/", nil)
+	crossed.Header.Set("If-None-Match", etag)
 	rec3 := httptest.NewRecorder()
-	servidorDoIndex().ServeHTTP(rec3, cruzada)
+	indexServer().ServeHTTP(rec3, crossed)
 	if rec3.Code == http.StatusNotModified {
 		t.Error("the brotli ETag returned 304 for a client with no br — an unreadable body")
 	}

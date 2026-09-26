@@ -2574,7 +2574,7 @@ func NewRouter(cfg *config.Config) (*Router, error) {
 			// the brotli variant would revalidate against the gzip one and get a
 			// 304 for a body it cannot read.
 			etag := `"` + buildStamp + `"`
-			if webassets.AceitaBrotli(req) {
+			if webassets.AcceptsBrotli(req) {
 				etag = `"` + buildStamp + `-br"`
 			}
 			w.Header().Set("ETag", etag)

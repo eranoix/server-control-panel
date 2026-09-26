@@ -252,7 +252,7 @@
 
         ws.onopen = () => {
           wsReady = true;
-          console.log('[vpsm:stt] whisper-local WS aberto, enviando start...');
+          console.log('[vpsm:stt] whisper-local WS open, enviando start...');
           ws.send(JSON.stringify({
             type: 'start',
             lang: (opts.lang || VPSMSTT.defaultLang() || 'pt').slice(0, 5),

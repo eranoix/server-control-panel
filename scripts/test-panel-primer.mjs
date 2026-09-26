@@ -1,4 +1,4 @@
-// test-primer-do-painel.mjs
+// test-panel-primer.mjs
 //
 // The panel had no way to recover the scrollback when the session was opened on
 // another computer. It depended on the block the SERVER re-emits on attach, and
@@ -38,7 +38,7 @@ console.log('=== test-primer-do-painel ===');
   ? ok('server: the /api/terminal/historico route is registered')
   : no('server: the rendered-history route is gone');
 
-const m = shell.match(/const primeEAbre = \(\) => \{([\s\S]*?)\n {6}\};/);
+const m = shell.match(/const primeAndOpen = \(\) => \{([\s\S]*?)\n {6}\};/);
 if (!m) {
   no('panel: could not find the primer — history depends on the server alone again');
 } else {
@@ -54,29 +54,29 @@ if (!m) {
     : no('panel: wrong source order — the raw log must not come before the history');
 
   // The order: open() has to happen AFTER the write, never in parallel.
-  const iEscreve = corpo.indexOf('state.term.write');
-  const iSeguir = corpo.indexOf('seguir()');
-  const abreSoNoFim = /\.finally\(\(\) => \{ clearTimeout\(teto\); seguir\(\); \}\)/.test(corpo);
-  (iEscreve >= 0 && abreSoNoFim)
+  const iWrite = corpo.indexOf('state.term.write');
+  const iFollow = corpo.indexOf('follow()');
+  const opensOnlyAtEnd = /\.finally\(\(\) => \{ clearTimeout\(cap\); follow\(\); \}\)/.test(corpo);
+  (iWrite >= 0 && opensOnlyAtEnd)
     ? ok('panel: writes the history and only then connects (the order is what avoids overlap)')
     : no('panel: connects in parallel with the fetch — history and live stream overlap');
-  iSeguir >= 0 || no('panel: no opening path');
+  iFollow >= 0 || no('panel: no opening path');
 
-  /setTimeout\(\(\) => \{[\s\S]{0,120}?seguir\(\);/.test(corpo)
+  /setTimeout\(\(\) => \{[\s\S]{0,120}?follow\(\);/.test(corpo)
     ? ok('panel: the primer has a time ceiling (a slow server does not become a terminal that never opens)')
     : no('panel: no ceiling — a slow server holds the terminal shut');
 
-  /_primerFeito/.test(corpo)
+  /_primerDone/.test(corpo)
     ? ok('panel: the primer does not run again on reconnect (it would duplicate what xterm already has)')
     : no('panel: the primer runs again on reconnect');
 
-  /PEDACO/.test(corpo)
+  /CHUNK/.test(corpo)
     ? ok('panel: writes in chunks (a few MB at once would cost the frame)')
     : no('panel: writes the history in one go');
 }
 
 // conditional `replay=0`: only once the primer has written.
-/state\._primouOk \? \(opts\.wsPath\.includes\('\?'\)\?'&':'\?'\)\+'replay=0' : ''/.test(shell)
+/state\._primedOk \? \(opts\.wsPath\.includes\('\?'\)\?'&':'\?'\)\+'replay=0' : ''/.test(shell)
   ? ok("panel: sends replay=0 only once the primer has written (otherwise the server replay is the safety net)")
   : no('panel: unconditional replay=0 — if the fetch fails there is no history at all');
 

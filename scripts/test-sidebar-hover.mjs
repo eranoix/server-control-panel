@@ -60,13 +60,13 @@ let css = reset + '\n' + [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].
 // point it exists to watch. We neutralise ONLY the environment predicate; the
 // rail rules stay byte for byte the ones in the product.
 const GATE = /\(hover: hover\) and |and \(hover: hover\)/g;
-const trocas = (css.match(GATE) || []).length;
-const cssBruto = css;                 // with the gate intact = an environment without hover
+const swaps = (css.match(GATE) || []).length;
+const rawCss = css;                 // with the gate intact = an environment without hover
 css = css.replace(GATE, '');
-if (trocas === 2) {
-  ok(`@media (hover) gate neutralised in the harness (${trocas} occurrences: left rail + right rail)`);
+if (swaps === 2) {
+  ok(`@media (hover) gate neutralised in the harness (${swaps} occurrences: left rail + right rail)`);
 } else {
-  no(`expected 2 '(hover: hover)' gates in index.html (left rail and right rail), found ${trocas} — the CSS was restructured and this test may be measuring an inert page`);
+  no(`expected 2 '(hover: hover)' gates in index.html (left rail and right rail), found ${swaps} — the CSS was restructured and this test may be measuring an inert page`);
 }
 
 // Minimal DOM with the SAME structure as the product: focusable items inside the rail.
@@ -76,30 +76,30 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><style>
 </style></head><body>
   <aside class="sidebar glass is-collapsed" id="sb">
     <div class="sidebar-head"><div><svg width="16" height="16"></svg></div></div>
-    <button class="sidebar-search" id="busca"><span class="sidebar-search__label">Search</span></button>
+    <button class="sidebar-search" id="search"><span class="sidebar-search__label">Search</span></button>
     <div class="nav-item" id="nav1" role="button" tabindex="0"><span class="nav-icon">■</span><span>Dashboard</span></div>
     <div class="nav-item" id="nav2" role="button" tabindex="0"><span class="nav-icon">■</span><span>Terminal</span></div>
   </aside>
   <main style="height:100%"><div id="fora" style="width:400px;height:400px"></div></main>
 </body></html>`;
 
-const perfil = mkdtempSync(join(tmpdir(), 'vpsm-chrome-'));
-const arquivo = join(perfil, 'sidebar.html');
+const profile = mkdtempSync(join(tmpdir(), 'vpsm-chrome-'));
+const arquivo = join(profile, 'sidebar.html');
 writeFileSync(arquivo, page);
 
 const porta = 9222 + (process.pid % 900);
 const proc = spawn(chrome, [
-  '--headless=new', `--remote-debugging-port=${porta}`, `--user-data-dir=${perfil}`,
+  '--headless=new', `--remote-debugging-port=${porta}`, `--user-data-dir=${profile}`,
   '--no-sandbox', '--disable-gpu', '--window-size=1400,900', '--no-first-run',
   '--disable-extensions', '--disable-dev-shm-usage', 'about:blank',
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
-const limpar = () => { try { proc.kill('SIGKILL'); } catch {} try { rmSync(perfil, { recursive: true, force: true }); } catch {} };
-process.on('exit', limpar);
+const clear = () => { try { proc.kill('SIGKILL'); } catch {} try { rmSync(profile, { recursive: true, force: true }); } catch {} };
+process.on('exit', clear);
 
-const dorme = (ms) => new Promise(r => setTimeout(r, ms));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-async function alvoWs() {
+async function targetWs() {
   for (let i = 0; i < 60; i++) {
     try {
       const r = await fetch(`http://127.0.0.1:${porta}/json/list`);
@@ -107,7 +107,7 @@ async function alvoWs() {
       const p = alvos.find(t => t.type === 'page');
       if (p?.webSocketDebuggerUrl) return p.webSocketDebuggerUrl;
     } catch {}
-    await dorme(150);
+    await sleep(150);
   }
   throw new Error('Chrome never brought the debugging port up');
 }
@@ -125,69 +125,69 @@ class CDP {
   }
 }
 
-const largura = (cdp) => cdp.eval("getComputedStyle(document.getElementById('sb')).width");
-const centro  = (cdp, id) => cdp.eval(`(()=>{const r=document.getElementById(${JSON.stringify(id)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+const width = (cdp) => cdp.eval("getComputedStyle(document.getElementById('sb')).width");
+const center  = (cdp, id) => cdp.eval(`(()=>{const r=document.getElementById(${JSON.stringify(id)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
 
 try {
-  const url = await alvoWs();
+  const url = await targetWs();
   const ws = new WebSocket(url);
   await new Promise((r, rej) => { ws.onopen = r; ws.onerror = () => rej(new Error('the Chrome WS failed')); });
   const cdp = new CDP(ws);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
   await cdp.send('Page.navigate', { url: 'file://' + arquivo });
-  await dorme(700);
+  await sleep(700);
 
-  const RECOLHIDA = 50.6, EXPANDIDA = 240;
+  const COLLAPSED = 50.6, EXPANDED = 240;
   const px = (v) => parseFloat(String(v));
 
   // Initial state: collapsed.
-  let w = px(await largura(cdp));
-  Math.abs(w - RECOLHIDA) < 2
+  let w = px(await width(cdp));
+  Math.abs(w - COLLAPSED) < 2
     ? ok(`starts collapsed (${w}px)`)
     : no(`did not start collapsed: ${w}px`);
 
   // Hover expands — the very function the rail exists to have.
-  const alvoNav = await centro(cdp, 'nav1');
-  await cdp.mouse('mouseMoved', alvoNav.x, alvoNav.y);
-  await dorme(400);
-  w = px(await largura(cdp));
-  Math.abs(w - EXPANDIDA) < 4
+  const targetNav = await center(cdp, 'nav1');
+  await cdp.mouse('mouseMoved', targetNav.x, targetNav.y);
+  await sleep(400);
+  w = px(await width(cdp));
+  Math.abs(w - EXPANDED) < 4
     ? ok(`hover expands (${w}px)`)
     : no(`hover did not expand: ${w}px`);
 
   // Mouse leaves with NO click: it has to collapse (the path that already worked).
   await cdp.mouse('mouseMoved', 900, 600);
-  await dorme(400);
-  w = px(await largura(cdp));
-  Math.abs(w - RECOLHIDA) < 2
+  await sleep(400);
+  w = px(await width(cdp));
+  Math.abs(w - COLLAPSED) < 2
     ? ok(`mouse leaves with no click → collapses (${w}px)`)
     : no(`stayed open after leaving without a click: ${w}px`);
 
   // ── THE BUG: click an item and take the mouse away ────────────────────
-  await cdp.mouse('mouseMoved', alvoNav.x, alvoNav.y);
-  await dorme(150);
-  await cdp.mouse('mousePressed', alvoNav.x, alvoNav.y, 'left', 1);
-  await cdp.mouse('mouseReleased', alvoNav.x, alvoNav.y, 'left', 1);
-  await dorme(150);
-  const focado = await cdp.eval("document.activeElement && (document.activeElement.id || document.activeElement.tagName)");
+  await cdp.mouse('mouseMoved', targetNav.x, targetNav.y);
+  await sleep(150);
+  await cdp.mouse('mousePressed', targetNav.x, targetNav.y, 'left', 1);
+  await cdp.mouse('mouseReleased', targetNav.x, targetNav.y, 'left', 1);
+  await sleep(150);
+  const focused = await cdp.eval("document.activeElement && (document.activeElement.id || document.activeElement.tagName)");
   await cdp.mouse('mouseMoved', 900, 600);
-  await dorme(450);
-  w = px(await largura(cdp));
-  Math.abs(w - RECOLHIDA) < 2
+  await sleep(450);
+  w = px(await width(cdp));
+  Math.abs(w - COLLAPSED) < 2
     ? ok(`CLICKS the item and takes the mouse away → collapses (${w}px)`)
-    : no(`CRITICAL: stayed open after click+leave (${w}px) — focus on '${focado}' is holding the rail`);
+    : no(`CRITICAL: stayed open after click+leave (${w}px) — focus on '${focused}' is holding the rail`);
 
   // Same thing through the search button (it is a <button>, it focuses even more easily).
-  const alvoBusca = await centro(cdp, 'busca');
-  await cdp.mouse('mouseMoved', alvoBusca.x, alvoBusca.y);
-  await dorme(150);
-  await cdp.mouse('mousePressed', alvoBusca.x, alvoBusca.y, 'left', 1);
-  await cdp.mouse('mouseReleased', alvoBusca.x, alvoBusca.y, 'left', 1);
+  const targetSearch = await center(cdp, 'search');
+  await cdp.mouse('mouseMoved', targetSearch.x, targetSearch.y);
+  await sleep(150);
+  await cdp.mouse('mousePressed', targetSearch.x, targetSearch.y, 'left', 1);
+  await cdp.mouse('mouseReleased', targetSearch.x, targetSearch.y, 'left', 1);
   await cdp.mouse('mouseMoved', 900, 600);
-  await dorme(450);
-  w = px(await largura(cdp));
-  Math.abs(w - RECOLHIDA) < 2
+  await sleep(450);
+  w = px(await width(cdp));
+  Math.abs(w - COLLAPSED) < 2
     ? ok(`clicks the search button and takes the mouse away → collapses (${w}px)`)
     : no(`stayed open after clicking the search button (${w}px)`);
 
@@ -196,16 +196,16 @@ try {
   // only. That is why the fix cannot be "remove :focus-within".
   await cdp.eval("document.getElementById('sb').focus?.()");
   await cdp.eval("document.body.focus()");
-  await dorme(100);
+  await sleep(100);
   await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
-  await dorme(350);
-  const focoTeclado = await cdp.eval("document.activeElement && document.activeElement.id");
-  w = px(await largura(cdp));
-  if (focoTeclado && focoTeclado !== 'null') {
-    Math.abs(w - EXPANDIDA) < 4
-      ? ok(`Tab focuses '${focoTeclado}' and the rail OPENS (${w}px) — keyboard preserved`)
-      : no(`Tab focused '${focoTeclado}' but the rail stayed at ${w}px — keyboard users see icons only`);
+  await sleep(350);
+  const keyboardFocus = await cdp.eval("document.activeElement && document.activeElement.id");
+  w = px(await width(cdp));
+  if (keyboardFocus && keyboardFocus !== 'null') {
+    Math.abs(w - EXPANDED) < 4
+      ? ok(`Tab focuses '${keyboardFocus}' and the rail OPENS (${w}px) — keyboard preserved`)
+      : no(`Tab focused '${keyboardFocus}' but the rail stayed at ${w}px — keyboard users see icons only`);
   } else {
     no('Tab did not move focus into the rail — the keyboard could not be verified');
   }
@@ -217,7 +217,7 @@ try {
   // Moving the mouse would cause the same damage a deploy used to cause. So the
   // central assertion here is not "it expanded": it is "the terminal did NOT
   // change width while expanding".
-  const paginaTerm = `<!doctype html><html><head><meta charset="utf-8"><style>
+  const termPage = `<!doctype html><html><head><meta charset="utf-8"><style>
     html,body{margin:0;padding:0;height:100%}
     ${css}
   </style></head><body>
@@ -231,61 +231,61 @@ try {
       </div>
     </div>
   </body></html>`;
-  const arqTerm = join(perfil, 'termside.html');
-  writeFileSync(arqTerm, paginaTerm);
+  const arqTerm = join(profile, 'termside.html');
+  writeFileSync(arqTerm, termPage);
   await cdp.send('Page.navigate', { url: 'file://' + arqTerm });
-  await dorme(700);
+  await sleep(700);
 
-  const larguraDe = (id) => cdp.eval(`getComputedStyle(document.getElementById(${JSON.stringify(id)})).width`);
-  const RAIL = 14, RAIL_ABERTO = 48;
+  const widthOf = (id) => cdp.eval(`getComputedStyle(document.getElementById(${JSON.stringify(id)})).width`);
+  const RAIL = 14, RAIL_OPEN = 48;
 
-  let wr = px(await larguraDe('ts'));
+  let wr = px(await widthOf('ts'));
   Math.abs(wr - RAIL) < 2
     ? ok(`the right rail starts thin (${wr}px) — only the grip hinting something is there`)
     : no(`the right rail did not start thin: ${wr}px`);
 
   // Content invisible while collapsed (otherwise clipped icons leak into the rail).
-  const opacBotao = await cdp.eval("getComputedStyle(document.getElementById('tsb1')).opacity");
-  parseFloat(opacBotao) === 0
+  const buttonOpacity = await cdp.eval("getComputedStyle(document.getElementById('tsb1')).opacity");
+  parseFloat(buttonOpacity) === 0
     ? ok('buttons invisible with the rail collapsed')
-    : no(`buttons showing through the thin rail (opacity ${opacBotao})`);
+    : no(`buttons showing through the thin rail (opacity ${buttonOpacity})`);
 
-  const larguraTerminalAntes = px(await larguraDe('pane'));
+  const terminalWidthBefore = px(await widthOf('pane'));
 
-  const alvoRail = await centro(cdp, 'ts');
-  await cdp.mouse('mouseMoved', alvoRail.x, alvoRail.y);
-  await dorme(400);
-  wr = px(await larguraDe('ts'));
-  Math.abs(wr - RAIL_ABERTO) < 3
+  const targetRail = await center(cdp, 'ts');
+  await cdp.mouse('mouseMoved', targetRail.x, targetRail.y);
+  await sleep(400);
+  wr = px(await widthOf('ts'));
+  Math.abs(wr - RAIL_OPEN) < 3
     ? ok(`hover expands the right rail (${wr}px)`)
     : no(`hover did not expand the right rail: ${wr}px`);
 
-  const larguraTerminalDurante = px(await larguraDe('pane'));
-  Math.abs(larguraTerminalDurante - larguraTerminalAntes) < 0.6
-    ? ok(`the terminal does NOT reflow during the expansion (${larguraTerminalAntes}px → ${larguraTerminalDurante}px)`)
-    : no(`CRITICAL: the terminal went from ${larguraTerminalAntes}px to ${larguraTerminalDurante}px on hover — that fires an xterm refit and a SIGWINCH on the PTY, repainting the screen`);
+  const terminalWidthDuring = px(await widthOf('pane'));
+  Math.abs(terminalWidthDuring - terminalWidthBefore) < 0.6
+    ? ok(`the terminal does NOT reflow during the expansion (${terminalWidthBefore}px → ${terminalWidthDuring}px)`)
+    : no(`CRITICAL: the terminal went from ${terminalWidthBefore}px to ${terminalWidthDuring}px on hover — that fires an xterm refit and a SIGWINCH on the PTY, repainting the screen`);
 
   parseFloat(await cdp.eval("getComputedStyle(document.getElementById('tsb1')).opacity")) === 1
     ? ok('buttons visible with the rail expanded')
     : no('buttons stayed invisible after expanding');
 
   await cdp.mouse('mouseMoved', 40, 300);
-  await dorme(400);
-  wr = px(await larguraDe('ts'));
+  await sleep(400);
+  wr = px(await widthOf('ts'));
   Math.abs(wr - RAIL) < 2
     ? ok(`mouse leaves → the right rail retracts (${wr}px)`)
     : no(`the right rail stayed open after the mouse left: ${wr}px`);
 
   // The left rail lesson applied here: clicking a <button> in the rail must not
   // pin it open.
-  await cdp.mouse('mouseMoved', alvoRail.x, alvoRail.y);
-  await dorme(250);
-  const alvoBtn = await centro(cdp, 'tsb1');
-  await cdp.mouse('mousePressed', alvoBtn.x, alvoBtn.y, 'left', 1);
-  await cdp.mouse('mouseReleased', alvoBtn.x, alvoBtn.y, 'left', 1);
+  await cdp.mouse('mouseMoved', targetRail.x, targetRail.y);
+  await sleep(250);
+  const targetBtn = await center(cdp, 'tsb1');
+  await cdp.mouse('mousePressed', targetBtn.x, targetBtn.y, 'left', 1);
+  await cdp.mouse('mouseReleased', targetBtn.x, targetBtn.y, 'left', 1);
   await cdp.mouse('mouseMoved', 40, 300);
-  await dorme(450);
-  wr = px(await larguraDe('ts'));
+  await sleep(450);
+  wr = px(await widthOf('ts'));
   Math.abs(wr - RAIL) < 2
     ? ok(`clicks a rail button and takes the mouse away → retracts (${wr}px)`)
     : no(`CRITICAL: the right rail was pinned open after a click (${wr}px) — :focus-within is back`);
@@ -294,25 +294,25 @@ try {
   await cdp.eval("document.body.focus()");
   await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
-  await dorme(350);
-  const focoRail = await cdp.eval("document.activeElement && document.activeElement.id");
-  wr = px(await larguraDe('ts'));
-  if (focoRail && String(focoRail).startsWith('tsb')) {
-    Math.abs(wr - RAIL_ABERTO) < 3
-      ? ok(`Tab focuses '${focoRail}' and the right rail OPENS (${wr}px) — keyboard preserved`)
-      : no(`Tab focused '${focoRail}' but the rail stayed at ${wr}px — keyboard users cannot reach the actions`);
+  await sleep(350);
+  const railFocus = await cdp.eval("document.activeElement && document.activeElement.id");
+  wr = px(await widthOf('ts'));
+  if (railFocus && String(railFocus).startsWith('tsb')) {
+    Math.abs(wr - RAIL_OPEN) < 3
+      ? ok(`Tab focuses '${railFocus}' and the right rail OPENS (${wr}px) — keyboard preserved`)
+      : no(`Tab focused '${railFocus}' but the rail stayed at ${wr}px — keyboard users cannot reach the actions`);
   } else {
-    no(`Tab did not focus a rail button (it went to '${focoRail}')`);
+    no(`Tab did not focus a rail button (it went to '${railFocus}')`);
   }
 
   // ── Touch fallback: with no hover, the rail has to stay VISIBLE ────────
   // Expand-on-hover is unreachable on a tablet. Headless is, by nature, a device
-  // without hover — so loading the CSS with the gate INTACT (`cssBruto`) is
+  // without hover — so loading the CSS with the gate INTACT (`rawCss`) is
   // enough to exercise exactly what a tablet ≥768px would see.
   {
-    const paginaToque = `<!doctype html><html><head><meta charset="utf-8"><style>
+    const touchPage = `<!doctype html><html><head><meta charset="utf-8"><style>
       html,body{margin:0;padding:0;height:100%}
-      ${cssBruto}
+      ${rawCss}
     </style></head><body>
       <div class="term-body" id="tb" style="height:100vh">
         <div class="term-pane-card" id="pane" style="flex:1 1 auto">terminal</div>
@@ -321,10 +321,10 @@ try {
         </div>
       </div>
     </body></html>`;
-    const arqToque = join(perfil, 'toque.html');
-    writeFileSync(arqToque, paginaToque);
+    const arqToque = join(profile, 'toque.html');
+    writeFileSync(arqToque, touchPage);
     await cdp.send('Page.navigate', { url: 'file://' + arqToque });
-    await dorme(600);
+    await sleep(600);
     const wt = px(await cdp.eval("getComputedStyle(document.getElementById('ts')).width"));
     const opac = parseFloat(await cdp.eval("getComputedStyle(document.getElementById('tsb1')).opacity"));
     (Math.abs(wt - 48) < 2 && opac === 1)
@@ -338,13 +338,13 @@ try {
   // `:has()` support, the rail loses EVEN the hover and never expands. Inside
   // `:is()`/`:where()` the list is forgiving and the degradation stays contained.
   {
-    const regras = [...css.matchAll(/([^{}]+)\{[^{}]*\}/g)].map(m => m[1]);
-    const perigosas = regras.filter(sel =>
+    const rules = [...css.matchAll(/([^{}]+)\{[^{}]*\}/g)].map(m => m[1]);
+    const dangerous = rules.filter(sel =>
       sel.includes(':has(') && sel.includes(':hover') &&
       !/:(is|where)\(\s*:has\(/.test(sel));
-    perigosas.length === 0
+    dangerous.length === 0
       ? ok(':has() never appears bare next to :hover (a browser without :has() loses only the keyboard, not the hover)')
-      : no(`CRITICAL: ${perigosas.length} rule(s) mix :hover with a bare :has() — without :has() support the rail would not expand at all`);
+      : no(`CRITICAL: ${dangerous.length} rule(s) mix :hover with a bare :has() — without :has() support the rail would not expand at all`);
   }
 
   ws.close();
@@ -353,5 +353,5 @@ try {
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
-limpar();
+clear();
 process.exit(fail ? 1 : 0);

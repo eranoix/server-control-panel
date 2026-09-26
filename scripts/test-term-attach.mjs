@@ -32,7 +32,7 @@ console.log('=== test-term-attach ===');
 
 // Cuts a method out of the object-literal of the app: from "    name(" to the
 // "    }," that closes it at the same indentation.
-function metodo(nome) {
+function method(nome) {
   const re = new RegExp('\\n    (?:async )?' + nome + '\\(([\\s\\S]*?)\\n    \\},');
   const m = src.match(re);
   if (!m) { no('could not find the method ' + nome + ' in the source'); process.exit(1); }
@@ -40,20 +40,20 @@ function metodo(nome) {
 }
 
 // Assembles an object with the requested methods + stubs, to really call them.
-function app(nomes, extra = {}) {
-  const corpo = nomes.map(metodo).join('\n');
-  const fabrica = new Function('extra', 'document', 'return Object.assign({' + corpo + '\n}, extra);');
+function app(names, extra = {}) {
+  const corpo = names.map(method).join('\n');
+  const factory = new Function('extra', 'document', 'return Object.assign({' + corpo + '\n}, extra);');
   const doc = {
     createElement: () => ({ style:{}, classList:{}, dataset:{}, appendChild(){}, querySelectorAll:()=>[], set textContent(v){}, click(){} }),
     querySelectorAll: () => [],
     body: { appendChild(){} },
     getElementById: () => null,
   };
-  return fabrica(extra, doc);
+  return factory(extra, doc);
 }
 
 const dt = (types, files = []) => ({ types, files, dropEffect: '' });
-const evento = (dataTransfer, extra = {}) => {
+const event = (dataTransfer, extra = {}) => {
   let prevented = false;
   return {
     dataTransfer, clipboardData: dataTransfer,
@@ -61,45 +61,45 @@ const evento = (dataTransfer, extra = {}) => {
     preventDefault(){ prevented = true; },
     stopPropagation(){}, stopImmediatePropagation(){},
     currentTarget: { querySelector: () => null, querySelectorAll: () => [], appendChild(){}, contains: () => false, getBoundingClientRect: () => ({left:0,top:0,width:100,height:100}) },
-    _foiPrevenido: () => prevented,
+    _wasPrevented: () => prevented,
     ...extra,
   };
 };
 const arquivo = (name, type) => ({ name, type, kind: 'file', getAsFile(){ return this; } });
 
-// ── 1. _arquivosDoClipboard: the rule that protects the text paste ─────────
+// ── 1. _clipboardFiles: the rule that protects the text paste ─────────
 {
-  const a = app(['_arquivosDoClipboard']);
+  const a = app(['_clipboardFiles']);
   // Excel/Word/image-in-page: text + PNG together → it has to paste TEXT.
-  const excel = evento({ types: ['text/plain', 'text/html', 'Files'], items: [arquivo('image.png','image/png')], files: [] });
-  a._arquivosDoClipboard(excel) === null
+  const excel = event({ types: ['text/plain', 'text/html', 'Files'], items: [arquivo('image.png','image/png')], files: [] });
+  a._clipboardFiles(excel) === null
     ? ok('clipboard with text/plain + file → null (pastes the TEXT, does not upload the PNG)')
     : no('REGRESSION: pasting text from Excel would become an image upload');
 
   // A file copied in the file manager of the system: no text/plain.
   const f = arquivo('contract.pdf', 'application/pdf');
-  const so = evento({ types: ['Files'], items: [f], files: [f] });
-  const r = a._arquivosDoClipboard(so);
+  const so = event({ types: ['Files'], items: [f], files: [f] });
+  const r = a._clipboardFiles(so);
   Array.isArray(r) && r.length === 1 && r[0].name === 'contract.pdf'
     ? ok('clipboard with only a file → returns the file (PDF, not only images)')
     : no('a non-image file was not recognised in the clipboard');
 
-  a._arquivosDoClipboard(evento({ types: ['text/plain'], items: [], files: [] })) === null
+  a._clipboardFiles(event({ types: ['text/plain'], items: [], files: [] })) === null
     ? ok('clipboard with only text → null')
     : no('a pure-text clipboard was treated as a file');
 
-  a._arquivosDoClipboard({ clipboardData: null }) === null
+  a._clipboardFiles({ clipboardData: null }) === null
     ? ok('event with no clipboardData → null (does not blow up)')
     : no('event with no clipboardData did not return null');
 }
 
-// ── 2. _dragTemArquivos ────────────────────────────────────────────────────
+// ── 2. _dragHasFiles ────────────────────────────────────────────────────
 {
-  const a = app(['_dragTemArquivos']);
-  a._dragTemArquivos(evento(dt(['Files']))) === true
+  const a = app(['_dragHasFiles']);
+  a._dragHasFiles(event(dt(['Files']))) === true
     ? ok('drag with Files → recognised as a file')
     : no('a file drag was not recognised');
-  a._dragTemArquivos(evento(dt(['text/plain']))) === false
+  a._dragHasFiles(event(dt(['text/plain']))) === false
     ? ok('pane drag (text/plain) → NOT a file (rearranging keeps working)')
     : no('a pane drag was mistaken for a file — that would break split by drag');
 }
@@ -107,14 +107,14 @@ const arquivo = (name, type) => ({ name, type, kind: 'file', getAsFile(){ return
 // ── 3. _panelDragOver: the preventDefault that stops the browser navigating 
 {
   let overlay = 0;
-  const a = app(['_panelDragOver', '_dragTemArquivos'], {
+  const a = app(['_panelDragOver', '_dragHasFiles'], {
     terms: { _dragPane: null },
     _showFileDropOverlay(){ overlay++; },
     _showDropOverlay(){ no('a FILE drag fell into the pane rearrange path'); },
   });
-  const ev = evento(dt(['Files']));
+  const ev = event(dt(['Files']));
   a._panelDragOver(ev, { id: 'p1' });
-  ev._foiPrevenido()
+  ev._wasPrevented()
     ? ok('dragover with a file → preventDefault (without it the drop navigates and kills the SPA)')
     : no('CRITICAL: file dragover with no preventDefault — the browser would navigate to the file');
   overlay === 1 ? ok('dragover with a file → shows the attachment overlay') : no('the attachment overlay did not appear');
@@ -122,34 +122,34 @@ const arquivo = (name, type) => ({ name, type, kind: 'file', getAsFile(){ return
 }
 {
   // No pane being dragged and no file: keeps the original early-return.
-  const a = app(['_panelDragOver', '_dragTemArquivos'], {
+  const a = app(['_panelDragOver', '_dragHasFiles'], {
     terms: { _dragPane: null }, _showFileDropOverlay(){}, _showDropOverlay(){},
   });
-  const ev = evento(dt(['text/plain']));
+  const ev = event(dt(['text/plain']));
   a._panelDragOver(ev, { id: 'p1' });
-  !ev._foiPrevenido()
+  !ev._wasPrevented()
     ? ok('dragover with no file and no dragged pane → does not interfere')
     : no('dragover started interfering with an unrelated drag');
 }
 
 // ── 4. _panelDrop: uploads the files into the right pane ───────────────────
 {
-  let recebido = null;
+  let received = null;
   const f = arquivo('spec.pdf', 'application/pdf');
-  const a = app(['_panelDrop', '_dragTemArquivos'], {
+  const a = app(['_panelDrop', '_dragHasFiles'], {
     terms: { _dragPane: null },
     _hideFileDropOverlay(){},
-    _sendFilesToPane(state, files){ recebido = { state, files }; return Promise.resolve(); },
+    _sendFilesToPane(state, files){ received = { state, files }; return Promise.resolve(); },
     _endPaneDrag(){ no('a file drop ran the pane rearrange flow'); },
   });
-  const alvoPane = { id: 'p9', ws: {} };
-  const ev = evento(dt(['Files'], [f]));
-  a._panelDrop(ev, alvoPane);
-  ev._foiPrevenido() ? ok('file drop → preventDefault') : no('the drop did not prevent the default');
-  recebido && recebido.state === alvoPane
+  const targetPane = { id: 'p9', ws: {} };
+  const ev = event(dt(['Files'], [f]));
+  a._panelDrop(ev, targetPane);
+  ev._wasPrevented() ? ok('file drop → preventDefault') : no('the drop did not prevent the default');
+  received && received.state === targetPane
     ? ok('the drop routes to the PANE where the file was dropped')
     : no('the drop did not route to the target pane (wrong state = attachment in the wrong pane)');
-  recebido && recebido.files.length === 1 && recebido.files[0].name === 'spec.pdf'
+  received && received.files.length === 1 && received.files[0].name === 'spec.pdf'
     ? ok('the drop passes the dropped file along')
     : no('the dropped file never reached the upload');
 }
@@ -171,32 +171,32 @@ const arquivo = (name, type) => ({ name, type, kind: 'file', getAsFile(){ return
 
 // ── 6. _sendFilesToPane: uses the OUTBOX, not the ws directly ──────────────
 {
-  let enviado = null, subiu = [];
+  let sent = null, uploaded = [];
   const a = app(['_sendFilesToPane', '_quoteShellPath'], {
-    _uploadTermFile(f){ subiu.push(f.name); return Promise.resolve({ path: '/up/' + f.name }); },
-    _paneSendInput(pane, d){ enviado = { pane, d }; return true; },
+    _uploadTermFile(f){ uploaded.push(f.name); return Promise.resolve({ path: '/up/' + f.name }); },
+    _paneSendInput(pane, d){ sent = { pane, d }; return true; },
     showToast(){},
   });
   const pane = { id: 'p1' };
   await a._sendFilesToPane(pane, [arquivo('a.pdf','application/pdf'), arquivo('b.csv','text/csv')]);
-  subiu.join(',') === 'a.pdf,b.csv' ? ok('uploads every dropped file') : no('not every file was uploaded');
-  enviado && enviado.pane === pane
+  uploaded.join(',') === 'a.pdf,b.csv' ? ok('uploads every dropped file') : no('not every file was uploaded');
+  sent && sent.pane === pane
     ? ok('injects through _paneSendInput (the outbox — nothing is lost in an outage)')
     : no('CRITICAL: the attachment skipped the outbox; with the connection down the path would vanish');
-  enviado && enviado.d === '/up/a.pdf /up/b.csv '
+  sent && sent.d === '/up/a.pdf /up/b.csv '
     ? ok('injects the paths on a single line, with a trailing space')
-    : no('the injection format changed: ' + JSON.stringify(enviado && enviado.d));
+    : no('the injection format changed: ' + JSON.stringify(sent && sent.d));
 }
 {
   // A failed upload must not inject a broken path nor an empty string.
-  let enviado = 0;
+  let sent = 0;
   const a = app(['_sendFilesToPane', '_quoteShellPath'], {
     _uploadTermFile(){ return Promise.resolve(null); },
-    _paneSendInput(){ enviado++; return true; },
+    _paneSendInput(){ sent++; return true; },
     showToast(){},
   });
   await a._sendFilesToPane({ id:'p1' }, [arquivo('x.bin','application/octet-stream')]);
-  enviado === 0 ? ok('upload failed → nothing is injected into the terminal') : no('it injected garbage after a failed upload');
+  sent === 0 ? ok('upload failed → nothing is injected into the terminal') : no('it injected garbage after a failed upload');
 }
 
 // ── 7. _uploadTermFile: the contract with the server ───────────────────────

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// test-reflow-coluna.mjs — one column more or less must not destroy the
+// test-reflow-column.mjs — one column more or less must not destroy the
 // history of the terminal.
 //
 // The report, from a phone: "I cannot see the first options; it is cutting off,
@@ -24,9 +24,9 @@ import http from 'node:http';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
-const RAIZ = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const WEB = path.join(RAIZ, 'internal', 'webassets', 'web');
-const require_ = createRequire(path.join(RAIZ, '.tools/'));
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const WEB = path.join(ROOT, 'internal', 'webassets', 'web');
+const require_ = createRequire(path.join(ROOT, '.tools/'));
 let chromium;
 try { ({ chromium } = require_('playwright-core')); }
 catch {
@@ -49,14 +49,14 @@ const index = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 // while the product regresses: delete the guard and there is nothing to extract.
 const mSafeFit = shell.match(/^ {4}_safeFit\(fit\)\{\n([\s\S]*?)^ {4}\},$/m);
 if (!mSafeFit) { no('could not find _safeFit in 00-shell.js — the panel guard is gone'); process.exit(1); }
-const corpoSafeFit = mSafeFit[1];
+const panelSafeFitBody = mSafeFit[1];
 
-const mFitSeguro = recovery.match(/^function fitSeguro\(\) \{\n([\s\S]*?)^\}$/m);
-if (!mFitSeguro) { no('could not find fitSeguro in recovery-term.html — the recovery guard is gone'); process.exit(1); }
-const corpoFitSeguro = mFitSeguro[1];
+const mRecoverySafeFit = recovery.match(/^function safeFit\(\) \{\n([\s\S]*?)^\}$/m);
+if (!mRecoverySafeFit) { no('could not find safeFit in recovery-term.html — the recovery guard is gone'); process.exit(1); }
+const recoverySafeFitBody = mRecoverySafeFit[1];
 
 // ── the page of the pin ─────────────────────────────────────────────────────
-const pagina = `<!doctype html><meta charset="utf-8">
+const pageHtml = `<!doctype html><meta charset="utf-8">
 <link rel="stylesheet" href="/vendor/xterm/xterm.css">
 <style>html,body{margin:0;background:#000} #t{width:900px;height:600px}</style>
 <div id="t"></div>
@@ -85,10 +85,10 @@ window.__buffer = () => {
 // one takes 1 physical line; at 55, it takes 2 (55 + the remainder). It is the
 // cleanest way to make the physical count change under +-1 column.
 const LINHAS = 5;
-function quadro(marca) {
+function quadro(mark) {
   const linhas = [];
   for (let i = 0; i < LINHAS; i++) {
-    const tok = 'SENT' + marca + '-L' + i + '-';
+    const tok = 'SENT' + mark + '-L' + i + '-';
     linhas.push(tok.repeat(Math.ceil(COLS / tok.length)).slice(0, COLS));
   }
   return linhas.join('\\r\\n');
@@ -109,7 +109,7 @@ window.__cenario = async (comResize) => {
 };
 
 // ── the REAL guards, with the REAL Terminal ────────────────────────────────
-window.__safeFit  = new Function('fit', ${JSON.stringify(corpoSafeFit)});
+window.__safeFit  = new Function('fit', ${JSON.stringify(panelSafeFitBody)});
 window.__mkFitSeguro = () => {
   // setTimeout/clearTimeout stay out of the parameters on purpose: passing them
   // detached from window makes Chrome throw "Illegal invocation", the try/catch
@@ -117,8 +117,8 @@ window.__mkFitSeguro = () => {
   // they resolve to the page globals, as in the real file.
   return new Function('fitAddon', 'term',
     'let colPend = 0, colTimer = 0;\\n'
-    + 'function fitSeguro(){' + ${JSON.stringify(corpoFitSeguro)} + '}\\n'
-    + 'return fitSeguro;')(window.__fitAtual, window.__termAtual);
+    + 'function safeFit(){' + ${JSON.stringify(recoverySafeFitBody)} + '}\\n'
+    + 'return safeFit;')(window.__fitAtual, window.__termAtual);
 };
 window.__term = term;
 window.__pronto = true;
@@ -126,7 +126,7 @@ window.__pronto = true;
 
 const srv = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
-  if (u === '/' ) { res.writeHead(200, {'content-type':'text/html'}); res.end(pagina); return; }
+  if (u === '/' ) { res.writeHead(200, {'content-type':'text/html'}); res.end(pageHtml); return; }
   const f = path.join(WEB, u.replace(/^\/+/, ''));
   if (!f.startsWith(WEB) || !fs.existsSync(f)) { res.writeHead(404); res.end(); return; }
   res.writeHead(200, {'content-type': u.endsWith('.css') ? 'text/css' : 'application/javascript'});
@@ -137,7 +137,7 @@ const base = 'http://127.0.0.1:' + srv.address().port + '/';
 
 // Same browser resolution as the tabs pin: the playwright cache or the system
 // chrome. Skipping for lack of a browser would be faking coverage.
-function achaNavegador() {
+function findBrowser() {
   const c = [];
   if (process.env.VPSM_CHROMIUM) c.push(process.env.VPSM_CHROMIUM);
   const cache = '/root/.cache/ms-playwright';
@@ -147,7 +147,7 @@ function achaNavegador() {
   for (const x of c) if (fs.existsSync(x)) return x;
   return null;
 }
-const exe = achaNavegador();
+const exe = findBrowser();
 if (!exe) { console.error('FAILURE: no Chromium found — skipping would be faking coverage.'); process.exit(1); }
 const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
 const page = await browser.newPage();
@@ -170,7 +170,7 @@ comResize > semResize
 // ── 2. THE PANEL GUARD, with the real xterm ─────────────────────────────────
 // The fit is stubbed because it is the thing that MEASURES — and measuring is
 // exactly what we are simulating. Terminal, reflow and column count are real.
-const guarda = async (roteiro) => page.evaluate(`(async () => {
+const guard = async (script) => page.evaluate(`(async () => {
   const t = window.__term;
   // DRAIN before starting. Each scenario arms 300ms timers inside the guard
   // itself; if the next one starts before they expire, the timer of the PREVIOUS
@@ -185,43 +185,43 @@ const guarda = async (roteiro) => page.evaluate(`(async () => {
     fit: () => t.resize(prop.cols, prop.rows),
   };
   const app = { _safeFit: window.__safeFit };
-  const passo = (c, r) => { prop = { cols: c, rows: r }; app._safeFit(fit); };
-  const espera = (ms) => new Promise(r => setTimeout(r, ms));
-  ${roteiro}
+  const step = (c, r) => { prop = { cols: c, rows: r }; app._safeFit(fit); };
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  ${script}
 })()`);
 
-const wobble = await guarda(`
-  passo(55, 30);                    // the chrome steals a column
+const wobble = await guard(`
+  step(55, 30);                    // the chrome steals a column
   const logo = t.cols;
-  await espera(120);
-  passo(56, 30);                    // and gives it back, before the 300ms
-  await espera(450);
+  await wait(120);
+  step(56, 30);                    // and gives it back, before the 300ms
+  await wait(450);
   return { logo, fim: t.cols };
 `);
 wobble.logo === 56 && wobble.fim === 56
   ? ok('panel: a ±1 column oscillation that undoes itself does NOT reach xterm (cols stayed 56)')
   : no('panel: the oscillation got through (immediate=' + wobble.logo + ', final=' + wobble.fim + ') — reflow happens');
 
-const sustentado = await guarda(`
-  passo(55, 30);
+const sustained = await guard(`
+  step(55, 30);
   const logo = t.cols;
-  await espera(450);                // the second measurement agrees
+  await wait(450);                // the second measurement agrees
   return { logo, fim: t.cols };
 `);
-sustentado.logo === 56 && sustentado.fim === 55
+sustained.logo === 56 && sustained.fim === 55
   ? ok('panel: a SUSTAINED ±1 column is applied on the second measurement (56 → 55)')
-  : no('panel: a real 1 column change was not applied (immediate=' + sustentado.logo + ', final=' + sustentado.fim + ')');
+  : no('panel: a real 1 column change was not applied (immediate=' + sustained.logo + ', final=' + sustained.fim + ')');
 
-const grande = await guarda(`
-  passo(40, 30);                    // rotation / split: real intent
+const grande = await guard(`
+  step(40, 30);                    // rotation / split: real intent
   return { logo: t.cols };
 `);
 grande.logo === 40
   ? ok('panel: a change of ≥2 columns goes through at once (no quarantine)')
   : no('panel: a real width change got stuck in the hysteresis (cols=' + grande.logo + ')');
 
-const linhas = await guarda(`
-  passo(55, 22);                    // virtual keyboard: width +-1, height changes
+const linhas = await guard(`
+  step(55, 22);                    // virtual keyboard: width +-1, height changes
   return { cols: t.cols, rows: t.rows };
 `);
 linhas.cols === 56 && linhas.rows === 22
@@ -239,15 +239,15 @@ const rec = await page.evaluate(`(async () => {
     proposeDimensions: () => prop,
     fit: () => t.resize(prop.cols, prop.rows),
   };
-  const fitSeguro = window.__mkFitSeguro();
-  const espera = (ms) => new Promise(r => setTimeout(r, ms));
-  prop = { cols: 55, rows: 30 }; fitSeguro();
+  const safeFit = window.__mkFitSeguro();
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  prop = { cols: 55, rows: 30 }; safeFit();
   const logo = t.cols;
-  await espera(120);
-  prop = { cols: 56, rows: 30 }; fitSeguro();
-  await espera(450);
+  await wait(120);
+  prop = { cols: 56, rows: 30 }; safeFit();
+  await wait(450);
   const fim = t.cols;
-  prop = { cols: 40, rows: 30 }; fitSeguro();
+  prop = { cols: 40, rows: 30 }; safeFit();
   return { logo, fim, grande: t.cols };
 })()`);
 rec.logo === 56 && rec.fim === 56
@@ -268,17 +268,17 @@ srv.close();
     .filter(l => /fitAddon\.fit\(\)/.test(l))
     .filter(l => !/proposeDimensions !== 'function'|term\.cols >= 2|^ {4}fitAddon\.fit\(\);$/.test(l));
   fora.length === 0
-    ? ok('recovery: no raw fitAddon.fit() outside fitSeguro')
+    ? ok('recovery: no raw fitAddon.fit() outside safeFit')
     : no('recovery: ' + fora.length + ' raw fit() outside the guard:' + fora.map(l => '\n      ' + l.trim()).join(''));
 
   const cruShell = shell.split('\n')
     .filter(l => /\bfit\.fit\(\)/.test(l))
     .filter(l => !/_safeFit/.test(l));
   // The only legitimate fit.fit() calls are the ones INSIDE _safeFit.
-  const dentro = (corpoSafeFit.match(/fit\.fit\(\)/g) || []).length;
-  cruShell.length === dentro
-    ? ok('panel: all ' + dentro + ' existing fit.fit() calls are inside _safeFit')
-    : no('panel: there is a fit.fit() outside _safeFit (' + cruShell.length + ' in the file, ' + dentro + ' in the guard)');
+  const inside = (panelSafeFitBody.match(/fit\.fit\(\)/g) || []).length;
+  cruShell.length === inside
+    ? ok('panel: all ' + inside + ' existing fit.fit() calls are inside _safeFit')
+    : no('panel: there is a fit.fit() outside _safeFit (' + cruShell.length + ' in the file, ' + inside + ' in the guard)');
 }
 
 // ── 5. The usable width of the terminal (the desktop side of the same bug) ──
@@ -289,9 +289,9 @@ const indexCss = index.replace(/\/\*[\s\S]*?\*\//g, '');
 // The protection is no longer a reserved gutter, it is the impossibility of a
 // scrollbar: on the terminal screen #conteudo does not scroll, so no bar can
 // appear and steal a column. Same bug covered, at no width cost on any page.
-/#conteudo\.is-noscroll\s*\{[^}]*overflow:\s*hidden/.test(indexCss)
-  ? ok('desktop: #conteudo.is-noscroll does not scroll — no bar can steal a column from xterm')
-  : no('desktop: the #conteudo.is-noscroll{overflow:hidden} rule is gone — the bar steals a column again');
+/#content\.is-noscroll\s*\{[^}]*overflow:\s*hidden/.test(indexCss)
+  ? ok('desktop: #content.is-noscroll does not scroll — no bar can steal a column from xterm')
+  : no('desktop: the #content.is-noscroll{overflow:hidden} rule is gone — the bar steals a column again');
 
 // The rule only counts if someone turns it on in the terminal screen. Without
 // this pair, the CSS above is orphaned and the guarantee vanishes silently.

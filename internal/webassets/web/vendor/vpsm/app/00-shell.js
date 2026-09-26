@@ -204,8 +204,8 @@ window.vpsmTheme = (function(){
   function _syncMeta(theme){
     try {
       var c = theme === 'light' ? META_LIGHT : META_DARK;
-      var metas = document.querySelectorAll('meta[name="theme-color"]');
-      for (var i = 0; i < metas.length; i++) metas[i].setAttribute('content', c);
+      var targets = document.querySelectorAll('meta[name="theme-color"]');
+      for (var i = 0; i < targets.length; i++) targets[i].setAttribute('content', c);
     } catch(_){}
   }
   // Stamps the theme onto the DOM (idempotent). Does not persist.
@@ -643,7 +643,7 @@ function app() {
     ...(window.VPSMGitModule ? window.VPSMGitModule() : { git: { repos: [], repo: '' } }),
     ...(window.VPSMDeployModule ? window.VPSMDeployModule() : { deploy: { apps: [] } }),
     ...(window.VPSMNodesModule ? window.VPSMNodesModule() : { nodes: { list: [] } }),
-    ...(window.VPSMProxmoxModule ? window.VPSMProxmoxModule() : { pvx: { saude: null } }),
+    ...(window.VPSMProxmoxModule ? window.VPSMProxmoxModule() : { pvx: { health: null } }),
     ...(window.VPSMAgentsModule ? window.VPSMAgentsModule() : { agents: { sessions: [] } }),
 
     // The deploy reentrancy guard now lives in deployRun itself, in 20-deploy.js,
@@ -1003,7 +1003,7 @@ function app() {
     // setPage() closes it automatically; the backdrop has an @click to close.
     mobileSidebarOpen: false,
     // Browser tab: null = not checked yet; true = service up; false = down.
-    navegadorHealth: null,
+    browserHealth: null,
     // Browser state: persisted in localStorage, survives F5/logout.
     // Each tab has 1 or 2 panes; each pane keeps its current URL (/browser/...).
     browserTabs: [],
@@ -1449,7 +1449,7 @@ function app() {
     // paste in both cases. Ctrl+C has NO toggle — it only copies when there is a
     // selection, so it never costs the SIGINT (see the key handler).
     hostTermCtrlV: localStorage.getItem('vpsm_term_ctrl_v') !== '0',
-    novaVersaoDisponivel: false,
+    newVersionAvailable: false,
     // Reload the tab on its own when it is hidden and the work is idle. It can be
     // turned off — it is the only way for the tab to leave the old JS behind
     // without the user having to notice a banner.
@@ -1463,7 +1463,7 @@ function app() {
     hostTermLigatures: localStorage.getItem('vpsm_term_ligatures') === '1',
     // Configurable scrollback (default 10k, cap 50k). A phone with 32GB RAM copes.
     hostTermScrollback: parseInt(localStorage.getItem('vpsm_term_scrollback')||'10000',10),
-    // How much of the session log the primer reloads on open — see primeEAbre.
+    // How much of the session log the primer reloads on open — see primeAndOpen.
     // In MiB in the settings panel; in bytes in localStorage.
     hostTermPrimerMiB: Math.round((parseInt(localStorage.getItem('vpsm_term_primer_bytes')||'2097152',10)||0)/1048576),
     // Search with case sensitivity persisted
@@ -1478,14 +1478,14 @@ function app() {
     // conservative because there is a multiplexer in the path here.
     // Screens already mounted (see _triggerViewLoaders). Starts empty: at boot only
     // the landing screen goes in.
-    _montados: {},
+    _mounted: {},
     // Claude Code versions per session. The CLI writes "Update installed · Restart
     // to update" and the notice sits there forever without saying WHICH sessions
     // need restarting; without this the operator has no way to act and the notice
     // becomes permanent noise.
-    claudeVer: { instalada: '', defasados: 0, processos: [], aberto: false, carregando: false, reiniciando: 0 },
+    claudeVer: { instalada: '', defasados: 0, processos: [], open: false, loading: false, restarting: 0 },
     hostTermEcoPreditivo: localStorage.getItem('vpsm_term_eco_preditivo') || 'auto',
-    hostTermEcoLimiar: parseInt(localStorage.getItem('vpsm_term_eco_limiar') || '60', 10),
+    hostTermEchoThreshold: parseInt(localStorage.getItem('vpsm_term_eco_limiar') || '60', 10),
     // Help overlay (Ctrl+/ or ?)
     termHelpOpen: false,
     hostNotifyEnabled: localStorage.getItem('vpsm_term_notify') === '1',
@@ -1581,15 +1581,15 @@ function app() {
       // 'dev/shell'->Terminal, 'senhas'->Secrets. Accents are already handled by _norm.
       pages: [
         {label:'Dashboard',           kind:'page', page:'dashboard',  hint:'g+d', kw:'inicio home visao geral painel'},
-        {label:'History',           kind:'page', page:'history',    hint:'g+h', kw:'history graficos series'},
-        {label:'Alerts',             kind:'page', page:'alerts',     hint:'g+l', kw:'alerts alarmes avisos regras'},
+        {label:'History',           kind:'page', page:'history',    hint:'g+h', kw:'history charts series'},
+        {label:'Alerts',             kind:'page', page:'alerts',     hint:'g+l', kw:'alerts alarmes avisos rules'},
         {label:'Metrics',            kind:'page', page:'metrics',                kw:'metrics cpu memoria ram disco carga'},
         {label:'Containers',          kind:'page', page:'containers', hint:'g+c', kw:'docker conteiner conteineres'},
         {label:'Compose',             kind:'page', page:'compose',                kw:'docker-compose stack projeto'},
-        {label:'Images',             kind:'page', page:'images',     hint:'g+i', kw:'images docker imagem'},
+        {label:'Images',             kind:'page', page:'images',     hint:'g+i', kw:'images docker image'},
         {label:'Volumes',             kind:'page', page:'volumes',    hint:'g+v', kw:'storage docker armazenamento'},
         {label:'Networks',               kind:'page', page:'networks',   hint:'g+n', kw:'networks network rede docker'},
-        {label:'Prune / Pull',        kind:'page', page:'prune',                  kw:'limpeza faxina docker prune pull limpar'},
+        {label:'Prune / Pull',        kind:'page', page:'prune',                  kw:'limpeza faxina docker prune pull clear'},
         {label:'Processes',           kind:'page', page:'processes',              kw:'processes ps top htop'},
         {label:'Ports / Connections',   kind:'page', page:'ports',                  kw:'ports connections sockets netstat rede'},
         {label:'Systemd / journalctl',kind:'page', page:'systemd',    hint:'g+s', kw:'services servicos unidades logs journal journalctl'},
@@ -1600,18 +1600,18 @@ function app() {
         {label:'Graphs',              kind:'page', page:'grafos',                 kw:'graphs grafo dependencias graphify'},
         {label:'VSCode (code-server)',kind:'page', page:'code',                   kw:'code editor vscode ide code-server'},
         {label:'Secrets',             kind:'page', page:'secrets',                kw:'segredos senhas vault credenciais'},
-        {label:'Audit',               kind:'page', page:'audit',      hint:'g+a', kw:'auditoria logs eventos rastro'},
+        {label:'Audit',               kind:'page', page:'audit',      hint:'g+a', kw:'auditoria logs events rastro'},
         {label:'Users',            kind:'page', page:'users',      hint:'g+u', kw:'users contas acesso permissoes'},
         {label:'Operations · Tasks',      kind:'page', page:'manutencao',  hint:'g+m', kw:'jira tasks tarefas manutencao kanban'},
-        {label:'Operations · Jobs (queue)',  kind:'page', page:'jobs',        hint:'g+j', kw:'queue fila trabalhos jobs'},
+        {label:'Operations · Jobs (queue)',  kind:'page', page:'jobs',        hint:'g+j', kw:'queue queue trabalhos jobs'},
         {label:'Operations · Schedules', kind:'page', page:'agendamentos',hint:'g+e', kw:'schedule cron agenda recorrente'},
         {label:'Operations · Git',          kind:'page', page:'git',                    kw:'versionamento repo repositorio commit branch'},
         // The "Nós" entry still exists and leads to the merged screen: whoever types
         // "nos" in the palette is looking for the inventory, and it did not change
         // subject, it changed address. Removing the entry would make the search fail
         // for the word the operator has in mind.
-        {label:'Operations · Nodes (on the Proxmox screen)', kind:'page', page:'proxmox', kw:'nos nodes inventario no eixo guest lxc qemu credencial revogar ligar desligar console'},
-        {label:'Operations · Proxmox',      kind:'page', page:'proxmox',     kw:'proxmox pve hipervisor tarefas upid discos smart snapshot ram load cpu memoria disco rede filtro saude'},
+        {label:'Operations · Nodes (on the Proxmox screen)', kind:'page', page:'proxmox', kw:'nos nodes inventario no eixo guest lxc qemu credencial revoke turnOn turnOff console'},
+        {label:'Operations · Proxmox',      kind:'page', page:'proxmox',     kw:'proxmox pve hipervisor tarefas upid discos smart snapshot ram load cpu memoria disco rede filter health'},
         {label:'Operations · Deploy',       kind:'page', page:'deploy',      hint:'g+p', kw:'deploy paas publicar release rollback apps'},
         {label:'Apps · WhatsApp',          kind:'page', page:'whatsapp',    hint:'g+w', kw:'zap whats mensagens'},
         {label:'Apps · Video call',      kind:'page', page:'videocall',              kw:'video call reuniao meet chamada'},
@@ -2065,18 +2065,18 @@ function app() {
 // Loads jobs at startup to feed the "running" badge. 15s poll because new jobs can appear (scheduler).
       this.loadJobs();
       this.jobsPrefsLoad(); // restores the Jobs tab prefs from the profile
-      this.loadClaudeVersoes(); // which sessions are on an old version of Claude
+      this.loadClaudeVersions(); // which sessions are on an old version of Claude
       this.jiraColSortLoad(); // restores the per-column sorting of the kanban
       this.jiraPrefsLoad(); // restores the fontScale of the Jira panel from the profile
       // Store interval id so logout()/cleanup can clear it — leaking
       // setIntervals after token expiry pile up 401s in the console.
-      this.jobsPollTimer = setInterval(() => { if (document.hidden || this._pulaPoll('jobs')) return; if (this.currentView !== 'jobs') this.loadJobs(); }, 15*1000);
+      this.jobsPollTimer = setInterval(() => { if (document.hidden || this._skipPoll('jobs')) return; if (this.currentView !== 'jobs') this.loadJobs(); }, 15*1000);
       // On the jobs tab itself the 15s poll above is skipped (it would reset
       // jobsCounts on every tick). This 5s timer only reloads while there is visible
       // active work — bars/steps advance under the eyes of the user. The 1s clock only
       // updates elapsed time/ETA locally (zero requests).
       this.jobsLiveTimer = setInterval(() => {
-        if (document.hidden || this._pulaPoll('jobsLive')) return;
+        if (document.hidden || this._skipPoll('jobsLive')) return;
         if (this.currentView === 'jobs' && (this.jobsCounts.running > 0 || this.jobsCounts.queued > 0)) this.loadJobs();
       }, 5*1000);
       this.jobsClockTimer = setInterval(() => {
@@ -2088,8 +2088,8 @@ function app() {
       // Bandwidth poll: every 10s (it used to be 3s = 20 req/min just for a counter)
       // and paused while the tab is in the background. Increments accumulate on the server.
       this.loadBandwidth();
-      this.bwPollTimer = setInterval(() => { if (!document.hidden && !this._pulaPoll('banda')) this.loadBandwidth(); }, 10000);
-      this.pollTimer = setInterval(()=>{ if(document.hidden || this._pulaPoll('stats')) return; this.loadStats(); if(['containers','dashboard'].includes(this.page)) this.loadContainers(); if(this.currentView==='alerts') { this.loadMetricSnapshot(); if(!this.alertFormOpen) this.loadAlertRules(); } if(this.currentView==='history') { this.loadAlertRules(); this.loadHistory().then(()=>this.drawCharts()); } }, 5000);
+      this.bwPollTimer = setInterval(() => { if (!document.hidden && !this._skipPoll('banda')) this.loadBandwidth(); }, 10000);
+      this.pollTimer = setInterval(()=>{ if(document.hidden || this._skipPoll('stats')) return; this.loadStats(); if(['containers','dashboard'].includes(this.page)) this.loadContainers(); if(this.currentView==='alerts') { this.loadMetricSnapshot(); if(!this.alertFormOpen) this.loadAlertRules(); } if(this.currentView==='history') { this.loadAlertRules(); this.loadHistory().then(()=>this.drawCharts()); } }, 5000);
       // A 1s clock only for the live countdown on the state pills (Alerts tab).
       // It touches a single reactive integer; it does not refetch or re-render lists.
       this.clockAlertsTimer = setInterval(()=>{ if(document.hidden) return; if(this.currentView==='alerts') this.clockNowSec = Math.floor(Date.now()/1000); }, 1000);
@@ -2099,13 +2099,13 @@ function app() {
       // waiting on a timer while the connection was already up. The browser knows the
       // exact moment that happens; we just have to listen. The same applies to a tab
       // coming back to the foreground, where the timers were choked by background throttling.
-      window.addEventListener('online', () => this._reconectarPanesAgora());
+      window.addEventListener('online', () => this._reconnectPanesNow());
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) { this._reconectarPanesAgora(); this._reconciliaTamanhos(); }
+        if (!document.hidden) { this._reconnectPanesNow(); this._reconcileSizes(); }
       });
       // `focus` covers the reported case: switching the WINDOW (not the tab). In an
       // installed app/PWA visibilitychange does not always fire, but focus does.
-      window.addEventListener('focus', () => this._reconciliaTamanhos());
+      window.addEventListener('focus', () => this._reconcileSizes());
 
       // Mobile listener: invalidates the isMobile() cache and re-renders the terminal
       // if the viewport crosses the breakpoint (rotation, devtools, resize).
@@ -2189,11 +2189,11 @@ function app() {
 
       // Listens for server alerts and turns them into notifications
       this.pollNotifications();
-      this.notificationTimer = setInterval(()=>{ if(!document.hidden && !this._pulaPoll('notif')) this.pollNotifications(); }, 15000);
+      this.notificationTimer = setInterval(()=>{ if(!document.hidden && !this._skipPoll('notif')) this.pollNotifications(); }, 15000);
 
       // Polls the in-app inbox and pushes new events to the bell in the bar.
       this.loadNotifyInbox();
-      this.notifyInboxTimer = setInterval(()=>{ if(!document.hidden && !this._pulaPoll('inbox')) this.loadNotifyInbox(); }, 20000);
+      this.notifyInboxTimer = setInterval(()=>{ if(!document.hidden && !this._skipPoll('inbox')) this.loadNotifyInbox(); }, 20000);
 
       // Presence: listens for "incoming-call" when someone joins a room you are a
       // member of. Does not block if the module did not load — the feature is optional.
@@ -3342,7 +3342,7 @@ function app() {
         const min = v / 60000000000;
         return v + ' (' + (Math.round(min * 10) / 10) + ' min)';
       }
-      if (typeof v === 'boolean') return v ? 'ligado' : 'desligado';
+      if (typeof v === 'boolean') return v ? 'ligado' : 'off';
       return String(v);
     },
     gsHint(k) {
@@ -3353,7 +3353,7 @@ function app() {
         bits.push((Math.round((cur / 60000000000) * 10) / 10) + ' min');
       }
       if (m.def !== undefined && JSON.stringify(cur) !== JSON.stringify(m.def)) {
-        bits.push('default: ' + (typeof m.def === 'boolean' ? (m.def ? 'ligado' : 'desligado') : m.def));
+        bits.push('default: ' + (typeof m.def === 'boolean' ? (m.def ? 'ligado' : 'off') : m.def));
       }
       return bits.join(' · ');
     },
@@ -3437,10 +3437,10 @@ function app() {
 
     // Requested but not applied yet — worth calling out visually.
     gameTrainerPending(c) {
-      const pedido = c.valueType === 'toggle'
+      const request = c.valueType === 'toggle'
         ? this.gameTrainerIsOn(c.id)
         : Number(this.gameTrainerVal(c.id)) !== 0;
-      return pedido && !this.gameTrainerApplied(c);
+      return request && !this.gameTrainerApplied(c);
     },
 
     gameTrainerToggle(id) {
@@ -3505,15 +3505,15 @@ function app() {
         + 'Name, slots, passwords and schedules are NOT affected — the game has no '
         + 'default for those fields.\n'
         + 'This only changes the form; nothing is written until you save.'))) return;
-      let mudou = 0, semPadrao = 0;
+      let mudou = 0, noDefault = 0;
       for (const k of Object.keys(this.games.gsDraft || {})) {
-        if (this.gsMeta(k).def === undefined) { semPadrao++; continue; }
+        if (this.gsMeta(k).def === undefined) { noDefault++; continue; }
         if (!this.gsIsDefault(k)) mudou++;
         this.gsResetDefault(k);
       }
       // Honest feedback: saying how many fields have NO known default avoids the
       // impression that the button ignored part of the screen for no reason.
-      const extra = semPadrao ? (' · ' + semPadrao + ' with no known default, kept') : '';
+      const extra = noDefault ? (' · ' + noDefault + ' with no known default, kept') : '';
       this.showToast(mudou + ' field(s) returned to the default' + extra + ' — review and save', '');
     },
 
@@ -3859,8 +3859,8 @@ function app() {
     // Rule: the CANONICAL key of a tab is the one with the SAME NAME as the tab.
     // Aliases are the fallback. Deterministic and immune to reordering the map.
     tabToView(group, tab) {
-      const canonica = this.PAGE_REMAP[tab];
-      if (canonica && canonica[0] === group && canonica[1] === tab) return tab;
+      const canonical = this.PAGE_REMAP[tab];
+      if (canonical && canonical[0] === group && canonical[1] === tab) return tab;
       for (const [view, [g, t]] of Object.entries(this.PAGE_REMAP)) {
         if (g === group && t === tab) return view;
       }
@@ -4147,7 +4147,7 @@ function app() {
       try {
         const id = this._telScreen();
         if (id && window.tel) window.tel.hit(id, origin || 'nav');
-        this._telSub(this._telSubAtual());
+        this._telSub(this._telSubCurrent());
       } catch (_) {}
     },
     // The measurement bias this method exists to correct: the third-level $watch
@@ -4164,7 +4164,7 @@ function app() {
     // `git` is deliberately left out: its default view is 'changes', which is not a
     // canonical sub-action, and prView='list' only means something with the PR panel
     // open. There, only the $watch handlers count.
-    _telSubAtual() {
+    _telSubCurrent() {
       try {
         const v = this.currentView;
         if (v === 'ai')         return 'dev.ai.' + this.aiTab;
@@ -4318,13 +4318,13 @@ function app() {
     _triggerViewLoaders(p, opts) {
       opts = opts || {};
       // Mount latch. The heaviest screens live inside a <template
-      // x-if="_montados.X">, so the browser does not build their DOM and Alpine does
+      // x-if="_mounted.X">, so the browser does not build their DOM and Alpine does
       // not scan their directives until the first visit: boot stops paying for
       // screens nobody opened (that is ~195 KB of markup and thousands of nodes).
       // The latch NEVER goes back to false — it is the same pattern as codeMounted:
       // once mounted, the screen stays alive, so switching tabs does not lose scroll,
       // focus or state, as it would if the x-if followed visibility.
-      if (p) this._montados[p] = true;
+      if (p) this._mounted[p] = true;
       if (p==='dashboard')  { this.loadStats(); this.loadContainers(); this.loadVPSMHealth(); }
       if (p==='containers') this.loadContainers();
       if (p==='compose')    this.loadCompose();
@@ -4419,7 +4419,7 @@ function app() {
           this.$nextTick(()=>this.openHostTerminal());
         }
       }
-      if (p==='navegador')  this.checkNavegadorHealth();
+      if (p==='navegador')  this.checkBrowserHealth();
       if (p==='videocall')  {
         // Guest mode: a kind=videocall_guest token does not pass these protected routes
         // → noisy 401s in the console. Skip everything.
@@ -4434,12 +4434,12 @@ function app() {
 
     // Quick probe of the Browser service (Ultraviolet+Wisp). Runs when the user
     // enters the tab — avoids loading the iframe against a backend that is down.
-    async checkNavegadorHealth() {
-      this.navegadorHealth = null;
+    async checkBrowserHealth() {
+      this.browserHealth = null;
       try {
         const r = await fetch('/browser/healthz', {headers:{'Authorization':'Bearer '+this.token}});
-        this.navegadorHealth = r.ok;
-        if (this.navegadorHealth) {
+        this.browserHealth = r.ok;
+        if (this.browserHealth) {
           this.browserMounted = true;
           this.ensureBrowserState();
           if (!this.browserSnapTimer) {
@@ -4448,7 +4448,7 @@ function app() {
             this.browserSnapTimer = setInterval(()=>this.snapBrowserState(), 2000);
           }
         }
-      } catch(e) { this.navegadorHealth = false; }
+      } catch(e) { this.browserHealth = false; }
     },
 
     // ---------- Browser: state, tabs, split ----------
@@ -5099,10 +5099,10 @@ function app() {
       headers['Authorization'] = 'Bearer ' + this.token;
       // The helper itself measures how long the API is taking. It is the most honest
       // probe available here — same network path, same server, zero cost — and it is
-      // what drives the decision to loosen the polling when the link is bad (see _redeLenta).
+      // what drives the decision to loosen the polling when the link is bad (see _slowNetwork).
       const _t0 = Date.now();
       const r = await fetch(path, Object.assign({}, opts, { headers }));
-      this._marcaLatenciaApi(Date.now() - _t0);
+      this._markApiLatency(Date.now() - _t0);
       if (r.status===401) {
         // Do NOT drop the session right away. A 401 is almost always just the access
         // token expiring (an idle/background tab) — the session on the server (and the
@@ -10183,12 +10183,12 @@ function app() {
             // flips it to 'text'. Desktop is untouched (a physical keyboard does not depend on this).
             try { if (self.isMobile && self.isMobile()) ta.setAttribute('inputmode','none'); } catch(_){}
             ta.addEventListener('paste', (ev) => {
-              const arquivos = self._arquivosDoClipboard(ev);
-              if (!arquivos) return;          // no file: xterm pastes the text
+              const files = self._clipboardFiles(ev);
+              if (!files) return;          // no file: xterm pastes the text
               ev.preventDefault();
               ev.stopImmediatePropagation();
-              if (self._pasteJaTratado(ev, arquivos)) return;
-              self._sendFilesToPane(state, arquivos).catch(()=>{});
+              if (self._pasteHandled(ev, files)) return;
+              self._sendFilesToPane(state, files).catch(()=>{});
             }, true /* capture */);
           }
         } catch(_) {}
@@ -10370,12 +10370,12 @@ function app() {
         // Native paste event (Ctrl+V): takes a FILE from the clipboard without requiring
         // the clipboard-read permission (clipboardData comes straight in the event).
         el.addEventListener('paste', (ev) => {
-          const arquivos = self._arquivosDoClipboard(ev);
-          if (!arquivos) return;              // no file: xterm pastes the text
+          const files = self._clipboardFiles(ev);
+          if (!files) return;              // no file: xterm pastes the text
           ev.preventDefault();
           ev.stopPropagation();
-          if (self._pasteJaTratado(ev, arquivos)) return;
-          self._sendFilesToPane(state, arquivos).catch(()=>{});
+          if (self._pasteHandled(ev, files)) return;
+          self._sendFilesToPane(state, files).catch(()=>{});
         });
 
         // Right-click: blocks forwarding the mouse to the app (a multiplexer that owns the screen has `mouse on`
@@ -10484,8 +10484,8 @@ function app() {
           el.addEventListener('wheel', (ev) => {
             if (!ev.shiftKey) return;
             if (!state.ws || state.ws.readyState !== 1) return;
-            const passo = ev.deltaY > 0 ? 4 : -4;
-            state._desloc = Math.max(0, (state._desloc || 0) + passo);
+            const step = ev.deltaY > 0 ? 4 : -4;
+            state._desloc = Math.max(0, (state._desloc || 0) + step);
             try { state.ws.send(JSON.stringify({ type: 'pan', x: state._desloc })); } catch (_) {}
             ev.preventDefault();
           }, { passive: false });
@@ -10535,7 +10535,7 @@ function app() {
         // will: the server deduplicates (pty.go), so SIGWINCH only reaches
         // the PTY when the value really changes. It is the cheap resend that closes the
         // whole class of bug, and no longer one guard for one path.
-        state._afirmaTamanho = (motivo) => {
+        state._assertSize = (motivo) => {
           const t = state.term;
           if (!t || !state.ws || state.ws.readyState !== 1) return false;
           // ── WHAT IS ASSERTED IS THE WINDOW, NOT THE GRID DRAWN ──────────
@@ -10560,7 +10560,7 @@ function app() {
           if (!(cols >= 2 && rows >= 1)) return false;
           try {
             state.ws.send(JSON.stringify({ type:'resize', cols, rows }));
-            state._tamAfirmado = cols + 'x' + rows + (motivo ? ' ' + motivo : '');
+            state._assertedSize = cols + 'x' + rows + (motivo ? ' ' + motivo : '');
             return true;
           } catch (_) { return false; }
         };
@@ -10573,7 +10573,7 @@ function app() {
             // Sends the CURRENT size of xterm, not the one captured when the timer was
             // scheduled: in a hidden window the timer can fire minutes later, and
             // the value from back then is the one that counts.
-            state._afirmaTamanho('resize');
+            state._assertSize('resize');
           }, 100);
         });
 // "↓ new output" pill: re-evaluates visibility when the user scrolls.
@@ -10616,7 +10616,7 @@ function app() {
         // frame. See primingDoServidor, in internal/pty/pty.go.
         const url = proto+'//'+location.host+opts.wsPath
           +(attachOnly ? (opts.wsPath.includes('?')?'&':'?')+'attach=1' : '')
-          +(state._primouOk ? (opts.wsPath.includes('?')?'&':'?')+'replay=0' : '');
+          +(state._primedOk ? (opts.wsPath.includes('?')?'&':'?')+'replay=0' : '');
         const ws = new WebSocket(url);
         ws.binaryType = 'arraybuffer';
         state.ws = ws;
@@ -10647,7 +10647,7 @@ function app() {
               // divergence (a lost resize, a recycled socket, a deploy in the middle)
               // fixes itself within at most one cycle, instead of leaving the
               // screen corrupted until someone resizes the window by hand.
-              if (state._afirmaTamanho) state._afirmaTamanho('heartbeat');
+              if (state._assertSize) state._assertSize('heartbeat');
               // silent-death watchdog: if more than 70s went by with no message at all
               // (no output, no pong), the middleware has probably dropped it silently.
               // Forces a close with code 4000 — onclose will show "watchdog" and reconnect.
@@ -10701,10 +10701,10 @@ function app() {
           // (exec in a container) does not repaint — and then the guess would stay on screen
           // added to the real echo, duplicating the text. Clearing here works for
           // both cases and costs nothing.
-          if (state._ecoPintado > 0) {
-            try { state.term.write('\b \b'.repeat(state._ecoPintado)); } catch(_){}
+          if (state._echoPainted > 0) {
+            try { state.term.write('\b \b'.repeat(state._echoPainted)); } catch(_){}
           }
-          state._ecoPintado = 0;
+          state._echoPainted = 0;
           if (state._outbox && state._outbox.length) {
             const pend = state._outbox.join('');
             state._outbox = []; state._outboxBytes = 0;
@@ -10790,14 +10790,14 @@ function app() {
           // releases when the burst goes QUIET (end of the frame), with a hard ceiling
           // so it never stalls the render on continuous output.
           if (state._holdUntil) {
-            const agora = Date.now();
-            const quieto = agora - (state._lastDataAt || 0);
-            if (agora < state._holdUntil && quieto < 90) {
+            const now = Date.now();
+            const quiet = now - (state._lastDataAt || 0);
+            if (now < state._holdUntil && quiet < 90) {
               if (!state._holdTimer) {
-                const espera = Math.max(16, Math.min(90 - quieto, state._holdUntil - agora));
+                const wait = Math.max(16, Math.min(90 - quiet, state._holdUntil - now));
                 state._holdTimer = setTimeout(() => {
                   state._holdTimer = 0; flushTerm();
-                }, espera);
+                }, wait);
               }
               return;   // keeps queueing, without painting
             }
@@ -10808,7 +10808,7 @@ function app() {
           if (!q.length) return;
           // The rule that makes predictive echo safe — the screen goes back to
           // the server's truth BEFORE any byte of it is applied.
-          try { self._apagaPrevisao(state); } catch(_){}
+          try { self._erasePrediction(state); } catch(_){}
           // Best practice (xterm.js official guide): a "fast path" with no callback on the
           // chunks and ONE callback only on the LAST — since the callbacks fire in
           // write order, the last one means the whole batch has been
@@ -10874,7 +10874,7 @@ function app() {
               // Exponential moving average: one isolated bad sample must not
               // make the interface flash "terrible connection".
               state.rtt = state.rtt ? Math.round(state.rtt * 0.6 + rtt * 0.4) : rtt;
-              try { self._atualizaQualidade(state); } catch(_){}
+              try { self._updateQuality(state); } catch(_){}
             }
             return;
           }
@@ -10882,12 +10882,12 @@ function app() {
           // interval is the ECHO latency — the number the user feels while
           // typing (network + PTY + app). It is what decides predictive echo, and
           // what proves this prompt ECHOES (the opposite = a password prompt).
-          if (state._envioEm) {
-            const dt = Date.now() - state._envioEm; state._envioEm = 0;
+          if (state._sentAt) {
+            const dt = Date.now() - state._sentAt; state._sentAt = 0;
             state.eco = state.eco ? Math.round(state.eco * 0.6 + dt * 0.4) : dt;
-            state._servidorEcoa = true;
+            state._serverEchoes = true;
             if (state._ecoTimer) { clearTimeout(state._ecoTimer); state._ecoTimer = 0; }
-            try { self._atualizaQualidade(state); } catch(_){}
+            try { self._updateQuality(state); } catch(_){}
           }
           state._lastDataAt = Date.now();   // used by the hold to detect the end of the burst
           const data = (typeof ev.data === 'string') ? ev.data : new Uint8Array(ev.data);
@@ -10943,7 +10943,7 @@ function app() {
           // middle of typing.
           if (state._pred && state._pred.txt) {
             if (state._pred.timer) { try { clearTimeout(state._pred.timer); } catch(_){} state._pred.timer = 0; }
-            state._ecoPintado = (state._ecoPintado || 0) + state._pred.txt.length;
+            state._echoPainted = (state._echoPainted || 0) + state._pred.txt.length;
             state._pred.txt = '';
           }
           // Log at the level that fits the kind of close:
@@ -11048,8 +11048,8 @@ function app() {
       };
       // Exposed so that whoever knows the network is back (the 'online' event, the
       // tab coming back) can cut the backoff short and reopen at once — see
-      // _reconectarPanesAgora.
-      state._reabrir = open;
+      // _reconnectPanesNow.
+      state._reopen = open;
 
       // ── PRIMER: the history goes in BEFORE the socket opens ─────────────
       //
@@ -11073,17 +11073,17 @@ function app() {
       //
       // A time ceiling, because history is comfort and a live session is the reason
       // the screen exists: a slow server must not become a terminal that will not open.
-      const primeEAbre = () => {
-        if (state._primerFeito) { open(); return; }
-        state._primerFeito = true;
+      const primeAndOpen = () => {
+        if (state._primerDone) { open(); return; }
+        state._primerDone = true;
         const nome = state.sessionName;
         const bytes = self._termPrimerBytes ? self._termPrimerBytes() : 0;
         if (!nome || !bytes) { open(); return; }
         let abriu = false;
-        const seguir = () => { if (abriu) return; abriu = true; open(); };
-        const teto = setTimeout(() => {
-          try { self._marcaPrimer(state, 'teto'); } catch(_){}
-          seguir();
+        const follow = () => { if (abriu) return; abriu = true; open(); };
+        const cap = setTimeout(() => {
+          try { self._markPrimer(state, 'cap'); } catch(_){}
+          follow();
         }, 6000);
         // TWO SOURCES, IN THIS ORDER.
         //
@@ -11097,13 +11097,13 @@ function app() {
         //
         // The raw log stays as the FALLBACK: an old session, with no history file
         // yet, still loads whatever there is to load.
-        const busca = (rota) => fetch(rota + '?name=' + encodeURIComponent(nome) + '&bytes=' + bytes,
+        const search = (route) => fetch(route + '?name=' + encodeURIComponent(nome) + '&bytes=' + bytes,
                                       { credentials: 'same-origin' })
           .then(r => r.ok ? r.arrayBuffer() : null)
           .then(b => (b && b.byteLength) ? b : null);
-        busca('/api/terminal/historico')
+        search('/api/terminal/historico')
           .catch(() => null)
-          .then(b => b || busca('/api/terminal/log-bruto'))
+          .then(b => b || search('/api/terminal/log-bruto'))
           .then(buf => {
             if (!buf || abriu || !state.term) return;
             const u8 = new Uint8Array(buf);
@@ -11111,19 +11111,19 @@ function app() {
             // In chunks: up to a few MB come through here, and xterm queues
             // internally — writing it in one go would cost the whole frame
             // exactly at the moment the person is watching.
-            const PEDACO = 256 * 1024;
-            for (let i = 0; i < u8.length; i += PEDACO) {
-              state.term.write(u8.subarray(i, Math.min(i + PEDACO, u8.length)));
+            const CHUNK = 256 * 1024;
+            for (let i = 0; i < u8.length; i += CHUNK) {
+              state.term.write(u8.subarray(i, Math.min(i + CHUNK, u8.length)));
             }
             // Only now is it worth telling the server "I take care of the history": if
             // the fetch fails, its own replay is still the safety net.
-            state._primouOk = true;
-            try { self._marcaPrimer(state, (u8.length / 1024 | 0) + ' KiB'); } catch(_){}
+            state._primedOk = true;
+            try { self._markPrimer(state, (u8.length / 1024 | 0) + ' KiB'); } catch(_){}
           })
           .catch(() => {})
-          .finally(() => { clearTimeout(teto); seguir(); });
+          .finally(() => { clearTimeout(cap); follow(); });
       };
-      primeEAbre();
+      primeAndOpen();
     },
 
     // How many bytes of log the primer fetches. A user preference, with a sane
@@ -11135,7 +11135,7 @@ function app() {
     },
     // A light record of what the primer did — it shows in the diagnostic pill of the
     // pill and in the problem report, without polluting the screen.
-    _marcaPrimer(state, texto){
+    _markPrimer(state, texto){
       state._primerInfo = texto;
     },
 
@@ -11631,10 +11631,10 @@ function app() {
       if (Array.isArray(snap.tabs) || Array.isArray(snap.names)) {
         const flatPaneDescriptors = [];
         if (Array.isArray(snap.names)) {
-          const vistos = new Set();
+          const seen = new Set();
           snap.names.forEach(name => {
-            if (vistos.has(name)) return;
-            vistos.add(name);
+            if (seen.has(name)) return;
+            seen.add(name);
             flatPaneDescriptors.push({ sessionName: name, startupCmd: '' });
           });
         } else {
@@ -12074,7 +12074,7 @@ function app() {
     },
     tlsExpiryLabel(){
       const h = this.vpsmHealth;
-      if (!h || !h.tls_enabled) return 'desligado';
+      if (!h || !h.tls_enabled) return 'off';
       if (h.tls_mode === 'letsencrypt') return "Let's Encrypt · " + (h.tls_domain||'');
       if (h.tls_expires_in_days != null) {
         const d = h.tls_expires_in_days;
@@ -12256,9 +12256,9 @@ function app() {
       // Guard 2: writing empty over something that was NOT empty is
       // destructive and almost always accidental. It asks for explicit confirmation.
       const novo = String(this.cron.content || '');
-      const antigo = String(this.cron.serverContent || '');
-      if (!novo.trim() && antigo.trim()) {
-        const linhas = antigo.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
+      const old = String(this.cron.serverContent || '');
+      if (!novo.trim() && old.trim()) {
+        const linhas = old.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
         const ok = await this.confirmAsync(
           'Delete the WHOLE root crontab?\n\nYou are saving empty content over '
           + linhas + ' active cron line(s). Every scheduled root task will be removed.',
@@ -12726,14 +12726,14 @@ function app() {
         await this.loadTunnelDevices();
       } catch(e){ this.showToast(e.message,'err'); await this.loadTunnelDevices(); }
     },
-    // _dsForma normalizes the answer from the server into the COMPLETE panel
+    // _dsShape normalizes the answer from the server into the COMPLETE panel
     // contract. A raw `this.dsStatus = s` was the underlying defect: the shape declared
     // in the initial state evaporated on the first load, and any field the
     // server stopped sending became undefined inside an Alpine
     // expression — which Alpine turns into a boot error, taking the whole app down.
     // Normalizing here keeps the panel renderable with a partial, stale
     // or empty answer; the worst case becomes 'shows zero', never 'error screen'.
-    _dsForma(s){
+    _dsShape(s){
       const o = (s && typeof s === 'object') ? s : {};
       const sv = (o.saved && typeof o.saved === 'object') ? o.saved : {};
       const num = (v) => (typeof v === 'number' && isFinite(v)) ? v : 0;
@@ -12755,7 +12755,7 @@ function app() {
       try {
         const r = await this.api('/api/datasaver/status');
         const s = await r.json();
-        this.dsStatus = this._dsForma(s);
+        this.dsStatus = this._dsShape(s);
         const st = (s && s.settings) || {};
         this.dsForm = {
           enabled: st.enabled !== false,
@@ -12779,7 +12779,7 @@ function app() {
       this._dsTimer = setInterval(async () => {
         if (this.currentView !== 'rede') { clearInterval(this._dsTimer); this._dsTimer=null; return; }
         if (document.hidden) return;
-        try { const r = await this.api('/api/datasaver/status'); const s = await r.json(); this.dsStatus = this._dsForma(s); } catch(_){}
+        try { const r = await this.api('/api/datasaver/status'); const s = await r.json(); this.dsStatus = this._dsShape(s); } catch(_){}
       }, 6000);
     },
     async saveDatasaverSettings(){
@@ -12927,7 +12927,7 @@ function app() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = (filename || 'lista') + '-' + new Date().toISOString().slice(0,10) + '.csv';
+        a.download = (filename || 'list') + '-' + new Date().toISOString().slice(0,10) + '.csv';
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -13664,7 +13664,7 @@ function app() {
       state._repaintProbe = setTimeout(() => {
         state._repaintProbe = null;
         if (!state.term || !state.ws || state.ws.readyState !== 1) return;
-        if (!this._viewportPrecisaRepaint(state.term)) return;   // screen OK → nothing to do
+        if (!this._viewportNeedsRepaint(state.term)) return;   // screen OK → nothing to do
         console.debug('[vpsm:term] blank viewport on reattach — escalating to the wobble');
         const rc = state.term.cols | 0, rr = state.term.rows | 0;
         if (rc <= 12 || rr <= 6) return;
@@ -13679,7 +13679,7 @@ function app() {
     // true = a forced repaint is needed. It ALSO returns true when it cannot
     // decide (buffer unavailable/API changed): when in doubt it preserves the old
     // behaviour, because a black screen is worse than a jolt.
-    _viewportPrecisaRepaint(term){
+    _viewportNeedsRepaint(term){
       try {
         const buf = term.buffer && term.buffer.active;
         if (!buf || typeof buf.getLine !== 'function') return true;
@@ -13712,9 +13712,9 @@ function app() {
         // Single-flight: every pane calls this in its onopen, and on a deploy they ALL
         // reconnect together — without the latch, 4 panes become 4 /api/health at the same
         // instant, right when the server has only just come up.
-        const agora = Date.now();
-        if (this._buildCheckAt && (agora - this._buildCheckAt) < 3000) return;
-        this._buildCheckAt = agora;
+        const now = Date.now();
+        if (this._buildCheckAt && (now - this._buildCheckAt) < 3000) return;
+        this._buildCheckAt = now;
         if (!this._meuBuild) {
           const m = document.querySelector('meta[name="vpsm-build"]');
           this._meuBuild = (m && m.content) || '';
@@ -13725,10 +13725,10 @@ function app() {
         const d = await r.json();
         const srv = d && d.build ? String(d.build) : '';
         if (!srv || srv === this._meuBuild) return;
-        if (this._buildAvisado === srv) return;
-        this._buildAvisado = srv;
-        this.novaVersaoDisponivel = true;
-        this._armarReloadSeguro();
+        if (this._buildWarned === srv) return;
+        this._buildWarned = srv;
+        this.newVersionAvailable = true;
+        this._armSafeReload();
       } catch(_){}
     },
     // Reloads the tab by itself ONLY when that is invisible to the user.
@@ -13742,27 +13742,27 @@ function app() {
     // The way out: reload only with the tab HIDDEN and the work stopped. When they
     // come back, they are already on the new version and saw nothing happen. The sessions live
     // in dtach, on the server, so the pane contents do not depend on the tab.
-    _armarReloadSeguro(){
+    _armSafeReload(){
       if (this._reloadTimer) return;
       if (!this.hostTermAutoReload) return;
-      const tentar = () => this._tentarReloadSeguro();
-      this._reloadTimer = setInterval(tentar, 5000);
-      document.addEventListener('visibilitychange', tentar);
+      const retry = () => this._trySafeReload();
+      this._reloadTimer = setInterval(retry, 5000);
+      document.addEventListener('visibilitychange', retry);
     },
-    _tentarReloadSeguro(){
-      if (!this.novaVersaoDisponivel || !this.hostTermAutoReload) return false;
+    _trySafeReload(){
+      if (!this.newVersionAvailable || !this.hostTermAutoReload) return false;
       // Tab visible: never. This is the entire point of the mechanism.
-      if (!document.hidden) { this._ocultaDesde = 0; return false; }
-      const agora = Date.now();
-      if (!this._ocultaDesde) { this._ocultaDesde = agora; return false; }
+      if (!document.hidden) { this._hiddenSince = 0; return false; }
+      const now = Date.now();
+      if (!this._hiddenSince) { this._hiddenSince = now; return false; }
       // Hidden only a moment ago: it could be a 3-second alt-tab to copy something
       // and come back. Reloading there would be exactly the fright we want to avoid.
       // 20s turned out to be far too short — any quick lookup in another tab
       // came back to a reloaded page. Ten minutes hidden is what separates
       // "I left the tab" from "I stopped working".
-      if (agora - this._ocultaDesde < 10 * 60 * 1000) return false;
+      if (now - this._hiddenSince < 10 * 60 * 1000) return false;
       // Work in progress beats any update (same scale).
-      if (this._ultimaDigitacao && (agora - this._ultimaDigitacao) < 10 * 60 * 1000) return false;
+      if (this._lastTyping && (now - this._lastTyping) < 10 * 60 * 1000) return false;
       // Nothing may be sitting in the outgoing queue: reloading would discard what the
       // user typed during an outage and that has not gone up yet.
       const pendente = (this.terms.panes || []).some(p => p._outbox && p._outbox.length);
@@ -13776,8 +13776,8 @@ function app() {
     _paneSendInput(pane, d){
       if (!pane || d == null || d === '') return false;
       // Activity stamp: it is what stops the automatic reload from happening
-      // while the user is actually working (see _tentarReloadSeguro).
-      this._ultimaDigitacao = Date.now();
+      // while the user is actually working (see _trySafeReload).
+      this._lastTyping = Date.now();
       if (pane.ws && pane.ws.readyState === 1) {
         // The key goes RAW, in a binary frame. The JSON envelope
         // ({"type":"input","data":"a"}) cost ~30 bytes to carry 1 —
@@ -13787,18 +13787,18 @@ function app() {
         // websocket.BinaryMessage), so this asks nothing new of that
         // side. As a bonus, the ambiguity of an input starting with '{' disappears.
         (pane._txQ || (pane._txQ = [])).push(d);
-        if (!pane._txAgendado) {
-          pane._txAgendado = true;
+        if (!pane._txScheduled) {
+          pane._txScheduled = true;
           // A microtask, NOT a timer: it gathers whatever the browser delivers in the same tick
           // (key auto-repeat, paste, IME) into a single frame without delaying at all
           // someone who types slowly. A setTimeout here would add latency
           // exactly in the case we are trying to fix.
-          const flush = () => { pane._txAgendado = false; this._paneTxFlush(pane); };
+          const flush = () => { pane._txScheduled = false; this._paneTxFlush(pane); };
           if (typeof queueMicrotask === 'function') queueMicrotask(flush);
           else Promise.resolve().then(flush);
         }
-        this._marcaEnvio(pane, d);
-        this._preveEco(pane, d);
+        this._markSend(pane, d);
+        this._predictEcho(pane, d);
         return true;
       }
       return this._paneEnfileiraOffline(pane, d);
@@ -13842,8 +13842,8 @@ function app() {
       // The server had stopped echoing before the drop = a password prompt.
       // Echoing here would write the password in clear text on screen. It is the same rule
       // mosh applies in its own prediction, and it is worth more than the convenience.
-      if (pane._servidorEcoa === false) return;
-      if (this._pareceLinhaDeSenha(pane)) return;
+      if (pane._serverEchoes === false) return;
+      if (this._looksLikePasswordLine(pane)) return;
       let out = '';
       for (const ch of d) {
         const c = ch.codePointAt(0);
@@ -13855,20 +13855,20 @@ function app() {
       try { pane.term.write('\x1b[2m' + out + '\x1b[22m'); } catch(_){}
       // How many cells the guess occupies RIGHT NOW on screen. It is what lets us erase it
       // when the connection returns, before the server echoes the real text.
-      let vis = pane._ecoPintado || 0;
+      let vis = pane._echoPainted || 0;
       for (const ch of d) {
         const c = ch.codePointAt(0);
         if (c === 0x7f || c === 0x08) vis = Math.max(0, vis - 1);
         else if (c < 0x20) break;
         else vis++;
       }
-      pane._ecoPintado = vis;
+      pane._echoPainted = vis;
     },
-    // Second layer of the password protection: even with _servidorEcoa still at
+    // Second layer of the password protection: even with _serverEchoes still at
     // "do not know" (a drop right after the prompt appeared, before any keystroke),
     // the cursor line itself gives the context away. When in doubt — and on error — it does not
     // echo: losing the echo is annoying, leaking a password on screen cannot be undone.
-    _pareceLinhaDeSenha(pane){
+    _looksLikePasswordLine(pane){
       try {
         const buf = pane.term.buffer.active;
         const linha = buf.getLine(buf.baseY + buf.cursorY);
@@ -13907,8 +13907,8 @@ function app() {
     //     only add the risk of flicker for no gain at all.
     //   - edge of the line: '\b' does not move up a line, so near the border the
     //     erasing could not be exact — better not to predict.
-    _preveEco(pane, d){
-      if (!this._podePrever(pane, d)) return;
+    _predictEcho(pane, d){
+      if (!this._canPredict(pane, d)) return;
       const term = pane.term, buf = term.buffer.active;
       const p = pane._pred || (pane._pred = { txt:'', col:0, linha:0 });
       if (!p.txt) { p.col = buf.cursorX; p.linha = buf.baseY + buf.cursorY; }
@@ -13918,11 +13918,11 @@ function app() {
       // A guess with no answer is an orphan guess: if the server says nothing (a
       // Ctrl-C that does not echo, a prompt that swallowed the key), nobody would erase
       // the mess. The deadline follows the measured latency, with a floor and a ceiling.
-      const prazo = Math.min(3000, Math.max(600, (pane.eco || pane.rtt || 200) * 3));
+      const deadline = Math.min(3000, Math.max(600, (pane.eco || pane.rtt || 200) * 3));
       if (p.timer) clearTimeout(p.timer);
-      p.timer = setTimeout(() => { p.timer = 0; this._apagaPrevisao(pane); }, prazo);
+      p.timer = setTimeout(() => { p.timer = 0; this._erasePrediction(pane); }, deadline);
     },
-    _podePrever(pane, d){
+    _canPredict(pane, d){
       if (!pane || !pane.term) return false;
       const modo = this.hostTermEcoPreditivo || 'auto';
       if (modo === 'nunca') return false;
@@ -13932,15 +13932,15 @@ function app() {
       let buf;
       try { buf = pane.term.buffer.active; } catch(_) { return false; }
       if (!buf || buf.type === 'alternate') return false;
-      if (pane._servidorEcoa === false) return false;
-      if (this._pareceLinhaDeSenha(pane)) return false;
+      if (pane._serverEchoes === false) return false;
+      if (this._looksLikePasswordLine(pane)) return false;
       if (modo === 'sempre') return true;
       const ms = pane.eco || pane.rtt || 0;
-      return ms >= (this.hostTermEcoLimiar || 60);
+      return ms >= (this.hostTermEchoThreshold || 60);
     },
     // Erases the guess from the screen. Called before every batch of output (that is what
     // guarantees the server always writes on top of the truth) and by the deadline.
-    _apagaPrevisao(pane){
+    _erasePrediction(pane){
       const p = pane && pane._pred;
       if (!p || !p.txt) return;
       const n = p.txt.length;
@@ -13966,27 +13966,27 @@ function app() {
       // The server changed line (Enter, scroll, repaint): the guess lost its
       // anchor and dies here — whatever is in flight shows up when it echoes.
       if ((buf.baseY + buf.cursorY) !== p.linha) { p.txt = ''; return; }
-      const avanco = buf.cursorX - p.col;
-      if (avanco < 0) { p.txt = ''; return; }
-      const resto = p.txt.slice(avanco);
+      const advance = buf.cursorX - p.col;
+      if (advance < 0) { p.txt = ''; return; }
+      const rest = p.txt.slice(advance);
       p.col = buf.cursorX;
-      p.txt = resto;
-      if (!resto) return;
-      if (buf.cursorX + resto.length >= term.cols - 1) { p.txt = ''; return; }
-      try { term.write('\x1b[2m' + resto + '\x1b[22m'); } catch(_){ p.txt = ''; }
+      p.txt = rest;
+      if (!rest) return;
+      if (buf.cursorX + rest.length >= term.cols - 1) { p.txt = ''; return; }
+      try { term.write('\x1b[2m' + rest + '\x1b[22m'); } catch(_){ p.txt = ''; }
     },
     // Marks that a key went out and is waiting for an answer. It serves two owners:
     // it measures echo latency (the number the user feels) and it discovers prompts
     // that do NOT echo — if nothing comes back in 1.5s with a live socket, it is a password.
-    _marcaEnvio(pane, d){
+    _markSend(pane, d){
       // Only printable characters make a good probe: Enter and Ctrl-* produce output for reasons
       // that are not echo and would skew both measurements.
       if (!/^[\x20-\x7e\u00a0-\uffff]+$/.test(d)) return;
-      if (!pane._envioEm) pane._envioEm = Date.now();
+      if (!pane._sentAt) pane._sentAt = Date.now();
       if (pane._ecoTimer) return;
       pane._ecoTimer = setTimeout(() => {
         pane._ecoTimer = 0;
-        if (pane._envioEm) { pane._servidorEcoa = false; pane._envioEm = 0; }
+        if (pane._sentAt) { pane._serverEchoes = false; pane._sentAt = 0; }
       }, 1500);
     },
     // Publishes connection quality to the interface AT MOST once per
@@ -13994,17 +13994,17 @@ function app() {
     // output; wiring an Alpine binding straight to them would make the interface
     // re-render hundreds of times per second during heavy output —
     // exactly the kind of work that steals keyboard responsiveness.
-    _atualizaQualidade(pane){
-      const agora = Date.now();
-      if (pane._qualEm && (agora - pane._qualEm) < 1000) return;
-      pane._qualEm = agora;
+    _updateQuality(pane){
+      const now = Date.now();
+      if (pane._qualityAt && (now - pane._qualityAt) < 1000) return;
+      pane._qualityAt = now;
       const ms = pane.eco || pane.rtt || 0;
-      const nivel = !ms ? '' : (ms < 120 ? 'ok' : (ms < 350 ? 'medio' : 'ruim'));
+      const level = !ms ? '' : (ms < 120 ? 'ok' : (ms < 350 ? 'medio' : 'bad'));
       const label = ms ? (ms < 1000 ? ms + ' ms' : (ms/1000).toFixed(1) + ' s') : '';
       if (pane.netLabel !== label) pane.netLabel = label;
-      if (pane.netNivel !== nivel) pane.netNivel = nivel;
+      if (pane.netLevel !== level) pane.netLevel = level;
     },
-    _marcaLatenciaApi(ms){
+    _markApiLatency(ms){
       // Exponential moving average: an isolated spike (an endpoint doing heavy
       // work on the server) must not be read as "the network went down".
       this._apiEwma = this._apiEwma ? Math.round(this._apiEwma * 0.7 + ms * 0.3) : ms;
@@ -14012,30 +14012,30 @@ function app() {
     // "Is the network bad RIGHT NOW?" — two independent probes, the larger wins: the
     // latency of the API calls and the terminal echo. One covers the other: you can
     // be on a screen with no terminal open, or with the terminal idle.
-    _redeLenta(){
-      let pior = this._apiEwma || 0;
+    _slowNetwork(){
+      let worst = this._apiEwma || 0;
       for (const p of (this.terms && this.terms.panes || [])) {
         const ms = (p && (p.eco || p.rtt)) || 0;
-        if (ms > pior) pior = ms;
+        if (ms > worst) worst = ms;
       }
-      return pior >= 350;
+      return worst >= 350;
     },
     // On a bad link, the background polls (statistics, bandwidth, jobs,
     // notifications, inbox) compete for the SAME narrow uplink as the terminal —
     // and the terminal is what the user is looking at. Under a bad network, each one
     // skips 1 tick in 3: the numbers stay alive, just less eager.
     // None of this changes on a good network.
-    _pulaPoll(chave){
-      if (!this._redeLenta()) return false;
+    _skipPoll(key){
+      if (!this._slowNetwork()) return false;
       this._pollTicks || (this._pollTicks = {});
-      const n = (this._pollTicks[chave] = (this._pollTicks[chave] || 0) + 1);
+      const n = (this._pollTicks[key] = (this._pollTicks[key] || 0) + 1);
       return (n % 3) !== 0;
     },
     // Asks which sessions are running an old version of Claude. Cheap and rare: only at
     // boot and when the operator opens the detail — it is not a poller.
-    async loadClaudeVersoes(){
-      if (this.claudeVer.carregando) return;
-      this.claudeVer.carregando = true;
+    async loadClaudeVersions(){
+      if (this.claudeVer.loading) return;
+      this.claudeVer.loading = true;
       try {
         const r = await this.api('/api/claude/versoes');
         if (!r || !r.ok) return;
@@ -14045,17 +14045,17 @@ function app() {
         // Sorts by what matters: the outdated ones first, with the session name.
         this.claudeVer.processos = (d.processos || []).sort((a, b) =>
           (a.atual === b.atual) ? String(a.sessao||'').localeCompare(String(b.sessao||'')) : (a.atual ? 1 : -1));
-      } catch(_){} finally { this.claudeVer.carregando = false; }
+      } catch(_){} finally { this.claudeVer.loading = false; }
     },
     // Dispatcher for the "Restart" button of the version panel. There are TWO ways to
     // restart a Claude, and they are not interchangeable: a panel session
     // restarts by typing into the pane (in full view of the operator, with --continue); the recovery
     // Claude runs in a container and has no pane at all — only the container
     // restarts it. Before, the absence of that second path left the row inert.
-    async reiniciarClaudeDoPainel(proc){
+    async restartPanelClaude(proc){
       if (!proc) return;
-      if (proc.alvo === 'recovery') return this.reiniciarClaudeDoRecovery(proc);
-      return this.reiniciarClaudeDaSessao(proc);
+      if (proc.alvo === 'recovery') return this.restartRecoveryClaude(proc);
+      return this.restartSessionClaude(proc);
     },
     // Restarts the container of the recovery Claude.
     //
@@ -14063,7 +14063,7 @@ function app() {
     // `sleep infinity` and the session is born when someone opens /recovery —
     // there is no conversation to resume, and whichever one is open is lost. The confirm
     // text says so, because that is the difference that matters to the operator.
-    async reiniciarClaudeDoRecovery(proc){
+    async restartRecoveryClaude(proc){
       const alvo = proc.ref || this.claudeVer.instalada || '?';
       const ok = await this.confirmAsync(
         'Restart the recovery Claude?\n'
@@ -14072,7 +14072,7 @@ function app() {
         + 'Running version: ' + proc.versao + '  →  in the container: ' + alvo,
         { danger: true });
       if (!ok) return;
-      this.claudeVer.reiniciando = proc.pid;
+      this.claudeVer.restarting = proc.pid;
       try {
         const r = await this.api('/api/claude/recovery/restart', { method:'POST' });
         const d = await r.json().catch(() => ({}));
@@ -14080,11 +14080,11 @@ function app() {
         this.showToast('recovery container restarted', 'ok');
         // The container takes a moment to bring the new process up; without the slack the
         // list goes back to showing the old PID and it looks like nothing happened.
-        setTimeout(() => this.loadClaudeVersoes(), 4000);
+        setTimeout(() => this.loadClaudeVersions(), 4000);
       } catch(e){
         this.showToast('error restarting the recovery: ' + e.message, 'err');
       } finally {
-        this.claudeVer.reiniciando = 0;
+        this.claudeVer.restarting = 0;
       }
     },
     // Restarts the Claude of ONE session, with the conversation preserved.
@@ -14094,7 +14094,7 @@ function app() {
     // The command is typed into the pane, in full view of the operator, exactly as they
     // would do by hand — and `claude --continue` resumes the conversation instead of starting
     // from scratch.
-    async reiniciarClaudeDaSessao(proc){
+    async restartSessionClaude(proc){
       if (!proc || !proc.sessao) return;
       // confirmAsync(message, opts) — the 1st line becomes the title when it is short.
       const ok = await this.confirmAsync(
@@ -14114,12 +14114,12 @@ function app() {
       // Ctrl-C aborts whatever is running; /exit closes Claude cleanly; then it
       // reopens with --continue. The intervals give the CLI time to process each step.
       const passos = [['\x03', 400], ['/exit\r', 1200], ['claude --continue\r', 300]];
-      for (const [txt, espera] of passos) {
+      for (const [txt, wait] of passos) {
         this._paneSendInput(pane, txt);
-        await new Promise(r => setTimeout(r, espera));
+        await new Promise(r => setTimeout(r, wait));
       }
       this.showToast('restarting Claude in ' + proc.sessao, 'ok');
-      setTimeout(() => this.loadClaudeVersoes(), 8000);
+      setTimeout(() => this.loadClaudeVersions(), 8000);
     },
     // Redoes the fit and reasserts the size of ALL panes. Called when the
     // window/tab comes back — the moment when divergence usually appears, because
@@ -14127,29 +14127,29 @@ function app() {
     // first (xterm decides how many columns fit), the assertion after (so the
     // server agrees). Free when nothing changed: the fit changes nothing
     // and the server deduplicates a repeated size.
-    _reconciliaTamanhos(){
-      const agora = Date.now();
-      if (this._reconcTamEm && (agora - this._reconcTamEm) < 400) return;
-      this._reconcTamEm = agora;
+    _reconcileSizes(){
+      const now = Date.now();
+      if (this._reconcTamEm && (now - this._reconcTamEm) < 400) return;
+      this._reconcTamEm = now;
       (this.terms && this.terms.panes || []).forEach(p => {
         if (!p || !p.term) return;
         try { this._safeFit(p.fit); } catch(_){}
-        try { if (p._afirmaTamanho) p._afirmaTamanho('janela'); } catch(_){}
+        try { if (p._assertSize) p._assertSize('janela'); } catch(_){}
       });
     },
     // The network came back (or the tab came to the front): there is no point waiting for the
     // backoff. Reopens every pane that is off the air right now. Without writing
     // anything to the terminal — success is silent, and the overlay tells the rest.
-    _reconectarPanesAgora(){
-      const agora = Date.now();
-      if (this._reconectAgoraEm && (agora - this._reconectAgoraEm) < 1000) return;
-      this._reconectAgoraEm = agora;
+    _reconnectPanesNow(){
+      const now = Date.now();
+      if (this._reconnectNowAt && (now - this._reconnectNowAt) < 1000) return;
+      this._reconnectNowAt = now;
       (this.terms && this.terms.panes || []).forEach(p => {
         if (!p || !p.reconnect || p.reconnect.cancelled) return;
         if (p.ws && (p.ws.readyState === 0 || p.ws.readyState === 1)) return;
-        if (typeof p._reabrir !== 'function') return;
+        if (typeof p._reopen !== 'function') return;
         if (p.reconnect.timer) { clearTimeout(p.reconnect.timer); p.reconnect.timer = null; }
-        try { p._reabrir(); } catch(_){}
+        try { p._reopen(); } catch(_){}
       });
     },
     _renderPaneOverlay(pane){
@@ -14310,14 +14310,14 @@ function app() {
           // The natural window keeps being asserted (once per new value):
           // it is how the server knows what the session can go back to
           // when the small client leaves.
-          const marca = d.cols + 'x' + d.rows;
-          if (fit._ultimoNatural !== marca) {
-            fit._ultimoNatural = marca;
-            try { fit._vpsmState._afirmaTamanho && fit._vpsmState._afirmaTamanho('janela natural'); } catch (_) {}
+          const mark = d.cols + 'x' + d.rows;
+          if (fit._lastNatural !== mark) {
+            fit._lastNatural = mark;
+            try { fit._vpsmState._assertSize && fit._vpsmState._assertSize('janela natural'); } catch (_) {}
           }
           return true;
         }
-        fit._ultimoNatural = d.cols + 'x' + d.rows;
+        fit._lastNatural = d.cols + 'x' + d.rows;
         // ── ONE-COLUMN HYSTERESIS ──────────────────────────────────────────
         // Changing `cols` re-wraps (reflows) the ENTIRE xterm scrollback. An app
         // that repaints by cursor addressing (the Claude CLI: go up N lines,
@@ -14361,16 +14361,16 @@ function app() {
           // So a ±1 correction does not undo the last one inside the
           // quiet window. A change of >=2 columns still passes immediately:
           // rotation, split and sidebar are intent, not noise.
-          const agora = Date.now();
-          if (fit._ultimoAjuste1col &&
-              (agora - fit._ultimoAjuste1col.em) < 2000 &&
-              fit._ultimoAjuste1col.dc === -dc) {
+          const now = Date.now();
+          if (fit._lastFit1col &&
+              (now - fit._lastFit1col.em) < 2000 &&
+              fit._lastFit1col.dc === -dc) {
             return true;   // that would undo the one from a moment ago: leave it as it is
           }
-          fit._ultimoAjuste1col = { dc, em: agora };
+          fit._lastFit1col = { dc, em: now };
         } else {
           fit._colPend = 0;
-          fit._ultimoAjuste1col = null;
+          fit._lastFit1col = null;
           if (fit._colTimer) { clearTimeout(fit._colTimer); fit._colTimer = 0; }
         }
         fit.fit();
@@ -14739,7 +14739,7 @@ function app() {
       // a valid drop target (HTML5 DnD): the drop escapes to the document and the browser
       // default action is to NAVIGATE to the file — the whole SPA disappears, taking
       // every pane and the tab state with it. That was the behaviour until this was fixed.
-      if (this._dragTemArquivos(ev)) {
+      if (this._dragHasFiles(ev)) {
         ev.preventDefault();
         try { ev.dataTransfer.dropEffect = 'copy'; } catch(_){}
         this._showFileDropOverlay(ev.currentTarget);
@@ -14765,7 +14765,7 @@ function app() {
       // Pane rearrangement: it does not remove the overlay on leave (dragover repeats right after)
       // — only on end or on drop. The FILE overlay, though, has to disappear here,
       // otherwise it stays stuck on screen when the user gives up and drags away.
-      if (ev && this._dragTemArquivos(ev)) {
+      if (ev && this._dragHasFiles(ev)) {
         const wrap = ev.currentTarget;
         // relatedTarget inside the wrap itself = it only moved between children, it did not leave.
         try { if (wrap && ev.relatedTarget && wrap.contains(ev.relatedTarget)) return; } catch(_){}
@@ -14774,14 +14774,14 @@ function app() {
     },
     _panelDrop(ev, targetPane){
       ev.preventDefault();
-      if (this._dragTemArquivos(ev)) {
+      if (this._dragHasFiles(ev)) {
         this._hideFileDropOverlay(ev.currentTarget);
-        const arquivos = (ev.dataTransfer && ev.dataTransfer.files) || [];
+        const files = (ev.dataTransfer && ev.dataTransfer.files) || [];
         // targetPane IS the pane state (the same object that carries .ws/.term and
         // that _paneSendInput expects) — the outbox covers the case of
         // dropping a file with the connection down: the path is queued and goes out on
         // reconnect instead of vanishing.
-        if (arquivos.length) this._sendFilesToPane(targetPane, arquivos).catch(()=>{});
+        if (files.length) this._sendFilesToPane(targetPane, files).catch(()=>{});
         return;
       }
       const src = this.terms._dragPane;
@@ -16629,21 +16629,21 @@ function app() {
     // that way the legitimate zones (panes, WhatsApp, video call, the Jira board)
     // stay in control and this guard only catches what is left over.
     _installGlobalDropGuard(){
-      if (this._dropGuardInstalado) return;
-      this._dropGuardInstalado = true;
-      const bloquear = (ev) => {
+      if (this._dropGuardInstalled) return;
+      this._dropGuardInstalled = true;
+      const block = (ev) => {
         if (ev.defaultPrevented) return;
-        if (!this._dragTemArquivos(ev)) return;
+        if (!this._dragHasFiles(ev)) return;
         ev.preventDefault();
         try { if (ev.type === 'dragover') ev.dataTransfer.dropEffect = 'none'; } catch(_){}
       };
-      window.addEventListener('dragover', bloquear, false);
+      window.addEventListener('dragover', block, false);
       window.addEventListener('drop', (ev) => {
-        const tinhaArquivo = this._dragTemArquivos(ev) && !ev.defaultPrevented;
-        bloquear(ev);
+        const hadFile = this._dragHasFiles(ev) && !ev.defaultPrevented;
+        block(ev);
         this._hideFileDropOverlay(null);
         // A hint only when the gesture got lost: the user clearly meant to attach.
-        if (tinhaArquivo) this.showToast?.('drop the file ONTO a terminal pane to attach it','info');
+        if (hadFile) this.showToast?.('drop the file ONTO a terminal pane to attach it','info');
       }, false);
     },
     // Extracts the FILES out of a paste event. Returns null when the paste
@@ -16656,11 +16656,11 @@ function app() {
     // screenshot upload — a silent regression on top of the single most common
     // case there is. Copying a file in the system file manager, which is the case
     // we do want to catch, carries no text/plain.
-    _arquivosDoClipboard(ev){
+    _clipboardFiles(ev){
       const cd = ev && ev.clipboardData;
       if (!cd) return null;
-      const tipos = Array.from(cd.types || []);
-      if (tipos.includes('text/plain')) return null;
+      const types = Array.from(cd.types || []);
+      if (types.includes('text/plain')) return null;
       const out = [];
       for (const it of (cd.items || [])) {
         if (it.kind === 'file') { const f = it.getAsFile(); if (f) out.push(f); }
@@ -16687,24 +16687,24 @@ function app() {
     // coming out of getAsFile() is born with lastModified = now, so two calls for
     // the same clipboard item produce different values and the signature would
     // fail to match in exactly the case it exists to catch.
-    _pasteJaTratado(ev, arquivos){
+    _pasteHandled(ev, files){
       try {
         if (ev && ev.__vpsmPasteHandled) return true;
         if (ev) ev.__vpsmPasteHandled = true;
       } catch(_) {}
-      const sig = (arquivos || [])
+      const sig = (files || [])
         .map((f) => (f.name||'') + ':' + (f.size||0) + ':' + (f.type||''))
         .join('|');
       if (!sig) return false;
-      const agora = Date.now();
-      const ult = this._ultimoPasteDedup;
-      if (ult && ult.sig === sig && agora - ult.ts < 1000) return true;
-      this._ultimoPasteDedup = { sig, ts: agora };
+      const now = Date.now();
+      const ult = this._lastPasteDedup;
+      if (ult && ult.sig === sig && now - ult.ts < 1000) return true;
+      this._lastPasteDedup = { sig, ts: now };
       return false;
     },
     // true when what is being dragged are system FILES (and not a pane of the
     // app itself being rearranged).
-    _dragTemArquivos(ev){
+    _dragHasFiles(ev){
       try {
         const t = ev.dataTransfer && ev.dataTransfer.types;
         if (!t) return false;
@@ -16767,12 +16767,12 @@ function app() {
     // typing does not get chopped up. Uploads run in series on purpose: these are
     // tens of MB over a home connection, and in parallel one starves the other.
     async _sendFilesToPane(state, files){
-      const lista = Array.from(files || []).filter(Boolean);
-      if (!lista.length || !state) return;
-      const total = lista.length;
+      const list = Array.from(files || []).filter(Boolean);
+      if (!list.length || !state) return;
+      const total = list.length;
       const paths = [];
       for (let i = 0; i < total; i++) {
-        const f = lista[i];
+        const f = list[i];
         this.showToast?.(total > 1 ? `enviando ${i+1}/${total}: ${f.name||'file'}…` : `enviando ${f.name||'file'}…`, 'info');
         const d = await this._uploadTermFile(f, f.name);
         if (d && d.path) paths.push(this._quoteShellPath(d.path));
@@ -16798,8 +16798,8 @@ function app() {
         if (navigator.clipboard && navigator.clipboard.read) {
           const items = await navigator.clipboard.read();
           for (const item of items) {
-            const tipos = item.types || [];
-            const img = tipos.find(t => t.startsWith('image/'));
+            const types = item.types || [];
+            const img = types.find(t => t.startsWith('image/'));
             if (img) {
               const blob = await item.getType(img);
               const path = await this._uploadPasteImage(blob);
@@ -16808,8 +16808,8 @@ function app() {
             }
           }
           for (const item of items) {
-            const tipos = item.types || [];
-            if (tipos.includes('text/plain')) {
+            const types = item.types || [];
+            if (types.includes('text/plain')) {
               const blob = await item.getType('text/plain');
               const txt = await blob.text();
               if (txt) this._paneSendInput(state, txt);
@@ -18885,7 +18885,7 @@ function app() {
               // Mute forçado pelo dono da sala. Sem isto o botão seguia
               // mostrando o mic aberto e o primeiro clique "mutava" de novo.
               this.videocall.muted = true;
-              if (ev.forced) this.vcToast('🔇 ' + (this.vcPeerName(ev.by) || 'O dono da sala') + ' silenciou seu microfone');
+              if (ev.forced) this.vcToast('🔇 ' + (this.vcPeerName(ev.by) || 'O dono da room') + ' silenciou seu microfone');
             } else if (ev.type === 'mic-processing') {
               if (ev.value) this.videocall.micProc = Object.assign({}, ev.value);
             } else if (ev.type === 'subtitles-backend') {
@@ -19619,7 +19619,7 @@ function app() {
     },
     vcConnectionLabel() {
       const b = this.vcConnectionQuality();
-      return b >= 4 ? 'excelente' : b === 3 ? 'boa' : b === 2 ? 'instável' : 'ruim';
+      return b >= 4 ? 'excelente' : b === 3 ? 'boa' : b === 2 ? 'instável' : 'bad';
     },
 
     // ---- QoL: Reactions (emoji floating) ----
@@ -19718,10 +19718,10 @@ function app() {
       // watchdog closes it by itself when `dragover` stops repeating.
       root.addEventListener('dragleave', (e) => {
         if (!this.videocall.dropOverlay) return;
-        const saiuDaJanela = !e.relatedTarget ||
+        const leftWindow = !e.relatedTarget ||
           e.clientX <= 0 || e.clientY <= 0 ||
           e.clientX >= (window.innerWidth || 0) || e.clientY >= (window.innerHeight || 0);
-        if (saiuDaJanela) this.vcDropOverlayHide();
+        if (leftWindow) this.vcDropOverlayHide();
       });
       root.addEventListener('dragend', () => this.vcDropOverlayHide());
       // Dragging out of the window (dropping into another app) usually just blurs.
@@ -19818,11 +19818,11 @@ function app() {
     },
     vcToggleGroup(k) {
       if (!this.videocall.settingsGroups || !(k in this.videocall.settingsGroups)) return;
-      const abrindo = !this.videocall.settingsGroups[k];
-      if (abrindo && this._vcSheetMobile()) {
+      const opening = !this.videocall.settingsGroups[k];
+      if (opening && this._vcSheetMobile()) {
         for (const g in this.videocall.settingsGroups) if (g !== k) this.videocall.settingsGroups[g] = false;
       }
-      this.videocall.settingsGroups[k] = abrindo;
+      this.videocall.settingsGroups[k] = opening;
       try { localStorage.setItem('vpsm_vc_settings_groups', JSON.stringify(this.videocall.settingsGroups)); } catch (e) {}
     },
 
@@ -20036,9 +20036,9 @@ function app() {
       // with 'quality' and 'owner' open) can bring several groups expanded. Leave
       // only the first one, otherwise the sheet opens in the middle of a wall of scrolling.
       if (this.videocall.settingsPopOpen && this._vcSheetMobile() && this.videocall.settingsGroups) {
-        const abertos = Object.keys(this.videocall.settingsGroups).filter((g) => this.videocall.settingsGroups[g]);
-        if (abertos.length > 1) {
-          for (const g of abertos.slice(1)) this.videocall.settingsGroups[g] = false;
+        const openOnes = Object.keys(this.videocall.settingsGroups).filter((g) => this.videocall.settingsGroups[g]);
+        if (openOnes.length > 1) {
+          for (const g of openOnes.slice(1)) this.videocall.settingsGroups[g] = false;
           try { localStorage.setItem('vpsm_vc_settings_groups', JSON.stringify(this.videocall.settingsGroups)); } catch (e) {}
         }
       }
@@ -20132,8 +20132,8 @@ function app() {
         );
         // When transcription is enabled for the first time, propagate the current
         // "show captions" state to the engine (preserving the saved preference).
-        if (this.videocall.subtitlesActive && window.VPSMVideoCall.setShowLegendas) {
-          try { window.VPSMVideoCall.setShowLegendas(this.videocall.subtitlesShow); } catch (_) {}
+        if (this.videocall.subtitlesActive && window.VPSMVideoCall.setShowCaptions) {
+          try { window.VPSMVideoCall.setShowCaptions(this.videocall.subtitlesShow); } catch (_) {}
         }
       } finally {
         this._subtitlesToggling = false;
@@ -20171,12 +20171,12 @@ function app() {
     // off. STT (transcription) keeps running — the text still goes to the panel +
     // the summary. Useful when you want to keep the speech history but do not want
     // letters over the picture of the peer.
-    vcToggleLegendas() {
+    vcToggleCaptions() {
       const next = !this.videocall.subtitlesShow;
       this.videocall.subtitlesShow = next;
       try { localStorage.setItem('vpsm_vc_subtitles_show', next ? '1' : '0'); } catch (_) {}
-      if (window.VPSMVideoCall && window.VPSMVideoCall.setShowLegendas) {
-        try { window.VPSMVideoCall.setShowLegendas(next); } catch (_) {}
+      if (window.VPSMVideoCall && window.VPSMVideoCall.setShowCaptions) {
+        try { window.VPSMVideoCall.setShowCaptions(next); } catch (_) {}
       }
     },
     // Volume de envio do mic — aplica ao vivo no Call e persiste. Fora da
@@ -20798,18 +20798,18 @@ function app() {
       // devices actually changed, never during an open in progress, and with a
       // debounce (plugging in one device emits several events in a row).
       this._lobbyDevSig = null;
-      const assinatura = async () => {
+      const signature = async () => {
         try {
           const l = await navigator.mediaDevices.enumerateDevices();
           return l.map(d => d.kind + ':' + d.deviceId).sort().join('|');
         } catch (_) { return null; }
       };
-      assinatura().then(sig => { this._lobbyDevSig = sig; });
+      signature().then(sig => { this._lobbyDevSig = sig; });
       this._lobbyDevWatch = () => {
         clearTimeout(this._lobbyDevTimer);
         this._lobbyDevTimer = setTimeout(async () => {
           if (!this.videocall.lobbyOpen || this.videocall.lobbyBusy) return;
-          const sig = await assinatura();
+          const sig = await signature();
           if (sig === null || sig === this._lobbyDevSig) return; // only the labels changed
           this._lobbyDevSig = sig;
           this.vcLobbyOpen(this.videocall.lobbyForRoomId, this.videocall.lobbyForPassphrase);

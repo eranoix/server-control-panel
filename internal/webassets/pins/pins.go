@@ -10,7 +10,7 @@
 // With the runner here, an expensive pin can live in a subpackage without
 // duplicating code, and the gate watches ./internal/webassets without the /... —
 // cheap on deploy, complete under `go test ./...` and on pre-push.
-package pinos
+package pins
 
 import (
 	"os"
@@ -20,13 +20,13 @@ import (
 	"testing"
 )
 
-// raizDoRepo walks up the tree until it finds the go.mod.
+// repoRootDir walks up the tree until it finds the go.mod.
 //
 // The old pins assembled the path with filepath.Join("..", "..", …), which ties
 // the runner to the DEPTH of its caller — moving a test one level down broke the
 // path silently, and "script not found" would read as a pin failure instead of a
 // refactoring mistake. Walking up to the go.mod works from any depth.
-func raizDoRepo(t *testing.T) string {
+func repoRootDir(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
 	if err != nil {
@@ -46,39 +46,39 @@ func raizDoRepo(t *testing.T) string {
 	return ""
 }
 
-// RodaBash is Roda for pins written in shell (not everything that needs
+// RunBash is Run for pins written in shell (not everything that needs
 // asserting is JavaScript — the independence of the recovery container lives in
 // a Dockerfile and a startup script).
-func RodaBash(t *testing.T, script string) {
+func RunBash(t *testing.T, script string) {
 	t.Helper()
-	caminho := filepath.Join(raizDoRepo(t), "scripts", script)
-	saida, err := exec.Command("bash", caminho).CombinedOutput()
-	confere(t, script, string(saida), err)
+	caminho := filepath.Join(repoRootDir(t), "scripts", script)
+	output, err := exec.Command("bash", caminho).CombinedOutput()
+	verify(t, script, string(output), err)
 }
 
-// Roda executes a .mjs harness with node.
+// Run executes a .mjs harness with node.
 //
 // A missing node is a FAILURE, not a skip. `make minify` already depends on
 // node/esbuild, so the machine that builds this project has node; a silent skip
 // would return the pin to its orphan state, now disguised as green.
-func Roda(t *testing.T, script string, env ...string) {
+func Run(t *testing.T, script string, env ...string) {
 	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Fatalf("node não encontrado no PATH: os pinos de tela não podem rodar, e pular seria fingir cobertura (%v)", err)
 	}
-	cmd := exec.Command(node, filepath.Join(raizDoRepo(t), "scripts", script))
+	cmd := exec.Command(node, filepath.Join(repoRootDir(t), "scripts", script))
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
-	saida, err := cmd.CombinedOutput()
-	confere(t, script, string(saida), err)
+	output, err := cmd.CombinedOutput()
+	verify(t, script, string(output), err)
 }
 
 // confere applies the same verdict to both runners, including the vacuity
 // guard: a harness that prints no PASS may have exited 0 without running a
 // single assertion (broken import, empty file, early return).
-func confere(t *testing.T, script, texto string, err error) {
+func verify(t *testing.T, script, texto string, err error) {
 	t.Helper()
 	if err != nil {
 		t.Errorf("%s reprovou:\n%s", script, texto)

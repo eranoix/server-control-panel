@@ -1,4 +1,4 @@
-// Package telapesada holds the EXPENSIVE screen pins — the ones that bring up a
+// Package heavyscreen holds the EXPENSIVE screen pins — the ones that bring up a
 // browser and render the whole page.
 //
 // Its own package for an operational reason: the deploy gate charges by PACKAGE,
@@ -9,15 +9,15 @@
 // ~20 s and this one goes on running under `go test ./...` and on pre-push.
 //
 // In other words: nothing lost surveillance. What changed was WHERE each cost is charged.
-package telapesada
+package heavyscreen
 
 import (
 	"testing"
 
-	"server-control-panel/internal/webassets/pinos"
+	"server-control-panel/internal/webassets/pins"
 )
 
-// TestTelaProxmoxRenderizaNoNavegador is the pin the other two could not be: it
+// TestProxmoxScreenRendersInBrowser is the pin the other two could not be: it
 // OPENS THE SCREEN IN A BROWSER and fails on a console error, on a page error
 // and on an empty drawing.
 //
@@ -33,10 +33,10 @@ import (
 // delivers the `.min.js` when it exists (internal/api/api.go) and falls back to
 // the source when it does not. Testing only one of them leaves the other without
 // a guard — and the minified one is, precisely, what the operator receives.
-func TestTelaProxmoxRenderizaNoNavegador(t *testing.T) {
-	for _, pacote := range []string{"min", "src"} {
-		t.Run(pacote, func(t *testing.T) {
-			pinos.Roda(t, "test-proxmox-render.mjs", "VPSM_RENDER_BUNDLE="+pacote)
+func TestProxmoxScreenRendersInBrowser(t *testing.T) {
+	for _, bundle := range []string{"min", "src"} {
+		t.Run(bundle, func(t *testing.T) {
+			pins.Run(t, "test-proxmox-render.mjs", "VPSM_RENDER_BUNDLE="+bundle)
 		})
 	}
 }

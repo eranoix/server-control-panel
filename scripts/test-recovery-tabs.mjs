@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// test-recovery-abas.mjs — the two tabs of /recovery must never be on screen
+// test-recovery-tabs.mjs — the two tabs of /recovery must never be on screen
 // at the same time.
 //
 // What the user saw (screenshot): the host terminal rendered on top AND the
@@ -14,9 +14,9 @@ import http from 'node:http';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
-const RAIZ = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const WEB = path.join(RAIZ, 'internal', 'webassets', 'web');
-const require_ = createRequire(path.join(RAIZ, '.tools/'));
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const WEB = path.join(ROOT, 'internal', 'webassets', 'web');
+const require_ = createRequire(path.join(ROOT, '.tools/'));
 let chromium;
 try { ({ chromium } = require_('playwright-core')); }
 catch {
@@ -28,19 +28,19 @@ catch {
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
-console.log('=== test-recovery-abas ===');
+console.log('=== test-recovery-tabs ===');
 
 // The real page, with the WebSocket stubbed (the pin tests LAYOUT, not the
 // transport — the transport has its own suite in test-recovery-term.mjs) and the
 // container status answering whatever each scenario needs.
-const pagina = fs.readFileSync(path.join(WEB, 'recovery-term.html'), 'utf8');
-let containerRodando = false;
+const pageHtml = fs.readFileSync(path.join(WEB, 'recovery-term.html'), 'utf8');
+let containerRunning = false;
 
 const srv = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
   if (u === '/' || u === '/recovery/term') {
     res.setHeader('content-type', 'text/html');
-    return res.end(pagina.replace('</head>', `<script>
+    return res.end(pageHtml.replace('</head>', `<script>
       // A WebSocket that never opens: layout must not depend on a connection.
       window.WebSocket = function () { this.readyState = 0; this.close = function(){}; this.send = function(){}; };
       window.WebSocket.prototype.readyState = 0;
@@ -59,7 +59,7 @@ const srv = http.createServer((req, res) => {
   }
   if (u === '/recovery/claude/status') {
     res.setHeader('content-type', 'application/json');
-    return res.end(JSON.stringify({ ok: true, existe: true, rodando: containerRodando, autenticado: false, versao: '2.1.241 (Claude Code)' }));
+    return res.end(JSON.stringify({ ok: true, existe: true, rodando: containerRunning, autenticado: false, versao: '2.1.241 (Claude Code)' }));
   }
   const f = path.join(WEB, u);
   if (!f.startsWith(WEB) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.statusCode = 404; return res.end('not found'); }
@@ -68,7 +68,7 @@ const srv = http.createServer((req, res) => {
   res.end(fs.readFileSync(f));
 });
 
-function achaNavegador() {
+function findBrowser() {
   const c = [];
   if (process.env.VPSM_CHROMIUM) c.push(process.env.VPSM_CHROMIUM);
   const cache = '/root/.cache/ms-playwright';
@@ -78,7 +78,7 @@ function achaNavegador() {
   for (const x of c) if (fs.existsSync(x)) return x;
   return null;
 }
-const exe = achaNavegador();
+const exe = findBrowser();
 if (!exe) { console.error('FAILURE: no Chromium found — skipping would be faking coverage.'); process.exit(1); }
 
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
@@ -97,7 +97,7 @@ page.on('console', (m) => {
 page.on('requestfailed', (r) => { if (!/favicon/i.test(r.url())) erros.push('resource failed: ' + r.url()); });
 page.on('response', (r) => { if (r.status() >= 400 && !/favicon/i.test(r.url())) erros.push('HTTP ' + r.status() + ': ' + r.url()); });
 
-const visivel = (sel) => page.evaluate((s) => {
+const visible = (sel) => page.evaluate((s) => {
   const el = document.querySelector(s);
   return !!el && el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
 }, sel);
@@ -108,7 +108,7 @@ await page.waitForTimeout(400);
 
 // ── 1. initial state: the host only ─────────────────────────────────────────
 {
-  const t = await visivel('#term'), c = await visivel('#term-claude'), off = await visivel('#claude-off');
+  const t = await visible('#term'), c = await visible('#term-claude'), off = await visible('#claude-off');
   (t && !c && !off) ? ok('boot shows only the host terminal')
                     : no(`boot with overlapping screens (host=${t} claude=${c} notice=${off})`);
 }
@@ -118,30 +118,30 @@ await page.waitForTimeout(400);
 // height, with the host action bar present in the wrong tab.
 await clica('#aba-claude');
 {
-  const t = await visivel('#term'), off = await visivel('#claude-off');
+  const t = await visible('#term'), off = await visible('#claude-off');
   (!t && off) ? ok('Claude tab (container down): shows the notice and HIDES the host terminal')
               : no(`both screens splitting the height (host=${t} notice=${off}) — the reported bug`);
 }
 {
-  const barra = await visivel('.action-bar');
-  !barra ? ok('the host action bar disappears in the Claude tab')
+  const bar = await visible('.action-bar');
+  !bar ? ok('the host action bar disappears in the Claude tab')
          : no('host action bar visible in the Claude tab — an author `display:flex` beats the browser [hidden]');
 }
 
 // ── 3. back to the host ─────────────────────────────────────────────────────
 await clica('#aba-host');
 {
-  const t = await visivel('#term'), off = await visivel('#claude-off'), barra = await visivel('.action-bar');
-  (t && !off && barra) ? ok('going back to the host restores terminal + bar and hides the notice')
-                       : no(`broken return (host=${t} notice=${off} bar=${barra})`);
+  const t = await visible('#term'), off = await visible('#claude-off'), bar = await visible('.action-bar');
+  (t && !off && bar) ? ok('going back to the host restores terminal + bar and hides the notice')
+                       : no(`broken return (host=${t} notice=${off} bar=${bar})`);
 }
 
 // ── 4. with the container UP, the tab shows the Claude terminal ─────────────
-containerRodando = true;
+containerRunning = true;
 await clica('#aba-claude');
 await page.waitForTimeout(400);
 {
-  const c = await visivel('#term-claude'), off = await visivel('#claude-off'), t = await visivel('#term');
+  const c = await visible('#term-claude'), off = await visible('#claude-off'), t = await visible('#term');
   (c && !off && !t) ? ok('container up: the tab shows the Claude terminal, no notice and no host')
                     : no(`wrong Claude tab with the container up (claude=${c} notice=${off} host=${t})`);
 }
@@ -150,13 +150,13 @@ await page.waitForTimeout(400);
 // Without this, "visible" would pass at 20px tall, which is what the overlap
 // produced in practice.
 {
-  const alturas = await page.evaluate(() => {
+  const heights = await page.evaluate(() => {
     const r = (s) => { const e = document.querySelector(s); return e ? e.getBoundingClientRect().height : 0; };
     return { claude: r('#term-claude'), janela: window.innerHeight };
   });
-  (alturas.claude > alturas.janela * 0.5)
-    ? ok(`active terminal fills the usable area (${Math.round(alturas.claude)}px of ${alturas.janela}px)`)
-    : no(`active terminal squeezed: ${Math.round(alturas.claude)}px of ${alturas.janela}px — another screen is stealing height`);
+  (heights.claude > heights.janela * 0.5)
+    ? ok(`active terminal fills the usable area (${Math.round(heights.claude)}px of ${heights.janela}px)`)
+    : no(`active terminal squeezed: ${Math.round(heights.claude)}px of ${heights.janela}px — another screen is stealing height`);
 }
 
 erros.length === 0 ? ok('no console errors when switching tabs')

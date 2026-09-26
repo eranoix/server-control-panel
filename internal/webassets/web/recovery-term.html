@@ -71,15 +71,15 @@
   /* Two tabs — the host shell and the independently connected Claude.
      Raw styling on purpose: this page cannot depend on Tailwind, which is
      one of the things that may be broken by the time you get here. */
-  .abas { display: flex; gap: .25rem; padding: .4rem 1rem 0; background: #0a1120;
+  .tabs { display: flex; gap: .25rem; padding: .4rem 1rem 0; background: #0a1120;
           border-bottom: 1px solid #1f2937; align-items: center; }
-  .abas button {
+  .tabs button {
     background: transparent; border: 1px solid transparent; border-bottom: none;
     color: #9ca3af; padding: .35rem .8rem; border-radius: 6px 6px 0 0;
     cursor: pointer; font: inherit; font-size: .78rem;
   }
-  .abas button.on { background: #0a0e1a; border-color: #1f2937; color: #e5e7eb; }
-  .abas .dica { margin-left: auto; font-size: .68rem; color: #6b7280; padding-bottom: .35rem; }
+  .tabs button.on { background: #0a0e1a; border-color: #1f2937; color: #e5e7eb; }
+  .tabs .hint { margin-left: auto; font-size: .68rem; color: #6b7280; padding-bottom: .35rem; }
   .painel { flex: 1; padding: .5rem; overflow: hidden; }
   .aviso { flex: 1; display: flex; flex-direction: column; align-items: center;
            justify-content: center; gap: .9rem; text-align: center; padding: 2rem; }
@@ -93,15 +93,15 @@
                 padding: .1rem .35rem; font-size: .78rem; }
   /* Notices about the SESSION live here, not inside the terminal —
      writing them into xterm dirtied the scrollback of the conversation with Claude. */
-  #faixa { padding: .45rem 1rem; font-size: .76rem; border-bottom: 1px solid #1f2937; }
-  #faixa[data-tom="erro"]  { background: #7f1d1d33; color: #fca5a5; }
-  #faixa[data-tom="aviso"] { background: #78350f33; color: #fcd34d; }
-  #faixa[data-tom="ok"]    { background: #14532d33; color: #86efac; }
+  #banner { padding: .45rem 1rem; font-size: .76rem; border-bottom: 1px solid #1f2937; }
+  #banner[data-tom="erro"]  { background: #7f1d1d33; color: #fca5a5; }
+  #banner[data-tom="aviso"] { background: #78350f33; color: #fcd34d; }
+  #banner[data-tom="ok"]    { background: #14532d33; color: #86efac; }
   /* How much session is left, ALWAYS visible. Finding out the limit by being
      disconnected halfway through a rollback is the worst way to find out. */
-  .relogio { font-size: .68rem; color: #6b7280; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .relogio[data-tom="aviso"] { color: #fcd34d; }
-  .relogio[data-tom="erro"]  { color: #fca5a5; }
+  .clock { font-size: .68rem; color: #6b7280; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .clock[data-tom="aviso"] { color: #fcd34d; }
+  .clock[data-tom="erro"]  { color: #fca5a5; }
   /* The output of the quick actions gets its OWN panel. Writing it inside
      xterm interrupted the drawing of a command in flight (a repaint mid-way
      = corrupted screen) and wiped the evidence on the first `clear`. Here it
@@ -117,24 +117,24 @@
                  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace; color: #cbd5e1; white-space: pre-wrap; word-break: break-word; }
   .console pre .err { color: #fca5a5; }
   .console pre .ok  { color: #86efac; }
-  .console pre .hora { color: #6b7280; }
+  .console pre .time { color: #6b7280; }
   /* Simple mode — the client for when the emulator (xterm) does NOT load.
      The whole page died in that case, because `new Terminal()` threw at the top
      of the module, taking tabs, quick actions and the sign-out button with it. */
-  .simples { height: 100%; display: flex; flex-direction: column; gap: .4rem; }
-  .simples-aviso { background: #78350f33; color: #fcd34d; border: 1px solid #78350f;
+  .simple { height: 100%; display: flex; flex-direction: column; gap: .4rem; }
+  .simple-aviso { background: #78350f33; color: #fcd34d; border: 1px solid #78350f;
                    border-radius: 6px; padding: .45rem .7rem; font-size: .74rem; line-height: 1.5; }
-  .simples-saida { flex: 1; margin: 0; overflow: auto; background: #0a0e1a; border: 1px solid #1f2937;
+  .simple-output { flex: 1; margin: 0; overflow: auto; background: #0a0e1a; border: 1px solid #1f2937;
                    border-radius: 6px; padding: .5rem .7rem; font-size: .8rem; line-height: 1.45;
                    font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
                    color: #e5e7eb; white-space: pre-wrap; word-break: break-word; }
-  .simples-entrada { display: flex; gap: .4rem; }
-  .simples-entrada input {
+  .simple-input { display: flex; gap: .4rem; }
+  .simple-input input {
     flex: 1; padding: .45rem .7rem; background: #0a1120; border: 1px solid #1f2937;
     border-radius: 6px; color: #e5e7eb; font-family: ui-monospace, Consolas, monospace; font-size: .82rem;
   }
-  .simples-entrada input:focus { outline: none; border-color: #3b82f6; }
-  .simples-entrada button { background: #1f2937; border: 1px solid #374151; color: #e5e7eb;
+  .simple-input input:focus { outline: none; border-color: #3b82f6; }
+  .simple-input button { background: #1f2937; border: 1px solid #374151; color: #e5e7eb;
                             padding: .45rem .8rem; border-radius: 6px; cursor: pointer; font: inherit; font-size: .78rem; }
 </style>
 </head>
@@ -144,23 +144,23 @@
   <h2>Recovery terminal</h2>
   <span class="user" id="user-label"></span>
   <span class="conn" id="conn" data-e="wait">connecting…</span>
-  <span class="relogio" id="relogio" title="time left in the recovery session"></span>
-  <button onclick="reconectaAgora()" id="btn-reconn" title="do not wait for the reconnect backoff">Reconnect</button>
+  <span class="clock" id="clock" title="time left in the recovery session"></span>
+  <button onclick="reconnectNow()" id="btn-reconn" title="do not wait for the reconnect backoff">Reconnect</button>
   <button onclick="doLogout()">Sign out</button>
 </div>
-<div class="abas">
-  <button id="aba-host" class="on" onclick="mostraAba('host')">Host shell</button>
-  <button id="aba-claude" onclick="mostraAba('claude')">Claude (independent)</button>
-  <span class="dica" id="aba-dica"></span>
-  <span class="dica" style="margin-left:.75rem" title="recovery console shortcuts">Ctrl+Alt+1/2 · Ctrl+Alt+R reconnects</span>
+<div class="tabs">
+  <button id="aba-host" class="on" onclick="showTab('host')">Host shell</button>
+  <button id="aba-claude" onclick="showTab('claude')">Claude (independent)</button>
+  <span class="hint" id="aba-hint"></span>
+  <span class="hint" style="margin-left:.75rem" title="recovery console shortcuts">Ctrl+Alt+1/2 · Ctrl+Alt+R reconnects</span>
 </div>
-<div id="faixa" hidden></div>
+<div id="banner" hidden></div>
 <div class="action-bar">
   <span class="label">Quick actions:</span>
   <button onclick="doAction('rollback')" class="danger">vpsmctl rollback</button>
   <button onclick="doAction('restart')">restart vps-manager</button>
   <button onclick="doAction('health')">health check</button>
-  <button onclick="baixaEvidencia()" title="saves the terminal screen and the action log to a file (post-mortem)">Save evidence</button>
+  <button onclick="downloadEvidence()" title="saves the terminal screen and the action log to a file (post-mortem)">Save evidence</button>
   <span class="status" id="action-status"></span>
 </div>
 <!-- Its own panel for the output of the quick actions. It used to be
@@ -173,8 +173,8 @@
     <strong>Action output</strong>
     <span id="console-n"></span>
     <span class="esq">
-      <button onclick="copiaConsole()">Copy</button>
-      <button onclick="limpaConsole()">Clear</button>
+      <button onclick="copyConsole()">Copy</button>
+      <button onclick="clearConsole()">Clear</button>
       <button onclick="document.getElementById('console').hidden = true">Close</button>
     </span>
   </div>
@@ -192,7 +192,7 @@
     vps-manager and with no claude-router in the path — so that it keeps answering when the
     router, the host install or the panel are the problem.
   </p>
-  <button onclick="ligaClaude()" id="claude-off-btn">Start the container</button>
+  <button onclick="startClaude()" id="claude-off-btn">Start the container</button>
   <p style="font-size:.72rem">
     If the image does not exist yet, build it once from the host:
     <code>scripts/recovery-claude.sh build</code>
@@ -251,14 +251,14 @@ const enc = new TextEncoder();
 // Declared BEFORE the factory on purpose: `degradado()` is called while the
 // host terminal is being created, which happens at the top of the module. With
 // the `let` further down, the call landed in the temporal dead zone and threw
-// "Cannot access 'jaDegradou' before initialization" — trading the xterm
+// "Cannot access 'alreadyDegraded' before initialization" — trading the xterm
 // failure for an equally dead page, which is exactly what this path exists
 // to prevent.
-let jaDegradou = false;
-function degradado(e) {
-  if (jaDegradou) return;
-  jaDegradou = true;
-  avisaSessao('The terminal emulator (/vendor/xterm) did not load — the page fell back to simple mode: '
+let alreadyDegraded = false;
+function degraded(e) {
+  if (alreadyDegraded) return;
+  alreadyDegraded = true;
+  notifySession('The terminal emulator (/vendor/xterm) did not load — the page fell back to simple mode: '
     + 'the connection and the quick actions still work, without colours and with line-by-line input. '
     + 'Detail: ' + ((e && e.message) || e || 'unknown'), 'aviso');
 }
@@ -279,29 +279,29 @@ const RE_ANSI = /\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][\s\S]*?(?:\x07|\x1b\\)|\x1b[(
 // It exposes the SAME surface the client uses from xterm — write/onData/
 // onResize/focus/cols/rows/buffer — so that no second code path has to be
 // kept in sync.
-function criaMotorSimples() {
+function createSimpleEngine() {
   const box = document.createElement('div');
-  box.className = 'simples';
+  box.className = 'simple';
   const aviso = document.createElement('div');
-  aviso.className = 'simples-aviso';
+  aviso.className = 'simple-aviso';
   aviso.textContent = 'Simple mode: the terminal emulator (xterm) did not load. '
     + 'The connection, the commands and the quick actions still work — the output comes without colours '
     + 'and input is line by line (Enter sends; Ctrl+C, Ctrl+D and Ctrl+Z work). '
     + 'Full-screen programs (vim, htop, less) will not draw correctly here.';
   const pre = document.createElement('pre');
-  pre.className = 'simples-saida';
-  const barra = document.createElement('div');
-  barra.className = 'simples-entrada';
+  pre.className = 'simple-output';
+  const bar = document.createElement('div');
+  bar.className = 'simple-input';
   const inp = document.createElement('input');
   inp.type = 'text'; inp.autocapitalize = 'off'; inp.autocomplete = 'off';
   inp.spellcheck = false; inp.placeholder = 'command + Enter';
   const bt = document.createElement('button');
   bt.type = 'button'; bt.textContent = 'Send';
-  barra.append(inp, bt);
-  box.append(aviso, pre, barra);
+  bar.append(inp, bt);
+  box.append(aviso, pre, bar);
 
   const dec = new TextDecoder('utf-8', { fatal: false });
-  const TETO = 200 * 1024;          // scrollback: ceiling so the tab does not grow forever
+  const CAP = 200 * 1024;          // scrollback: ceiling so the tab does not grow forever
   let texto = '';
   let aoDado = null, aoResize = null;
   let cols = 80, rows = 24;
@@ -310,28 +310,28 @@ function criaMotorSimples() {
   // a '\n' comes, it was a CRLF (end of line); if anything else comes, it was a
   // real carriage return. The PTY delivers chunks of whatever size the network
   // feels like, and that boundary lands inside a CRLF very easily.
-  let crPendente = false;
-  function retornoDeCarro() {      // back to the start of the line: whatever comes next overwrites
+  let crPending = false;
+  function carriageReturn() {      // back to the start of the line: whatever comes next overwrites
     texto = texto.slice(0, texto.lastIndexOf('\n') + 1);
   }
-  function aplica(s) {
+  function apply(s) {
     s = String(s).replace(RE_ANSI, '');
-    if (crPendente) {
-      crPendente = false;
+    if (crPending) {
+      crPending = false;
       // A CRLF only disappears because the '\n' that follows already breaks the
       // line. Treating the '\r' of a CRLF as a carriage return WIPED the whole
       // line — all the shell's normal output vanished from the screen.
       if (s[0] === '\n') s = s.slice(1);
-      else retornoDeCarro();
+      else carriageReturn();
       texto += '\n';
     }
-    if (s.endsWith('\r')) { crPendente = true; s = s.slice(0, -1); }
+    if (s.endsWith('\r')) { crPending = true; s = s.slice(0, -1); }
     s = s.replace(/\r\n/g, '\n');
     // Fast path: the overwhelming majority of chunks have no loose \r and no \b.
     if (s.indexOf('\r') < 0 && s.indexOf('\b') < 0 && s.indexOf('\x07') < 0) { texto += s; return; }
     for (let i = 0; i < s.length; i++) {
       const c = s[i];
-      if (c === '\r') retornoDeCarro();
+      if (c === '\r') carriageReturn();
       else if (c === '\b') {
         if (texto.length && texto[texto.length - 1] !== '\n') texto = texto.slice(0, -1);
       } else if (c === '\x07') {   // bell
@@ -345,11 +345,11 @@ function criaMotorSimples() {
     // Signals to the client that there is no emulation here: predictive echo and
     // offline echo stay off (the <input> already shows what is typed; painting it
     // again in the <pre> would be the command duplicated on screen).
-    simples: true,
+    simple: true,
     write(dados, cb) {
       try {
-        aplica(typeof dados === 'string' ? dados : dec.decode(dados, { stream: true }));
-        if (texto.length > TETO) texto = texto.slice(-TETO);
+        apply(typeof dados === 'string' ? dados : dec.decode(dados, { stream: true }));
+        if (texto.length > CAP) texto = texto.slice(-CAP);
         pre.textContent = texto;
         // Only sticks to the bottom if the operator was already at the bottom —
         // otherwise reading the history during continuous output would be impossible.
@@ -372,24 +372,24 @@ function criaMotorSimples() {
       },
     } },
     // Hands the screen back for the evidence (xterm has the equivalent by sweeping the buffer).
-    _captura() { return texto; },
+    _capture() { return texto; },
   };
 
-  function envia(d) { if (aoDado) { try { aoDado(d); } catch (_) {} } }
-  function enviaLinha() {
+  function send(d) { if (aoDado) { try { aoDado(d); } catch (_) {} } }
+  function sendLine() {
     const v = inp.value; inp.value = '';
-    envia(v + '\r');
+    send(v + '\r');
   }
-  bt.addEventListener('click', enviaLinha);
+  bt.addEventListener('click', sendLine);
   inp.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); enviaLinha(); return; }
+    if (e.key === 'Enter') { e.preventDefault(); sendLine(); return; }
     // Ctrl+letter becomes the matching control character — Ctrl+C is what you
     // reach for in an emergency, and without it the simple mode would be a dead end.
     if (e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
       const k = e.key.toLowerCase();
       if (k >= 'a' && k <= 'z') {
         e.preventDefault();
-        envia(String.fromCharCode(k.charCodeAt(0) - 96));
+        send(String.fromCharCode(k.charCodeAt(0) - 96));
       }
     }
   });
@@ -409,16 +409,16 @@ function criaMotorSimples() {
   return { term, fit };
 }
 
-function criaTerminal(cfg) {
-const elConn = cfg.pilula;
+function createTerminal(cfg) {
+const elConn = cfg.pill;
 let ws = null;
 
 const st = {
-  tentativas: 0, timerRecon: 0, hb: 0, ultimaMsg: 0, pingEm: 0,
-  fila: [], filaBytes: 0, rafId: 0, pendente: 0, pausado: false,
-  outbox: [], outboxBytes: 0, ecoPintado: 0,
+  attempts: 0, timerRecon: 0, hb: 0, lastMsg: 0, pingEm: 0,
+  queue: [], queueBytes: 0, rafId: 0, pendente: 0, paused: false,
+  outbox: [], outboxBytes: 0, echoPainted: 0,
   pred: { txt: '', col: 0, linha: 0, timer: 0 },
-  rtt: 0, eco: 0, envioEm: 0, ecoTimer: 0, servidorEcoa: null,
+  rtt: 0, eco: 0, sentAt: 0, ecoTimer: 0, serverEchoes: null,
 };
 
 // The engine choice is wrapped in try/catch, not merely checked: `temXterm()`
@@ -441,16 +441,16 @@ try {
   // `open()` goes inside the SAME try: that is where xterm touches canvas, fonts
   // and WebGL — i.e. where it fails in a restricted browser. Leaving it out made
   // the protection above useless in precisely the likeliest case of needing it.
-  if (cfg.elemento) term.open(cfg.elemento);
+  if (cfg.element) term.open(cfg.element);
 } catch (e) {
-  const m = criaMotorSimples();
+  const m = createSimpleEngine();
   term = m.term; fitAddon = m.fit;
-  if (cfg.elemento) {
+  if (cfg.element) {
     // xterm may have left half-built DOM behind before throwing.
-    try { cfg.elemento.innerHTML = ''; } catch (_) {}
-    try { term.open(cfg.elemento); } catch (_) {}
+    try { cfg.element.innerHTML = ''; } catch (_) {}
+    try { term.open(cfg.element); } catch (_) {}
   }
-  degradado(e);
+  degraded(e);
 }
 
 // Hysteresis of ONE column, the same as the panel client's.
@@ -464,9 +464,9 @@ try {
 //
 // Sibling code to _safeFit in 00-shell.js, duplicated on purpose: this page
 // exists OUTSIDE the SPA so as not to depend on what it is there to repair.
-// test-reflow-coluna.mjs asserts both sides so they cannot diverge.
+// test-reflow-column.mjs asserts both sides so they cannot diverge.
 let colPend = 0, colTimer = 0;
-function fitSeguro() {
+function safeFit() {
   if (!fitAddon) return false;
   try {
     if (typeof fitAddon.proposeDimensions !== 'function') { fitAddon.fit(); return true; }
@@ -478,7 +478,7 @@ function fitSeguro() {
       if (colPend !== d.cols) {
         colPend = d.cols;
         if (colTimer) clearTimeout(colTimer);
-        colTimer = setTimeout(() => { colTimer = 0; fitSeguro(); }, 300);
+        colTimer = setTimeout(() => { colTimer = 0; safeFit(); }, 300);
         if (d.rows !== term.rows) { try { term.resize(term.cols, d.rows); } catch (_) {} }
         return true;
       }
@@ -491,7 +491,7 @@ function fitSeguro() {
     return true;
   } catch (_) { return false; }
 }
-fitSeguro();
+safeFit();
 
 // There is only one pill and both tabs write to it; without this filter, the tab
 // nobody is looking at would overwrite the state of the one in front.
@@ -499,59 +499,59 @@ function conn(estado, texto) {
   // ALWAYS store, paint only if this is the front tab. Without storing, switching
   // tabs left the pill frozen on the OTHER tab's state until the next event —
   // in an emergency, reading "connected" from a terminal that went down is worse
-  // than reading nothing. With the state stored, mostraAba() can repaint at once.
+  // than reading nothing. With the state stored, showTab() can repaint at once.
   st.estado = estado; st.texto = texto;
   if (!elConn) return;
   if (cfg.ativo && !cfg.ativo()) return;
-  pinta();
+  paint();
 }
-function pinta() {
+function paint() {
   if (!elConn || !st.estado) return;
   // The pending typing queue goes into the pill: without this, what was typed
   // during the outage stayed invisible and looked lost.
-  const fila = st.outbox.length ? ' · ' + st.outboxBytes + ' queued' : '';
+  const queue = st.outbox.length ? ' · ' + st.outboxBytes + ' queued' : '';
   elConn.dataset.e = st.estado;
-  elConn.textContent = (cfg.rotulo ? cfg.rotulo + ': ' : '') + st.texto + fila;
+  elConn.textContent = (cfg.label ? cfg.label + ': ' : '') + st.texto + queue;
 }
 
 // ── output: one write per frame + backpressure ──────────────────────────────
 // Watermarks identical to the main terminal's. Past the ceiling we ask for a pause:
 // the server stops reading the PTY, the program blocks on write and nothing is lost.
-const FC_ALTO = 256 * 1024, FC_BAIXO = 32 * 1024;
-function checaFluxo() {
-  const emVoo = st.filaBytes + st.pendente;
-  if (!st.pausado && emVoo >= FC_ALTO) {
-    st.pausado = true;
+const FC_ALTO = 256 * 1024, FC_LOW = 32 * 1024;
+function checkFlow() {
+  const emVoo = st.queueBytes + st.pendente;
+  if (!st.paused && emVoo >= FC_ALTO) {
+    st.paused = true;
     try { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'pause' })); } catch (_) {}
-  } else if (st.pausado && emVoo <= FC_BAIXO) {
-    st.pausado = false;
+  } else if (st.paused && emVoo <= FC_LOW) {
+    st.paused = false;
     try { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'resume' })); } catch (_) {}
   }
 }
-function despeja() {
+function flush() {
   st.rafId = 0;
-  const q = st.fila; st.fila = [];
-  const bytes = st.filaBytes; st.filaBytes = 0;
+  const q = st.queue; st.queue = [];
+  const bytes = st.queueBytes; st.queueBytes = 0;
   if (!q.length) return;
   // The screen returns to the server's truth BEFORE applying bytes from it — that
   // is what makes the predictive echo's guess safe (see preve()).
-  apagaPalpite();
+  eraseGuess();
   st.pendente += bytes;
   const ult = q.length - 1;
   for (let i = 0; i < ult; i++) term.write(q[i]);
   term.write(q[ult], () => {
     st.pendente = Math.max(0, st.pendente - bytes);
-    checaFluxo();
+    checkFlow();
     repreve();
   });
-  checaFluxo();
+  checkFlow();
 }
 
 // ── predictive echo and offline echo ────────────────────────────────────────
 // Same boundaries as the main terminal: no guessing in full screen
 // (vim/htop repaint whole regions), at a password prompt, with a good network, at
 // the edge of the line, or for a control character.
-function pareceSenha() {
+function looksLikePassword() {
   try {
     const buf = term.buffer.active;
     const linha = buf.getLine(buf.baseY + buf.cursorY);
@@ -561,20 +561,20 @@ function pareceSenha() {
     return /(senha|password|passwd|passphrase|palavra[- ]passe|\bpin\b|token|secret|segredo)/i.test(txt);
   } catch (_) { return true; }
 }
-function podePrever(d) {
+function canPredict(d) {
   // With no emulator there is no way to reconcile a guess by the cursor, and the
   // <input> already shows what was typed: predicting here would paint the command twice.
-  if (term.simples) return false;
+  if (term.simple) return false;
   if (!/^[\x20-\x7e\u00a0-\uffff]+$/.test(d)) return false;
   let buf;
   try { buf = term.buffer.active; } catch (_) { return false; }
   if (!buf || buf.type === 'alternate') return false;
-  if (st.servidorEcoa === false) return false;
-  if (pareceSenha()) return false;
+  if (st.serverEchoes === false) return false;
+  if (looksLikePassword()) return false;
   return (st.eco || st.rtt || 0) >= 60;
 }
-function preve(d) {
-  if (!podePrever(d)) return;
+function predict(d) {
+  if (!canPredict(d)) return;
   const buf = term.buffer.active;
   if (!st.pred.txt) { st.pred.col = buf.cursorX; st.pred.linha = buf.baseY + buf.cursorY; }
   if (buf.cursorX + d.length >= term.cols - 1) return;
@@ -583,9 +583,9 @@ function preve(d) {
   // A guess with no answer (a key the program swallowed) cannot be left
   // dirtying the screen forever.
   if (st.pred.timer) clearTimeout(st.pred.timer);
-  st.pred.timer = setTimeout(apagaPalpite, Math.min(3000, Math.max(600, (st.eco || st.rtt || 200) * 3)));
+  st.pred.timer = setTimeout(eraseGuess, Math.min(3000, Math.max(600, (st.eco || st.rtt || 200) * 3)));
 }
-function apagaPalpite() {
+function eraseGuess() {
   if (!st.pred.txt) return;
   const n = st.pred.txt.length;
   st.pred.txt = '';
@@ -600,20 +600,20 @@ function repreve() {
   try { buf = term.buffer.active; } catch (_) { st.pred.txt = ''; return; }
   if (!buf || buf.type === 'alternate') { st.pred.txt = ''; return; }
   if ((buf.baseY + buf.cursorY) !== st.pred.linha) { st.pred.txt = ''; return; }
-  const avanco = buf.cursorX - st.pred.col;
-  if (avanco < 0) { st.pred.txt = ''; return; }
-  const resto = st.pred.txt.slice(avanco);
-  st.pred.col = buf.cursorX; st.pred.txt = resto;
-  if (!resto) return;
-  if (buf.cursorX + resto.length >= term.cols - 1) { st.pred.txt = ''; return; }
-  try { term.write('\x1b[2m' + resto + '\x1b[22m'); } catch (_) { st.pred.txt = ''; }
+  const advance = buf.cursorX - st.pred.col;
+  if (advance < 0) { st.pred.txt = ''; return; }
+  const rest = st.pred.txt.slice(advance);
+  st.pred.col = buf.cursorX; st.pred.txt = rest;
+  if (!rest) return;
+  if (buf.cursorX + rest.length >= term.cols - 1) { st.pred.txt = ''; return; }
+  try { term.write('\x1b[2m' + rest + '\x1b[22m'); } catch (_) { st.pred.txt = ''; }
 }
 // With no socket: show what was typed, dimmed, instead of leaving the screen
 // dead. It goes away on reattach, erased before the queue is flushed.
 function ecoOffline(d) {
-  if (term.simples) return;
-  if (st.servidorEcoa === false || pareceSenha()) return;
-  let out = '', vis = st.ecoPintado;
+  if (term.simple) return;
+  if (st.serverEchoes === false || looksLikePassword()) return;
+  let out = '', vis = st.echoPainted;
   for (const ch of d) {
     const c = ch.codePointAt(0);
     if (c === 0x7f || c === 0x08) { out += '\b \b'; vis = Math.max(0, vis - 1); continue; }
@@ -621,26 +621,26 @@ function ecoOffline(d) {
     out += ch; vis++;
   }
   if (!out) return;
-  try { term.write('\x1b[2m' + out + '\x1b[22m'); st.ecoPintado = vis; } catch (_) {}
+  try { term.write('\x1b[2m' + out + '\x1b[22m'); st.echoPainted = vis; } catch (_) {}
 }
 
 // ── input ───────────────────────────────────────────────────────────────────
-function envia(d) {
+function send(d) {
   if (d == null || d === '') return;
   if (ws && ws.readyState === 1) {
     // Raw binary frame: the server writes every binary frame straight into the PTY.
     try { ws.send(enc.encode(d)); } catch (_) { enfileira(d); return; }
     if (/^[\x20-\x7e\u00a0-\uffff]+$/.test(d)) {
-      if (!st.envioEm) st.envioEm = Date.now();
+      if (!st.sentAt) st.sentAt = Date.now();
       if (!st.ecoTimer) {
         // Nothing back in 1.5s with a live socket = a prompt that does not echo (password).
         st.ecoTimer = setTimeout(() => {
           st.ecoTimer = 0;
-          if (st.envioEm) { st.servidorEcoa = false; st.envioEm = 0; }
+          if (st.sentAt) { st.serverEchoes = false; st.sentAt = 0; }
         }, 1500);
       }
     }
-    preve(d);
+    predict(d);
     return;
   }
   enfileira(d);
@@ -648,34 +648,34 @@ function envia(d) {
 function enfileira(d) {
   if (st.outboxBytes + d.length > 128 * 1024) return;  // ceiling: does not grow forever
   st.outbox.push(d); st.outboxBytes += d.length;
-  if (!cfg.ativo || cfg.ativo()) pinta();
+  if (!cfg.ativo || cfg.ativo()) paint();
   ecoOffline(d);
 }
 
 // ── connection ──────────────────────────────────────────────────────────────
-function abre() {
+function open() {
   if (ws && (ws.readyState === 0 || ws.readyState === 1)) return;
   // The Claude tab only connects after it knows the container is up —
   // opening a WebSocket that dies on upgrade tells the person watching nothing.
-  if (cfg.podeAbrir && !cfg.podeAbrir()) return;
+  if (cfg.canOpen && !cfg.canOpen()) return;
   if (st.timerRecon) { clearTimeout(st.timerRecon); st.timerRecon = 0; }
-  conn('wait', st.tentativas ? 'reconnecting…' : 'connecting…');
+  conn('wait', st.attempts ? 'reconnecting…' : 'connecting…');
   const s = new WebSocket(wsProto + '//' + location.host + cfg.caminho);
   s.binaryType = 'arraybuffer';
   ws = s;
 
   s.onopen = () => {
-    st.tentativas = 0; st.ultimaMsg = Date.now();
-    st.fila = []; st.filaBytes = 0; st.pendente = 0; st.pausado = false;
+    st.attempts = 0; st.lastMsg = Date.now();
+    st.queue = []; st.queueBytes = 0; st.pendente = 0; st.paused = false;
     conn('open', 'connected');
-    fitSeguro();
+    safeFit();
     if (term.cols >= 2 && term.rows >= 1) {
       s.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
     }
     // Erase the local echo before sending the queue: the server will echo the real
     // text, and the two on screen would be the same command duplicated.
-    if (st.ecoPintado > 0) { try { term.write('\b \b'.repeat(st.ecoPintado)); } catch (_) {} }
-    st.ecoPintado = 0;
+    if (st.echoPainted > 0) { try { term.write('\b \b'.repeat(st.echoPainted)); } catch (_) {} }
+    st.echoPainted = 0;
     if (st.outbox.length) {
       const pend = st.outbox.join(''); st.outbox = []; st.outboxBytes = 0;
       try { s.send(enc.encode(pend)); } catch (_) {}
@@ -688,9 +688,9 @@ function abre() {
       // Reassert the size along with the heartbeat: any divergence fixes
       // itself within at most one cycle, instead of leaving the screen corrupted until
       // somebody resizes the window by hand.
-      afirmaTamanho();
+      assertSize();
       // Silent death: TCP up, server mute. Close and reconnect.
-      if (st.ultimaMsg && Date.now() - st.ultimaMsg > 70000) {
+      if (st.lastMsg && Date.now() - st.lastMsg > 70000) {
         try { ws.close(4000, 'silent-death'); } catch (_) {}
       }
     }, 20000);
@@ -699,7 +699,7 @@ function abre() {
 
   s.onmessage = (e) => {
     if (ws !== s) return;
-    st.ultimaMsg = Date.now();
+    st.lastMsg = Date.now();
     const n = (typeof e.data === 'string') ? e.data.length : ((e.data && e.data.byteLength) | 0);
     if (n === 0) {                       // pong: empty binary frame
       if (st.pingEm) {
@@ -709,17 +709,17 @@ function abre() {
       }
       return;
     }
-    if (st.envioEm) {
-      const dt = Date.now() - st.envioEm; st.envioEm = 0;
+    if (st.sentAt) {
+      const dt = Date.now() - st.sentAt; st.sentAt = 0;
       st.eco = st.eco ? Math.round(st.eco * 0.6 + dt * 0.4) : dt;
-      st.servidorEcoa = true;
+      st.serverEchoes = true;
       if (st.ecoTimer) { clearTimeout(st.ecoTimer); st.ecoTimer = 0; }
     }
     const dados = (typeof e.data === 'string') ? e.data : new Uint8Array(e.data);
-    st.fila.push(dados);
-    st.filaBytes += (dados.length || 0);
-    if (!st.rafId) st.rafId = requestAnimationFrame(despeja);
-    checaFluxo();
+    st.queue.push(dados);
+    st.queueBytes += (dados.length || 0);
+    if (!st.rafId) st.rafId = requestAnimationFrame(flush);
+    checkFlow();
   };
 
   s.onerror = () => { /* onclose handles it — avoid two warnings for the same event */ };
@@ -731,38 +731,38 @@ function abre() {
     // A pending guess becomes offline echo: the reconnect is what erases it.
     if (st.pred.txt) {
       if (st.pred.timer) { clearTimeout(st.pred.timer); st.pred.timer = 0; }
-      st.ecoPintado += st.pred.txt.length; st.pred.txt = '';
+      st.echoPainted += st.pred.txt.length; st.pred.txt = '';
     }
-    if (ev.code === 4401 || ev.code === 1008) { expirou(); return; }
-    st.tentativas++;
+    if (ev.code === 4401 || ev.code === 1008) { expired(); return; }
+    st.attempts++;
     // The recovery session lasts 30 min. When it expires, the WS upgrade is
     // refused BEFORE becoming a WebSocket, and that arrives here as 1006 — the same
     // code as a network drop. Without asking, the client would keep reconnecting
     // in a loop forever announcing "no connection" on a perfect network. It only
     // asks after the second attempt: a network blink does not deserve a
     // request at all.
-    if (st.tentativas === 2 || st.tentativas % 4 === 0) sondaSessao();
+    if (st.attempts === 2 || st.attempts % 4 === 0) probeSession();
     const rapido = [300, 700, 1500];
-    const base = st.tentativas <= rapido.length
-      ? rapido[st.tentativas - 1]
-      : Math.min(5000, 3000 * Math.pow(2, st.tentativas - rapido.length - 1));
-    const espera = Math.floor(base * (0.8 + Math.random() * 0.4));
+    const base = st.attempts <= rapido.length
+      ? rapido[st.attempts - 1]
+      : Math.min(5000, 3000 * Math.pow(2, st.attempts - rapido.length - 1));
+    const wait = Math.floor(base * (0.8 + Math.random() * 0.4));
     conn('down', 'no connection — retrying');
-    st.timerRecon = setTimeout(abre, espera);
+    st.timerRecon = setTimeout(open, wait);
   };
 }
 
 // Cheap probe: HEAD carries no body, and a 302 to /recovery (expired session)
 // shows up as an opaque response with redirect:'manual'.
-function sondaSessao() {
+function probeSession() {
   fetch('/recovery/term', { method: 'HEAD', redirect: 'manual', cache: 'no-store' })
-    .then((r) => { if (r.type === 'opaqueredirect' || r.status === 401 || r.status === 302) expirou(); })
+    .then((r) => { if (r.type === 'opaqueredirect' || r.status === 401 || r.status === 302) expired(); })
     .catch(() => { /* no network: the backoff carries on, which is right */ });
 }
-function expirou() {
+function expired() {
   if (st.timerRecon) { clearTimeout(st.timerRecon); st.timerRecon = 0; }
   if (st.hb) { clearInterval(st.hb); st.hb = 0; }
-  st.tentativas = 0;
+  st.attempts = 0;
   try { if (ws) ws.close(); } catch (_) {}
   ws = null;
   conn('down', 'session expired');
@@ -770,10 +770,10 @@ function expirou() {
   // Writing into xterm dirtied the scrollback of the conversation with Claude — and a
   // notice about the page does not belong to the content of the session, which is
   // still alive on the server waiting for the next authentication.
-  avisaSessao('The recovery session expired. Reload the page and authenticate again — whatever is running on the server is still there.');
+  notifySession('The recovery session expired. Reload the page and authenticate again — whatever is running on the server is still there.');
 }
 
-term.onData(envia);
+term.onData(send);
 
 // The size is RECONCILED STATE, not an event.
 //
@@ -786,7 +786,7 @@ term.onData(envia);
 //
 // Reasserting is cheap because the SERVER deduplicates (pty.go): SIGWINCH only reaches
 // the PTY when the value really changes.
-function afirmaTamanho() {
+function assertSize() {
   if (!ws || ws.readyState !== 1) return false;
   const cols = term.cols, rows = term.rows;
   if (!(cols >= 2 && rows >= 1)) return false;
@@ -794,39 +794,39 @@ function afirmaTamanho() {
 }
 // Redo the fit and reassert — for when the window comes back and the layout may have
 // changed while nobody was measuring.
-function reconciliaTamanho() {
-  fitSeguro();
-  afirmaTamanho();
+function reconcileSize() {
+  safeFit();
+  assertSize();
 }
 let tRes = 0;
 term.onResize((dim) => {
   if (dim.cols < 2 || dim.rows < 1) return;
   if (tRes) return;
-  tRes = setTimeout(() => { tRes = 0; afirmaTamanho(); }, 100);
+  tRes = setTimeout(() => { tRes = 0; assertSize(); }, 100);
 });
 // The network came back (or the tab did): no point waiting out the backoff.
-window.addEventListener('online', abre);
+window.addEventListener('online', open);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { abre(); reconciliaTamanho(); }
+  if (!document.hidden) { open(); reconcileSize(); }
 });
 // `focus` covers switching the WINDOW (not the tab): in an installed app/PWA
 // visibilitychange does not always fire, but focus does.
-window.addEventListener('focus', reconciliaTamanho);
+window.addEventListener('focus', reconcileSize);
 
 return {
-  term, fit: fitAddon, st, abre, envia, afirmaTamanho, reconciliaTamanho,
-  ajusta() { fitSeguro(); },
-  foca() { try { term.focus(); } catch (_) {} },
+  term, fit: fitAddon, st, open, send, assertSize, reconcileSize,
+  adjust() { safeFit(); },
+  focus() { try { term.focus(); } catch (_) {} },
   ligado() { return !!(ws && ws.readyState === 1); },
   // Repaints the pill with the stored state — used when switching tabs.
-  repinta() { pinta(); },
+  repinta() { paint(); },
   // Reconnect NOW, without waiting for the backoff: when the operator knows the
   // network is back, spending 5 s staring at "no connection" is wasted time at the worst moment.
-  jaVai() { st.tentativas = 0; if (st.timerRecon) { clearTimeout(st.timerRecon); st.timerRecon = 0; } abre(); },
+  jaVai() { st.attempts = 0; if (st.timerRecon) { clearTimeout(st.timerRecon); st.timerRecon = 0; } open(); },
   // The screen, as text, for the post-mortem evidence.
-  captura() {
+  capture() {
     try {
-      if (term.simples) return term._captura();
+      if (term.simple) return term._capture();
       const buf = term.buffer.active;
       const out = [];
       for (let i = 0; i < buf.length; i++) {
@@ -842,43 +842,43 @@ return {
 }
 
 // ── the two tabs ────────────────────────────────────────────────────────────
-const pilula = document.getElementById('conn');
-const host = criaTerminal({
+const pill = document.getElementById('conn');
+const host = createTerminal({
   caminho: '/recovery/ws/pty',
-  elemento: document.getElementById('term'),
-  pilula, rotulo: 'host',
-  ativo: () => abaAtual === 'host',
+  element: document.getElementById('term'),
+  pill, label: 'host',
+  ativo: () => currentTab === 'host',
 });
 // The Claude one is born without connecting: first we ask whether the container is
-// up (podeAbrir), otherwise the WebSocket would die on upgrade explaining nothing.
-let claudeLiberado = false;
-const claude = criaTerminal({
+// up (canOpen), otherwise the WebSocket would die on upgrade explaining nothing.
+let claudeUnlocked = false;
+const claude = createTerminal({
   caminho: '/recovery/ws/claude',
-  elemento: document.getElementById('term-claude'),
-  pilula, rotulo: 'claude',
-  podeAbrir: () => claudeLiberado,
-  ativo: () => abaAtual === 'claude',
+  element: document.getElementById('term-claude'),
+  pill, label: 'claude',
+  canOpen: () => claudeUnlocked,
+  ativo: () => currentTab === 'claude',
 });
 
-let abaAtual = 'host';
-host.abre();
-function mostraAba(qual) {
-  abaAtual = qual;
-  document.getElementById('aba-host').classList.toggle('on', qual === 'host');
-  document.getElementById('aba-claude').classList.toggle('on', qual === 'claude');
-  document.getElementById('term').hidden = qual !== 'host';
-  document.getElementById('term-claude').hidden = qual !== 'claude' || !claudeLiberado;
-  document.getElementById('claude-off').hidden = qual !== 'claude' || claudeLiberado;
+let currentTab = 'host';
+host.open();
+function showTab(which) {
+  currentTab = which;
+  document.getElementById('aba-host').classList.toggle('on', which === 'host');
+  document.getElementById('aba-claude').classList.toggle('on', which === 'claude');
+  document.getElementById('term').hidden = which !== 'host';
+  document.getElementById('term-claude').hidden = which !== 'claude' || !claudeUnlocked;
+  document.getElementById('claude-off').hidden = which !== 'claude' || claudeUnlocked;
   // The quick actions bar belongs to the host; on the Claude tab it would only confuse.
-  document.querySelector('.action-bar').hidden = qual !== 'host';
+  document.querySelector('.action-bar').hidden = which !== 'host';
   // The pill is shared: without repainting here, it would keep showing the
   // state of the tab that has just left the stage.
-  (qual === 'host' ? host : claude).repinta();
-  if (qual === 'host') {
-    host.ajusta(); host.foca();
-    document.getElementById('aba-dica').textContent = '';
+  (which === 'host' ? host : claude).repinta();
+  if (which === 'host') {
+    host.adjust(); host.focus();
+    document.getElementById('aba-hint').textContent = '';
   } else {
-    checaClaude();
+    checkClaude();
   }
 }
 
@@ -889,43 +889,43 @@ function mostraAba(qual) {
 document.addEventListener('keydown', (e) => {
   if (!e.ctrlKey || !e.altKey || e.metaKey) return;
   const k = (e.key || '').toLowerCase();
-  if (k === '1') { e.preventDefault(); mostraAba('host'); }
-  else if (k === '2') { e.preventDefault(); mostraAba('claude'); }
-  else if (k === 'r') { e.preventDefault(); reconectaAgora(); }
+  if (k === '1') { e.preventDefault(); showTab('host'); }
+  else if (k === '2') { e.preventDefault(); showTab('claude'); }
+  else if (k === 'r') { e.preventDefault(); reconnectNow(); }
 }, true);
 
 // Reconnects BOTH tabs: whoever clicks this has just seen the network come back, and
 // does not want to find out later that the other tab was left behind.
-function reconectaAgora() {
+function reconnectNow() {
   host.jaVai();
-  if (claudeLiberado) claude.jaVai();
+  if (claudeUnlocked) claude.jaVai();
 }
 
 // The container's state BEFORE trying to connect. This is what turns a mute
 // "it will not connect" into an actionable sentence.
-async function checaClaude() {
-  const dica = document.getElementById('aba-dica');
-  dica.textContent = 'checking the container…';
+async function checkClaude() {
+  const hint = document.getElementById('aba-hint');
+  hint.textContent = 'checking the container…';
   let d = {};
   try {
     const r = await fetch('/recovery/claude/status', { cache: 'no-store' });
     d = await r.json().catch(() => ({}));
   } catch (_) { d = {}; }
-  claudeLiberado = !!d.rodando;
-  if (abaAtual !== 'claude') return;
-  document.getElementById('term-claude').hidden = !claudeLiberado;
-  document.getElementById('claude-off').hidden = claudeLiberado;
-  if (!claudeLiberado) {
-    dica.textContent = d.existe ? 'container stopped' : 'container does not exist yet';
+  claudeUnlocked = !!d.rodando;
+  if (currentTab !== 'claude') return;
+  document.getElementById('term-claude').hidden = !claudeUnlocked;
+  document.getElementById('claude-off').hidden = claudeUnlocked;
+  if (!claudeUnlocked) {
+    hint.textContent = d.existe ? 'container stopped' : 'container does not exist yet';
     document.getElementById('claude-off-txt').textContent = d.existe
       ? 'The vpsm-recovery-claude container exists but is not running. It is independent of vps-manager and of claude-router — which is why it keeps serving even when they are down.'
       : 'The vpsm-recovery-claude container has not been created on this server yet. It runs alongside vps-manager, with no claude-router in the path and with its own login.';
     return;
   }
-  dica.textContent = (d.versao ? d.versao + ' · ' : '')
+  hint.textContent = (d.versao ? d.versao + ' · ' : '')
     + (d.autenticado ? 'no router, its own login' : 'NOT authenticated yet: run `claude` once here');
-  claude.abre();
-  claude.ajusta(); claude.foca();
+  claude.open();
+  claude.adjust(); claude.focus();
   // Until the login has happened, the hint has to correct itself: it is
   // queried ONCE when the tab opens, so it kept saying "FALTA
   // autenticar" after the operator had already authenticated right there, in the
@@ -933,8 +933,8 @@ async function checaClaude() {
   // only changes once, it is not worth hammering forever.
   if (!d.autenticado && !recheque) {
     recheque = setInterval(() => {
-      if (abaAtual !== 'claude' || document.hidden) return;
-      checaClaude();
+      if (currentTab !== 'claude' || document.hidden) return;
+      checkClaude();
     }, 15000);
   } else if (d.autenticado && recheque) {
     clearInterval(recheque); recheque = 0;
@@ -942,33 +942,33 @@ async function checaClaude() {
 }
 let recheque = 0;
 
-async function ligaClaude() {
+async function startClaude() {
   const btn = document.getElementById('claude-off-btn');
-  const dica = document.getElementById('aba-dica');
-  btn.disabled = true; dica.textContent = 'starting…';
+  const hint = document.getElementById('aba-hint');
+  btn.disabled = true; hint.textContent = 'starting…';
   try {
     const r = await fetch('/recovery/action/claude-up', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.ok === false) {
-      dica.textContent = (d.error || ('HTTP ' + r.status));
+      hint.textContent = (d.error || ('HTTP ' + r.status));
       document.getElementById('claude-off-txt').textContent =
         (d.output || d.error || 'failed to start') + ' — if the image does not exist, build it once from the host: scripts/recovery-claude.sh build';
       return;
     }
-    await checaClaude();
+    await checkClaude();
   } finally { btn.disabled = false; }
 }
 
-window.addEventListener('resize', () => { host.ajusta(); claude.ajusta(); });
+window.addEventListener('resize', () => { host.adjust(); claude.adjust(); });
 
 // ── the PAGE's notice banner ────────────────────────────────────────────────
 // Notices about the session (expired, about to expire) do not belong to the content of
 // the terminal: writing them into xterm dirtied the scrollback of the conversation with Claude,
 // which is exactly what the operator is trying to read in an emergency.
-function avisaSessao(texto, tom) {
-  const el = document.getElementById('faixa');
+function notifySession(texto, tom) {
+  const el = document.getElementById('banner');
   if (!el) return;
   el.textContent = texto;
   el.dataset.tom = tom || 'erro';
@@ -981,116 +981,116 @@ function avisaSessao(texto, tom) {
 // moment to have to retype password + TOTP — it happened in the first real session.
 // While the tab is open and there has been recent use, we renew; the server keeps
 // an absolute cap counted from sign-in, so a forgotten tab still dies.
-let usoRecente = Date.now();
-const marcaUso = () => { usoRecente = Date.now(); };
-document.addEventListener('keydown', marcaUso, true);
-document.addEventListener('mousedown', marcaUso, true);
-document.addEventListener('touchstart', marcaUso, { capture: true, passive: true });
+let recentUse = Date.now();
+const markUse = () => { recentUse = Date.now(); };
+document.addEventListener('keydown', markUse, true);
+document.addEventListener('mousedown', markUse, true);
+document.addEventListener('touchstart', markUse, { capture: true, passive: true });
 
 // The instant the absolute cap runs out, derived from the last answer from
 // /recovery/renew. The clock counts from here, locally, so as not to depend on a
 // request every second.
-let tetoEm = 0;
-let renovandoEm = 0;
+let capAt = 0;
+let renewingAt = 0;
 
-async function renovaSessao() {
+async function renewSession() {
   // "In use" = keyboard/mouse in the last 20 min. Without this, a tab left open and
   // abandoned would renew forever up to the cap, which is not the point.
-  if (Date.now() - usoRecente > 20 * 60 * 1000) return;
-  if (Date.now() - renovandoEm < 30000) return;   // does not stack calls
-  renovandoEm = Date.now();
+  if (Date.now() - recentUse > 20 * 60 * 1000) return;
+  if (Date.now() - renewingAt < 30000) return;   // does not stack calls
+  renewingAt = Date.now();
   try {
     const r = await fetch('/recovery/renew', { method: 'POST', cache: 'no-store' });
     if (r.status === 401) {
       // The 30 min token expired (tab hidden too long, server clock,
       // a sign-out somewhere else). This used to pass in silence and the
       // page went on looking alive until the operator typed and nothing happened.
-      tetoEm = 0;
-      avisaSessao('The recovery session expired. Reload the page and authenticate again — whatever is running on the server is still there.');
+      capAt = 0;
+      notifySession('The recovery session expired. Reload the page and authenticate again — whatever is running on the server is still there.');
       return;
     }
     if (r.status === 403) {
       // Absolute cap reached: warn BEFORE the operator finds out by being
       // disconnected in the middle of a command.
       const d = await r.json().catch(() => ({}));
-      tetoEm = Date.now();
-      avisaSessao(d.error || 'The recovery session has hit its cap and is about to end. Save what you need and authenticate again.');
+      capAt = Date.now();
+      notifySession(d.error || 'The recovery session has hit its cap and is about to end. Save what you need and authenticate again.');
       return;
     }
     if (r.ok) {
       const d = await r.json().catch(() => ({}));
-      const el = document.getElementById('faixa');
-      if (typeof d.restante_seg === 'number') tetoEm = Date.now() + d.restante_seg * 1000;
+      const el = document.getElementById('banner');
+      if (typeof d.restante_seg === 'number') capAt = Date.now() + d.restante_seg * 1000;
       // Less than 30 min of cap left: time to warn, there is still time.
       if (typeof d.restante_seg === 'number' && d.restante_seg < 30 * 60) {
-        avisaSessao('The recovery session ends in ' + Math.max(1, Math.round(d.restante_seg / 60)) + ' min (the cap since sign-in). Authenticate again when you can.', 'aviso');
+        notifySession('The recovery session ends in ' + Math.max(1, Math.round(d.restante_seg / 60)) + ' min (the cap since sign-in). Authenticate again when you can.', 'aviso');
       } else if (el && el.dataset.tom !== 'erro') {
         el.hidden = true;
       }
-      pintaRelogio();
+      paintClock();
     }
   } catch (_) { /* no network: the WS backoff already handles it */ }
 }
 
-setInterval(() => { if (!document.hidden) renovaSessao(); }, 5 * 60 * 1000);
+setInterval(() => { if (!document.hidden) renewSession(); }, 5 * 60 * 1000);
 // Coming back to the tab is the MOST likely moment for the session to be hanging by a
 // thread: the interval above does not run with the tab hidden, so whoever comes back after a
 // while came back to a session about to die (or already dead) without knowing.
 // Renewing on return turns that into a non-event.
-document.addEventListener('visibilitychange', () => { if (!document.hidden) renovaSessao(); });
-window.addEventListener('online', () => renovaSessao());
+document.addEventListener('visibilitychange', () => { if (!document.hidden) renewSession(); });
+window.addEventListener('online', () => renewSession());
 // Once at the start, just so the clock knows how much time we are talking about.
-setTimeout(renovaSessao, 1500);
+setTimeout(renewSession, 1500);
 
 // ── session clock ───────────────────────────────────────────────────────────
 // Always visible, not only when it is running out: knowing that 8 min are left changes
 // the order in which you do things in an emergency.
-function pintaRelogio() {
-  const el = document.getElementById('relogio');
+function paintClock() {
+  const el = document.getElementById('clock');
   if (!el) return;
-  if (!tetoEm) { el.textContent = ''; el.dataset.tom = ''; return; }
-  const seg = Math.max(0, Math.round((tetoEm - Date.now()) / 1000));
+  if (!capAt) { el.textContent = ''; el.dataset.tom = ''; return; }
+  const seg = Math.max(0, Math.round((capAt - Date.now()) / 1000));
   const mm = Math.floor(seg / 60), ss = seg % 60;
   el.textContent = 'session ' + mm + ':' + String(ss).padStart(2, '0');
   el.dataset.tom = seg <= 300 ? 'erro' : (seg <= 1800 ? 'aviso' : '');
 }
-setInterval(pintaRelogio, 1000);
+setInterval(paintClock, 1000);
 
 // ── any unhandled error becomes a banner ────────────────────────────────────
 // On an emergency page, a JavaScript error that only shows up in the browser
 // console is an invisible error: whoever is repairing the server does not have
 // devtools open. It becomes visible, and the rest of the page stays up.
-let jaAvisouErro = false;
-function avisaErroGlobal(msg) {
-  if (jaAvisouErro) return;
-  jaAvisouErro = true;
+let alreadyWarnedError = false;
+function reportGlobalError(msg) {
+  if (alreadyWarnedError) return;
+  alreadyWarnedError = true;
   logaConsole('page error: ' + msg, 'If something stopped responding, use "Save evidence" and reload.', 'err');
 }
 window.addEventListener('error', (ev) => {
-  avisaErroGlobal((ev && (ev.message || (ev.error && ev.error.message))) || 'unknown error');
+  reportGlobalError((ev && (ev.message || (ev.error && ev.error.message))) || 'unknown error');
 });
 window.addEventListener('unhandledrejection', (ev) => {
   const r = ev && ev.reason;
-  avisaErroGlobal((r && (r.message || String(r))) || 'rejected promise');
+  reportGlobalError((r && (r.message || String(r))) || 'rejected promise');
 });
 
 // ── quick actions console ──────────────────────────────────────────
-const linhasConsole = [];
-function logaConsole(titulo, corpo, tom) {
-  const hora = new Date().toLocaleTimeString('pt-BR', { hour12: false });
-  linhasConsole.push({ hora, titulo, corpo: String(corpo == null ? '' : corpo).replace(/\s+$/, ''), tom });
-  if (linhasConsole.length > 200) linhasConsole.shift();
+const consoleLines = [];
+function logaConsole(title, corpo, tom) {
+  const time = new Date().toLocaleTimeString('pt-BR', { hour12: false });
+  consoleLines.push({ time, title, corpo: String(corpo == null ? '' : corpo).replace(/\s+$/, ''), tom });
+  if (consoleLines.length > 200) consoleLines.shift();
   const pre = document.getElementById('console-txt');
   const cx = document.getElementById('console');
   if (!pre || !cx) return;
   pre.textContent = '';
-  for (const l of linhasConsole) {
+  for (const l of consoleLines) {
     const cab = document.createElement('div');
     const h = document.createElement('span');
-    h.className = 'hora'; h.textContent = '[' + l.hora + '] ';
+    h.className = 'time'; h.textContent = '[' + l.time + '] ';
     const t = document.createElement('span');
     if (l.tom) t.className = l.tom;
-    t.textContent = l.titulo;
+    t.textContent = l.title;
     cab.append(h, t);
     pre.appendChild(cab);
     if (l.corpo) {
@@ -1100,18 +1100,18 @@ function logaConsole(titulo, corpo, tom) {
     }
   }
   const n = document.getElementById('console-n');
-  if (n) n.textContent = linhasConsole.length + ' entries';
+  if (n) n.textContent = consoleLines.length + ' entries';
   cx.hidden = false;
   pre.scrollTop = pre.scrollHeight;
 }
-function textoConsole() {
-  return linhasConsole.map((l) => '[' + l.hora + '] ' + l.titulo + (l.corpo ? '\n' + l.corpo : '')).join('\n');
+function consoleText() {
+  return consoleLines.map((l) => '[' + l.time + '] ' + l.title + (l.corpo ? '\n' + l.corpo : '')).join('\n');
 }
-function copiaConsole() {
-  const t = textoConsole();
+function copyConsole() {
+  const t = consoleText();
   // In an emergency the clipboard may be denied (insecure context, permission
   // refused). Falling back to manual selection beats a button that does nothing.
-  const falha = () => {
+  const fail = () => {
     try {
       const pre = document.getElementById('console-txt');
       const sel = window.getSelection(); const rg = document.createRange();
@@ -1119,12 +1119,12 @@ function copiaConsole() {
     } catch (_) {}
   };
   try {
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).catch(falha);
-    else falha();
-  } catch (_) { falha(); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).catch(fail);
+    else fail();
+  } catch (_) { fail(); }
 }
-function limpaConsole() {
-  linhasConsole.length = 0;
+function clearConsole() {
+  consoleLines.length = 0;
   document.getElementById('console-txt').textContent = '';
   document.getElementById('console-n').textContent = '';
   document.getElementById('console').hidden = true;
@@ -1133,22 +1133,22 @@ function limpaConsole() {
 // Evidence: the screen of both terminals + the action log in a file. Whoever
 // repairs at 3 in the morning will not remember what the screen said — and the scrollback
 // dies on the first `clear` or when the tab closes.
-function baixaEvidencia() {
-  const carimbo = new Date().toISOString().replace(/[:.]/g, '-');
-  const partes = [
+function downloadEvidence() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const parts = [
     '# VPS Manager — recovery terminal evidence',
     'generated: ' + new Date().toISOString(),
     'user: ' + (document.cookie.match(/vpsm_recovery_user=([^;]+)/)?.[1] || '?'),
-    'engine: ' + (host.term.simples ? 'simple (xterm unavailable)' : 'xterm'),
+    'engine: ' + (host.term.simple ? 'simple (xterm unavailable)' : 'xterm'),
     '',
-    '## quick actions', textoConsole() || '(none)', '',
-    '## host shell', host.captura(), '',
-    '## recovery claude', claudeLiberado ? claude.captura() : '(the container was not running)',
+    '## quick actions', consoleText() || '(none)', '',
+    '## host shell', host.capture(), '',
+    '## recovery claude', claudeUnlocked ? claude.capture() : '(the container was not running)',
   ];
   try {
-    const url = URL.createObjectURL(new Blob([partes.join('\n')], { type: 'text/plain;charset=utf-8' }));
+    const url = URL.createObjectURL(new Blob([parts.join('\n')], { type: 'text/plain;charset=utf-8' }));
     const a = document.createElement('a');
-    a.href = url; a.download = 'recovery-' + carimbo + '.txt';
+    a.href = url; a.download = 'recovery-' + stamp + '.txt';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   } catch (e) {

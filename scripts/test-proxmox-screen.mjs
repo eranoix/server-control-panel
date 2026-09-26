@@ -4,8 +4,8 @@ import { fileURLToPath } from 'url';
 
 // The repo root from THIS file: the pin runs both under `node scripts/...` and
 // under `go test ./internal/webassets/`, whose cwd is the package.
-const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ler = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ler = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const src = ler('internal/webassets/web/vendor/vpsm/app/41-proxmox.js');
 const win = {};
 new Function('window','document','location','setInterval','clearInterval', src)(
@@ -35,16 +35,16 @@ const host  = comp.nodes.list[0], guest = comp.nodes.list[2];
 // reached parity with Proxmox — with nothing broken. An exact list is fragile for
 // the same reason a position was: any legitimate growth knocks it over. What
 // needs a guard are the PROPERTIES.
-const idsHost = comp.pvxAbasDoNo(host).map((a) => a.id);
-const idsGuest = comp.pvxAbasDoNo(guest).map((a) => a.id);
+const idsHost = comp.pvxNodeTabs(host).map((a) => a.id);
+const idsGuest = comp.pvxNodeTabs(guest).map((a) => a.id);
 
-ok('both lists open on the Summary', idsHost[0] === 'resumo' && idsGuest[0] === 'resumo');
+ok('both lists open on the Summary', idsHost[0] === 'summary' && idsGuest[0] === 'summary');
 ok('the host has the infrastructure tabs',
    ['discos', 'storage', 'zfs'].every((x) => idsHost.includes(x)), idsHost.join(','));
 ok('the guest has console and snapshots',
    ['console', 'snaps'].every((x) => idsGuest.includes(x)), idsGuest.join(','));
 ok('no infrastructure tab leaks into the guest',
-   !['discos', 'storage', 'zfs', 'rede', 'sistema', 'pacotes', 'registro', 'perms']
+   !['discos', 'storage', 'zfs', 'rede', 'sistema', 'pacotes', 'registry', 'perms']
      .some((x) => idsGuest.includes(x)), idsGuest.join(','));
 // 🔴 `console` LEFT this list: the host gained a Shell once the operator granted
 // Sys.Console, and the pin — correctly — failed over the change. `snaps` stays:
@@ -57,19 +57,19 @@ ok('and the guest has a console too', idsGuest.includes('console'));
 ok('no repeated id in either list',
    new Set(idsHost).size === idsHost.length && new Set(idsGuest).size === idsGuest.length);
 ok('no host tab shows up with a guest selected',
-   !comp.pvxAbasDoNo(guest).some(a=>['discos','storage','zfs','perms'].includes(a.id)));
+   !comp.pvxNodeTabs(guest).some(a=>['discos','storage','zfs','perms'].includes(a.id)));
 
 // a tab inherited from another type falls back to Summary, not an empty panel
-comp.pvx.aberto = 'qemu/208'; comp.pvx.aba = 'zfs';
-ok('a "zfs" tab inherited on a guest normalises to "resumo"', comp.pvxAbaAtiva() === 'resumo',
-   comp.pvxAbaAtiva());
+comp.pvx.open = 'qemu/208'; comp.pvx.aba = 'zfs';
+ok('a "zfs" tab inherited on a guest normalises to "summary"', comp.pvxActiveTab() === 'summary',
+   comp.pvxActiveTab());
 comp.pvx.aba = 'console';
-ok('a valid guest tab is respected', comp.pvxAbaAtiva() === 'console');
+ok('a valid guest tab is respected', comp.pvxActiveTab() === 'console');
 
 // ── lab summary ───────────────────────────────────────────────────────────
-comp.pvx.aberto = '';
-const r = comp.pvxResumoDoLab();
-ok('counts 3 guests, 2 running', r.guests===3 && r.ligados===2, `${r.guests}/${r.ligados}`);
+comp.pvx.open = '';
+const r = comp.pvxLabSummary();
+ok('counts 3 guests, 2 running', r.guests===3 && r.running===2, `${r.guests}/${r.running}`);
 ok('a guest with no timestamp goes into semDado, not in as a zero', r.semDado===1, String(r.semDado));
 ok('summed memory IGNORES the one with no data (it does not dilute the average)',
    Math.abs(r.memTotal - (17.18e9+8.59e9)) < 1e6, (r.memTotal/1e9).toFixed(2)+' GB');
@@ -92,7 +92,7 @@ ok('the memory percentage matches the sum of the observed ones',
   // dereferenced by the template before the first load — which is the state the
   // screen ALWAYS opens in — and the throw took down the whole of Alpine, taking
   // the terminal with it.
-  ok('with no answer yet, the screen does not pretend it loaded', comp.pvxBackups().carregado === false);
+  ok('with no answer yet, the screen does not pretend it loaded', comp.pvxBackups().loaded === false);
   ok('and the state already has a SHAPE before loading (it is not null)',
      Array.isArray(comp.pvx.backup.datastores) && comp.pvx.backup.datastores.length === 0);
 
@@ -105,34 +105,34 @@ ok('the memory percentage matches the sum of the observed ones',
       { storage: 'quebrado', erro: 'the hypervisor refused' },
     ],
   };
-  const itens = comp.pvxBackups().itens;
-  ok('each datastore shows up SEPARATELY (merging masks the stopped layer)', itens.length === 4,
-     itens.map((d) => d.storage).join(' '));
+  const items = comp.pvxBackups().items;
+  ok('each datastore shows up SEPARATELY (merging masks the stopped layer)', items.length === 4,
+     items.map((d) => d.storage).join(' '));
 
-  const pbs = comp.pvxIdadeDoBackup(itens[0]);
-  const usb = comp.pvxIdadeDoBackup(itens[1]);
+  const pbs = comp.pvxBackupAge(items[0]);
+  const usb = comp.pvxBackupAge(items[1]);
   ok('the age comes from the SERVER timestamp (observed_at − ultimo_ctime)',
      pbs.seg === 3 * 3600 && usb.seg === 340 * 3600, `pbs=${pbs.seg}s usb=${usb.seg}s`);
 
   // 🔴 Zero is ABSENCE, not 1970. An empty datastore and one with an ancient copy
   // call for opposite actions.
-  const vazio = comp.pvxIdadeDoBackup(itens[2]);
+  const vazio = comp.pvxBackupAge(items[2]);
   ok('an empty datastore says "no copy yet", not an age counted from 1970',
      vazio.vazio === true && vazio.seg === undefined);
-  ok('a datastore with an error does not become silence', !!comp.pvxIdadeDoBackup(itens[3]).erro);
+  ok('a datastore with an error does not become silence', !!comp.pvxBackupAge(items[3]).erro);
 
   // The threshold is PER datastore: PBS runs every day, the external-disk rotation
   // is "whenever I remember to swap the disk". A single threshold would paint a
   // healthy rotation red, or a PBS dead for three days green.
   const verde = (e) => /#22c55e/.test(e);
   const vermelho = (e) => /#ef4444/.test(e);
-  ok('PBS at 3 h comes out green', verde(comp.pvxEstiloBackup(itens[0])));
-  ok('an empty datastore NEVER comes out green', !verde(comp.pvxEstiloBackup(itens[2])));
+  ok('PBS at 3 h comes out green', verde(comp.pvxBackupStyle(items[0])));
+  ok('an empty datastore NEVER comes out green', !verde(comp.pvxBackupStyle(items[2])));
 
   // Negative control for the per-layer threshold.
-  const pbsVelho = { storage: 'pbs', total: 1, ultimo_ctime: 1_000_000 - 200 * 3600, guests: [1], agendamento: 'active' };
+  const pbsStale = { storage: 'pbs', total: 1, ultimo_ctime: 1_000_000 - 200 * 3600, guests: [1], agendamento: 'active' };
   ok('PBS at 200 h fails, even though that is a normal age for the rotation',
-     !verde(comp.pvxEstiloBackup(pbsVelho)));
+     !verde(comp.pvxBackupStyle(pbsStale)));
 
   // ── disarmed is NOT a failure ──────────────────────────────────────────────
   //
@@ -144,9 +144,9 @@ ok('the memory percentage matches the sum of the observed ones',
   // this lab the credibility of its alarm channel.
   const desarmado = { storage: 'backupusb', total: 5, ultimo_ctime: 1_000_000 - 340 * 3600,
                       guests: [1, 2, 3], agendamento: 'desarmado', schedule: '03:30' };
-  const eD = comp.pvxEstadoBackup(desarmado);
-  ok('a DISARMED layer does not come out red', !vermelho(comp.pvxEstiloBackup(desarmado)), eD.cor);
-  ok('and it says the label "desarmado", not an alarming age', eD.rotulo === 'disarmed', eD.rotulo);
+  const eD = comp.pvxBackupState(desarmado);
+  ok('a DISARMED layer does not come out red', !vermelho(comp.pvxBackupStyle(desarmado)), eD.cor);
+  ok('and it says the label "desarmado", not an alarming age', eD.label === 'disarmed', eD.label);
   ok('and it explains WHY, with the time it used to run', /schedule turned off/.test(eD.nota) && /03:30/.test(eD.nota), eD.nota);
   ok('and it says outright that this is not a failure', /this is not a failure/.test(eD.nota));
 
@@ -157,36 +157,36 @@ ok('the memory percentage matches the sum of the observed ones',
   // A boolean "scheduled" would paint it disarmed — wrong in the other direction.
   const foraDoPve = { storage: 'pbs', total: 65, ultimo_ctime: 1_000_000 - 3 * 3600,
                       guests: [1], agendamento: 'fora-do-pve' };
-  const eF = comp.pvxEstadoBackup(foraDoPve);
-  ok('a fresh layer with NO job in PVE stays green', verde(comp.pvxEstiloBackup(foraDoPve)), eF.cor);
+  const eF = comp.pvxBackupState(foraDoPve);
+  ok('a fresh layer with NO job in PVE stays green', verde(comp.pvxBackupStyle(foraDoPve)), eF.cor);
   ok('and the screen admits it does not know who schedules it', /does not know by whom/.test(eF.nota), eF.nota);
 
   // A layer that is ACTIVE and old is still a failure — otherwise the fix would
   // have erased the real alarm along with the false one.
-  const ativaVelha = { storage: 'pbs', total: 1, ultimo_ctime: 1_000_000 - 400 * 3600,
+  const staleActive = { storage: 'pbs', total: 1, ultimo_ctime: 1_000_000 - 400 * 3600,
                        guests: [1], agendamento: 'active', schedule: '03:30' };
   ok('an ACTIVE and old layer stays red (the real alarm did not vanish)',
-     vermelho(comp.pvxEstiloBackup(ativaVelha)));
+     vermelho(comp.pvxBackupStyle(staleActive)));
   comp.pvx.backup = { datastores: [] };
-  comp.pvx.carregado.backup = false;
+  comp.pvx.loaded.backup = false;
 }
 
 // ── automatic pause ───────────────────────────────────────────────────────
-let carregou = 0; comp.loadNodes = () => { carregou++; };
-comp.pvx.con = {guest:'', estado:'closed', erro:''}; comp.pvx.filtroFoco = false;
+let loaded = 0; comp.loadNodes = () => { loaded++; };
+comp.pvx.con = {guest:'', estado:'closed', erro:''}; comp.pvx.focusFilter = false;
 comp.pvxTick();
-ok('no console and no focus: the cycle FETCHES', carregou===1, 'buscas='+carregou);
+ok('no console and no focus: the cycle FETCHES', loaded===1, 'buscas='+loaded);
 comp.pvx.con.guest = 'lxc/204'; comp.pvxTick();
-ok('an open console PAUSES the fetch', carregou===1 && comp.pvx.pausado, 'buscas='+carregou);
-ok('the pause states its reason', comp.pvx.pausaMotivo==='console open', comp.pvx.pausaMotivo);
-comp.pvx.con.guest=''; comp.pvx.filtroFoco = true; comp.pvxTick();
-ok('focus in the filter pauses too', carregou===1 && comp.pvx.pausaMotivo==='typing in the filter');
+ok('an open console PAUSES the fetch', loaded===1 && comp.pvx.paused, 'buscas='+loaded);
+ok('the pause states its reason', comp.pvx.pauseReason==='console open', comp.pvx.pauseReason);
+comp.pvx.con.guest=''; comp.pvx.focusFilter = true; comp.pvxTick();
+ok('focus in the filter pauses too', loaded===1 && comp.pvx.pauseReason==='typing in the filter');
 // the timestamp keeps running during the pause
 comp.nodes.poll.age_seconds = 300; comp.pvxTick();
 ok('the age stamp KEEPS running during the pause',
-   comp.pvx.idadeSeg===300 && comp.pvxIdadeVelha(), comp.pvxIdadeTexto());
-comp.pvx.filtroFoco=false; comp.pvxTick();
-ok('out of the pause, fetching resumes', carregou===2 && !comp.pvx.pausado, 'buscas='+carregou);
+   comp.pvx.ageSec===300 && comp.pvxAgeStale(), comp.pvxAgeText());
+comp.pvx.focusFilter=false; comp.pvxTick();
+ok('out of the pause, fetching resumes', loaded===2 && !comp.pvx.paused, 'buscas='+loaded);
 
 
 // ── a visible label on the gauges (the operator could not tell them apart) ────
@@ -196,51 +196,51 @@ ok('out of the pause, fetching resumes', carregou===2 && !comp.pvx.pausado, 'bus
 // anyone on a screen reader knew, anyone looking did not. These pins demand the
 // VISIBLE label, and that is why they cannot settle for the aria-label.
 const index = ler('internal/webassets/web/index.html');
-const secao = (() => {
+const section = (() => {
   const i = index.indexOf("currentView==='proxmox'");
   const f = index.indexOf('</section>', index.indexOf('/master-detail grid'));
   return index.slice(i, f);
 })();
 
-ok('the Proxmox section was cut out for the pins', secao.length > 5000, secao.length + ' chars');
+ok('the Proxmox section was cut out for the pins', section.length > 5000, section.length + ' chars');
 
 // the x-text that renders the quantity name — this is the label the eye reads.
-const rotulosVisiveis = (secao.match(/x-text="qual === 'disco' \? 'disco' : qual"/g) || []).length;
-ok('every gauge has a VISIBLE label (list and detail)', rotulosVisiveis >= 2,
-   rotulosVisiveis + ' occurrence(s)');
+const visibleLabels = (section.match(/x-text="which === 'disco' \? 'disco' : which"/g) || []).length;
+ok('every gauge has a VISIBLE label (list and detail)', visibleLabels >= 2,
+   visibleLabels + ' occurrence(s)');
 ok('the label is not only for the screen reader',
-   secao.includes('aria-label="qual') || secao.includes(":aria-label=\"qual + ' of '"));
+   section.includes('aria-label="which') || section.includes(":aria-label=\"which + ' of '"));
 // Deliberately tight: it demands the label IN THE CONSUMPTION BLOCK, not just any
 // ">rede<" somewhere in the section. The first version of this pin was loose and
 // went green over the mutation that deleted the label — it was the mutation that
 // showed that, not the reading.
 ok('the network row gained a label instead of two loose arrows',
-   /style="min-width:3\.2rem">rede<\/span>/.test(secao));
+   /style="min-width:3\.2rem">rede<\/span>/.test(section));
 
 // The CPU text cannot repeat the percentage: it read "0.8% of 2 core…", two
 // percentages on the same line, rounded differently, and truncated.
-const cpuTexto = comp.pvxMedidor(
+const cpuText = comp.pvxGauge(
   { id:'x', kind:'guest', vmid:1, status:obs('running'),
     cpu_frac:obs(0.008), cpu_cores:obs(2) }, 'cpu');
-ok('the CPU text does NOT repeat the percentage', !cpuTexto.texto.includes('%'), cpuTexto.texto);
-ok('the CPU text states the cores', /core/.test(cpuTexto.texto), cpuTexto.texto);
-const semNucleos = comp.pvxMedidor(
+ok('the CPU text does NOT repeat the percentage', !cpuText.texto.includes('%'), cpuText.texto);
+ok('the CPU text states the cores', /core/.test(cpuText.texto), cpuText.texto);
+const noCores = comp.pvxGauge(
   { id:'y', kind:'guest', vmid:2, status:obs('running'), cpu_frac:obs(0.5) }, 'cpu');
 ok('with no cores reported, it says so instead of inventing them',
-   /cores not reported/.test(semNucleos.texto), semNucleos.texto);
+   /cores not reported/.test(noCores.texto), noCores.texto);
 
 // The absolute value belongs to the wide panel, not to the narrow column.
 ok('the right-hand panel shows the absolute value (Summary tab)',
-   /pvxAbaAtiva\(\) === 'resumo'[\s\S]{0,2500}pvxMedidor\(pvxNoAberto\(\), qual\)\.texto/.test(secao));
+   /pvxActiveTab\(\) === 'summary'[\s\S]{0,2500}pvxGauge\(pvxOpenNode\(\), which\)\.texto/.test(section));
 
 
 // ── no template expression throws with NOTHING selected ──────────────────────
 //
 // 🔴 THIS REPRODUCES A REAL CRASH, not a hypothesis. Clicking "← Lab summary"
-// calls pvxLimpaSelecao(), which clears pvx.aberto — and pvxNoAberto() starts
+// calls pvxClearSelection(), which clears pvx.aberto — and pvxOpenNode() starts
 // returning null. Alpine unmounts the subtree of the <template x-if>, but the
 // effects that were inside it (chiefly the ones created by x-for) still evaluate
-// ONCE before removal. At that point `pvxNoAberto().name` threw and the whole
+// ONCE before removal. At that point `pvxOpenNode().name` threw and the whole
 // interface came down with:
 //     TypeError: Cannot read properties of null (reading 'name')
 //
@@ -249,13 +249,13 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 // in the file" — it EVALUATES every template expression in the exact state of the
 // crash.
 {
-  const compVazio = Object.assign(Object.create(null), comp, {
+  const emptyComp = Object.assign(Object.create(null), comp, {
     // functions that come from the 40-nodes.js module (spread into the same app());
     // absent here only because the harness loads one module at a time.
     nodesStatusStyle: () => '', nodesTransportBadge: () => '', nodesCredStyle: () => '',
-    nodesCredLabel: () => '', nodesCredExpiry: () => '', nodesCredExpiryUrgente: () => false,
+    nodesCredLabel: () => '', nodesCredExpiry: () => '', nodesCredExpiryUrgent: () => false,
   });
-  compVazio.pvx.aberto = ''; compVazio.pvx.detalhe = null; compVazio.pvx.aba = '';
+  emptyComp.pvx.open = ''; emptyComp.pvx.detalhe = null; emptyComp.pvx.aba = '';
 
   const exprs = new Set();
   // 🔴 THE ATTRIBUTE LIST WAS AN ALLOWLIST, AND IT AGED IN SILENCE. When the screen
@@ -265,8 +265,8 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   // with every new piece of markup, and nobody keeps it up.
   //
   // Now it matches ANY Alpine binding: `x-something="..."` and `:something="..."`.
-  const atributos = /(?:\sx-[a-z:.-]+|\s:(?!key=)[a-zA-Z-]+)="([^"]+)"/g;
-  for (const m of secao.matchAll(atributos)) {
+  const attributes = /(?:\sx-[a-z:.-]+|\s:(?!key=)[a-zA-Z-]+)="([^"]+)"/g;
+  for (const m of section.matchAll(attributes)) {
     let e = m[1];
     // `x-for="item in collection"` is not an evaluable expression: it is a loop
     // clause. What is worth evaluating is the COLLECTION — that is what throws when
@@ -274,7 +274,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
     // loop, with the item variable in scope.
     if (/^\s*(\(?[\w\s,)]+\)?)\s+in\s+/.test(e)) e = e.replace(/^\s*\(?[\w\s,)]+\)?\s+in\s+/, '');
     // 🔴 NO STATE ALLOWLIST. The previous version only evaluated expressions that
-    // mentioned pvxNoAberto, pvx.detalhe, pvx.saude, pvx.taskLog or pvx.con — and
+    // mentioned pvxOpenNode, pvx.detalhe, pvx.saude, pvx.taskLog or pvx.con — and
     // all the state born afterwards (pvx.serie, pvx.sistema, pvx.backup,
     // pvx.topologia, pvx.pacotes, pvx.registro) fell OUTSIDE. The pin stayed green
     // while ignoring exactly the expressions that froze the screen and locked the
@@ -290,21 +290,21 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   ok('the pin harvested template expressions to evaluate', exprs.size >= 150, exprs.size + ' expressions');
 
   // Names declared in `x-for="X in ..."` and `x-for="(X, Y) in ..."`.
-  const nomesDeLaco = [...new Set(
-    [...secao.matchAll(/x-for="\s*\(?([\w\s,]+?)\)?\s+in\s+/g)]
+  const loopNames = [...new Set(
+    [...section.matchAll(/x-for="\s*\(?([\w\s,]+?)\)?\s+in\s+/g)]
       .flatMap((m) => m[1].split(',').map((x) => x.trim()))
       .filter((x) => /^[A-Za-z_$][\w$]*$/.test(x)),
   )];
-  ok('the pin harvested the loop variables to neutralise', nomesDeLaco.length >= 3,
-     nomesDeLaco.join(', '));
-  const itemNeutro = new Proxy(function () {}, {
+  ok('the pin harvested the loop variables to neutralise', loopNames.length >= 3,
+     loopNames.join(', '));
+  const neutralItem = new Proxy(function () {}, {
     get: (t, k) => (k === Symbol.toPrimitive || k === 'toString' || k === 'valueOf'
-      ? () => '' : itemNeutro),
-    apply: () => itemNeutro,
+      ? () => '' : neutralItem),
+    apply: () => neutralItem,
     has: () => true,
   });
 
-  const estouros = [];
+  const overflows = [];
   for (const e of exprs) {
     try {
       // The loop variables are NEUTRALISED, not null: what this pin measures is
@@ -312,12 +312,12 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
       // blowing up for want of the x-for item would be noise hiding the signal.
       // The proxy returns itself for any property, so a chained access
       // (`g.credential.state`) survives too.
-      new Function(...nomesDeLaco, `with(this){ return (${e}) }`)
-        .call(compVazio, ...nomesDeLaco.map(() => itemNeutro));
-    } catch (err) { estouros.push(`${err.message} — ${e.slice(0, 70)}`); }
+      new Function(...loopNames, `with(this){ return (${e}) }`)
+        .call(emptyComp, ...loopNames.map(() => neutralItem));
+    } catch (err) { overflows.push(`${err.message} — ${e.slice(0, 70)}`); }
   }
-  ok('no expression throws with NOTHING selected', estouros.length === 0,
-     estouros.length ? estouros[0] : `${exprs.size} evaluated`);
+  ok('no expression throws with NOTHING selected', overflows.length === 0,
+     overflows.length ? overflows[0] : `${exprs.size} evaluated`);
 }
 
 
@@ -337,14 +337,14 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 //     is how it got here.
 {
   const BREAKPOINTS = { sm: 640, md: 768, lg: 1024, xl: 1280, '2xl': 1536 };
-  const m = secao.match(/(\w+):grid-cols-\[minmax\((\d+)px,(\d+)px\)_1fr\]/);
+  const m = section.match(/(\w+):grid-cols-\[minmax\((\d+)px,(\d+)px\)_1fr\]/);
   ok('the master-detail grid declares a breakpoint', !!m, m ? m[0] : 'not found');
   if (m) {
-    const [, prefixo, minLista] = m;
-    const px = BREAKPOINTS[prefixo];
-    ok('the breakpoint is a known one', !!px, prefixo);
-    ok('two columns from 768px or below', px <= 768, `${prefixo} = ${px}px`);
-    ok('the list column asks for no more than 260px', Number(minLista) <= 260, minLista + 'px');
+    const [, prefix, minList] = m;
+    const px = BREAKPOINTS[prefix];
+    ok('the breakpoint is a known one', !!px, prefix);
+    ok('two columns from 768px or below', px <= 768, `${prefix} = ${px}px`);
+    ok('the list column asks for no more than 260px', Number(minList) <= 260, minList + 'px');
 
     // The missing link: the class has to be in the GENERATED CSS, not only in the HTML.
     const css = ler('internal/webassets/web/tailwind.css');
@@ -369,23 +369,23 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   // `max-w-[420px]` gives zero and makes a class that is there look absent. The
   // pin builds the escaped selector, the way Tailwind writes it.
   {
-    const cssGerado = ler('internal/webassets/web/tailwind.css');
-    const arbitrarias = new Set();
-    for (const m2 of secao.matchAll(/class="([^"]+)"/g)) {
+    const generatedCss = ler('internal/webassets/web/tailwind.css');
+    const arbitrary = new Set();
+    for (const m2 of section.matchAll(/class="([^"]+)"/g)) {
       for (const cls of m2[1].split(/\s+/)) {
-        if (/^[a-z0-9:-]+\[[^\]]+\]$/i.test(cls) && !cls.startsWith(':')) arbitrarias.add(cls);
+        if (/^[a-z0-9:-]+\[[^\]]+\]$/i.test(cls) && !cls.startsWith(':')) arbitrary.add(cls);
       }
     }
-    ok('the pin harvested arbitrary classes to check', arbitrarias.size >= 3,
-       arbitrarias.size + ': ' + [...arbitrarias].slice(0, 5).join(' '));
+    ok('the pin harvested arbitrary classes to check', arbitrary.size >= 3,
+       arbitrary.size + ': ' + [...arbitrary].slice(0, 5).join(' '));
     // Instead of reproducing every Tailwind escaping rule — `\\[`, `\\(`, and the
     // comma that becomes the unicode escape `\\2c ` — we normalise the CSS back to
     // the original text of the class. Chasing the rules one by one is how the pin
     // would end up wrong the day Tailwind changes its escaping.
-    const cssPlano = cssGerado.replace(/\\2c\s/g, ',').replace(/\\(.)/g, '$1');
-    const ausentes = [...arbitrarias].filter((cls) => !cssPlano.includes('.' + cls));
-    ok('every arbitrary class in the section exists in the generated CSS', ausentes.length === 0,
-       ausentes.length ? ausentes.join(', ') + ' — run "make tailwind"' : `${arbitrarias.size} checked`);
+    const flatCss = generatedCss.replace(/\\2c\s/g, ',').replace(/\\(.)/g, '$1');
+    const missing = [...arbitrary].filter((cls) => !flatCss.includes('.' + cls));
+    ok('every arbitrary class in the section exists in the generated CSS', missing.length === 0,
+       missing.length ? missing.join(', ') + ' — run "make tailwind"' : `${arbitrary.size} checked`);
   }
 
   // The bar cannot stretch without a cap: in stacked mode it became a 400px dash,
@@ -393,11 +393,11 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   // The cap can live on the grid (max-w) or on the bar column (a fixed minmax).
   // What it cannot do is not exist: with no cap, in stacked mode the bar becomes a
   // 400px dash, which adds no precision and only pushes value away from label.
-  const gradeMedidor = secao.match(/class="grid[^"]*"\s*\n?\s*style="grid-template-columns:3rem[^"]*"/);
-  const temTeto = /max-w-\[\d+px\][^"]*"\s*\n?\s*style="grid-template-columns:3rem/.test(secao)
-               || /grid-template-columns:[^"]*minmax\(\d+px,\s*\d+px\)/.test(secao);
-  ok('the gauge bar has a width cap', temTeto,
-     temTeto ? 'cap present' : 'no max-w and no fixed minmax on the gauge grid');
+  const gaugeGrid = section.match(/class="grid[^"]*"\s*\n?\s*style="grid-template-columns:3rem[^"]*"/);
+  const hasCap = /max-w-\[\d+px\][^"]*"\s*\n?\s*style="grid-template-columns:3rem/.test(section)
+               || /grid-template-columns:[^"]*minmax\(\d+px,\s*\d+px\)/.test(section);
+  ok('the gauge bar has a width cap', hasCap,
+     hasCap ? 'cap present' : 'no max-w and no fixed minmax on the gauge grid');
 }
 
 
@@ -411,8 +411,8 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 // ended up ON TOP of the disk bar.
 {
   const linha = (() => {
-    const i = secao.indexOf('@click="pvxSeleciona(n)"');
-    return i < 0 ? '' : secao.slice(Math.max(0, i - 900), i + 3200);
+    const i = section.indexOf('@click="pvxSelect(n)"');
+    return i < 0 ? '' : section.slice(Math.max(0, i - 900), i + 3200);
   })();
   ok('the node row was located', linha.length > 1000, linha.length + ' chars');
 
@@ -434,21 +434,21 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   // because "outside the strip, but before the x-for" still satisfied the
   // comparison. Relative position is weak; the real property is BELONGING to the
   // strip. The pin now cuts out the title strip and demands the stamp inside it.
-  const faixaTitulo = (() => {
+  const bannerTitle = (() => {
     const a = linha.indexOf('<div class="flex items-center gap-2 min-w-0">');
     if (a < 0) return '';
     const b = linha.indexOf('</div>', a);
     return b < 0 ? '' : linha.slice(a, b);
   })();
-  ok('the title strip was cut out', faixaTitulo.length > 200, faixaTitulo.length + ' chars');
+  ok('the title strip was cut out', bannerTitle.length > 200, bannerTitle.length + ' chars');
   ok('the age stamp is INSIDE the title strip',
-     faixaTitulo.includes('pvxFormatAge(n.age_seconds)'));
+     bannerTitle.includes('pvxFormatAge(n.age_seconds)'));
   ok('and so is the state badge',
-     faixaTitulo.includes('pvxRotuloEstado(pvxNoEstado(n))'));
+     bannerTitle.includes('pvxStateLabel(pvxNodeState(n))'));
 
-  ok('the badge goes away when the node is ok', linha.includes("pvxNoEstado(n) !== 'ok'"));
+  ok('the badge goes away when the node is ok', linha.includes("pvxNodeState(n) !== 'ok'"));
   ok('and it does not flash before Alpine starts (x-cloak)',
-     /pvxNoEstado\(n\) !== 'ok'"[\s\S]{0,40}x-cloak/.test(linha));
+     /pvxNodeState\(n\) !== 'ok'"[\s\S]{0,40}x-cloak/.test(linha));
 }
 
 
@@ -458,72 +458,72 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 // here we cannot". The data was always there — in the id PREFIX — and the screen
 // never showed it, so knowing whether `lxc/203` was a container meant decoding it.
 {
-  const tipoDe = (id, extra2 = {}) =>
-    comp.pvxTipo(Object.assign({ id, kind: 'guest', vmid: 1 }, extra2));
+  const typeOf = (id, extra2 = {}) =>
+    comp.pvxType(Object.assign({ id, kind: 'guest', vmid: 1 }, extra2));
 
-  ok('lxc/203 is a container', tipoDe('lxc/203').sigla === 'CT', tipoDe('lxc/203').rotulo);
-  ok('qemu/208 is a virtual machine', tipoDe('qemu/208').sigla === 'VM', tipoDe('qemu/208').rotulo);
+  ok('lxc/203 is a container', typeOf('lxc/203').abbrev === 'CT', typeOf('lxc/203').label);
+  ok('qemu/208 is a virtual machine', typeOf('qemu/208').abbrev === 'VM', typeOf('qemu/208').label);
   ok('node/pve is the hypervisor',
-     tipoDe('node/pve', { kind: 'host' }).sigla === 'NODE', tipoDe('node/pve', { kind: 'host' }).rotulo);
+     typeOf('node/pve', { kind: 'host' }).abbrev === 'NODE', typeOf('node/pve', { kind: 'host' }).label);
   ok('canario (no prefix) is external',
-     tipoDe('canario', { kind: 'externo' }).sigla === 'EXT', tipoDe('canario', { kind: 'externo' }).rotulo);
+     typeOf('canario', { kind: 'externo' }).abbrev === 'EXT', typeOf('canario', { kind: 'externo' }).label);
 
   // 🔴 The fallback cannot guess. Inventing "VM" would make the operator act on the
   // wrong category — starting, stopping or snapshotting something that is not what
   // the screen said it was.
-  const desconhecido = tipoDe('coisa/9', { kind: 'coisa' });
+  const desconhecido = typeOf('coisa/9', { kind: 'coisa' });
   ok('an unknown type says it does not know, instead of guessing',
-     desconhecido.chave === '?' && desconhecido.sigla === '?', desconhecido.rotulo);
+     desconhecido.key === '?' && desconhecido.abbrev === '?', desconhecido.label);
 
   // A template is not a startable guest, and the difference has to show up BEFORE
   // somebody tries to start it.
-  const modelo = tipoDe('lxc/900', { template: true });
+  const modelo = typeOf('lxc/900', { template: true });
   ok('a template is marked as a template', modelo.modelo === true);
   ok('and the title warns that it is not startable',
-     /TEMPLATE/.test(comp.pvxTipoTitulo({ id: 'lxc/900', kind: 'guest', vmid: 900, template: true })));
+     /TEMPLATE/.test(comp.pvxTypeTitle({ id: 'lxc/900', kind: 'guest', vmid: 900, template: true })));
 
   // Colour = state; letter = type. If the two palettes collided, neither would be
   // trustworthy — the green "ok" badge and a green type would fight over the same
   // visual channel.
-  const coresTipo = ['node', 'lxc', 'qemu', 'externo', '?'].map((k) => comp.TIPOS[k].cor.toLowerCase());
-  const coresEstado = ['ok', 'atencao', 'critico', 'vencido', 'sem-credencial', 'parado']
-    .map((e) => comp.pvxCorEstado(e).toLowerCase());
-  const colisao = coresTipo.filter((c) => coresEstado.includes(c));
-  ok('the TYPE palette does not collide with the STATE one', colisao.length === 0,
-     colisao.length ? colisao.join(', ') : `${coresTipo.length} distinct colours`);
+  const typeColors = ['node', 'lxc', 'qemu', 'externo', '?'].map((k) => comp.TYPES[k].cor.toLowerCase());
+  const stateColors = ['ok', 'atencao', 'critico', 'vencido', 'sem-credencial', 'parado']
+    .map((e) => comp.pvxStateColor(e).toLowerCase());
+  const collision = typeColors.filter((c) => stateColors.includes(c));
+  ok('the TYPE palette does not collide with the STATE one', collision.length === 0,
+     collision.length ? collision.join(', ') : `${typeColors.length} distinct colours`);
 
   // Count per type in the header, with the 11 real nodes of the lab.
-  const listaReal = [
+  const realList = [
     { id: 'node/pve', kind: 'host', name: 'pve' },
     ...[201, 202, 203, 204, 205, 206, 207].map((v) => ({ id: `lxc/${v}`, kind: 'guest', vmid: v })),
     { id: 'qemu/100', kind: 'guest', vmid: 100 }, { id: 'qemu/208', kind: 'guest', vmid: 208 },
     { id: 'canario', kind: 'externo', name: 'canario' },
   ];
-  const compReal = Object.assign(Object.create(null), comp, { nodes: { list: listaReal, poll: {} } });
-  const contagem = compReal.pvxContagemPorTipo();
-  const mapa = Object.fromEntries(contagem.map((t) => [t.sigla, t.n]));
+  const compReal = Object.assign(Object.create(null), comp, { nodes: { list: realList, poll: {} } });
+  const counts = compReal.pvxCountByType();
+  const mapa = Object.fromEntries(counts.map((t) => [t.abbrev, t.n]));
   ok('counts 7 CT, 2 VM, 1 NODE and 1 EXT',
      mapa.CT === 7 && mapa.VM === 2 && mapa['NODE'] === 1 && mapa.EXT === 1, JSON.stringify(mapa));
   ok('a non-existent type does not show up with a zero',
-     !contagem.some((t) => t.n === 0), 'zero is not information');
+     !counts.some((t) => t.n === 0), 'zero is not information');
 
   // The filter has to accept the word the badge shows.
-  const filtrar = (txt) => compReal.pvxFiltraNos(listaReal, txt, '', () => 'ok');
-  ok('the filter accepts "tipo:ct" (the short form the screen shows)', filtrar('tipo:ct').length === 7,
-     filtrar('tipo:ct').length + ' nodes');
-  ok('the filter accepts "tipo:vm"', filtrar('tipo:vm').length === 2, filtrar('tipo:vm').length + ' nodes');
-  ok('the filter accepts "tipo:conteiner"', filtrar('tipo:conteiner').length === 7);
+  const filter = (txt) => compReal.pvxFilterNodes(realList, txt, '', () => 'ok');
+  ok('the filter accepts "tipo:ct" (the short form the screen shows)', filter('tipo:ct').length === 7,
+     filter('tipo:ct').length + ' nodes');
+  ok('the filter accepts "tipo:vm"', filter('tipo:vm').length === 2, filter('tipo:vm').length + ' nodes');
+  ok('the filter accepts "tipo:conteiner"', filter('tipo:conteiner').length === 7);
   ok('and it still accepts "tipo:lxc" (the old vocabulary did not break)',
-     filtrar('tipo:lxc').length === 7);
-  ok('the filter accepts "tipo:externo"', filtrar('tipo:externo').length === 1);
+     filter('tipo:lxc').length === 7);
+  ok('the filter accepts "tipo:externo"', filter('tipo:externo').length === 1);
 
   // The screen shows the badge in the three places that matter.
-  ok('the type badge shows up on the list row', /:style="pvxEstiloTipo\(n\)"/.test(secao));
+  ok('the type badge shows up on the list row', /:style="pvxTypeStyle\(n\)"/.test(section));
   ok('and in the header of the detail panel',
-     /:style="pvxEstiloTipo\(pvxNoAberto\(\)\)"/.test(secao));
+     /:style="pvxTypeStyle\(pvxOpenNode\(\)\)"/.test(section));
   ok('and the count per type is in the list header',
-     /pvxContagemPorTipo\(\)/.test(secao));
-  ok('the filter hint states the short form the screen shows', /tipo:ct/.test(secao));
+     /pvxCountByType\(\)/.test(section));
+  ok('the filter hint states the short form the screen shows', /tipo:ct/.test(section));
 }
 
 
@@ -534,19 +534,19 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 // with no error at all. Here the tab list grew from 6 to 11 at once — exactly the
 // kind of change where one of them ends up with no markup and nobody notices.
 {
-  const todas = [...new Set([...comp.ABAS_HOST, ...comp.ABAS_GUEST].map((a) => a.id))];
-  ok('the pin harvested the declared tabs', todas.length >= 8, todas.length + ': ' + todas.join(','));
-  const semPainel = todas.filter((id) => !secao.includes(`pvxAbaAtiva()==='${id}'`)
-                                      && !secao.includes(`pvxAbaAtiva() === '${id}'`));
-  ok('every declared tab has a panel on the screen', semPainel.length === 0,
-     semPainel.length ? 'NO PANEL:' + semPainel.join(', ') : todas.length + ' checked');
+  const all = [...new Set([...comp.ABAS_HOST, ...comp.ABAS_GUEST].map((a) => a.id))];
+  ok('the pin harvested the declared tabs', all.length >= 8, all.length + ': ' + all.join(','));
+  const noPanel = all.filter((id) => !section.includes(`pvxActiveTab()==='${id}'`)
+                                      && !section.includes(`pvxActiveTab() === '${id}'`));
+  ok('every declared tab has a panel on the screen', noPanel.length === 0,
+     noPanel.length ? 'NO PANEL:' + noPanel.join(', ') : all.length + ' checked');
 
   // And the reverse: an orphan panel, reached by no tab, is dead code that nobody
   // will delete because it looks like it is in use.
-  const idsNaTela = [...new Set([...secao.matchAll(/pvxAbaAtiva\(\)\s*===\s*'([\w-]+)'/g)].map((m) => m[1]))];
-  const orfaos = idsNaTela.filter((id) => !todas.includes(id));
-  ok('no orphan panel (with no tab reaching it)', orfaos.length === 0,
-     orfaos.length ? 'ORPHANS:' + orfaos.join(', ') : idsNaTela.length + ' panels');
+  const idsOnScreen = [...new Set([...section.matchAll(/pvxActiveTab\(\)\s*===\s*'([\w-]+)'/g)].map((m) => m[1]))];
+  const orphans = idsOnScreen.filter((id) => !all.includes(id));
+  ok('no orphan panel (with no tab reaching it)', orphans.length === 0,
+     orphans.length ? 'ORPHANS:' + orphans.join(', ') : idsOnScreen.length + ' panels');
 }
 
 
@@ -558,12 +558,12 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
 // give 403. The screen has to SAY the difference before opening, not after.
 {
   const host = { id: 'node/pve', kind: 'host', name: 'pve' };
-  ok('the host can open a Shell', comp.pvxConsolePode(host) === true);
+  ok('the host can open a Shell', comp.pvxConsoleCan(host) === true);
   ok('and a guest with no credential is still refused, with a reason',
-     comp.pvxConsolePode({ id: 'lxc/202', kind: 'guest', vmid: 202, credential: { state: 'ausente' } }) === false
-     && /node token/.test(comp.pvxConsoleMotivo({ id: 'lxc/202', kind: 'guest', vmid: 202, credential: { state: 'ausente' } })));
+     comp.pvxConsoleCan({ id: 'lxc/202', kind: 'guest', vmid: 202, credential: { state: 'ausente' } }) === false
+     && /node token/.test(comp.pvxConsoleReason({ id: 'lxc/202', kind: 'guest', vmid: 202, credential: { state: 'ausente' } })));
   ok('the screen states what the hypervisor Shell is BEFORE opening it',
-     /pvxEhHost\(pvxNoAberto\(\)\)[\s\S]{0,400}root on/.test(secao));
+     /pvxEhHost\(pvxOpenNode\(\)\)[\s\S]{0,400}root on/.test(section));
 }
 
 
@@ -583,15 +583,15 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   ], poll: {} };
 
   ok('counts only the RUNNING guests among the ones that would go down',
-     compE.pvxGuestsLigados().length === 2,
-     compE.pvxGuestsLigados().map((g) => g.name).join(','));
+     compE.pvxRunningGuests().length === 2,
+     compE.pvxRunningGuests().map((g) => g.name).join(','));
 
   // Captures what the confirmation would say, without executing anything.
   let dlg = null;
-  compE.askConfirm = (titulo, texto, _fn, opts) => { dlg = { titulo, texto, opts }; };
-  compE.pvx.aberto = 'node/pve';
+  compE.askConfirm = (title, texto, _fn, opts) => { dlg = { title, texto, opts }; };
+  compE.pvx.open = 'node/pve';
 
-  compE.pvxEnergiaHost('shutdown');
+  compE.pvxHostPower('shutdown');
   ok('shutting down asks for confirmation', !!dlg);
   ok('and it demands TYPING the hypervisor name', dlg && dlg.opts && dlg.opts.requireText === 'pve',
      dlg && dlg.opts ? String(dlg.opts.requireText) : 'no requireText');
@@ -607,27 +607,27 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   // 🔴 The two sentences have to be DIFFERENT: restarting is betting the machine
   // comes back; shutting down is guaranteeing it does not come back on its own. One
   // text for both would make the graver one look like routine.
-  const textoShutdown = dlg.texto;
+  const shutdownText = dlg.texto;
   dlg = null;
-  compE.pvxEnergiaHost('reboot');
+  compE.pvxHostPower('reboot');
   ok('restart also asks for confirmation by typing',
      dlg && dlg.opts && dlg.opts.requireText === 'pve');
   ok('and the reboot text is DIFFERENT from the shutdown text',
-     dlg && dlg.texto !== textoShutdown);
+     dlg && dlg.texto !== shutdownText);
   ok('the reboot is honest about the worst case (not coming back equals a shutdown)',
      dlg && /outcome is the same/i.test(dlg.texto));
 
   // On a guest, the buttons do not exist.
-  compE.pvx.aberto = 'lxc/201';
+  compE.pvx.open = 'lxc/201';
   dlg = null;
-  compE.pvxEnergiaHost('shutdown');
+  compE.pvxHostPower('shutdown');
   ok('the action does NOT fire with a guest selected', dlg === null);
 
   // And on the screen: set apart, red-bordered, out of the middle of the numbers.
   ok('the power block exists and is visually set apart',
-     /Hypervisor power/.test(secao) && /#ef444455/.test(secao));
+     /Hypervisor power/.test(section) && /#ef444455/.test(section));
   ok('the screen shows how many guests would go down before the click',
-     /pvxGuestsLigados\(\)\.length/.test(secao));
+     /pvxRunningGuests\(\)\.length/.test(section));
 }
 
 
@@ -650,28 +650,28 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   //   a crash waiting for the first load.
   //
   // `pvx.X?.Y` and `pvx.X && pvx.X.Y` are protected and pass.
-  const desprotegidas = [];
-  for (const m of secao.matchAll(/(?:\sx-[a-z:.-]+|\s:[a-zA-Z-]+)="([^"]+)"/g)) {
+  const unprotected = [];
+  for (const m of section.matchAll(/(?:\sx-[a-z:.-]+|\s:[a-zA-Z-]+)="([^"]+)"/g)) {
     const e = m[1];
     for (const d of e.matchAll(/\bpvx\.([a-zA-Z_$][\w$]*)\.(?!\s)/g)) {
-      const campo = d[1];
-      if (campo === 'carregado') continue;
+      const field = d[1];
+      if (field === 'loaded') continue;
       // Three forms of protection count: `pvx.X && …`, `pvx.X?.…` / `pvx.X ? …`,
       // and the short circuit `!pvx.X || …` — this last one protects because, when
       // null, the `!` is true and the rest never evaluates.
-      const protegido = new RegExp(`pvx\\.${campo}\\s*(?:&&|\\?)`).test(e)
-        || new RegExp(`!\\s*pvx\\.${campo}\\s*\\|\\|`).test(e);
-      const nulo = comp.pvx[campo] === null || comp.pvx[campo] === undefined;
-      if (!protegido && nulo) desprotegidas.push(`pvx.${campo} em: ${e.slice(0, 54)}`);
+      const isProtected = new RegExp(`pvx\\.${field}\\s*(?:&&|\\?)`).test(e)
+        || new RegExp(`!\\s*pvx\\.${field}\\s*\\|\\|`).test(e);
+      const nullish = comp.pvx[field] === null || comp.pvx[field] === undefined;
+      if (!isProtected && nullish) unprotected.push(`pvx.${field} em: ${e.slice(0, 54)}`);
     }
   }
   ok('no unprotected dereference over a field that is born null',
-     desprotegidas.length === 0,
-     desprotegidas.length ? desprotegidas[0] : 'none');
+     unprotected.length === 0,
+     unprotected.length ? unprotected[0] : 'none');
 
   // And the fields created in this pass have a stable shape at the source — that is
   // what stops the next expression having to remember the `?.`.
-  for (const c of ['serie', 'sistema', 'backup', 'topologia', 'pacotes', 'registro']) {
+  for (const c of ['series', 'sistema', 'backup', 'topology', 'pacotes', 'registry']) {
     ok(`pvx.${c} is born with a shape, not null`, comp.pvx[c] !== null && comp.pvx[c] !== undefined,
        String(comp.pvx[c] === null ? 'null' : typeof comp.pvx[c]));
   }
@@ -695,7 +695,7 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   ok('rule', /<hr class="pvx-md-hr">/.test(md('---')));
 
   // ── what must NOT happen ──────────────────────────────────────────────────
-  const hostil = [
+  const hostile = [
     '<script>alert(1)</script>',
     '<img src=x onerror=alert(1)>',
     '<a href="javascript:alert(1)">x</a>',
@@ -704,9 +704,9 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
     '[clique](data:text/html,<script>alert(1)</script>)',
     '<iframe src="https://evil"></iframe>',
   ];
-  const saidas = hostil.map(md);
+  const outputs = hostile.map(md);
   ok('🔴 no tag from the TEXT survives rendering',
-     saidas.every((h) => !/<(script|img|svg|iframe|object|embed|link|style)\b/i.test(h)),
+     outputs.every((h) => !/<(script|img|svg|iframe|object|embed|link|style)\b/i.test(h)),
      'escaping AFTER converting is the classic source of XSS; here it escapes first');
   // 🔴 THE INSPECTION LOOKS ONLY AT THE TAGS THE RENDERER EMITTED.
   //
@@ -715,12 +715,12 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
   // escaped text `&lt;img src=x onerror=alert(1)&gt;` — which is exactly the
   // CORRECT result, displayed as letters. That is what happened in the first
   // version of this pin: it failed the right behaviour.
-  const tagsEmitidas = (h) => h.match(/<[^>]*>/g) || [];
+  const emittedTags = (h) => h.match(/<[^>]*>/g) || [];
   ok('🔴 no event handler comes out in an emitted tag',
-     saidas.every((h) => tagsEmitidas(h).every((t) => !/\son\w+\s*=/i.test(t))),
+     outputs.every((h) => emittedTags(h).every((t) => !/\son\w+\s*=/i.test(t))),
      'onerror/onload in an attribute is execution without <script>');
   ok('🔴 links only with http(s) — javascript: and data: stay TEXT',
-     saidas.every((h) => tagsEmitidas(h).every((t) => !/href\s*=\s*["']?\s*(javascript|data|vbscript):/i.test(t))),
+     outputs.every((h) => emittedTags(h).every((t) => !/href\s*=\s*["']?\s*(javascript|data|vbscript):/i.test(t))),
      'an href with an executable scheme is <script> under another name');
   // And the positive control: the hostile text STAYS VISIBLE, escaped. Making it
   // vanish would be the screen hiding what the note says.
@@ -728,8 +728,8 @@ ok('the right-hand panel shows the absolute value (Summary tab)',
      /&lt;script&gt;/.test(md('<script>alert(1)</script>')),
      'a filter that DELETES content is a filter that hides the note from the operator');
   ok('an http link still works (the pin is not "ban everything")',
-     /<a href="https:\/\/exemplo\.test" target="_blank" rel="noopener noreferrer">doc<\/a>/
-       .test(md('[doc](https://exemplo.test)')));
+     /<a href="https:\/\/sample\.test" target="_blank" rel="noopener noreferrer">doc<\/a>/
+       .test(md('[doc](https://sample.test)')));
 
   // 🔴 NEGATIVE CONTROL ON THE PIN ITSELF: if the renderer started returning the
   // raw text, everything above would still be "no dangerous tag" by accident — the

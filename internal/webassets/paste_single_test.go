@@ -13,4 +13,4 @@ import "testing"
 // propagation is DOM semantics: evaluating the functions in isolation, which is
 // what the expression pins do, could never see this defect — that is exactly how
 // it slipped through.
-func TestPasteNoTerminalSobeUmaVezSo(t *testing.T) { rodaHarness(t, "test-paste-unico.mjs") }
+func TestTerminalPasteUploadsOnce(t *testing.T) { runHarness(t, "test-paste-single.mjs") }

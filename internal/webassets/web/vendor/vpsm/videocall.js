@@ -643,12 +643,12 @@
     comp.ratio.value = MIC_LIM_RATIO;
     comp.attack.value = 0.002;
     comp.release.value = 0.12;
-    const escalaCheiaDb = MIC_LIM_THRESHOLD - MIC_LIM_THRESHOLD / MIC_LIM_RATIO;
-    const makeupDb = -0.6 * escalaCheiaDb;
-    const compensa = ctx.createGain();
-    compensa.gain.value = Math.pow(10, -makeupDb / 20);
-    comp.connect(compensa);
-    return { input: comp, output: compensa, comp: comp };
+    const fullScaleDb = MIC_LIM_THRESHOLD - MIC_LIM_THRESHOLD / MIC_LIM_RATIO;
+    const makeupDb = -0.6 * fullScaleDb;
+    const compensate = ctx.createGain();
+    compensate.gain.value = Math.pow(10, -makeupDb / 20);
+    comp.connect(compensate);
+    return { input: comp, output: compensate, comp: comp };
   }
 
   // ---- Call -----------------------------------------------------------
@@ -849,35 +849,35 @@
     // Agora tenta um plano em degradacao e entra com o que existir — o
     // motor e o unico ponto por onde TODAS as entradas passam (lobby,
     // pular-lobby, recovery, convidado), entao a rede de seguranca fica aqui.
-    const plano = [];
+    const plan = [];
     const semId = (c) => {
       if (!c || typeof c !== 'object') return c;
       const cp = Object.assign({}, c);
       delete cp.deviceId; delete cp.facingMode;
       return cp;
     };
-    const passo = (a, v, nota) => { if (a || v) plano.push({ audio: a, video: v, nota: nota }); };
-    passo(audio, video, '');
-    const temIdFixo = (audio && audio.deviceId) || (video && (video.deviceId || video.facingMode));
-    if (temIdFixo) passo(semId(audio), semId(video), 'o dispositivo salvo não existe mais — entrei com o padrão do sistema');
+    const step = (a, v, nota) => { if (a || v) plan.push({ audio: a, video: v, nota: nota }); };
+    step(audio, video, '');
+    const hasFixedId = (audio && audio.deviceId) || (video && (video.deviceId || video.facingMode));
+    if (hasFixedId) step(semId(audio), semId(video), 'o dispositivo salvo não existe mais — entrei com o padrão do sistema');
     if (audio && video) {
-      passo(semId(audio), false, 'sem câmera disponível — entrei só com áudio');
-      passo(false, semId(video), 'sem microfone disponível — você entrou, mas ninguém vai te ouvir');
+      step(semId(audio), false, 'sem câmera disponível — entrei só com áudio');
+      step(false, semId(video), 'sem microfone disponível — você entrou, mas ninguém vai te ouvir');
     }
-    let ultimoErro = null;
+    let lastError = null;
     this.degradedNote = '';
-    for (const p of plano) {
+    for (const p of plan) {
       try {
         this.localStream = await navigator.mediaDevices.getUserMedia({ audio: p.audio, video: p.video });
         this.degradedNote = p.nota || '';
         break;
-      } catch (e) { ultimoErro = e; }
+      } catch (e) { lastError = e; }
     }
     if (!this.localStream) {
       // Plano vazio = chamaram com audioOnly E micOff (nada a pedir). Caso
-      // contrario, ultimoErro tem o motivo real da ultima tentativa.
-      throw new Error(ultimoErro
-        ? humanizeGumError(ultimoErro)
+      // contrario, lastError tem o motivo real da ultima tentativa.
+      throw new Error(lastError
+        ? humanizeGumError(lastError)
         : 'Nenhuma câmera ou microfone utilizável neste computador — conecte um aparelho e tente de novo.');
     }
     this.cameraTrack = this.localStream.getVideoTracks()[0] || null;
@@ -1498,7 +1498,7 @@
         break;
       case 'reset':
         // O outro lado detectou que a conexao travou e esta recriando a dele.
-        if (msg.from && this.peers[msg.from]) this._rebuildPeer(msg.from, 'pedido do outro lado', false);
+        if (msg.from && this.peers[msg.from]) this._rebuildPeer(msg.from, 'request do outro lado', false);
         break;
       case 'offer':
       case 'answer':
@@ -1715,24 +1715,24 @@
   // lado que travou — manda `reset` pro outro recriar o dele e voltamos como
   // iniciador (abrimos os DataChannels e oferecemos). O `reset` sai pelo mesmo
   // WS e antes da oferta nova, entao chega primeiro. Ate 3 por peer.
-  Call.prototype._rebuildPeer = function (remoteId, motivo, avisar) {
+  Call.prototype._rebuildPeer = function (remoteId, motivo, warn) {
     const old = this.peers[remoteId];
     if (!old || this.stopped) return;
     this._peerRebuilds = this._peerRebuilds || {};
     const n = (this._peerRebuilds[remoteId] || 0) + 1;
     if (n > 3) {
-      console.warn('[vpsm:vc] conexao com ' + remoteId.slice(-6) + ' nao sobe apos 3 recriacoes — desisto');
+      console.warn('[vpsm:vc] conexao com ' + remoteId.slice(-6) + ' nao rise apos 3 recriacoes — desisto');
       this.cbError('Não consegui ligar o áudio/vídeo com ' + (old.remoteUser || 'o participante') + '. Saia e entre de novo.');
       return;
     }
     this._peerRebuilds[remoteId] = n;
     console.warn('[vpsm:vc] recriando conexao com ' + remoteId.slice(-6) + ' (' + motivo + ', ' + n + '/3)');
     const user = old.remoteUser, clientId = old.remoteClientId;
-    if (avisar) this.send({ type: 'reset', to: remoteId, payload: jsonRaw({ reason: motivo }) });
+    if (warn) this.send({ type: 'reset', to: remoteId, payload: jsonRaw({ reason: motivo }) });
     try { old.close(); } catch (_) {}
     delete this.peers[remoteId];
     this._teardownPeerMonitor(remoteId);
-    this.ensurePeer(remoteId, user, /*initiator=*/!!avisar, clientId);
+    this.ensurePeer(remoteId, user, /*initiator=*/!!warn, clientId);
   };
 
   // Alpine não enxerga mutações em `this.peers` (objeto fora da reatividade).
@@ -2655,10 +2655,10 @@
   // DataChannel ou do próprio Speech local). Texto vazio esconde.
   Call.prototype.updatePeerCaption = function (peerId, text, isLocal) {
     if (!this.videosEl) return;
-    // _showLegendas controla SÓ a sobreposição visual em vídeo. Texto continua
+    // _showCaptions controla SÓ a sobreposição visual em vídeo. Texto continua
     // emitindo via cbState (transcript panel + resumo permanecem populando).
-    // Default true (legendas on); UI altera via setShowLegendas(false).
-    if (this._showLegendas === false) {
+    // Default true (legendas on); UI altera via setShowCaptions(false).
+    if (this._showCaptions === false) {
       // Remove qualquer caption já renderizada pra zerar imediato.
       try {
         const localCap = this.videosEl.querySelector('[data-vc-local-caption]');
@@ -2710,13 +2710,13 @@
     else { cap.style.display = 'none'; }
   };
 
-  // setShowLegendas controla SÓ a sobreposição visual. Se false, transcript
+  // setShowCaptions controla SÓ a sobreposição visual. Se false, transcript
   // panel + resumo continuam populando com o texto (STT segue rodando).
   // Útil quando você quer gravar tudo pro resumo mas não quer letra sobre
   // a imagem do peer durante a chamada.
-  Call.prototype.setShowLegendas = function (show) {
-    this._showLegendas = !!show;
-    if (!this._showLegendas) {
+  Call.prototype.setShowCaptions = function (show) {
+    this._showCaptions = !!show;
+    if (!this._showCaptions) {
       // Remove ATUAL + DUPLICATAS órfãs em parentElement do videosEl (bug:
       // captions empilhavam quando videosEl mudava entre renegotiations).
       try {
@@ -2736,11 +2736,11 @@
         }
       } catch (_) {}
     }
-    this.cbState({ type: 'legendas-show', show: this._showLegendas });
+    this.cbState({ type: 'legendas-show', show: this._showCaptions });
   };
 
   // -- Live subtitles (VPSMSTT adapter — whisper-local OR web-speech) --------
-  // Roda local: transcreve sua voz e envia texto via data channel pros peers.
+  // Run local: transcreve sua voz e envia texto via data channel pros peers.
   // Backend default: whisper.cpp + Silero VAD via stt-proxy (WER 5-6% PT-BR,
   // timestamps por palavra, confidence per-word, sem hallucinations em
   // silêncio). Fallback transparente pra Web Speech API se backend offline.
@@ -3400,7 +3400,7 @@
         // sempre passphrase incorreta. Antes era tela preta silenciosa.
         // (Auditoria M19)
         onDecryptFail: (count) => {
-          this.call.cbError('E2EE: ' + count + ' frames falharam. Passphrase pode estar incorreta — verifique com o outro lado.');
+          this.call.cbError('E2EE: ' + count + ' frames falharam. Passphrase can estar incorreta — verifique com o outro lado.');
         },
       })
         .then(() => { this.call.e2eeActive = true; })
@@ -3510,8 +3510,8 @@
       console.log('[vpsm:vc] onnegotiationneeded FIRE peer=' + this.remoteId.slice(-6) + ' signalingState=' + this.pc.signalingState);
       // Oferta em voo: o lado educado que recebe uma oferta AGORA espera esta
       // assentar e faz rollback explicito (ver handleSignal).
-      let ofertaAssentou;
-      this._offerInFlight = new Promise((r) => { ofertaAssentou = r; });
+      let offerSettled;
+      this._offerInFlight = new Promise((r) => { offerSettled = r; });
       try {
         this.makingOffer = true;
         const offer = await this.pc.createOffer();
@@ -3538,7 +3538,7 @@
       } finally {
         this.makingOffer = false;
         this._offerInFlight = null;
-        ofertaAssentou();
+        offerSettled();
       }
     };
 

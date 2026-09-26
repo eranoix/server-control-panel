@@ -19,20 +19,20 @@ var (
 	cachedIndexOnce sync.Once
 )
 
-// AquecePreCompressao assembles the index and kicks off the brotli compression
+// WarmPrecompression assembles the index and kicks off the brotli compression
 // BEFORE there is a user waiting on it. Without this the warm-up only starts on
 // the first request after the deploy — and since brotliOnce does not block, that
 // first visitor gets gzip. Called from boot, in a goroutine: by the time the
 // browser arrives (seconds after a deploy), the 196 KB are already ready.
-func AquecePreCompressao() {
-	montaIndex()
+func WarmPrecompression() {
+	buildIndex()
 	if cachedIndexHTML != nil {
 		brotliOnce("index:"+BuildStamp, cachedIndexHTML)
 	}
 }
 
-// montaIndex performs the BuildStamp substitution exactly once per run.
-func montaIndex() {
+// buildIndex performs the BuildStamp substitution exactly once per run.
+func buildIndex() {
 	cachedIndexOnce.Do(func() {
 		data, err := FS.ReadFile("web/index.html")
 		if err != nil {
@@ -49,7 +49,7 @@ func IndexInjector(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		montaIndex()
+		buildIndex()
 		if cachedIndexHTML == nil {
 			next.ServeHTTP(w, r)
 			return
@@ -66,7 +66,7 @@ func IndexInjector(next http.Handler) http.Handler {
 		// the brotli variant must not revalidate against the gzip one and receive a 304
 		// for a body it cannot read.
 		etag := `"` + BuildStamp + `"`
-		if aceitaBrotli(r) {
+		if acceptsBrotli(r) {
 			etag = `"` + BuildStamp + `-br"`
 		}
 		w.Header().Set("ETag", etag)

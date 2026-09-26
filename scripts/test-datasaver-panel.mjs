@@ -1,4 +1,4 @@
-// test-datasaver-painel.mjs — the seam that broke TWICE in a row.
+// test-datasaver-panel.mjs — the seam that broke TWICE in a row.
 //
 // 🔴 WHY THIS PIN EXISTS
 //
@@ -23,8 +23,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const ler = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const ler = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const index = ler('internal/webassets/web/index.html');
 const shell = ler('internal/webassets/web/vendor/vpsm/app/00-shell.js');
 
@@ -35,10 +35,10 @@ const ok = (nome, cond, extra = '') => {
 };
 
 // ── extraction: match braces to grab a {...} block or a function body ───────
-function bloco(src, marca, abre = '{') {
-  const i = src.indexOf(marca);
+function block(src, mark, open = '{') {
+  const i = src.indexOf(mark);
   if (i < 0) return null;
-  let j = src.indexOf(abre, i + marca.length - 1);
+  let j = src.indexOf(open, i + mark.length - 1);
   if (j < 0) return null;
   let prof = 0;
   for (let k = j; k < src.length; k++) {
@@ -50,14 +50,14 @@ function bloco(src, marca, abre = '{') {
 }
 
 // 1) the initial state the app DECLARES (not a copy of mine)
-const txtEstado = bloco(shell, 'dsStatus: {');
-ok('initial dsStatus found in 00-shell.js', !!txtEstado);
-const estadoInicial = txtEstado ? new Function('return (' + txtEstado + ')')() : null;
+const txtState = block(shell, 'dsStatus: {');
+ok('initial dsStatus found in 00-shell.js', !!txtState);
+const initialState = txtState ? new Function('return (' + txtState + ')')() : null;
 
 // 2) the normalizer the app runs over every server response
-const corpoForma = bloco(shell, '_dsForma(s){');
-ok('_dsForma found in 00-shell.js', !!corpoForma);
-const _dsForma = corpoForma ? new Function('s', corpoForma.slice(1, -1)) : null;
+const shapeBody = block(shell, '_dsShape(s){');
+ok('_dsShape found in 00-shell.js', !!shapeBody);
+const _dsShape = shapeBody ? new Function('s', shapeBody.slice(1, -1)) : null;
 
 // 3) EVERY index expression that touches dsStatus (x-text and x-if)
 // The kind matters: x-text GOES TO THE DOM (undefined/NaN are a visible defect),
@@ -82,37 +82,37 @@ const escopo = {
   dsLoaded: true, dsLoading: false, dsError: '',
 };
 
-function avalia(expr, dsStatus) {
-  const nomes = Object.keys(escopo).concat(['dsStatus']);
+function evaluate(expr, dsStatus) {
+  const names = Object.keys(escopo).concat(['dsStatus']);
   const vals = Object.values(escopo).concat([dsStatus]);
-  return new Function(...nomes, 'return (' + expr + ')')(...vals);
+  return new Function(...names, 'return (' + expr + ')')(...vals);
 }
 
 // Every scenario is a response the server can legitimately return — or return
 // by defect. None of them may turn into an error screen.
-const cenarios = [
-  ['initial state (before the 1st load)', estadoInicial],
-  ['complete response',      _dsForma && _dsForma({settings:{enabled:true}, bypass:[], has_ca:true,
+const scenarios = [
+  ['initial state (before the 1st load)', initialState],
+  ['complete response',      _dsShape && _dsShape({settings:{enabled:true}, bypass:[], has_ca:true,
                                saved:{orig:1000, out:220, imgs:37, reqs_cut:12, pct:78}})],
-  ['empty response {}',      _dsForma && _dsForma({})],
-  ['null response',          _dsForma && _dsForma(null)],
-  ['saved missing',          _dsForma && _dsForma({settings:{}, bypass:[]})],
-  ['saved partial (pct only)', _dsForma && _dsForma({saved:{pct: 50}})],
-  ['saved full of junk',         _dsForma && _dsForma({saved:{imgs:'x', orig:null, out:undefined, pct:NaN}})],
+  ['empty response {}',      _dsShape && _dsShape({})],
+  ['null response',          _dsShape && _dsShape(null)],
+  ['saved missing',          _dsShape && _dsShape({settings:{}, bypass:[]})],
+  ['saved partial (pct only)', _dsShape && _dsShape({saved:{pct: 50}})],
+  ['saved full of junk',         _dsShape && _dsShape({saved:{imgs:'x', orig:null, out:undefined, pct:NaN}})],
 ];
 
-for (const [nome, st] of cenarios) {
+for (const [nome, st] of scenarios) {
   if (!st) { ok('scenario ' + nome, false, 'state was not built'); continue; }
-  let erro = null, ruim = null;
+  let erro = null, bad = null;
   for (const { tipo, expr } of exprs) {
     try {
-      const v = avalia(expr, st);
+      const v = evaluate(expr, st);
       if (tipo !== 'text') continue;   // conditional: not blowing up is enough
       const txt = String(v);
-      if (txt.includes('undefined') || txt.includes('NaN')) { ruim = expr + ' -> "' + txt + '"'; break; }
+      if (txt.includes('undefined') || txt.includes('NaN')) { bad = expr + ' -> "' + txt + '"'; break; }
     } catch (ex) { erro = expr + ' -> ' + ex.constructor.name + ': ' + ex.message; break; }
   }
-  ok('survives: ' + nome, !erro && !ruim, erro || ruim || '');
+  ok('survives: ' + nome, !erro && !bad, erro || bad || '');
 }
 
 // ── the shape guard: the container can never be promised empty ──────────────
@@ -121,8 +121,8 @@ for (const [nome, st] of cenarios) {
 // back undefined.
 const camposSaved = ['orig', 'out', 'imgs', 'reqs_cut', 'pct'];
 ok('the initial state declares saved COMPLETE (not a {} that pretends to exist)',
-   !!estadoInicial && camposSaved.every((c) => typeof estadoInicial.saved?.[c] === 'number'),
-   estadoInicial ? JSON.stringify(estadoInicial.saved) : '');
+   !!initialState && camposSaved.every((c) => typeof initialState.saved?.[c] === 'number'),
+   initialState ? JSON.stringify(initialState.saved) : '');
 
 // ── do not return to the antipattern: guard the container, deref the field ─
 const antipadrao = /\(\s*dsStatus\.saved\s*\?\s*dsStatus\.saved\.\w+\s*:/;

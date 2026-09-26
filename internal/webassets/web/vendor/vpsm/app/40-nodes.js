@@ -148,21 +148,21 @@
       // not the browser’s — for the same reason as the age. Without `serverNow`
       // the answer is empty: we would rather say nothing than state a deadline
       // measured by the wrong clock.
-      nodesCredDias(n) {
+      nodesCredDays(n) {
         const c = n && n.credential ? n.credential : null;
         if (!c || !c.expire || !this.nodes.serverNow) return null;
         return Math.floor((c.expire - this.nodes.serverNow) / 86400);
       },
       nodesCredExpiry(n) {
-        const dias = this.nodesCredDias(n);
-        if (dias === null) return '';
-        if (dias < 0) return `expired ${-dias} days ago`;
-        if (dias <= 30) return `expires in ${dias} days`;
+        const days = this.nodesCredDays(n);
+        if (days === null) return '';
+        if (days < 0) return `expired ${-days} days ago`;
+        if (days <= 30) return `expires in ${days} days`;
         return '';
       },
-      nodesCredExpiryUrgente(n) {
-        const dias = this.nodesCredDias(n);
-        return dias !== null && dias <= 30;
+      nodesCredExpiryUrgent(n) {
+        const days = this.nodesCredDays(n);
+        return days !== null && days <= 30;
       },
 
       // ---- detail ----------------------------------------------------------
@@ -189,11 +189,11 @@
       // replies after the WaitTask (status stopped + exitstatus OK), so the
       // spinner covers the real operation, not the "request accepted".
       nodesPower(n, action) {
-        const rotulos = { start: 'Turn on', stop: 'Power off (cuts the power)', shutdown: 'Shut down gracefully' };
+        const labels = { start: 'Turn on', stop: 'Power off (cuts the power)', shutdown: 'Shut down gracefully' };
         const aviso = action === 'stop'
           ? `Cuts the power to "${n.name}" outright — the same as pulling the cable.`
           : `Runs "${action}" on "${n.name}". The response only comes back once the hypervisor has finished the task.`;
-        this.askConfirm(rotulos[action] || action, aviso, async () => {
+        this.askConfirm(labels[action] || action, aviso, async () => {
           if (this.nodes.busy) return;
           this.nodes.busy = n.id;
           this.nodes.lastError = '';

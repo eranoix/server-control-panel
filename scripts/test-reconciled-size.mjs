@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// test-tamanho-reconciliado.mjs — the terminal size has to correct itself, in
+// test-reconciled-size.mjs — the terminal size has to correct itself, in
 // BOTH clients.
 //
 // The report, with a photo: switching browser windows turned the terminal into
@@ -36,9 +36,9 @@ console.log('=== test-tamanho-reconciliado ===');
   // The reassertion has to send the CURRENT xterm size, not a value captured
   // when the timer was scheduled: with the window hidden the timer fires minutes
   // later, and the value at that moment is the one that counts.
-  const m = shell.match(/state\._afirmaTamanho = \(motivo\) => \{([\s\S]*?)\n {8}\};/);
+  const m = shell.match(/state\._assertSize = \(motivo\) => \{([\s\S]*?)\n {8}\};/);
   if (!m) {
-    no('could not find _afirmaTamanho in the panel client — the size is an event again');
+    no('could not find _assertSize in the panel client — the size is an event again');
   } else {
     const corpo = m[1];
     // Measured RIGHT THEN (nothing captured when the timer was scheduled) and
@@ -52,25 +52,25 @@ console.log('=== test-tamanho-reconciliado ===');
   }
 
   // Heartbeat: it is what repairs itself within ≤1 cycle.
-  /state\.ws\.send\(JSON\.stringify\(\{type:'ping'[\s\S]{0,600}?_afirmaTamanho\('heartbeat'\)/.test(shell)
+  /state\.ws\.send\(JSON\.stringify\(\{type:'ping'[\s\S]{0,600}?_assertSize\('heartbeat'\)/.test(shell)
     ? ok('panel: the heartbeat reasserts the size (repaired within ≤1 cycle)')
     : no('panel: the heartbeat does not reassert — a divergence would be permanent');
 
   // Coming back to the window: the exact instant of the report.
-  /window\.addEventListener\('focus', \(\) => this\._reconciliaTamanhos\(\)\)/.test(shell)
+  /window\.addEventListener\('focus', \(\) => this\._reconcileSizes\(\)\)/.test(shell)
     ? ok("panel: switching WINDOWS triggers reconciliation (the reported case)")
     : no('panel: nothing reconciles on coming back to the window');
-  /visibilitychange[\s\S]{0,200}_reconciliaTamanhos\(\)/.test(shell)
+  /visibilitychange[\s\S]{0,200}_reconcileSizes\(\)/.test(shell)
     ? ok('panel: coming back to the tab reconciles too')
     : no('panel: a returning tab does not reconcile');
 
   // Reconciliation has to FIT before asserting: xterm decides how many columns
   // fit, and only then can the server agree on the right number.
-  const r = shell.match(/_reconciliaTamanhos\(\)\{([\s\S]*?)\n {4}\},/);
+  const r = shell.match(/_reconcileSizes\(\)\{([\s\S]*?)\n {4}\},/);
   if (!r) {
-    no('could not find _reconciliaTamanhos');
+    no('could not find _reconcileSizes');
   } else {
-    const i = r[1].indexOf('_safeFit'), j = r[1].indexOf('_afirmaTamanho');
+    const i = r[1].indexOf('_safeFit'), j = r[1].indexOf('_assertSize');
     (i >= 0 && j > i)
       ? ok('panel: reconciliation fits BEFORE asserting (the order is what makes the number right)')
       : no('panel: it asserts before fitting — it would reassert the old size');
@@ -97,7 +97,7 @@ console.log('=== test-tamanho-reconciliado ===');
     /_gradeSessao/.test(sf[1])
       ? ok('panel: the fit obeys the session grid')
       : no('panel: the fit ignores the session grid — it fights the notice again');
-    /_afirmaTamanho/.test(sf[1])
+    /_assertSize/.test(sf[1])
       ? ok('panel: even while obeying, the fit asserts the natural window (that is how the session grows back)')
       : no('panel: obeying without asserting the natural window pins the session to the size of whoever left');
   }
@@ -115,7 +115,7 @@ console.log('=== test-tamanho-reconciliado ===');
   if (!sf) {
     no('could not find _safeFit');
   } else {
-    /_ultimoAjuste1col/.test(sf[1])
+    /_lastFit1col/.test(sf[1])
       ? ok('panel: a ±1 column does not undo the previous correction (damper on the oscillator)')
       : no('panel: the ±1 column oscillator is back — every round trip is a reflow and a SIGWINCH');
     /dc === -dc|\.dc === -dc/.test(sf[1])
@@ -139,20 +139,20 @@ console.log('=== test-tamanho-reconciliado ===');
 // Separate code on purpose (the screen exists outside the SPA); hence the same
 // guarantee is asserted here, or the two drift apart on the next fix.
 {
-  /function afirmaTamanho\(\)[\s\S]{0,400}?const cols = term\.cols, rows = term\.rows/.test(recovery)
+  /function assertSize\(\)[\s\S]{0,400}?const cols = term\.cols, rows = term\.rows/.test(recovery)
     ? ok('recovery: reasserts by reading the CURRENT xterm size')
     : no('recovery: no reassertion of the current size');
-  /ping[\s\S]{0,400}?afirmaTamanho\(\);/.test(recovery)
+  /ping[\s\S]{0,400}?assertSize\(\);/.test(recovery)
     ? ok('recovery: the heartbeat reasserts the size')
     : no('recovery: the heartbeat does not reassert');
-  /window\.addEventListener\('focus', reconciliaTamanho\)/.test(recovery)
+  /window\.addEventListener\('focus', reconcileSize\)/.test(recovery)
     ? ok('recovery: switching WINDOWS triggers reconciliation')
     : no('recovery: nothing reconciles on coming back to the window');
-  const r = recovery.match(/function reconciliaTamanho\(\) \{([\s\S]*?)\n\}/);
+  const r = recovery.match(/function reconcileSize\(\) \{([\s\S]*?)\n\}/);
   if (!r) {
-    no('recovery: could not find reconciliaTamanho');
+    no('recovery: could not find reconcileSize');
   } else {
-    const i = r[1].indexOf('fit'), j = r[1].indexOf('afirmaTamanho');
+    const i = r[1].indexOf('safeFit'), j = r[1].indexOf('assertSize');
     (i >= 0 && j > i)
       ? ok('recovery: reconciliation fits BEFORE asserting')
       : no('recovery: it asserts before fitting');

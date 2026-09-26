@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// test-vc-dispositivos.mjs — the video call must not lock the user out because
+// test-vc-devices.mjs — the video call must not lock the user out because
 // of ONE missing device.
 //
 // The report: "it isn't identifying any of my devices now". The lobby screen
@@ -16,9 +16,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
-const RAIZ = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const WEB = path.join(RAIZ, 'internal', 'webassets', 'web');
-const require_ = createRequire(path.join(RAIZ, '.tools/'));
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const WEB = path.join(ROOT, 'internal', 'webassets', 'web');
+const require_ = createRequire(path.join(ROOT, '.tools/'));
 let chromium;
 try { ({ chromium } = require_('playwright-core')); }
 catch {
@@ -71,7 +71,7 @@ const STUB = (temAudio, temVideo) => `
   Object.defineProperty(navigator, 'permissions', { configurable: true, value: { query: async () => ({ state: 'prompt' }) } });
 `;
 
-async function cenario(browser, nome, temAudio, temVideo) {
+async function scenario(browser, nome, temAudio, temVideo) {
   const page = await browser.newPage();
   await page.goto('about:blank');
   await page.addInitScript(STUB(temAudio, temVideo));
@@ -88,7 +88,7 @@ async function cenario(browser, nome, temAudio, temVideo) {
 
 // Same browser resolution as the other pins: the playwright-core in .tools/
 // downloads no browser, so it points at the cache or system chromium.
-function achaNavegador() {
+function findBrowser() {
   const c = [];
   if (process.env.VPSM_CHROMIUM) c.push(process.env.VPSM_CHROMIUM);
   const cache = '/root/.cache/ms-playwright';
@@ -98,13 +98,13 @@ function achaNavegador() {
   for (const x of c) if (fs.existsSync(x)) return x;
   return null;
 }
-const exe = achaNavegador();
+const exe = findBrowser();
 if (!exe) { console.error('FAILED: no Chromium found — skipping would be faking coverage.'); process.exit(1); }
 const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
 
 // ── 1. Microphone only (the reported case) ───────────────────────────────
 {
-  const { probe, devs } = await cenario(browser, 'so-mic', true, false);
+  const { probe, devs } = await scenario(browser, 'so-mic', true, false);
   probe.ok === true   ? ok('mic only: probe.ok (joining is possible)') : no('mic only: probe.ok=' + probe.ok + ' — this would lock the user out');
   probe.audio === true  ? ok('mic only: audio detected') : no('mic only: audio=' + probe.audio);
   probe.video === false ? ok('mic only: missing video reported') : no('mic only: video=' + probe.video);
@@ -114,7 +114,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
 
 // ── 2. Camera only ───────────────────────────────────────────────────────
 {
-  const { probe, devs } = await cenario(browser, 'so-cam', false, true);
+  const { probe, devs } = await scenario(browser, 'so-cam', false, true);
   probe.ok === true    ? ok('camera only: probe.ok') : no('camera only: probe.ok=' + probe.ok);
   probe.video === true ? ok('camera only: video detected') : no('camera only: video=' + probe.video);
   probe.audio === false? ok('camera only: missing audio reported') : no('camera only: audio=' + probe.audio);
@@ -123,14 +123,14 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
 
 // ── 3. Neither one — the only case that blocks ───────────────────────────
 {
-  const { probe } = await cenario(browser, 'nada', false, false);
+  const { probe } = await scenario(browser, 'nada', false, false);
   probe.ok === false ? ok('nothing at all: probe.ok=false (it really does block)') : no('nothing at all: probe.ok=' + probe.ok);
   (probe.audio === false && probe.video === false) ? ok('nothing at all: both sides reported missing') : no('nothing at all: audio=' + probe.audio + ' video=' + probe.video);
 }
 
 // ── 4. Everything present — ONE prompt only (no regression on the happy path)
 {
-  const { probe, gum } = await cenario(browser, 'all', true, true);
+  const { probe, gum } = await scenario(browser, 'all', true, true);
   (probe.ok && probe.audio && probe.video) ? ok('all ok: complete probe') : no('all ok: ' + JSON.stringify(probe));
   gum.length === 1 ? ok('all ok: a single getUserMedia (no extra prompt)') : no('all ok: ' + gum.length + ' getUserMedia calls — duplicated prompt');
 }
@@ -142,25 +142,25 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   await page.goto('about:blank');
   await page.addScriptTag({ content: srcVC });
   const r = await page.evaluate(async () => {
-    const eventos = [];
+    const events = [];
     let erro = '';
     try {
       await window.VPSMVideoCall.connect({
         roomId: 'x', token: 't', displayName: 'teste',
         videosEl: document.createElement('div'),
-        onState: (ev) => eventos.push(ev),
+        onState: (ev) => events.push(ev),
       });
     } catch (e) { erro = e.message; }
-    return { eventos, erro, gum: window.__gumCalls };
+    return { events, erro, gum: window.__gumCalls };
   });
   await page.close();
-  const degradou = r.eventos.some(e => e.type === 'devices-degraded');
-  degradou ? ok('engine: emitted devices-degraded') : no('engine: no devices-degraded — events=' + JSON.stringify(r.eventos.map(e=>e.type)));
-  const nota = (r.eventos.find(e => e.type === 'devices-degraded') || {}).note || '';
+  const degraded = r.events.some(e => e.type === 'devices-degraded');
+  degraded ? ok('engine: emitted devices-degraded') : no('engine: no devices-degraded — events=' + JSON.stringify(r.events.map(e=>e.type)));
+  const nota = (r.events.find(e => e.type === 'devices-degraded') || {}).note || '';
   /c.mera/i.test(nota) ? ok('engine: the note says the camera was missing ("' + nota + '")') : no('engine: unexpected note: ' + nota);
   // The last gUM attempt has to have been audio-without-video.
-  const ultima = r.gum[r.gum.length - 1] || {};
-  (ultima.audio === true && ultima.video === false) ? ok('engine: fell back to audio-only') : no('engine: the last attempt was ' + JSON.stringify(ultima));
+  const last = r.gum[r.gum.length - 1] || {};
+  (last.audio === true && last.video === false) ? ok('engine: fell back to audio-only') : no('engine: the last attempt was ' + JSON.stringify(last));
   // The final error must NOT be the getUserMedia one — it has to have got past it.
   !/getUserMedia|c.mera ou microfone/i.test(r.erro) ? ok('engine: got past getUserMedia (it failed later, at the signalling)') : no('engine: stuck at getUserMedia: ' + r.erro);
 }
@@ -172,9 +172,9 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
 {
   const i = srcShell.indexOf('async vcLobbyOpen(');
   const j = srcShell.indexOf('await this.vcRefreshDevices();', i);
-  const trecho = i >= 0 && j > i ? srcShell.slice(i, j) : '';
-  trecho ? ok('lobby: vcLobbyOpen calls vcRefreshDevices') : no('lobby: vcRefreshDevices is gone from vcLobbyOpen');
-  !/\n\s+return;\n/.test(trecho) ? ok('lobby: no return before enumerating the devices') : no('lobby: the return that emptied the pickers is back');
+  const excerpt = i >= 0 && j > i ? srcShell.slice(i, j) : '';
+  excerpt ? ok('lobby: vcLobbyOpen calls vcRefreshDevices') : no('lobby: vcRefreshDevices is gone from vcLobbyOpen');
+  !/\n\s+return;\n/.test(excerpt) ? ok('lobby: no return before enumerating the devices') : no('lobby: the return that emptied the pickers is back');
   /lobbyCaps/.test(srcShell) ? ok('lobby: per-kind capabilities (lobbyCaps) present') : no('lobby: lobbyCaps is gone');
 }
 
@@ -190,7 +190,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   const j = html.indexOf('</div>', html.indexOf('Test again')) + 6;
   const banner = i >= 0 ? html.slice(i, j) : '';
   const ci = html.indexOf('.vc-lobby-aviso {');
-  const css = ci >= 0 ? html.slice(ci, html.indexOf('}', html.indexOf('.acao:hover', ci)) + 1) : '';
+  const css = ci >= 0 ? html.slice(ci, html.indexOf('}', html.indexOf('.action:hover', ci)) + 1) : '';
   const vars = ':root{--surface-1:#111827;--surface-2:#1f2937;--surface-3:#374151;--focus:#2563eb;'
              + '--text-primary:#e5e7eb;--text-muted:#9ca3af}body{background:#0b1220;margin:0;padding:16px}'
              + '[x-cloak]{display:none!important}';
@@ -198,14 +198,14 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
     no('notice: the lobby notice markup/CSS was not found in index.html');
   } else {
     const page = await browser.newPage({ viewport: { width: 760, height: 260 } });
-    const casos = [
+    const cases = [
       { n: 'with a message', err: 'No camera was found. You can join anyway — with audio only.', caps: { audio: true, video: false }, ver: true,  sev: 'is-aviso' },
       { n: 'both missing', err: 'No usable camera or microphone on this computer.', caps: { audio: false, video: false }, ver: true, sev: 'is-erro' },
       { n: 'empty message',  err: '',    caps: { audio: true, video: true }, ver: false },
       { n: 'blank message', err: '   ', caps: { audio: true, video: true }, ver: false },
       { n: 'tab on an old bundle', err: 'Microphone in use by another program.', caps: undefined, ver: true, sev: 'is-aviso' },
     ];
-    for (const c of casos) {
+    for (const c of cases) {
       const estado = JSON.stringify({ lobbyError: c.err, lobbyCaps: c.caps, lobbyForRoomId: 'r', lobbyForPassphrase: '' });
       await page.setContent('<style>' + tail + '</style><style>' + vars + css + '</style>'
         + "<div x-data='{ videocall: " + estado + ", vcLobbyOpen(){} }'>" + banner + '</div>');
@@ -214,21 +214,21 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
       const r = await page.evaluate(() => {
         const el = document.querySelector('.vc-lobby-aviso');
         if (!el) return { existe: false };
-        return { existe: true, display: getComputedStyle(el).display, classe: el.className,
+        return { existe: true, display: getComputedStyle(el).display, className: el.className,
                  texto: ((el.querySelector('.txt') || {}).textContent || '').trim(),
-                 altura: Math.round(el.getBoundingClientRect().height),
-                 botao: !!el.querySelector('.acao') };
+                 height: Math.round(el.getBoundingClientRect().height),
+                 button: !!el.querySelector('.action') };
       });
-      const visivel = r.existe && r.display !== 'none';
+      const visible = r.existe && r.display !== 'none';
       if (!c.ver) {
-        !visivel ? ok('notice/' + c.n + ': the band does not appear') : no('notice/' + c.n + ': an empty band of ' + r.altura + 'px went live');
+        !visible ? ok('notice/' + c.n + ': the band does not appear') : no('notice/' + c.n + ': an empty band of ' + r.height + 'px went live');
         continue;
       }
-      if (!visivel) { no('notice/' + c.n + ': the band vanished'); continue; }
+      if (!visible) { no('notice/' + c.n + ': the band vanished'); continue; }
       r.texto ? ok('notice/' + c.n + ': has text') : no('notice/' + c.n + ': no text');
-      r.botao ? ok('notice/' + c.n + ': has "Test again"') : no('notice/' + c.n + ': no retry button');
-      r.altura <= 60 ? ok('notice/' + c.n + ': compact (' + r.altura + 'px)') : no('notice/' + c.n + ': ' + r.altura + 'px — it became a block again');
-      r.classe.includes(c.sev) ? ok('notice/' + c.n + ': severity ' + c.sev) : no('notice/' + c.n + ': ' + r.classe + ' (expected ' + c.sev + ')');
+      r.button ? ok('notice/' + c.n + ': has "Test again"') : no('notice/' + c.n + ': no retry button');
+      r.height <= 60 ? ok('notice/' + c.n + ': compact (' + r.height + 'px)') : no('notice/' + c.n + ': ' + r.height + 'px — it became a block again');
+      r.className.includes(c.sev) ? ok('notice/' + c.n + ': severity ' + c.sev) : no('notice/' + c.n + ': ' + r.className + ' (expected ' + c.sev + ')');
     }
     await page.close();
   }
@@ -243,70 +243,70 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   const tail = fs.readFileSync(path.join(WEB, 'tailwind.css'), 'utf8');
   const alpine = fs.readFileSync(path.join(WEB, 'vendor', 'alpine', 'alpine.min.js'), 'utf8');
   const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
-  const estilos = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(m => m[1]).join('\n');
+  const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(m => m[1]).join('\n');
   const modal = html.slice(html.indexOf('<!-- Modal: Lobby'), html.indexOf('<!-- Modal: Settings'));
   const lum = (c) => { const v = c.match(/\d+/g).map(Number).map(x => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); });
                        return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
-  const razao = (a, b) => { const x = [lum(a), lum(b)].sort((m, n) => n - m); return (x[0] + 0.05) / (x[1] + 0.05); };
-  const monta = async (page, caps, tema) => {
+  const ratio = (a, b) => { const x = [lum(a), lum(b)].sort((m, n) => n - m); return (x[0] + 0.05) / (x[1] + 0.05); };
+  const build = async (page, caps, theme) => {
     const st = { lobbyOpen: true, lobbyBusy: false, lobbyError: '', lobbyCaps: caps, lobbyMicLevel: 40, lobbyTone: false,
                  lobbyForRoomId: 'r', lobbyForPassphrase: '', lobbySkipNext: false, localMirror: true,
                  selectedRoom: { name: 'Daily — platform team' }, sinkIdSupported: true,
                  selectedDevices: { camera: 'default', mic: 'default', speaker: 'default' },
                  devices: { cameras: [], mics: [], speakers: [] } };
-    await page.setContent('<style>' + tail + '</style><style>' + estilos + '</style><body style="margin:0">'
+    await page.setContent('<style>' + tail + '</style><style>' + styles + '</style><body style="margin:0">'
       + "<div x-data='{ videocall: " + JSON.stringify(st) + ", vcLobbyCancel(){},vcLobbyConfirm(){},vcLobbyOpen(){},"
       + "vcLobbyToggleSkip(){},vcLobbyChangeCamera(){},vcLobbyChangeMic(){},vcLobbyChangeSpeaker(){},vcLobbyTestSpeaker(){} }'>"
       + modal + '</div></body>');
-    await page.evaluate((t) => { if (t === 'light') document.documentElement.setAttribute('data-theme', 'light'); }, tema);
+    await page.evaluate((t) => { if (t === 'light') document.documentElement.setAttribute('data-theme', 'light'); }, theme);
     await page.addScriptTag({ content: alpine });
     await page.waitForTimeout(250);
   };
   const page = await browser.newPage({ viewport: { width: 1200, height: 1000 } });
 
-  await monta(page, { audio: true, video: true }, 'dark');
+  await build(page, { audio: true, video: true }, 'dark');
   const r = await page.evaluate(() => {
     const pills = [...document.querySelectorAll('.vc-pill')].filter(e => e.offsetParent !== null);
     const tops = [...new Set(pills.map(e => Math.round(e.getBoundingClientRect().top)))];
-    const rotulos = [...document.querySelectorAll('.vc-sala label')].map(l => Math.round(l.getBoundingClientRect().width));
-    const nivel = document.querySelector('.vc-pill .nivel');
-    const mic = nivel && nivel.parentElement;
+    const labels = [...document.querySelectorAll('.vc-room label')].map(l => Math.round(l.getBoundingClientRect().width));
+    const level = document.querySelector('.vc-pill .level');
+    const mic = level && level.parentElement;
     return { n: pills.length, linhas: tops.length,
-             rotuloVisivel: rotulos.filter(w => w > 2).length,
-             nivelLargura: nivel ? nivel.getBoundingClientRect().width : -1,
-             micLargura: mic ? mic.getBoundingClientRect().width : -1,
-             entrarOff: document.querySelector('.vc-btn-join').disabled };
+             visibleLabel: labels.filter(w => w > 2).length,
+             levelWidth: level ? level.getBoundingClientRect().width : -1,
+             micWidth: mic ? mic.getBoundingClientRect().width : -1,
+             joinOff: document.querySelector('.vc-btn-join').disabled };
   });
   r.n === 3 ? ok('lobby: 3 device pills') : no('lobby: ' + r.n + ' pills');
   r.linhas === 1 ? ok('lobby: control bar on a single line') : no('lobby: pills across ' + r.linhas + ' lines — it is no longer a bar');
-  r.rotuloVisivel === 0 ? ok('lobby: labels for the screen reader only') : no('lobby: ' + r.rotuloVisivel + ' label(s) rendering as text (was .sr-only purged?)');
-  (r.nivelLargura > 0 && r.nivelLargura < r.micLargura) ? ok('lobby: the mic level fills the pill (' + Math.round(r.nivelLargura) + '/' + Math.round(r.micLargura) + 'px)')
-                                                        : no('lobby: the meter inside the pill does not follow the level (' + r.nivelLargura + ')');
-  r.entrarOff === false ? ok('lobby: Join enabled with both devices') : no('lobby: Join disabled for no reason');
+  r.visibleLabel === 0 ? ok('lobby: labels for the screen reader only') : no('lobby: ' + r.visibleLabel + ' label(s) rendering as text (was .sr-only purged?)');
+  (r.levelWidth > 0 && r.levelWidth < r.micWidth) ? ok('lobby: the mic level fills the pill (' + Math.round(r.levelWidth) + '/' + Math.round(r.micWidth) + 'px)')
+                                                        : no('lobby: the meter inside the pill does not follow the level (' + r.levelWidth + ')');
+  r.joinOff === false ? ok('lobby: Join enabled with both devices') : no('lobby: Join disabled for no reason');
 
-  await monta(page, { audio: true, video: false }, 'dark');
+  await build(page, { audio: true, video: false }, 'dark');
   const so = await page.evaluate(() => ({
     off: document.querySelectorAll('.vc-pill.is-off').length,
-    entrarOff: document.querySelector('.vc-btn-join').disabled,
-    rotulo: document.querySelector('.vc-btn-join span').textContent.trim(),
+    joinOff: document.querySelector('.vc-btn-join').disabled,
+    label: document.querySelector('.vc-btn-join span').textContent.trim(),
   }));
   so.off === 1 ? ok('lobby: the camera pill is marked as missing') : no('lobby: ' + so.off + ' pills marked is-off');
-  so.entrarOff === false ? ok('lobby: joining with audio only is possible') : no('lobby: Join blocked even with a microphone');
-  /audio/i.test(so.rotulo) ? ok('lobby: the button says "' + so.rotulo + '"') : no('lobby: the button says "' + so.rotulo + '" without warning that it is audio only');
+  so.joinOff === false ? ok('lobby: joining with audio only is possible') : no('lobby: Join blocked even with a microphone');
+  /audio/i.test(so.label) ? ok('lobby: the button says "' + so.label + '"') : no('lobby: the button says "' + so.label + '" without warning that it is audio only');
 
-  await monta(page, { audio: false, video: false }, 'dark');
-  const nada2 = await page.evaluate(() => document.querySelector('.vc-btn-join').disabled);
-  nada2 === true ? ok('lobby: Join disabled with no device at all') : no('lobby: Join clickable with neither camera nor microphone');
+  await build(page, { audio: false, video: false }, 'dark');
+  const nothing2 = await page.evaluate(() => document.querySelector('.vc-btn-join').disabled);
+  nothing2 === true ? ok('lobby: Join disabled with no device at all') : no('lobby: Join clickable with neither camera nor microphone');
 
-  for (const tema of ['dark', 'light']) {
-    await monta(page, { audio: true, video: true }, tema);
+  for (const theme of ['dark', 'light']) {
+    await build(page, { audio: true, video: true }, theme);
     const c = await page.evaluate(() => {
       const t = document.getElementById('dlg-vc-lobby-title');
-      return { cor: getComputedStyle(t).color, fundo: getComputedStyle(t.closest('.fm-modal')).backgroundColor };
+      return { cor: getComputedStyle(t).color, background: getComputedStyle(t.closest('.fm-modal')).backgroundColor };
     });
-    const cr = razao(c.cor, c.fundo);
-    cr >= 4.5 ? ok('lobby: title legible in the ' + tema + ' theme (' + cr.toFixed(1) + ':1)')
-              : no('lobby: title at contrast ' + cr.toFixed(2) + ':1 in theme ' + tema);
+    const cr = ratio(c.cor, c.background);
+    cr >= 4.5 ? ok('lobby: title legible in the ' + theme + ' theme (' + cr.toFixed(1) + ':1)')
+              : no('lobby: title at contrast ' + cr.toFixed(2) + ':1 in theme ' + theme);
   }
   await page.close();
 }
@@ -319,53 +319,53 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbo
   const tail = fs.readFileSync(path.join(WEB, 'tailwind.css'), 'utf8');
   const alpine = fs.readFileSync(path.join(WEB, 'vendor', 'alpine', 'alpine.min.js'), 'utf8');
   const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
-  const estilos = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(m => m[1]).join('\n');
+  const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(m => m[1]).join('\n');
   const modal = html.slice(html.indexOf('<!-- Modal: Settings'), html.indexOf('<!-- Modal: E2EE'));
   const lum = (c) => { const v = c.match(/\d+/g).map(Number).map(x => { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); });
                        return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; };
-  const razao = (a, b) => { const x = [lum(a), lum(b)].sort((m, n) => n - m); return (x[0] + 0.05) / (x[1] + 0.05); };
+  const ratio = (a, b) => { const x = [lum(a), lum(b)].sort((m, n) => n - m); return (x[0] + 0.05) / (x[1] + 0.05); };
   const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
-  for (const tema of ['dark', 'light']) {
+  for (const theme of ['dark', 'light']) {
     const st = { settingsOpen: true, settingsMicLevel: 44, settingsTone: false, sinkIdSupported: true,
                  selectedDevices: { camera: 'default', mic: 'default', speaker: 'default' },
                  devices: { cameras: [], mics: [], speakers: [] } };
-    await page.setContent('<style>' + tail + '</style><style>' + estilos + '</style><body style="margin:0">'
+    await page.setContent('<style>' + tail + '</style><style>' + styles + '</style><body style="margin:0">'
       + "<div x-data='{ videocall: " + JSON.stringify(st) + ", vcSettingsClose(){},vcSettingsChangeCamera(){},"
       + "vcSettingsChangeMic(){},vcSettingsChangeSpeaker(){},vcSettingsTestSpeaker(){} }'>" + modal + '</div></body>');
-    await page.evaluate((t) => { if (t === 'light') document.documentElement.setAttribute('data-theme', 'light'); }, tema);
+    await page.evaluate((t) => { if (t === 'light') document.documentElement.setAttribute('data-theme', 'light'); }, theme);
     await page.addScriptTag({ content: alpine });
     await page.waitForTimeout(250);
     const r = await page.evaluate(() => {
       const linhas = [...document.querySelectorAll('.vc-pill.is-linha')].filter(e => e.offsetParent !== null);
-      const nivel = document.querySelector('.vc-pill.is-linha .nivel');
+      const level = document.querySelector('.vc-pill.is-linha .level');
       const teste = document.querySelector('.vc-pill.is-linha .teste');
-      const rot = document.querySelector('.vc-pill label.rotulo');
+      const rot = document.querySelector('.vc-pill label.label');
       const tit = document.getElementById('dlg-vc-settings-title');
       const cs = linhas[0] ? getComputedStyle(linhas[0]) : null;
       const ct = teste ? getComputedStyle(teste) : null;
       return { n: linhas.length,
-               nivelPct: nivel && linhas[1] ? nivel.getBoundingClientRect().width / linhas[1].getBoundingClientRect().width : -1,
-               temTeste: !!teste, testeBorda: ct ? ct.borderTopColor : '', testeFundo: ct ? ct.backgroundColor : '',
-               rotuloVisivel: rot ? rot.getBoundingClientRect().width > 2 : false,
-               rotuloMaiusc: rot ? getComputedStyle(rot).textTransform : '',
-               fundoLinha: cs ? cs.backgroundColor : '', corLinha: cs ? cs.color : '',
-               corTit: tit ? getComputedStyle(tit).color : '', fundoModal: getComputedStyle(document.querySelector('.fm-modal')).backgroundColor };
+               levelPct: level && linhas[1] ? level.getBoundingClientRect().width / linhas[1].getBoundingClientRect().width : -1,
+               hasTest: !!teste, testBorder: ct ? ct.borderTopColor : '', testBackground: ct ? ct.backgroundColor : '',
+               visibleLabel: rot ? rot.getBoundingClientRect().width > 2 : false,
+               upperLabel: rot ? getComputedStyle(rot).textTransform : '',
+               rowBackground: cs ? cs.backgroundColor : '', rowColor: cs ? cs.color : '',
+               corTit: tit ? getComputedStyle(tit).color : '', modalBackground: getComputedStyle(document.querySelector('.fm-modal')).backgroundColor };
     });
-    if (tema === 'dark') {
+    if (theme === 'dark') {
       r.n === 3 ? ok('in-call: 3 device lines') : no('in-call: ' + r.n + ' lines');
-      (r.nivelPct > 0.3 && r.nivelPct < 0.6) ? ok('in-call: the mic level fills the line (' + Math.round(r.nivelPct * 100) + '%)')
-                                             : no('in-call: meter at ' + Math.round(r.nivelPct * 100) + '% for a level of 44');
-      r.temTeste ? ok('in-call: the output test button on the line itself') : no('in-call: the output test is gone');
-      r.rotuloVisivel ? ok('in-call: label visible (mic and output carry the same device name)') : no('in-call: label invisible — mic and output cannot be told apart');
-      r.rotuloMaiusc === 'none' ? ok('in-call: label without the uppercase from .fm-modal-body label') : no('in-call: label with text-transform:' + r.rotuloMaiusc);
+      (r.levelPct > 0.3 && r.levelPct < 0.6) ? ok('in-call: the mic level fills the line (' + Math.round(r.levelPct * 100) + '%)')
+                                             : no('in-call: meter at ' + Math.round(r.levelPct * 100) + '% for a level of 44');
+      r.hasTest ? ok('in-call: the output test button on the line itself') : no('in-call: the output test is gone');
+      r.visibleLabel ? ok('in-call: label visible (mic and output carry the same device name)') : no('in-call: label invisible — mic and output cannot be told apart');
+      r.upperLabel === 'none' ? ok('in-call: label without the uppercase from .fm-modal-body label') : no('in-call: label with text-transform:' + r.upperLabel);
     }
-    const crT = razao(r.corTit, r.fundoModal);
-    crT >= 4.5 ? ok('in-call: title legible in the ' + tema + ' theme (' + crT.toFixed(1) + ':1)') : no('in-call: title ' + crT.toFixed(2) + ':1 in theme ' + tema);
-    const crL = razao(r.corLinha, r.fundoLinha);
-    crL >= 4.5 ? ok('in-call: line text legible in the ' + tema + ' theme (' + crL.toFixed(1) + ':1)') : no('in-call: line ' + crL.toFixed(2) + ':1 in theme ' + tema);
-    const crB = razao(r.testeBorda, r.testeFundo);
+    const crT = ratio(r.corTit, r.modalBackground);
+    crT >= 4.5 ? ok('in-call: title legible in the ' + theme + ' theme (' + crT.toFixed(1) + ':1)') : no('in-call: title ' + crT.toFixed(2) + ':1 in theme ' + theme);
+    const crL = ratio(r.rowColor, r.rowBackground);
+    crL >= 4.5 ? ok('in-call: line text legible in the ' + theme + ' theme (' + crL.toFixed(1) + ':1)') : no('in-call: line ' + crL.toFixed(2) + ':1 in theme ' + theme);
+    const crB = ratio(r.testBorder, r.testBackground);
     // The border has to stand out from the button's own background, or it vanishes.
-    (r.testeBorda !== r.testeFundo) ? ok('in-call: the test button is visible in theme ' + tema) : no('in-call: the test button is invisible in the ' + tema + ' theme (border == background)');
+    (r.testBorder !== r.testBackground) ? ok('in-call: the test button is visible in theme ' + theme) : no('in-call: the test button is invisible in the ' + theme + ' theme (border == background)');
   }
   await page.close();
 }

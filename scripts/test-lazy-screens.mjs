@@ -1,15 +1,15 @@
 #!/usr/bin/env node
-// test-telas-preguicosas.mjs — the heavy screens must not be built at boot,
+// test-lazy-screens.mjs — the heavy screens must not be built at boot,
 // and must not be destroyed afterwards.
 //
 // The gain: four sections (maintenance, schedules, AI, games) add up to ~195 KB
 // of markup and thousands of nodes that the browser built and Alpine walked on
 // EVERY load, even for someone who never opened those screens. Wrapped in a
-// <template x-if="_montados.X">, they are only born on the first visit.
+// <template x-if="_mounted.X">, they are only born on the first visit.
 //
 // The risk, and the reason this pin exists: an x-if tied to VISIBILITY would
 // destroy the screen on a tab switch, losing scroll and state — that is how the
-// code-server iframe broke. The _montados latch never goes back to false, and
+// code-server iframe broke. The _mounted latch never goes back to false, and
 // that is what has to stay true.
 //
 // Only EXECUTION proves it: the test renders the REAL markup in a real browser
@@ -19,9 +19,9 @@ import http from 'node:http';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
-const RAIZ = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const WEB = path.join(RAIZ, 'internal', 'webassets', 'web');
-const require_ = createRequire(path.join(RAIZ, '.tools/'));
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const WEB = path.join(ROOT, 'internal', 'webassets', 'web');
+const require_ = createRequire(path.join(ROOT, '.tools/'));
 let chromium;
 try { ({ chromium } = require_('playwright-core')); }
 catch {
@@ -30,14 +30,14 @@ catch {
   process.exit(1);
 }
 
-const TELAS = ['manutencao', 'agendamentos', 'ai', 'gamesettings'];
+const SCREENS = ['manutencao', 'agendamentos', 'ai', 'gamesettings'];
 const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 
-// Cut each <template x-if="_montados.X"> … </template> out of the real markup,
+// Cut each <template x-if="_mounted.X"> … </template> out of the real markup,
 // counting nesting (there are hundreds of <template> tags inside them).
-function recorta(nome) {
-  const abre = `<template x-if="_montados.${nome}">`;
-  const ini = html.indexOf(abre);
+function clip(nome) {
+  const open = `<template x-if="_mounted.${nome}">`;
+  const ini = html.indexOf(open);
   if (ini < 0) return null;
   let prof = 0;
   const re = /<template\b|<\/template>/g;
@@ -48,14 +48,14 @@ function recorta(nome) {
   }
   return null;
 }
-const blocos = TELAS.map((t) => {
-  const b = recorta(t);
-  if (!b) { console.error(`FAILED: the screen "${t}" is no longer inside <template x-if="_montados.${t}"> — the lazy mount has been undone`); process.exit(1); }
+const blocks = SCREENS.map((t) => {
+  const b = clip(t);
+  if (!b) { console.error(`FAILED: the screen "${t}" is no longer inside <template x-if="_mounted.${t}"> — the lazy mount has been undone`); process.exit(1); }
   if (b.length < 15000) { console.error(`FAILED: the block for "${t}" is only ${b.length} bytes — the cut broke`); process.exit(1); }
   return b;
 });
 
-const estilos = [...html.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/g)].map((m) => m[0]).join('\n');
+const styles = [...html.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/g)].map((m) => m[0]).join('\n');
 
 // The fixture neutralises only the NETWORK and init(): everything else is the
 // real app(), with the real initial state. If one of these screens depended on
@@ -72,12 +72,12 @@ const fixture = `
   };
 `;
 
-const pagina = `<!doctype html><html><head><meta charset="utf-8">
+const pageHtml = `<!doctype html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="/tailwind.css">
-${estilos}
+${styles}
 <style>[x-cloak]{display:none!important}</style>
 </head><body x-data="app()">
-${blocos.join('\n')}
+${blocks.join('\n')}
 <script src="/vendor/vpsm/app/00-shell.js"></script>
 <script src="/vendor/vpsm/app/10-git.js"></script>
 <script src="/vendor/vpsm/app/20-deploy.js"></script>
@@ -90,7 +90,7 @@ ${blocos.join('\n')}
 
 const srv = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
-  if (u === '/') { res.setHeader('content-type', 'text/html'); return res.end(pagina); }
+  if (u === '/') { res.setHeader('content-type', 'text/html'); return res.end(pageHtml); }
   if (u.startsWith('/api/')) { res.setHeader('content-type', 'application/json'); return res.end('{}'); }
   if (u === '/favicon.ico') { res.setHeader('content-type', 'image/x-icon'); return res.end(''); }
   const f = path.join(WEB, u);
@@ -100,7 +100,7 @@ const srv = http.createServer((req, res) => {
   res.end(fs.readFileSync(f));
 });
 
-function achaNavegador() {
+function findBrowser() {
   const cands = [];
   if (process.env.VPSM_CHROMIUM) cands.push(process.env.VPSM_CHROMIUM);
   const cache = '/root/.cache/ms-playwright';
@@ -110,7 +110,7 @@ function achaNavegador() {
   for (const c of cands) if (fs.existsSync(c)) return c;
   return null;
 }
-const exe = achaNavegador();
+const exe = findBrowser();
 if (!exe) { console.error('FAILED: no Chromium found — skipping would be faking coverage.'); process.exit(1); }
 
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
@@ -128,30 +128,30 @@ let pass = 0, fail = 0;
 const ok = (m) => { console.log('PASS ' + m); pass++; };
 const no = (m) => { console.log('FAIL ' + m); fail++; };
 
-const conta = (tela) => page.evaluate((t) => document.querySelectorAll(`section[x-show*="${t}"] *`).length, tela);
+const count = (screen) => page.evaluate((t) => document.querySelectorAll(`section[x-show*="${t}"] *`).length, screen);
 
 // ── 1. at boot, none of them exist ──────────────────────────────────────────
 {
-  let nascidas = [];
-  for (const t of TELAS) if ((await conta(t)) > 0) nascidas.push(t);
-  nascidas.length === 0
+  let born = [];
+  for (const t of SCREENS) if ((await count(t)) > 0) born.push(t);
+  born.length === 0
     ? ok('boot builds none of the heavy screens (that is the whole gain)')
-    : no('screens built at boot anyway: ' + nascidas.join(', '));
+    : no('screens built at boot anyway: ' + born.join(', '));
 }
 
 // ── 2. the first visit mounts — and really mounts, with content ─────────────
-const tamanhos = {};
-for (const t of TELAS) {
-  await page.evaluate((tela) => {
+const sizes = {};
+for (const t of SCREENS) {
+  await page.evaluate((screen) => {
     const raiz = document.querySelector('[x-data]');
     const app = Alpine.$data(raiz);
-    app.currentView = tela;
-    app._triggerViewLoaders(tela);
+    app.currentView = screen;
+    app._triggerViewLoaders(screen);
   }, t);
   await page.waitForTimeout(150);
-  const n = await conta(t);
-  const existe = await page.evaluate((tela) => !!document.querySelector(`section[x-show*="${tela}"]`), t);
-  tamanhos[t] = n;
+  const n = await count(t);
+  const existe = await page.evaluate((screen) => !!document.querySelector(`section[x-show*="${screen}"]`), t);
+  sizes[t] = n;
   // The floor is deliberately low and measures what can be measured without
   // inventing: part of the content of these screens is only born after a fetch
   // (games.settings, for one, keeps the whole body hidden under the default
@@ -171,11 +171,11 @@ for (const t of TELAS) {
     app._triggerViewLoaders('terminal');
   });
   await page.waitForTimeout(150);
-  const perdidas = [];
-  for (const t of TELAS) if ((await conta(t)) < tamanhos[t]) perdidas.push(t);
-  perdidas.length === 0
+  const lost = [];
+  for (const t of SCREENS) if ((await count(t)) < sizes[t]) lost.push(t);
+  lost.length === 0
     ? ok('leaving the screen does not destroy the DOM (scroll and state survive — the code-server lesson)')
-    : no('screens destroyed on a tab switch: ' + perdidas.join(', '));
+    : no('screens destroyed on a tab switch: ' + lost.join(', '));
 }
 
 // ── 4. rendering must not cost an error ─────────────────────────────────────
