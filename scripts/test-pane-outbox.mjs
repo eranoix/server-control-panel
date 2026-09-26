@@ -16,12 +16,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const raiz = join(dirname(fileURLToPath(import.meta.url)), '..');
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Optional target via argv: lets the test run against a MUTATED COPY of
 // 00-shell.js and prove it fails when the bug comes back (a test that only ever
 // passes proves nothing).
-const alvo = process.argv[2] || join(raiz, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
-const src = readFileSync(alvo, 'utf8');
+const target = process.argv[2] || join(root, 'internal/webassets/web/vendor/vpsm/app/00-shell.js');
+const src = readFileSync(target, 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (m) => { console.log('  ✓ ' + m); pass++; };
@@ -39,26 +39,26 @@ console.log('=== test-pane-outbox ===');
 // local echo, latency probe). We extract ALL of them and assemble the object —
 // testing only _paneSendInput would test half a truth: the "never drops a
 // keystroke" guarantee is now split between it and _paneTxFlush.
-const extrai = (nome, args) => {
-  const re = new RegExp('^ {4}' + nome + '\\(' + args.join(', ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\)\\{\\n([\\s\\S]*?)^ {4}\\},$', 'm');
+const extract = (name, args) => {
+  const re = new RegExp('^ {4}' + name + '\\(' + args.join(', ').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\)\\{\\n([\\s\\S]*?)^ {4}\\},$', 'm');
   const mm = src.match(re);
-  if (!mm) { console.log('  ✗ could not extract ' + nome + ' from 00-shell.js'); process.exit(1); }
+  if (!mm) { console.log('  ✗ could not extract ' + name + ' from 00-shell.js'); process.exit(1); }
   return new Function(...args, mm[1]);
 };
 const app = {
   _renderPaneOverlay(){},
-  _paneSendInput: extrai('_paneSendInput', ['pane', 'd']),
-  _paneTxFlush: extrai('_paneTxFlush', ['pane']),
-  _paneEnfileiraOffline: extrai('_paneEnfileiraOffline', ['pane', 'd']),
-  _paneEcoOffline: extrai('_paneEcoOffline', ['pane', 'd']),
-  _pareceLinhaDeSenha: extrai('_pareceLinhaDeSenha', ['pane']),
-  _marcaEnvio: extrai('_marcaEnvio', ['pane', 'd']),
+  _paneSendInput: extract('_paneSendInput', ['pane', 'd']),
+  _paneTxFlush: extract('_paneTxFlush', ['pane']),
+  _paneEnfileiraOffline: extract('_paneEnfileiraOffline', ['pane', 'd']),
+  _paneEchoOffline: extract('_paneEchoOffline', ['pane', 'd']),
+  _looksLikePasswordLine: extract('_looksLikePasswordLine', ['pane']),
+  _markSend: extract('_markSend', ['pane', 'd']),
   // Sending now also fires the predictive echo. It is inert in the cases in
   // this file (a pane with no term, or a socket that is down), but it has to
   // exist — this is the real path we exercise, not a pruned version of it. The
-  // boundaries of the prediction have their own suite: test-eco-preditivo.mjs.
-  _preveEco: extrai('_preveEco', ['pane', 'd']),
-  _podePrever: extrai('_podePrever', ['pane', 'd']),
+  // boundaries of the prediction have their own suite: test-predictive-echo.mjs.
+  _predictEcho: extract('_predictEcho', ['pane', 'd']),
+  _canPredict: extract('_canPredict', ['pane', 'd']),
 };
 const _paneSendInput = (pane, d) => app._paneSendInput(pane, d);
 
@@ -71,43 +71,43 @@ const tick = () => new Promise(r => setTimeout(r, 0));
 // straight into the PTY. The fake decodes it so the test can keep reasoning in
 // text — and the check that it really is binary lives in case 7.
 const dec = new TextDecoder();
-const novoPane = (readyState) => ({
+const newPane = (readyState) => ({
   id: 'p1',
   ws: {
-    readyState, enviados: [], cru: [],
-    send(b){ this.cru.push(b); this.enviados.push(typeof b === 'string' ? b : dec.decode(b)); },
+    readyState, sent: [], raw: [],
+    send(b){ this.raw.push(b); this.sent.push(typeof b === 'string' ? b : dec.decode(b)); },
   },
 });
 
 // Fake terminal: only what the local echo uses — write and the cursor line.
-const termFalso = (escrito, linha) => ({
-  write(x){ escrito.push(x); },
+const fakeTerm = (written, line) => ({
+  write(x){ written.push(x); },
   buffer: { active: { baseY: 0, cursorY: 0,
-    getLine: () => ({ translateToString: () => linha }) } },
+    getLine: () => ({ translateToString: () => line }) } },
 });
 
 // 1) socket open → goes straight out, nothing queued
 {
-  const p = novoPane(1);
+  const p = newPane(1);
   const r = _paneSendInput(p, 'ls');
   await tick();
-  r === true && p.ws.enviados.join('') === 'ls' && !p._outbox
+  r === true && p.ws.sent.join('') === 'ls' && !p._outbox
     ? ok('socket open: sends straight out, nothing queued')
     : no('socket open: wrong behaviour');
 }
 
 // 2) socket down → does NOT drop: it queues instead of discarding (the bug)
 {
-  const p = novoPane(3);                       // 3 = CLOSED
-  const r = _paneSendInput(p, 'meu comando');
-  r === false && (p._outbox||[]).join('') === 'meu comando' && p.ws.enviados.length === 0
+  const p = newPane(3);                       // 3 = CLOSED
+  const r = _paneSendInput(p, 'my command');
+  r === false && (p._outbox||[]).join('') === 'my command' && p.ws.sent.length === 0
     ? ok('socket down: queues instead of discarding (the original bug)')
     : no('socket down: the keystroke was LOST');
 }
 
 // 3) order preserved — the typing is reassembled exactly
 {
-  const p = novoPane(0);                       // 0 = CONNECTING
+  const p = newPane(0);                       // 0 = CONNECTING
   for (const c of ['g','i','t',' ','s','t','a','t','u','s','\r']) _paneSendInput(p, c);
   (p._outbox||[]).join('') === 'git status\r'
     ? ok('order preserved during the outage ("git status\\r")')
@@ -116,26 +116,26 @@ const termFalso = (escrito, linha) => ({
 
 // 4) byte ceiling: does not grow unbounded and MARKS the drop (never silent)
 {
-  const p = novoPane(3);
+  const p = newPane(3);
   _paneSendInput(p, 'x'.repeat(128 * 1024));   // fills the ceiling exactly
-  const antes = p._outboxBytes;
+  const before = p._outboxBytes;
   _paneSendInput(p, 'y');                      // overflows it
-  p._outboxDropped === true && p._outboxBytes === antes
+  p._outboxDropped === true && p._outboxBytes === before
     ? ok('128KB ceiling: stops growing and marks the drop so it can warn')
     : no('byte ceiling not honoured');
 }
 
 // 5) empty/null input does not dirty the queue
 {
-  const p = novoPane(3);
+  const p = newPane(3);
   _paneSendInput(p, ''); _paneSendInput(p, null); _paneSendInput(p, undefined);
   !p._outbox ? ok('empty/null input ignored') : no('empty input dirtied the queue');
 }
 
 // 6) a send that throws (socket dying between check and send) is queued
 {
-  const p = novoPane(1);
-  p.ws.send = () => { throw new Error('socket morreu'); };
+  const p = newPane(1);
+  p.ws.send = () => { throw new Error('socket died'); };
   // The old code called send() WITHOUT try/catch: the exception escaped and
   // took down the whole typing handler. We catch it here to report a readable
   // failure instead of aborting the suite halfway.
@@ -143,12 +143,12 @@ const termFalso = (escrito, linha) => ({
   // the failure shows up — the GUARANTEE (the keystroke does not vanish) is what
   // the test has to assert, and it still holds: the catch in the flush puts the
   // text back in the queue.
-  let explodiu = false;
-  try { _paneSendInput(p, 'abc'); } catch(_) { explodiu = true; }
+  let blewUp = false;
+  try { _paneSendInput(p, 'abc'); } catch(_) { blewUp = true; }
   await tick();
-  (!explodiu && p._outbox && p._outbox.join('') === 'abc')
+  (!blewUp && p._outbox && p._outbox.join('') === 'abc')
     ? ok('send that throws: lands in the queue instead of vanishing')
-    : no(explodiu ? 'send that throws: the exception escaped and would take typing down' : 'send that throws: keystroke lost');
+    : no(blewUp ? 'send that throws: the exception escaped and would take typing down' : 'send that throws: keystroke lost');
 }
 
 // ── binary frames ───────────────────────────────────────────────────────────
@@ -156,10 +156,10 @@ const termFalso = (escrito, linha) => ({
 //    bytes per character, and on a lossy link every extra byte is one more
 //    chance of stalling the whole TCP queue.
 {
-  const p = novoPane(1);
+  const p = newPane(1);
   _paneSendInput(p, 'a');
   await tick();
-  const b = p.ws.cru[0];
+  const b = p.ws.raw[0];
   (b instanceof Uint8Array && b.length === 1 && !/type/.test(dec.decode(b)))
     ? ok('the send is raw binary (no JSON envelope per keystroke)')
     : no('the per-keystroke JSON envelope is back: ' + JSON.stringify(String(b)));
@@ -168,25 +168,25 @@ const termFalso = (escrito, linha) => ({
 // 8) a burst from the same tick (auto-repeat, paste, IME) becomes ONE frame —
 //    and even so nothing is reordered or delayed by a timer.
 {
-  const p = novoPane(1);
+  const p = newPane(1);
   for (const c of ['g','i','t',' ','p','u','l','l']) _paneSendInput(p, c);
   await tick();
-  (p.ws.cru.length === 1 && p.ws.enviados.join('') === 'git pull')
+  (p.ws.raw.length === 1 && p.ws.sent.join('') === 'git pull')
     ? ok('a burst from one tick becomes 1 frame, in the right order')
-    : no('coalescing failed: ' + p.ws.cru.length + ' frames, ' + JSON.stringify(p.ws.enviados.join('')));
+    : no('coalescing failed: ' + p.ws.raw.length + ' frames, ' + JSON.stringify(p.ws.sent.join('')));
 }
 
 // 9) with no socket, the keystroke APPEARS on screen (dimmed) instead of
 //    vanishing — exactly the "sometimes it types nothing" from the report.
 {
-  const escrito = [];
-  const p = novoPane(3);
-  p.term = termFalso(escrito, '$ ');
+  const written = [];
+  const p = newPane(3);
+  p.term = fakeTerm(written, '$ ');
   _paneSendInput(p, 'ls');
-  const saida = escrito.join('');
-  (saida.includes('ls') && saida.includes('\x1b[2m') && p._ecoPintado === 2)
+  const output = written.join('');
+  (output.includes('ls') && output.includes('\x1b[2m') && p._echoPainted === 2)
     ? ok('no socket: the dimmed local echo shows up on screen')
-    : no('with no socket the screen went dead: ' + JSON.stringify(saida));
+    : no('with no socket the screen went dead: ' + JSON.stringify(output));
 }
 
 // 10) the local echo must NEVER leak a password: not when the line is a
@@ -201,47 +201,47 @@ const termFalso = (escrito, linha) => ({
     'Senha:',
     "Password for 'https://github.com':",
   ]) {
-    const escrito = [];
-    const p = novoPane(3);
-    p.term = termFalso(escrito, prompt);
-    _paneSendInput(p, 'segredo');
-    escrito.length === 0
+    const written = [];
+    const p = newPane(3);
+    p.term = fakeTerm(written, prompt);
+    _paneSendInput(p, 'secret');
+    written.length === 0
       ? ok('does not echo at ' + JSON.stringify(prompt))
-      : no('ECHOED the password at ' + JSON.stringify(prompt) + ': ' + JSON.stringify(escrito.join('')));
+      : no('ECHOED the password at ' + JSON.stringify(prompt) + ': ' + JSON.stringify(written.join('')));
   }
   // And the converse: an ordinary prompt has to keep echoing, otherwise the
   // protection would have eaten the whole feature.
   {
-    const escrito = [];
-    const p = novoPane(3);
-    p.term = termFalso(escrito, 'sam@vps:/opt/panel$ ');
+    const written = [];
+    const p = newPane(3);
+    p.term = fakeTerm(written, 'sam@vps:/opt/panel$ ');
     _paneSendInput(p, 'ls');
-    escrito.join('').includes('ls')
+    written.join('').includes('ls')
       ? ok('a normal prompt keeps echoing (the protection did not eat the feature)')
       : no('a normal prompt stopped echoing — the local echo became useless');
   }
 
-  const escrito2 = [];
-  const p2 = novoPane(3);
-  p2.term = termFalso(escrito2, '$ ');
-  p2._servidorEcoa = false;          // server stopped echoing before the outage
-  _paneSendInput(p2, 'segredo');
-  escrito2.length === 0
+  const written2 = [];
+  const p2 = newPane(3);
+  p2.term = fakeTerm(written2, '$ ');
+  p2._serverEchoes = false;          // server stopped echoing before the outage
+  _paneSendInput(p2, 'secret');
+  written2.length === 0
     ? ok('server was not echoing before the outage: no echo (the mosh rule)')
-    : no('ECHOED while the server was in no-echo mode: ' + JSON.stringify(escrito2.join('')));
+    : no('ECHOED while the server was in no-echo mode: ' + JSON.stringify(written2.join('')));
 }
 
 // 11) control characters are not guessed: Enter/Ctrl-* have effects only the
 //     shell on the other end knows. They go to the queue silently.
 {
-  const escrito = [];
-  const p = novoPane(3);
-  p.term = termFalso(escrito, '$ ');
+  const written = [];
+  const p = newPane(3);
+  p.term = fakeTerm(written, '$ ');
   _paneSendInput(p, 'ok\r');
-  const saida = escrito.join('');
-  (saida.includes('ok') && !saida.includes('\r') && (p._outbox||[]).join('') === 'ok\r')
+  const output = written.join('');
+  (output.includes('ok') && !output.includes('\r') && (p._outbox||[]).join('') === 'ok\r')
     ? ok('Enter is not echoed locally, but reaches the queue intact')
-    : no('improper control-character echo: ' + JSON.stringify(saida));
+    : no('improper control-character echo: ' + JSON.stringify(output));
 }
 
 // ── repaint decision on reattach ────────────────────────────────────────────
@@ -251,25 +251,25 @@ const termFalso = (escrito, linha) => ({
 // more jolt) and do escalate when the screen is black or when it CANNOT be
 // decided (otherwise the original bug returns, and that is worse than a jolt).
 {
-  const mp = src.match(/^ {4}_viewportPrecisaRepaint\(term\)\{\n([\s\S]*?)^ {4}\},$/m);
-  if (!mp) { no('could not extract _viewportPrecisaRepaint'); }
+  const mp = src.match(/^ {4}_viewportNeedsRepaint\(term\)\{\n([\s\S]*?)^ {4}\},$/m);
+  if (!mp) { no('could not extract _viewportNeedsRepaint'); }
   else {
-    const precisa = new Function('term', mp[1]);
-    const termCom = (linhas) => ({
-      rows: linhas.length,
-      buffer: { active: { viewportY: 0, getLine: (i) => linhas[i] === undefined ? null
-        : { translateToString: () => linhas[i] } } },
+    const needs = new Function('term', mp[1]);
+    const termWith = (lines) => ({
+      rows: lines.length,
+      buffer: { active: { viewportY: 0, getLine: (i) => lines[i] === undefined ? null
+        : { translateToString: () => lines[i] } } },
     });
-    precisa(termCom(['', '  $ ls', ''])) === false
+    needs(termWith(['', '  $ ls', ''])) === false
       ? ok('screen WITH content → no escalation (no more jolt on deploy)')
       : no('it would escalate with a good screen — the jolt would be back');
-    precisa(termCom(['', '   ', ''])) === true
+    needs(termWith(['', '   ', ''])) === true
       ? ok('blank screen → escalates to the wobble (the original bug covered)')
       : no('a black screen would NOT escalate — the original bug is back');
-    precisa({ rows: 3, buffer: null }) === true
+    needs({ rows: 3, buffer: null }) === true
       ? ok('no buffer (the API changed) → escalate; when in doubt, keep the old screen')
       : no('no buffer would not escalate — that risks a black screen');
-    precisa({ rows: 3, buffer: { active: { viewportY: 0, getLine: () => { throw new Error('x'); } } } }) === true
+    needs({ rows: 3, buffer: { active: { viewportY: 0, getLine: () => { throw new Error('x'); } } } }) === true
       ? ok('getLine that throws → escalates instead of assuming a good screen')
       : no('an exception read as a good screen — that risks a black screen');
   }
@@ -317,10 +317,10 @@ const termFalso = (escrito, linha) => ({
 {
   const mr = src.match(/^ {4}_reattachRepaint\(state\)\{\n([\s\S]*?)^ {4}\},$/m);
   const total = (src.match(/resize\(rc - 8, rr - 4\)/g) || []).length;
-  const dentro = mr ? (mr[1].match(/resize\(rc - 8, rr - 4\)/g) || []).length : 0;
-  (total === 1 && dentro === 1)
+  const inside = mr ? (mr[1].match(/resize\(rc - 8, rr - 4\)/g) || []).length : 0;
+  (total === 1 && inside === 1)
     ? ok('the wobble exists only inside the escalation (not on every reattach)')
-    : no(`wobble outside the escalation (total=${total}, inside=${dentro}) — the jolt is back`);
+    : no(`wobble outside the escalation (total=${total}, inside=${inside}) — the jolt is back`);
 }
 
 // ── atomic repaint on reattach ──────────────────────────────────────────────
@@ -338,7 +338,7 @@ const termFalso = (escrito, linha) => ({
 // The hold has to be ADAPTIVE, not a fixed timer: the first version held a flat
 // 260ms and the window expired in the MIDDLE of the repaint when the app took
 // longer — the user saw the fragment. The right criterion is "the burst went quiet".
-/quieto < 90/.test(src) && /_lastDataAt/.test(src)
+/quiet < 90/.test(src) && /_lastDataAt/.test(src)
   ? ok('the hold releases on the SILENCE of the burst, not on a fixed timer')
   : no('the hold is a fixed timer again — a long repaint shows up half-drawn');
 /state\._holdUntil = Date\.now\(\) \+ 1500;/.test(src)
@@ -355,7 +355,7 @@ const termFalso = (escrito, linha) => ({
   ? ok('native paste listener present (images without needing permission)')
   : no('the native paste listener is gone — pasting an image fails again');
 // The GUARANTEE here is "pasting text never becomes an upload", and what holds
-// it up is the text/plain early-return in _arquivosDoClipboard. This pin
+// it up is the text/plain early-return in _clipboardFiles. This pin
 // asserted instead a literal regex of the listener that first shipped the
 // feature — and twice that left it out of step with the product: the filter was
 // later widened on purpose (any file type, not only images, so PDF/CSV can go
@@ -364,8 +364,8 @@ const termFalso = (escrito, linha) => ({
 // change into a failure.
 //
 // The in-browser verification of this property lives in
-// scripts/test-paste-unico.mjs ("a paste with text/plain stays text").
-/_arquivosDoClipboard\(ev\)\{[\s\S]{0,400}?tipos\.includes\('text\/plain'\)\) return null;/.test(src)
+// scripts/test-paste-single.mjs ("a paste with text/plain stays text").
+/_clipboardFiles\(ev\)\{[\s\S]{0,400}?types\.includes\('text\/plain'\)\) return null;/.test(src)
   ? ok('pasting text never becomes an upload (text/plain early-return)')
   : no('the text/plain guard is gone — pasting from Excel/Word would upload');
 !/\b_pasteImageIfAny\b/.test(src)

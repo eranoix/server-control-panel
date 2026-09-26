@@ -1,17 +1,12 @@
 package com.vpsmanager.terminalengine
 
 /**
- * Where the viewport sits inside the emulator's history — the position the UI
- * shows and the one that decides whether "back to the end" needs to appear.
+ * Where the viewport sits inside the emulator's history, mirroring
+ * libghostty-vt's `GhosttyTerminalScrollbar`. Measures are in LINES, in the
+ * same space as [TerminalEngine.scrollToRow].
  *
- * It mirrors libghostty-vt's `GhosttyTerminalScrollbar`. All three measures
- * are in LINES and in the same space as [TerminalEngine.scrollToRow], so a
- * position read here goes back to the engine with no conversion at all.
- *
- * The library states explicitly that **there is no notification** of a scroll
- * change: whoever draws the position reads this once per frame and compares
- * it with the previous one. That is why this type is a cheap, immutable
- * snapshot and not a flow.
+ * A cheap immutable snapshot rather than a flow, because the library has no
+ * scroll-change notification and the UI polls it once per frame.
  */
 data class TerminalScrollState(
     /** Total scrollable lines: the whole history plus the live screen. */
@@ -20,42 +15,38 @@ data class TerminalScrollState(
     /** First visible line, counted from the top of the history. */
     val offset: Long,
 
-    /** Quantas linhas cabem na tela. */
-    val visiveis: Long,
+    /** How many lines fit on the screen. */
+    val visible: Long,
 
     /**
-     * The viewport is pinned to the end (the active area), i.e. following new
-     * output.
-     *
-     * False is exactly the moment the owner is reading the past — and the
-     * moment the screen **must not** jump down by itself because new output
-     * arrived.
+     * The viewport is pinned to the end (the active area), following new
+     * output. While false the user is reading the past and the screen must
+     * not jump down on new output.
      */
-    val noFim: Boolean,
+    val atEnd: Boolean,
 ) {
     /**
-     * How many history lines exist above the live screen. Zero when there is
-     * nowhere to scroll to — the alternate screen, or a freshly opened session.
+     * History lines above the live screen. Zero on the alternate screen or in
+     * a freshly opened session.
      */
-    val historico: Long get() = (total - visiveis).coerceAtLeast(0)
+    val history: Long get() = (total - visible).coerceAtLeast(0)
 
-    /** There is somewhere to scroll: only then do the position bar and the gesture make sense. */
-    val podeRolar: Boolean get() = historico > 0
+    /** Whether there is anywhere to scroll. */
+    val canScroll: Boolean get() = history > 0
 
     /**
-     * Progress from 0 (top of the history) to 1 (the end, the live screen),
-     * for drawing the bar. With no history the value is 1 — everything is in
-     * view, and the end is where you are.
+     * Progress from 0 (top of the history) to 1 (the live screen), for drawing
+     * the bar. 1 when there is no history.
      */
-    val progresso: Float
+    val progress: Float
         get() {
-            val h = historico
+            val h = history
             if (h <= 0) return 1f
             return (offset.toFloat() / h.toFloat()).coerceIn(0f, 1f)
         }
 
     companion object {
         /** Pinned to the end, with no history: the state of a freshly created terminal. */
-        val NO_FIM = TerminalScrollState(total = 0, offset = 0, visiveis = 0, noFim = true)
+        val AT_END = TerminalScrollState(total = 0, offset = 0, visible = 0, atEnd = true)
     }
 }

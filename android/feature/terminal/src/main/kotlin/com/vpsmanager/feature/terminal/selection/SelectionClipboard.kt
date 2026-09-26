@@ -30,7 +30,7 @@ internal fun extractSelectedText(snapshot: CellSnapshot, selection: GridSelectio
     // One single normalisation across the whole module — the same one that
     // positions the handles and measures the floating bar's rectangle (see
     // `SelectionHandles.kt`).
-    val normalized = emOrdemDeLeitura(selection)
+    val normalized = inReadingOrder(selection)
     val sb = StringBuilder()
     for (row in normalized.startRow..normalized.endRow) {
         val fromCol = if (row == normalized.startRow) normalized.startCol else 0
@@ -68,19 +68,19 @@ private fun extractRow(snapshot: CellSnapshot, row: Int, fromCol: Int, toCol: In
  * share, and send back to the remote program. Duplicating the guards is how
  * the first version's "buttons that do nothing" were born.
  */
-internal class TextoSelecionado(
+internal class SelectedText(
     private val snapshotProvider: () -> CellSnapshot?,
     private val selectionProvider: () -> GridSelection?,
 ) {
     /** The reconstructed text, or `null` if the snapshot or the selection is missing. */
-    fun ler(): String? {
+    fun read(): String? {
         val snapshot = snapshotProvider() ?: return null
         val selection = selectionProvider() ?: return null
         return extractSelectedText(snapshot, selection)
     }
 
     /**
-     * Hands the selected text to [consumir], and calls NOTHING when there is
+     * Hands the selected text to [consume], and calls NOTHING when there is
      * no text — it is the single guard for the overflow menu's actions (share,
      * send back to the program, open in another app).
      *
@@ -89,10 +89,10 @@ internal class TextoSelecionado(
      * repeating its own guard is how the first version's "buttons that do
      * nothing" were born.
      */
-    fun usar(consumir: (String) -> Unit) {
-        val conteudo = ler()
-        if (conteudo.isNullOrEmpty()) return
-        consumir(conteudo)
+    fun use(consume: (String) -> Unit) {
+        val content = read()
+        if (content.isNullOrEmpty()) return
+        consume(content)
     }
 }
 
@@ -110,10 +110,10 @@ internal class CopyAction(
     private val selectionProvider: () -> GridSelection?,
     private val clipboardWrite: (String) -> Unit,
 ) {
-    private val texto = TextoSelecionado(snapshotProvider, selectionProvider)
+    private val text = SelectedText(snapshotProvider, selectionProvider)
 
     fun copy() {
-        clipboardWrite(texto.ler() ?: return)
+        clipboardWrite(text.read() ?: return)
     }
 }
 
@@ -131,7 +131,7 @@ internal class CopyAction(
  *
  * An empty (or absent) clipboard sends nothing: a zero-length `paste` has no
  * useful effect on the remote shell. But it is not silent either — it calls
- * [aoFaltarConteudo].
+ * [onContentMissing].
  *
  * **Why telling the user matters here.** "Paste" is pinned to the bar, at the
  * app owner's request, and it is the only action there that may have nothing
@@ -145,12 +145,12 @@ internal class CopyAction(
 internal class PasteAction(
     private val clipboardRead: () -> String?,
     private val sendPaste: (String) -> Unit,
-    private val aoFaltarConteudo: () -> Unit = {},
+    private val onContentMissing: () -> Unit = {},
 ) {
     fun paste() {
         val text = clipboardRead()
         if (text.isNullOrEmpty()) {
-            aoFaltarConteudo()
+            onContentMissing()
             return
         }
         sendPaste(text)

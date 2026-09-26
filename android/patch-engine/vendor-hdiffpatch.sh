@@ -1,24 +1,19 @@
 #!/usr/bin/env bash
-# Vendoriza o LADO PATCHER do HDiffPatch (fonte, nunca binario de terceiro)
-# nos commits fixados em toolchain.properties.
+# Vendors the PATCHER side of HDiffPatch (source, never a third-party binary)
+# at the commits pinned in toolchain.properties.
 #
-# Por que fonte e nao um .aar/.so pronto: o aparelho vai executar este codigo
-# sobre um APK que sera INSTALADO. Um binario baixado de terceiro seria um
-# elo da cadeia de suprimento que ninguem neste projeto auditou -- mesma
-# regra que :terminal-engine ja aplica (04-PLAN.md, ameaca T-04-SC), so que
-# la o artefato commitado e o .a construido aqui e aqui e o .c em si, porque
-# o alvo cabe em 2 MB de fonte e o ndk-build o compila no proprio build do
-# Gradle.
+# Source rather than a prebuilt .aar/.so: this code runs on an APK that gets
+# INSTALLED, so an unaudited downloaded binary would be a supply-chain risk.
+# ndk-build compiles the sources as part of the Gradle build.
 #
-# Copia APENAS os arquivos listados em vendor-files.txt -- fecho transitivo
-# real de #include, extraido dos .d do compilador, nao um palpite. Ver o
-# cabecalho daquele arquivo e a flag --relist abaixo.
+# Copies ONLY the files in vendor-files.txt, the real transitive #include
+# closure taken from the compiler's .d files (see --relist below).
 #
-# Uso:
-#   ./vendor-hdiffpatch.sh            # (re)vendoriza e regrava o manifesto
-#   ./vendor-hdiffpatch.sh --relist   # so imprime como regerar vendor-files.txt
+# Usage:
+#   ./vendor-hdiffpatch.sh            # (re)vendor and rewrite the manifest
+#   ./vendor-hdiffpatch.sh --relist   # only print how to regenerate vendor-files.txt
 #
-# Idempotente: rodar de novo com os mesmos commits produz bytes identicos.
+# Idempotent: re-running with the same commits produces identical bytes.
 
 set -euo pipefail
 
@@ -34,29 +29,28 @@ VENDOR_DIR="$SCRIPT_DIR/vendor"
 
 if [ "${1:-}" = "--relist" ]; then
   cat <<'RELIST'
-Para regerar vendor-files.txt depois de mexer num interruptor do Android.mk:
+To regenerate vendor-files.txt after changing a switch in Android.mk:
 
-  1. ./vendor-hdiffpatch.sh                 # garante .build/src com os commits fixados
+  1. ./vendor-hdiffpatch.sh                 # ensures .build/src at the pinned commits
   2. cd .build/src/HDiffPatch/builds/android_ndk_jni_mk
      ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk \
        NDK_APPLICATION_MK=Application.mk APP_ABI="arm64-v8a x86_64" \
-       <os mesmos interruptores de src/main/cpp/Android.mk>
-  3. Junte todos os obj/local/**/*.o.d, normalize os caminhos relativos e
-     escreva a uniao ordenada em vendor-files.txt (prefixo = nome do repo
-     irmao: HDiffPatch/, lzma/, zstd/, xxHash/, libmd5/).
+       <the same switches as src/main/cpp/Android.mk>
+  3. Merge all obj/local/**/*.o.d files, normalize the relative paths and
+     write the sorted union to vendor-files.txt (prefix = sibling repo
+     name: HDiffPatch/, lzma/, zstd/, xxHash/, libmd5/).
 
-O .d e a unica fonte honesta dessa lista: os includes do hpatchz.c dependem
-dos proprios -D que os interruptores ligam, entao ler o codigo a olho erra.
+The .d files are the only reliable source for this list: hpatchz.c includes
+depend on the -D flags the switches set, so reading the code by eye misses some.
 RELIST
   exit 0
 fi
 
 mkdir -p "$SRC_DIR"
 
-# Cada repo irmao e um checkout raso do commit EXATO. Nunca uma branch: o
-# formato do arquivo de diff e a lista de plugins mudam entre versoes, e um
-# patch gerado no servidor por uma versao que este .so nao entende falha no
-# aparelho, longe de quem poderia depurar.
+# Each sibling repo is a shallow checkout of the EXACT commit, never a branch:
+# the diff format and plugin list change between versions, and a mismatch
+# only fails later, on the device.
 fetch_pinned() {
   local name="$1" repo="$2" commit="$3"
   local dst="$SRC_DIR/$name"
@@ -64,7 +58,7 @@ fetch_pinned() {
     local head
     head="$(cd "$dst" && "$VCS" rev-parse HEAD)"
     if [ "$head" = "$commit" ]; then
-      echo "vendor-hdiffpatch: $name ja em $commit" >&2
+      echo "vendor-hdiffpatch: $name already at $commit" >&2
       return 0
     fi
   fi
@@ -87,7 +81,7 @@ fetch_pinned zstd       "$(prop ZSTD_REPO)"       "$(prop ZSTD_COMMIT)"
 fetch_pinned xxHash     "$(prop XXHASH_REPO)"     "$(prop XXHASH_COMMIT)"
 fetch_pinned libmd5     "$(prop LIBMD5_REPO)"     "$(prop LIBMD5_COMMIT)"
 
-echo "vendor-hdiffpatch: copiando $(grep -cvE '^\s*(#|$)' vendor-files.txt) arquivos" >&2
+echo "vendor-hdiffpatch: copying $(grep -cvE '^\s*(#|$)' vendor-files.txt) files" >&2
 rm -rf "$VENDOR_DIR/HDiffPatch" "$VENDOR_DIR/lzma" "$VENDOR_DIR/zstd" \
        "$VENDOR_DIR/xxHash" "$VENDOR_DIR/libmd5"
 mkdir -p "$VENDOR_DIR"
@@ -98,26 +92,23 @@ while IFS= read -r rel; do
   cp -p "$SRC_DIR/$rel" "$VENDOR_DIR/$rel"
 done < vendor-files.txt
 
-# O binding Java oficial. Fica FORA de vendor-files.txt de proposito: aquela
-# lista e o fecho de #include do compilador C, e este arquivo nao e C. Vem
-# literal, sem uma linha alterada, porque o simbolo JNI compilado em
-# hpatch_jni.c e literalmente Java_com_github_sisong_HPatch_patch -- mudar o
-# pacote da classe quebraria o vinculo em runtime, nao em tempo de compilacao.
-# build.gradle.kts registra o diretorio abaixo como srcDir de java.
+# The official Java binding, kept out of vendor-files.txt (that list is the C
+# #include closure). Copied verbatim: hpatch_jni.c exports
+# Java_com_github_sisong_HPatch_patch, so changing the class package would
+# break linking at runtime, not at compile time. build.gradle.kts adds this
+# directory as a java srcDir.
 JAVA_REL="HDiffPatch/builds/android_ndk_jni_mk/java"
 mkdir -p "$VENDOR_DIR/$JAVA_REL"
 cp -pR "$SRC_DIR/$JAVA_REL/." "$VENDOR_DIR/$JAVA_REL/"
 
-# Licencas: cada repo irmao entra com a sua propria, ao lado do codigo. O app
-# tem tela de licencas -- o que e distribuido no APK precisa estar listado la,
-# e nao da para listar o que nao esta escrito aqui.
+# Each sibling repo's license is vendored next to its code, so the app's
+# licenses screen can list everything shipped in the APK.
 cp -p "$SRC_DIR/HDiffPatch/LICENSE" "$VENDOR_DIR/HDiffPatch/LICENSE"
 cp -p "$SRC_DIR/zstd/LICENSE"       "$VENDOR_DIR/zstd/LICENSE"
 cp -p "$SRC_DIR/xxHash/LICENSE"     "$VENDOR_DIR/xxHash/LICENSE"
 cp -p "$SRC_DIR/lzma/DOC/lzma-sdk.txt" "$VENDOR_DIR/lzma/LICENSE-lzma-sdk.txt"
-# libmd5 nao tem arquivo de licenca separado: o texto (zlib-like, Aladdin
-# Enterprises / L. Peter Deutsch) vive no cabecalho do proprio md5.h, que ja
-# esta vendorizado.
+# libmd5 has no separate license file: the zlib-like text (Aladdin
+# Enterprises / L. Peter Deutsch) is in the header of md5.h, already vendored.
 
 python3 - "$VENDOR_DIR" "$PROPS_FILE" <<'PY'
 import hashlib, json, os, subprocess, sys
@@ -166,7 +157,7 @@ out = os.path.join(vendor, "vendor-manifest.json")
 with open(out, "w") as fh:
     json.dump(manifest, fh, indent=2, sort_keys=False)
     fh.write("\n")
-print("vendor-hdiffpatch: %d arquivos, %d bytes" % (len(files), manifest["total_bytes"]), file=sys.stderr)
+print("vendor-hdiffpatch: %d files, %d bytes" % (len(files), manifest["total_bytes"]), file=sys.stderr)
 PY
 
-echo "vendor-hdiffpatch: pronto" >&2
+echo "vendor-hdiffpatch: done" >&2

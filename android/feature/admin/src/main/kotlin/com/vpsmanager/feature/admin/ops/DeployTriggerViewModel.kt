@@ -70,7 +70,7 @@ class DeployTriggerViewModel(
      * would force every test to stand up Android infrastructure just to
      * exercise a decision that has nothing to do with it.
      */
-    private val acompanharForaDaTela: ((jobId: String) -> Unit)? = null,
+    private val trackOffScreen: ((jobId: String) -> Unit)? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DeployTriggerUiState>(DeployTriggerUiState.Idle)
@@ -121,7 +121,7 @@ class DeployTriggerViewModel(
                     // the backgrounded process's network in about 5.7 s.
                     // Without this, the deploy went up to ten minutes with no
                     // signal at all.
-                    acompanharForaDaTela?.invoke(result.jobId)
+                    trackOffScreen?.invoke(result.jobId)
                     startStreaming(result.jobId)
                 }
                 is TriggerDeployResult.Error -> _uiState.value = DeployTriggerUiState.TriggerFailed(result.reason)

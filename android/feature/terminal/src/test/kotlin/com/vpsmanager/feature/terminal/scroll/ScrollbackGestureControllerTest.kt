@@ -11,230 +11,211 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The translation from PIXEL to LINE, and the destination of each line. Runs
- * on the JVM: the rule does not depend on a device, and it is precisely the
- * one that would make scrolling look truncated or run away from the finger if
- * it were wrong.
- */
+/** Conversion of scroll pixels to lines, and where each line goes (viewport, wheel, arrows). */
 class ScrollbackGestureControllerTest {
 
-    private val alturaCelula = 20
+    private val cellHeight = 20
 
-    private class Registro {
-        var modos = TerminalModes.NENHUM
-        val rolagens = mutableListOf<Int>()
+    private class Recorder {
+        var modes = TerminalModes.NONE
+        val scrolls = mutableListOf<Int>()
         val bytes = mutableListOf<ByteArray>()
-        val rodas = mutableListOf<MouseButton>()
-        var haParaOnde = true
+        val wheels = mutableListOf<MouseButton>()
+        var hasRoom = true
     }
 
-    private fun controlador(r: Registro): ScrollbackGestureController =
+    private fun controller(r: Recorder): ScrollbackGestureController =
         ScrollbackGestureController(
-            modos = { r.modos },
-            geometria = {
+            modes = { r.modes },
+            geometry = {
                 MouseGeometry(
                     cellWidthPx = 10,
-                    cellHeightPx = alturaCelula,
+                    cellHeightPx = cellHeight,
                     screenWidthPx = 400,
                     screenHeightPx = 200,
                 )
             },
-            rolarViewport = { r.rolagens += it },
-            podeRolarViewport = { r.haParaOnde },
-            enviarBytes = { r.bytes += it },
+            scrollViewport = { r.scrolls += it },
+            canScrollViewport = { r.hasRoom },
+            sendBytes = { r.bytes += it },
             encodeMouse = { _, button, _, _, _ ->
-                r.rodas += button
+                r.wheels += button
                 byteArrayOf(button.ordinal.toByte())
             },
         )
 
-    private fun arrastar(c: ScrollbackGestureController, px: Float): Boolean {
+    private fun drag(c: ScrollbackGestureController, px: Float): Boolean {
         return c.onScroll(px, Offset(5f, 5f))
     }
 
-    // ---- pixels become lines --------------------------------------------
-
-    /**
-     * Less than one cell scrolls nothing — but the pixel is not lost, and that
-     * is what makes the content follow the finger instead of jumping three
-     * lines at a time.
-     */
+    /** Less than one cell scrolls nothing, but the pixels accumulate so content follows the finger. */
     @Test
-    fun arrasteMenorQueUmaCelula_naoRolaMasAcumula() {
-        val r = Registro()
-        val c = controlador(r)
+    fun dragSmallerThanCell_doesNotScrollButAccumulates() {
+        val r = Recorder()
+        val c = controller(r)
         c.onScrollStart()
 
-        arrastar(c, 8f)
-        assertTrue("nada devia ter rolado ainda", r.rolagens.isEmpty())
-        arrastar(c, 8f)
-        assertTrue(r.rolagens.isEmpty())
+        drag(c, 8f)
+        assertTrue("nothing should have scrolled yet", r.scrolls.isEmpty())
+        drag(c, 8f)
+        assertTrue(r.scrolls.isEmpty())
         // 8+8+8 = 24 px, past one cell of 20.
-        arrastar(c, 8f)
-        assertEquals(listOf(-1), r.rolagens)
+        drag(c, 8f)
+        assertEquals(listOf(-1), r.scrolls)
     }
 
-    /** Finger DOWN shows the PAST — negative, the same convention as the wheel. */
+    /** Finger down shows the past (negative, same convention as the wheel). */
     @Test
-    fun dedoParaBaixo_rolaParaOPassado() {
-        val r = Registro()
-        val c = controlador(r)
+    fun fingerDown_scrollsToPast() {
+        val r = Recorder()
+        val c = controller(r)
         c.onScrollStart()
-        arrastar(c, 60f)
-        assertEquals(listOf(-3), r.rolagens)
+        drag(c, 60f)
+        assertEquals(listOf(-3), r.scrolls)
     }
 
     @Test
-    fun dedoParaCima_rolaParaOPresente() {
-        val r = Registro()
-        val c = controlador(r)
+    fun fingerUp_scrollsToPresent() {
+        val r = Recorder()
+        val c = controller(r)
         c.onScrollStart()
-        arrastar(c, -40f)
-        assertEquals(listOf(2), r.rolagens)
+        drag(c, -40f)
+        assertEquals(listOf(2), r.scrolls)
     }
 
-    /** Starting a new gesture clears the remainder: the previous drag does not leak. */
+    /** A new gesture clears the remainder of the previous one. */
     @Test
-    fun novoGesto_zeraOAcumulado() {
-        val r = Registro()
-        val c = controlador(r)
+    fun newGesture_resetsAccumulated() {
+        val r = Recorder()
+        val c = controller(r)
         c.onScrollStart()
-        arrastar(c, 19f)
+        drag(c, 19f)
         c.onScrollEnd()
 
         c.onScrollStart()
-        arrastar(c, 19f)
-        assertTrue("a sobra do gesto anterior vazou", r.rolagens.isEmpty())
+        drag(c, 19f)
+        assertTrue("the previous gesture's remainder leaked", r.scrolls.isEmpty())
     }
 
-    // ---- where the lines go ---------------------------------------------
-
     @Test
-    fun semMouse_naTelaNormal_rolaOViewportLocal() {
-        val r = Registro()
-        val c = controlador(r)
+    fun noMouse_onNormalScreen_scrollsLocalViewport() {
+        val r = Recorder()
+        val c = controller(r)
         c.onScrollStart()
-        arrastar(c, 40f)
-        assertEquals(listOf(-2), r.rolagens)
-        assertTrue("não devia mandar byte nenhum ao PTY", r.bytes.isEmpty())
+        drag(c, 40f)
+        assertEquals(listOf(-2), r.scrolls)
+        assertTrue("should not send any bytes to the PTY", r.bytes.isEmpty())
     }
 
-    /** With `htop` open, the drag becomes the wheel — and nothing scrolls locally. */
+    /** With mouse tracking on (e.g. `htop`), the drag becomes wheel events and nothing scrolls locally. */
     @Test
-    fun comMouseAtivo_arrasteViraRoda_eNaoRolaLocalmente() {
-        val r = Registro()
-        r.modos = TerminalModes.NENHUM.copy(mouseTracking = true)
-        val c = controlador(r)
+    fun mouseActive_dragBecomesWheel_andDoesNotScrollLocally() {
+        val r = Recorder()
+        r.modes = TerminalModes.NONE.copy(mouseTracking = true)
+        val c = controller(r)
         c.onScrollStart()
-        arrastar(c, 60f)
+        drag(c, 60f)
 
-        assertTrue("o viewport local não podia se mover", r.rolagens.isEmpty())
+        assertTrue("the local viewport must not move", r.scrolls.isEmpty())
         assertEquals(
-            "uma roda por linha, para cima",
-            listOf(MouseButton.RODA_CIMA, MouseButton.RODA_CIMA, MouseButton.RODA_CIMA),
-            r.rodas,
+            "one wheel event per line, upwards",
+            listOf(MouseButton.WHEEL_UP, MouseButton.WHEEL_UP, MouseButton.WHEEL_UP),
+            r.wheels,
         )
         assertEquals(3, r.bytes.size)
     }
 
     @Test
-    fun comMouseAtivo_dedoParaCima_mandaRodaParaBaixo() {
-        val r = Registro()
-        r.modos = TerminalModes.NENHUM.copy(mouseTracking = true)
-        val c = controlador(r)
+    fun mouseActive_fingerUp_sendsWheelDown() {
+        val r = Recorder()
+        r.modes = TerminalModes.NONE.copy(mouseTracking = true)
+        val c = controller(r)
         c.onScrollStart()
-        arrastar(c, -40f)
-        assertEquals(listOf(MouseButton.RODA_BAIXO, MouseButton.RODA_BAIXO), r.rodas)
+        drag(c, -40f)
+        assertEquals(listOf(MouseButton.WHEEL_DOWN, MouseButton.WHEEL_DOWN), r.wheels)
     }
 
-    /** `less`: alternate screen, no mouse, 1007 on — the drag becomes arrow keys. */
+    /** Alternate screen with mode 1007 and no mouse (e.g. `less`): the drag becomes arrow keys. */
     @Test
-    fun telaAlternativaComAltScroll_mandaSetas() {
-        val r = Registro()
-        r.modos = TerminalModes.NENHUM.copy(altScreen = true, altScroll = true)
-        val c = controlador(r)
+    fun altScreenWithAltScroll_sendsArrows() {
+        val r = Recorder()
+        r.modes = TerminalModes.NONE.copy(altScreen = true, altScroll = true)
+        val c = controller(r)
         c.onScrollStart()
-        arrastar(c, 40f)
+        drag(c, 40f)
 
-        assertTrue(r.rolagens.isEmpty())
+        assertTrue(r.scrolls.isEmpty())
         assertEquals(1, r.bytes.size)
         assertArrayEquals("\u001b[A\u001b[A".toByteArray(), r.bytes.single())
     }
 
     @Test
-    fun telaAlternativaComDECCKM_mandaSetasEmModoAplicacao() {
-        val r = Registro()
-        r.modos = TerminalModes.NENHUM.copy(
+    fun altScreenWithDECCKM_sendsApplicationModeArrows() {
+        val r = Recorder()
+        r.modes = TerminalModes.NONE.copy(
             altScreen = true,
             altScroll = true,
             cursorKeysApplication = true,
         )
-        val c = controlador(r)
+        val c = controller(r)
         c.onScrollStart()
-        arrastar(c, 20f)
+        drag(c, 20f)
         assertArrayEquals("\u001bOA".toByteArray(), r.bytes.single())
     }
 
-    /** Full screen without 1007: nothing happens, and the gesture says it is over. */
+    /** Alternate screen without 1007: nothing happens and the fling stops. */
     @Test
-    fun telaAlternativaSemAltScroll_naoFazNadaEEncerraAInercia() {
-        val r = Registro()
-        r.modos = TerminalModes.NENHUM.copy(altScreen = true, altScroll = false)
-        val c = controlador(r)
+    fun altScreenWithoutAltScroll_doesNothingAndEndsFling() {
+        val r = Recorder()
+        r.modes = TerminalModes.NONE.copy(altScreen = true, altScroll = false)
+        val c = controller(r)
         c.onScrollStart()
 
-        assertFalse("a inércia tinha que parar", arrastar(c, 40f))
-        assertTrue(r.rolagens.isEmpty())
+        assertFalse("the fling should stop", drag(c, 40f))
+        assertTrue(r.scrolls.isEmpty())
         assertTrue(r.bytes.isEmpty())
     }
 
-    // ---- end of the history ----------------------------------------------
-
-    /**
-     * It reached the top: the gesture answers `false` and the fling stops,
-     * instead of grinding against the wall until the deceleration curve runs
-     * out on its own.
-     */
+    /** At the end of history the gesture returns `false` so the fling stops. */
     @Test
-    fun noFimDoHistorico_avisaQueNaoHaParaOnde() {
-        val r = Registro()
-        r.haParaOnde = false
-        val c = controlador(r)
+    fun atEndOfHistory_reportsNowhereToGo() {
+        val r = Recorder()
+        r.hasRoom = false
+        val c = controller(r)
         c.onScrollStart()
-        assertFalse(arrastar(c, 40f))
+        assertFalse(drag(c, 40f))
     }
 
-    /** The wheel belongs to the remote program: there is no end of OUR history there. */
+    /** Wheel events belong to the remote program, so our history end does not apply. */
     @Test
-    fun comMouseAtivo_aInerciaNuncaEInterrompidaPeloFimLocal() {
-        val r = Registro()
-        r.haParaOnde = false
-        r.modos = TerminalModes.NENHUM.copy(mouseTracking = true)
-        val c = controlador(r)
+    fun mouseActive_flingIsNeverStoppedByLocalEnd() {
+        val r = Recorder()
+        r.hasRoom = false
+        r.modes = TerminalModes.NONE.copy(mouseTracking = true)
+        val c = controller(r)
         c.onScrollStart()
-        assertTrue(arrastar(c, 40f))
+        assertTrue(drag(c, 40f))
     }
 
     /** An absurd drag must not turn into hundreds of wheel events on the PTY. */
     @Test
-    fun arrasteAbsurdo_temTetoDeRodasPorEvento() {
-        val r = Registro()
-        r.modos = TerminalModes.NENHUM.copy(mouseTracking = true)
-        val c = controlador(r)
+    fun absurdDrag_hasWheelCapPerEvent() {
+        val r = Recorder()
+        r.modes = TerminalModes.NONE.copy(mouseTracking = true)
+        val c = controller(r)
         c.onScrollStart()
-        arrastar(c, 20f * 500)
-        assertEquals(10, r.rodas.size)
+        drag(c, 20f * 500)
+        assertEquals(10, r.wheels.size)
     }
 
     @Test
-    fun semGeometria_naoFazNada() {
+    fun noGeometry_doesNothing() {
         val c = ScrollbackGestureController(
-            modos = { TerminalModes.NENHUM },
-            geometria = { null },
-            rolarViewport = { throw AssertionError("não podia rolar sem geometria") },
-            podeRolarViewport = { true },
-            enviarBytes = { throw AssertionError("não podia mandar byte sem geometria") },
+            modes = { TerminalModes.NONE },
+            geometry = { null },
+            scrollViewport = { throw AssertionError("must not scroll without geometry") },
+            canScrollViewport = { true },
+            sendBytes = { throw AssertionError("must not send bytes without geometry") },
             encodeMouse = { _, _, _, _, _ -> null },
         )
         c.onScrollStart()

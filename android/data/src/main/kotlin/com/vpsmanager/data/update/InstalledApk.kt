@@ -6,13 +6,9 @@ import java.io.File
 import java.io.IOException
 
 /**
- * The APK running RIGHT NOW, identified by its bytes.
- *
- * The incremental channel is keyed by the SHA-256 of the installed APK, never
- * by `versionCode` — two builds of the same `versionCode` (a rebuild, a
- * re-signing, a different ABI) have different bytes, and applying the wrong
- * patch raises no version error: it produces a corrupted file. See
- * `docs/android-atualizacao-incremental.md`.
+ * The APK running right now, identified by its bytes. The incremental channel is
+ * keyed by its SHA-256, never `versionCode`: two builds with the same
+ * `versionCode` differ in bytes, and a wrong patch yields a corrupted file.
  */
 sealed interface InstalledApkResult {
 
@@ -20,10 +16,8 @@ sealed interface InstalledApkResult {
     data class Ok(val file: File, val sha256: String) : InstalledApkResult
 
     /**
-     * The installed APK could not be identified. That is NOT a reason to give
-     * up on the update: with no base the server returns `patch: null` plus the
-     * full path, which rebuilds the APK from scratch. It is exactly the first
-     * rung of the fallback ladder.
+     * The installed APK could not be identified. Not a reason to give up: with no
+     * base the server returns `patch: null` plus the full artifact.
      */
     data class Unavailable(val reason: String) : InstalledApkResult
 }
@@ -31,20 +25,9 @@ sealed interface InstalledApkResult {
 /**
  * Reads and hashes the installed APK.
  *
- * ### Why the path is read every time
- * `applicationInfo.sourceDir` is
- * `/data/app/~~<random>/<package>-<random>/base.apk` — both random segments
- * change ON EVERY (re)installation, by Android's design. Storing the path and
- * reusing it after an update points at a directory that no longer exists. That
- * is why [read] asks the context's `ApplicationInfo` every time, and why
- * nothing here persists a path as configuration.
- *
- * ### Why the HASH can be cached
- * Hashing 31 MB costs 0.2 to 0.5 s — little, but paid on every opening of the
- * app and on every periodic check. The cache is keyed by the file's identity
- * (path + size + mtime): since the path changes on every installation, the
- * cache invalidates itself when the APK changes. There is no scenario in which
- * it hands back the hash of a file that is not the current one.
+ * The path is read every time because `applicationInfo.sourceDir` contains
+ * random segments that change on every (re)install. The hash (0.2 to 0.5 s for
+ * 31 MB) is cached by path + size + mtime, so it invalidates itself when the APK changes.
  */
 class InstalledApkReader(
     context: Context,
@@ -73,8 +56,7 @@ class InstalledApkReader(
             return InstalledApkResult.Unavailable("no permission to read the installed APK")
         }
 
-        // A single entry: the previous one describes an APK that is no longer
-        // installed, and keeping history here would buy nothing.
+        // Keep a single entry: older ones describe APKs no longer installed.
         prefs.edit().clear().putString(identity, hash).apply()
         return InstalledApkResult.Ok(file, hash)
     }

@@ -50,7 +50,7 @@ internal interface GridEngine {
      * to the scrollback that libghostty-vt has always kept and that nothing
      * exposed.
      */
-    fun scrollViewport(linhas: Int)
+    fun scrollViewport(lines: Int)
 
     /** Pins the viewport back at the end (the live area). */
     fun scrollToBottom()
@@ -64,9 +64,9 @@ internal interface GridEngine {
      * It is part of the contract because it is the ONLY way to undo the copies
      * the attach repaint leaves behind: the remote program cannot reach the
      * scrollback with `ESC[nA`, but the emulator can. See
-     * [TerminalEngine.limparHistorico].
+     * [TerminalEngine.clearHistory].
      */
-    fun limparHistorico()
+    fun clearHistory()
 }
 
 /** Thin adapter over the real native-backed [TerminalEngine]. */
@@ -92,10 +92,10 @@ internal class RealGridEngine(private val engine: TerminalEngine) : GridEngine {
         anyButtonPressed = anyButtonPressed,
     )
     override fun encodePaste(text: String): ByteArray = engine.encodePaste(text)
-    override fun scrollViewport(linhas: Int) = engine.scrollViewport(linhas)
+    override fun scrollViewport(lines: Int) = engine.scrollViewport(lines)
     override fun scrollToBottom() = engine.scrollToBottom()
     override fun scrollState(): TerminalScrollState = engine.scrollState()
-    override fun limparHistorico() = engine.limparHistorico()
+    override fun clearHistory() = engine.clearHistory()
 
     companion object {
         fun create(cols: Int, rows: Int, scrollback: Int): GridEngine =

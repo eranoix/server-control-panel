@@ -1,32 +1,21 @@
 // JNI shim over libghostty-vt. This is the ONLY translation unit in
 // :terminal-engine allowed to reference ghostty_* types, enums, or field
-// offsets — the vendored C ABI is explicitly unstable and pinned to a
+// offsets: the vendored C ABI is explicitly unstable and pinned to a
 // single commit, so every other file in this module must go through the
-// Kotlin facade (TerminalEngine) instead of touching the native API
-// directly. A grep gate enforces this boundary.
+// Kotlin facade (TerminalEngine). A grep gate enforces this boundary.
 //
-// Threading model: a GhosttyTerminal handle is not thread-safe on its own
-// (the upstream library provides no internal lock). This shim owns a
-// std::mutex per engine instance and takes it for every terminal mutation
-// or read. write() holds it for the native vt_write call; snapshot() holds
-// it only for ghostty_render_state_begin_update (the phase that needs
-// terminal access) and releases it before doing any copying — the second
-// phase, ghostty_render_state_end_update plus the row/cell walk, touches
-// only memory owned by the render state and is safe to run lock-free while
-// a writer thread mutates the terminal concurrently.
+// Threading model: a GhosttyTerminal handle is not thread-safe on its own.
+// This shim owns a std::mutex per engine instance and takes it for every
+// terminal mutation or read. snapshot() holds it only for
+// ghostty_render_state_begin_update and releases it before copying; the
+// second phase touches only render-state memory and runs lock-free while a
+// writer thread mutates the terminal.
 //
-// Duas travas, de proposito. `mutex` protege o TERMINAL; `bufferMutex`
-// protege a VIDA do buffer de snapshot (bufferPtr/bufferCapacity/cols/rows).
-// Elas sao separadas porque a fase 2 do snapshot — a copia cara, celula a
-// celula — nao pode bloquear a thread que empurra os bytes do PTY: era essa
-// a razao de a fase 2 rodar sem trava. So que ela ESCREVE em bufferPtr e le
-// cols/rows, que nao sao memoria do render state; sem trava propria, um
-// resize concorrente fazia `delete[]` embaixo do leitor (uso-apos-liberacao)
-// e o clamp defensivo podia ler um h->cols antigo MAIOR que o buffer novo e
-// escrever alem dele. Com bufferMutex, realocacao e fase 2 sao mutuamente
-// exclusivas e o escritor continua livre. Quando as duas travas sao
-// necessarias (so em nativeClose), a ordem e mutex -> bufferMutex, nunca o
-// contrario.
+// Two locks on purpose: `mutex` guards the TERMINAL, `bufferMutex` guards the
+// snapshot buffer's lifetime (bufferPtr/bufferCapacity/cols/rows). Phase 2
+// writes to the buffer, so it must exclude a concurrent resize (use after
+// free) without blocking the PTY writer. When both are needed (only in
+// nativeClose), the order is always mutex -> bufferMutex.
 //
 // Snapshot transfer: exactly one direct ByteBuffer is allocated per engine
 // instance, sized for the current viewport, and reused across every
@@ -52,7 +41,7 @@
 
 namespace {
 
-// ---- Snapshot buffer layout -------------------------------------------
+// Snapshot buffer layout.
 //
 // HEADER (16 bytes):
 //   u16 cols
@@ -60,7 +49,7 @@ namespace {
 //   u16 cursorX
 //   u16 cursorY
 //   u8  cursorVisible      (0/1)
-//   u8  cursorViewportValid (0/1 — cursorX/Y/wideTail only meaningful if 1)
+//   u8  cursorViewportValid (0/1, cursorX/Y/wideTail only meaningful if 1)
 //   u8  cursorWideTail     (0/1)
 //   u8  reserved[5]
 //
@@ -77,8 +66,8 @@ namespace {
 //   u8  wide (GhosttyCellWide: 0 narrow,1 wide,2 spacer_tail,3 spacer_head)
 //   u8  reserved
 //
-// Wave 4 (Compose renderer) reads only this layout via CellSnapshot.kt —
-// it never touches ghostty_* types directly.
+// The Compose renderer reads only this layout via CellSnapshot.kt and never
+// touches ghostty_* types directly.
 constexpr size_t kHeaderSize = 16;
 constexpr size_t kCellStride = 16;
 
@@ -112,18 +101,16 @@ struct EngineHandle {
     GhosttyRenderStateRowIterator rowIterator = nullptr;
     GhosttyRenderStateRowCells rowCells = nullptr;
 
-    // Encoder de mouse e evento reusados por instancia, nunca criados por
-    // gesto. O encoder guarda ESTADO entre chamadas — a celula do ultimo
-    // evento, usada pela deduplicacao de movimento (OPT_TRACK_LAST_CELL) —
-    // e um encoder novo a cada arraste perderia essa memoria e mandaria um
-    // evento de movimento por PIXEL percorrido, inundando o PTY.
+    // Mouse encoder and event are reused per instance, never created per
+    // gesture: the encoder remembers the last cell for motion dedup
+    // (OPT_TRACK_LAST_CELL), and losing it would send one event per PIXEL.
     GhosttyMouseEncoder mouseEncoder = nullptr;
     GhosttyMouseEvent mouseEvent = nullptr;
 
     std::mutex mutex;
 
-    // Protege a vida do buffer de snapshot e a geometria que descreve o
-    // layout dele (ver a nota de threading no topo do arquivo).
+    // Guards the snapshot buffer's lifetime and the geometry describing its
+    // layout (see the threading note at the top of the file).
     std::mutex bufferMutex;
 
     uint8_t* bufferPtr = nullptr;
@@ -134,14 +121,14 @@ struct EngineHandle {
     // Test-only instrumentation for the "exactly one direct buffer per
     // engine instance" invariant: incremented only when reallocateBuffer
     // actually replaces the backing allocation (construction, or a resize()
-    // that changes byte capacity) — never on every snapshot().
+    // that changes byte capacity), never on every snapshot().
     int bufferAllocations = 0;
 
     bool closed = false;
 };
 
-// Cached once in JNI_OnLoad as global refs (Memory Rule 2: anything held
-// across calls must be a global ref, never a bare local one).
+// Cached once in JNI_OnLoad as a global ref: anything held across calls must
+// be a global ref, never a bare local one.
 jclass g_illegalStateExceptionClass = nullptr;
 
 EngineHandle* handleFrom(jlong ptr) {
@@ -154,22 +141,16 @@ void throwClosed(JNIEnv* env) {
     }
 }
 
-// Chamada sempre com bufferMutex ja em maos — dai o sufixo do nome.
+// Caller must already hold bufferMutex.
 void freeBufferLocked(EngineHandle* h) {
     delete[] h->bufferPtr;
     h->bufferPtr = nullptr;
     h->bufferCapacity = 0;
 }
 
-// Allocates (or reuses) the single reused snapshot buffer for the given
-// dimensions and returns a NEW LOCAL REF to the JVM-visible ByteBuffer
-// (the caller — a JNI-exported function returning to Kotlin — is the
-// normal place for that local ref to be consumed as a return value; it is
-// never cached as a bare local past the call that returns it).
-//
-// Nao se chama mais "...Locked": o sufixo prometia que o chamador segurava
-// a trava, e nativeResize chamava sem trava nenhuma. Agora a funcao tranca
-// bufferMutex por dentro, entao o nome nao pode mais afirmar o contrario.
+// Allocates (or reuses) the single snapshot buffer for the given dimensions
+// and returns a NEW LOCAL REF to a JVM-visible ByteBuffer, meant to be
+// returned to Kotlin and never cached. Takes bufferMutex internally.
 jobject reallocateBuffer(JNIEnv* env, EngineHandle* h, uint16_t cols, uint16_t rows) {
     size_t needed = bufferCapacityFor(cols, rows);
 
@@ -184,14 +165,9 @@ jobject reallocateBuffer(JNIEnv* env, EngineHandle* h, uint16_t cols, uint16_t r
     h->cols = cols;
     h->rows = rows;
 
-    // Devolve so um local ref. Nao existe mais NewGlobalRef aqui: a global
-    // antiga so era liberada quando a capacidade MUDAVA, entao todo resize
-    // que mantinha a capacidade abandonava uma referencia — a tabela global
-    // do ART (teto de 51200) enchia e o processo abortava. E ela nunca era
-    // lida: a memoria e `new uint8_t[]`, do C++, e nativeBuffer() devolve um
-    // NewDirectByteBuffer novo em vez de entregar a global. Segurar uma
-    // referencia global a um DirectByteBuffer que nao e dono da memoria nao
-    // protege nada — so vaza.
+    // Only a local ref, never a global one: the memory is owned by C++, so a
+    // global ref to the ByteBuffer protects nothing and would leak entries in
+    // ART's global ref table (capped at 51200) on every resize.
     return env->NewDirectByteBuffer(h->bufferPtr, static_cast<jlong>(h->bufferCapacity));
 }
 
@@ -319,9 +295,8 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeBuffer(
         throwClosed(env);
         return nullptr;
     }
-    // Embrulha a memoria nativa viva num ByteBuffer direto novo. Sob
-    // bufferMutex porque ponteiro e capacidade tem que ser lidos como par:
-    // um resize concorrente troca os dois.
+    // Wraps the live native memory in a new direct ByteBuffer. Under
+    // bufferMutex because pointer and capacity must be read as a pair.
     std::lock_guard<std::mutex> bufferLock(h->bufferMutex);
     return env->NewDirectByteBuffer(h->bufferPtr, static_cast<jlong>(h->bufferCapacity));
 }
@@ -335,7 +310,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeWrite(
         return;
     }
     jsize length = env->GetArrayLength(data);
-    // PTY bytes are arbitrary, not modified-UTF-8 — never NewStringUTF here.
+    // PTY bytes are arbitrary, not modified UTF-8: never NewStringUTF here.
     // GetPrimitiveArrayCritical avoids a copy; only plain C calls happen
     // while the array is pinned, no further JNI calls.
     void* raw = env->GetPrimitiveArrayCritical(data, nullptr);
@@ -361,13 +336,9 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeSnapshot(
         std::lock_guard<std::mutex> lock(h->mutex);
         ghostty_render_state_begin_update(h->renderState, h->terminal);
     }
-    // Phase 2: sem a trava do TERMINAL — e essa a propriedade de desempenho
-    // do desenho, a thread que escreve os bytes do PTY nao pode ficar presa
-    // atras da copia celula a celula. Mas COM bufferMutex: daqui pra baixo o
-    // codigo escreve em h->bufferPtr e le h->cols/h->rows, que sao memoria do
-    // C++, nao do render state. Sem esta trava, um resize concorrente dava
-    // `delete[]` no buffer no meio da copia, e o clamp abaixo podia ler um
-    // h->cols antigo MAIOR que o buffer novo e escrever fora dele.
+    // Phase 2: without the terminal lock, so the PTY writer is never stuck
+    // behind the cell copy. But WITH bufferMutex, since the code below writes
+    // h->bufferPtr and reads h->cols/h->rows, which a concurrent resize replaces.
     ghostty_render_state_end_update(h->renderState);
     std::lock_guard<std::mutex> bufferLock(h->bufferMutex);
 
@@ -500,11 +471,10 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeResize(
         std::lock_guard<std::mutex> lock(h->mutex);
         ghostty_terminal_resize(h->terminal, static_cast<uint16_t>(cols), static_cast<uint16_t>(rows), 0, 0);
     }
-    // As duas travas sao tomadas em sequencia, nunca aninhadas. Um snapshot
-    // que caia na fresta entre elas ve a geometria nova do terminal com o
-    // buffer antigo — o clamp de nativeSnapshot cobre exatamente isso,
-    // escrevendo no maximo h->cols/h->rows, que ainda descrevem o buffer
-    // antigo porque so reallocateBuffer os atualiza, sob bufferMutex.
+    // The two locks are taken in sequence, never nested. A snapshot between
+    // them sees the new terminal geometry with the old buffer; the clamp in
+    // nativeSnapshot handles that, because h->cols/h->rows still describe the
+    // old buffer until reallocateBuffer updates them under bufferMutex.
     return reallocateBuffer(env, h, static_cast<uint16_t>(cols), static_cast<uint16_t>(rows));
 }
 
@@ -538,7 +508,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodeKey(
     ghostty_key_event_set_unshifted_codepoint(event, static_cast<uint32_t>(unshiftedCodepoint));
 
     // utf8OrNull, when present, holds the layout's own UTF-8 text for this
-    // key (never PTY-derived bytes) — copied out with GetByteArrayRegion,
+    // key (never PTY-derived bytes), copied out with GetByteArrayRegion,
     // never NewStringUTF, since it may be arbitrary UTF-8 the encoder
     // itself validates.
     jbyte utf8Stack[8];
@@ -569,26 +539,19 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodeKey(
     return out;
 }
 
-// Modos do terminal que a INTERFACE precisa conhecer para nao inventar
-// comportamento. Todos vem do proprio emulador — quem os liga e o programa
-// remoto, por sequencia DEC, e a libghostty-vt ja os rastreia ao processar a
-// saida do PTY. Perguntar aqui e o oposto de adivinhar do lado Kotlin.
+// Terminal modes the UI needs, read from the emulator itself (the remote
+// program sets them via DEC sequences and libghostty-vt tracks them), so
+// Kotlin never has to guess.
 //
-// bit 0 = ha rastreamento de mouse ATIVO (DECSET 1000/1002/1003, ou X10 9):
-//         so entao um toque na grade tem destinatario. Sem isto os bytes de
-//         mouse chegam ao shell como TEXTO e sujam a linha de comando.
-// bit 1 = colagem entre colchetes ativa (DECSET 2004).
-// bit 2 = a TELA ALTERNATIVA esta ativa (vim, htop em tela cheia). Ela nao
-//         tem historico NENHUM — a propria libghostty-vt recusa mover o
-//         viewport nela — entao rolar ali nao pode fingir navegar um
-//         scrollback que nao existe.
-// bit 3 = rolagem alternativa (DECSET 1007). E a convencao do xterm
-//         ("alternateScroll"): na tela alternativa, sem mouse, a roda vira
-//         SETA. E o que faz `less`, `man` e o `vim` sem mouse rolarem com o
-//         dedo em vez de ficarem inertes.
-// bit 4 = teclas de cursor em modo APLICACAO (DECCKM, DECSET 1). Decide se a
-//         seta sai como ESC[A ou ESC O A — mandar a forma errada faz o
-//         programa receber lixo em vez de rolar.
+// bit 0 = mouse tracking ACTIVE (DECSET 1000/1002/1003, or X10 9). Only then
+//         does a tap have a recipient; otherwise mouse bytes reach the shell as text.
+// bit 1 = bracketed paste active (DECSET 2004).
+// bit 2 = ALTERNATE SCREEN active (full-screen vim, htop). It has no history,
+//         so scrolling there must not pretend to navigate scrollback.
+// bit 3 = alternate scroll (DECSET 1007, xterm "alternateScroll"): on the
+//         alternate screen without mouse, the wheel becomes ARROW keys.
+// bit 4 = cursor keys in APPLICATION mode (DECCKM, DECSET 1): arrows are sent
+//         as ESC O A instead of ESC[A.
 JNIEXPORT jint JNICALL
 Java_com_vpsmanager_terminalengine_TerminalEngine_nativeModes(
     JNIEnv* env, jclass, jlong handle) {
@@ -609,9 +572,8 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeModes(
         bracketedPaste) {
         bits |= 2;
     }
-    // A tela ativa vem do estado do terminal, nao dos modos: 1047/1049/47 sao
-    // caminhos DIFERENTES para a mesma tela alternativa, e perguntar modo a
-    // modo erraria conforme o programa. ACTIVE_SCREEN e a resposta unica.
+    // Read the active screen from terminal state, not modes: 1047/1049/47 are
+    // DIFFERENT routes to the same alternate screen.
     GhosttyTerminalScreen screen = GHOSTTY_TERMINAL_SCREEN_PRIMARY;
     if (ghostty_terminal_get(h->terminal, GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN, &screen) == GHOSTTY_SUCCESS &&
         screen == GHOSTTY_TERMINAL_SCREEN_ALTERNATE) {
@@ -630,20 +592,14 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeModes(
     return bits;
 }
 
-// Move o VIEWPORT do emulador sobre o proprio scrollback que ele ja guarda.
+// Moves the emulator's VIEWPORT over the scrollback it already keeps.
 //
-// Este e o conserto de fundo do defeito relatado: a libghostty-vt sempre
-// manteve historico (max_scrollback em nativeCreate), mas nada aqui expunha
-// como olhar para tras, e o snapshot entregava eternamente a tela viva. O
-// historico existia e era INALCANCAVEL.
+// `tag` mirrors GhosttyTerminalScrollViewportTag: 0 top, 1 bottom (active
+// area), 2 delta in rows (negative scrolls up), 3 absolute row. `value` is
+// only read for the last two.
 //
-// `tag` espelha GhosttyTerminalScrollViewportTag: 0 topo, 1 fim (area ativa),
-// 2 delta em linhas (negativo sobe), 3 linha absoluta. O `value` so e lido
-// nos dois ultimos.
-//
-// Na tela alternativa a propria biblioteca prende o viewport na area ativa —
-// nao ha o que navegar — entao esta chamada e inofensiva ali, e nao e preciso
-// duplicar a regra do lado Kotlin para evitar corromper a tela.
+// On the alternate screen the library pins the viewport to the active area,
+// so this call is harmless there and Kotlin need not duplicate the rule.
 JNIEXPORT void JNICALL
 Java_com_vpsmanager_terminalengine_TerminalEngine_nativeScrollViewport(
     JNIEnv* env, jclass, jlong handle, jint tag, jlong value) {
@@ -668,17 +624,16 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeScrollViewport(
     ghostty_terminal_scroll_viewport(h->terminal, behavior);
 }
 
-// Onde o viewport esta dentro do historico — o que a barra de posicao mostra e
-// o que decide se o botao "voltar ao fim" aparece.
+// Where the viewport sits in the history: drives the position bar and the
+// "back to bottom" button.
 //
-// Devolve {total, offset, len, presoNoFim}. Os tres primeiros vem do
-// GhosttyTerminalScrollbar (mesmo espaco de linhas do tag ROW, entao a posicao
-// lida aqui volta para scroll_viewport sem conversao). O quarto e
-// VIEWPORT_ACTIVE: falso exatamente quando o dono esta lendo o passado, que e
-// o instante em que a tela NAO pode saltar sozinha para baixo.
+// Returns {total, offset, len, pinnedToBottom}. The first three come from
+// GhosttyTerminalScrollbar (same row space as the ROW tag, so a position read
+// here goes back to scroll_viewport unconverted). The fourth is
+// VIEWPORT_ACTIVE, false exactly while the user reads the past, when the
+// screen must NOT jump to the bottom by itself.
 //
-// A biblioteca avisa que nao existe notificacao de mudanca de rolagem: quem
-// desenha barra le isto uma vez por quadro e compara. E o que a interface faz.
+// The library has no scroll-change notification, so the UI polls this once per frame.
 JNIEXPORT jlongArray JNICALL
 Java_com_vpsmanager_terminalengine_TerminalEngine_nativeScrollState(
     JNIEnv* env, jclass, jlong handle) {
@@ -710,17 +665,13 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeScrollState(
     return out;
 }
 
-// Codifica UM evento de mouse na sequencia que o programa remoto espera —
-// ou NADA, se ele nao pediu mouse.
+// Encodes ONE mouse event into the sequence the remote program expects, or
+// NOTHING if it did not request mouse input.
 //
-// A chave e ghostty_mouse_encoder_setopt_from_terminal(): ela copia do
-// terminal vivo o MODO de rastreamento (nenhum/X10/normal/botao/qualquer) e o
-// FORMATO de saida (X10/UTF-8/SGR/URxvt/SGR-pixels) que o programa ativou. Com
-// modo "nenhum" o encoder devolve zero byte, e e exatamente esse o conserto do
-// defeito relatado: num prompt de bash, que nunca pede mouse, o toque deixa de
-// produzir byte nenhum em vez de despejar "[<0;28;15M" na linha de comando.
-// Escolher o formato tambem deixa de ser palpite — o app antes emitia SGR
-// sempre, mesmo para um programa que so ativou o formato X10.
+// ghostty_mouse_encoder_setopt_from_terminal() copies the tracking MODE
+// (none/X10/normal/button/any) and output FORMAT (X10/UTF-8/SGR/URxvt/SGR-pixels)
+// from the live terminal. With mode "none" the encoder emits zero bytes, so a
+// tap at a bash prompt does not dump "[<0;28;15M" onto the command line.
 JNIEXPORT jbyteArray JNICALL
 Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodeMouse(
     JNIEnv* env, jclass, jlong handle, jint action, jint button, jint mods,
@@ -737,11 +688,9 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodeMouse(
 
     ghostty_mouse_encoder_setopt_from_terminal(h->mouseEncoder, h->terminal);
 
-    // Reafirmado DEPOIS do setopt_from_terminal, a cada evento. Setar uma vez
-    // na criacao nao bastava: medido no emulador, um movimento dentro da mesma
-    // celula continuava produzindo relatorio, ou seja, a sincronizacao com o
-    // terminal nao preserva esta opcao. Sem a deduplicacao, um arraste de dedo
-    // vira um evento por PIXEL percorrido no PTY.
+    // Re-set AFTER setopt_from_terminal on every event: syncing from the
+    // terminal does not preserve this option, and without dedup a finger drag
+    // sends one event per PIXEL to the PTY.
     bool trackLastCell = true;
     ghostty_mouse_encoder_setopt(h->mouseEncoder, GHOSTTY_MOUSE_ENCODER_OPT_TRACK_LAST_CELL, &trackLastCell);
 
@@ -773,9 +722,8 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodeMouse(
     size_t written = 0;
     GhosttyResult result =
         ghostty_mouse_encoder_encode(h->mouseEncoder, h->mouseEvent, outBuf, sizeof(outBuf), &written);
-    // written == 0 NAO e erro: e o encoder dizendo "este evento nao produz
-    // relatorio" — sem rastreamento ativo, ou movimento dentro da mesma celula
-    // que a deduplicacao ja descartou.
+    // written == 0 is NOT an error: the event produces no report (no active
+    // tracking, or motion within the same cell dropped by dedup).
     if (result != GHOSTTY_SUCCESS || written == 0) {
         return nullptr;
     }
@@ -787,18 +735,16 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodeMouse(
     return out;
 }
 
-// Codifica um texto colado para ir ao PTY, decidindo pela DECSET 2004 do
-// proprio terminal se ele vai entre os marcadores \x1b[200~ ... \x1b[201~.
+// Encodes pasted text for the PTY, using the terminal's own DECSET 2004 to
+// decide whether to wrap it in \x1b[200~ ... \x1b[201~.
 //
-// Isto e correcao E seguranca, nas duas direcoes:
-//  - com 2004 LIGADA e sem os marcadores, um texto de varias linhas e
-//    EXECUTADO linha a linha pelo shell no instante da colagem;
-//  - com 2004 DESLIGADA e com os marcadores, os proprios marcadores viram
-//    texto literal na linha de comando (o mesmo defeito do mouse), e por isso
-//    embrulhar incondicionalmente tambem esta errado.
-// Alem disso ghostty_paste_encode() neutraliza bytes de controle do conteudo
-// colado — inclusive um "\x1b[201~" embutido no texto, que sem isso fecharia a
-// colagem no meio e transformaria o resto num COMANDO.
+// This is correctness AND security, both ways:
+//  - with 2004 ON and no markers, multi-line text is EXECUTED line by line;
+//  - with 2004 OFF and markers, the markers show up as literal text, so
+//    wrapping unconditionally is also wrong.
+// ghostty_paste_encode() also neutralizes control bytes in the content,
+// including an embedded "\x1b[201~" that would otherwise end the paste early
+// and turn the rest into a COMMAND.
 JNIEXPORT jbyteArray JNICALL
 Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodePaste(
     JNIEnv* env, jclass, jlong handle, jbyteArray utf8) {
@@ -810,8 +756,8 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodePaste(
     if (utf8 == nullptr) return nullptr;
 
     jsize length = env->GetArrayLength(utf8);
-    // ghostty_paste_encode() modifica a entrada NO LUGAR, entao ela precisa ser
-    // uma copia nossa — nunca o array do JVM preso por GetPrimitiveArrayCritical.
+    // ghostty_paste_encode() modifies its input IN PLACE, so it must be our own
+    // copy, never the JVM array pinned by GetPrimitiveArrayCritical.
     std::unique_ptr<char[]> data(new char[static_cast<size_t>(length) + 1]);
     if (length > 0) {
         env->GetByteArrayRegion(utf8, 0, length, reinterpret_cast<jbyte*>(data.get()));
@@ -823,7 +769,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodePaste(
         ghostty_terminal_mode_get(h->terminal, GHOSTTY_MODE_BRACKETED_PASTE, &bracketed);
     }
 
-    // Os marcadores custam 12 bytes; a folga cobre qualquer ajuste do encoder.
+    // The markers take 12 bytes; the slack covers any encoder adjustment.
     size_t capacity = static_cast<size_t>(length) + 32;
     std::unique_ptr<char[]> out(new char[capacity]);
     size_t written = 0;
@@ -832,9 +778,8 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeEncodePaste(
     if (result == GHOSTTY_OUT_OF_SPACE) {
         capacity = written;
         out.reset(new char[capacity]);
-        // A entrada ja foi normalizada na tentativa anterior; a operacao e
-        // idempotente (trocar byte de controle por espaco duas vezes da no
-        // mesmo), entao repetir sobre o mesmo buffer e seguro.
+        // The input was already normalized by the first attempt; the operation
+        // is idempotent, so retrying on the same buffer is safe.
         result = ghostty_paste_encode(data.get(), static_cast<size_t>(length), bracketed, out.get(), capacity, &written);
     }
     if (result != GHOSTTY_SUCCESS) return nullptr;
@@ -867,7 +812,7 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeClose(
 
     {
         // Scoped so the mutex is unlocked (and no longer touched) before
-        // the EngineHandle — and the mutex living inside it — is destroyed.
+        // the EngineHandle (and the mutex living inside it) is destroyed.
         std::lock_guard<std::mutex> lock(h->mutex);
         h->closed = true;
         if (h->mouseEvent) ghostty_mouse_event_free(h->mouseEvent);
@@ -876,8 +821,8 @@ Java_com_vpsmanager_terminalengine_TerminalEngine_nativeClose(
         if (h->rowIterator) ghostty_render_state_row_iterator_free(h->rowIterator);
         if (h->renderState) ghostty_render_state_free(h->renderState);
         if (h->terminal) ghostty_terminal_free(h->terminal);
-        // Unica vez em que as duas travas se aninham; a ordem e sempre
-        // mutex -> bufferMutex (ver a nota no topo do arquivo).
+        // The only place both locks nest; the order is always
+        // mutex -> bufferMutex (see the note at the top of the file).
         std::lock_guard<std::mutex> bufferLock(h->bufferMutex);
         freeBufferLocked(h);
     }

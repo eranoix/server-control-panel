@@ -46,53 +46,35 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vpsmanager.data.terminal.SessionBackup
-import com.vpsmanager.data.terminal.agruparPorSessao
-import com.vpsmanager.data.terminal.VersaoDeBackup
-import com.vpsmanager.data.terminal.GrupoDeBackup
+import com.vpsmanager.data.terminal.groupBySession
+import com.vpsmanager.data.terminal.BackupVersion
+import com.vpsmanager.data.terminal.BackupGroup
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * The session backups sheet.
+ * The session backups sheet. A sheet rather than a screen: a backup is an
+ * operation on the session list, which stays visible behind it.
  *
- * ## Why a sheet, and not a screen
- * A backup is an operation ON the session list, not a place you go to. The
- * sheet keeps the list visible behind it, which is the context for "restore
- * what, and where to" — and leaving it is a gesture, not a navigation with a
- * back stack.
- *
- * ## What each card shows
- * ```
- * ┌───────────────────────────────────────────────┐
- * │ 07/09 20:14 · automatic      1.2 MB   ↺   🗑  │
- * │ [Servidor] [Aplicativo] [tt]                   │
- * │ Servidor — build passed, pushing the deploy    │
- * └───────────────────────────────────────────────┘
- * ```
- * Date, origin, size, which sessions are inside, and one line saying what the
- * first of them was about. The summary is what tells two backups from the same
- * afternoon apart — without it, choosing which one to restore means choosing
- * by timestamp.
+ * Backups are grouped by session; each version shows date, origin, size and a
+ * one-line summary, which is what tells two backups from the same afternoon apart.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BackupsSheet(viewModel: SessionListViewModel, aoFechar: () -> Unit) {
-    val estado by viewModel.backups.collectAsStateWithLifecycle()
-    val ocupada by viewModel.ocupada.collectAsStateWithLifecycle()
+fun BackupsSheet(viewModel: SessionListViewModel, onClose: () -> Unit) {
+    val state by viewModel.backups.collectAsStateWithLifecycle()
+    val busySession by viewModel.busySession.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var confirmandoExclusao by remember { mutableStateOf<VersaoParaExcluir?>(null) }
-    // Which groups are open. All closed by default: the sheet opens showing
-    // the SESSION LIST, which is the question ("which session?"), not a wall
-    // of dates. Opening everything up front would hand the problem back.
-    val abertos = remember { mutableStateMapOf<String, Boolean>() }
+    var confirmingDelete by remember { mutableStateOf<VersionToDelete?>(null) }
+    // Open groups; all closed by default so the sheet first answers "which session?".
+    val expanded = remember { mutableStateMapOf<String, Boolean>() }
 
-    // Load on opening, not in the ViewModel's `init`: listing backups reads
-    // every one of the user's files, and that read must not happen every time
-    // the sessions screen appears.
-    LaunchedEffect(Unit) { viewModel.carregarBackups() }
+    // Load when the sheet opens, not in the ViewModel's `init`: listing backups
+    // reads all the user's files and should not run every time the screen appears.
+    LaunchedEffect(Unit) { viewModel.loadBackups() }
 
-    ModalBottomSheet(onDismissRequest = aoFechar, sheetState = sheetState) {
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = sheetState) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -103,7 +85,7 @@ fun BackupsSheet(viewModel: SessionListViewModel, aoFechar: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(text = "Session backups", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.weight(1f))
-                TextButton(onClick = { viewModel.salvarBackup(null) }) { Text(text = "Save now") }
+                TextButton(onClick = { viewModel.saveBackup(null) }) { Text(text = "Save now") }
             }
             Text(
                 text = "The server also saves on its own every 6 h and keeps the 10 most recent.",
@@ -111,45 +93,45 @@ fun BackupsSheet(viewModel: SessionListViewModel, aoFechar: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            when (val atual = estado) {
-                is BackupsUiState.Ocioso, is BackupsUiState.Carregando -> CaixaCentral {
+            when (val current = state) {
+                is BackupsUiState.Idle, is BackupsUiState.Loading -> CenterBox {
                     CircularProgressIndicator(modifier = Modifier.size(28.dp))
                 }
-                is BackupsUiState.Vazio -> CaixaCentral {
+                is BackupsUiState.Empty -> CenterBox {
                     Text(
                         text = "No backups yet.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                is BackupsUiState.Erro -> CaixaCentral {
+                is BackupsUiState.Error -> CenterBox {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = atual.mensagem, style = MaterialTheme.typography.bodyMedium)
-                        TextButton(onClick = viewModel::carregarBackups) { Text(text = "Try again") }
+                        Text(text = current.message, style = MaterialTheme.typography.bodyMedium)
+                        TextButton(onClick = viewModel::loadBackups) { Text(text = "Try again") }
                     }
                 }
-                is BackupsUiState.Pronto -> {
-                    val grupos = remember(atual.backups) { agruparPorSessao(atual.backups) }
+                is BackupsUiState.Ready -> {
+                    val groups = remember(current.backups) { groupBySession(current.backups) }
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.testTag(LISTA_BACKUPS_TAG),
+                        modifier = Modifier.testTag(BACKUP_LIST_TAG),
                     ) {
-                        items(items = grupos, key = { it.sessao }) { grupo ->
-                            GrupoDeSessao(
-                                grupo = grupo,
-                                aberto = abertos[grupo.sessao] == true,
-                                ocupado = ocupada != null,
-                                aoAlternar = {
-                                    abertos[grupo.sessao] = abertos[grupo.sessao] != true
+                        items(items = groups, key = { it.session }) { group ->
+                            SessionGroup(
+                                group = group,
+                                isOpen = expanded[group.session] == true,
+                                busy = busySession != null,
+                                onToggle = {
+                                    expanded[group.session] = expanded[group.session] != true
                                 },
-                                aoRestaurarVersao = { versao ->
-                                    viewModel.restaurar(versao.id, grupo.sessao)
+                                onRestoreVersion = { version ->
+                                    viewModel.restore(version.id, group.session)
                                 },
-                                aoRestaurarTudoDoSnapshot = { versao ->
-                                    viewModel.restaurar(versao.id)
+                                onRestoreWholeSnapshot = { version ->
+                                    viewModel.restore(version.id)
                                 },
-                                aoExcluirVersao = { versao ->
-                                    confirmandoExclusao = VersaoParaExcluir(grupo.sessao, versao)
+                                onDeleteVersion = { version ->
+                                    confirmingDelete = VersionToDelete(group.session, version)
                                 },
                             )
                         }
@@ -159,22 +141,19 @@ fun BackupsSheet(viewModel: SessionListViewModel, aoFechar: () -> Unit) {
         }
     }
 
-    confirmandoExclusao?.let { alvo ->
+    confirmingDelete?.let { target ->
         AlertDialog(
-            onDismissRequest = { confirmandoExclusao = null },
+            onDismissRequest = { confirmingDelete = null },
             title = { Text(text = "Delete this version?") },
             text = {
-                // The wording names the SESSION and the DATE, not "this
-                // backup": what is deleted here is one version of one
-                // session. When the snapshot holds other sessions, they stay
-                // — and not saying so would make a person think they are
-                // deleting the whole backup.
+                // Name the session and date: only this session's version is
+                // deleted, and other sessions in the same backup are kept.
                 Text(
                     text = buildString {
-                        append("\"${alvo.sessao}\" from ${dataLegivel(alvo.versao.criadoEm)}.")
-                        if (alvo.versao.sessoesNoBackup > 1) {
+                        append("\"${target.session}\" from ${readableDate(target.version.createdAt)}.")
+                        if (target.version.sessionsInBackup > 1) {
                             append(
-                                " The other ${alvo.versao.sessoesNoBackup - 1} session(s) " +
+                                " The other ${target.version.sessionsInBackup - 1} session(s) " +
                                     "in this same backup are kept.",
                             )
                         }
@@ -184,83 +163,72 @@ fun BackupsSheet(viewModel: SessionListViewModel, aoFechar: () -> Unit) {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val id = alvo.versao.id
-                    val sessao = alvo.sessao
-                    confirmandoExclusao = null
-                    viewModel.excluirBackup(id, sessao)
+                    val id = target.version.id
+                    val session = target.session
+                    confirmingDelete = null
+                    viewModel.deleteBackup(id, session)
                 }) { Text(text = "Delete") }
             },
             dismissButton = {
-                TextButton(onClick = { confirmandoExclusao = null }) { Text(text = "Cancel") }
+                TextButton(onClick = { confirmingDelete = null }) { Text(text = "Cancel") }
             },
         )
     }
 }
 
 /** What the confirmation needs to know: which session, from which version. */
-private data class VersaoParaExcluir(val sessao: String, val versao: VersaoDeBackup)
+private data class VersionToDelete(val session: String, val version: BackupVersion)
 
 /**
- * One group: the session, and its versions once open.
- *
- * ## Why closed by default
- *
- * Once open, this sheet answers "which session?"; the date only matters after
- * that question has been answered. Eight expanded groups would hand back the
- * wall of repeated dates that motivated the grouping in the first place.
- *
- * ## Why the count sits in the header
- *
- * "3 versions · most recent 09/09 08:40" answers, without expanding, the two
- * things that decide whether expanding is worth it: whether there is anything
- * to choose from, and whether the latest one is recent enough.
+ * One group: the session, and its versions once expanded. Closed by default,
+ * since the date matters only after the session is chosen. The header count
+ * ("3 versions, latest 09/09 08:40") tells whether expanding is worth it.
  */
 @Composable
-private fun GrupoDeSessao(
-    grupo: GrupoDeBackup,
-    aberto: Boolean,
-    ocupado: Boolean,
-    aoAlternar: () -> Unit,
-    aoRestaurarVersao: (VersaoDeBackup) -> Unit,
-    aoRestaurarTudoDoSnapshot: (VersaoDeBackup) -> Unit,
-    aoExcluirVersao: (VersaoDeBackup) -> Unit,
+private fun SessionGroup(
+    group: BackupGroup,
+    isOpen: Boolean,
+    busy: Boolean,
+    onToggle: () -> Unit,
+    onRestoreVersion: (BackupVersion) -> Unit,
+    onRestoreWholeSnapshot: (BackupVersion) -> Unit,
+    onDeleteVersion: (BackupVersion) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = aoAlternar)
+                    .clickable(onClick = onToggle)
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = grupo.sessao,
+                        text = group.session,
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "${grupo.versoes.size} version(s) · latest " +
-                            dataLegivel(grupo.versoes.first().criadoEm),
+                        text = "${group.versions.size} version(s) · latest " +
+                            readableDate(group.versions.first().createdAt),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Text(
-                    text = if (aberto) "▲" else "▼",
+                    text = if (isOpen) "▲" else "▼",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            if (!aberto && grupo.resumo.isNotBlank()) {
-                // The collapsed summary is the clue to WHICH session this is
-                // when the name does not say (`tt`, `proxy`). It goes away on
-                // expanding: there the versions already have the attention.
+            if (!isOpen && group.summary.isNotBlank()) {
+                // The collapsed summary identifies sessions with unhelpful names;
+                // hidden once expanded, where the versions take over.
                 Text(
-                    text = grupo.resumo,
+                    text = group.summary,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -269,15 +237,15 @@ private fun GrupoDeSessao(
                 )
             }
 
-            if (aberto) {
-                grupo.versoes.forEach { versao ->
+            if (isOpen) {
+                group.versions.forEach { version ->
                     HorizontalDivider()
-                    LinhaDeVersao(
-                        versao = versao,
-                        ocupado = ocupado,
-                        aoRestaurar = { aoRestaurarVersao(versao) },
-                        aoRestaurarTudo = { aoRestaurarTudoDoSnapshot(versao) },
-                        aoExcluir = { aoExcluirVersao(versao) },
+                    VersionRow(
+                        version = version,
+                        busy = busy,
+                        onRestore = { onRestoreVersion(version) },
+                        onRestoreAll = { onRestoreWholeSnapshot(version) },
+                        onDelete = { onDeleteVersion(version) },
                     )
                 }
             }
@@ -287,35 +255,33 @@ private fun GrupoDeSessao(
 
 /** One version: date, origin, and what can be done with it. */
 @Composable
-private fun LinhaDeVersao(
-    versao: VersaoDeBackup,
-    ocupado: Boolean,
-    aoRestaurar: () -> Unit,
-    aoRestaurarTudo: () -> Unit,
-    aoExcluir: () -> Unit,
+private fun VersionRow(
+    version: BackupVersion,
+    busy: Boolean,
+    onRestore: () -> Unit,
+    onRestoreAll: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Text(text = dataLegivel(versao.criadoEm), style = MaterialTheme.typography.bodyMedium)
+        Text(text = readableDate(version.createdAt), style = MaterialTheme.typography.bodyMedium)
         Text(
-            // THE SIZE IS THAT OF THE WHOLE FILE, and the wording says so
-            // when it holds more than one session. "89 kB" beside the name of
-            // ONE session implies that this session takes 89 kB, which is
-            // false in a backup of eight.
+            // The size is the whole file's; say so when it holds several
+            // sessions, or it would look like this session's size.
             text = buildString {
-                append(origemLegivel(versao.origem))
+                append(readableOrigin(version.origin))
                 append(" · ")
-                if (versao.sessoesNoBackup > 1) {
-                    append("${tamanhoLegivel(versao.bytes)} in a backup of ${versao.sessoesNoBackup} sessions")
+                if (version.sessionsInBackup > 1) {
+                    append("${readableSize(version.bytes)} in a backup of ${version.sessionsInBackup} sessions")
                 } else {
-                    append(tamanhoLegivel(versao.bytes))
+                    append(readableSize(version.bytes))
                 }
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (versao.resumo.isNotBlank()) {
+        if (version.summary.isNotBlank()) {
             Text(
-                text = versao.resumo,
+                text = version.summary,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
@@ -324,36 +290,35 @@ private fun LinhaDeVersao(
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(onClick = aoRestaurar, enabled = !ocupado) { Text(text = "Restore") }
-            // "Restore the snapshot" only appears when there is a snapshot
-            // to restore: in a backup of a single session it would do exactly
-            // the same as the button next to it, under another name.
-            if (versao.sessoesNoBackup > 1) {
-                TextButton(onClick = aoRestaurarTudo, enabled = !ocupado) {
-                    Text(text = "All ${versao.sessoesNoBackup}")
+            TextButton(onClick = onRestore, enabled = !busy) { Text(text = "Restore") }
+            // Only offered when there is more than one session; otherwise it
+            // would duplicate the button next to it.
+            if (version.sessionsInBackup > 1) {
+                TextButton(onClick = onRestoreAll, enabled = !busy) {
+                    Text(text = "All ${version.sessionsInBackup}")
                 }
             }
             Spacer(modifier = Modifier.weight(1f))
-            TextButton(onClick = aoExcluir, enabled = !ocupado) { Text(text = "Delete") }
+            TextButton(onClick = onDelete, enabled = !busy) { Text(text = "Delete") }
         }
     }
 }
 
 @Composable
-private fun CaixaCentral(conteudo: @Composable () -> Unit) {
+private fun CenterBox(content: @Composable () -> Unit) {
     Box(
         modifier = Modifier.fillMaxWidth().height(160.dp),
         contentAlignment = Alignment.Center,
-    ) { conteudo() }
+    ) { content() }
 }
 
 @Composable
-private fun CartaoDeBackup(
+private fun BackupCard(
     backup: SessionBackup,
-    ocupado: Boolean,
-    aoRestaurarTudo: () -> Unit,
-    aoRestaurarSessao: (String) -> Unit,
-    aoExcluir: () -> Unit,
+    busy: Boolean,
+    onRestoreAll: () -> Unit,
+    onRestoreSession: (String) -> Unit,
+    onDelete: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -367,26 +332,26 @@ private fun CartaoDeBackup(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = dataLegivel(backup.criadoEm),
+                        text = readableDate(backup.createdAt),
                         style = MaterialTheme.typography.titleSmall,
                     )
                     Text(
                         text = listOfNotNull(
-                            origemLegivel(backup.origem),
-                            tamanhoLegivel(backup.bytes),
-                            "${backup.sessoes.size} session(s)",
+                            readableOrigin(backup.origin),
+                            readableSize(backup.bytes),
+                            "${backup.sessions.size} session(s)",
                         ).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = aoRestaurarTudo, enabled = !ocupado) {
+                IconButton(onClick = onRestoreAll, enabled = !busy) {
                     Icon(
                         imageVector = Icons.Filled.Refresh,
                         contentDescription = "Restore all sessions in this backup",
                     )
                 }
-                IconButton(onClick = aoExcluir, enabled = !ocupado) {
+                IconButton(onClick = onDelete, enabled = !busy) {
                     Icon(
                         imageVector = Icons.Filled.Delete,
                         contentDescription = "Delete this backup",
@@ -395,22 +360,20 @@ private fun CartaoDeBackup(
                 }
             }
 
-            // Tapping a chip restores ONLY that session. That is the truly
-            // common case: one almost never wants the whole bundle back, one
-            // wants the session that was lost.
-            ChipsDeSessoes(
-                nomes = backup.sessoes.map { it.nome },
-                aoTocar = { if (!ocupado) aoRestaurarSessao(it) },
+            // Tapping a chip restores only that session, the common case.
+            SessionChips(
+                names = backup.sessions.map { it.name },
+                onTap = { if (!busy) onRestoreSession(it) },
             )
 
-            backup.sessoes.firstOrNull { it.resumo.isNotBlank() }?.let { s ->
+            backup.sessions.firstOrNull { it.summary.isNotBlank() }?.let { s ->
                 Surface(
                     color = MaterialTheme.colorScheme.surface,
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
                 ) {
                     Text(
-                        text = s.resumo,
+                        text = s.summary,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
@@ -424,32 +387,30 @@ private fun CartaoDeBackup(
 }
 
 /**
- * Short date and time. No year: a terminal session backup lives for days, not
- * years — pruning keeps ten — and the year would spend the width that the
- * session names need.
+ * Short date and time, without the year: backups live for days (pruning keeps
+ * ten) and the width is needed for session names.
  */
-private fun dataLegivel(segundos: Long): String {
-    if (segundos <= 0L) return "—"
-    return SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(Date(segundos * 1000))
+private fun readableDate(seconds: Long): String {
+    if (seconds <= 0L) return "—"
+    return SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(Date(seconds * 1000))
 }
 
 /**
- * The origin, spelled out in Portuguese. It matters because it changes the
- * expectation: an automatic one disappears by itself on pruning, a manual one
- * belongs to the user, a scheduled one has a retention of its own.
+ * The origin in words. It changes expectations: automatic backups are pruned,
+ * manual ones belong to the user, scheduled ones have their own retention.
  */
-private fun origemLegivel(origem: String?): String = when (origem) {
+private fun readableOrigin(origin: String?): String = when (origin) {
     "manual" -> "manual"
     "auto" -> "automatic"
     "scheduled" -> "scheduled"
     else -> "legacy"
 }
 
-private fun tamanhoLegivel(bytes: Long): String = when {
+private fun readableSize(bytes: Long): String = when {
     bytes <= 0 -> "—"
     bytes < 1024 -> "$bytes B"
     bytes < 1024 * 1024 -> String.format(Locale.getDefault(), "%.0f kB", bytes / 1024.0)
     else -> String.format(Locale.getDefault(), "%.1f MB", bytes / (1024.0 * 1024.0))
 }
 
-internal const val LISTA_BACKUPS_TAG = "backups-lista"
+internal const val BACKUP_LIST_TAG = "backups-lista"

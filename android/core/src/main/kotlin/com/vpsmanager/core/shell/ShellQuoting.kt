@@ -36,24 +36,24 @@ package com.vpsmanager.core.shell
  * list, the possible mistake is the harmless one: quoting where it was not
  * needed.
  */
-private val CARACTERES_SEM_ASPAS = Regex("^[A-Za-z0-9_@%+=:,./-]+$")
+private val UNQUOTED_CHARS = Regex("^[A-Za-z0-9_@%+=:,./-]+$")
 
 /**
- * Returns [texto] ready to be inserted as ONE shell argument.
+ * Returns [text] ready to be inserted as ONE shell argument.
  *
  * Empty text becomes `''` — without that, "nothing" would disappear from the
  * command line instead of becoming a genuinely empty argument.
  */
-fun comAspasParaShell(texto: String): String {
-    if (texto.isEmpty()) return "''"
-    if (CARACTERES_SEM_ASPAS.matches(texto)) return texto
+fun shellQuoted(text: String): String {
+    if (text.isEmpty()) return "''"
+    if (UNQUOTED_CHARS.matches(text)) return text
     // Close the quote, escape the literal quote outside it, reopen. It is the
     // canonical form and works in sh/bash/zsh/dash alike.
-    return "'" + texto.replace("'", "'\\''") + "'"
+    return "'" + text.replace("'", "'\\''") + "'"
 }
 
 /**
- * Assembles the text to be inserted into the command line for [caminhos].
+ * Assembles the text to be inserted into the command line for [paths].
  *
  * Two decisions that matter more than the code:
  *
@@ -66,7 +66,7 @@ fun comAspasParaShell(texto: String): String {
  *    It is the form an `ls`/`cat`/`file` already understands, without the
  *    operator having to insert them one at a time.
  */
-fun textoDeInsercaoParaShell(caminhos: List<String>): String {
-    if (caminhos.isEmpty()) return ""
-    return caminhos.joinToString(separator = " ", postfix = " ") { comAspasParaShell(it) }
+fun shellInsertionText(paths: List<String>): String {
+    if (paths.isEmpty()) return ""
+    return paths.joinToString(separator = " ", postfix = " ") { shellQuoted(it) }
 }

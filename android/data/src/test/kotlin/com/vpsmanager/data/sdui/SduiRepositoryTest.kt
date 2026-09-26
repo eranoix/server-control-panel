@@ -32,8 +32,8 @@ class SduiRepositoryTest {
     }
 
     private val envelopeJson = """
-        {"sdui_version":1,"screen":{"id":"scheduler.jobs","title":"Agendador","components":[
-            {"type":"action","id":"refresh-jobs","label":"Atualizar","action_id":"scheduler.jobs.refresh"}
+        {"sdui_version":1,"screen":{"id":"scheduler.jobs","title":"Scheduler","components":[
+            {"type":"action","id":"refresh-jobs","label":"Refresh","action_id":"scheduler.jobs.refresh"}
         ]}}
     """.trimIndent()
 

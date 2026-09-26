@@ -48,20 +48,20 @@ fun ChatListScreen(
     viewModel: ChatListViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var filtro by rememberSaveable { mutableStateOf(FiltroDeConversas.TODAS) }
+    var filter by rememberSaveable { mutableStateOf(ChatFilter.ALL) }
 
-    val todas = (state as? ChatListUiState.Success)?.chats
-    val contagens = todas?.let(::contagensPorFiltro)
+    val all = (state as? ChatListUiState.Success)?.chats
+    val counts = all?.let(::countsByFilter)
 
     Column(modifier = modifier.fillMaxSize()) {
         // The chips live OUTSIDE the `when`: they exist in every state, with a
         // dash in place of the number while it is not yet known. Making them
         // vanish on error would make the bar appear and disappear on every
         // reload, and a bar that flickers is a bar nobody trusts.
-        ChipsDeFiltro(
-            selecionado = filtro,
-            contagens = contagens,
-            aoSelecionar = { filtro = it },
+        FilterChips(
+            selected = filter,
+            counts = counts,
+            onSelect = { filter = it },
         )
         Box(modifier = Modifier.fillMaxSize()) {
             when (val current = state) {
@@ -69,16 +69,16 @@ fun ChatListScreen(
                 is ChatListUiState.Error -> ErrorContent(message = current.message, onRetry = viewModel::retry)
                 is ChatListUiState.Empty -> EmptyContent()
                 is ChatListUiState.Success -> {
-                    val visiveis = filtrarConversas(current.chats, filtro)
-                    if (visiveis.isEmpty()) {
+                    val visible = filterChats(current.chats, filter)
+                    if (visible.isEmpty()) {
                         // THREE different empty states, three different
                         // screens. This is the FILTER one: there are chats, it
                         // is the slice that has none. Showing the same "no chats
                         // yet" sentence here would repeat this screen's most
                         // expensive defect.
-                        FiltroSemResultado(filtro = filtro, aoVerTodas = { filtro = FiltroDeConversas.TODAS })
+                        FilterWithoutResults(filter = filter, onShowAll = { filter = ChatFilter.ALL })
                     } else {
-                        ChatListContent(chats = visiveis, onOpenChat = onOpenChat)
+                        ChatListContent(chats = visible, onOpenChat = onOpenChat)
                     }
                 }
             }
@@ -94,14 +94,14 @@ fun ChatListScreen(
  * blank screen and concludes the list is broken.
  */
 @Composable
-private fun FiltroSemResultado(filtro: FiltroDeConversas, aoVerTodas: () -> Unit) {
+private fun FilterWithoutResults(filter: ChatFilter, onShowAll: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = "No chats in “${filtro.rotulo}”",
+                text = "No chats in “${filter.label}”",
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
@@ -109,7 +109,7 @@ private fun FiltroSemResultado(filtro: FiltroDeConversas, aoVerTodas: () -> Unit
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
-            Button(onClick = aoVerTodas) { Text(text = "Show all") }
+            Button(onClick = onShowAll) { Text(text = "Show all") }
         }
     }
 }

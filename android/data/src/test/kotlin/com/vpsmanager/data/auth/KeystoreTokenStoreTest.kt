@@ -12,20 +12,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Proof that [KeystoreTokenStore] FAILS CLOSED.
- *
- * Robolectric has no `AndroidKeyStore` `java.security.Provider` at all —
- * `MasterKey.Builder(context).build()` throws
- * `java.security.KeyStoreException: AndroidKeyStore not found` every time (the
- * same fact [com.vpsmanager.data.config.EncryptedServerConfigStoreTest] already
- * documents). In other words: these cases exercise the REAL degradation path
- * against a genuinely unavailable Keystore, not a mock standing in for one.
- *
- * What is being locked down here is the deliberate difference from the
- * neighbouring [com.vpsmanager.data.config.EncryptedServerConfigStore], which
- * under the SAME conditions writes to `SharedPreferences` in the clear. Copying
- * that fallback over here would break the case below proving that no token
- * reaches disk when the Keystore fails.
+ * Proves that [KeystoreTokenStore] fails closed. Robolectric has no `AndroidKeyStore` provider, so
+ * these cases run the real degradation path. Unlike [com.vpsmanager.data.config.EncryptedServerConfigStore],
+ * which falls back to plaintext `SharedPreferences`, tokens must never reach disk.
  */
 @RunWith(RobolectricTestRunner::class)
 class KeystoreTokenStoreTest {
@@ -33,13 +22,13 @@ class KeystoreTokenStoreTest {
     private val context: Context get() = ApplicationProvider.getApplicationContext()
 
     private val tokens = SessionTokens(
-        accessToken = "access-token-secreto-nao-pode-vazar",
-        refreshToken = "refresh-token-secreto-nao-pode-vazar",
+        accessToken = "secret-access-token-must-not-leak",
+        refreshToken = "secret-refresh-token-must-not-leak",
         expiresAtEpochMillis = 1_800_000_000_000L,
     )
 
     @Test
-    fun `nenhum token vai para disco quando o Keystore falha`() {
+    fun `no token reaches disk when the Keystore fails`() {
         val store = KeystoreTokenStore(context)
 
         store.save(tokens)
@@ -57,26 +46,25 @@ class KeystoreTokenStoreTest {
             .orEmpty()
 
         assertTrue(
-            "token gravado em claro no disco do app: $leaked -- KeystoreTokenStore tem que " +
-                "degradar para memoria, nunca para SharedPreferences em claro",
+            "token written in plaintext to app storage: $leaked, KeystoreTokenStore must " +
+                "degrade to memory, never to plaintext SharedPreferences",
             leaked.isEmpty(),
         )
     }
 
     @Test
-    fun `com o Keystore indisponivel a guarda se declara nao persistente`() {
+    fun `with the Keystore unavailable the store reports itself as not persistent`() {
         val store = KeystoreTokenStore(context)
 
         assertFalse(
-            "isPersistent tem que ser falso para a UI poder avisar que a sessao morre no proximo boot",
+            "isPersistent must be false so the UI can warn that the session ends on the next boot",
             store.isPersistent,
         )
     }
 
     @Test
-    fun `a sessao continua utilizavel no processo atual mesmo sem Keystore`() {
-        // Fail-closed must not become fail-useless: inside the process the
-        // session works normally; what it loses is surviving the next boot.
+    fun `the session stays usable in the current process without a Keystore`() {
+        // Fail-closed still works in-process; only surviving a restart is lost.
         val store = KeystoreTokenStore(context)
 
         store.save(tokens)
@@ -85,18 +73,15 @@ class KeystoreTokenStoreTest {
     }
 
     @Test
-    fun `uma instancia nova nao enxerga a sessao da anterior quando a guarda e so memoria`() {
-        // The in-test equivalent of reopening the app: a fresh instance over
-        // the same Context. Had it persisted to disk, this would now find the
-        // tokens -- and that would be exactly the security failure this file
-        // exists to prevent.
+    fun `a new instance does not see the previous session when storage is memory only`() {
+        // A fresh instance over the same Context stands in for reopening the app.
         KeystoreTokenStore(context).save(tokens)
 
         assertNull(KeystoreTokenStore(context).load())
     }
 
     @Test
-    fun `clear nao explode quando a guarda degradou para memoria`() {
+    fun `clear does not crash when storage degraded to memory`() {
         val store = KeystoreTokenStore(context)
         store.save(tokens)
 

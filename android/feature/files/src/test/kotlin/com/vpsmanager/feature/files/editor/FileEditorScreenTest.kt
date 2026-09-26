@@ -13,10 +13,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Renders [FileEditorScreen] under Robolectric in every [FileEditorUiState]
- * -- including the two states that embed [SoraEditorView], a real
- * `AndroidView`-wrapped `CodeEditor` from sora-editor that had never been
- * inflated in any test before this.
+ * Renders [FileEditorScreen] under Robolectric in every [FileEditorUiState], including the
+ * states that inflate the real sora-editor `CodeEditor` inside [SoraEditorView].
  */
 @RunWith(RobolectricTestRunner::class)
 class FileEditorScreenTest {
@@ -27,8 +25,7 @@ class FileEditorScreenTest {
     @Test
     fun `loading state shows the progress indicator`() {
         val repository = EditorScreenFakeFilesRepository(onRead = { awaitCancellation() })
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm = FileEditorViewModel("/srv/app/main.go", repository)
         composeRule.setContent {
             FileEditorScreen(path = "/srv/app/main.go", onBack = {}, viewModel = vm)
@@ -39,16 +36,15 @@ class FileEditorScreenTest {
 
     @Test
     fun `error state surfaces the repository's reason and a retry action`() {
-        val repository = EditorScreenFakeFilesRepository(onRead = { FileReadResult.Error("Arquivo binário não pode ser editado.") })
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        val repository = EditorScreenFakeFilesRepository(onRead = { FileReadResult.Error("Binary files cannot be edited.") })
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm2 = FileEditorViewModel("/srv/app/bin", repository)
         composeRule.setContent {
             FileEditorScreen(path = "/srv/app/bin", onBack = {}, viewModel = vm2)
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Arquivo binário não pode ser editado.").assertExists()
+        composeRule.onNodeWithText("Binary files cannot be edited.").assertExists()
         composeRule.onNodeWithText("Try again").assertExists()
     }
 
@@ -57,18 +53,14 @@ class FileEditorScreenTest {
         val repository = EditorScreenFakeFilesRepository(
             onRead = { FileReadResult.Success(content = "package main\n", mtime = 1L, language = "go") },
         )
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm3 = FileEditorViewModel("/srv/app/main.go", repository)
         composeRule.setContent {
             FileEditorScreen(path = "/srv/app/main.go", onBack = {}, viewModel = vm3)
         }
         composeRule.waitForIdle()
 
-        // The top bar's own title (fileNameOf(path)) is the cheapest proof
-        // the Editing branch composed past SoraEditorView's AndroidView
-        // factory (CodeEditor + TextMate bootstrap) instead of crashing
-        // before Scaffold could lay out its topBar.
+        // The top bar title proves the Editing branch got past the CodeEditor factory without crashing.
         composeRule.onNodeWithText("main.go").assertExists()
         composeRule.onNodeWithText("Save").assertExists()
     }
@@ -84,9 +76,7 @@ class FileEditorScreenTest {
             FileEditorScreen(path = "/srv/app/main.go", onBack = {}, viewModel = viewModel)
         }
         composeRule.waitForIdle()
-        // Drives the dirty flag directly through the ViewModel -- the real
-        // path is a keystroke inside SoraEditorView's wrapped CodeEditor,
-        // which exposes no Compose semantics for a test to type into.
+        // Set the dirty flag via the ViewModel: the wrapped CodeEditor has no Compose semantics to type into.
         viewModel.onContentChanged("local edit, modified")
         composeRule.waitForIdle()
         composeRule.onNodeWithText("Save").performClick()

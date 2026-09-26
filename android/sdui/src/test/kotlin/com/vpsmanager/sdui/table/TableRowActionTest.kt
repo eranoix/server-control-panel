@@ -10,18 +10,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * `rowActionInvocation` is the decision `TableComponent`'s row-action menu
- * dispatches through -- this is what proves a table row action reaches
- * `ActionRunner` shaped the way the server expects, without needing any
- * Compose test infrastructure (this module has none -- see `ScreenState`,
- * `ActionRunner`, `bindErrors` for the same separation).
+ * Tests `rowActionInvocation`, which shapes a table row action the way the
+ * server expects before it reaches `ActionRunner`.
  */
 class TableRowActionTest {
 
     private fun confirmDestructive(actionId: String) = SduiComponent.ConfirmDestructive(
         id = "confirm-$actionId",
         actionId = actionId,
-        message = "Tem certeza?",
+        message = "Are you sure?",
     )
 
     @Test

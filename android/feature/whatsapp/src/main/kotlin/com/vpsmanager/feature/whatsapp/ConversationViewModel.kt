@@ -23,13 +23,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * Where a media message this device is currently sending/just sent stands.
- * Keyed by `client_msg_id` in [ConversationUiState.Content.uploads] --
- * separate from [MessageSendStatus] (which the bubble itself already
- * carries) so the composer can show a percent/retry affordance without every
- * other call site needing to know about upload internals. Cleared from the
- * map once [MediaSendOutcome.Success] reconciles (the message's own
- * [MessageSendStatus.SENT] is enough at that point).
+ * Upload progress of a media message being sent, keyed by `client_msg_id` in
+ * [ConversationUiState.Content.uploads]. Removed once the upload succeeds and
+ * [MessageSendStatus.SENT] takes over.
  */
 sealed interface MediaUploadState {
     data class InProgress(val percent: Int) : MediaUploadState
@@ -48,22 +44,12 @@ sealed interface ConversationUiState {
 }
 
 /**
- * Loads a chat's history via `WhatsAppRepository.messages()`, collects
- * [eventSource]'s live `/ws/whatsapp` events for [jid], and sends text with
- * an idempotent, client-generated `client_msg_id`.
+ * Loads a chat's history, applies live WebSocket events for [jid], and sends messages with an
+ * idempotent client-generated `client_msg_id`.
  *
- * Message identity/ordering is server-authoritative: incoming messages
- * (history and live alike) are deduped by server [WhatsAppMessage.id] --
- * never by content or timestamp. A message this device is currently sending
- * is tracked by its `client_msg_id` only until the server confirms a real
- * `id` (via the send response or a matching `message`/`ack` WS event,
- * whichever arrives first); retrying the same `client_msg_id` after a failed
- * send reuses that same pending entry instead of appending a second bubble.
- *
- * On every reconnect (state moving back to `Live` after a disconnect) this
- * ViewModel refetches history over REST -- it never trusts [eventSource] to
- * have buffered/replayed anything it missed while disconnected, matching the
- * server's own design.
+ * Messages are deduped by server [WhatsAppMessage.id], never by content or time. A pending send
+ * is tracked by `client_msg_id` until the server confirms an id; a retry reuses the same entry.
+ * Every reconnect refetches history over REST, since the socket does not replay missed events.
  */
 open class ConversationViewModel(
     private val jid: String,
@@ -132,7 +118,7 @@ open class ConversationViewModel(
         viewModelScope.launch {
             when (val result = repository.sendMessage(jid = jid, clientMsgId = clientMsgId, text = text)) {
                 is SendResult.Success -> reconcileSent(clientMsgId, result.id)
-                is SendResult.NaFila -> marcarNaFila(clientMsgId)
+                is SendResult.Queued -> markQueued(clientMsgId)
                 is SendResult.Error -> markFailed(clientMsgId)
             }
         }
@@ -140,9 +126,7 @@ open class ConversationViewModel(
 
     private fun reconcileSent(clientMsgId: String, serverId: String) {
         val current = _uiState.value as? ConversationUiState.Content ?: return
-        // A matching WS event may have already replaced the pending entry
-        // with the real server id before this response came back -- if so,
-        // there is nothing left to reconcile and we must not re-add it.
+        // A WS event may already have replaced the pending entry; do not add it again.
         if (current.messages.any { it.id == serverId }) return
         _uiState.value = current.copy(
             messages = current.messages.map { msg ->
@@ -156,19 +140,15 @@ open class ConversationViewModel(
     }
 
     /**
-     * The message has been stored to go out when the network comes back.
-     *
-     * Marking it NA_FILA rather than leaving it SENDING: a "sending" that
-     * never finishes reads as a frozen app, and after thirty seconds the
-     * person sends it again — creating the duplicate message the queue
-     * existed to prevent.
+     * Marks a message stored for sending when the network returns. A SENDING state that never
+     * ends looks frozen and invites a duplicate resend.
      */
-    private fun marcarNaFila(clientMsgId: String) {
+    private fun markQueued(clientMsgId: String) {
         val current = _uiState.value as? ConversationUiState.Content ?: return
         _uiState.value = current.copy(
             messages = current.messages.map { msg ->
                 if (msg.clientMsgId == clientMsgId) {
-                    msg.copy(sendStatus = MessageSendStatus.NA_FILA)
+                    msg.copy(sendStatus = MessageSendStatus.QUEUED)
                 } else {
                     msg
                 }
@@ -190,7 +170,7 @@ open class ConversationViewModel(
         sendMediaWithId(clientMsgId = UUID.randomUUID().toString(), attachment = attachment, caption = caption, quotedId = quotedId)
     }
 
-    /** Re-uploads a previously [MessageSendStatus.FAILED] media bubble with its *same* `client_msg_id`, reading the same local file back off disk. */
+    /** Re-uploads a failed media bubble with the same `client_msg_id`, from the same local file. */
     fun retryMediaSend(clientMsgId: String) {
         val current = _uiState.value as? ConversationUiState.Content ?: return
         val failed = current.messages.firstOrNull { it.clientMsgId == clientMsgId } ?: return
@@ -219,9 +199,7 @@ open class ConversationViewModel(
             ack = 0,
             quotedId = quotedId,
             media = WhatsAppMedia(
-                // A `file://` path, never a bare local path -- `MediaCache.resolveUrl`
-                // passes any URI-scheme value through untouched instead of wrongly
-                // prefixing it with the server origin (see MediaCache.kt).
+                // Must be a `file://` URI so `MediaCache.resolveUrl` does not prefix the server origin.
                 url = attachment.file.toURI().toString(),
                 mimeType = attachment.mimeType,
                 filename = attachment.filename,
@@ -272,10 +250,7 @@ open class ConversationViewModel(
     }
 
     private fun reconcileMediaSent(clientMsgId: String, serverId: String) {
-        // Reuses the exact same text-send reconciliation path -- media
-        // bubbles are dedup'd/replaced by `client_msg_id`/server `id`
-        // exactly like text, only the `uploads` bookkeeping below is
-        // media-specific.
+        // Same reconciliation as text; only the `uploads` bookkeeping is media-specific.
         reconcileSent(clientMsgId, serverId)
         val current = _uiState.value as? ConversationUiState.Content ?: return
         _uiState.value = current.copy(uploads = current.uploads - clientMsgId)
@@ -309,8 +284,7 @@ open class ConversationViewModel(
             eventSource.state.collect { connectionState ->
                 if (connectionState is WhatsAppConnectionState.Live) {
                     if (hasConnectedOnce) {
-                        // Reconnect: never trust any client-side event buffer,
-                        // always refetch the ground truth over REST.
+                        // Reconnect: refetch over REST instead of trusting buffered events.
                         load()
                     }
                     hasConnectedOnce = true
@@ -331,16 +305,10 @@ open class ConversationViewModel(
             is WhatsAppWsEvent.MessageReceived -> {
                 val incoming = event.message
                 if (incoming.chatJid != jid) return
-                // Dedupe by server id -- a WS redelivery of the same event
-                // must never append a second entry.
+                // Dedupe by server id so a WS redelivery never appends twice.
                 if (current.messages.any { it.id == incoming.id }) return
-                // If this message reconciles a pending optimistic send from
-                // this device -- same text, still awaiting a server id --
-                // replace that entry in place instead of appending a second
-                // bubble. The server never echoes client_msg_id back on the
-                // WS frame, so text is the best available correlation key;
-                // this is safe because only one send is in flight at a time
-                // (the composer disables sending while one is pending).
+                // Replace a matching pending send in place. The WS frame has no client_msg_id,
+                // so text is the key; safe because only one send is in flight at a time.
                 val pendingIndex = if (incoming.fromMe) {
                     current.messages.indexOfFirst {
                         it.clientMsgId != null && it.sendStatus == MessageSendStatus.SENDING && it.text == incoming.text

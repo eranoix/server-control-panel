@@ -2,10 +2,10 @@ package com.vpsmanager.feature.terminal.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vpsmanager.data.terminal.AcaoResult
-import com.vpsmanager.data.terminal.AlvosResult
+import com.vpsmanager.data.terminal.ActionResult
+import com.vpsmanager.data.terminal.TargetsResult
 import com.vpsmanager.data.terminal.BackupsResult
-import com.vpsmanager.data.terminal.PreviaResult
+import com.vpsmanager.data.terminal.PreviewResult
 import com.vpsmanager.data.terminal.SessionBackup
 import com.vpsmanager.data.terminal.TerminalBackupSource
 import com.vpsmanager.data.terminal.TerminalRepository
@@ -32,19 +32,19 @@ sealed interface SessionListUiState {
 
 /** State of the backups sheet, loaded only when it opens. */
 sealed interface BackupsUiState {
-    data object Ocioso : BackupsUiState
-    data object Carregando : BackupsUiState
-    data object Vazio : BackupsUiState
-    data class Pronto(val backups: List<SessionBackup>) : BackupsUiState
-    data class Erro(val mensagem: String) : BackupsUiState
+    data object Idle : BackupsUiState
+    data object Loading : BackupsUiState
+    data object Empty : BackupsUiState
+    data class Ready(val backups: List<SessionBackup>) : BackupsUiState
+    data class Error(val message: String) : BackupsUiState
 }
 
 /** State of ONE session's preview. It exists only while the preview is open. */
-sealed interface PreviaUiState {
-    data object Carregando : PreviaUiState
-    data object Vazia : PreviaUiState
-    data class Pronta(val texto: String) : PreviaUiState
-    data class Erro(val mensagem: String) : PreviaUiState
+sealed interface PreviewUiState {
+    data object Loading : PreviewUiState
+    data object Empty : PreviewUiState
+    data class Ready(val text: String) : PreviewUiState
+    data class Error(val message: String) : PreviewUiState
 }
 
 /**
@@ -54,10 +54,10 @@ sealed interface PreviaUiState {
  * ## Why backups and list are separate states
  * The list is what the screen always shows; the backups only matter once the
  * sheet opens, and loading them alongside would cost a read of every one of the
- * user's backup files each time the screen appears. [carregarBackups] is called
+ * user's backup files each time the screen appears. [loadBackups] is called
  * when the sheet opens, not in `init`.
  *
- * ## Why [recado] exists
+ * ## Why [notice] exists
  * Every operation here is a write and happens away from its result: whoever
  * taps "restore" is looking at the sheet, and what changes is the list behind
  * it. Without a sentence reporting back, the action looks as though it never
@@ -72,28 +72,28 @@ class SessionListViewModel(
     private val _uiState = MutableStateFlow<SessionListUiState>(SessionListUiState.Loading)
     val uiState: StateFlow<SessionListUiState> = _uiState.asStateFlow()
 
-    private val _backups = MutableStateFlow<BackupsUiState>(BackupsUiState.Ocioso)
+    private val _backups = MutableStateFlow<BackupsUiState>(BackupsUiState.Idle)
     val backups: StateFlow<BackupsUiState> = _backups.asStateFlow()
 
     /** The last sentence reporting back on an operation. The screen consumes it and clears it. */
-    private val _recado = MutableStateFlow<String?>(null)
-    val recado: StateFlow<String?> = _recado.asStateFlow()
+    private val _notice = MutableStateFlow<String?>(null)
+    val notice: StateFlow<String?> = _notice.asStateFlow()
 
     /** Name of the session with an operation in flight, so the row can show progress. */
-    private val _ocupada = MutableStateFlow<String?>(null)
-    val ocupada: StateFlow<String?> = _ocupada.asStateFlow()
+    private val _busySession = MutableStateFlow<String?>(null)
+    val busySession: StateFlow<String?> = _busySession.asStateFlow()
 
     /** Assignment targets. `null` = we have not asked yet. */
-    private val _alvos = MutableStateFlow<List<String>?>(null)
-    val alvos: StateFlow<List<String>?> = _alvos.asStateFlow()
+    private val _targets = MutableStateFlow<List<String>?>(null)
+    val targets: StateFlow<List<String>?> = _targets.asStateFlow()
 
     /** Open previews, by session name. Absent = closed. */
-    private val _previas = MutableStateFlow<Map<String, PreviaUiState>>(emptyMap())
-    val previas: StateFlow<Map<String, PreviaUiState>> = _previas.asStateFlow()
+    private val _previews = MutableStateFlow<Map<String, PreviewUiState>>(emptyMap())
+    val previews: StateFlow<Map<String, PreviewUiState>> = _previews.asStateFlow()
 
     init {
         refresh()
-        // carregarAlvos() does NOT belong here. Constructing a ViewModel must
+        // loadTargets() does NOT belong here. Constructing a ViewModel must
         // not fire off every call it will ever make: the screen asks for the
         // targets when it appears, so whoever constructs it controls what
         // starts. It was putting this in init that revealed the leak between
@@ -112,20 +112,20 @@ class SessionListViewModel(
         }
     }
 
-    fun carregarBackups() {
-        _backups.value = BackupsUiState.Carregando
+    fun loadBackups() {
+        _backups.value = BackupsUiState.Loading
         viewModelScope.launch {
             _backups.value = when (val r = backupSource.backups()) {
-                is BackupsResult.Success -> BackupsUiState.Pronto(r.backups)
-                is BackupsResult.Empty -> BackupsUiState.Vazio
-                is BackupsResult.Error -> BackupsUiState.Erro(r.reason)
+                is BackupsResult.Success -> BackupsUiState.Ready(r.backups)
+                is BackupsResult.Empty -> BackupsUiState.Empty
+                is BackupsResult.Error -> BackupsUiState.Error(r.reason)
             }
         }
     }
 
-    /** A null [sessao] saves every session in a single bundle. */
-    fun salvarBackup(sessao: String? = null) = executar(sessao) {
-        backupSource.criarBackup(sessao)
+    /** A null [session] saves every session in a single bundle. */
+    fun saveBackup(session: String? = null) = run(session) {
+        backupSource.createBackup(session)
     }
 
     /**
@@ -133,16 +133,16 @@ class SessionListViewModel(
      * reloads both things: the list, which is what the person is going to use,
      * and the backups, which is what they are looking at.
      */
-    fun restaurar(id: String, sessao: String? = null) = executar(sessao, recarregaLista = true) {
-        backupSource.restaurar(id, sessao)
+    fun restore(id: String, session: String? = null) = run(session, reloadList = true) {
+        backupSource.restore(id, session)
     }
 
-    fun excluirBackup(id: String, sessao: String? = null) = executar(sessao) {
-        backupSource.excluirBackup(id, sessao)
+    fun deleteBackup(id: String, session: String? = null) = run(session) {
+        backupSource.deleteBackup(id, session)
     }
 
-    fun renomear(de: String, para: String) = executar(de, recarregaLista = true, recarregaBackups = false) {
-        backupSource.renomearSessao(de, para)
+    fun rename(from: String, to: String) = run(from, reloadList = true, reloadBackups = false) {
+        backupSource.renameSession(from, to)
     }
 
     /**
@@ -152,12 +152,12 @@ class SessionListViewModel(
      * The confirmation lives in the screen because that is where the name the
      * person is about to lose exists; only the string would reach this far.
      */
-    fun matar(nome: String) = executar(nome, recarregaLista = true, recarregaBackups = false) {
-        backupSource.matarSessao(nome)
+    fun kill(name: String) = run(name, reloadList = true, reloadBackups = false) {
+        backupSource.killSession(name)
     }
 
-    fun atribuir(nome: String, alvo: String) = executar(nome, recarregaLista = true, recarregaBackups = false) {
-        backupSource.atribuirSessao(nome, alvo)
+    fun assign(name: String, target: String) = run(name, reloadList = true, reloadBackups = false) {
+        backupSource.assignSession(name, target)
     }
 
     /**
@@ -168,12 +168,12 @@ class SessionListViewModel(
      * list in that case is the right thing: the option disappears from the menu
      * instead of opening an empty sheet.
      */
-    fun carregarAlvos() {
-        if (_alvos.value != null) return
+    fun loadTargets() {
+        if (_targets.value != null) return
         viewModelScope.launch {
-            _alvos.value = when (val r = backupSource.alvosDeAtribuicao()) {
-                is AlvosResult.Success -> r.alvos
-                is AlvosResult.Error -> emptyList()
+            _targets.value = when (val r = backupSource.assignmentTargets()) {
+                is TargetsResult.Success -> r.targets
+                is TargetsResult.Error -> emptyList()
             }
         }
     }
@@ -186,29 +186,29 @@ class SessionListViewModel(
      * assert as current something that has aged — the same reason the app's
      * offline cache carries an age strip.
      */
-    fun alternarPrevia(nome: String) {
-        val abertas = _previas.value
-        if (abertas.containsKey(nome)) {
-            _previas.value = abertas - nome
+    fun togglePreview(name: String) {
+        val openPreviews = _previews.value
+        if (openPreviews.containsKey(name)) {
+            _previews.value = openPreviews - name
             return
         }
-        _previas.value = abertas + (nome to PreviaUiState.Carregando)
+        _previews.value = openPreviews + (name to PreviewUiState.Loading)
         viewModelScope.launch {
-            val estado = when (val r = backupSource.previaDaSessao(nome)) {
-                is PreviaResult.Success ->
-                    if (r.texto.isBlank()) PreviaUiState.Vazia
-                    else PreviaUiState.Pronta(r.texto)
-                is PreviaResult.Error -> PreviaUiState.Erro(r.reason)
+            val state = when (val r = backupSource.sessionPreview(name)) {
+                is PreviewResult.Success ->
+                    if (r.text.isBlank()) PreviewUiState.Empty
+                    else PreviewUiState.Ready(r.text)
+                is PreviewResult.Error -> PreviewUiState.Error(r.reason)
             }
             // If the person closed it while it was loading, do not reopen it under them.
-            if (_previas.value.containsKey(nome)) {
-                _previas.value = _previas.value + (nome to estado)
+            if (_previews.value.containsKey(name)) {
+                _previews.value = _previews.value + (name to state)
             }
         }
     }
 
-    fun limparRecado() {
-        _recado.value = null
+    fun clearNotice() {
+        _notice.value = null
     }
 
     /**
@@ -220,36 +220,36 @@ class SessionListViewModel(
      * screen is still the truth, and reloading it would flash the whole screen
      * to show exactly the same content.
      */
-    private fun executar(
-        sessao: String?,
-        recarregaLista: Boolean = false,
-        recarregaBackups: Boolean = true,
-        bloco: suspend () -> AcaoResult,
+    private fun run(
+        session: String?,
+        reloadList: Boolean = false,
+        reloadBackups: Boolean = true,
+        tile: suspend () -> ActionResult,
     ) {
-        _ocupada.value = sessao ?: TODAS
+        _busySession.value = session ?: ALL
         viewModelScope.launch {
-            val r = bloco()
-            _ocupada.value = null
-            _recado.value = when (r) {
-                is AcaoResult.Ok -> r.mensagem
-                is AcaoResult.Erro -> r.reason
+            val r = tile()
+            _busySession.value = null
+            _notice.value = when (r) {
+                is ActionResult.Ok -> r.message
+                is ActionResult.Error -> r.reason
                 // Once queued it is a message, not a reload: the server does
                 // not know anything yet, and reloading the list would show the
                 // OLD state right after saying the action had been stored —
                 // making it look as though it had failed.
-                is AcaoResult.NaFila -> r.mensagem
+                is ActionResult.Queued -> r.message
             }
-            if (r is AcaoResult.Ok) {
-                if (recarregaLista) refresh()
-                if (recarregaBackups && _backups.value != BackupsUiState.Ocioso) carregarBackups()
+            if (r is ActionResult.Ok) {
+                if (reloadList) refresh()
+                if (reloadBackups && _backups.value != BackupsUiState.Idle) loadBackups()
             }
         }
     }
 
-    private fun <T> MutableStateFlow<T>.limpar(valor: T) = update { valor }
+    private fun <T> MutableStateFlow<T>.clear(value: T) = update { value }
 
     companion object {
-        /** Marker for "an operation over every session", for [ocupada]. */
-        const val TODAS: String = "*"
+        /** Marker for "an operation over every session", for [busySession]. */
+        const val ALL: String = "*"
     }
 }

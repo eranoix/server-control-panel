@@ -7,11 +7,9 @@ import androidx.core.app.NotificationCompat
 import com.vpsmanager.feature.notifications.R
 
 /**
- * Route/entity-id extras a tapped notification's content [Intent] carries so the `:app`-level
- * nav host opens directly to the already-subscribed target screen instead of the home screen.
- * Only an opaque route id + entity id travel here — never a screen-bypassing auth token or
- * capability flag (accepted: the target screen re-authorizes on load regardless of how it was
- * reached).
+ * Extras on a tapped notification's content [Intent] so the nav host opens the target screen.
+ * Only an opaque route and entity id travel here, never a token or capability flag; the target
+ * screen re-authorises on load.
  */
 object NotificationDeepLink {
     const val EXTRA_ROUTE = "vpsm_notification_route"
@@ -20,34 +18,30 @@ object NotificationDeepLink {
     const val ROUTE_ALERT = "alert"
 }
 
-/** Metric severities eligible for the inline "Dispensar" action. `critical` is deliberately
- * excluded — it only ever gets the notification's own content-tap "Abrir". */
+/** Metric severities eligible for the inline Dismiss action; `critical` is deliberately excluded. */
 private val ACK_ELIGIBLE_SEVERITIES = setOf("info", "warning")
 
 private const val REQUEST_CODE_CONTENT = 100
 private const val REQUEST_CODE_VIEW_LOG = 200
 private const val REQUEST_CODE_DISMISS = 300
 
-/** The safe-inline-action whitelist result for one notification. Never a state-mutating
- * action ("Refazer deploy"/"Reiniciar") — those require `DeployTriggerScreen`'s own confirmation
- * gate and are never offered from a notification. */
+/**
+ * A whitelisted inline action. Never state-mutating (redeploy, restart): those need the
+ * confirmation gate in `DeployTriggerScreen` and are never offered from a notification.
+ */
 internal sealed interface InlineAction {
     val label: String
 
-    /** Opens the same already-subscribed target screen the content tap opens — read-only,
-     * safe regardless of severity (e.g. "Ver log" for a failed job). */
+    /** Opens the same target screen as the content tap; read-only, safe at any severity. */
     data class OpenScreen(override val label: String) : InlineAction
 
-    /** Cancels the local notification only; fires no network call (see
-     * [NotificationActionReceiver]'s doc for why no real ack endpoint exists yet). */
+    /** Cancels the local notification only, with no network call. */
     data class Dismiss(override val label: String) : InlineAction
 }
 
 /**
- * Shapes an FCM data payload — the real `buildPushPayload` contract from
- * `internal/notify/pushchannel.go` (keyed on `event_type`/`severity`/`job_id`, NOT the
- * underscore-separated `type` field an earlier draft of the interface assumed) — into a
- * `NotificationCompat.Builder` plus at most one safe inline action.
+ * Turns an FCM data payload (keyed on `event_type`, `severity` and `job_id`, as sent by the
+ * server's `buildPushPayload`) into a notification builder with at most one safe inline action.
  */
 object ActionableNotificationBuilder {
 
@@ -76,8 +70,7 @@ object ActionableNotificationBuilder {
         return builder
     }
 
-    /** The id [build]'s notification must be posted under so [InlineAction.Dismiss] cancels the
-     * exact same notification it was attached to. */
+    /** Id to post [build]'s notification under, so [InlineAction.Dismiss] cancels the right one. */
     fun notificationIdFor(eventType: String, jobId: String?): Int = (jobId ?: eventType).hashCode()
 
     internal fun defaultTitleFor(eventType: String): String = when {
@@ -99,11 +92,8 @@ object ActionableNotificationBuilder {
     }
 
     /**
-     * The safe-inline-action whitelist: `job.*` events always get a read-only "Ver log"
-     * action (opens the target screen, no server mutation — safe regardless of severity).
-     * `metric.*` events only get an inline "Dispensar" action when severity is in
-     * [ACK_ELIGIBLE_SEVERITIES]; `critical` never does. No combination here ever produces a
-     * state-mutating action.
+     * Inline action whitelist: `job.*` gets a read-only "View log"; `metric.*` gets "Dismiss"
+     * only for [ACK_ELIGIBLE_SEVERITIES]. Nothing here ever mutates server state.
      */
     internal fun inlineActionFor(eventType: String, severity: String?): InlineAction? = when {
         eventType.startsWith("job.") -> InlineAction.OpenScreen("View log")

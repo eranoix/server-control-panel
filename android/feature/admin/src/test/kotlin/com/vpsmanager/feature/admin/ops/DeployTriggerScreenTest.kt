@@ -11,9 +11,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Renders [DeployTriggerScreen] under Robolectric across the `isAdmin`
- * gate and every [DeployTriggerUiState] -- never composed before this.
- * Stateless, so no ViewModel/repository fake is needed.
+ * Renders the stateless [DeployTriggerScreen] under Robolectric for each
+ * `isAdmin` value and every [DeployTriggerUiState].
  */
 @RunWith(RobolectricTestRunner::class)
 class DeployTriggerScreenTest {
@@ -35,11 +34,10 @@ class DeployTriggerScreenTest {
     }
 
     @Test
-    fun `while the admin check is in flight, only a spinner shows -- no button leaks early`() {
+    fun `while the admin check is in flight, only a spinner shows and no button leaks`() {
         setContent(uiState = DeployTriggerUiState.Idle, isAdmin = null)
 
-        // The TopAppBar title itself reads "Disparar deploy", so it always
-        // exists; only the clickable trigger button must not leak early.
+        // The app bar title shares the button text, so match only the clickable node.
         composeRule.onNode(hasText("Trigger deploy") and hasClickAction()).assertDoesNotExist()
     }
 
@@ -55,8 +53,7 @@ class DeployTriggerScreenTest {
         var requested = false
         setContent(uiState = DeployTriggerUiState.Idle, isAdmin = true, onRequest = { requested = true })
 
-        // The TopAppBar title also reads "Disparar deploy", so target only
-        // the clickable button to avoid an ambiguous match.
+        // The app bar title shares the button text, so match only the clickable node.
         composeRule.onNode(hasText("Trigger deploy") and hasClickAction()).performClick()
         assert(requested) { "expected onRequestConfirmation to fire" }
     }
@@ -82,9 +79,9 @@ class DeployTriggerScreenTest {
 
     @Test
     fun `a failed trigger surfaces its message and offers a retry`() {
-        setContent(uiState = DeployTriggerUiState.TriggerFailed("Falha ao enfileirar o deploy."), isAdmin = true)
+        setContent(uiState = DeployTriggerUiState.TriggerFailed("Failed to queue the deploy."), isAdmin = true)
 
-        composeRule.onNodeWithText("Falha ao enfileirar o deploy.").assertExists()
+        composeRule.onNodeWithText("Failed to queue the deploy.").assertExists()
         composeRule.onNodeWithText("Try again").assertExists()
     }
 
@@ -110,7 +107,7 @@ class DeployTriggerScreenTest {
             uiState = DeployTriggerUiState.InProgress(
                 jobId = "job-1",
                 phase = "running",
-                logLines = listOf("clonando repositório", "buildando binário"),
+                logLines = listOf("cloning repository", "building binary"),
                 progress = 42,
                 step = "build",
             ),
@@ -119,8 +116,8 @@ class DeployTriggerScreenTest {
 
         composeRule.onNodeWithText("Current phase: running").assertExists()
         composeRule.onNodeWithText("Step: build").assertExists()
-        composeRule.onNodeWithText("clonando repositório").assertExists()
-        composeRule.onNodeWithText("buildando binário").assertExists()
+        composeRule.onNodeWithText("cloning repository").assertExists()
+        composeRule.onNodeWithText("building binary").assertExists()
     }
 
     @Test

@@ -9,8 +9,7 @@ import org.junit.Assert.fail
 import org.junit.Test
 
 /**
- * The forward-compat proof: run against the shared golden fixtures on plain JVM, no
- * Android SDK, no emulator, no server.
+ * Forward-compatibility checks against the shared fixtures, on the plain JVM.
  */
 class ForwardCompatTest {
 
@@ -78,13 +77,13 @@ class ForwardCompatTest {
               "sdui_version": 1,
               "screen": {
                 "id": "fixture.broken-table",
-                "title": "Tabela sem rows_source",
+                "title": "Table without rows_source",
                 "components": [
                   {
                     "type": "table",
                     "id": "containers-table",
                     "columns": [
-                      { "key": "name", "label": "Nome", "kind": "text" }
+                      { "key": "name", "label": "Name", "kind": "text" }
                     ]
                   }
                 ]
@@ -94,7 +93,7 @@ class ForwardCompatTest {
 
         try {
             parseScreen(payloadMissingRowsSource)
-            fail("expected a MissingFieldException — a missing required field must not decode into a half-built component")
+            fail("expected a MissingFieldException: a missing required field must not decode into a half-built component")
         } catch (expected: MissingFieldException) {
             assertTrue(expected.message.orEmpty().contains("rows_source"))
         }

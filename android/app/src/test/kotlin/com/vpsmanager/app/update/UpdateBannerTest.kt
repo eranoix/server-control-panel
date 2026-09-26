@@ -18,13 +18,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The update banner.
- *
- * The test that matters most here is the SIZE one: on a bad connection,
- * "1.4 MB" is the difference between tapping now and putting it off, and
- * showing the size of the rebuilt APK (31 MB) instead of what travels
- * would be lying in exactly the direction that makes the owner never
- * update.
+ * The update banner. It must show the size of what is actually downloaded (the patch), not
+ * the rebuilt APK, since on a slow connection that decides whether the user updates.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class, qualifiers = "w411dp-h891dp-xxhdpi")
@@ -33,33 +28,25 @@ class UpdateBannerTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    // ------------------------------------------------------------------
-    // The number
-    // ------------------------------------------------------------------
-
     /**
-     * The three numbers are the ones MEASURED in this project
-     * (`docs/android-atualizacao-incremental.md`): the 0.1.5→0.1.6 patch, the
-     * full one, and the raw APK. The banner has to say exactly what the
-     * documentation says — in MiB the patch would become "1.3 MB" and the
-     * owner would see a number different from the one the device shows for
-     * the same file.
+     * Measured sizes: an incremental patch, a full patch and the raw APK. Decimal MB, not MiB,
+     * so the number matches what the device shows for the same file.
      */
     @Test
-    fun `o tamanho aparece em MB com uma casa e virgula`() {
+    fun `the size is shown in MB with one decimal and a comma`() {
         assertEquals("1,4 MB", formatDownloadSize(1_400_329))
         assertEquals("10,0 MB", formatDownloadSize(10_029_237))
         assertEquals("31,1 MB", formatDownloadSize(31_135_416))
     }
 
     @Test
-    fun `abaixo de um mega o numero vira KB, porque zero virgula um MB nao diz nada`() {
+    fun `below one megabyte the size switches to KB`() {
         assertEquals("819 KB", formatDownloadSize(819_200))
         assertEquals("512 B", formatDownloadSize(512))
     }
 
     @Test
-    fun `o banner anuncia a versao e o tamanho do que vai trafegar`() {
+    fun `the banner announces the version and the download size`() {
         composeRule.setContent {
             VpsManagerTheme {
                 UpdateBanner(
@@ -75,21 +62,17 @@ class UpdateBannerTest {
         composeRule.onNodeWithText("Update").assertIsDisplayed()
     }
 
-    // ------------------------------------------------------------------
-    // Each rung of the ladder has its own banner
-    // ------------------------------------------------------------------
-
     @Test
-    fun `nada a fazer nao desenha faixa nenhuma`() {
+    fun `nothing to do draws no banner`() {
         assertNull(bannerContentFor(UpdateState.Idle))
         assertNull(
-            "verificar é rotina de fundo; piscar 'verificando' a cada abertura vira ruído",
+            "checking is a background routine; flashing 'checking' on every launch is noise",
             bannerContentFor(UpdateState.Checking),
         )
     }
 
     @Test
-    fun `baixando mostra progresso e deixa cancelar`() {
+    fun `downloading shows progress and allows cancelling`() {
         val content = bannerContentFor(
             UpdateState.Downloading(versionName = "0.1.7", downloadedBytes = 700_000, totalBytes = 1_400_329),
         )
@@ -101,22 +84,22 @@ class UpdateBannerTest {
     }
 
     @Test
-    fun `aplicar e instalar mostram giro e nenhum botao — nao ha o que cancelar ali`() {
-        val aplicando = checkNotNull(bannerContentFor(UpdateState.Applying("0.1.7")))
-        assertTrue(aplicando.spinner)
-        assertTrue(aplicando.actions.isEmpty())
+    fun `applying and installing show a spinner and no button, since nothing can be cancelled`() {
+        val applying = checkNotNull(bannerContentFor(UpdateState.Applying("0.1.7")))
+        assertTrue(applying.spinner)
+        assertTrue(applying.actions.isEmpty())
 
-        val instalando = checkNotNull(bannerContentFor(UpdateState.Installing("0.1.7")))
-        assertTrue(instalando.spinner)
-        assertTrue(instalando.actions.isEmpty())
+        val installing = checkNotNull(bannerContentFor(UpdateState.Installing("0.1.7")))
+        assertTrue(installing.spinner)
+        assertTrue(installing.actions.isEmpty())
     }
 
     @Test
-    fun `falta de espaco oferece liberar espaco E tentar de novo`() {
+    fun `low storage offers to free space and to try again`() {
         val content = checkNotNull(
             bannerContentFor(
                 UpdateState.Failed(
-                    "Falta espaço: libere 5,5 MB e tente de novo.",
+                    "Not enough space: free 5,5 MB and try again.",
                     canRetry = true,
                     recovery = UpdateRecovery.FREE_SPACE,
                 ),
@@ -131,9 +114,9 @@ class UpdateBannerTest {
     }
 
     @Test
-    fun `fontes desconhecidas negada oferece o atalho para o interruptor`() {
+    fun `denied unknown sources offers the shortcut to the toggle`() {
         val content = checkNotNull(
-            bannerContentFor(UpdateState.Failed("permissão", canRetry = true, recovery = UpdateRecovery.ALLOW_UNKNOWN_SOURCES)),
+            bannerContentFor(UpdateState.Failed("permission", canRetry = true, recovery = UpdateRecovery.ALLOW_UNKNOWN_SOURCES)),
         )
 
         assertTrue(content.actions.first() is UpdateBannerAction.Recover)
@@ -141,19 +124,19 @@ class UpdateBannerTest {
     }
 
     @Test
-    fun `sideload bloqueado nao oferece tentar de novo — seria empurrar para o mesmo muro`() {
+    fun `blocked sideload does not offer retry, which would hit the same wall`() {
         val content = checkNotNull(
-            bannerContentFor(UpdateState.Failed("bloqueado", canRetry = false, recovery = UpdateRecovery.USE_BROWSER)),
+            bannerContentFor(UpdateState.Failed("blocked", canRetry = false, recovery = UpdateRecovery.USE_BROWSER)),
         )
 
         assertEquals(listOf(UpdateBannerAction.Recover("How to install", UpdateRecovery.USE_BROWSER)), content.actions)
     }
 
     @Test
-    fun `instalacao falhada leva ao diagnostico, onde a mensagem do sistema cabe inteira`() {
+    fun `a failed install leads to diagnostics, where the full system message fits`() {
         val content = checkNotNull(
             bannerContentFor(
-                UpdateState.Failed("A instalação falhou: ...", canRetry = true, recovery = UpdateRecovery.SHOW_DIAGNOSTICS),
+                UpdateState.Failed("Installation failed: ...", canRetry = true, recovery = UpdateRecovery.SHOW_DIAGNOSTICS),
             ),
         )
 
@@ -163,20 +146,16 @@ class UpdateBannerTest {
         )
     }
 
-    // ------------------------------------------------------------------
-    // The taps land where they should
-    // ------------------------------------------------------------------
-
     @Test
-    fun `tocar em Atualizar dispara o download e nao o cancelamento`() {
-        var atualizou = 0
-        var cancelou = 0
+    fun `tapping Update starts the download, not the cancellation`() {
+        var updated = 0
+        var cancelled = 0
         composeRule.setContent {
             VpsManagerTheme {
                 UpdateBanner(
                     state = UpdateState.Available("0.1.7", 1_400_329, incremental = true),
-                    onUpdateClick = { atualizou++ },
-                    onCancelClick = { cancelou++ },
+                    onUpdateClick = { updated++ },
+                    onCancelClick = { cancelled++ },
                     onRecoveryClick = {},
                 )
             }
@@ -184,19 +163,19 @@ class UpdateBannerTest {
 
         composeRule.onNodeWithText("Update").performClick()
 
-        assertEquals(1, atualizou)
-        assertEquals(0, cancelou)
+        assertEquals(1, updated)
+        assertEquals(0, cancelled)
     }
 
     @Test
-    fun `tocar em Cancelar durante o download cancela`() {
-        var cancelou = 0
+    fun `tapping Cancel during the download cancels`() {
+        var cancelled = 0
         composeRule.setContent {
             VpsManagerTheme {
                 UpdateBanner(
                     state = UpdateState.Downloading("0.1.7", 700_000, 1_400_329),
                     onUpdateClick = {},
-                    onCancelClick = { cancelou++ },
+                    onCancelClick = { cancelled++ },
                     onRecoveryClick = {},
                 )
             }
@@ -204,37 +183,37 @@ class UpdateBannerTest {
 
         composeRule.onNodeWithText("Cancel").performClick()
 
-        assertEquals(1, cancelou)
+        assertEquals(1, cancelled)
     }
 
     @Test
-    fun `tocar na saida de uma falha entrega QUAL saida foi pedida`() {
-        var pedida: UpdateRecovery? = null
+    fun `tapping a failure's recovery reports which recovery was requested`() {
+        var requested: UpdateRecovery? = null
         composeRule.setContent {
             VpsManagerTheme {
                 UpdateBanner(
-                    state = UpdateState.Failed("sem permissão", canRetry = true, recovery = UpdateRecovery.ALLOW_UNKNOWN_SOURCES),
+                    state = UpdateState.Failed("no permission", canRetry = true, recovery = UpdateRecovery.ALLOW_UNKNOWN_SOURCES),
                     onUpdateClick = {},
                     onCancelClick = {},
-                    onRecoveryClick = { pedida = it },
+                    onRecoveryClick = { requested = it },
                 )
             }
         }
 
         composeRule.onNodeWithText("Allow").performClick()
 
-        assertEquals(UpdateRecovery.ALLOW_UNKNOWN_SOURCES, pedida)
+        assertEquals(UpdateRecovery.ALLOW_UNKNOWN_SOURCES, requested)
     }
 
-    /** "Try again" is the same path as "Update" — the coordinator resumes the partial download. */
+    /** "Try again" takes the same path as "Update"; the coordinator resumes the partial download. */
     @Test
-    fun `tentar de novo reusa o caminho de atualizar`() {
-        var atualizou = 0
+    fun `try again reuses the update path`() {
+        var updated = 0
         composeRule.setContent {
             VpsManagerTheme {
                 UpdateBanner(
-                    state = UpdateState.Failed("Falha de conexão.", canRetry = true),
-                    onUpdateClick = { atualizou++ },
+                    state = UpdateState.Failed("Connection failed.", canRetry = true),
+                    onUpdateClick = { updated++ },
                     onCancelClick = {},
                     onRecoveryClick = {},
                 )
@@ -243,6 +222,6 @@ class UpdateBannerTest {
 
         composeRule.onNodeWithText("Try again").performClick()
 
-        assertEquals(1, atualizou)
+        assertEquals(1, updated)
     }
 }

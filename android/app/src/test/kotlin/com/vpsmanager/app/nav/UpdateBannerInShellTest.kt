@@ -19,18 +19,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The update banner INSIDE the shell.
- *
- * What is proved here is not the banner's design (that is
- * `UpdateBannerTest`'s job), it is its PLACE: it lives in the
- * `Scaffold`'s `topBar` slot, next to the bar — the only point that
- * survives every drawer destination without being recomposed by
- * navigation, and where the `Scaffold` discounts its height from the
- * `innerPadding` on its own.
- *
- * And what it does NOT do: appear on the detail screens. There every dp
- * belongs to the content, and a banner on top of a call in progress is an
- * interruption, not a notice.
+ * The update banner's placement inside the shell (its design is covered by `UpdateBannerTest`):
+ * in the `Scaffold`'s `topBar` slot on drawer destinations, and never on detail screens.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class, qualifiers = "w411dp-h891dp-xxhdpi")
@@ -63,29 +53,24 @@ class UpdateBannerInShellTest {
     }
 
     @Test
-    fun `a faixa aparece na casca, junto com o hamburguer, sem esconder o conteudo`() {
+    fun `the banner shows in the shell next to the hamburger without hiding content`() {
         renderShell(UpdateState.Available(versionName = "0.1.7", downloadBytes = 1_400_329, incremental = true))
 
         composeRule.onNodeWithText("Version 0.1.7 available — 1,4 MB").assertIsDisplayed()
-        // The shell stays whole: the banner was added to the top, not put in
-        // place of the bar.
+        // The banner is added below the bar, not in its place.
         composeRule.onNodeWithContentDescription(OPEN_DRAWER_DESCRIPTION).assertIsDisplayed()
     }
 
     @Test
-    fun `sem atualizacao nao ha faixa nenhuma ocupando altura`() {
+    fun `without an update no banner takes up height`() {
         renderShell(UpdateState.Idle)
 
         composeRule.onNodeWithText("Update", substring = true).assertDoesNotExist()
     }
 
-    /**
-     * The same test that guarantees one header per screen:
-     * `currentDestination == null` is exactly terminal, call and file editor.
-     * The banner uses that SAME condition, so it cannot reappear there.
-     */
+    /** The banner uses the same condition as the shell bar, so it never shows on detail screens. */
     @Test
-    fun `a faixa some nas telas de detalhe`() {
+    fun `the banner disappears on detail screens`() {
         renderShell(UpdateState.Available(versionName = "0.1.7", downloadBytes = 1_400_329, incremental = true))
         composeRule.onNodeWithText("Version 0.1.7 available — 1,4 MB").assertIsDisplayed()
 
@@ -96,57 +81,54 @@ class UpdateBannerInShellTest {
     }
 
     @Test
-    fun `tocar na faixa pede a atualizacao`() {
-        var pedidos = 0
+    fun `tapping the banner requests the update`() {
+        var requests = 0
         renderShell(
             UpdateState.Available(versionName = "0.1.7", downloadBytes = 1_400_329, incremental = true),
-            onUpdateClick = { pedidos++ },
+            onUpdateClick = { requests++ },
         )
 
         composeRule.onNodeWithText("Update").performClick()
 
-        assertEquals(1, pedidos)
+        assertEquals(1, requests)
     }
 
     /**
-     * A failed install: `PackageInstaller`'s message does not fit in a
-     * banner, and the owner has no `adb`. The button leads to the Diagnostics
-     * INSIDE the app — navigation, not a way out to the system, which is why
-     * it is resolved here and does not go up as [UpdateRecovery] to
-     * `MainActivity`.
+     * A failed install's `PackageInstaller` message does not fit in a banner, so "Diagnostics"
+     * navigates inside the app instead of going up to `MainActivity` as an [UpdateRecovery].
      */
     @Test
-    fun `o botao Diagnostico navega para o relatorio com a mensagem do sistema`() {
-        var saidasParaOSistema = 0
+    fun `the Diagnostics button navigates to the report with the system message`() {
+        var exitsToSystem = 0
         renderShell(
             UpdateState.Failed(
-                "A instalação falhou: INSTALL_FAILED_UPDATE_INCOMPATIBLE",
+                "Installation failed: INSTALL_FAILED_UPDATE_INCOMPATIBLE",
                 canRetry = true,
                 recovery = UpdateRecovery.SHOW_DIAGNOSTICS,
             ),
-            onUpdateRecovery = { saidasParaOSistema++ },
-            updateDiagnostics = "Atualização — instalação falhou (status 4)\nINSTALL_FAILED_UPDATE_INCOMPATIBLE",
+            onUpdateRecovery = { exitsToSystem++ },
+            updateDiagnostics = "Update: installation failed (status 4)\nINSTALL_FAILED_UPDATE_INCOMPATIBLE",
         )
 
         composeRule.onNodeWithText("Diagnostics").performClick()
         composeRule.waitForIdle()
 
         assertEquals("diagnostico", navController.currentBackStackEntry?.destination?.route)
-        assertEquals("nada de sair do app para isto", 0, saidasParaOSistema)
+        assertEquals("this must not leave the app", 0, exitsToSystem)
         composeRule.onNodeWithText("INSTALL_FAILED_UPDATE_INCOMPATIBLE", substring = true).assertExists()
     }
 
-    /** The ways out that ARE the system's (toggle, storage, browser) go up to whoever has an Activity. */
+    /** Recoveries that belong to the system (toggle, storage, browser) go up to the Activity. */
     @Test
-    fun `as demais saidas sobem para a Activity em vez de virarem navegacao`() {
-        var pedida: UpdateRecovery? = null
+    fun `other recoveries go up to the Activity instead of becoming navigation`() {
+        var requested: UpdateRecovery? = null
         renderShell(
-            UpdateState.Failed("sem permissão", canRetry = true, recovery = UpdateRecovery.ALLOW_UNKNOWN_SOURCES),
-            onUpdateRecovery = { pedida = it },
+            UpdateState.Failed("no permission", canRetry = true, recovery = UpdateRecovery.ALLOW_UNKNOWN_SOURCES),
+            onUpdateRecovery = { requested = it },
         )
 
         composeRule.onNodeWithText("Allow").performClick()
 
-        assertEquals(UpdateRecovery.ALLOW_UNKNOWN_SOURCES, pedida)
+        assertEquals(UpdateRecovery.ALLOW_UNKNOWN_SOURCES, requested)
     }
 }

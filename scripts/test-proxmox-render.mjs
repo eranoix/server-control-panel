@@ -49,13 +49,13 @@ try {
   process.exit(1);
 }
 
-const RAIZ = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const WEB = path.join(RAIZ, 'internal', 'webassets', 'web');
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const WEB = path.join(ROOT, 'internal', 'webassets', 'web');
 
 // ── browser: resolved by SEARCH, not by a matched version ──────────────────
 // Tying the playwright-core version to the downloaded chromium turns an
 // `npm update` into a broken pin. The search takes the first one that exists.
-function achaNavegador() {
+function findBrowser() {
   const cands = [];
   if (process.env.VPSM_CHROMIUM) cands.push(process.env.VPSM_CHROMIUM);
   const cache = '/root/.cache/ms-playwright';
@@ -86,41 +86,41 @@ const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
 // Each <template> can nest others (x-for, x-if of sub-blocks); an indexOf for the
 // nearest '</template>' would close too early. Count depth to find the
 // </template> that actually matches the opening.
-function extraiTemplateBalanceado(html, aberturaLiteral, apartirDe) {
-  const iAbre = html.indexOf(aberturaLiteral, apartirDe);
-  if (iAbre < 0) return null;
+function extractBalancedTemplate(html, literalOpening, startingFrom) {
+  const iOpen = html.indexOf(literalOpening, startingFrom);
+  if (iOpen < 0) return null;
   const reTag = /<template\b|<\/template>/g;
-  reTag.lastIndex = iAbre;
-  let profundidade = 0, m;
+  reTag.lastIndex = iOpen;
+  let depth = 0, m;
   while ((m = reTag.exec(html))) {
-    profundidade += m[0] === '</template>' ? -1 : 1;
-    if (profundidade === 0) return { html: html.slice(iAbre, reTag.lastIndex), fim: reTag.lastIndex };
+    depth += m[0] === '</template>' ? -1 : 1;
+    if (depth === 0) return { html: html.slice(iOpen, reTag.lastIndex), end: reTag.lastIndex };
   }
   return null;
 }
 
-const ANCORA = 'PROXMOX tab — the lab\'s SINGLE screen';
-const iAncora = html.indexOf(ANCORA);
-if (iAncora < 0) {
+const ANCHOR = 'PROXMOX tab — the lab\'s SINGLE screen';
+const iAnchor = html.indexOf(ANCHOR);
+if (iAnchor < 0) {
   console.error('FAILED: could not find the anchor comment for the Proxmox tab in index.html — the structure changed, update this test');
   process.exit(1);
 }
 
 const ABRE_TEMPLATE = `<template x-if="currentView==='proxmox'`;
-const blocoReal = extraiTemplateBalanceado(html, ABRE_TEMPLATE, iAncora);
-if (!blocoReal) { console.error('FAILED: could not find the <template x-if> holding the real content of the Proxmox tab in index.html'); process.exit(1); }
-if (!/typeof pvxStaleStyle==='function'/.test(blocoReal.html)) {
+const realBlock = extractBalancedTemplate(html, ABRE_TEMPLATE, iAnchor);
+if (!realBlock) { console.error('FAILED: could not find the <template x-if> holding the real content of the Proxmox tab in index.html'); process.exit(1); }
+if (!/typeof pvxStaleStyle==='function'/.test(realBlock.html)) {
   console.error('FAILED: the first <template x-if> of the Proxmox tab is no longer the one with the real content (the pvxStaleStyle gate is gone) — the structure changed, update this test');
   process.exit(1);
 }
 
-const blocoFallback = extraiTemplateBalanceado(html, ABRE_TEMPLATE, blocoReal.fim);
-if (!blocoFallback) { console.error('FAILED: could not find the fallback <template x-if> (module not loaded) of the Proxmox tab in index.html'); process.exit(1); }
+const fallbackBlock = extractBalancedTemplate(html, ABRE_TEMPLATE, realBlock.end);
+if (!fallbackBlock) { console.error('FAILED: could not find the fallback <template x-if> (module not loaded) of the Proxmox tab in index.html'); process.exit(1); }
 
-const secao = blocoReal.html + '\n' + blocoFallback.html;
-if (secao.length < 20000) { console.error(`FAILED: the extracted section is only ${secao.length} bytes — the cut broke`); process.exit(1); }
+const section = realBlock.html + '\n' + fallbackBlock.html;
+if (section.length < 20000) { console.error(`FAILED: the extracted section is only ${section.length} bytes — the cut broke`); process.exit(1); }
 
-const fixture = fs.readFileSync(path.join(RAIZ, 'scripts', 'proxmox-render-fixture.js'), 'utf8');
+const fixture = fs.readFileSync(path.join(ROOT, 'scripts', 'proxmox-render-fixture.js'), 'utf8');
 
 // Which bundle to render: `min` (what production serves) or `src` (the source).
 const BUNDLE = process.env.VPSM_RENDER_BUNDLE === 'src' ? 'src' : 'min';
@@ -130,15 +130,15 @@ const BUNDLE = process.env.VPSM_RENDER_BUNDLE === 'src' ? 'src' : 'min';
 // every test that reads the source passes green over the top of it.
 if (BUNDLE === 'min') {
   const dirApp = path.join(WEB, 'vendor', 'vpsm', 'app');
-  const velhos = [];
-  for (const nome of fs.readdirSync(dirApp).filter((x) => x.endsWith('.js') && !x.endsWith('.min.js'))) {
-    const src = path.join(dirApp, nome);
-    const min = path.join(dirApp, nome.slice(0, -3) + '.min.js');
+  const stale = [];
+  for (const name of fs.readdirSync(dirApp).filter((x) => x.endsWith('.js') && !x.endsWith('.min.js'))) {
+    const src = path.join(dirApp, name);
+    const min = path.join(dirApp, name.slice(0, -3) + '.min.js');
     if (!fs.existsSync(min)) continue;
-    if (fs.statSync(min).mtimeMs < fs.statSync(src).mtimeMs) velhos.push(nome);
+    if (fs.statSync(min).mtimeMs < fs.statSync(src).mtimeMs) stale.push(name);
   }
-  if (velhos.length) {
-    console.error('FAILED: a .min.js is OLDER than its source (the server serves the old one): ' + velhos.join(', '));
+  if (stale.length) {
+    console.error('FAILED: a .min.js is OLDER than its source (the server serves the old one): ' + stale.join(', '));
     console.error('       run `make minify`.');
     process.exit(1);
   }
@@ -149,18 +149,18 @@ if (BUNDLE === 'min') {
 // `.pvx-chip` and the rest — and then it can judge no styling at all: every
 // button would look "background-less". That is exactly what the first version of
 // the styling pin did.
-const estilos = [...html.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/g)].map((m) => m[0]).join('\n');
-if (estilos.length < 5000) {
-  console.error(`FAILED: only ${estilos.length} bytes of <style> extracted from index.html — the styling pin would be measuring the void`);
+const styles = [...html.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/g)].map((m) => m[0]).join('\n');
+if (styles.length < 5000) {
+  console.error(`FAILED: only ${styles.length} bytes of <style> extracted from index.html — the styling pin would be measuring the void`);
   process.exit(1);
 }
 
-const pagina = `<!doctype html><html><head><meta charset="utf-8">
+const pageHtml = `<!doctype html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="/tailwind.css">
-${estilos}
+${styles}
 <style>[x-cloak]{display:none!important}</style>
 </head><body x-data="app()">
-${secao}
+${section}
 <script src="/vendor/vpsm/app/00-shell.js"></script>
 <script src="/vendor/vpsm/app/10-git.js"></script>
 <script src="/vendor/vpsm/app/20-deploy.js"></script>
@@ -173,7 +173,7 @@ ${secao}
 
 const srv = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
-  if (u === '/') { res.setHeader('content-type', 'text/html'); return res.end(pagina); }
+  if (u === '/') { res.setHeader('content-type', 'text/html'); return res.end(pageHtml); }
   if (u === '/__fixture.js') { res.setHeader('content-type', 'application/javascript'); return res.end(fixture); }
   // The harness does not test the network layer: any /api/ answers empty, and the
   // service worker is served blank. Without this the 404 noise would hide the
@@ -198,7 +198,7 @@ const srv = http.createServer((req, res) => {
   res.end(fs.readFileSync(f));
 });
 
-const exe = achaNavegador();
+const exe = findBrowser();
 if (!exe) {
   console.error('FAILED: no Chromium found. This pin RENDERS — skipping would be faking coverage.');
   console.error('       Install it with `npx playwright install chromium` or point VPSM_CHROMIUM=<path>.');
@@ -206,49 +206,49 @@ if (!exe) {
 }
 
 await new Promise((r) => srv.listen(0, '127.0.0.1', r));
-const porta = srv.address().port;
+const port = srv.address().port;
 const browser = await chromium.launch({ executablePath: exe, args: ['--no-sandbox'] });
 const page = await browser.newPage();
 
-const erros = [];
-page.on('console', (m) => { if (m.type() === 'error') { const l = m.location(); erros.push('console: ' + m.text() + ' @ ' + (l ? l.url + ':' + l.lineNumber : '?')); } });
-page.on('pageerror', (e) => erros.push('pageerror: ' + ((e && e.message) || e) + (process.env.VPSM_RENDER_DEBUG && e && e.stack ? '\n          ' + String(e.stack).split('\n').slice(0,4).join('\n          ') : '')));
-page.on('response', (r) => { if (r.status() >= 400) erros.push('HTTP ' + r.status() + ': ' + r.url()); });
+const errors = [];
+page.on('console', (m) => { if (m.type() === 'error') { const l = m.location(); errors.push('console: ' + m.text() + ' @ ' + (l ? l.url + ':' + l.lineNumber : '?')); } });
+page.on('pageerror', (e) => errors.push('pageerror: ' + ((e && e.message) || e) + (process.env.VPSM_RENDER_DEBUG && e && e.stack ? '\n          ' + String(e.stack).split('\n').slice(0,4).join('\n          ') : '')));
+page.on('response', (r) => { if (r.status() >= 400) errors.push('HTTP ' + r.status() + ': ' + r.url()); });
 // says WHICH resource was missing, instead of the console's opaque 'Failed to load resource'
-page.on('requestfailed', (r) => erros.push('resource failed: ' + r.url()));
+page.on('requestfailed', (r) => errors.push('resource failed: ' + r.url()));
 if (process.env.VPSM_RENDER_DEBUG) page.on('request', (r) => console.log('    req ' + r.url()));
 
-await page.goto(`http://127.0.0.1:${porta}/`, { waitUntil: 'networkidle' });
+await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle' });
 await page.waitForTimeout(400);
 if (process.env.VPSM_DIAG) await page.evaluate(() => { window.__diag = true; });
 
-const total = await page.evaluate(() => (window.__roteiro || []).length);
+const total = await page.evaluate(() => (window.__script || []).length);
 if (total < 20) {
   console.error(`FAILED: a script of ${total} steps — vacuous, the fixture did not load`);
   await browser.close(); srv.close(); process.exit(1);
 }
 
-let reprovados = 0, medidos = 0;
+let rejected = 0, measured = 0;
 for (let i = 0; i < total; i++) {
-  const nome = await page.evaluate((k) => window.__roteiro[k].nome, i);
-  await page.evaluate((k) => window.__roteiro[k].passo(), i);
+  const name = await page.evaluate((k) => window.__script[k].nome, i);
+  await page.evaluate((k) => window.__script[k].step(), i);
   await page.waitForTimeout(180);
-  let nota = '';
-  if (await page.evaluate((k) => !!window.__roteiro[k].exige, i)) {
-    medidos++;
-    const r = await page.evaluate((k) => window.__roteiro[k].exige(), i);
-    if (r && r.erro) erros.push('measurement: ' + r.erro);
-    if (r && r.nota) nota = '  [' + r.nota + ']';
+  let note = '';
+  if (await page.evaluate((k) => !!window.__script[k].expect, i)) {
+    measured++;
+    const r = await page.evaluate((k) => window.__script[k].expect(), i);
+    if (r && r.erro) errors.push('measurement: ' + r.erro);
+    if (r && r.nota) note = '  [' + r.nota + ']';
   }
-  const novos = erros.splice(0);
-  if (novos.length) { reprovados++; console.log('  FAIL ' + nome + '\n        ' + novos.join('\n        ')); }
-  else console.log('  ok   ' + nome + nota);
+  const newOnes = errors.splice(0);
+  if (newOnes.length) { rejected++; console.log('  FAIL ' + name + '\n        ' + newOnes.join('\n        ')); }
+  else console.log('  ok   ' + name + note);
 }
 
 await browser.close();
 srv.close();
 
 // Double vacuity guard: steps actually run AND steps that MEASURED the DOM.
-if (medidos < 8) { console.error(`FAILED: only ${medidos} steps measured the DOM — the rest only checked for the absence of an error`); process.exit(1); }
-if (reprovados) { console.error(`\nFAILED: ${reprovados} of ${total} steps failed`); process.exit(1); }
-console.log(`\nPASS — bundle ${BUNDLE}: ${total} steps rendered in the browser, ${medidos} of them measuring the DOM, 0 console errors`);
+if (measured < 8) { console.error(`FAILED: only ${measured} steps measured the DOM — the rest only checked for the absence of an error`); process.exit(1); }
+if (rejected) { console.error(`\nFAILED: ${rejected} of ${total} steps failed`); process.exit(1); }
+console.log(`\nPASS — bundle ${BUNDLE}: ${total} steps rendered in the browser, ${measured} of them measuring the DOM, 0 console errors`);

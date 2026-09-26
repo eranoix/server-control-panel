@@ -10,7 +10,7 @@ import kotlin.math.abs
 /**
  * Translates the vertical drag, which arrives in PIXELS, into what the
  * terminal understands, which is ROWS — and sends each row to the destination
- * [decidirRolagem] chose.
+ * [decideScroll] chose.
  *
  * It sits outside Compose on purpose: that way the rule for "how many pixels
  * become how many rows, and where they go" is testable on the JVM, with no
@@ -23,11 +23,11 @@ import kotlin.math.abs
  * follows the finger cell by cell.
  */
 internal class ScrollbackGestureController(
-    private val modos: () -> TerminalModes,
-    private val geometria: () -> MouseGeometry?,
-    private val rolarViewport: (Int) -> Unit,
-    private val podeRolarViewport: (Int) -> Boolean,
-    private val enviarBytes: (ByteArray) -> Unit,
+    private val modes: () -> TerminalModes,
+    private val geometry: () -> MouseGeometry?,
+    private val scrollViewport: (Int) -> Unit,
+    private val canScrollViewport: (Int) -> Boolean,
+    private val sendBytes: (ByteArray) -> Unit,
     private val encodeMouse: (
         action: MouseAction,
         button: MouseButton,
@@ -38,51 +38,51 @@ internal class ScrollbackGestureController(
 ) : CanvasScrollTarget {
 
     /** Leftover pixels that have not yet added up to a row. */
-    private var acumuladoPx = 0f
+    private var accumulatedPx = 0f
 
     override fun onScrollStart() {
-        acumuladoPx = 0f
+        accumulatedPx = 0f
     }
 
     override fun onScrollEnd() {
-        acumuladoPx = 0f
+        accumulatedPx = 0f
     }
 
     override fun onScroll(deltaPx: Float, position: Offset): Boolean {
-        val geo = geometria() ?: return false
-        val alturaCelula = geo.cellHeightPx
-        if (alturaCelula <= 0) return false
+        val geo = geometry() ?: return false
+        val cellHeight = geo.cellHeightPx
+        if (cellHeight <= 0) return false
 
-        acumuladoPx += deltaPx
-        val linhasInteiras = (acumuladoPx / alturaCelula).toInt()
-        if (linhasInteiras == 0) return true
-        acumuladoPx -= linhasInteiras * alturaCelula
+        accumulatedPx += deltaPx
+        val wholeRows = (accumulatedPx / cellHeight).toInt()
+        if (wholeRows == 0) return true
+        accumulatedPx -= wholeRows * cellHeight
 
         // The finger moves down, the content shows the PAST. By the
         // convention used throughout the stack (and by the mouse wheel), the
         // past is negative.
-        val linhas = -linhasInteiras
+        val lines = -wholeRows
 
-        return when (val acao = decidirRolagem(modos(), linhas)) {
-            is AcaoDeRolagem.Viewport -> {
-                rolarViewport(acao.linhas)
-                podeRolarViewport(acao.linhas)
+        return when (val action = decideScroll(modes(), lines)) {
+            is ScrollAction.Viewport -> {
+                scrollViewport(action.lines)
+                canScrollViewport(action.lines)
             }
 
-            is AcaoDeRolagem.Roda -> {
-                enviarRoda(acao.linhas, position, geo)
+            is ScrollAction.Wheel -> {
+                sendWheel(action.lines, position, geo)
                 // The wheel belongs to the remote program: there is no end
                 // of scrollback of ours to reach, so the fling is never
                 // interrupted here.
                 true
             }
 
-            is AcaoDeRolagem.Setas -> {
-                enviarBytes(bytesDeSeta(acao.linhas, modos().cursorKeysApplication))
+            is ScrollAction.Arrows -> {
+                sendBytes(arrowBytes(action.lines, modes().cursorKeysApplication))
                 true
             }
 
-            AcaoDeRolagem.Nada -> false
+            ScrollAction.Nothing -> false
         }
     }
 
@@ -90,14 +90,14 @@ internal class ScrollbackGestureController(
      * One wheel event per row. It is not waste: it is literally what a desk
      * mouse produces, and it is how `htop` and `vim` count how far to scroll.
      */
-    private fun enviarRoda(linhas: Int, position: Offset, geo: MouseGeometry) {
-        val botao = if (linhas < 0) MouseButton.RODA_CIMA else MouseButton.RODA_BAIXO
-        repeat(abs(linhas).coerceAtMost(MAXIMO_RODA_POR_EVENTO)) {
+    private fun sendWheel(lines: Int, position: Offset, geo: MouseGeometry) {
+        val button = if (lines < 0) MouseButton.WHEEL_UP else MouseButton.WHEEL_DOWN
+        repeat(abs(lines).coerceAtMost(MAX_WHEEL_PER_EVENT)) {
             // The wheel is a PRESS with no RELEASE — the xterm convention
             // from the very beginning. Sending a RELEASE along makes some
             // programs count two scrolls.
-            encodeMouse(MouseAction.PRESS, botao, position.x, position.y, geo)
-                ?.let(enviarBytes)
+            encodeMouse(MouseAction.PRESS, button, position.x, position.y, geo)
+                ?.let(sendBytes)
         }
     }
 
@@ -106,6 +106,6 @@ internal class ScrollbackGestureController(
          * A cap per event. An absurdly fast drag must not turn into hundreds
          * of wheel events at once on the PTY.
          */
-        const val MAXIMO_RODA_POR_EVENTO = 10
+        const val MAX_WHEEL_PER_EVENT = 10
     }
 }

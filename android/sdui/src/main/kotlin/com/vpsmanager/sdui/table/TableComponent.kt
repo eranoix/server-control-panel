@@ -218,10 +218,10 @@ private fun TableRow(
     //
     // Measured result on those same two columns: ~270 px → ~64 px. Four times
     // as many rows per screen, with the same information.
-    val selos = columns.filter { it.kind == "badge" }
-    val demais = columns.filter { it.kind != "badge" }
-    val titulo = demais.firstOrNull()
-    val meta = if (titulo == null) demais else demais.drop(1)
+    val badges = columns.filter { it.kind == "badge" }
+    val others = columns.filter { it.kind != "badge" }
+    val title = others.firstOrNull()
+    val meta = if (title == null) others else others.drop(1)
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -234,22 +234,22 @@ private fun TableRow(
                 // what gets an ellipsis, because a truncated name is still
                 // recognisable and a cut-off badge is not.
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (titulo != null) {
+                    if (title != null) {
                         Text(
-                            text = valorDe(row, titulo),
+                            text = valueFor(row, title),
                             style = MaterialTheme.typography.titleSmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false),
                         )
                     }
-                    selos.forEach { selo ->
+                    badges.forEach { badge ->
                         Spacer(modifier = Modifier.width(8.dp))
-                        BadgeValue(raw = valorDe(row, selo), badgeMap = selo.badgeMap)
+                        BadgeValue(raw = valueFor(row, badge), badgeMap = badge.badgeMap)
                     }
                 }
                 if (meta.isNotEmpty()) {
-                    LinhaDeMeta(row = row, columns = meta)
+                    MetaRow(row = row, columns = meta)
                 }
             }
             if (!rowActions.isNullOrEmpty()) {
@@ -271,13 +271,13 @@ private fun TableRow(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LinhaDeMeta(row: JsonObject, columns: List<SduiTableColumn>) {
-    val visiveis = columns.filter { valorDe(row, it).isNotBlank() }
-    if (visiveis.isEmpty()) return
+private fun MetaRow(row: JsonObject, columns: List<SduiTableColumn>) {
+    val visible = columns.filter { valueFor(row, it).isNotBlank() }
+    if (visible.isEmpty()) return
 
     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        visiveis.forEachIndexed { indice, column ->
-            if (indice > 0) {
+        visible.forEachIndexed { index, column ->
+            if (index > 0) {
                 Text(
                     text = "·",
                     style = MaterialTheme.typography.bodySmall,
@@ -290,7 +290,7 @@ private fun LinhaDeMeta(row: JsonObject, columns: List<SduiTableColumn>) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = valorDe(row, column),
+                text = valueFor(row, column),
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -305,7 +305,7 @@ private fun LinhaDeMeta(row: JsonObject, columns: List<SduiTableColumn>) {
  * finished, and formatting on the client is how the two ends start to
  * disagree.
  */
-private fun valorDe(row: JsonObject, column: SduiTableColumn): String =
+private fun valueFor(row: JsonObject, column: SduiTableColumn): String =
     row[column.key]?.jsonPrimitive?.contentOrNull.orEmpty()
 
 /**

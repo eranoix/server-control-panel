@@ -40,18 +40,15 @@ import org.webrtc.SessionDescription
 import org.webrtc.VideoTrack
 
 /**
- * The runtime permissions [CallViewModel] requires before it will touch the camera, microphone,
- * or signaling connection at all. Kept as a narrow interface — mirroring
- * [com.vpsmanager.data.videocall.LocalMediaTrackControl]'s existing seam pattern — so
- * [CallViewModelTest] can inject a fake instead of exercising Android's real permission APIs on
- * the JVM.
+ * Reports the runtime permissions [CallViewModel] needs before touching camera, mic or signaling.
+ * An interface so JVM tests can inject a fake.
  */
 fun interface CallPermissionChecker {
     /** The RECORD_AUDIO/CAMERA permissions still missing; empty when both are granted. */
     fun missingPermissions(): List<String>
 }
 
-/** The only production [CallPermissionChecker]: reads real runtime grant state via [context]. */
+/** Production [CallPermissionChecker] reading the real runtime grant state. */
 class AndroidCallPermissionChecker(context: Context) : CallPermissionChecker {
     private val appContext = context.applicationContext
 
@@ -65,51 +62,31 @@ class AndroidCallPermissionChecker(context: Context) : CallPermissionChecker {
     }
 }
 
-/**
- * Default [CallForegroundServiceController] for every test that does not care about the
- * foreground service — keeps [CallViewModel]'s constructor call sites in [CallViewModelTest]
- * unchanged. Only [createCallViewModel] wires the real [AndroidCallForegroundServiceController].
- */
+/** Default no-op controller; only [createCallViewModel] wires the real [AndroidCallForegroundServiceController]. */
 private object NoopCallForegroundServiceController : CallForegroundServiceController {
     override fun start() = Unit
     override fun stop() = Unit
 }
 
 /**
- * Mirrors `HomeViewModel`'s established `StateFlow<UiState>` shape — no new
- * state-management library introduced. [InCall.remoteTracks] is keyed by each peer's stable
- * `client_id` (falling back to their connection id when absent, see [PeerInfo]'s doc comment),
- * never by the raw signaling connection id alone — a reconnecting peer gets a fresh connection id
- * on every attach, so keying by connection id would show a ghost tile for the stale connection
- * until its `peer-left` arrives, alongside a second tile for the fresh `peer-joined`.
- *
- * [InCall.remoteTracks]'s value is nullable — deviating from the design's literal
- * `Map<String, VideoTrack>` — because a peer's tile must exist (and render a placeholder) from
- * the moment `peer-joined` arrives, before that peer's `onTrack` callback has fired; a non-null
- * map could only represent "tile exists with video" or "tile does not exist yet", not the
- * real intermediate "tile exists, still connecting" state the UI requirement describes.
+ * Call screen state. [InCall.remoteTracks] is keyed by the peer's stable `client_id` (or its
+ * connection id when absent), because a reconnecting peer gets a new connection id and keying by
+ * it would leave a ghost tile. Values are nullable so a tile can show "connecting" before
+ * `onTrack` fires.
  */
 sealed interface CallUiState {
     data object Loading : CallUiState
     data class PermissionRequired(val missing: List<String>) : CallUiState
     data class Error(val message: String) : CallUiState
     /**
-     * THE LOBBY: the camera is already live, the signaling is not yet.
-     *
-     * It exists because joining a call is the one action in this app that is
-     * public and irreversible — by the time the person discovers they were
-     * muted, or that the camera was pointing at the ceiling, the others have
-     * already seen it. Adjusting beforehand costs seconds; adjusting
-     * afterwards costs the impression.
-     *
-     * And it is the app's only "loading" that is CONTENT rather than waiting:
-     * while the camera wakes up, the microphone can already be switched off.
+     * Pre-join lobby: local camera is live, signaling is not connected yet. Joining is public
+     * and irreversible, so mic and camera can be adjusted first.
      */
     data class Lobby(
         val localTrack: VideoTrack?,
         val micEnabled: Boolean,
         val cameraEnabled: Boolean,
-        val semCamera: Boolean,
+        val noCamera: Boolean,
     ) : CallUiState
 
     data class InCall(
@@ -132,22 +109,11 @@ private inline fun <reified T> decodePayload(payload: JsonElement?): T? {
 }
 
 /**
- * Drives one call's signaling + WebRTC session end to end: permission gate, `join`, remote-peer
- * bookkeeping (with `client_id`-based ghost-tile dedup on reconnect), full perfect-negotiation
- * offer/answer/ice handling, and the mic/camera/switch/hang-up intents the call UI requires.
+ * Drives one call's signaling and WebRTC session: permission gate, join, peer bookkeeping with
+ * reconnect dedup by `client_id`, perfect-negotiation offer/answer/ICE, and the call controls.
  *
- * Every dependency is a required constructor parameter — no Android [Context] leaks into this
- * class at all, keeping it constructible on the plain JVM with hand-rolled fakes.
- * [createCallViewModel] is the one production call site that wires the real,
- * directly-constructed [WebRtcSessionManager]/[AndroidCallPermissionChecker], mirroring
- * `HomeViewModel`'s direct `SessionRepository()` construction.
- * [CallViewModelTest] constructs this class directly with fakes instead.
- *
- * Real SDP negotiation (`createOffer`/`createAnswer`/`setLocalDescription`/`setRemoteDescription`
- * and the resulting `onTrack`/`onIceCandidate` callbacks) requires the native WebRTC library and
- * is therefore not exercised by any test here — it is real production code, verified only by the
- * human-verification script on a real device (two peers must actually see/hear each
- * other), never claimed as unit-tested.
+ * Takes no Android [Context], so it runs on the JVM with fakes; [createCallViewModel] wires the
+ * real dependencies. Real SDP negotiation needs native WebRTC and is only verified on a device.
  */
 class CallViewModel(
     private val permissionChecker: CallPermissionChecker,
@@ -160,81 +126,54 @@ class CallViewModel(
     private val _uiState = MutableStateFlow<CallUiState>(CallUiState.Loading)
     val uiState: StateFlow<CallUiState> = _uiState.asStateFlow()
 
-    /** The single EGL context every [VideoTile] `CallScreen` renders must share (see [VideoCallSessionController.eglBaseContext]'s doc comment). */
+    /** The single EGL context every [VideoTile] must share. */
     val eglBaseContext: org.webrtc.EglBase.Context get() = sessionController.eglBaseContext
 
     private var ownPeerId: String? = null
     private var turnCredentials: TurnCredentials? = null
 
-    /** Signaling connection-id -> PeerConnection, one per live `peer-joined` (not per client). */
+    /** Connection id to PeerConnection, one per live `peer-joined`. */
     private val peerConnections = mutableMapOf<String, PeerConnection>()
 
-    /** Signaling connection-id -> stable client key (`client_id` or, absent that, the connection id). */
+    /** Connection id to stable client key (`client_id`, or the connection id when absent). */
     private val connectionIdToClientKey = mutableMapOf<String, String>()
 
-    /** Client key -> the connection id CURRENTLY considered live for that client (reconnect dedup). */
+    /** Client key to its currently live connection id (reconnect dedup). */
     private val clientKeyToConnectionId = mutableMapOf<String, String>()
 
-    /** Client key -> that peer's remote video track, `null` until `onTrack` fires. Rendered as [CallUiState.InCall.remoteTracks]. */
+    /** Client key to remote video track, `null` until `onTrack` fires. */
     private val remoteTracks = mutableMapOf<String, VideoTrack?>()
 
     private var micEnabled = true
     private var cameraEnabled = true
 
     /**
-     * Checks RECORD_AUDIO/CAMERA BEFORE any capture or signaling call — a denial
-     * reaches [CallUiState.PermissionRequired] having touched neither the camera/mic nor the
-     * network, never as the result of a failed connect attempt.
-     */
-    /**
-     * Opens the lobby: brings up the local camera and microphone WITHOUT
-     * connecting the signaling.
+     * Opens the lobby: checks permissions first (a denial touches neither media nor network),
+     * then starts local camera and mic without connecting signaling.
      *
-     * `startLocalMedia()` depends on nothing from the signaling — in the old
-     * flow it was called right after `joined`, and the tracks only enter a
-     * connection once a peer appears (`createPeerConnectionFor`). In other
-     * words: bringing it forward gives a genuine preview without touching the
-     * protocol.
-     *
-     * The foreground service does NOT start here, deliberately. It exists to
-     * keep camera and microphone alive during a call; in the lobby there is
-     * no call yet, and leaving the app really should switch the camera off.
+     * The foreground service deliberately does not start here: there is no call yet, and leaving
+     * the app should turn the camera off.
      */
-    fun abrirAntessala() {
+    fun openLobby() {
         val missing = permissionChecker.missingPermissions()
         if (missing.isNotEmpty()) {
             _uiState.value = CallUiState.PermissionRequired(missing)
             return
         }
-        // STARTING THE MEDIA CAN THROW, and throwing here takes the app down.
-        //
-        // `startLocalMedia()` does three things that fail in the real world:
-        // it loads WebRTC's native library, enumerates cameras (and calls
-        // `error(...)` when there is none) and opens the capture (which
-        // throws if another app already holds the camera). I wrote "with no
-        // camera the lobby degrades" and handled only the NULL TRACK case —
-        // the EXCEPTION case was left out, and it was that one that brought
-        // the app down on the call screen.
-        //
-        // Here the rule is the same one that was already written, now holding
-        // for both paths: a camera that will not open becomes an audio call,
-        // never an app that closes.
-        val ligou = runCatching { sessionController.startLocalMedia() }
-        val trilha = if (ligou.isSuccess) {
+        // startLocalMedia can throw (native library, no camera, camera in use); a failure must
+        // degrade to an audio call, never crash.
+        val started = runCatching { sessionController.startLocalMedia() }
+        val trail = if (started.isSuccess) {
             runCatching { sessionController.localVideoTrack }.getOrNull()
         } else {
             null
         }
         _uiState.value = CallUiState.Lobby(
-            localTrack = trilha,
+            localTrack = trail,
             micEnabled = micEnabled,
             cameraEnabled = cameraEnabled,
-            // With no video track, the camera failed (held by another app,
-            // or the device has none, or the media never came up at all).
-            // That does NOT block: the call degrades to audio only, which is
-            // still the call. A lobby that refuses to let you in because the
-            // camera would not open trades a feature for an obstacle.
-            semCamera = trilha == null,
+            // No video track means the camera failed; the lobby still allows joining with audio.
+            noCamera = trail == null,
         )
     }
 
@@ -244,14 +183,7 @@ class CallViewModel(
             _uiState.value = CallUiState.PermissionRequired(missing)
             return
         }
-        // JOINING HAS TO GIVE FEEDBACK ON THE SPOT.
-        //
-        // Before the lobby this was unnecessary: the initial state was already
-        // Loading and the screen opened with the spinner. With the lobby, and
-        // without this line, the screen sat STILL on the lobby until the
-        // server answered "joined" — the button accepted a tap and nothing
-        // happened, which is how a button teaches itself to be tapped three
-        // times. A test caught this.
+        // Show Loading immediately so the join tap gets feedback before the server answers.
         _uiState.value = CallUiState.Loading
         viewModelScope.launch {
             signaling.connect(roomId = roomId, clientId = localClientId, resume = false).collect { message ->
@@ -269,7 +201,7 @@ class CallViewModel(
             "answer" -> handleAnswer(message)
             "ice" -> handleIce(message)
             "error" -> _uiState.value = CallUiState.Error(message.error ?: "Unknown video call error.")
-            // "leave", "chat", "state", "ping": outside this plan's scope.
+            // "leave", "chat", "state" and "ping" are ignored.
             else -> Unit
         }
     }
@@ -278,10 +210,8 @@ class CallViewModel(
         val joinResponse = decodePayload<JoinResponse>(message.payload) ?: return
         ownPeerId = joinResponse.peerId
         turnCredentials = joinResponse.turn
-        // A call joined from RoomLobbyScreen never goes through VpsmConnection.onAnswer (that
-        // path is only for an incoming ring answered from the lock screen) — this is the only
-        // place a call started this way starts the foreground service that keeps its camera/mic
-        // alive across backgrounding.
+        // Calls joined from the lobby skip VpsmConnection.onAnswer, so the foreground service that
+        // keeps camera and mic alive in the background is started here.
         foregroundService.start()
         sessionController.startLocalMedia()
         joinResponse.peers.forEach { peer -> registerPeer(connectionId = peer.id, peerInfo = peer) }
@@ -296,11 +226,8 @@ class CallViewModel(
     }
 
     /**
-     * `peer-left` carries only the leaving connection's id, never a `client_id` (the server
-     * relays it payload-less — see `internal/videocall/signaling.go`). Only remove the tile when
-     * [connectionId] is still the CURRENT connection for its client key: if a fresher
-     * `peer-joined` for the same client already replaced it (the reconnect race), that newer
-     * tile must survive this stale connection's belated `peer-left`.
+     * `peer-left` carries only the connection id. The tile is removed only if that connection is
+     * still current for its client, so a late `peer-left` after a reconnect keeps the new tile.
      */
     private fun handlePeerLeft(message: SignalingMessage) {
         val connectionId = message.from ?: return
@@ -362,11 +289,8 @@ class CallViewModel(
     }
 
     /**
-     * Creates (or, on reconnect, replaces) the [PeerConnection] for [connectionId], evicting any
-     * stale connection this same [peerInfo]'s `client_id` was previously mapped to. Adding local
-     * tracks and wiring negotiation callbacks requires the real native factory; when
-     * [sessionController] is a test fake this returns `null` and the tile is added without a
-     * live connection, which is exactly what the plan's `peerJoinedAddsRemoteTile` test asserts.
+     * Creates or replaces the [PeerConnection] for [connectionId], evicting the stale connection of
+     * the same client. With a fake controller no connection is created, but the tile is still added.
      */
     private fun registerPeer(connectionId: String, peerInfo: PeerInfo) {
         val clientKey = peerInfo.clientId ?: peerInfo.id
@@ -393,7 +317,7 @@ class CallViewModel(
         sessionController.closePeerConnectionFor(connectionId)
     }
 
-    /** Perfect-negotiation glue for one remote peer: only the "impolite" side initiates offers on renegotiation. */
+    /** Perfect negotiation for one remote peer: only the impolite side sends offers on renegotiation. */
     private inner class RemotePeerObserver(
         private val connectionId: String,
         private val clientKey: String,
@@ -456,18 +380,10 @@ class CallViewModel(
         override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) = Unit
     }
 
-    /**
-     * Re-emits the lobby's state when one of its buttons changes something.
-     *
-     * `pushInCallState` only knows how to paint [CallUiState.InCall]; without
-     * this counterpart, the microphone button in the lobby would change the
-     * audio and NOT change the drawing — a control that does not confirm what
-     * it did is a control nobody trusts. A no-op outside the lobby, so the
-     * call flow stays identical.
-     */
-    private fun repintarAntessala() {
-        val atual = _uiState.value as? CallUiState.Lobby ?: return
-        _uiState.value = atual.copy(
+    /** Re-emits the lobby state after a control changes, so the button reflects it. No-op outside the lobby. */
+    private fun repaintLobby() {
+        val current = _uiState.value as? CallUiState.Lobby ?: return
+        _uiState.value = current.copy(
             localTrack = sessionController.localVideoTrack,
             micEnabled = micEnabled,
             cameraEnabled = cameraEnabled,
@@ -483,12 +399,12 @@ class CallViewModel(
         )
     }
 
-    /** Always reachable, independent of connection state — flips both UI state and the real track together. */
+    /** Toggles the mic, updating the real track and the UI state together. */
     fun onToggleMic() {
         if (_uiState.value !is CallUiState.InCall) return
         micEnabled = !micEnabled
         sessionController.setMicEnabled(micEnabled)
-        repintarAntessala()
+        repaintLobby()
         pushInCallState()
     }
 
@@ -496,7 +412,7 @@ class CallViewModel(
         if (_uiState.value !is CallUiState.InCall) return
         cameraEnabled = !cameraEnabled
         sessionController.setCameraEnabled(cameraEnabled)
-        repintarAntessala()
+        repaintLobby()
         pushInCallState()
     }
 
@@ -505,12 +421,11 @@ class CallViewModel(
         sessionController.switchCamera()
     }
 
-    /** Ends the call: closes signaling first (sends `leave`), then tears down every peer connection and the capture pipeline. */
+    /** Ends the call: closes signaling first (sends `leave`), then tears down peers and capture. */
     fun onLeave() {
         signaling.close()
         sessionController.dispose()
-        // Safe even if this call was answered via Telecom and VpsmConnection.teardown() already
-        // stopped it — CallForegroundService.stop is documented idempotent for exactly this race.
+        // Idempotent, so safe if VpsmConnection.teardown() already stopped it.
         foregroundService.stop()
         peerConnections.clear()
         connectionIdToClientKey.clear()
@@ -519,23 +434,15 @@ class CallViewModel(
     }
 
     /**
-     * Backgrounding the app does NOT clear this ViewModel or call [onLeave] — a ViewModel is
-     * only cleared when its owning `NavBackStackEntry` leaves the back stack (the user backs out
-     * of the call screen) or the process dies, not when `onStop()` fires on the host Activity. So
-     * an ongoing call's signaling connection and peer connections keep running while backgrounded
-     * from this class's point of view; whether the OS lets camera capture keep running while the
-     * app is not in the foreground is a device/OS-version concern this plan does not address —
-     * this module's own build.gradle.kts comment ("unica excecao com foreground service
-     * persistente") already earmarks a persistent foreground service as the fix, which is not
-     * part of this plan's scope and must land before background/lock-screen calling is claimed to
-     * work.
+     * Runs only when the call screen leaves the back stack or the process dies, not on
+     * backgrounding; the foreground service keeps capture alive in the background.
      */
     override fun onCleared() {
         onLeave()
     }
 }
 
-/** A no-op [SdpObserver] used as the base for the anonymous overrides above, and directly wherever no callback is needed. */
+/** No-op [SdpObserver], used directly and as a delegate base. */
 private object NoopSdpObserver : SdpObserver {
     override fun onCreateSuccess(sessionDescription: SessionDescription?) = Unit
     override fun onSetSuccess() = Unit
@@ -543,13 +450,7 @@ private object NoopSdpObserver : SdpObserver {
     override fun onSetFailure(error: String?) = Unit
 }
 
-/**
- * Builds the real, production [CallViewModel] — directly constructing [WebRtcSessionManager] and
- * [AndroidCallPermissionChecker] from [context] (mirrors `HomeViewModel`'s direct
- * `SessionRepository()` construction; `WebRtcSessionManager(context)` is the deliberate
- * "no intermediate abstraction" call site). This is the only production caller of
- * [CallViewModel]'s constructor; `CallViewModelTest` constructs it directly with fakes instead.
- */
+/** Builds the production [CallViewModel] with the real WebRTC, permission and service dependencies. */
 fun createCallViewModel(context: Context): CallViewModel {
     val appContext = context.applicationContext
     return CallViewModel(

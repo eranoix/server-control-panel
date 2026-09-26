@@ -1,17 +1,16 @@
 package com.vpsmanager.feature.terminal.selection
 
 import androidx.compose.ui.geometry.Offset
-import com.vpsmanager.feature.terminal.mouse.RoteamentoDeToque
+import com.vpsmanager.feature.terminal.mouse.TouchRouting
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Host-runnable: exercises [SelectionGestureController] as a scripted drag
- * path (start cell, then a sequence of moves), asserting every
- * [GridSelection] value written matches exactly what [CellHitTester] would
- * report for that pixel — never a value derived from raw pixel deltas.
+ * Drives [SelectionGestureController] through scripted drags and checks that every
+ * [GridSelection] matches what [CellHitTester] reports for that pixel, never a value
+ * derived from raw pixel deltas.
  */
 class SelectionGestureControllerTest {
 
@@ -78,11 +77,9 @@ class SelectionGestureControllerTest {
     }
 
     @Test
-    fun routeCanvasDrag_programaNaoPediuMouse_soASelecaoRecebeOgesto() {
-        // The `bash` prompt — no tracking active. Previously a manual switch
-        // could send the gesture to the "mouse" even here, and the bytes ended
-        // up as text on the command line.
-        val toggle = RoteamentoDeToque { false }
+    fun routeCanvasDrag_programDidNotAskForMouse_onlySelectionGetsGesture() {
+        // A `bash` prompt with no mouse tracking: mouse bytes would land as text.
+        val toggle = TouchRouting { false }
         val selectionCalls = mutableListOf<Offset>()
         val mouseCalls = mutableListOf<Offset>()
         val selectionTarget = CanvasDragTarget { position, _ -> selectionCalls += position }
@@ -92,12 +89,12 @@ class SelectionGestureControllerTest {
         router.onDrag(Offset(1f, 2f), DragPhase.START)
 
         assertEquals(listOf(Offset(1f, 2f)), selectionCalls)
-        assertTrue("sem programa pedindo mouse, nenhum byte de mouse pode ser gerado", mouseCalls.isEmpty())
+        assertTrue("with no program asking for the mouse, no mouse bytes may be generated", mouseCalls.isEmpty())
     }
 
     @Test
-    fun routeCanvasDrag_programaPediuMouse_soOmouseRecebeOgesto() {
-        val toggle = RoteamentoDeToque { true }
+    fun routeCanvasDrag_programAskedForMouse_onlyMouseGetsGesture() {
+        val toggle = TouchRouting { true }
         val selectionCalls = mutableListOf<Offset>()
         val mouseCalls = mutableListOf<Offset>()
         val selectionTarget = CanvasDragTarget { position, _ -> selectionCalls += position }
@@ -107,30 +104,23 @@ class SelectionGestureControllerTest {
         router.onDrag(Offset(3f, 4f), DragPhase.START)
 
         assertEquals(listOf(Offset(3f, 4f)), mouseCalls)
-        assertTrue("com o programa pedindo mouse, a seleção não recebe o arraste", selectionCalls.isEmpty())
+        assertTrue("with the program asking for the mouse, selection does not get the drag", selectionCalls.isEmpty())
     }
 
     @Test
-    fun routeCanvasDrag_seguirOprogramaRemotoNaoEmaisNegociavel() {
-        // There used to be a test here for the "the program asked for the
-        // mouse but I want to select anyway" preference. The preference was
-        // REMOVED at the app owner's request, and this test now pins that
-        // removal down: with the program asking for the mouse, the drag is
-        // its own — no state in the app can divert that any more.
-        //
-        // Selecting inside an `htop` is still possible through a LONG PRESS,
-        // which anchors the selection before this routing and therefore does
-        // not show up in this test.
-        val roteamento = RoteamentoDeToque { true }
+    fun routeCanvasDrag_followingRemoteProgramIsNotNegotiable() {
+        // When the program asks for the mouse, the drag is always its own. Selecting
+        // inside e.g. `htop` still works through a long press, which is routed earlier.
+        val routing = TouchRouting { true }
         val selectionCalls = mutableListOf<Offset>()
         val mouseCalls = mutableListOf<Offset>()
         val selectionTarget = CanvasDragTarget { position, _ -> selectionCalls += position }
         val mouseTarget = CanvasDragTarget { position, _ -> mouseCalls += position }
 
-        val router = routeCanvasDrag(roteamento, selectionTarget, mouseTarget)
+        val router = routeCanvasDrag(routing, selectionTarget, mouseTarget)
         router.onDrag(Offset(5f, 6f), DragPhase.START)
 
         assertEquals(listOf(Offset(5f, 6f)), mouseCalls)
-        assertTrue("nenhum estado do app desvia o gesto do programa", selectionCalls.isEmpty())
+        assertTrue("no app state diverts the gesture away from the program", selectionCalls.isEmpty())
     }
 }

@@ -26,24 +26,19 @@ sealed interface TransferUiState {
 }
 
 /**
- * Enqueues and observes [DownloadWorker]/[UploadWorker] jobs. `AndroidViewModel`
- * (not a plain `ViewModel` with a manually-wired `Context`) because
- * `WorkManager.getInstance` needs an application `Context` and this is the
- * standard, DI-free way to get one inside a `ViewModel` -- no new wiring
- * pattern introduced for this single need.
+ * Enqueues and observes [DownloadWorker] and [UploadWorker] jobs. An `AndroidViewModel` because
+ * `WorkManager.getInstance` needs an application Context.
  */
 class TransferViewModel(application: Application) : AndroidViewModel(application) {
 
     private val workManager = WorkManager.getInstance(application)
     private val stateStore = TransferStateStore(application)
-    // Deferred cleanup: cancelling a worker throws CancellationException out
-    // of doWork() before DownloadWorker/UploadWorker's own terminal-state
-    // cleanup runs, so cleanup on CANCELLED is done here instead (see observe).
+    // Cancellation skips the workers' own cleanup, so it runs here on CANCELLED (see observe).
     private val garbageCollector = TransferGarbageCollector(stateStore)
     private val _transfers = MutableStateFlow<Map<UUID, TransferUiState>>(emptyMap())
     val transfers: StateFlow<Map<UUID, TransferUiState>> = _transfers.asStateFlow()
 
-    /** Only a transfer requires network -- WorkManager holds the job until connectivity returns. */
+    /** Transfers need network; WorkManager holds the job until connectivity returns. */
     private val transferConstraints = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
@@ -62,10 +57,8 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
                 ),
             )
             .build()
-        // KEEP: re-triggering a download that is still enqueued/running must
-        // not stack a duplicate job -- once the existing job reaches a terminal
-        // state (cancelled/failed/succeeded), the next trigger enqueues fresh
-        // and resumes from the persisted state regardless.
+        // KEEP avoids duplicating a running job; after a terminal state a new trigger
+        // enqueues fresh and resumes from the persisted state.
         workManager.enqueueUniqueWork(workName, ExistingWorkPolicy.KEEP, request)
         observe(request.id, workName)
     }
@@ -98,9 +91,7 @@ class TransferViewModel(application: Application) : AndroidViewModel(application
                 if (info == null) return@collect
                 _transfers.value = _transfers.value + (workId to info.toUiState())
                 if (info.state == WorkInfo.State.CANCELLED) {
-                    // By the time WorkManager reports CANCELLED, the worker has
-                    // fully stopped -- safe to delete the MediaStore row and
-                    // clear the resume state without racing a live writer.
+                    // The worker has fully stopped by CANCELLED, so cleanup cannot race a writer.
                     garbageCollector.cleanupCancelled(workName) { mediaUri ->
                         getApplication<Application>().contentResolver.delete(Uri.parse(mediaUri), null, null)
                     }

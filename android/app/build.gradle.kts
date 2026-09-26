@@ -1,7 +1,6 @@
-// :app — the only Android application module. Navigable shell (theme, edge-to-
-// edge, NavHost) and the real vertical slice of Home; every other area is still
-// a placeholder. The only module with targetSdk (AGP 9.3 does not expose
-// targetSdk in com.android.library — see android/data/build.gradle.kts).
+// :app, the only Android application module: the navigable shell (theme, edge-to-edge,
+// NavHost). The only module with targetSdk (AGP 9.3 does not expose it in
+// com.android.library).
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
 import org.gradle.api.file.RegularFileProperty
@@ -16,19 +15,15 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// applicationId is the DISTRIBUTION identity (assetlinks.json, F-Droid,
-// Developer Verification) — independent of the Kotlin/R-class namespace below.
-// Single literal in android/gradle.properties (vpsmanager.applicationId);
-// verifyApplicationIdMatchesDocs, registered further down, fails the build if
-// this value diverges from the one documented in docs/android-signing-keystore.md
-// section 2 (see section 7 of that document on why reading
-// data/config.json at build time is not viable: it is a runtime file, outside git, that
-// does not exist in the CI checkout).
+// applicationId is the distribution identity (assetlinks.json, F-Droid, Developer
+// Verification), independent of the namespace below. Its single source is
+// android/gradle.properties; verifyApplicationIdMatchesDocs fails the build if it differs
+// from docs/android-signing-keystore.md section 2.
 val applicationIdFromProperties = requireNotNull(
     project.findProperty("vpsmanager.applicationId") as String?
 ) {
-    "vpsmanager.applicationId ausente em android/gradle.properties — " +
-        "ver docs/android-signing-keystore.md Seção 7"
+    "vpsmanager.applicationId missing from android/gradle.properties, " +
+        "see docs/android-signing-keystore.md section 7"
 }
 
 android {
@@ -39,27 +34,21 @@ android {
         applicationId = applicationIdFromProperties
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        // versionCode/versionName are read from the Gradle properties passed
-        // by the CI android-release job (github.run_number / android-v* tag
-        // — see .github/workflows/ci.yml and docs/android-release-pipeline.md);
-        // without them (local build) they fall back to the development default.
+        // versionCode/versionName come from the CI android-release job (run number and
+        // android-v* tag); local builds fall back to development defaults.
         versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
         versionName = project.findProperty("versionName") as String? ?: "0.1.0"
 
-        // ABIs — arm64-v8a + x86_64 (real device + emulator).
-        // Without this filter the APK carries all FOUR that stream-webrtc-android
-        // packages, including x86 (11.8 MB) and armeabi-v7a (6.3 MB) that no
-        // target of this project uses — 18 MB of dead weight in a download that is already
-        // large. `vpsmanager.abi` allows narrowing further for a single-device
-        // build (e.g. -Pvpsmanager.abi=arm64-v8a saves another 20 MB).
+        // arm64-v8a + x86_64 (device + emulator). Without the filter stream-webrtc-android
+        // ships x86 and armeabi-v7a too (18 MB unused). `vpsmanager.abi` narrows further for
+        // a single-device build (-Pvpsmanager.abi=arm64-v8a saves another 20 MB).
         ndk {
             val soAbi = project.findProperty("vpsmanager.abi") as String?
             abiFilters += soAbi?.split(",")?.map { it.trim() } ?: listOf("arm64-v8a", "x86_64")
         }
 
-        // Default server seeded on first boot (see MainActivity). Empty by
-        // default: without the property the app falls back to the setup screen as before. It is not
-        // a secret — it is the panel's public origin.
+        // Default server seeded on first boot (see MainActivity). Empty means the app shows
+        // the setup screen. Not a secret: it is the panel's public origin.
         buildConfigField(
             "String",
             "DEFAULT_SERVER_URL",
@@ -79,27 +68,14 @@ android {
 
     buildTypes {
         release {
-            // Minification/obfuscation (R8) and removal of unreferenced resources.
-            //
-            // The .dex files are by far the largest block of this APK — larger than the
-            // native .so put together. The app's owner downloads the APK on his phone, over
-            // a bad connection: every MB is a real cost to him, not a vanity
-            // number.
-            //
-            // This stayed off until now for a legitimate reason: a wrong keep
-            // rule does not break the build, it breaks at RUNTIME (the
-            // terminal stops opening, the login stops parsing), and there
-            // was no way to run the app and find out. With the Lab emulator
-            // there now is — the rules in
-            // proguard-rules.pro were derived from this project's real dependencies
-            // and the minified APK was exercised on the device before
-            // this flag was committed.
+            // R8 minification and resource shrinking: .dex is the largest part of the APK,
+            // which is downloaded over mobile connections. A wrong keep rule breaks at
+            // runtime, not at build time, so test the minified APK on a device after
+            // changing proguard-rules.pro.
             isMinifyEnabled = true
             isShrinkResources = true
 
-            // `proguard-android-optimize.txt` (and not `proguard-android.txt`):
-            // it is the same base set, with R8's optimizations enabled —
-            // which is exactly the point of turning this on.
+            // The optimize variant enables R8 optimizations on the same base rules.
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 file("proguard-rules.pro"),
@@ -107,19 +83,10 @@ android {
         }
     }
 
-    // DEVELOPMENT signing — strictly opt-in.
-    //
-    // Without the `vpsmanager.devKeystore` property, the release build comes out
-    // UNSIGNED, which is the correct and deliberate behaviour: the release key
-    // must never exist on this VPS (see docs/android-signing-keystore.md), so
-    // CI compiles without signing and the operator signs offline. A signingConfig
-    // enabled by default would erase that guarantee with nobody noticing.
-    //
-    // With the property, it applies the disposable key documented in
-    // docs/android-chave-dev.md and marks versionName with `-devsigned`, so that
-    // the APK identifies itself as such in `aapt2 dump badging`, on the about screen and
-    // in any F-Droid index — an artifact signed with a dev key must never
-    // be mistaken for a publishable release.
+    // Development signing, strictly opt-in. Without `vpsmanager.devKeystore` the release
+    // build is unsigned on purpose: the release key must never exist on this VPS, and the
+    // operator signs offline. With it, the disposable dev key is used and versionName gets
+    // `-devsigned` so the APK can never be mistaken for a publishable release.
     val devKeystorePath = project.findProperty("vpsmanager.devKeystore") as String?
     if (devKeystorePath != null) {
         signingConfigs {
@@ -141,14 +108,12 @@ android {
 }
 
 dependencies {
-    // MainActivity e FragmentActivity (BiometricPrompt exige).
+    // MainActivity is a FragmentActivity (BiometricPrompt requires it).
     implementation(libs.androidx.fragment)
     implementation(project(":core"))
 
-    // The home-screen widget. Glance because a widget is ANOTHER
-    // process (the launcher) drawing through RemoteViews: without it, this would be XML +
-    // RemoteViews by hand, a second UI language to maintain in
-    // parallel with the whole rest of the app in Compose.
+    // Home screen widget. Glance avoids hand-written XML and RemoteViews as a second UI
+    // toolkit next to Compose.
     implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.glance.material3)
     implementation(project(":data"))
@@ -169,30 +134,24 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
-    // Navigation-drawer icons. The `core` set (823 KB) and not
-    // `extended` (35.7 MB) — see the note in gradle/libs.versions.toml about
-    // why that still holds even with R8 on. The missing glyphs
-    // come from VpsmIcons, in :design-system, with the official Material
-    // path data.
+    // Drawer icons: the `core` set (823 KB), not `extended` (35.7 MB); see
+    // gradle/libs.versions.toml. Missing glyphs come from VpsmIcons in :design-system.
     implementation(libs.compose.material.icons.core)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.core.ktx)
-    // ProcessLifecycleOwner — the single place MobileEventsSocket.start()/stop() are wired,
+    // ProcessLifecycleOwner: the single place MobileEventsSocket.start()/stop() are wired,
     // driven by the whole app's foreground/background transitions.
     implementation(libs.androidx.lifecycle.process)
-    // UpdateCheckWorker: the periodic check for an update of the app itself.
-    // :app declares WorkManager directly (and not through :feature-files,
-    // which keeps it as `implementation` on purpose) because the worker lives
-    // here — the update belongs to the shell, not to a feature.
+    // UpdateCheckWorker (periodic app self-update check) lives here, so :app declares
+    // WorkManager directly instead of relying on :feature-files.
     implementation(libs.androidx.work.runtime.ktx)
 
-    // Pure JVM unit tests for the deep-link route resolution/consumption logic —
+    // Pure JVM unit tests for the deep-link route resolution/consumption logic;
     // no Android framework classes involved, so plain JUnit is enough (no Robolectric).
     testImplementation(libs.junit)
     // Bootstrap/VpsManagerApplication launch-path tests touch a real Context (crash file
-    // persistence, TelecomManager, NotificationManager) — same Robolectric setup :data and
-    // :feature-videocall already use for the same reason.
+    // persistence, TelecomManager, NotificationManager), so they use Robolectric.
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.kotlinx.coroutines.test)
@@ -202,12 +161,9 @@ dependencies {
     debugImplementation(libs.compose.ui.test.manifest)
 }
 
-// Fails the build if the applicationId in gradle.properties diverges from the value
-// documented in docs/android-signing-keystore.md section 2. The only anti-drift
-// mechanism available while the value cannot be read directly
-// from data/config.json (runtime, outside git — see section 7 of that
-// document): a "keep in sync" comment blocks nothing, this
-// task does.
+// Fails the build if the applicationId in gradle.properties differs from
+// docs/android-signing-keystore.md section 2. The runtime config.json is not in git, so this
+// check is the only drift guard.
 abstract class VerifyApplicationIdMatchesDocsTask : DefaultTask() {
 
     @get:Input
@@ -221,9 +177,9 @@ abstract class VerifyApplicationIdMatchesDocsTask : DefaultTask() {
         val file = docsFile.get().asFile
         if (!file.isFile) {
             throw GradleException(
-                "verifyApplicationIdMatchesDocs: ${file.path} não encontrado — " +
-                    "não é possível confirmar que o applicationId do Gradle bate " +
-                    "com a Seção 2 do runbook de assinatura."
+                "verifyApplicationIdMatchesDocs: ${file.path} not found, " +
+                    "cannot confirm that the Gradle applicationId matches " +
+                    "section 2 of the signing runbook."
             )
         }
 
@@ -231,8 +187,8 @@ abstract class VerifyApplicationIdMatchesDocsTask : DefaultTask() {
         val afterHeading = file.readText().substringAfter(heading, missingDelimiterValue = "")
         if (afterHeading.isEmpty()) {
             throw GradleException(
-                "verifyApplicationIdMatchesDocs: seção '$heading' não encontrada em " +
-                    "${file.path} — o runbook mudou de formato, ajuste esta task."
+                "verifyApplicationIdMatchesDocs: section '$heading' not found in " +
+                    "${file.path}. The runbook format changed, update this task."
             )
         }
 
@@ -245,10 +201,10 @@ abstract class VerifyApplicationIdMatchesDocsTask : DefaultTask() {
         val expected = expectedApplicationId.get()
         if (documented != expected) {
             throw GradleException(
-                "applicationId diverge entre o build e a documentação:\n" +
+                "applicationId differs between the build and the docs:\n" +
                     "  gradle.properties (vpsmanager.applicationId): $expected\n" +
-                    "  ${file.path} Seção 2: ${documented ?: "<não encontrado>"}\n" +
-                    "Os dois precisam bater — atualize um dos dois antes de continuar."
+                    "  ${file.path} section 2: ${documented ?: "<not found>"}\n" +
+                    "They must match. Update one of them before continuing."
             )
         }
     }

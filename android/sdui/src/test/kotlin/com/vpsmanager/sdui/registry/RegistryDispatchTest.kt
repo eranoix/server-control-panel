@@ -8,15 +8,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Proves two things against the real fixture corpus in
- * `contracts/sdui/fixtures` (never a copy pasted into this file):
- *
- * 1. [renderPolicyFor] is exhaustive over every [SduiComponent] subclass with
- *    no `else` branch, so it is a compile error — not a silent runtime gap —
- *    to add a 9th subclass without updating this function.
- * 2. The critical-unknown-becomes-a-placeholder and
- *    non-critical-unknown-is-skipped-and-logged-once policies described in
- *    `core.sdui.parseScreen`'s KDoc are exactly what the renderer applies.
+ * Checks [renderPolicyFor] against the real SDUI fixtures: known types render,
+ * a critical unknown becomes a placeholder, and a non-critical one is skipped
+ * and logged once.
  */
 class RegistryDispatchTest {
 
@@ -132,6 +126,6 @@ class RegistryDispatchTest {
     private fun sampleConfirmDestructive() = SduiComponent.ConfirmDestructive(
         id = "cd1",
         actionId = "kill",
-        message = "Tem certeza?",
+        message = "Are you sure?",
     )
 }

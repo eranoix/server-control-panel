@@ -1,6 +1,4 @@
-// :sdui — renderer Compose do vocabulario fechado de 7 componentes
-// (form/table/list/detail/action/chart/confirm_destructive). Sem motor de
-// layout generico.
+// Compose renderer for the closed 7-component SDUI vocabulary. No generic layout engine.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
@@ -14,9 +12,7 @@ android {
         minSdk = libs.versions.minSdk.get().toInt()
     }
 
-    // BuildConfig.DEBUG is what PayloadPreviewScreen self-gates on: it must
-    // render nothing in a release build regardless of whether or when a
-    // navigation graph ever calls it (plan 07-06 threat closure).
+    // PayloadPreviewScreen gates on BuildConfig.DEBUG so it renders nothing in release builds.
     buildFeatures {
         buildConfig = true
     }
@@ -36,18 +32,12 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.kotlinx.coroutines.core)
-    // Component sources decode row/series JSON bodies directly (JsonObject,
-    // JsonArray, jsonPrimitive) -- :data's own kotlinx-serialization-json
-    // dependency is `implementation`-scoped there, so it is not exposed
-    // transitively and must be declared here too.
+    // Needed directly: :data declares serialization-json as `implementation`, not `api`.
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.reflect)
     testImplementation(libs.kotlinx.coroutines.test)
-    // Renders the 7 SDUI components + NeedsUpdateCard under Robolectric,
-    // driven from the same real committed fixtures the registry dispatch
-    // tests already read via sdui.fixtures.dir -- never composed before this.
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(platform(libs.compose.bom))
@@ -55,9 +45,7 @@ dependencies {
     debugImplementation(libs.compose.ui.test.manifest)
 }
 
-// The same corpus of real fixtures that :core reads (contracts/sdui/fixtures at
-// the repo root) -- the registry's dispatch tests also run against the real
-// files, never a copy pasted into the test source.
+// Tests read the same real SDUI fixtures as :core, never a copy.
 tasks.withType<Test> {
     val fixturesDir = rootDir.parentFile.resolve("contracts/sdui/fixtures")
     systemProperty("sdui.fixtures.dir", fixturesDir.absolutePath)

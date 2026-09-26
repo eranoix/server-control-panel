@@ -7,124 +7,119 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The chunked upload loop, exercised against a fake [TransferRepository].
- * What these tests protect is not the loop itself — it is the RESUMPTION: that
- * the chunk goes back out from the right offset after a drop, that the
- * server's count beats ours, and that "retrying will not help" does not turn
- * into an eternal retry.
+ * The chunked upload loop against a fake [TransferRepository]. The focus is resumption: the right
+ * offset after a drop, the server's byte count winning over ours, and non-retryable errors not retrying.
  */
 class ChunkedUploadPumpTest {
 
     private class FakeTransferRepository(
         private val chunkResults: MutableList<UploadChunkResult> = mutableListOf(),
-        private val completeResult: UploadCompleteResult = UploadCompleteResult.Success("/destino/arquivo.bin"),
+        private val completeResult: UploadCompleteResult = UploadCompleteResult.Success("/dest/file.bin"),
     ) : TransferRepository() {
-        val chunksRecebidos = mutableListOf<Pair<Long, Int>>()
+        val receivedChunks = mutableListOf<Pair<Long, Int>>()
 
         override suspend fun uploadChunk(sessionId: String, offset: Long, data: ByteArray): UploadChunkResult {
-            chunksRecebidos += offset to data.size
+            receivedChunks += offset to data.size
             return if (chunkResults.isEmpty()) UploadChunkResult.Accepted else chunkResults.removeAt(0)
         }
 
         override suspend fun completeUpload(sessionId: String): UploadCompleteResult = completeResult
     }
 
-    private fun fonteDe(bytes: ByteArray) = UploadByteSource { ByteArrayInputStream(bytes) }
+    private fun sourceOf(bytes: ByteArray) = UploadByteSource { ByteArrayInputStream(bytes) }
 
     @Test
-    fun `envia todos os pedacos e conclui com o caminho do servidor`() = runTest {
+    fun `sends every chunk and completes with the server path`() = runTest {
         val repo = FakeTransferRepository()
         val pump = ChunkedUploadPump(repo, chunkSizeBytes = 4)
 
-        val outcome = pump.send(fonteDe(ByteArray(10)), "s1", startOffset = 0, totalSize = 10, onProgress = {})
+        val outcome = pump.send(sourceOf(ByteArray(10)), "s1", startOffset = 0, totalSize = 10, onProgress = {})
 
-        assertEquals(ChunkedUploadOutcome.Completed("/destino/arquivo.bin"), outcome)
-        assertEquals(listOf(0L to 4, 4L to 4, 8L to 2), repo.chunksRecebidos)
+        assertEquals(ChunkedUploadOutcome.Completed("/dest/file.bin"), outcome)
+        assertEquals(listOf(0L to 4, 4L to 4, 8L to 2), repo.receivedChunks)
     }
 
     @Test
-    fun `retomada comeca do offset ja confirmado, nao do zero`() = runTest {
+    fun `resuming starts at the confirmed offset, not at zero`() = runTest {
         val repo = FakeTransferRepository()
         val pump = ChunkedUploadPump(repo, chunkSizeBytes = 4)
 
-        pump.send(fonteDe(ByteArray(10)), "s1", startOffset = 8, totalSize = 10, onProgress = {})
+        pump.send(sourceOf(ByteArray(10)), "s1", startOffset = 8, totalSize = 10, onProgress = {})
 
-        // A single chunk, and at offset 8 — the first 8 bytes were already on
-        // the server and were not sent again.
-        assertEquals(listOf(8L to 2), repo.chunksRecebidos)
+        // The first 8 bytes were already on the server and are not sent again.
+        assertEquals(listOf(8L to 2), repo.receivedChunks)
     }
 
     @Test
-    fun `progresso e reportado por pedaco ACEITO, para a retomada nunca deixar buraco`() = runTest {
+    fun `progress is reported per accepted chunk so resuming never leaves a gap`() = runTest {
         val repo = FakeTransferRepository()
         val pump = ChunkedUploadPump(repo, chunkSizeBytes = 4)
-        val progresso = mutableListOf<Long>()
+        val progress = mutableListOf<Long>()
 
-        pump.send(fonteDe(ByteArray(10)), "s1", 0, 10, onProgress = { progresso += it })
+        pump.send(sourceOf(ByteArray(10)), "s1", 0, 10, onProgress = { progress += it })
 
-        assertEquals(listOf(4L, 8L, 10L), progresso)
+        assertEquals(listOf(4L, 8L, 10L), progress)
     }
 
     @Test
-    fun `pedaco recusado por falha temporaria devolve Interrompido com o que ja foi aceito`() = runTest {
+    fun `a chunk rejected by a temporary failure returns Interrupted with the accepted bytes`() = runTest {
         val repo = FakeTransferRepository(
             chunkResults = mutableListOf(
                 UploadChunkResult.Accepted,
-                UploadChunkResult.Rejected("rede caiu", retryable = true),
+                UploadChunkResult.Rejected("network dropped", retryable = true),
             ),
         )
         val pump = ChunkedUploadPump(repo, chunkSizeBytes = 4)
 
-        val outcome = pump.send(fonteDe(ByteArray(10)), "s1", 0, 10, onProgress = {})
+        val outcome = pump.send(sourceOf(ByteArray(10)), "s1", 0, 10, onProgress = {})
 
-        assertEquals(ChunkedUploadOutcome.Interrupted(bytesSent = 4, reason = "rede caiu"), outcome)
+        assertEquals(ChunkedUploadOutcome.Interrupted(bytesSent = 4, reason = "network dropped"), outcome)
     }
 
     @Test
-    fun `pedaco recusado por disco cheio devolve Recusado, nunca Interrompido`() = runTest {
+    fun `a chunk rejected by a full disk returns Refused, never Interrupted`() = runTest {
         val repo = FakeTransferRepository(
-            chunkResults = mutableListOf(UploadChunkResult.Rejected("sem espaço", retryable = false)),
+            chunkResults = mutableListOf(UploadChunkResult.Rejected("no space", retryable = false)),
         )
         val pump = ChunkedUploadPump(repo, chunkSizeBytes = 4)
 
-        val outcome = pump.send(fonteDe(ByteArray(10)), "s1", 0, 10, onProgress = {})
+        val outcome = pump.send(sourceOf(ByteArray(10)), "s1", 0, 10, onProgress = {})
 
-        assertEquals(ChunkedUploadOutcome.Refused("sem espaço"), outcome)
+        assertEquals(ChunkedUploadOutcome.Refused("no space"), outcome)
     }
 
     @Test
-    fun `origem que sumiu do aparelho vira Recusado com instrucao de reescolher`() = runTest {
+    fun `a source gone from the device becomes Refused with a hint to choose again`() = runTest {
         val pump = ChunkedUploadPump(FakeTransferRepository(), chunkSizeBytes = 4)
 
         val outcome = pump.send(UploadByteSource { null }, "s1", 0, 10, onProgress = {})
 
-        val recusado = outcome as ChunkedUploadOutcome.Refused
-        assertTrue(recusado.reason.contains("choose the file again", ignoreCase = true))
+        val refused = outcome as ChunkedUploadOutcome.Refused
+        assertTrue(refused.reason.contains("choose the file again", ignoreCase = true))
     }
 
     @Test
-    fun `complete incompleto adota a contagem do servidor, nao a nossa`() = runTest {
+    fun `an incomplete complete call adopts the server byte count`() = runTest {
         val repo = FakeTransferRepository(
             completeResult = UploadCompleteResult.Incomplete(receivedBytes = 6, totalSize = 10),
         )
         val pump = ChunkedUploadPump(repo, chunkSizeBytes = 4)
 
-        val outcome = pump.send(fonteDe(ByteArray(10)), "s1", 0, 10, onProgress = {})
+        val outcome = pump.send(sourceOf(ByteArray(10)), "s1", 0, 10, onProgress = {})
 
-        // Locally we would have counted 10; the server says 6, and it is the
-        // server that knows what became durable on disk.
+        // The server knows what became durable on disk, so its count wins.
         assertEquals(6L, (outcome as ChunkedUploadOutcome.Interrupted).bytesSent)
     }
 
     @Test
-    fun `complete recusado sem retomada possivel vira Recusado`() = runTest {
+    fun `a refused complete call with no possible resume becomes Refused`() = runTest {
         val repo = FakeTransferRepository(
-            completeResult = UploadCompleteResult.Error("pasta sem permissão", retryable = false),
+            completeResult = UploadCompleteResult.Error("folder not writable", retryable = false),
         )
         val pump = ChunkedUploadPump(repo, chunkSizeBytes = 4)
 
-        val outcome = pump.send(fonteDe(ByteArray(4)), "s1", 0, 4, onProgress = {})
+        val outcome = pump.send(sourceOf(ByteArray(4)), "s1", 0, 4, onProgress = {})
 
-        assertEquals(ChunkedUploadOutcome.Refused("pasta sem permissão"), outcome)
+        assertEquals(ChunkedUploadOutcome.Refused("folder not writable"), outcome)
     }
 }

@@ -1,20 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Camada MONOCROMÁTICA do ícone adaptativo (android:monochrome, API 33+) — o
-    que o Android 13+ usa quando o dono liga "ícones temáticos" e o sistema
-    repinta todos os ícones da tela inicial com as cores do papel de parede.
-
-    Sem esta camada o ícone simplesmente FICA DE FORA do tema: no meio de uma
-    tela inteira de ícones repintados, o vps-manager apareceria como o único
-    ainda no seu azul-escuro — exatamente o tipo de detalhe que faz um app
-    parecer estrangeiro ao sistema.
-
-    Sai praticamente de graça porque a marca de origem é desenhada em
-    currentColor: é a mesma geometria (mesmo grupo, mesma zona segura) só que
-    chapada em branco. A cor aqui é irrelevante para o resultado — o sistema
-    aplica o próprio tint e só aproveita o canal alpha —, mas branco opaco é o
-    que a documentação pede e é o que aparece se algum lançador desenhar a
-    camada sem tingir.
+    Monochrome layer of the adaptive icon (API 33+), used for Android 13+ themed icons;
+    without it the icon is left out of the theme. Same geometry and safe zone as the
+    foreground. The system tints it and only uses alpha, but opaque white is what the docs
+    ask for and what shows if a launcher draws it untinted.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"

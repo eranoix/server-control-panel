@@ -112,14 +112,14 @@ class SduiCatalogRepository(
         val array = body.jsonObject["sections"]?.jsonArray ?: return emptyList()
         return array.mapNotNull { element ->
             val obj = element.jsonObject
-            val id = obj["id"].textoOuNulo() ?: return@mapNotNull null
-            val label = obj["label"].textoOuNulo() ?: return@mapNotNull null
+            val id = obj["id"].textOrNull() ?: return@mapNotNull null
+            val label = obj["label"].textOrNull() ?: return@mapNotNull null
             SduiSection(
                 id = id,
                 // A missing group falls back to a neutral label rather than
                 // dropping the entry: losing the header is cosmetic, losing the
                 // section would make the screen unreachable.
-                group = obj["group"].textoOuNulo() ?: "Other",
+                group = obj["group"].textOrNull() ?: "Other",
                 label = label,
             )
         }
@@ -135,8 +135,8 @@ class SduiCatalogRepository(
  * null returns the STRING "null", which would pass any emptiness test and
  * become a section called "null" in the list.
  */
-private fun JsonElement?.textoOuNulo(): String? {
-    val primitivo = this as? JsonPrimitive ?: return null
-    if (primitivo is JsonNull) return null
-    return primitivo.content.takeIf { it.isNotBlank() }
+private fun JsonElement?.textOrNull(): String? {
+    val primitive = this as? JsonPrimitive ?: return null
+    if (primitive is JsonNull) return null
+    return primitive.content.takeIf { it.isNotBlank() }
 }

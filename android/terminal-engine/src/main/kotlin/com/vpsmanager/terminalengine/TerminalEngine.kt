@@ -17,17 +17,13 @@ import java.nio.ByteOrder
  * on a closed engine throws [IllegalStateException] (thrown from native code
  * against the same cached exception class).
  *
- * Threading contract: [write] may run concurrently with [snapshot] — that is
- * the whole reason the native side is built in two phases, so the thread
- * pushing PTY bytes never waits on the expensive snapshot copy. [snapshot],
- * [resize] and [close], on the other hand, are mutually exclusive, serialized
- * here by [viewportLock]. The C++-side mutex alone would NOT be enough: it
- * covers only the native fill of the buffer, and the copy into Kotlin objects
- * ([CellSnapshot.fromBuffer]) happens AFTER the native call returns — a
- * concurrent [resize] would `delete[]` the memory that copy is still reading.
- * The buffer/cols/rows trio also has to be read as a single thing (a new
- * buffer with the old cols builds a skewed snapshot), which is why [Viewport]
- * is immutable and swapped in one go.
+ * Threading contract: [write] may run concurrently with [snapshot], so the
+ * PTY thread never waits on the snapshot copy. [snapshot], [resize] and
+ * [close] are mutually exclusive via [viewportLock]: the copy into Kotlin
+ * objects ([CellSnapshot.fromBuffer]) happens after the native call returns,
+ * and a concurrent [resize] would free the memory it reads. Buffer, cols and
+ * rows must be read together, which is why [Viewport] is immutable and
+ * swapped in one go.
  */
 class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scrollback: Int) {
 
@@ -36,9 +32,7 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
 
     private val handle: Long = nativeCreate(initialCols, initialRows, scrollback)
 
-    // Serializes snapshot/resize/close. Resize is rare (a layout change) and
-    // snapshot is frequent, so in practice contention here is negligible —
-    // what matters is that write() does NOT take part in this lock.
+    // Serializes snapshot/resize/close. write() must NOT take this lock.
     private val viewportLock = Any()
 
     @Volatile private var viewport: Viewport
@@ -61,25 +55,20 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
 
     /**
      * Takes an immutable copy of the current viewport. Safe to call
-     * concurrently with [write] from another thread — the native side
-     * briefly locks the terminal only for the phase that touches it, then
-     * fills the reused buffer under the buffer's lock (not the terminal's),
-     * and this call copies that buffer into Kotlin-owned storage before
-     * returning.
+     * concurrently with [write] from another thread.
      */
     fun snapshot(): CellSnapshot = synchronized(viewportLock) {
         checkOpen()
         nativeSnapshot(handle)
-        // The fromBuffer copy has to stay INSIDE the lock: it reads native
-        // memory after nativeSnapshot has returned, and that is exactly the
-        // window a concurrent resize used to free.
+        // The fromBuffer copy must stay INSIDE the lock: it reads native
+        // memory that a concurrent resize would free.
         val current = viewport
         CellSnapshot.fromBuffer(current.buffer, current.cols, current.rows)
     }
 
     /**
      * Resizes the viewport. The reused snapshot buffer is only reallocated
-     * here, when dimensions actually change — never per-snapshot.
+     * here, when dimensions actually change, never per snapshot.
      */
     fun resize(newCols: Int, newRows: Int) = synchronized(viewportLock) {
         checkOpen()
@@ -117,18 +106,11 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
         )
         if (encoded != null) return encoded
 
-        // Ctrl+I, Ctrl+M and Ctrl+[ do not come out of the native encoder:
-        // libghostty-vt leaves those three out of its C0 table ON PURPOSE (an
-        // explicit comment in its ctrlSeq, following fixterms) so that they
-        // become CSI u instead. But CSI u depends on the "modify other keys"/
-        // Kitty mode, which this app does not enable — under legacy encoding
-        // the encoder simply writes no byte at all. And Android delivers
-        // unicodeChar == 0 while CTRL is held, so there is no text for its
-        // fallback path either. Result: Ctrl+I and Ctrl+M reached the PTY as
-        // dead keys. This app's contract is [KeyByteEncoder]'s — ctrl+letter is
-        // a C0 byte derived from the keyCode, the same on any layout — so we
-        // reuse that table, the single source of truth, instead of duplicating
-        // the mapping here.
+        // libghostty-vt deliberately leaves Ctrl+I, Ctrl+M and Ctrl+[ out of its
+        // C0 table (they become CSI u, which needs a Kitty mode we do not
+        // enable), and Android reports unicodeChar == 0 while CTRL is held, so
+        // the native encoder emits nothing. Fall back to [KeyByteEncoder], the
+        // single source of truth for ctrl+letter C0 bytes.
         if (event.isCtrlPressed && event.keyCode in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z) {
             return KeyByteEncoder.encode(event, cursorMode)
         }
@@ -136,13 +118,10 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
     }
 
     /**
-     * The modes the REMOTE PROGRAM turned on in the terminal — mouse tracking
-     * and bracketed paste. It is the question the app never asked and therefore
-     * guessed at: the gesture layer consults this to know whether a touch has a
-     * recipient, instead of trusting a manual switch.
+     * The modes the REMOTE PROGRAM turned on (mouse tracking, bracketed paste,
+     * etc.), so the gesture layer knows whether a touch has a recipient.
      *
-     * A cheap call: one JNI crossing and two field reads under the terminal's
-     * lock. No grid copy, unlike [snapshot].
+     * Cheap: one JNI crossing and a few field reads, no grid copy.
      */
     fun modes(): TerminalModes {
         checkOpen()
@@ -150,23 +129,12 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
     }
 
     /**
-     * Encodes a mouse event into the sequence the remote program expects — or
-     * returns `null` when there is nothing to send.
+     * Encodes a mouse event into the sequence (and format) the remote program
+     * expects, or returns `null` when the program did not ask for the mouse or
+     * the movement stayed within the same cell.
      *
-     * `null` happens in the two cases the app used to ignore:
-     * 1. **The program did not ask for the mouse.** At a `bash` prompt there is
-     *    no tracking active, and emitting bytes there only dirties the command
-     *    line — which was exactly the "crazy text" being reported.
-     * 2. **The movement did not change cell.** The encoder's deduplication
-     *    drops the event instead of flooding the PTY on every pixel of a drag.
-     *
-     * The FORMAT (SGR, X10, URxvt, SGR-pixels) also comes from the terminal and
-     * not from a guess: the app used to emit SGR always, even to a program that
-     * had only enabled X10.
-     *
-     * @param position finger position in pixels, in the same frame as the grid
-     * @param anyButtonPressed whether any button is held — what separates a
-     *   drag (movement WITH a button) from free movement
+     * @param anyButtonPressed whether any button is held, which separates a
+     *   drag from free movement
      */
     fun encodeMouse(
         action: MouseAction,
@@ -194,62 +162,34 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
     }
 
     /**
-     * Moves the emulator's **viewport** across the history it already keeps.
+     * Moves the emulator's viewport across the history it already keeps; the
+     * next [snapshot] draws from the new position.
      *
-     * This is what was missing for the history to exist at all: libghostty-vt
-     * always kept a scrollback (the `scrollback` argument to [create]), but
-     * nothing here exposed a way to look back — [snapshot] returned the live
-     * screen forever, and the history was **unreachable**.
+     * Harmless on the alternate screen, where the library pins the viewport.
      *
-     * After moving, the next [snapshot] already draws the past lines: the
-     * render state follows the viewport, not the active area.
-     *
-     * On the alternate screen (`vim`, `htop`) the library itself pins the
-     * viewport to the active area — there is no history to navigate — so
-     * calling this there is harmless, and the rule need not be duplicated here.
-     *
-     * @param linhas how many lines to move; **negative goes up** (into the
-     *   past), positive goes down, exactly like a mouse wheel delta.
+     * @param lines how many lines to move; negative goes up (into the past).
      */
-    fun scrollViewport(linhas: Int) {
+    fun scrollViewport(lines: Int) {
         checkOpen()
-        if (linhas == 0) return
-        nativeScrollViewport(handle, TAG_SCROLL_DELTA, linhas.toLong())
+        if (lines == 0) return
+        nativeScrollViewport(handle, TAG_SCROLL_DELTA, lines.toLong())
     }
 
     /**
-     * Erases the stored **history**, leaving the live screen intact.
+     * Erases the stored history, leaving the live screen intact (`ESC[3J`).
      *
-     * ## Why this has to exist
-     *
-     * A differential renderer repaints by moving the cursor up with `ESC[nA`.
-     * That movement saturates at the first line of the SCREEN — it **does not
-     * reach the scrollback**. So every frame that has already scrolled up is,
-     * as far as the program is concerned, impossible to erase: it paints the
-     * new frame below and the old copy stays.
-     *
-     * That is what happens on a fresh attach. The server forces a repaint by
-     * nudging the PTY's line count (the "wobble", in `internal/pty/pty.go`) and
-     * the app paints **two** frames — one at each size. The first scrolls up
-     * and becomes a permanent copy. Measured: `67x52 → 67x26 → 67x52` produced
-     * two whole copies of the same text, one below the other.
-     *
-     * The program cannot clear that. **The emulator can** — and it is the same
-     * thing any terminal does on receiving `ESC[3J` (*erase saved lines*,
-     * xterm), which is exactly the sequence written here rather than inventing
-     * a new native entry point.
-     *
-     * Calling this DISCARDS history: it only makes sense right after a fresh
-     * attach, where what sits in the scrollback is repaint scaffolding and not
-     * conversation. On a reconnect the history is legitimate — see
-     * `TerminalViewModel`.
+     * On a fresh attach the server forces a repaint by nudging the PTY size,
+     * and a differential renderer cannot erase frames that already scrolled
+     * into the scrollback (`ESC[nA` stops at the top of the screen), leaving
+     * duplicate copies. Only call this right after a fresh attach; on a
+     * reconnect the history is real (see `TerminalViewModel`).
      */
-    fun limparHistorico() {
+    fun clearHistory() {
         checkOpen()
         nativeWrite(handle, ERASE_SAVED_LINES)
     }
 
-    /** Pins the viewport back at the end (the active area) — the "back to the bottom". */
+    /** Pins the viewport back at the end (the active area). */
     fun scrollToBottom() {
         checkOpen()
         nativeScrollViewport(handle, TAG_SCROLL_BOTTOM, 0L)
@@ -262,49 +202,37 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
     }
 
     /**
-     * Jumps to an absolute history row — the same row space as
+     * Jumps to an absolute history row, in the same row space as
      * [TerminalScrollState.offset], so a position read back needs no conversion.
      */
-    fun scrollToRow(linha: Long) {
+    fun scrollToRow(line: Long) {
         checkOpen()
-        nativeScrollViewport(handle, TAG_SCROLL_ROW, if (linha < 0) 0L else linha)
+        nativeScrollViewport(handle, TAG_SCROLL_ROW, if (line < 0) 0L else line)
     }
 
     /**
-     * Where the viewport sits within the history. Feeds the position bar and
-     * the decision to show the "back to the bottom" control.
-     *
-     * A cheap call, like [modes]: one JNI crossing and a few field reads under
-     * the terminal's lock, with no grid copy. The library warns that **there is
-     * no notification** of a scroll change — whoever draws the position reads
-     * this once per frame and compares, and that is what the interface does.
+     * Where the viewport sits within the history. Cheap (no grid copy); the
+     * library has no scroll-change notification, so the UI polls this per frame.
      */
     fun scrollState(): TerminalScrollState {
         checkOpen()
-        val v = nativeScrollState(handle) ?: return TerminalScrollState.NO_FIM
-        if (v.size < 4) return TerminalScrollState.NO_FIM
+        val v = nativeScrollState(handle) ?: return TerminalScrollState.AT_END
+        if (v.size < 4) return TerminalScrollState.AT_END
         return TerminalScrollState(
             total = v[0],
             offset = v[1],
-            visiveis = v[2],
-            noFim = v[3] != 0L,
+            visible = v[2],
+            atEnd = v[3] != 0L,
         )
     }
 
     /**
      * Encodes pasted text on its way to the PTY, wrapping it in
      * `ESC[200~`/`ESC[201~` **if, and only if**, the remote program has turned
-     * DECSET 2004 on.
+     * DECSET 2004 on (otherwise the markers would show up as literal text).
      *
-     * Without that wrapper, multi-line text pasted into a shell is EXECUTED
-     * line by line the instant it is pasted — correctness and safety in equal
-     * measure. With it applied at the wrong time (2004 off), the markers become
-     * literal text on the command line, the same defect seen with the mouse:
-     * which is why the right answer is never "always wrap".
-     *
-     * The encoding also neutralises control bytes coming from the clipboard —
-     * including an `ESC[201~` embedded in the text, which would close the paste
-     * halfway through and turn the remainder into a COMMAND.
+     * Also neutralises control bytes from the clipboard, including an embedded
+     * `ESC[201~` that would end the paste early and run the rest as a command.
      */
     fun encodePaste(text: String): ByteArray {
         checkOpen()
@@ -312,11 +240,9 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
     }
 
     /**
-     * Number of times the native reused snapshot buffer has actually been
-     * (re)allocated for this instance — 1 right after construction, and
-     * only incremented again by a [resize] that changes byte capacity.
-     * Exists solely so tests can assert the "exactly one buffer, never
-     * per-frame allocation" invariant; production code has no use for it.
+     * Number of times the native snapshot buffer has been (re)allocated: 1
+     * after construction, incremented only by a [resize] that changes byte
+     * capacity. Test-only.
      */
     internal fun debugBufferAllocationCount(): Int {
         checkOpen()
@@ -363,9 +289,7 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
             System.loadLibrary("terminal_engine_jni")
         }
 
-        // Mirrors GhosttyKeyAction (vt/key/event.h) — kept here rather than
-        // duplicating the native header, since only the integer value
-        // crosses the JNI boundary.
+        // Mirrors GhosttyKeyAction (vt/key/event.h); only the integer crosses JNI.
         private const val GHOSTTY_KEY_ACTION_RELEASE = 0
         private const val GHOSTTY_KEY_ACTION_PRESS = 1
         private const val GHOSTTY_KEY_ACTION_REPEAT = 2
@@ -385,24 +309,16 @@ class TerminalEngine private constructor(initialCols: Int, initialRows: Int, scr
         private const val TAG_SCROLL_DELTA = 2
         private const val TAG_SCROLL_ROW = 3
 
-        /**
-         * `ESC[3J` — xterm's *erase saved lines*: clears the scrollback and
-         * leaves the live screen intact. Written through the parser itself
-         * rather than a new native entry point, because it is the standard
-         * sequence libghostty-vt already implements. See [limparHistorico].
-         */
+        /** `ESC[3J`, xterm's erase saved lines. See [clearHistory]. */
         private val ERASE_SAVED_LINES = byteArrayOf(0x1b, '['.code.toByte(), '3'.code.toByte(), 'J'.code.toByte())
 
         /**
-         * How many LINES of history the emulator keeps (lines, not bytes:
-         * `max_scrollback` in `vt/terminal.h` says "maximum number of lines to
-         * keep in scrollback history"). The default covers ordinary use well;
-         * anyone who wants more passes another value — see
-         * `TerminalScrollbackPreference`.
+         * Scrollback size in LINES, not bytes (`max_scrollback` in
+         * `vt/terminal.h`). Overridable via `TerminalScrollbackPreference`.
          */
-        const val SCROLLBACK_PADRAO = 10_000
+        const val DEFAULT_SCROLLBACK = 10_000
 
-        fun create(cols: Int, rows: Int, scrollback: Int = SCROLLBACK_PADRAO): TerminalEngine =
+        fun create(cols: Int, rows: Int, scrollback: Int = DEFAULT_SCROLLBACK): TerminalEngine =
             TerminalEngine(cols, rows, scrollback)
 
         @JvmStatic private external fun nativeCreate(cols: Int, rows: Int, scrollback: Int): Long

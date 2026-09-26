@@ -30,7 +30,7 @@ private class FakeOpsSource(
 ) : OpsSource {
     var triggerCallCount = 0
 
-    override suspend fun fetchStatus(): OpsStatusResult = OpsStatusResult.Error("não usado neste teste")
+    override suspend fun fetchStatus(): OpsStatusResult = OpsStatusResult.Error("not used in this test")
 
     override suspend fun triggerDeploy(): TriggerDeployResult {
         triggerCallCount += 1
@@ -133,7 +133,7 @@ class DeployTriggerViewModelTest {
 
     @Test
     fun `a trigger failure surfaces TriggerFailed and never subscribes to a channel`() = runTest {
-        val repository = FakeOpsSource(triggerResult = TriggerDeployResult.Error("fila indisponível"))
+        val repository = FakeOpsSource(triggerResult = TriggerDeployResult.Error("queue unavailable"))
         val events = FakeEventsSubscriber()
         val viewModel = DeployTriggerViewModel(eventsClient = events, repository = repository, sessionRepository = FakeSessionSource(SessionResult.Success(user = "sam", email = "sam@northwind.example", isAdmin = true)))
 
@@ -141,7 +141,7 @@ class DeployTriggerViewModelTest {
         viewModel.confirmDeploy()
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(DeployTriggerUiState.TriggerFailed("fila indisponível"), viewModel.uiState.value)
+        assertEquals(DeployTriggerUiState.TriggerFailed("queue unavailable"), viewModel.uiState.value)
         assertTrue(events.flowsByChannel.isEmpty())
     }
 
@@ -157,14 +157,14 @@ class DeployTriggerViewModelTest {
 
         val channel = events.flowsByChannel.getValue("deploy.job-1")
         channel.emit(deployEvent("deploy.job-1", """{"type":"status","job_id":"job-1","status":"running","ts":1}"""))
-        channel.emit(deployEvent("deploy.job-1", """{"type":"log","job_id":"job-1","log":"buildando...","ts":2}"""))
+        channel.emit(deployEvent("deploy.job-1", """{"type":"log","job_id":"job-1","log":"building...","ts":2}"""))
         channel.emit(deployEvent("deploy.job-1", """{"type":"progress","job_id":"job-1","progress":42,"ts":3}"""))
         dispatcher.scheduler.advanceUntilIdle()
 
         val state = viewModel.uiState.value
         check(state is DeployTriggerUiState.InProgress)
         assertEquals("running", state.phase)
-        assertEquals(listOf("buildando..."), state.logLines)
+        assertEquals(listOf("building..."), state.logLines)
         assertEquals(42, state.progress)
     }
 
@@ -172,7 +172,7 @@ class DeployTriggerViewModelTest {
     fun `a terminal status event fetches the real outcome and renders it verbatim`() = runTest {
         val repository = FakeOpsSource(
             deployStatusResult = DeployStatusResult.Success(
-                DeployStatus(status = "failed", progress = 60, step = "health-check", error = "gate de saude falhou; rollback automatico executado"),
+                DeployStatus(status = "failed", progress = 60, step = "health-check", error = "health gate failed; automatic rollback executed"),
             ),
         )
         val events = FakeEventsSubscriber()
@@ -187,7 +187,7 @@ class DeployTriggerViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(
-            DeployTriggerUiState.Outcome(status = "failed", error = "gate de saude falhou; rollback automatico executado"),
+            DeployTriggerUiState.Outcome(status = "failed", error = "health gate failed; automatic rollback executed"),
             viewModel.uiState.value,
         )
     }
@@ -226,7 +226,7 @@ class DeployTriggerViewModelTest {
         val viewModel = DeployTriggerViewModel(
             eventsClient = FakeEventsSubscriber(),
             repository = FakeOpsSource(),
-            sessionRepository = FakeSessionSource(SessionResult.Success(user = "convidado", email = "guest@northwind.example", isAdmin = false)),
+            sessionRepository = FakeSessionSource(SessionResult.Success(user = "guest", email = "guest@northwind.example", isAdmin = false)),
         )
 
         dispatcher.scheduler.advanceUntilIdle()
@@ -252,7 +252,7 @@ class DeployTriggerViewModelTest {
         val viewModel = DeployTriggerViewModel(
             eventsClient = FakeEventsSubscriber(),
             repository = FakeOpsSource(),
-            sessionRepository = FakeSessionSource(SessionResult.Error("falha de rede")),
+            sessionRepository = FakeSessionSource(SessionResult.Error("network failure")),
         )
 
         dispatcher.scheduler.advanceUntilIdle()

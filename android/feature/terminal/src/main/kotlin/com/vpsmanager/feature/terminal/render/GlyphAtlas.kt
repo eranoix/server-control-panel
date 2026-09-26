@@ -56,15 +56,10 @@ class GlyphAtlas(
     private val paintCache = HashMap<Pair<Boolean, Boolean>, Paint>()
 
     /**
-     * Total bytes committed to atlas pixel storage for the lifetime of this
-     * instance: `4 bytes/px * (narrowBitmap area + wideBitmap area)`. The
-     * requested capacities are rounded up to the nearest square-ish grid, so
-     * with the defaults above (384 narrow -> a 20x20 = 400-slot grid, 128
-     * wide -> a 12x11 = 132-slot grid) at a representative 16x28px monospace
-     * cell that is a 320x560px narrow bitmap (716,800 bytes) plus a
-     * 384x308px wide bitmap (473,088 bytes) = 1,189,888 bytes (~1.13MB),
-     * fixed regardless of scrollback length or how many distinct glyphs a
-     * session ever draws.
+     * Total bytes of atlas pixel storage, fixed for the instance's lifetime:
+     * `4 bytes/px * (narrow area + wide area)`. With the defaults (384 narrow ->
+     * 400 slots, 128 wide -> 132 slots) and a 16x28 px cell this is about 1.13 MB,
+     * regardless of scrollback or glyph variety.
      */
     fun byteSize(): Long =
         4L * narrowBitmap.width * narrowBitmap.height + 4L * wideBitmap.width * wideBitmap.height
@@ -90,16 +85,10 @@ class GlyphAtlas(
             val text = String(Character.toChars(key.codepoint))
             val metrics = paint.fontMetrics
             val baselineY = rect.top + (rect.height() - metrics.ascent - metrics.descent) / 2f
-            // Centre the glyph in the slot instead of butting it against
-            // the left edge. In a monospaced face the advance equals the cell
-            // width and this is a no-op (offset 0). It earns its keep for the
-            // rest: the cell is a whole number of pixels while the advance may
-            // be fractional (20 vs 20.16), and glyphs coming from a FALLBACK
-            // (emoji, a symbol the monospaced face does not cover) may not
-            // respect the cell metric. In those cases, centring splits the
-            // difference across both sides instead of throwing it all to the
-            // right, where the clipRect would cut off just one half of the
-            // drawing.
+            // Centre the glyph in the slot: a no-op for true monospace, but the
+            // advance may be fractional or a fallback glyph (emoji, symbols) may
+            // not match the cell, and centring keeps the clipRect from cutting
+            // only one side.
             val advance = paint.measureText(text)
             val glyphX = rect.left + (rect.width() - advance) / 2f
             canvas.drawText(text, glyphX, baselineY, paint)
@@ -119,18 +108,9 @@ class GlyphAtlas(
             italic -> Typeface.ITALIC
             else -> Typeface.NORMAL
         }
-        // `Typeface.create` is resolved OUT HERE, on purpose. Inside an
-        // `apply { }` over a Paint, the bare identifier `typeface` resolves to
-        // the innermost receiver — `Paint.getTypeface()`, which is null on a
-        // freshly created Paint — and not to this class property. That was the
-        // bug: `Typeface.create(null, style)` returns the DEFAULT face
-        // (Roboto, proportional), so the atlas rasterized everything in Roboto
-        // while the on-screen grid was measured in the monospaced face. The
-        // result: a narrow glyph ('i', 'r', '1') left space to spare on the
-        // right of the cell and a wide one ('m', 'W', '@') overflowed the cell
-        // and was CUT by the clipRect — the text came out with gaps in the
-        // middle of words. Keeping the creation outside the `apply` makes the
-        // shadowing impossible to reintroduce.
+        // Resolve `Typeface.create` outside `apply { }`: inside it, `typeface`
+        // would resolve to `Paint.getTypeface()` (null on a new Paint), giving the
+        // proportional default face and glyphs clipped by the monospace grid.
         val resolved = Typeface.create(typeface, style)
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             this.typeface = resolved

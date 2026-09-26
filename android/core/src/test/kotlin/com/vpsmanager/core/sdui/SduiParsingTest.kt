@@ -79,7 +79,7 @@ class SduiParsingTest {
     }
 
     @Test
-    fun `the sealed hierarchy has exactly 8 direct subclasses — 7 known plus Unknown`() {
+    fun `the sealed hierarchy has exactly 8 direct subclasses, 7 known plus Unknown`() {
         val subclasses = SduiComponent::class.sealedSubclasses
         assertEquals(8, subclasses.size)
         assertTrue(subclasses.any { it == SduiComponent.Unknown::class })

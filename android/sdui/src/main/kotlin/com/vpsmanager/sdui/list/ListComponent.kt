@@ -27,15 +27,9 @@ private const val TAG = "SduiListComponent"
 private val KNOWN_ITEM_TEMPLATES = setOf("notification_card", "default")
 
 /**
- * Renders a [SduiComponent.ListComponent] as a `Column` of cards, one per
- * row, laid out according to [SduiComponent.ListComponent.itemTemplate].
- * `Column` and not `LazyColumn` because the host
- * ([com.vpsmanager.sdui.SduiScreen]) is already a `LazyColumn` — see the
- * comment in the body. An
- * `item_template` outside [KNOWN_ITEM_TEMPLATES] falls back to `default`
- * instead of failing to render — the same forward-compatibility posture as an
- * unrecognized component `type` — and is logged once per occurrence so the
- * fallback is never silent.
+ * Renders a [SduiComponent.ListComponent] as a column of cards using its
+ * [SduiComponent.ListComponent.itemTemplate]. An unknown template falls back to
+ * `default` and is logged, so the fallback is never silent.
  */
 @Composable
 fun ListComponent(component: SduiComponent.ListComponent) {
@@ -45,12 +39,8 @@ fun ListComponent(component: SduiComponent.ListComponent) {
         is ComponentDataState.Empty -> EmptyBlock()
         is ComponentDataState.Data -> {
             val template = resolveTemplate(component.itemTemplate)
-            // Column, NEVER LazyColumn — same reason as TableComponent: this
-            // component is rendered inside an item of
-            // [com.vpsmanager.sdui.SduiScreen]'s LazyColumn, and a second
-            // nested vertical scroll is forbidden by Compose (it kills the app
-            // with an IllegalStateException about infinite maximum height). The
-            // rows already come whole in memory, so no laziness is lost.
+            // Never LazyColumn: this sits inside SduiScreen's LazyColumn, and a
+            // nested vertical scroll crashes with an infinite-height IllegalStateException.
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 state.rows.forEach { row ->
                     when (template) {
@@ -65,7 +55,7 @@ fun ListComponent(component: SduiComponent.ListComponent) {
 
 private fun resolveTemplate(itemTemplate: String): String {
     if (itemTemplate in KNOWN_ITEM_TEMPLATES) return itemTemplate
-    Log.w(TAG, "Unrecognized item_template \"$itemTemplate\" — falling back to \"default\"")
+    Log.w(TAG, "Unrecognized item_template \"$itemTemplate\", falling back to \"default\"")
     return "default"
 }
 

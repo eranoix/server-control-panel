@@ -1,7 +1,7 @@
 package com.vpsmanager.data.auth
 
 import com.vpsmanager.data.config.ServerConfigRepository
-import com.vpsmanager.data.offline.CacheDeLeitura
+import com.vpsmanager.data.offline.ReadCache
 import com.vpsmanager.mobileapiclient.api.AuthApi
 
 /**
@@ -68,7 +68,7 @@ class SignOutRepository(
             // whoever got into this device next. It sits in the `finally` for
             // the same reason as `session.signOut()`: signing out cannot
             // depend on the server-side revocation having worked.
-            CacheDeLeitura.limpar()
+            ReadCache.clear()
         }
     }
 }

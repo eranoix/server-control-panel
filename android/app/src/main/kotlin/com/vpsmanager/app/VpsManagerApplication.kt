@@ -19,13 +19,13 @@ import com.vpsmanager.data.events.MobileEventsClient
 import com.vpsmanager.data.events.MobileEventsRepository
 import com.vpsmanager.data.events.MobileEventsSocket
 import com.vpsmanager.data.terminal.defaultTerminalWsBaseUrl
-import com.vpsmanager.data.offline.CacheDeLeitura
-import com.vpsmanager.data.offline.FilaDeEnvio
-import com.vpsmanager.data.offline.RedeDoAparelho
+import com.vpsmanager.data.offline.ReadCache
+import com.vpsmanager.data.offline.Outbox
+import com.vpsmanager.data.offline.DeviceNetwork
 import com.vpsmanager.data.update.UpdateCoordinator
 import com.vpsmanager.data.update.createUpdateCoordinator
 import com.vpsmanager.data.videocall.IncomingCallDispatcher
-import com.vpsmanager.app.armazenamento.ManutencaoWorker
+import com.vpsmanager.app.storage.MaintenanceWorker
 import com.vpsmanager.app.update.UpdateCheckWorker
 import com.vpsmanager.feature.files.transfer.TransferMaintenance
 import com.vpsmanager.feature.notifications.fcm.FirebaseBootstrap
@@ -43,60 +43,40 @@ import kotlinx.coroutines.launch
 private const val APP_SCOPE_LOG_TAG = "VpsmAppScope"
 
 /**
- * The [CoroutineScope] every fire-and-forget background task started from [VpsManagerApplication]
- * runs on (currently just [VpsManagerApplication.sweepAbandonedTransfers]). A [SupervisorJob]
- * alone is not enough isolation here: it stops a failing child from cancelling its siblings, but
- * an uncaught exception from a `launch` with no [CoroutineExceptionHandler] in its context still
- * propagates to the *thread's* uncaught-exception handler -- which, on a real device, terminates
- * the process. That defeats the entire point of [Bootstrap.step]'s isolation: every OTHER launch
- * step degrades gracefully and the app keeps running, but this one instead escapes into the crash
- * path, wiping out whatever screen the user was on. The handler here gives this scope the exact
- * same isolation semantics as [Bootstrap.step] -- log it, record it in [Bootstrap.initFailures]
- * (so [MainActivity]'s diagnostic screen surfaces it next launch, same as any other init failure),
- * and never let it reach the thread's default handler.
+ * The scope for fire-and-forget background tasks started from [VpsManagerApplication].
+ * [SupervisorJob] alone would still let an uncaught exception reach the thread's handler and
+ * kill the process; the [CoroutineExceptionHandler] gives it the same isolation as
+ * [Bootstrap.step]: log, record in [Bootstrap.initFailures], and keep running.
  */
 internal fun appCoroutineScope(): CoroutineScope {
     val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
-        Log.e(APP_SCOPE_LOG_TAG, "falha nao tratada numa coroutine de fundo do app", throwable)
+        Log.e(APP_SCOPE_LOG_TAG, "unhandled failure in an app background coroutine", throwable)
         Bootstrap.initFailures += "appScope: ${throwable.javaClass.simpleName}: ${throwable.message}"
     }
     return CoroutineScope(SupervisorJob() + Dispatchers.Default + exceptionHandler)
 }
 
 /**
- * Application entry point. Dependency wiring for most repositories is still
- * done at the call site (see [com.vpsmanager.feature.auth.HomeViewModel])
- * until a real DI graph is introduced in a later phase — [mobileEventsClient]
- * is the one deliberate exception, because it must be a single instance for
- * the whole app's lifetime, not per-screen like a ViewModel.
+ * Application entry point. Most repositories are wired at the call site; app-wide singletons
+ * such as [mobileEventsClient] live here.
  *
- * [ProcessLifecycleOwner] registration below is the ONLY place
- * [MobileEventsSocket.start]/[MobileEventsSocket.stop] are called:
- * `onStart`/`onStop` fire on the whole app's foreground/background
- * transition (not any single Activity's lifecycle), so the socket survives
- * configuration changes and in-app navigation, and closes only when the app
- * itself leaves the foreground. No feature module may call `start()`/`stop()`
- * directly.
+ * The [ProcessLifecycleOwner] observer is the only place [MobileEventsSocket.start] and
+ * [MobileEventsSocket.stop] are called, so the socket survives configuration changes and
+ * navigation and closes only when the whole app leaves the foreground. Feature modules must
+ * never call them.
  */
 class VpsManagerApplication : Application() {
 
     private val appScope = appCoroutineScope()
 
-    /**
-     * The single source of truth for which server this app talks to
-     * (`MainActivity`'s first-run gate, the QR pairing flow, and every
-     * repository that needs the base URL all go through this one
-     * instance) — never a per-repository `System.getProperty` read.
-     */
+    /** The single source of truth for which server this app talks to. */
     val serverConfigRepository: ServerConfigRepository by lazy {
         ServerConfigRepository(EncryptedServerConfigStore(applicationContext))
     }
 
     /**
-     * The process session. Built HERE (and registered in [AppSession]) so it
-     * shares the same [serverConfigRepository] as the rest of the app —
-     * `AppSession.get(context)` only builds one on its own when nobody
-     * installed one before.
+     * The process session, built here and registered in [AppSession] so it shares
+     * [serverConfigRepository] with the rest of the app.
      */
     private val sessionManager: SessionManager by lazy {
         SessionManager(
@@ -105,11 +85,7 @@ class VpsManagerApplication : Application() {
         )
     }
 
-    /**
-     * The navigation drawer's "Sign out". Shares the SAME [sessionManager]
-     * and the same [serverConfigRepository] as the rest of the app — signing
-     * out has to drop the session the screens read, not a copy.
-     */
+    /** "Sign out", sharing [sessionManager] so it drops the session the screens actually read. */
     val signOutRepository: SignOutSource by lazy {
         SignOutRepository(
             session = sessionManager,
@@ -121,9 +97,7 @@ class VpsManagerApplication : Application() {
         MobileEventsSocket(
             ticketSource = MobileEventsRepository(),
             scope = appScope,
-            // Same origin-derivation the terminal socket uses (`ws(s)://` scheme swapped in
-            // from the generated client's own HTTP base) — there is only one BFF host, so
-            // reusing it here keeps both sockets pointed at the same server by construction.
+            // Same origin as the terminal socket, so both always point at the same server.
             wsBaseUrl = defaultTerminalWsBaseUrl(),
         )
     }
@@ -132,18 +106,8 @@ class VpsManagerApplication : Application() {
     val mobileEventsClient: MobileEventsClient by lazy { MobileEventsClient(mobileEventsSocket, appScope) }
 
     /**
-     * The app's own incremental update channel.
-     *
-     * It lives here, and not in a ViewModel, for two reasons that add up: the
-     * download has to survive navigation between screens (a `viewModelScope`
-     * would die on leaving the screen and kill the download halfway), and the
-     * state is ONE for the whole app — the banner belongs to the shell, not to
-     * any screen. Same reason [mobileEventsClient] is a single instance and
-     * not per-screen.
-     *
-     * It shares the SAME [serverConfigRepository] as the rest of the app:
-     * checking for an update has to talk to the server the owner configured,
-     * not to a copy.
+     * The app's incremental self-update channel. It lives here, not in a ViewModel, because the
+     * download must survive navigation and its state is shared by the whole shell.
      */
     val updateCoordinator: UpdateCoordinator by lazy {
         createUpdateCoordinator(
@@ -155,33 +119,20 @@ class VpsManagerApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        // FIRST THING: without this, a crash here dies mute — and the operator has
-        // no adb. See Bootstrap.
+        // First, so that any crash below is persisted. See Bootstrap.
         Bootstrap.installCrashReporter(this)
 
-        // Each stage below is isolated. None is required for the first screen to
-        // open, and several depend on things a manufacturer may refuse (a
-        // self-managed phone account, WorkManager, channels). Letting any one of
-        // them take the whole app down at boot is the worst possible trade: it
-        // swaps a degraded feature for an app that does not open.
+        // Each stage is isolated: none is required for the first screen, and several depend
+        // on things a manufacturer may refuse.
 
-        // Must run before any FCM message can possibly arrive — see NotificationChannels'
-        // own doc for the STACK.md gotcha this ordering avoids.
+        // Must run before any FCM message can arrive; see NotificationChannels.
         Bootstrap.step("notification channels") {
             NotificationChannels.ensureChannels(this)
         }
-        // Registers the one production IncomingCallHandler before any FCM message
-        // can possibly arrive, same ordering requirement as NotificationChannels above — without
-        // this, VpsFirebaseMessagingService.dispatchIncomingCall finds IncomingCallDispatcher.handler
-        // null and drops the ring (see that object's own doc).
-        // Two SEPARATE steps on purpose. If registering the phone account fails
-        // (some manufacturers refuse a self-managed ConnectionService), the
-        // handler still has to be installed: without it,
-        // VpsFirebaseMessagingService.dispatchIncomingCall does not find
-        // IncomingCallDispatcher.handler and drops the ring — an incoming call
-        // simply never rings, for the rest of the process's life, with a single
-        // log line as the only sign. Degrading the native call interface is
-        // acceptable; going mute is not.
+        // The incoming call handler must be installed before any FCM message arrives, or
+        // incoming calls are dropped. It is a separate step so a refused phone account
+        // registration (some manufacturers reject self-managed ConnectionService) does not
+        // stop calls from ringing.
         val registrar = PhoneAccountRegistrar(this, ComponentName(this, VpsmConnectionService::class.java))
         Bootstrap.step("phone account registration (Telecom)") {
             registrar.ensureRegistered()
@@ -189,64 +140,47 @@ class VpsManagerApplication : Application() {
         Bootstrap.step("incoming call handler") {
             IncomingCallDispatcher.handler = TelecomIncomingCallHandler(this, registrar)
         }
-        // Re-publish the persisted server config into ApiClient.BASE_URL_KEY on every
-        // process start — see ServerConfigRepository.publishLegacyBasePathSeam. A no-op
-        // (does not touch the property) until the device has actually been configured.
+        // Re-publish the persisted server config on every process start; a no-op until
+        // the device is configured. See ServerConfigRepository.publishLegacyBasePathSeam.
         Bootstrap.step("server config (keystore)") {
             serverConfigRepository.publishLegacyBasePathSeam()
         }
-        // CRITICAL ORDER: SessionNetworking.install adds the Authorization
-        // interceptor to ApiClient.builder, and ApiClient.defaultClient is a
-        // `by lazy { builder.build() }` — once any *Api touches that client,
-        // touching the builder has no effect any more. That is why this stage
-        // comes BEFORE anything that does networking (the events socket, the
-        // transfer sweep) and after publishing the basePath, which the token
-        // refresh needs in order to know who to talk to.
+        // Critical order: this adds the auth interceptor to ApiClient.builder, and
+        // ApiClient.defaultClient is built lazily from it, so it must run before any
+        // networking and after the base path is published (the token refresh needs it).
         Bootstrap.step("session (token guard + auth interceptor)") {
             AppSession.install(sessionManager)
             SessionNetworking.install(sessionManager)
         }
-        // The SAME critical window as the step above, and for the same reason:
-        // the cache is installed on `ApiClient.builder`, and `defaultClient` is a
-        // `by lazy { builder.build() }`. Once any *Api touches that client, this
-        // becomes a silent no-op — and the symptom would be the app still dying
-        // without internet, with no error pointing here.
+        // Same ordering constraint as above: the cache is installed on ApiClient.builder and
+        // silently does nothing once the client has been built.
         Bootstrap.step("offline (read cache + network state)") {
-            CacheDeLeitura.instalar(this)
-            RedeDoAparelho.instalar(this)
-            // The queue is read from disk here: an action queued yesterday has to
-            // reappear today, and WorkManager only delivers it if somebody rewires
-            // the work after the process dies.
-            FilaDeEnvio.instalar(this)
+            ReadCache.install(this)
+            DeviceNetwork.install(this)
+            // Reloads the persisted queue so actions queued before the process died are delivered.
+            Outbox.install(this)
         }
-        // Native push: brings Firebase up if — and only if — the console's
-        // google-services.json is in assets/. Without it, this step does nothing
-        // and records the instruction, the same way the server degrades when
-        // `fcm_service_account` is not in the vault. See FirebaseBootstrap.
+        // Starts Firebase only if google-services.json is in assets/; otherwise it records
+        // what is missing. See FirebaseBootstrap.
         Bootstrap.step("native push (Firebase, if provisioned)") {
-            FirebaseBootstrap.instalar(this)
+            FirebaseBootstrap.install(this)
         }
         Bootstrap.step("transfer cleanup (WorkManager)") {
             sweepAbandonedTransfers()
         }
-        // AFTER the session stage: the manifest check is authenticated, and
-        // without the interceptor installed it would go out with no
-        // Authorization and come back 401. The worker only CHECKS (a small
-        // JSON) — what downloads is the tap on the banner.
+        // After the session stage: the check is authenticated and would get a 401 without
+        // the interceptor.
         Bootstrap.step("periodic update check (WorkManager)") {
             UpdateCheckWorker.enqueue(this)
         }
-        // Daily storage cleanup. Enqueueing is cheap (one write to WorkManager's
-        // database); what runs it is the system, when the device is comfortable.
-        // See ManutencaoWorker about the KEEP.
+        // Daily storage cleanup; see MaintenanceWorker.
         Bootstrap.step("storage maintenance (WorkManager)") {
-            ManutencaoWorker.enfileirar(this)
+            MaintenanceWorker.enqueue(this)
         }
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
-                    // Never dial out before a server is configured — an unconfigured
-                    // device has no real host to connect to (see defaultTerminalWsBaseUrl).
+                    // Never connect before a server is configured.
                     if (serverConfigRepository.currentBaseUrl() != null) {
                         mobileEventsSocket.start()
                     }
@@ -262,18 +196,11 @@ class VpsManagerApplication : Application() {
     }
 
     /**
-     * Deferral: a transfer cancelled while the process was dead (or
-     * force-stopped before WorkManager ever reported a terminal state the app
-     * observed) never runs [TransferViewModel][com.vpsmanager.feature.files.transfer.TransferViewModel]'s
-     * own cancel-time cleanup. Sweeping once per process start catches those
-     * -- cheap when there is nothing to clean (the common case) and bounded
-     * by however many transfers this device has ever started. Delegates to
-     * [TransferMaintenance] (feature-files) rather than depending on
-     * `androidx.work` here directly -- `:app` only depends on `:feature-files`
-     * as `implementation`, which intentionally does not leak that dependency.
+     * Cleans up transfers cancelled while the process was dead, which never ran
+     * [TransferViewModel][com.vpsmanager.feature.files.transfer.TransferViewModel]'s own cleanup.
+     * Runs once per process start through [TransferMaintenance].
      *
-     * Returns the launched [Job] (`internal` visibility) so tests can `join()` it instead of
-     * racing a fire-and-forget coroutine — production call sites ignore the return value.
+     * Returns the [Job] so tests can `join()` it; production ignores it.
      */
     internal fun sweepAbandonedTransfers(): Job =
         appScope.launch(Dispatchers.IO) {

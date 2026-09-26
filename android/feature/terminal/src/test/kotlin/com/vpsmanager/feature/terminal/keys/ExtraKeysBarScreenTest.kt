@@ -27,13 +27,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * The bar's three states, the auto-collapse with a physical keyboard and the
- * secondary function on swipe-up — rendered for real under Robolectric.
- *
- * Height is a first-class assertion here, not an aesthetic detail: the bar is
- * the only permanent chrome left below the grid, so "how much room it takes"
- * IS the requirement. [ExtraKeysBarActionTest] covers the byte encoding with
- * no composition; this file covers what only exists once composed.
+ * The key bar's three states, auto-collapse with a physical keyboard and swipe-up
+ * secondary functions, rendered under Robolectric. Height is asserted because the bar
+ * is the only permanent chrome below the grid; [ExtraKeysBarActionTest] covers bytes.
  */
 @RunWith(RobolectricTestRunner::class)
 class ExtraKeysBarScreenTest {
@@ -41,9 +37,9 @@ class ExtraKeysBarScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    /** Host holding the bar's state, just like `TerminalRoute` does. */
+    /** Holds the bar's state the way `TerminalRoute` does. */
     private fun setBar(
-        initial: ExtraKeysBarState = ExtraKeysBarState.UMA_LINHA,
+        initial: ExtraKeysBarState = ExtraKeysBarState.ONE_ROW,
         hasHardwareKeyboard: Boolean = false,
         onSendBytes: (ByteArray) -> Unit = {},
         pendingModifiers: PendingModifiers = PendingModifiers(),
@@ -63,22 +59,21 @@ class ExtraKeysBarScreenTest {
     }
 
     @Test
-    fun `estado colapsado mede 32 dp e mantem o terminal operavel`() {
-        setBar(initial = ExtraKeysBarState.COLAPSADA)
+    fun `the collapsed state is 32 dp and keeps the terminal usable`() {
+        setBar(initial = ExtraKeysBarState.COLLAPSED)
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(32.dp)
-        // The minimum set: without these, neither Ctrl+C nor quitting vim.
+        // The minimum set needed for Ctrl+C and quitting vim.
         composeRule.onNodeWithText("Esc").assertExists()
         composeRule.onNodeWithText("^C").assertExists()
         composeRule.onNodeWithText("Tab").assertExists()
         composeRule.onNodeWithText("Ctrl").assertExists()
-        // Keys that only exist in the larger states stay out.
         composeRule.onNodeWithText("PgUp").assertDoesNotExist()
     }
 
     @Test
-    fun `estado de uma linha mede 40 dp e traz as oito teclas`() {
-        setBar(initial = ExtraKeysBarState.UMA_LINHA)
+    fun `the one-row state is 40 dp and has the eight keys`() {
+        setBar(initial = ExtraKeysBarState.ONE_ROW)
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(40.dp)
         listOf("Esc", "Tab", "Ctrl", "Alt", "←", "↓", "↑", "→").forEach { label ->
@@ -87,8 +82,8 @@ class ExtraKeysBarScreenTest {
     }
 
     @Test
-    fun `estado de duas linhas mede 80 dp e traz a navegacao completa`() {
-        setBar(initial = ExtraKeysBarState.DUAS_LINHAS)
+    fun `the two-row state is 80 dp and has full navigation`() {
+        setBar(initial = ExtraKeysBarState.TWO_ROWS)
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(80.dp)
         listOf("Home", "End", "PgUp", "PgDn", "/").forEach { label ->
@@ -97,8 +92,8 @@ class ExtraKeysBarScreenTest {
     }
 
     @Test
-    fun `a alca cicla os tres estados no toque`() {
-        setBar(initial = ExtraKeysBarState.COLAPSADA)
+    fun `tapping the handle cycles through the three states`() {
+        setBar(initial = ExtraKeysBarState.COLLAPSED)
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(32.dp)
         composeRule.onNodeWithTag(EXTRA_KEYS_HANDLE_TAG).performClick()
@@ -110,8 +105,8 @@ class ExtraKeysBarScreenTest {
     }
 
     @Test
-    fun `arrastar a alca pra cima expande e pra baixo colapsa`() {
-        setBar(initial = ExtraKeysBarState.UMA_LINHA)
+    fun `dragging the handle up expands and down collapses`() {
+        setBar(initial = ExtraKeysBarState.ONE_ROW)
 
         composeRule.onNodeWithTag(EXTRA_KEYS_HANDLE_TAG).performTouchInput {
             swipeUp(startY = bottom, endY = top - 200f)
@@ -125,42 +120,36 @@ class ExtraKeysBarScreenTest {
     }
 
     @Test
-    fun `teclado fisico conectado colapsa a barra sozinho`() {
-        setBar(initial = ExtraKeysBarState.DUAS_LINHAS, hasHardwareKeyboard = true)
+    fun `a connected physical keyboard collapses the bar on its own`() {
+        setBar(initial = ExtraKeysBarState.TWO_ROWS, hasHardwareKeyboard = true)
 
-        // With no tap at all: the mere presence of a physical keyboard already
-        // takes the bar to the collapsed state (the opposite of the complaint
-        // open for years in Termux and of the bug acknowledged in JuiceSSH's
-        // FAQ).
+        // No tap needed: a physical keyboard alone collapses the bar.
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(32.dp)
     }
 
     @Test
-    fun `o auto-colapso e reversivel pela alca`() {
-        setBar(initial = ExtraKeysBarState.UMA_LINHA, hasHardwareKeyboard = true)
+    fun `auto-collapse can be undone with the handle`() {
+        setBar(initial = ExtraKeysBarState.ONE_ROW, hasHardwareKeyboard = true)
 
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(32.dp)
         composeRule.onNodeWithTag(EXTRA_KEYS_HANDLE_TAG).performClick()
-        // With a physical keyboard still connected, the handle is still in
-        // charge: the automatism does not lock the operator out of the arrows.
+        // The handle still works with a physical keyboard connected.
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(40.dp)
     }
 
     @Test
-    fun `sem teclado fisico o automatismo nao mexe no que o operador escolheu`() {
-        setBar(initial = ExtraKeysBarState.COLAPSADA, hasHardwareKeyboard = false)
+    fun `without a physical keyboard auto-collapse leaves the user's choice alone`() {
+        setBar(initial = ExtraKeysBarState.COLLAPSED, hasHardwareKeyboard = false)
 
-        // Entering the screen with no physical keyboard does not reimpose
-        // UMA_LINHA over the handle's choice: the automatism only acts when
-        // there IS a physical keyboard, or when one already evaluated
-        // disconnects.
+        // Auto-collapse only acts when a physical keyboard connects or disconnects,
+        // so it does not override the handle's choice on entry.
         composeRule.onNodeWithTag(EXTRA_KEYS_BAR_TAG).assertHeightIsEqualTo(32.dp)
-        assertEquals(ExtraKeysBarState.UMA_LINHA, ExtraKeysBarState.forHardwareKeyboard(present = false))
-        assertEquals(ExtraKeysBarState.COLAPSADA, ExtraKeysBarState.forHardwareKeyboard(present = true))
+        assertEquals(ExtraKeysBarState.ONE_ROW, ExtraKeysBarState.forHardwareKeyboard(present = false))
+        assertEquals(ExtraKeysBarState.COLLAPSED, ExtraKeysBarState.forHardwareKeyboard(present = true))
     }
 
     @Test
-    fun `tocar Esc manda ESC e tocar Ctrl arma o modificador sticky`() {
+    fun `tapping Esc sends ESC and tapping Ctrl arms the sticky modifier`() {
         val sent = mutableListOf<ByteArray>()
         val pending = PendingModifiers()
         setBar(onSendBytes = { sent.add(it) }, pendingModifiers = pending)
@@ -170,12 +159,12 @@ class ExtraKeysBarScreenTest {
         assertArrayEquals(byteArrayOf(0x1b), sent[0])
 
         composeRule.onNodeWithText("Ctrl").performClick()
-        assertTrue("um toque em Ctrl arma o sticky", pending.isCtrlPending())
+        assertTrue("one tap on Ctrl arms the sticky modifier", pending.isCtrlPending())
         assertEquals(ModifierArmState.ARMED, pending.ctrl)
     }
 
     @Test
-    fun `swipe-up numa tecla dispara a segunda funcao no lugar da primeira`() {
+    fun `swipe-up on a key fires the secondary function instead of the primary`() {
         val sent = mutableListOf<ByteArray>()
         setBar(onSendBytes = { sent.add(it) })
 
@@ -183,15 +172,14 @@ class ExtraKeysBarScreenTest {
             swipeUp(startY = bottom, endY = top - 300f)
         }
 
-        // Esc's secondary function is Ctrl+C (0x03) -- and the ESC (0x1b) of
-        // the primary function does NOT go out with it: the gesture is a single
-        // finger, and once recognised as a swipe it cancels the tap.
+        // Esc's secondary is Ctrl+C (0x03); once recognized as a swipe, the tap (ESC)
+        // is cancelled.
         assertEquals(1, sent.size)
         assertArrayEquals(byteArrayOf(0x03), sent[0])
     }
 
     @Test
-    fun `swipe-up na seta esquerda manda Home`() {
+    fun `swipe-up on the left arrow sends Home`() {
         val sent = mutableListOf<ByteArray>()
         setBar(onSendBytes = { sent.add(it) })
 
@@ -204,13 +192,13 @@ class ExtraKeysBarScreenTest {
     }
 
     @Test
-    fun `um toque simples na seta nao repete`() {
+    fun `a single tap on an arrow does not repeat`() {
         val sent = mutableListOf<ByteArray>()
         setBar(onSendBytes = { sent.add(it) })
 
         composeRule.onNodeWithText("→").performTouchInput { click(Offset(centerX, centerY)) }
 
-        assertEquals("um toque = uma seta", 1, sent.size)
+        assertEquals("one tap means one arrow", 1, sent.size)
         assertArrayEquals("[C".toByteArray(Charsets.US_ASCII), sent[0])
     }
 }

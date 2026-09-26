@@ -4,13 +4,12 @@
 #
 # Builds from source deliberately (never downloads a prebuilt .a): we control
 # the compiler, the source commit and the flags, so an unaudited third-party
-# binary never enters the build (04-PLAN.md threat T-04-SC).
+# binary never enters the build.
 #
-# Idempotent and re-runnable: re-running reproduces identical checksums
-# because the source is a pinned commit and the flags are fixed here.
+# Idempotent: re-running reproduces identical checksums because the source is
+# a pinned commit and the flags are fixed here.
 #
-# Usage: ./build-libghostty.sh   (from anywhere; paths are resolved from this
-#                                  script's own location)
+# Usage: ./build-libghostty.sh   (from anywhere)
 
 set -euo pipefail
 
@@ -34,7 +33,7 @@ if [ -z "$GHOSTTY_COMMIT" ] || [ -z "$GHOSTTY_REPO" ]; then
   exit 1
 fi
 
-# 40-char sha only — never a branch or tag, the C ABI is unstable and must be
+# 40-char sha only, never a branch or tag: the C ABI is unstable and must be
 # pinned exactly.
 if ! [[ "$GHOSTTY_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
   echo "build-libghostty: GHOSTTY_COMMIT '$GHOSTTY_COMMIT' is not a 40-char sha" >&2
@@ -86,7 +85,7 @@ for abi in "${ABIS[@]}"; do
   out_dir="$BUILD_DIR/out-$abi"
   rm -rf "$out_dir"
 
-  echo "build-libghostty: building $abi (zig target $target, bare triple — no API-level suffix; see docs/android-toolchain.md)" >&2
+  echo "build-libghostty: building $abi (zig target $target, bare triple, no API-level suffix; see docs/android-toolchain.md)" >&2
   (
     cd "$SRC_DIR"
     zig build -Demit-lib-vt -Dtarget="$target" -Doptimize=ReleaseFast --prefix "$out_dir"
@@ -94,7 +93,7 @@ for abi in "${ABIS[@]}"; do
 
   ARTIFACT="$out_dir/lib/libghostty-vt.a"
   if [ ! -s "$ARTIFACT" ]; then
-    echo "build-libghostty: ABI '$abi' produced no libghostty-vt.a at $ARTIFACT — refusing to vendor a partial tree" >&2
+    echo "build-libghostty: ABI '$abi' produced no libghostty-vt.a at $ARTIFACT, refusing to vendor a partial tree" >&2
     exit 1
   fi
 
@@ -107,12 +106,12 @@ done
 
 for abi in "${ABIS[@]}"; do
   if [ ! -s "$VENDOR_DIR/$abi/libghostty-vt.a" ]; then
-    echo "build-libghostty: post-build check failed — $VENDOR_DIR/$abi/libghostty-vt.a missing or empty" >&2
+    echo "build-libghostty: post-build check failed: $VENDOR_DIR/$abi/libghostty-vt.a missing or empty" >&2
     exit 1
   fi
 done
 if [ ! -d "$VENDOR_DIR/include/ghostty" ]; then
-  echo "build-libghostty: post-build check failed — $VENDOR_DIR/include/ghostty missing" >&2
+  echo "build-libghostty: post-build check failed: $VENDOR_DIR/include/ghostty missing" >&2
   exit 1
 fi
 

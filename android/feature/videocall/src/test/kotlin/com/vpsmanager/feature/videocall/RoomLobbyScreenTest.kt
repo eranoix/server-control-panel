@@ -12,10 +12,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders [RoomLobbyScreen] under Robolectric across every [RoomLobbyUiState] -- never composed
- * before this.
- */
+/** Renders [RoomLobbyScreen] under Robolectric across every [RoomLobbyUiState]. */
 @RunWith(RobolectricTestRunner::class)
 class RoomLobbyScreenTest {
 
@@ -29,8 +26,7 @@ class RoomLobbyScreenTest {
     @Test
     fun `loading state shows a spinner, not a blank screen`() {
         val source = FakeRoomsSource { awaitCancellation() }
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = RoomLobbyViewModel(source)
         composeRule.setContent { RoomLobbyScreen(onRoomSelected = {}, viewModel = viewModel) }
 
@@ -41,29 +37,27 @@ class RoomLobbyScreenTest {
     fun `success lists every room and clicking one navigates into it`() {
         val source = FakeRoomsSource {
             VideocallRoomsResult.Success(
-                listOf(VideocallRoom(id = "sala-1", name = "Reunião de equipe", memberCount = 3)),
+                listOf(VideocallRoom(id = "sala-1", name = "Team meeting", memberCount = 3)),
             )
         }
         var selectedRoomId: String? = null
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val vm = RoomLobbyViewModel(source)
         composeRule.setContent {
             RoomLobbyScreen(onRoomSelected = { selectedRoomId = it }, viewModel = vm)
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Reunião de equipe").assertExists()
+        composeRule.onNodeWithText("Team meeting").assertExists()
         composeRule.onNodeWithText("3 participant(s)").assertExists()
-        composeRule.onNodeWithText("Reunião de equipe").performClick()
+        composeRule.onNodeWithText("Team meeting").performClick()
         assert(selectedRoomId == "sala-1")
     }
 
     @Test
     fun `empty room list renders the create-a-room message instead of a blank list`() {
         val source = FakeRoomsSource { VideocallRoomsResult.Empty }
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = RoomLobbyViewModel(source)
         composeRule.setContent { RoomLobbyScreen(onRoomSelected = {}, viewModel = viewModel) }
         composeRule.waitForIdle()
@@ -76,19 +70,18 @@ class RoomLobbyScreenTest {
         var calls = 0
         val source = FakeRoomsSource {
             calls += 1
-            if (calls == 1) VideocallRoomsResult.Error("Não foi possível falar com o servidor de sinalização.")
-            else VideocallRoomsResult.Success(listOf(VideocallRoom(id = "sala-1", name = "Reunião", memberCount = 1)))
+            if (calls == 1) VideocallRoomsResult.Error("Could not reach the signalling server.")
+            else VideocallRoomsResult.Success(listOf(VideocallRoom(id = "sala-1", name = "Meeting", memberCount = 1)))
         }
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = RoomLobbyViewModel(source)
         composeRule.setContent { RoomLobbyScreen(onRoomSelected = {}, viewModel = viewModel) }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Não foi possível falar com o servidor de sinalização.").assertExists()
+        composeRule.onNodeWithText("Could not reach the signalling server.").assertExists()
         composeRule.onNodeWithText("Try again").performClick()
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Reunião").assertExists()
+        composeRule.onNodeWithText("Meeting").assertExists()
     }
 }

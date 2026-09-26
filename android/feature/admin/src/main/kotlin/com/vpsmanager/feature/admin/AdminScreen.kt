@@ -55,9 +55,9 @@ import com.vpsmanager.sdui.registry.LocalScreenState
  * |---|---|
  * | [AdminLauncher] (the grid) | you recognise it by shape, without reading |
  * | the search inside it | you know the name, not where it is |
- * | [PaletaDeComandos] | you are INSIDE a section and want another |
+ * | [CommandPalette] | you are INSIDE a section and want another |
  *
- * All three read the same catalogue and use the same `filtrarSecoes`, so they
+ * All three read the same catalogue and use the same `filterSections`, so they
  * never disagree about what a term finds.
  *
  * THE SECTION LIST COMES FROM THE SERVER (`GET /screens`), never from a
@@ -83,9 +83,9 @@ fun AdminScreen(
     modifier: Modifier = Modifier,
     catalogViewModel: AdminCatalogViewModel = adminCatalogViewModel(sectionId),
 ) {
-    val catalogo by catalogViewModel.uiState.collectAsStateWithLifecycle()
-    var paletaAberta by remember { mutableStateOf(false) }
-    val foco = remember { FocusRequester() }
+    val catalog by catalogViewModel.uiState.collectAsStateWithLifecycle()
+    var paletteOpen by remember { mutableStateOf(false) }
+    val focus = remember { FocusRequester() }
 
     // The shortcut exists because this app is already operated with a
     // Bluetooth keyboard — it is the same hardware path the terminal uses. It
@@ -95,69 +95,69 @@ fun AdminScreen(
     //
     // onPreviewKeyEvent, not onKeyEvent: the palette has to win against any
     // text field that holds focus inside the rendered section.
-    LaunchedEffect(Unit) { runCatching { foco.requestFocus() } }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .focusRequester(foco)
+            .focusRequester(focus)
             .focusable()
-            .onPreviewKeyEvent { evento ->
-                val atalho = evento.type == KeyEventType.KeyDown &&
-                    evento.isCtrlPressed &&
-                    evento.key == Key.K
-                if (atalho) paletaAberta = true
-                atalho
+            .onPreviewKeyEvent { event ->
+                val shortcut = event.type == KeyEventType.KeyDown &&
+                    event.isCtrlPressed &&
+                    event.key == Key.K
+                if (shortcut) paletteOpen = true
+                shortcut
             },
     ) {
-        when (val estado = catalogo) {
+        when (val state = catalog) {
             is AdminCatalogState.Loading -> LoadingState()
 
             // A failure to list the sections does NOT take the whole screen
             // down in silence: it is stated, with a button to try again.
             is AdminCatalogState.Error ->
-                ErrorState(message = estado.message, onRetry = estado.retry)
+                ErrorState(message = state.message, onRetry = state.retry)
 
             is AdminCatalogState.Ready -> {
-                val escolhida = estado.selectedId
+                val chosen = state.selectedId
                 when {
                     // An empty catalogue is not the same as the launcher: the
                     // server offered this user no section at all, and an empty
                     // grid would look like a defect.
-                    estado.sections.isEmpty() -> AdminCatalogVazio()
+                    state.sections.isEmpty() -> AdminCatalogEmpty()
 
-                    escolhida == null -> AdminLauncher(
-                        sections = estado.sections,
-                        busca = estado.busca,
-                        recentes = estado.recentes,
-                        onBuscaChange = catalogViewModel::buscar,
+                    chosen == null -> AdminLauncher(
+                        sections = state.sections,
+                        query = state.query,
+                        recents = state.recents,
+                        onQueryChange = catalogViewModel::search,
                         onSelect = catalogViewModel::select,
                     )
 
                     else -> {
-                        BarraDaSecao(
-                            titulo = estado.selected?.label ?: escolhida,
-                            grupo = estado.selected?.group,
-                            onVoltar = catalogViewModel::voltarAoLancador,
-                            onAbrirPaleta = { paletaAberta = true },
+                        SectionBar(
+                            title = state.selected?.label ?: chosen,
+                            group = state.selected?.group,
+                            onBack = catalogViewModel::backToLauncher,
+                            onOpenPalette = { paletteOpen = true },
                         )
                         // key(): each section gets its own AdminSectionViewModel.
                         // Without it, switching section would reuse the previous
                         // one's ViewModel and the new screen would be born
                         // holding the old screen's state.
-                        AdminSectionContent(sectionId = escolhida)
+                        AdminSectionContent(sectionId = chosen)
                     }
                 }
 
-                if (paletaAberta) {
-                    PaletaDeComandos(
-                        sections = estado.sections,
-                        recentes = estado.recentes,
+                if (paletteOpen) {
+                    CommandPalette(
+                        sections = state.sections,
+                        recents = state.recents,
                         onSelect = { id ->
-                            paletaAberta = false
+                            paletteOpen = false
                             catalogViewModel.select(id)
                         },
-                        onDismiss = { paletaAberta = false },
+                        onDismiss = { paletteOpen = false },
                     )
                 }
             }
@@ -179,9 +179,9 @@ private fun adminCatalogViewModel(sectionId: String): AdminCatalogViewModel {
         factory = viewModelFactory {
             initializer {
                 AdminCatalogViewModel(
-                    rotaInicial = sectionId,
-                    lerRecentes = { AdminRecentes.ler(context) },
-                    gravarRecente = { id -> AdminRecentes.registrar(context, id) },
+                    initialRoute = sectionId,
+                    readRecents = { AdminRecents.read(context) },
+                    writeRecent = { id -> AdminRecents.registrar(context, id) },
                 )
             }
         },
@@ -197,11 +197,11 @@ private fun adminCatalogViewModel(sectionId: String): AdminCatalogViewModel {
  * and two search fields on one screen would be the same question asked twice.
  */
 @Composable
-private fun BarraDaSecao(
-    titulo: String,
-    grupo: String?,
-    onVoltar: () -> Unit,
-    onAbrirPaleta: () -> Unit,
+private fun SectionBar(
+    title: String,
+    group: String?,
+    onBack: () -> Unit,
+    onOpenPalette: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -209,19 +209,19 @@ private fun BarraDaSecao(
             .padding(start = 4.dp, end = 4.dp, top = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onVoltar) {
+        IconButton(onClick = onBack) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to sections")
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = titulo,
+                text = title,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (grupo != null) {
+            if (group != null) {
                 Text(
-                    text = grupo,
+                    text = group,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -229,8 +229,8 @@ private fun BarraDaSecao(
                 )
             }
         }
-        IconButton(onClick = onAbrirPaleta) {
-            Icon(Icons.Filled.Search, contentDescription = PALETA_ABRIR_DESCRICAO)
+        IconButton(onClick = onOpenPalette) {
+            Icon(Icons.Filled.Search, contentDescription = PALETTE_OPEN_DESCRIPTION)
         }
     }
 }

@@ -10,12 +10,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Every fixture below was NOT hand-typed: it is the verbatim output of marshaling a real
- * `internal/videocall/types.go` struct value via a throwaway `go run` program (the
- * fixture-derivation rule this suite follows), then copy-pasted here unmodified. This is
- * what proves the Kotlin data classes in `SignalingMessage.kt` match the server's actual JSON,
- * not a transcription of a design document's field list (which was itself found to contain
- * a fabricated field name and a missing load-bearing field in an earlier iteration).
+ * Fixtures follow the shape produced by marshaling real `internal/videocall/types.go` values in Go,
+ * so they prove the data classes in `SignalingMessage.kt` match the server's actual JSON.
  */
 class SignalingMessageTest {
 
@@ -40,7 +36,7 @@ class SignalingMessageTest {
     @Test
     fun decodesJoined() {
         val msg = roundTrip(
-            """{"type":"joined","payload":{"peer_id":"peerA1","room":{"id":"room123","name":"Sala de reuniao","owner":"sam","members":["sam","convidado"],"created_at":1735689600},"peers":[{"id":"peerB2","user":"convidado","client_id":"client-uuid-1"}],"turn":{"urls":["turn:vps.example.com:3478?transport=udp"],"username":"1735693200:sam","credential":"aGVsbG8td29ybGQtaG1hYy1iNjQ=","ttl":3600},"politeness_seed":"peerA1"}}""",
+            """{"type":"joined","payload":{"peer_id":"peerA1","room":{"id":"room123","name":"Meeting room","owner":"sam","members":["sam","guest"],"created_at":1735689600},"peers":[{"id":"peerB2","user":"guest","client_id":"client-uuid-1"}],"turn":{"urls":["turn:vps.example.com:3478?transport=udp"],"username":"1735693200:sam","credential":"aGVsbG8td29ybGQtaG1hYy1iNjQ=","ttl":3600},"politeness_seed":"peerA1"}}""",
         )
         assertEquals("joined", msg.type)
         val payload = requireNotNull(msg.payload).jsonObject
@@ -49,12 +45,12 @@ class SignalingMessageTest {
 
     @Test
     fun decodesPeerJoined() {
-        val msg = roundTrip("""{"type":"peer-joined","from":"peerB2","payload":{"id":"peerB2","user":"convidado","client_id":"client-uuid-1"}}""")
+        val msg = roundTrip("""{"type":"peer-joined","from":"peerB2","payload":{"id":"peerB2","user":"guest","client_id":"client-uuid-1"}}""")
         assertEquals("peer-joined", msg.type)
         assertEquals("peerB2", msg.from)
         val peer = json.decodeFromJsonElement(PeerInfo.serializer(), requireNotNull(msg.payload))
         assertEquals("peerB2", peer.id)
-        assertEquals("convidado", peer.user)
+        assertEquals("guest", peer.user)
         assertEquals("client-uuid-1", peer.clientId)
     }
 
@@ -102,9 +98,9 @@ class SignalingMessageTest {
 
     @Test
     fun decodesChat() {
-        val msg = roundTrip("""{"type":"chat","from":"peerA1","to":"peerB2","payload":"ola"}""")
+        val msg = roundTrip("""{"type":"chat","from":"peerA1","to":"peerB2","payload":"hello"}""")
         assertEquals("chat", msg.type)
-        assertEquals(JsonPrimitive("ola"), msg.payload)
+        assertEquals(JsonPrimitive("hello"), msg.payload)
     }
 
     @Test
@@ -116,9 +112,9 @@ class SignalingMessageTest {
 
     @Test
     fun decodesError() {
-        val msg = roundTrip("""{"type":"error","error":"sala cheia"}""")
+        val msg = roundTrip("""{"type":"error","error":"room full"}""")
         assertEquals("error", msg.type)
-        assertEquals("sala cheia", msg.error)
+        assertEquals("room full", msg.error)
     }
 
     @Test
@@ -128,24 +124,22 @@ class SignalingMessageTest {
     }
 
     /**
-     * Proves the three landmines from the plan's `<interfaces>` section all survive decoding at
-     * once: `credential` (never `password`), `user` (never `display_name`), and `clientId`
-     * (load-bearing for 11-03's ghost-tile dedup). Fixture is the exact `JoinResponse` marshal
-     * output, not the `joined`-wrapped envelope, to test `JoinResponse` decoding directly.
+     * Decodes `credential` (not `password`), `user` (not `display_name`) and `clientId` (used to
+     * dedupe ghost tiles) from a bare `JoinResponse`, without the `joined` envelope.
      */
     @Test
     fun decodesJoinResponseWithTurnAndPolitenessSeed() {
-        val fixture = """{"peer_id":"peerA1","room":{"id":"room123","name":"Sala de reuniao","owner":"sam","members":["sam","convidado"],"created_at":1735689600},"peers":[{"id":"peerB2","user":"convidado","client_id":"client-uuid-1"}],"turn":{"urls":["turn:vps.example.com:3478?transport=udp"],"username":"1735693200:sam","credential":"aGVsbG8td29ybGQtaG1hYy1iNjQ=","ttl":3600},"politeness_seed":"peerA1"}"""
+        val fixture = """{"peer_id":"peerA1","room":{"id":"room123","name":"Meeting room","owner":"sam","members":["sam","guest"],"created_at":1735689600},"peers":[{"id":"peerB2","user":"guest","client_id":"client-uuid-1"}],"turn":{"urls":["turn:vps.example.com:3478?transport=udp"],"username":"1735693200:sam","credential":"aGVsbG8td29ybGQtaG1hYy1iNjQ=","ttl":3600},"politeness_seed":"peerA1"}"""
         val response = json.decodeFromString(JoinResponse.serializer(), fixture)
 
         assertEquals("peerA1", response.peerId)
         assertEquals("peerA1", response.politenessSeed)
         assertEquals("room123", response.room.id)
-        assertEquals(listOf("sam", "convidado"), response.room.members)
+        assertEquals(listOf("sam", "guest"), response.room.members)
 
         assertEquals(1, response.peers.size)
         val peer = response.peers.first()
-        assertEquals("convidado", peer.user)
+        assertEquals("guest", peer.user)
         assertEquals("client-uuid-1", peer.clientId)
 
         assertTrue("turn.urls must not be empty", response.turn.urls.isNotEmpty())
@@ -164,10 +158,10 @@ class SignalingMessageTest {
 
     @Test
     fun decodesPeerInfoWithoutClientId() {
-        val fixture = """{"id":"peerC3","user":"legado"}"""
+        val fixture = """{"id":"peerC3","user":"legacy"}"""
         val peer = json.decodeFromString(PeerInfo.serializer(), fixture)
         assertEquals("peerC3", peer.id)
-        assertEquals("legado", peer.user)
+        assertEquals("legacy", peer.user)
         assertNull("clientId must be null when the server omits client_id (omitempty)", peer.clientId)
     }
 }

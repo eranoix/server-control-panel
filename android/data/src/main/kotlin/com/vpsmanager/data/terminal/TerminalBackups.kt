@@ -1,32 +1,24 @@
 package com.vpsmanager.data.terminal
 
 /**
- * One session inside a backup, already summarised by the server.
- *
- * The [resumo] is a single line saying what that session was about — it arrives
- * ready-made from the server because the one who can extract meaning from a
- * `capture-pane` is the one holding the scrollback. Without it, the list of
- * backups would be a column of timestamps, and choosing which to restore would
- * become guesswork.
+ * One session inside a backup. [summary] is a one-line description produced by
+ * the server (which holds the scrollback), so the user can pick what to restore.
  */
-data class BackupSession(val nome: String, val resumo: String, val linhas: Int)
+data class BackupSession(val name: String, val summary: String, val lines: Int)
 
 /**
  * A backup of terminal sessions.
  *
- * @property origem `manual` (a button), `auto` (the periodic collector) or
- *   `scheduled`. It appears on screen because it changes what the person
- *   expects: an automatic backup disappears by itself during pruning, a manual
- *   one is theirs.
- * @property bytes size on disk. A backup of 7 sessions with long histories goes
- *   past 10 MB, and knowing that is what prevents the surprise of a full disk.
+ * @property origin `manual`, `auto` (periodic collector) or `scheduled`. Shown on
+ *   screen because automatic backups are pruned and manual ones are not.
+ * @property bytes size on disk; backups with long histories can exceed 10 MB.
  */
 data class SessionBackup(
     val id: String,
-    val criadoEm: Long,
-    val origem: String?,
+    val createdAt: Long,
+    val origin: String?,
     val bytes: Long,
-    val sessoes: List<BackupSession>,
+    val sessions: List<BackupSession>,
 )
 
 /** The result of listing the backups. */
@@ -37,93 +29,71 @@ sealed interface BackupsResult {
 }
 
 /**
- * The result of an operation that CHANGES something (create, restore, delete,
- * rename).
- *
- * It returns a ready-made sentence rather than a boolean because every one of
- * these operations has a possible partial result — restoring 3 of 5 sessions is
- * the common case, not the exception — and "succeeded: yes/no" would erase
- * exactly the part the person needs to read.
+ * The result of an operation that changes something (create, restore, delete,
+ * rename). A ready-made sentence rather than a boolean, since partial results
+ * (restoring 3 of 5 sessions) are common.
  */
-sealed interface AcaoResult {
-    data class Ok(val mensagem: String) : AcaoResult
-    data class Erro(val reason: String) : AcaoResult
+sealed interface ActionResult {
+    data class Ok(val message: String) : ActionResult
+    data class Error(val reason: String) : ActionResult
 
     /**
-     * The action never reached the server for lack of network and was STORED:
-     * it goes out by itself when the internet is back.
-     *
-     * A state of its own, and not a gentler [Erro] or an optimistic [Ok] — for
-     * the same reason `NA_FILA` exists in the WhatsApp send. An error would
-     * make the person repeat the action (creating the second copy the queue
-     * exists to prevent); an "ok" would lie about a backup that does not exist
-     * yet.
+     * No network, so the action was stored and goes out when the internet is
+     * back. Neither an error (the user would repeat it and create a duplicate) nor
+     * an [Ok] (the result does not exist yet).
      */
-    data class NaFila(val mensagem: String) : AcaoResult
+    data class Queued(val message: String) : ActionResult
 }
 
 /**
  * The slice of [TerminalRepository] the sessions screen uses for backup and
- * management. Same discipline as [TerminalSessionsSource]: `:feature-terminal`
- * cannot see the generated client, so its tests fake this interface
- * and not `MobileApi`.
+ * management. `:feature-terminal` cannot see the generated client, so its tests
+ * fake this interface.
  */
 interface TerminalBackupSource {
     suspend fun backups(): BackupsResult
 
-    /** A null [sessao] saves ALL visible sessions in one package. */
-    suspend fun criarBackup(sessao: String? = null): AcaoResult
+    /** A null [session] saves ALL visible sessions in one package. */
+    suspend fun createBackup(session: String? = null): ActionResult
 
-    /** A null [sessao] restores every session in the backup. */
-    suspend fun restaurar(id: String, sessao: String? = null): AcaoResult
+    /** A null [session] restores every session in the backup. */
+    suspend fun restore(id: String, session: String? = null): ActionResult
 
-    /** A null [sessao] deletes the whole backup; given one, only that session within it. */
-    suspend fun excluirBackup(id: String, sessao: String? = null): AcaoResult
+    /** A null [session] deletes the whole backup; given one, only that session within it. */
+    suspend fun deleteBackup(id: String, session: String? = null): ActionResult
 
-    suspend fun renomearSessao(de: String, para: String): AcaoResult
+    suspend fun renameSession(from: String, to: String): ActionResult
 
-    /**
-     * Kills the session and everything running inside it.
-     *
-     * Irreversible by design and with no safety net on the server side — it is
-     * the caller that has to confirm first.
-     */
-    suspend fun matarSessao(nome: String): AcaoResult
+    /** Kills the session and everything in it. Irreversible, so the caller must confirm first. */
+    suspend fun killSession(name: String): ActionResult
 
     /**
-     * Changes WHO the session appears to in the day-to-day list. [alvo] is a
+     * Changes WHO the session appears to in the day-to-day list. [target] is a
      * username, or `"*"` for everyone. Admin only.
      */
-    suspend fun atribuirSessao(nome: String, alvo: String): AcaoResult
+    suspend fun assignSession(name: String, target: String): ActionResult
 
     /**
-     * The session's last lines, as plain text, without attaching to it.
-     *
-     * It is what answers "what is going on in there?" without the cost of
-     * opening: opening an agent session changes what it shows, and on a phone
-     * opening to look and going back is expensive.
+     * The session's last lines as plain text, without attaching (attaching to an
+     * agent session changes what it shows).
      */
-    suspend fun previaDaSessao(nome: String, linhas: Int = 20): PreviaResult
+    suspend fun sessionPreview(name: String, lines: Int = 20): PreviewResult
 
     /**
-     * Who a session CAN be assigned to.
-     *
-     * It exists so the screen can OFFER the list. A free-text field would fail
-     * silently: the server accepts any target, and a username with one
-     * character wrong makes the session disappear from everybody's list, with
-     * no error.
+     * Who a session can be assigned to, so the screen offers a list: the server
+     * accepts any target, and a mistyped username would hide the session silently.
      */
-    suspend fun alvosDeAtribuicao(): AlvosResult
+    suspend fun assignmentTargets(): TargetsResult
 }
 
-/** Resultado de [TerminalBackupSource.alvosDeAtribuicao]. */
-sealed interface AlvosResult {
-    data class Success(val alvos: List<String>) : AlvosResult
-    data class Error(val reason: String) : AlvosResult
+/** Result of [TerminalBackupSource.assignmentTargets]. */
+sealed interface TargetsResult {
+    data class Success(val targets: List<String>) : TargetsResult
+    data class Error(val reason: String) : TargetsResult
 }
 
-/** Resultado de [TerminalBackupSource.previaDaSessao]. */
-sealed interface PreviaResult {
-    data class Success(val texto: String, val linhas: Int) : PreviaResult
-    data class Error(val reason: String) : PreviaResult
+/** Result of [TerminalBackupSource.sessionPreview]. */
+sealed interface PreviewResult {
+    data class Success(val text: String, val lines: Int) : PreviewResult
+    data class Error(val reason: String) : PreviewResult
 }

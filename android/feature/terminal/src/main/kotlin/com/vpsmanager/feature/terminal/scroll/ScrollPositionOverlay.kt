@@ -29,66 +29,57 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.vpsmanager.terminalengine.TerminalScrollState
 
-/** Test tags — the interface is checked through them, never through loose text. */
-internal const val TAG_BARRA_DE_POSICAO = "terminal-barra-posicao"
-internal const val TAG_VOLTAR_AO_FIM = "terminal-voltar-ao-fim"
+/** Test tags: the UI is checked through them, never through loose text. */
+internal const val TAG_POSITION_BAR = "terminal-barra-posicao"
+internal const val TAG_BACK_TO_END = "terminal-voltar-ao-fim"
 
 /**
- * What the owner needs to see while reading the past: **where they are** and
- * **how to get back**.
- *
- * Scrolling blind in a terminal is disorienting — there is no section title,
- * no page number, and the content all looks alike. The bar on the right
- * answers "where am I"; the button answers "how do I get out of here"; and
- * when new output arrives while you are reading, the button says so, because
- * the screen does **not** jump to it on its own.
- *
- * Everything appears only when it makes sense: pinned to the bottom, the
- * terminal stays clean.
+ * Shows where the user is while reading history and how to get back: a position
+ * bar on the right and a "back to the end" button that also announces new output
+ * (the screen never jumps to it on its own). Hidden when pinned to the bottom.
  */
 @Composable
 internal fun ScrollPositionOverlay(
-    estado: TerminalScrollState,
-    haSaidaNova: Boolean,
-    aoVoltarAoFim: () -> Unit,
+    state: TerminalScrollState,
+    hasNewOutput: Boolean,
+    onBackToEnd: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val lendoOPassado = !estado.noFim && estado.podeRolar
+    val readingThePast = !state.atEnd && state.canScroll
 
     Box(modifier = modifier.fillMaxSize()) {
         AnimatedVisibility(
-            visible = lendoOPassado,
+            visible = readingThePast,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.CenterEnd),
         ) {
-            BarraDePosicao(estado = estado)
+            PositionBar(state = state)
         }
 
         AnimatedVisibility(
-            visible = lendoOPassado,
+            visible = readingThePast,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
-            BotaoVoltarAoFim(
-                linhasAtras = estado.historico - estado.offset,
-                haSaidaNova = haSaidaNova,
-                aoVoltarAoFim = aoVoltarAoFim,
+            BackToEndButton(
+                rowsBack = state.history - state.offset,
+                hasNewOutput = hasNewOutput,
+                onBackToEnd = onBackToEnd,
             )
         }
     }
 }
 
 /**
- * The bar on the right. It is not a control — it is an indicator: dragging is
- * the gesture on the whole grid, and a thin 4 dp handle would be a worse
- * target than the entire screen that already works.
+ * The position bar is an indicator, not a control: dragging works on the whole
+ * grid, which is a better target than a 4 dp handle.
  */
 @Composable
-private fun BarraDePosicao(estado: TerminalScrollState) {
-    val alturaRelativa = if (estado.total > 0) {
-        (estado.visiveis.toFloat() / estado.total.toFloat()).coerceIn(0.08f, 1f)
+private fun PositionBar(state: TerminalScrollState) {
+    val relativeHeight = if (state.total > 0) {
+        (state.visible.toFloat() / state.total.toFloat()).coerceIn(0.08f, 1f)
     } else {
         1f
     }
@@ -100,50 +91,47 @@ private fun BarraDePosicao(estado: TerminalScrollState) {
             .width(4.dp)
             .clip(RoundedCornerShape(2.dp))
             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
-            .testTag(TAG_BARRA_DE_POSICAO)
+            .testTag(TAG_POSITION_BAR)
             .semantics {
                 contentDescription =
-                    "Position in history: ${(estado.progresso * 100).toInt()} percent"
+                    "Position in history: ${(state.progress * 100).toInt()} percent"
             },
     ) {
-        val alturaDoCursor = maxHeight * alturaRelativa
-        val cursorOffset = (maxHeight - alturaDoCursor) * estado.progresso
+        val thumbHeight = maxHeight * relativeHeight
+        val cursorOffset = (maxHeight - thumbHeight) * state.progress
         Box(
             modifier = Modifier
                 .offset(y = cursorOffset)
                 .width(4.dp)
-                .size(width = 4.dp, height = alturaDoCursor)
+                .size(width = 4.dp, height = thumbHeight)
                 .clip(RoundedCornerShape(2.dp))
                 .background(MaterialTheme.colorScheme.primary),
         )
     }
 }
 
-/**
- * The way back. It sits at the bottom, where the thumb reaches, and says **how
- * far** up you went — a number orients better than an arrow alone.
- */
+/** The way back, within thumb reach, showing how many lines up the user is. */
 @Composable
-private fun BotaoVoltarAoFim(
-    linhasAtras: Long,
-    haSaidaNova: Boolean,
-    aoVoltarAoFim: () -> Unit,
+private fun BackToEndButton(
+    rowsBack: Long,
+    hasNewOutput: Boolean,
+    onBackToEnd: () -> Unit,
 ) {
-    val rotulo = when {
-        haSaidaNova -> "New output at the end"
-        linhasAtras > 0 -> "Back to the end · $linhasAtras lines"
+    val label = when {
+        hasNewOutput -> "New output at the end"
+        rowsBack > 0 -> "Back to the end · $rowsBack lines"
         else -> "Back to the end"
     }
 
     Surface(
-        onClick = aoVoltarAoFim,
+        onClick = onBackToEnd,
         shape = CircleShape,
-        color = if (haSaidaNova) {
+        color = if (hasNewOutput) {
             MaterialTheme.colorScheme.primary
         } else {
             MaterialTheme.colorScheme.secondaryContainer
         },
-        contentColor = if (haSaidaNova) {
+        contentColor = if (hasNewOutput) {
             MaterialTheme.colorScheme.onPrimary
         } else {
             MaterialTheme.colorScheme.onSecondaryContainer
@@ -152,15 +140,15 @@ private fun BotaoVoltarAoFim(
         shadowElevation = 3.dp,
         modifier = Modifier
             .padding(bottom = 12.dp)
-            .testTag(TAG_VOLTAR_AO_FIM)
-            .semantics { contentDescription = rotulo },
+            .testTag(TAG_BACK_TO_END)
+            .semantics { contentDescription = label },
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
         ) {
-            if (haSaidaNova) {
+            if (hasNewOutput) {
                 Box(
                     modifier = Modifier
                         .padding(end = 8.dp)
@@ -169,7 +157,7 @@ private fun BotaoVoltarAoFim(
                         .background(MaterialTheme.colorScheme.onPrimary),
                 )
             }
-            Text(text = rotulo, style = MaterialTheme.typography.labelLarge)
+            Text(text = label, style = MaterialTheme.typography.labelLarge)
         }
     }
 }

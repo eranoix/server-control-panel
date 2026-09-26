@@ -21,69 +21,69 @@ import java.io.IOException
 // generated models just to exercise a card.
 
 /** A Jira person, reduced to what a card shows. */
-data class PessoaDoJira(
+data class JiraPerson(
     val accountId: String,
-    val nome: String,
+    val name: String,
     val avatarUrl: String? = null,
 )
 
 /** A project in the picker's list. */
-data class ProjetoDoJira(val chave: String, val nome: String)
+data class JiraProject(val key: String, val name: String)
 
 /** A quick filter, with the label the server sent. */
-data class FiltroDoJira(val chave: String, val rotulo: String)
+data class JiraFilter(val key: String, val label: String)
 
 /** An issue as it appears on a board card. */
-data class CartaoDoJira(
-    val chave: String,
-    val resumo: String,
+data class JiraCard(
+    val key: String,
+    val summary: String,
     val status: String,
-    val categoria: String,
-    val tipo: String? = null,
-    val prioridade: String? = null,
-    val responsavel: String? = null,
-    val responsavelId: String? = null,
+    val category: String,
+    val type: String? = null,
+    val priority: String? = null,
+    val assignee: String? = null,
+    val assigneeId: String? = null,
     val avatarUrl: String? = null,
-    val rotulos: List<String> = emptyList(),
-    val atualizada: String? = null,
-    val vence: String? = null,
+    val labels: List<String> = emptyList(),
+    val updated: String? = null,
+    val due: String? = null,
 )
 
 /**
  * A column of the board.
  *
- * [rotulo] is the column's identity throughout the interface: it is what goes
+ * [label] is the column's identity throughout the interface: it is what goes
  * back to the server on a move call. The app never invents a column name and
  * never translates a status — the server is what knows what a column is.
  */
-data class ColunaDoJira(
-    val rotulo: String,
-    val sobra: Boolean = false,
-    val cartoes: List<CartaoDoJira> = emptyList(),
+data class JiraColumn(
+    val label: String,
+    val leftover: Boolean = false,
+    val cards: List<JiraCard> = emptyList(),
 )
 
 /** The whole board, as one call returns it. */
-data class QuadroDoJira(
-    val conectado: Boolean,
+data class JiraBoard(
+    val connected: Boolean,
     val site: String? = null,
-    val projeto: String? = null,
-    val projetos: List<ProjetoDoJira> = emptyList(),
-    val eu: PessoaDoJira? = null,
-    val filtro: String = "all",
-    val filtros: List<FiltroDoJira> = emptyList(),
+    val project: String? = null,
+    val projects: List<JiraProject> = emptyList(),
+    val me: JiraPerson? = null,
+    val filter: String = "all",
+    val filters: List<JiraFilter> = emptyList(),
     val jql: String? = null,
-    val colunas: List<ColunaDoJira> = emptyList(),
+    val columns: List<JiraColumn> = emptyList(),
     val total: Int = 0,
     /** A refusal from Jira (malformed JQL, expired token) WITHOUT the screen having been wiped. */
-    val recusa: String? = null,
+    val rejection: String? = null,
 )
 
 /** A comment already flattened for reading. */
-data class ComentarioDoJira(
+data class JiraComment(
     val id: String,
-    val texto: String,
-    val autor: String,
-    val quando: String,
+    val text: String,
+    val author: String,
+    val whenText: String,
 )
 
 /**
@@ -92,74 +92,74 @@ data class ComentarioDoJira(
  * It is what feeds the card menu's "move to…" — the accessible way to move,
  * because a screen reader does not drag.
  */
-data class DestinoDoJira(val coluna: String, val status: String, val transicao: String? = null)
+data class JiraDestination(val column: String, val status: String, val transition: String? = null)
 
 /** The other end of a link ("blocks", "is blocked by"). */
-data class VinculoDoJira(
-    val relacao: String,
-    val chave: String,
-    val resumo: String? = null,
+data class JiraLink(
+    val relation: String,
+    val key: String,
+    val summary: String? = null,
     val status: String? = null,
 )
 
 /** An open issue: fields, comments and where it can go. */
-data class IssueDoJira(
-    val chave: String,
-    val resumo: String,
-    val descricao: String? = null,
+data class JiraIssue(
+    val key: String,
+    val summary: String,
+    val description: String? = null,
     val status: String,
-    val categoria: String,
-    val coluna: String? = null,
-    val tipo: String? = null,
-    val prioridade: String? = null,
-    val responsavel: PessoaDoJira? = null,
-    val relator: PessoaDoJira? = null,
-    val rotulos: List<String> = emptyList(),
-    val criada: String? = null,
-    val atualizada: String? = null,
-    val vence: String? = null,
+    val category: String,
+    val column: String? = null,
+    val type: String? = null,
+    val priority: String? = null,
+    val assignee: JiraPerson? = null,
+    val reporter: JiraPerson? = null,
+    val labels: List<String> = emptyList(),
+    val created: String? = null,
+    val updated: String? = null,
+    val due: String? = null,
     val urlWeb: String? = null,
-    val comentarios: List<ComentarioDoJira> = emptyList(),
-    val destinos: List<DestinoDoJira> = emptyList(),
-    val subtarefas: List<CartaoDoJira> = emptyList(),
-    val vinculos: List<VinculoDoJira> = emptyList(),
+    val comments: List<JiraComment> = emptyList(),
+    val destinations: List<JiraDestination> = emptyList(),
+    val subtasks: List<JiraCard> = emptyList(),
+    val links: List<JiraLink> = emptyList(),
 )
 
 /** What a creation form offers instead of asking you to type. */
-data class MetaDoJira(val tipos: List<String>, val prioridades: List<String>)
+data class JiraMeta(val types: List<String>, val priorities: List<String>)
 
 /** An issue that did not make it, with the reason. */
-data class FalhaEmLote(val chave: String, val motivo: String)
+data class BulkFailure(val key: String, val reason: String)
 
 /** The honest result of a bulk action. */
-data class ResultadoEmLote(val feitas: List<String>, val falhas: List<FalhaEmLote>)
+data class BulkResult(val done: List<String>, val failures: List<BulkFailure>)
 
 /** What creating an issue needs. */
-data class NovaIssue(
-    val projeto: String,
-    val tipo: String,
-    val resumo: String,
-    val descricao: String? = null,
-    val prioridade: String? = null,
-    val responsavelId: String? = null,
-    val rotulos: List<String> = emptyList(),
-    val vence: String? = null,
+data class NewIssue(
+    val project: String,
+    val type: String,
+    val summary: String,
+    val description: String? = null,
+    val priority: String? = null,
+    val assigneeId: String? = null,
+    val labels: List<String> = emptyList(),
+    val due: String? = null,
 )
 
 /**
  * The outcome of an operation.
  *
- * [Recusa] is kept apart from [Erro] on purpose, and the distinction is the
+ * [Rejected] is kept apart from [Error] on purpose, and the distinction is the
  * most important thing in this file: a refusal is Jira saying "that move does
  * not exist in this workflow" — the server is fine, the network is fine, and
  * trying again will give exactly the same result. An error is anything else,
  * and that one does call for another attempt. Conflating the two would have the
  * board offer "try again" for a move that will never be accepted.
  */
-sealed interface ResultadoDoJira<out T> {
-    data class Ok<T>(val valor: T) : ResultadoDoJira<T>
-    data class Recusa(val motivo: String) : ResultadoDoJira<Nothing>
-    data class Erro(val motivo: String) : ResultadoDoJira<Nothing>
+sealed interface JiraResult<out T> {
+    data class Ok<T>(val value: T) : JiraResult<T>
+    data class Rejected(val reason: String) : JiraResult<Nothing>
+    data class Error(val reason: String) : JiraResult<Nothing>
 }
 
 /**
@@ -170,27 +170,27 @@ sealed interface ResultadoDoJira<out T> {
  * visibility of the generated client, so its tests fake this instead of faking
  * OkHttp.
  */
-interface FonteDoJira {
-    suspend fun quadro(
-        projeto: String? = null,
-        filtro: String = "all",
+interface JiraSource {
+    suspend fun board(
+        project: String? = null,
+        filter: String = "all",
         jql: String? = null,
-        busca: String? = null,
-        ordem: String? = null,
-        ocultarConcluidasApos: Int = 0,
-    ): ResultadoDoJira<QuadroDoJira>
+        query: String? = null,
+        order: String? = null,
+        hideDoneAfter: Int = 0,
+    ): JiraResult<JiraBoard>
 
-    suspend fun mover(chave: String, coluna: String): ResultadoDoJira<String>
-    suspend fun issue(chave: String): ResultadoDoJira<IssueDoJira>
-    suspend fun comentar(chave: String, texto: String): ResultadoDoJira<ComentarioDoJira>
-    suspend fun atribuir(chave: String, accountId: String?): ResultadoDoJira<Unit>
-    suspend fun pessoas(projeto: String, busca: String? = null): ResultadoDoJira<List<PessoaDoJira>>
-    suspend fun meta(projeto: String): ResultadoDoJira<MetaDoJira>
-    suspend fun criar(nova: NovaIssue): ResultadoDoJira<String>
-    suspend fun moverEmLote(chaves: List<String>, coluna: String): ResultadoDoJira<ResultadoEmLote>
-    suspend fun atribuirEmLote(chaves: List<String>, accountId: String?): ResultadoDoJira<ResultadoEmLote>
-    suspend fun conectar(site: String, email: String, token: String, projeto: String?): ResultadoDoJira<Unit>
-    suspend fun fixarProjeto(projeto: String): ResultadoDoJira<Unit>
+    suspend fun move(key: String, column: String): JiraResult<String>
+    suspend fun issue(key: String): JiraResult<JiraIssue>
+    suspend fun comment(key: String, text: String): JiraResult<JiraComment>
+    suspend fun assign(key: String, accountId: String?): JiraResult<Unit>
+    suspend fun people(project: String, query: String? = null): JiraResult<List<JiraPerson>>
+    suspend fun meta(project: String): JiraResult<JiraMeta>
+    suspend fun create(next: NewIssue): JiraResult<String>
+    suspend fun bulkMove(keys: List<String>, column: String): JiraResult<BulkResult>
+    suspend fun bulkAssign(keys: List<String>, accountId: String?): JiraResult<BulkResult>
+    suspend fun connect(site: String, email: String, token: String, project: String?): JiraResult<Unit>
+    suspend fun pinProject(project: String): JiraResult<Unit>
 }
 
 /**
@@ -201,196 +201,196 @@ interface FonteDoJira {
  */
 class JiraRepository(
     private val api: JiraApi = JiraApi(),
-) : FonteDoJira {
+) : JiraSource {
 
-    override suspend fun quadro(
-        projeto: String?,
-        filtro: String,
+    override suspend fun board(
+        project: String?,
+        filter: String,
         jql: String?,
-        busca: String?,
-        ordem: String?,
-        ocultarConcluidasApos: Int,
-    ): ResultadoDoJira<QuadroDoJira> = protegido("Could not load the board.") {
+        query: String?,
+        order: String?,
+        hideDoneAfter: Int,
+    ): JiraResult<JiraBoard> = guarded("Could not load the board.") {
         val r = api.getJiraBoard(
-            project = projeto?.takeIf { it.isNotBlank() },
-            filter = filtro,
+            project = project?.takeIf { it.isNotBlank() },
+            filter = filter,
             jql = jql?.takeIf { it.isNotBlank() },
-            search = busca?.takeIf { it.isNotBlank() },
-            sort = ordem?.takeIf { it.isNotBlank() },
-            hideDoneDays = ocultarConcluidasApos.toLong(),
+            search = query?.takeIf { it.isNotBlank() },
+            sort = order?.takeIf { it.isNotBlank() },
+            hideDoneDays = hideDoneAfter.toLong(),
         )
-        QuadroDoJira(
-            conectado = r.connected,
+        JiraBoard(
+            connected = r.connected,
             site = r.site,
-            projeto = r.project,
-            projetos = r.projects.orEmpty().map { ProjetoDoJira(it.key, it.name) },
-            eu = r.me?.let { PessoaDoJira(it.accountId, it.displayName, it.avatarUrl) },
-            filtro = r.filter,
-            filtros = r.filters.orEmpty().map { FiltroDoJira(it.key, it.label) },
+            project = r.project,
+            projects = r.projects.orEmpty().map { JiraProject(it.key, it.name) },
+            me = r.me?.let { JiraPerson(it.accountId, it.displayName, it.avatarUrl) },
+            filter = r.filter,
+            filters = r.filters.orEmpty().map { JiraFilter(it.key, it.label) },
             jql = r.jql,
-            colunas = r.columns.orEmpty().map { c ->
-                ColunaDoJira(
-                    rotulo = c.label,
-                    sobra = c.fallback ?: false,
-                    cartoes = c.cards.orEmpty().map(::paraCartao),
+            columns = r.columns.orEmpty().map { c ->
+                JiraColumn(
+                    label = c.label,
+                    leftover = c.fallback ?: false,
+                    cards = c.cards.orEmpty().map(::toCard),
                 )
             },
             total = r.total.toInt(),
-            recusa = r.error?.takeIf { it.isNotBlank() },
+            rejection = r.error?.takeIf { it.isNotBlank() },
         )
     }
 
-    override suspend fun mover(chave: String, coluna: String): ResultadoDoJira<String> =
-        protegido("Could not move $chave.") {
-            api.moveJiraIssue(JiraMoveRequest(key = chave, column = coluna)).status
+    override suspend fun move(key: String, column: String): JiraResult<String> =
+        guarded("Could not move $key.") {
+            api.moveJiraIssue(JiraMoveRequest(key = key, column = column)).status
         }
 
-    override suspend fun issue(chave: String): ResultadoDoJira<IssueDoJira> =
-        protegido("Could not open $chave.") {
-            val r = api.getJiraIssue(chave)
-            IssueDoJira(
-                chave = r.key,
-                resumo = r.summary,
-                descricao = r.description?.takeIf { it.isNotBlank() },
+    override suspend fun issue(key: String): JiraResult<JiraIssue> =
+        guarded("Could not open $key.") {
+            val r = api.getJiraIssue(key)
+            JiraIssue(
+                key = r.key,
+                summary = r.summary,
+                description = r.description?.takeIf { it.isNotBlank() },
                 status = r.status,
-                categoria = r.category,
-                coluna = r.column,
-                tipo = r.type,
-                prioridade = r.priority,
-                responsavel = r.assignee?.let { PessoaDoJira(it.accountId, it.displayName, it.avatarUrl) },
-                relator = r.reporter?.let { PessoaDoJira(it.accountId, it.displayName, it.avatarUrl) },
-                rotulos = r.labels.orEmpty(),
-                criada = r.created,
-                atualizada = r.updated,
-                vence = r.dueDate,
+                category = r.category,
+                column = r.column,
+                type = r.type,
+                priority = r.priority,
+                assignee = r.assignee?.let { JiraPerson(it.accountId, it.displayName, it.avatarUrl) },
+                reporter = r.reporter?.let { JiraPerson(it.accountId, it.displayName, it.avatarUrl) },
+                labels = r.labels.orEmpty(),
+                created = r.created,
+                updated = r.updated,
+                due = r.dueDate,
                 urlWeb = r.webUrl,
-                comentarios = r.comments.orEmpty().map {
-                    ComentarioDoJira(it.id, it.body, it.author, it.created)
+                comments = r.comments.orEmpty().map {
+                    JiraComment(it.id, it.body, it.author, it.created)
                 },
-                destinos = r.moves.orEmpty().map { DestinoDoJira(it.column, it.status, it.name) },
-                subtarefas = r.subtasks.orEmpty().map(::paraCartao),
-                vinculos = r.links.orEmpty().map {
-                    VinculoDoJira(it.relation, it.key, it.summary, it.status)
+                destinations = r.moves.orEmpty().map { JiraDestination(it.column, it.status, it.name) },
+                subtasks = r.subtasks.orEmpty().map(::toCard),
+                links = r.links.orEmpty().map {
+                    JiraLink(it.relation, it.key, it.summary, it.status)
                 },
             )
         }
 
-    override suspend fun comentar(chave: String, texto: String): ResultadoDoJira<ComentarioDoJira> =
-        protegido("Could not post the comment.") {
-            val c = api.commentJiraIssue(JiraCommentRequest(key = chave, text = texto))
-            ComentarioDoJira(c.id, c.body, c.author, c.created)
+    override suspend fun comment(key: String, text: String): JiraResult<JiraComment> =
+        guarded("Could not post the comment.") {
+            val c = api.commentJiraIssue(JiraCommentRequest(key = key, text = text))
+            JiraComment(c.id, c.body, c.author, c.created)
         }
 
-    override suspend fun atribuir(chave: String, accountId: String?): ResultadoDoJira<Unit> =
-        protegido("Could not change the assignee.") {
-            api.assignJiraIssue(JiraAssignRequest(key = chave, accountId = accountId.orEmpty()))
+    override suspend fun assign(key: String, accountId: String?): JiraResult<Unit> =
+        guarded("Could not change the assignee.") {
+            api.assignJiraIssue(JiraAssignRequest(key = key, accountId = accountId.orEmpty()))
             Unit
         }
 
-    override suspend fun pessoas(projeto: String, busca: String?): ResultadoDoJira<List<PessoaDoJira>> =
-        protegido("Could not load the project's people.") {
-            api.listJiraAssignableUsers(projeto, busca?.takeIf { it.isNotBlank() })
-                .users.orEmpty().map { PessoaDoJira(it.accountId, it.displayName, it.avatarUrl) }
+    override suspend fun people(project: String, query: String?): JiraResult<List<JiraPerson>> =
+        guarded("Could not load the project's people.") {
+            api.listJiraAssignableUsers(project, query?.takeIf { it.isNotBlank() })
+                .users.orEmpty().map { JiraPerson(it.accountId, it.displayName, it.avatarUrl) }
         }
 
-    override suspend fun meta(projeto: String): ResultadoDoJira<MetaDoJira> =
-        protegido("Could not load this project's issue types.") {
-            val m = api.getJiraMeta(projeto)
-            MetaDoJira(tipos = m.issueTypes.orEmpty(), prioridades = m.priorities.orEmpty())
+    override suspend fun meta(project: String): JiraResult<JiraMeta> =
+        guarded("Could not load this project's issue types.") {
+            val m = api.getJiraMeta(project)
+            JiraMeta(types = m.issueTypes.orEmpty(), priorities = m.priorities.orEmpty())
         }
 
-    override suspend fun criar(nova: NovaIssue): ResultadoDoJira<String> =
-        protegido("Could not create the issue.") {
+    override suspend fun create(next: NewIssue): JiraResult<String> =
+        guarded("Could not create the issue.") {
             api.createJiraIssue(
                 JiraCreateRequest(
-                    project = nova.projeto,
-                    type = nova.tipo,
-                    summary = nova.resumo,
-                    description = nova.descricao,
-                    priority = nova.prioridade,
-                    assigneeId = nova.responsavelId,
-                    labels = nova.rotulos.takeIf { it.isNotEmpty() },
-                    dueDate = nova.vence,
+                    project = next.project,
+                    type = next.type,
+                    summary = next.summary,
+                    description = next.description,
+                    priority = next.priority,
+                    assigneeId = next.assigneeId,
+                    labels = next.labels.takeIf { it.isNotEmpty() },
+                    dueDate = next.due,
                 ),
             ).key
         }
 
-    override suspend fun moverEmLote(chaves: List<String>, coluna: String): ResultadoDoJira<ResultadoEmLote> =
-        protegido("Could not move the selection.") {
-            paraLote(api.bulkMoveJiraIssues(JiraBulkMoveRequest(issueKeys = chaves, column = coluna)))
+    override suspend fun bulkMove(keys: List<String>, column: String): JiraResult<BulkResult> =
+        guarded("Could not move the selection.") {
+            toBulk(api.bulkMoveJiraIssues(JiraBulkMoveRequest(issueKeys = keys, column = column)))
         }
 
-    override suspend fun atribuirEmLote(chaves: List<String>, accountId: String?): ResultadoDoJira<ResultadoEmLote> =
-        protegido("Could not assign the selection.") {
-            paraLote(api.bulkAssignJiraIssues(JiraBulkAssignRequest(issueKeys = chaves, accountId = accountId.orEmpty())))
+    override suspend fun bulkAssign(keys: List<String>, accountId: String?): JiraResult<BulkResult> =
+        guarded("Could not assign the selection.") {
+            toBulk(api.bulkAssignJiraIssues(JiraBulkAssignRequest(issueKeys = keys, accountId = accountId.orEmpty())))
         }
 
-    override suspend fun conectar(
+    override suspend fun connect(
         site: String,
         email: String,
         token: String,
-        projeto: String?,
-    ): ResultadoDoJira<Unit> = protegido("Could not connect to Jira.") {
-        api.connectJira(JiraConnectRequest(site = site, email = email, token = token, project = projeto))
+        project: String?,
+    ): JiraResult<Unit> = guarded("Could not connect to Jira.") {
+        api.connectJira(JiraConnectRequest(site = site, email = email, token = token, project = project))
         Unit
     }
 
-    override suspend fun fixarProjeto(projeto: String): ResultadoDoJira<Unit> =
-        protegido("Could not switch projects.") {
-            api.setJiraProject(JiraProjectRequest(project = projeto))
+    override suspend fun pinProject(project: String): JiraResult<Unit> =
+        guarded("Could not switch projects.") {
+            api.setJiraProject(JiraProjectRequest(project = project))
             Unit
         }
 
-    private fun paraCartao(c: com.vpsmanager.mobileapiclient.model.JiraBoardCard) = CartaoDoJira(
-        chave = c.key,
-        resumo = c.summary,
+    private fun toCard(c: com.vpsmanager.mobileapiclient.model.JiraBoardCard) = JiraCard(
+        key = c.key,
+        summary = c.summary,
         status = c.status,
-        categoria = c.category,
-        tipo = c.type,
-        prioridade = c.priority,
-        responsavel = c.assignee,
-        responsavelId = c.assigneeId,
+        category = c.category,
+        type = c.type,
+        priority = c.priority,
+        assignee = c.assignee,
+        assigneeId = c.assigneeId,
         avatarUrl = c.avatarUrl,
-        rotulos = c.labels.orEmpty(),
-        atualizada = c.updated,
-        vence = c.dueDate,
+        labels = c.labels.orEmpty(),
+        updated = c.updated,
+        due = c.dueDate,
     )
 
-    private fun paraLote(r: com.vpsmanager.mobileapiclient.model.JiraBulkResult) = ResultadoEmLote(
-        feitas = r.done.orEmpty(),
-        falhas = r.failed.orEmpty().map { FalhaEmLote(it.key, it.reason) },
+    private fun toBulk(r: com.vpsmanager.mobileapiclient.model.JiraBulkResult) = BulkResult(
+        done = r.done.orEmpty(),
+        failures = r.failed.orEmpty().map { BulkFailure(it.key, it.reason) },
     )
 
     /**
      * Runs the call and translates whatever goes wrong.
      *
-     * A 409 becomes [ResultadoDoJira.Recusa] carrying the server's own text,
+     * A 409 becomes [JiraResult.Rejected] carrying the server's own text,
      * and that is why this wrapper exists: the 409's message is the only one
      * that says WHERE you can go from there. Replacing it with "could not move"
      * would throw away the information that turns a refusal into a next step.
      */
-    private suspend fun <T> protegido(
-        quandoFalhar: String,
-        bloco: suspend () -> T,
-    ): ResultadoDoJira<T> = try {
-        ResultadoDoJira.Ok(bloco())
+    private suspend fun <T> guarded(
+        onFailureText: String,
+        tile: suspend () -> T,
+    ): JiraResult<T> = try {
+        JiraResult.Ok(tile())
     } catch (e: ClientException) {
-        val detalhe = detalheDoErro(e.message)
+        val detail = errorDetail(e.message)
         when (e.statusCode) {
-            409 -> ResultadoDoJira.Recusa(detalhe ?: quandoFalhar)
+            409 -> JiraResult.Rejected(detail ?: onFailureText)
             // A 400 is also the server's decision about the ACTION (a column
             // that no longer exists, a missing field) — retrying changes
             // nothing.
-            400 -> ResultadoDoJira.Recusa(detalhe ?: quandoFalhar)
-            401, 403 -> ResultadoDoJira.Erro("Session expired. Sign in again.")
-            else -> ResultadoDoJira.Erro(detalhe ?: quandoFalhar)
+            400 -> JiraResult.Rejected(detail ?: onFailureText)
+            401, 403 -> JiraResult.Error("Session expired. Sign in again.")
+            else -> JiraResult.Error(detail ?: onFailureText)
         }
     } catch (e: ServerException) {
-        ResultadoDoJira.Erro("The server is unavailable right now.")
+        JiraResult.Error("The server is unavailable right now.")
     } catch (e: IOException) {
-        ResultadoDoJira.Erro("Connection failed. Check your network and try again.")
+        JiraResult.Error("Connection failed. Check your network and try again.")
     } catch (e: Exception) {
-        ResultadoDoJira.Erro(quandoFalhar)
+        JiraResult.Error(onFailureText)
     }
 }
 
@@ -404,29 +404,29 @@ class JiraRepository(
  * And a failure HERE would erase precisely the sentence that explains the
  * refusal.
  */
-internal fun detalheDoErro(mensagem: String?): String? {
-    if (mensagem.isNullOrBlank()) return null
-    val marca = "\"detail\":"
-    val i = mensagem.indexOf(marca)
+internal fun errorDetail(message: String?): String? {
+    if (message.isNullOrBlank()) return null
+    val mark = "\"detail\":"
+    val i = message.indexOf(mark)
     if (i < 0) return null
-    var j = i + marca.length
-    while (j < mensagem.length && mensagem[j].isWhitespace()) j++
-    if (j >= mensagem.length || mensagem[j] != '"') return null
+    var j = i + mark.length
+    while (j < message.length && message[j].isWhitespace()) j++
+    if (j >= message.length || message[j] != '"') return null
     j++
     val sb = StringBuilder()
-    while (j < mensagem.length) {
-        val c = mensagem[j]
+    while (j < message.length) {
+        val c = message[j]
         when {
-            c == '\\' && j + 1 < mensagem.length -> {
+            c == '\\' && j + 1 < message.length -> {
                 // JSON escape sequences. `\uXXXX` is left out: the BFF does
                 // not emit them (Go serializes an accent as literal UTF-8), and
                 // decoding them here would mean writing half a parser for a
                 // case that does not occur.
-                when (val prox = mensagem[j + 1]) {
+                when (val nextChar = message[j + 1]) {
                     'n' -> sb.append('\n')
                     't' -> sb.append('\t')
                     'r' -> sb.append('\r')
-                    else -> sb.append(prox)
+                    else -> sb.append(nextChar)
                 }
                 j += 2
             }

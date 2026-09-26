@@ -39,7 +39,7 @@ class WhatsAppRepositoryTest {
         return WhatsAppRepository(api)
     }
 
-    /** A real file with enough bytes that OkHttp writes it across more than one buffer flush, so progress and a mid-transfer disconnect are both observable. */
+    /** Large enough for OkHttp to write it across several flushes, so progress and a mid-transfer disconnect are observable. */
     private fun mediaFile(sizeBytes: Int = 64 * 1024): File =
         tempFolder.newFile("attachment.jpg").apply { writeBytes(ByteArray(sizeBytes) { it.toByte() }) }
 
@@ -52,7 +52,7 @@ class WhatsAppRepositoryTest {
                 .setBody(
                     """
                     [
-                        {"jid":"b@s.whatsapp.net","name":"Bruna","is_group":false,"unread":3,"last_message_at":1700000200,"last_message_preview":"oi"},
+                        {"jid":"b@s.whatsapp.net","name":"Bruna","is_group":false,"unread":3,"last_message_at":1700000200,"last_message_preview":"hi"},
                         {"jid":"a@s.whatsapp.net","name":"Ana","is_group":false,"unread":0,"last_message_at":1700000100,"last_message_preview":"ok"}
                     ]
                     """.trimIndent()
@@ -71,7 +71,7 @@ class WhatsAppRepositoryTest {
                         unread = 3,
                         avatarUrl = null,
                         lastMessageAt = 1700000200,
-                        lastMessagePreview = "oi",
+                        lastMessagePreview = "hi",
                     ),
                     WhatsAppChat(
                         jid = "a@s.whatsapp.net",
@@ -122,7 +122,7 @@ class WhatsAppRepositoryTest {
                     {
                         "backfilling": true,
                         "messages": [
-                            {"id":"m1","chat_jid":"a@s.whatsapp.net","from_me":false,"ts":1700000000,"type":"text","text":"oi","ack":2}
+                            {"id":"m1","chat_jid":"a@s.whatsapp.net","from_me":false,"ts":1700000000,"type":"text","text":"hi","ack":2}
                         ]
                     }
                     """.trimIndent()
@@ -133,7 +133,7 @@ class WhatsAppRepositoryTest {
 
         assertEquals(1, result.messages.size)
         assertEquals("m1", result.messages[0].id)
-        assertEquals("oi", result.messages[0].text)
+        assertEquals("hi", result.messages[0].text)
         assertTrue(result.backfilling)
     }
 
@@ -155,7 +155,7 @@ class WhatsAppRepositoryTest {
                 .setBody("""{"id":"srv-1"}""")
         )
 
-        val result = repositoryFor().sendMessage(jid = "a@s.whatsapp.net", clientMsgId = "c1", text = "oi")
+        val result = repositoryFor().sendMessage(jid = "a@s.whatsapp.net", clientMsgId = "c1", text = "hi")
 
         assertEquals(SendResult.Success("srv-1"), result)
     }
@@ -169,23 +169,21 @@ class WhatsAppRepositoryTest {
                 .setBody("""{"id":"srv-1"}""")
         )
 
-        repositoryFor().sendMessage(jid = "a@s.whatsapp.net", clientMsgId = "retry-abc-123", text = "oi")
+        repositoryFor().sendMessage(jid = "a@s.whatsapp.net", clientMsgId = "retry-abc-123", text = "hi")
 
         val recorded = server.takeRequest()
         assertTrue(
-            "client_msg_id deve ir no corpo sem alteração",
+            "client_msg_id must be sent unchanged in the body",
             recorded.body.readUtf8().contains("\"client_msg_id\":\"retry-abc-123\""),
         )
     }
 
     @Test
     fun `sendMessage maps a network failure to Error, never throwing`() = runTest {
-        // Port 1 refuses connections immediately (no listener), giving a
-        // synchronous IOException without the hang a shut-down MockWebServer
-        // (or an unenqueued response) would cause.
+        // Port 1 refuses immediately, avoiding the hang of a shut-down MockWebServer.
         val unreachable = WhatsAppRepository(WhatsappApi(basePath = "http://127.0.0.1:1"))
 
-        val result = unreachable.sendMessage(jid = "a@s.whatsapp.net", clientMsgId = "c1", text = "oi")
+        val result = unreachable.sendMessage(jid = "a@s.whatsapp.net", clientMsgId = "c1", text = "hi")
 
         assertTrue(result is SendResult.Error)
     }
@@ -230,16 +228,14 @@ class WhatsAppRepositoryTest {
             onProgress = { reported += it },
         )
 
-        assertTrue("onProgress deve ser chamado ao menos uma vez", reported.isNotEmpty())
-        assertEquals("o último valor reportado deve ser 100%", 100, reported.last())
-        assertEquals("progresso nunca pode regredir", reported, reported.sorted())
+        assertTrue("onProgress must be called at least once", reported.isNotEmpty())
+        assertEquals("the last reported value must be 100%", 100, reported.last())
+        assertEquals("progress must never go backwards", reported, reported.sorted())
     }
 
     @Test
     fun `client_msg_id survives a media upload retry unchanged after a mid-transfer disconnect`() = runTest {
-        // First attempt: the server drops the connection while the client is
-        // still writing the multipart body -- the same failure shape a real
-        // flaky mobile network produces mid-upload.
+        // The server drops the connection mid-body, like a flaky mobile network.
         server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_DURING_REQUEST_BODY))
         server.enqueue(
             MockResponse()
@@ -252,7 +248,7 @@ class WhatsAppRepositoryTest {
         val file = mediaFile()
 
         val firstAttempt = repository.uploadMedia(jid = "a@s.whatsapp.net", clientMsgId = "retry-media-1", file = file)
-        assertTrue("a primeira tentativa deve falhar (conexão derrubada)", firstAttempt is UploadResult.Error)
+        assertTrue("the first attempt must fail (connection dropped)", firstAttempt is UploadResult.Error)
 
         val secondAttempt = repository.uploadMedia(jid = "a@s.whatsapp.net", clientMsgId = "retry-media-1", file = file)
         assertEquals(UploadResult.Success("srv-media-1"), secondAttempt)
@@ -260,15 +256,15 @@ class WhatsAppRepositoryTest {
         val firstRequestBody = server.takeRequest().body.readUtf8()
         val secondRequestBody = server.takeRequest().body.readUtf8()
         assertTrue(
-            "o client_msg_id da 1ª tentativa deve ser o id gerado no cliente",
+            "the first attempt client_msg_id must be the client-generated id",
             firstRequestBody.contains("\"retry-media-1\""),
         )
         assertTrue(
-            "o client_msg_id da 2ª tentativa (retry) deve ser IDÊNTICO ao da 1ª -- nunca gerar um novo id",
+            "the retry client_msg_id must be identical to the first, never a new id",
             secondRequestBody.contains("\"retry-media-1\""),
         )
         assertFalse(
-            "o retry não pode ter gerado um client_msg_id diferente",
+            "the retry must not generate a different client_msg_id",
             secondRequestBody.contains("\"retry-media-2\""),
         )
     }

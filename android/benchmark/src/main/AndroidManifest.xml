@@ -1,10 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <!--
-            Activity só usada pelo GridThroughputBenchmark (androidTest) para
-            ter uma Window real para anexar TerminalCanvas/TerminalSurfaceGrid
-            e registrar Window.addOnFrameMetricsAvailableListener. Nunca
-            aparece no app real: este módulo não é embarcado em :app.
+            Used only by GridThroughputBenchmark to get a real Window for
+            TerminalCanvas/TerminalSurfaceGrid and frame metrics. This module
+            is never bundled into :app.
         -->
         <activity
             android:name=".BenchmarkHostActivity"

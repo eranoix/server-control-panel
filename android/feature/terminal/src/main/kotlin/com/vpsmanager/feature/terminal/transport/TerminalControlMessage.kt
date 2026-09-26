@@ -44,8 +44,8 @@ data class TerminalControlMessage(
          * terminal down nor turn into rubbish on the screen — it is simply not
          * this announcement.
          */
-        fun tamanhoDaSessao(texto: String): Pair<Int, Int>? = runCatching {
-            val m = json.decodeFromString(serializer(), texto)
+        fun sessionSize(text: String): Pair<Int, Int>? = runCatching {
+            val m = json.decodeFromString(serializer(), text)
             if (m.type != "size") return null
             val c = m.cols ?: return null
             val r = m.rows ?: return null

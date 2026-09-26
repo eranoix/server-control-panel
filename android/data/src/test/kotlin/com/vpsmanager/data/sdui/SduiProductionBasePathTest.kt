@@ -15,40 +15,18 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Regression: the entire SDUI surface was unreachable in production.
- *
- * THE SYMPTOM. The Admin screen showed "This section does not exist" for EVERY
- * section, even though the server answered 200 to
- * `GET /api/mobile/v1/screens/scheduler.jobs` with the complete descriptor.
- *
- * THE CAUSE. [SduiDataClient] inherited from `ApiClient` the base
- * `MobileApi.defaultBasePath`, which in production is already
- * `https://server/api/mobile/v1` (published by
- * `ServerConfigRepository.publishLegacyBasePathSeam`). But [SduiDataClient.call]
- * takes an ABSOLUTE path from the root of the server — the prefix went in twice
- * and the final URL became
- * `/api/mobile/v1/api/mobile/v1/screens/scheduler.jobs`, which the server does
- * not register: 404 → [SduiScreenResult.NotFound] → "This section does not exist".
- *
- * WHY THE SUITE DID NOT CATCH IT. The three SDUI suites build the client with
- * `server.url("/")` — a base WITHOUT the BFF prefix, the one shape in which the
- * concatenation happened to work. The fixture was hiding the defect. That is
- * why this suite uses `server.url("/api/mobile/v1")`: exactly the shape
- * production publishes.
- *
- * THE FAKE SERVER IS ROUTED, NOT ENQUEUED. An `enqueue` answers 200 for any
- * path and so could never fail a wrong URL; the [Dispatcher] below answers 404
- * outside the real routes, just like the real server — which is what makes this
- * test fail before the fix.
+ * In production the base path already ends in `/api/mobile/v1`, while [SduiDataClient.call] takes
+ * absolute paths from the server root, so the prefix must not be applied twice. This suite uses
+ * that production base shape, and a routing [Dispatcher] that answers 404 off the real routes so a
+ * wrong URL actually fails.
  */
 class SduiProductionBasePathTest {
 
     private lateinit var server: MockWebServer
 
     /**
-     * The real body of `GET /api/mobile/v1/screens/scheduler.jobs` in
-     * production, for an admin viewer (`{"user":"teste","is_admin":true}`) —
-     * the true contract, assembled by `internal/mobilebff/screens/scheduler.go`.
+     * The real production body of `GET /api/mobile/v1/screens/scheduler.jobs` for an admin
+     * viewer, as built by `internal/mobilebff/screens/scheduler.go`.
      */
     private val schedulerJobsEnvelope = """
         {"sdui_version":1,
@@ -87,9 +65,7 @@ class SduiProductionBasePathTest {
     @Before
     fun setUp() {
         server = MockWebServer()
-        // Only the routes the BFF actually registers answer; anything else
-        // returns 404, like the real server (which on top of that uses
-        // 404-instead-of-403 as an anti-enumeration stance).
+        // Only routes the BFF registers answer; anything else is 404, like the real server.
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
                 "/api/mobile/v1/screens/scheduler.jobs" -> json(schedulerJobsEnvelope)
@@ -111,30 +87,27 @@ class SduiProductionBasePathTest {
         server.shutdown()
     }
 
-    /**
-     * The base exactly as `ServerConfigRepository.publishLegacyBasePathSeam`
-     * publishes it: the server URL ALREADY with `/api/mobile/v1` at the end.
-     */
+    /** The base as `ServerConfigRepository.publishLegacyBasePathSeam` publishes it, ending in `/api/mobile/v1`. */
     private fun productionClient() = SduiDataClient(basePath = server.url("/api/mobile/v1").toString())
 
     @Test
-    fun `serverRootOf remove o prefixo do BFF que a producao ja embute na base`() {
+    fun `serverRootOf strips the BFF prefix that production puts in the base`() {
         assertEquals("https://panel.northwind.example", serverRootOf("https://panel.northwind.example/api/mobile/v1"))
         assertEquals("https://panel.northwind.example", serverRootOf("https://panel.northwind.example/api/mobile/v1/"))
-        // Installation under a sub-path: keeps the sub-path, does not collapse to the "origin".
+        // An install under a sub-path keeps the sub-path.
         assertEquals("https://host/vpsm", serverRootOf("https://host/vpsm/api/mobile/v1"))
-        // App not configured yet: a relative base comes out empty, and empty is
-        // rejected by the ApiClient — fails loudly, never falls back to localhost.
+        // A relative base (app not configured) yields empty, which ApiClient rejects
+        // instead of falling back to localhost.
         assertEquals("", serverRootOf("/api/mobile/v1"))
     }
 
     @Test
-    fun `screen busca o descritor na rota real, e nao no prefixo do BFF duplicado`() = runTest {
+    fun `screen fetches the descriptor from the real route, without a doubled BFF prefix`() = runTest {
         val client = productionClient()
 
         val result = SduiRepository(client, SduiActionRepository(client)).screen("scheduler.jobs")
 
-        assertTrue("esperava Success, veio $result", result is SduiScreenResult.Success)
+        assertTrue("expected Success, got $result", result is SduiScreenResult.Success)
         val envelope = (result as SduiScreenResult.Success).envelope
         assertEquals("scheduler.jobs", envelope.screen.id)
         assertEquals("Scheduler", envelope.screen.title)
@@ -146,20 +119,20 @@ class SduiProductionBasePathTest {
     }
 
     @Test
-    fun `rows_source do descritor tambem resolve contra a raiz do servidor`() = runTest {
+    fun `the descriptor rows_source also resolves against the server root`() = runTest {
         val result = SduiDataRepository(productionClient())
             .fetch(SduiDataSource(endpoint = "/api/mobile/v1/scheduler/jobs"))
 
-        assertTrue("esperava Success, veio $result", result is SduiDataResult.Success)
+        assertTrue("expected Success, got $result", result is SduiDataResult.Success)
         assertEquals("/api/mobile/v1/scheduler/jobs", server.takeRequest().path)
     }
 
     @Test
-    fun `acao de linha tambem resolve contra a raiz do servidor`() = runTest {
+    fun `a row action also resolves against the server root`() = runTest {
         val result = SduiActionRepository(productionClient())
             .invoke("scheduler.job.run_now", JsonObject(emptyMap()))
 
-        assertTrue("esperava Success, veio $result", result is SduiActionHttpResult.Success)
+        assertTrue("expected Success, got $result", result is SduiActionHttpResult.Success)
         assertEquals("/api/mobile/v1/actions/scheduler.job.run_now", server.takeRequest().path)
     }
 }

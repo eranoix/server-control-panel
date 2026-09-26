@@ -16,12 +16,8 @@ import org.junit.Test
 import java.io.IOException
 
 /**
- * [SignOutRepository] — the missing half that gives the app a way to sign out.
- *
- * The three things these tests pin, in the order they matter:
- *  1. the server-side revocation really happens, on the right path;
- *  2. the local session ALWAYS drops, including when the server never answers;
- *  3. with no server configured, signing out still signs out (not an error).
+ * [SignOutRepository]: server-side revocation happens on the right path, the local session always
+ * ends (even when the server never answers), and with no server configured signing out still works.
  */
 class SignOutRepositoryTest {
 
@@ -51,14 +47,13 @@ class SignOutRepositoryTest {
 
     private class NeverCalledRefresher : SessionRefresher {
         override suspend fun refresh(refreshToken: String): RefreshOutcome =
-            throw AssertionError("sair não pode renovar a sessão")
+            throw AssertionError("signing out must not renew the session")
     }
 
     private fun signedInSession(): SessionManager = SessionManager(
         tokenStore = InMemoryTokenStore(),
         refresher = NeverCalledRefresher(),
-        // The real network interceptor takes no part in this test: `publishAccessToken`
-        // is swapped out so `ApiClient`'s global companion does not leak between cases.
+        // Keeps the global `ApiClient` token from leaking between cases.
         publishAccessToken = {},
     ).apply { establish(accessToken = "access-1", refreshToken = "refresh-1", expiresInSeconds = 900) }
 
@@ -71,7 +66,7 @@ class SignOutRepositoryTest {
     )
 
     @Test
-    fun `revoga no BFF e derruba a sessao local`() = runTest {
+    fun `revokes on the BFF and ends the local session`() = runTest {
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"ok":true}"""))
         val session = signedInSession()
         assertTrue(session.state.value is SessionState.SignedIn)
@@ -85,14 +80,9 @@ class SignOutRepositoryTest {
         assertNull(session.currentAccessToken())
     }
 
-    /**
-     * The case that decides whether this button is any good: signing out on a
-     * plane. A "Sign out" that only signs out when the network is good would
-     * leave the session alive on the device — the opposite of what the
-     * operator asked for by tapping it.
-     */
+    /** Signing out must work offline, otherwise the session would stay alive on the device. */
     @Test
-    fun `servidor fora do ar nao impede o logout local`() = runTest {
+    fun `a server that is down does not block local sign out`() = runTest {
         server.shutdown()
         val session = signedInSession()
 
@@ -103,7 +93,7 @@ class SignOutRepositoryTest {
     }
 
     @Test
-    fun `resposta de erro do servidor nao impede o logout local`() = runTest {
+    fun `a server error response does not block local sign out`() = runTest {
         server.enqueue(MockResponse().setResponseCode(500))
         val session = signedInSession()
 
@@ -114,7 +104,7 @@ class SignOutRepositoryTest {
     }
 
     @Test
-    fun `sem servidor configurado sai sem chamar rede nenhuma`() = runTest {
+    fun `without a configured server it signs out without any network call`() = runTest {
         val session = signedInSession()
         var apiBuilt = false
 
@@ -123,11 +113,11 @@ class SignOutRepositoryTest {
             serverConfigRepository = ServerConfigRepository(FakeStore(null)),
             authApiFactory = {
                 apiBuilt = true
-                throw IOException("não deveria haver chamada")
+                throw IOException("no call expected")
             },
         ).signOut()
 
         assertTrue(session.state.value is SessionState.SignedOut)
-        assertTrue("nenhum AuthApi deveria ser construído", !apiBuilt)
+        assertTrue("no AuthApi should be built", !apiBuilt)
     }
 }

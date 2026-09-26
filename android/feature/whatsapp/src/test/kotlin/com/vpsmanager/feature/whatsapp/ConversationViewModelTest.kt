@@ -27,14 +27,12 @@ import org.junit.Test
 private const val JID = "5511999@s.whatsapp.net"
 
 /**
- * A fake at the [WhatsAppRepository] seam -- never touches the generated
- * mobile-api-client (that mapping is [com.vpsmanager.data.whatsapp.WhatsAppRepositoryTest]'s
- * job against a real `MockWebServer`); this only exercises the ViewModel's
- * own state machine and reconciliation logic given a repository outcome.
+ * Fake [WhatsAppRepository] for exercising the ViewModel's state machine; the real client
+ * mapping is covered by [com.vpsmanager.data.whatsapp.WhatsAppRepositoryTest].
  */
 private class FakeConversationRepository(
     private val onMessages: suspend () -> MessagesResult = { MessagesResult.Success(emptyList(), backfilling = false) },
-    private val onSend: suspend (String, String) -> SendResult = { _, _ -> SendResult.Error("falha") },
+    private val onSend: suspend (String, String) -> SendResult = { _, _ -> SendResult.Error("failed") },
 ) : WhatsAppRepository() {
     var messagesCalls = 0
         private set
@@ -51,11 +49,7 @@ private class FakeConversationRepository(
     }
 }
 
-/**
- * The testability seam [WhatsAppWsClient] implements for real -- lets this
- * test drive connection-state transitions and push wire events without ever
- * touching a real socket.
- */
+/** Fake [WhatsAppEventSource] that drives connection state and events without a socket. */
 private class FakeWhatsAppEventSource : WhatsAppEventSource {
     private val _state = MutableStateFlow<WhatsAppConnectionState>(WhatsAppConnectionState.Live)
     override val state: StateFlow<WhatsAppConnectionState> = _state.asStateFlow()
@@ -108,7 +102,7 @@ class ConversationViewModelTest {
             chatJid = JID,
             fromMe = false,
             sender = JID,
-            text = "oi",
+            text = "hi",
             type = "text",
             ts = 10,
             ack = 0,
@@ -134,14 +128,14 @@ class ConversationViewModelTest {
         val repository = FakeConversationRepository(
             onSend = { _, _ ->
                 attempt += 1
-                if (attempt == 1) SendResult.Error("falha de rede") else SendResult.Success(id = "server-9")
+                if (attempt == 1) SendResult.Error("network failure") else SendResult.Success(id = "server-9")
             },
         )
         val eventSource = FakeWhatsAppEventSource()
         val viewModel = ConversationViewModel(jid = JID, repository = repository, eventSource = eventSource)
         dispatcher.scheduler.advanceUntilIdle()
 
-        viewModel.sendMessage("oi de novo")
+        viewModel.sendMessage("hi again")
         dispatcher.scheduler.advanceUntilIdle()
 
         var content = viewModel.uiState.value as ConversationUiState.Content
@@ -179,51 +173,38 @@ class ConversationViewModelTest {
         assertTrue(viewModel.uiState.value is ConversationUiState.Content)
     }
 
-    /**
-     * THE QUEUE, WIRED UP — the guarantee that was missing for a whole session.
-     *
-     * The write queue shipped with tests of its own and ZERO callers:
-     * `FilaDeEnvio.instalar()` ran at boot and nothing ever called
-     * `enfileirar`. Writing without internet went on failing exactly as
-     * before. This test exists so that cannot happen again in silence: if
-     * anyone unwires the path again, it goes red.
-     */
+    /** Guards that sending is actually wired to the offline write queue. */
     @Test
-    fun `sem rede a mensagem vai para a fila, e a bolha diz isso`() = runTest {
-        val repository = FakeConversationRepository(onSend = { _, _ -> SendResult.NaFila })
+    fun `without network the message is queued, and the bubble says so`() = runTest {
+        val repository = FakeConversationRepository(onSend = { _, _ -> SendResult.Queued })
         val eventSource = FakeWhatsAppEventSource()
         val viewModel = ConversationViewModel(jid = JID, repository = repository, eventSource = eventSource)
         dispatcher.scheduler.advanceUntilIdle()
 
-        viewModel.sendMessage("isto sai quando a internet voltar")
+        viewModel.sendMessage("this goes out when the internet is back")
         dispatcher.scheduler.advanceUntilIdle()
 
         val content = viewModel.uiState.value as ConversationUiState.Content
         assertEquals(1, content.messages.size)
-        assertEquals(MessageSendStatus.NA_FILA, content.messages.single().sendStatus)
+        assertEquals(MessageSendStatus.QUEUED, content.messages.single().sendStatus)
     }
 
     /**
-     * NA_FILA is not FAILED, and the difference changes what the person does.
-     *
-     * Faced with a failure they tap "tentar de novo"; faced with a message
-     * that has been put aside, they put the phone away. Treating the two as
-     * failure — which was the old behaviour — made the app ask for an
-     * unnecessary action, and that action creates a second copy of the same
-     * message.
+     * QUEUED is not FAILED: showing a failure would invite a retry, and a retry
+     * would create a duplicate of the queued message.
      */
     @Test
-    fun `na fila NAO e falha — o texto continua e o estado e outro`() = runTest {
-        val repository = FakeConversationRepository(onSend = { _, _ -> SendResult.NaFila })
+    fun `queued is NOT failed, the text stays and the state differs`() = runTest {
+        val repository = FakeConversationRepository(onSend = { _, _ -> SendResult.Queued })
         val eventSource = FakeWhatsAppEventSource()
         val viewModel = ConversationViewModel(jid = JID, repository = repository, eventSource = eventSource)
         dispatcher.scheduler.advanceUntilIdle()
 
-        viewModel.sendMessage("texto preservado")
+        viewModel.sendMessage("preserved text")
         dispatcher.scheduler.advanceUntilIdle()
 
         val msg = (viewModel.uiState.value as ConversationUiState.Content).messages.single()
         assertTrue(msg.sendStatus != MessageSendStatus.FAILED)
-        assertEquals("texto preservado", msg.text)
+        assertEquals("preserved text", msg.text)
     }
 }

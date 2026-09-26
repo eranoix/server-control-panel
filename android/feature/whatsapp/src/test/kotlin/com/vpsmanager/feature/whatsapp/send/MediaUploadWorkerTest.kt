@@ -9,13 +9,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Records every `uploadMedia` call it receives and returns a scripted,
- * queued [UploadResult] per call -- mirrors [WhatsAppRepositoryTest]'s
- * `MockWebServer` coverage of the same idempotency contract, but at the
- * seam [MediaUploadWorker] actually depends on (never `WhatsappApi`
- * directly).
- */
+/** Fake repository that records each `uploadMedia` call and returns scripted [UploadResult]s in order. */
 private class FakeUploadRepository(
     private val results: MutableList<UploadResult> = mutableListOf(),
 ) : WhatsAppRepository() {
@@ -51,7 +45,7 @@ class MediaUploadWorkerTest {
     @Test
     fun `retrying with the same client_msg_id sends the exact same id both times`() = runTest {
         val repository = FakeUploadRepository().apply {
-            enqueue(UploadResult.Error("falha de rede"))
+            enqueue(UploadResult.Error("network failure"))
             enqueue(UploadResult.Success("srv-1"))
         }
         val worker = MediaUploadWorker(repository)
@@ -69,7 +63,7 @@ class MediaUploadWorkerTest {
         var progress: Int? = null
         progress = clampUploadProgress(progress, 40)
         progress = clampUploadProgress(progress, 90)
-        // A retry's callback restarts its own attempt at 0 -- the clamp must hold the higher value already shown.
+        // A retry restarts at 0; the clamp must keep the higher value already shown.
         progress = clampUploadProgress(progress, 0)
 
         assertEquals(90, progress)
@@ -97,14 +91,14 @@ class MediaUploadWorkerTest {
         )
 
         assertTrue(outcome is MediaSendOutcome.Failed)
-        assertFalse("um arquivo grande demais nunca deve ser retentável", (outcome as MediaSendOutcome.Failed).retryable)
-        assertEquals("a checagem client-side não deve nem abrir uma requisição", 0, repository.callCount)
+        assertFalse("an oversized file must never be retryable", (outcome as MediaSendOutcome.Failed).retryable)
+        assertEquals("the client-side check must not even open a request", 0, repository.callCount)
     }
 
     @Test
     fun `a server 413 maps to the same non-retryable shape as the client-side size cap`() = runTest {
         val repository = FakeUploadRepository().apply {
-            enqueue(UploadResult.Error(reason = "Não foi possível enviar o arquivo (erro 413).", overCap = true))
+            enqueue(UploadResult.Error(reason = "Could not upload the file (error 413).", overCap = true))
         }
         val worker = MediaUploadWorker(repository)
 
@@ -117,13 +111,13 @@ class MediaUploadWorkerTest {
             msgType = "video",
         ) as MediaSendOutcome.Failed
 
-        assertFalse("um 413 do servidor também nunca deve ser retentável", outcome.retryable)
+        assertFalse("a server 413 must never be retryable either", outcome.retryable)
     }
 
     @Test
     fun `a retryable server error maps to a retryable outcome`() = runTest {
         val repository = FakeUploadRepository().apply {
-            enqueue(UploadResult.Error(reason = "Falha de conexão. Verifique a rede e tente novamente."))
+            enqueue(UploadResult.Error(reason = "Connection failed. Check the network and try again."))
         }
         val worker = MediaUploadWorker(repository)
 

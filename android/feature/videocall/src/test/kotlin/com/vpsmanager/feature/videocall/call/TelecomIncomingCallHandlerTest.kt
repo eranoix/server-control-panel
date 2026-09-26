@@ -52,25 +52,24 @@ class TelecomIncomingCallHandlerTest {
 
     @Test
     fun `onIncomingCall registers the phone account then adds exactly one Telecom call with all extras`() {
-        handler.onIncomingCall(roomId = "r1", roomName = "Sala", from = "alice", callId = "c1")
+        handler.onIncomingCall(roomId = "r1", roomName = "Room", from = "alice", callId = "c1")
 
         assertEquals(1, accountPort.registerCallCount)
         assertEquals(1, callPort.calls.size)
         val (handle, extras) = callPort.calls[0]
         assertEquals(registrar.phoneAccountHandle, handle)
         assertEquals("r1", extras.getString(EXTRA_ROOM_ID))
-        assertEquals("Sala", extras.getString(EXTRA_ROOM_NAME))
+        assertEquals("Room", extras.getString(EXTRA_ROOM_NAME))
         assertEquals("alice", extras.getString(EXTRA_CALLER_NAME))
         assertEquals("c1", extras.getString(EXTRA_CALL_ID))
     }
 
     @Test
     fun `onIncomingCall does not crash when Telecom rejects the call`() {
-        callPort.throwOnNextCall = SecurityException("conta desabilitada")
+        callPort.throwOnNextCall = SecurityException("account disabled")
 
-        // Must not throw — a rejected call is dropped silently (logged), same posture as a
-        // missing/incomplete FCM payload upstream in VpsFirebaseMessagingService.
-        handler.onIncomingCall(roomId = "r1", roomName = "Sala", from = "alice", callId = "c1")
+        // Must not throw: a rejected call is logged and dropped.
+        handler.onIncomingCall(roomId = "r1", roomName = "Room", from = "alice", callId = "c1")
     }
 
     @Test

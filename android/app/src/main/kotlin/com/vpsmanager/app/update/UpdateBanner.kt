@@ -100,7 +100,7 @@ fun UpdateBanner(
                                 // different for whoever reads them.
                                 is UpdateBannerAction.Update, is UpdateBannerAction.Retry -> onUpdateClick()
                                 is UpdateBannerAction.Cancel,
-                                is UpdateBannerAction.CancelRotulado,
+                                is UpdateBannerAction.LabeledCancel,
                                 -> onCancelClick()
                                 is UpdateBannerAction.Recover -> onRecoveryClick(action.recovery)
                             }
@@ -152,14 +152,14 @@ internal sealed interface UpdateBannerAction {
      * progress; in a sentence that only informs, "Cancel" asks the reader
      * what exactly they would be cancelling.
      */
-    data class CancelRotulado(override val label: String) : UpdateBannerAction
+    data class LabeledCancel(override val label: String) : UpdateBannerAction
 
     data class Recover(override val label: String, val recovery: UpdateRecovery) : UpdateBannerAction
 }
 
 /** Reading sugar for the two answer states. */
-internal fun UpdateBannerAction.Cancel.comRotulo(rotulo: String): UpdateBannerAction =
-    UpdateBannerAction.CancelRotulado(rotulo)
+internal fun UpdateBannerAction.Cancel.withLabel(label: String): UpdateBannerAction =
+    UpdateBannerAction.LabeledCancel(label)
 
 /**
  * The state-to-banner translation, split from the drawing so it can be
@@ -203,14 +203,14 @@ internal fun bannerContentFor(state: UpdateState): UpdateBannerContent? = when (
     // whoever asked may want the answer out of the way before the 6 s are up
     // — and "Close" here is the same old `cancel()`, which returns the banner
     // to the state the manifest describes (none, when there is no news).
-    is UpdateState.SemNovidade -> UpdateBannerContent(
+    is UpdateState.UpToDate -> UpdateBannerContent(
         text = "You already have the latest version (${state.versionName}).",
-        actions = listOf(UpdateBannerAction.Cancel.comRotulo("Close")),
+        actions = listOf(UpdateBannerAction.Cancel.withLabel("Close")),
     )
 
-    is UpdateState.BuscaFalhou -> UpdateBannerContent(
+    is UpdateState.CheckFailed -> UpdateBannerContent(
         text = state.message,
-        actions = listOf(UpdateBannerAction.Cancel.comRotulo("Close")),
+        actions = listOf(UpdateBannerAction.Cancel.withLabel("Close")),
     )
 
     is UpdateState.Failed -> UpdateBannerContent(

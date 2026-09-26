@@ -1,6 +1,6 @@
 /* vpsm-videocall-push — Web Push subscription helper.
  *
- * Opt-in: the user toggles "Receber chamadas off-app" once. We:
+ * Opt-in: the user turns on the off-app calls toggle once. We:
  *   1) request Notification permission,
  *   2) ensure SW is registered (vps-manager already does that for PWA),
  *   3) PushManager.subscribe() with the server's VAPID public key,
@@ -9,7 +9,7 @@
  * To opt-out: PushManager.unsubscribe() + POST .../unsubscribe.
  *
  * Listens for SW postMessage `vpsm-vc-accept` (when the user clicks the
- * "Atender" action on a push notification while the panel is already open).
+ * answer action on a push notification while the panel is already open).
  *
  * Public API: window.VPSMPush = {
  *   isSupported(), getState(token), subscribe(token, onAccept), unsubscribe(token), onAcceptMessage(fn)
@@ -57,21 +57,21 @@
   }
 
   async function subscribe(token, onAccept) {
-    if (!isSupported()) throw new Error('Push notifications não suportadas neste navegador');
+    if (!isSupported()) throw new Error('Push notifications are not supported in this browser');
     // 1) Permission
     if (Notification.permission === 'default') {
       const r = await Notification.requestPermission();
-      if (r !== 'granted') throw new Error('permissão de notificação negada');
+      if (r !== 'granted') throw new Error('notification permission denied');
     } else if (Notification.permission === 'denied') {
-      throw new Error('notificações bloqueadas — habilite nas configurações do navegador');
+      throw new Error('notifications are blocked; enable them in the browser settings');
     }
     // 2) Fetch VAPID public key
     const r = await fetch('/api/videocall/push/public-key', {
       headers: { Authorization: 'Bearer ' + token },
     });
-    if (!r.ok) throw new Error('VAPID key indisponível (HTTP ' + r.status + ')');
+    if (!r.ok) throw new Error('VAPID key unavailable (HTTP ' + r.status + ')');
     const { public_key } = await r.json();
-    if (!public_key) throw new Error('VAPID key vazio');
+    if (!public_key) throw new Error('VAPID key is empty');
     // 3) Subscribe at the browser
     const reg = await getRegistration();
     let sub = await reg.pushManager.getSubscription();
@@ -81,10 +81,9 @@
         applicationServerKey: urlB64ToBytes(public_key),
       });
     }
-    // 4) Send subscription to our server
-    // manda também o device_id. Sem esse elo, silenciar "este
-    // computador" calaria só o toque in-tab e o push do sistema operacional
-    // continuaria pipocando no MESMO aparelho que o dono acabou de silenciar.
+    // 4) Send subscription to our server, with the device_id: without it,
+    // muting "this computer" would silence only the in-tab ring and the OS
+    // push would keep firing on the device the owner just muted.
     const subJSON = sub.toJSON();
     try {
       const d = window.VPSMDevice ? window.VPSMDevice.info() : null;
@@ -98,7 +97,7 @@
     if (!post.ok) {
       // Rollback the browser-side sub so the user can retry cleanly.
       try { await sub.unsubscribe(); } catch (_) {}
-      throw new Error('falha ao registrar no servidor (HTTP ' + post.status + ')');
+      throw new Error('failed to register with the server (HTTP ' + post.status + ')');
     }
     onAcceptMessage(onAccept);
     return true;
@@ -121,14 +120,12 @@
     return true;
   }
 
-  // Hook SW → page messaging. When the user clicks the "Atender" action on
+  // Hook SW → page messaging. When the user clicks the answer action on
   // a push notification, the SW posts a message to all open clients; we
   // forward it to the app callback so the call auto-opens.
   //
-  // Dedup: chamadas múltiplas a onAcceptMessage (reload do init, reconexão)
-  // antes acumulavam listeners — callback disparava N vezes. Agora um único
-  // listener delega pro callback atual armazenado em `currentAcceptCb`.
-  // (Auditoria A2)
+  // onAcceptMessage may be called many times (init reload, reconnect): a single
+  // listener delegates to `currentAcceptCb` so the callback never fires N times.
   let currentAcceptCb = null;
   let listenerInstalled = false;
   function onAcceptMessage(fn) {

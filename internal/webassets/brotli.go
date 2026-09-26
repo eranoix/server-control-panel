@@ -24,17 +24,17 @@ import (
 // form is safe by construction — there is no way to serve a stale version of
 // content that does not change.
 var (
-	brCache   sync.Map // key (with the build baked in) -> compressed []byte
-	brEmCurso sync.Map // key -> compression in flight (one compressor per key)
+	brCache    sync.Map // key (with the build baked in) -> compressed []byte
+	brInFlight sync.Map // key -> compression in flight (one compressor per key)
 )
 
-// aceitaBrotli is deliberately simple: "br" in the list is enough. An explicit
+// acceptsBrotli is deliberately simple: "br" in the list is enough. An explicit
 // q=0 is rare enough not to be worth a quality parser here — and the worst case
 // of getting it wrong is serving brotli to someone who asked for gzip first,
 // which every browser that advertises br knows how to read.
-func aceitaBrotli(r *http.Request) bool {
-	for _, parte := range strings.Split(r.Header.Get("Accept-Encoding"), ",") {
-		if strings.EqualFold(strings.TrimSpace(strings.SplitN(parte, ";", 2)[0]), "br") {
+func acceptsBrotli(r *http.Request) bool {
+	for _, part := range strings.Split(r.Header.Get("Accept-Encoding"), ",") {
+		if strings.EqualFold(strings.TrimSpace(strings.SplitN(part, ";", 2)[0]), "br") {
 			return true
 		}
 	}
@@ -52,20 +52,20 @@ func aceitaBrotli(r *http.Request) bool {
 // the optimization would worsen exactly the case it exists to improve. This way
 // the cost leaves the critical path and the maximum level comes for free: q=11
 // gives 196 KB against 226 KB for q=5 and 252 KB for gzip (measured on the real index).
-func brotliOnce(chave string, corpo []byte) []byte {
-	if v, ok := brCache.Load(chave); ok {
+func brotliOnce(key string, body []byte) []byte {
+	if v, ok := brCache.Load(key); ok {
 		b, _ := v.([]byte)
 		return b
 	}
 	// LoadOrStore guarantees a single compressor per key even with N simultaneous
 	// requests right after a deploy.
-	if _, jaRodando := brEmCurso.LoadOrStore(chave, true); jaRodando {
+	if _, alreadyRunning := brInFlight.LoadOrStore(key, true); alreadyRunning {
 		return nil
 	}
 	// Copy: the caller may be handing us a buffer it reuses.
-	dados := append([]byte(nil), corpo...)
+	dados := append([]byte(nil), body...)
 	go func() {
-		defer brEmCurso.Delete(chave)
+		defer brInFlight.Delete(key)
 		var buf bytes.Buffer
 		w := brotli.NewWriterLevel(&buf, brotli.BestCompression)
 		if _, err := w.Write(dados); err != nil {
@@ -79,10 +79,10 @@ func brotliOnce(chave string, corpo []byte) []byte {
 		// Content that does not compress (already compressed, or tiny) is no gain:
 		// storing nil avoids recompressing it on every request for nothing.
 		if len(out) >= len(dados) {
-			brCache.Store(chave, []byte(nil))
+			brCache.Store(key, []byte(nil))
 			return
 		}
-		brCache.Store(chave, out)
+		brCache.Store(key, out)
 	}()
 	return nil
 }
@@ -90,29 +90,29 @@ func brotliOnce(chave string, corpo []byte) []byte {
 // serveBrotli writes the compressed body if the client accepts it and the
 // compression was worth it. Returns false when the caller should follow the
 // normal path (no encoding), and in that case NOTHING was written to the response.
-func serveBrotli(w http.ResponseWriter, r *http.Request, chave string, corpo []byte) bool {
-	if !aceitaBrotli(r) {
+func serveBrotli(w http.ResponseWriter, r *http.Request, key string, body []byte) bool {
+	if !acceptsBrotli(r) {
 		return false
 	}
-	comprimido := brotliOnce(chave, corpo)
-	if comprimido == nil {
+	compressed := brotliOnce(key, body)
+	if compressed == nil {
 		return false
 	}
 	w.Header().Set("Content-Encoding", "br")
 	// Without Vary, an intermediate cache can hand the brotli body to a client
 	// that never advertised br.
 	w.Header().Add("Vary", "Accept-Encoding")
-	_, _ = w.Write(comprimido)
+	_, _ = w.Write(compressed)
 	return true
 }
 
 // ServeBrotliAsset exposes the brotli path to whoever serves assets outside
 // this package (the /vendor handler in the router). Same contract: it returns
 // false without having written anything when the caller should take the normal path.
-func ServeBrotliAsset(w http.ResponseWriter, r *http.Request, chave string, corpo []byte) bool {
-	return serveBrotli(w, r, chave, corpo)
+func ServeBrotliAsset(w http.ResponseWriter, r *http.Request, key string, body []byte) bool {
+	return serveBrotli(w, r, key, body)
 }
 
-// AceitaBrotli reports whether the client advertised support — used to vary the
+// AcceptsBrotli reports whether the client advertised support — used to vary the
 // ETag by encoding before the file is even read.
-func AceitaBrotli(r *http.Request) bool { return aceitaBrotli(r) }
+func AcceptsBrotli(r *http.Request) bool { return acceptsBrotli(r) }

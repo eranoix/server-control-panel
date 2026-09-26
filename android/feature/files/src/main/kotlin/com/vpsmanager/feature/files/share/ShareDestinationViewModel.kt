@@ -14,29 +14,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-/**
- * One file/text item extracted from the incoming share [android.content.Intent]
- * by `ShareTargetActivity`, already resolved to a display name and size so
- * [ShareDestinationScreen] can show what is being shared before committing to
- * an upload.
- */
+/** One item from the incoming share [android.content.Intent], with its display name and size. */
 data class SharedItem(val uri: String, val displayName: String, val sizeBytes: Long)
 
 /**
- * Renames every [SharedItem] after the first to carry a given `displayName`
- * within [items] to `"name (2).ext"`, `"name (3).ext"`, etc. -- an
- * `ACTION_SEND_MULTIPLE` share of two items whose source app didn't expose a
- * `DISPLAY_NAME` column (both fall back to the literal `"arquivo"`, see
- * `ShareTargetActivity.resolveSharedUri`), or two photos that simply share a
- * filename, is an ordinary occurrence -- not an edge case. Without this,
- * downstream consumers that key by `displayName` collide: `ShareDestinationScreen`'s
- * `LazyColumn` throws (Compose requires unique keys), and
- * `TransferViewModel.startUpload`'s `WorkManager` unique-work name
- * (`"upload:$destDir/$filename"`) silently drops every item after the first
- * to the same name via `ExistingWorkPolicy.KEEP`. Called once, at the point
- * [SharedItem]s are first handed to the UI, so every consumer downstream
- * (the list, the upload call, the per-item work-info query) agrees on the
- * same already-unique name.
+ * Renames repeated display names to `"name (2).ext"`, `"name (3).ext"` and so on. Duplicates are
+ * common (items without `DISPLAY_NAME` share a fallback name), and would crash the keyed
+ * `LazyColumn` and make `ExistingWorkPolicy.KEEP` silently drop uploads with the same work name.
  */
 fun disambiguateSharedItems(items: List<SharedItem>): List<SharedItem> {
     val seenCounts = HashMap<String, Int>()
@@ -64,18 +48,10 @@ sealed interface DestinationStep {
 }
 
 /**
- * Drives the destination choice for a share: resolve the default inbox
- * directory, or let the admin pick a folder via [ShareDestinationScreen]'s
- * embedded `FileBrowserScreen(pickMode = true)`. This class never talks to
- * [com.vpsmanager.feature.files.transfer.UploadWorker]/`TransferRepository`
- * itself -- that stays exclusively [com.vpsmanager.feature.files.transfer.TransferViewModel]'s
- * job (the same engine built for the manual "Enviar" affordance), this class
- * only decides which `destDir` that engine is pointed at.
+ * Chooses the share destination: the default inbox or a folder picked in the embedded browser.
+ * Uploading itself stays with [com.vpsmanager.feature.files.transfer.TransferViewModel].
  *
- * `AndroidViewModel` (not a plain `ViewModel`) because [uploadWorkInfo] needs
- * an application `Context` to reach [WorkManager.getInstance] -- the same
- * precedent `TransferViewModel` already established, no new DI wiring
- * introduced for this single need.
+ * An `AndroidViewModel` because [uploadWorkInfo] needs a Context for [WorkManager.getInstance].
  */
 class ShareDestinationViewModel(
     application: Application,
@@ -115,14 +91,8 @@ class ShareDestinationViewModel(
     }
 
     /**
-     * Observes the same [WorkManager] unique-work entry
-     * `TransferViewModel.startUpload` enqueues for `(destDir, filename)`,
-     * queried directly by name rather than through `TransferViewModel`'s own
-     * `StateFlow` (which is keyed by an internally-generated work id this
-     * class never sees). This mirrors `"upload:$destDir/$filename"` --
-     * `TransferViewModel.startUpload`'s own unique-work-name convention --
-     * so this plan never has to touch a file under `feature/files/transfer/`
-     * to correlate per-item progress.
+     * Observes the upload's unique work by name. Must match the `"upload:$destDir/$filename"`
+     * convention of `TransferViewModel.startUpload`.
      */
     fun uploadWorkInfo(destDir: String, filename: String): Flow<WorkInfo?> =
         workManager.getWorkInfosForUniqueWorkFlow(uploadWorkName(destDir, filename)).map { it.firstOrNull() }

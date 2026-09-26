@@ -204,8 +204,8 @@ window.vpsmTheme = (function(){
   function _syncMeta(theme){
     try {
       var c = theme === 'light' ? META_LIGHT : META_DARK;
-      var metas = document.querySelectorAll('meta[name="theme-color"]');
-      for (var i = 0; i < metas.length; i++) metas[i].setAttribute('content', c);
+      var targets = document.querySelectorAll('meta[name="theme-color"]');
+      for (var i = 0; i < targets.length; i++) targets[i].setAttribute('content', c);
     } catch(_){}
   }
   // Stamps the theme onto the DOM (idempotent). Does not persist.
@@ -643,7 +643,7 @@ function app() {
     ...(window.VPSMGitModule ? window.VPSMGitModule() : { git: { repos: [], repo: '' } }),
     ...(window.VPSMDeployModule ? window.VPSMDeployModule() : { deploy: { apps: [] } }),
     ...(window.VPSMNodesModule ? window.VPSMNodesModule() : { nodes: { list: [] } }),
-    ...(window.VPSMProxmoxModule ? window.VPSMProxmoxModule() : { pvx: { saude: null } }),
+    ...(window.VPSMProxmoxModule ? window.VPSMProxmoxModule() : { pvx: { health: null } }),
     ...(window.VPSMAgentsModule ? window.VPSMAgentsModule() : { agents: { sessions: [] } }),
 
     // The deploy reentrancy guard now lives in deployRun itself, in 20-deploy.js,
@@ -906,10 +906,9 @@ function app() {
       // Language for Web Speech recognition.
       subtitlesLang: localStorage.getItem('vpsm_vc_subtitles_lang') || 'pt-BR',
       subtitlesLangPickerOpen: false,
-      // Volume de envio do mic (1.0 = 100%) — o que os outros ouvem. A
-      // transcrição lê o mic cru e não é afetada. Persistido entre sessões.
+      // Outgoing mic volume (1.0 = 100%), what the others hear. Transcription
+      // reads the raw mic and is not affected. Persisted across sessions.
       micGain: Math.min(4, Math.max(0.25, parseFloat(localStorage.getItem('vpsm_vc_mic_gain') || '1.0') || 1.0)),
-      // Processamento do navegador na captura (default: tudo ligado).
       micProc: (() => {
         let p = {};
         try { p = JSON.parse(localStorage.getItem('vpsm_vc_mic_proc') || '{}') || {}; } catch (_) {}
@@ -920,7 +919,7 @@ function app() {
         };
       })(),
       micProcBusy: false,
-      // Medidor do que SAI pros peers (depois do volume): 0..100.
+      // Level of what goes OUT to the peers (after the volume): 0..100.
       micLevel: 0,
       micLimiting: false,
       // Separate toggle from the transcription itself (subtitlesActive). Default true.
@@ -1003,7 +1002,7 @@ function app() {
     // setPage() closes it automatically; the backdrop has an @click to close.
     mobileSidebarOpen: false,
     // Browser tab: null = not checked yet; true = service up; false = down.
-    navegadorHealth: null,
+    browserHealth: null,
     // Browser state: persisted in localStorage, survives F5/logout.
     // Each tab has 1 or 2 panes; each pane keeps its current URL (/browser/...).
     browserTabs: [],
@@ -1449,7 +1448,7 @@ function app() {
     // paste in both cases. Ctrl+C has NO toggle — it only copies when there is a
     // selection, so it never costs the SIGINT (see the key handler).
     hostTermCtrlV: localStorage.getItem('vpsm_term_ctrl_v') !== '0',
-    novaVersaoDisponivel: false,
+    newVersionAvailable: false,
     // Reload the tab on its own when it is hidden and the work is idle. It can be
     // turned off — it is the only way for the tab to leave the old JS behind
     // without the user having to notice a banner.
@@ -1463,7 +1462,7 @@ function app() {
     hostTermLigatures: localStorage.getItem('vpsm_term_ligatures') === '1',
     // Configurable scrollback (default 10k, cap 50k). A phone with 32GB RAM copes.
     hostTermScrollback: parseInt(localStorage.getItem('vpsm_term_scrollback')||'10000',10),
-    // How much of the session log the primer reloads on open — see primeEAbre.
+    // How much of the session log the primer reloads on open — see primeAndOpen.
     // In MiB in the settings panel; in bytes in localStorage.
     hostTermPrimerMiB: Math.round((parseInt(localStorage.getItem('vpsm_term_primer_bytes')||'2097152',10)||0)/1048576),
     // Search with case sensitivity persisted
@@ -1478,14 +1477,14 @@ function app() {
     // conservative because there is a multiplexer in the path here.
     // Screens already mounted (see _triggerViewLoaders). Starts empty: at boot only
     // the landing screen goes in.
-    _montados: {},
+    _mounted: {},
     // Claude Code versions per session. The CLI writes "Update installed · Restart
     // to update" and the notice sits there forever without saying WHICH sessions
     // need restarting; without this the operator has no way to act and the notice
     // becomes permanent noise.
-    claudeVer: { instalada: '', defasados: 0, processos: [], aberto: false, carregando: false, reiniciando: 0 },
-    hostTermEcoPreditivo: localStorage.getItem('vpsm_term_eco_preditivo') || 'auto',
-    hostTermEcoLimiar: parseInt(localStorage.getItem('vpsm_term_eco_limiar') || '60', 10),
+    claudeVer: { instalada: '', defasados: 0, processos: [], open: false, loading: false, restarting: 0 },
+    hostTermPredictiveEcho: localStorage.getItem('vpsm_term_eco_preditivo') || 'auto',
+    hostTermEchoThreshold: parseInt(localStorage.getItem('vpsm_term_eco_limiar') || '60', 10),
     // Help overlay (Ctrl+/ or ?)
     termHelpOpen: false,
     hostNotifyEnabled: localStorage.getItem('vpsm_term_notify') === '1',
@@ -1573,23 +1572,21 @@ function app() {
       // pages + actions; dynamic data (containers, sessions) is merged in getPaletteItems()
       // IMPORTANT: every `hint:'g+X'` here is a CONTRACT with the key map in
       // installGlobalHotkeys(). Announcing a g+X that is not there (or that leads to
-      // a different screen) makes the palette lie. Previously: g+j and g+m were
-      // announced without existing, and g+s was announced on Agendamentos while the
-      // handler sent you to Systemd. Fixed on both sides — do not edit one without the other.
+      // a different screen) makes the palette lie, so never edit one without the other.
       // kw: aliases concatenated to the label at match time (getPaletteItems).
       // They resolve synonyms/terms the label does not have: 'limpeza'->Prune,
       // 'dev/shell'->Terminal, 'senhas'->Secrets. Accents are already handled by _norm.
       pages: [
-        {label:'Dashboard',           kind:'page', page:'dashboard',  hint:'g+d', kw:'inicio home visao geral painel'},
-        {label:'History',           kind:'page', page:'history',    hint:'g+h', kw:'history graficos series'},
-        {label:'Alerts',             kind:'page', page:'alerts',     hint:'g+l', kw:'alerts alarmes avisos regras'},
+        {label:'Dashboard',           kind:'page', page:'dashboard',  hint:'g+d', kw:'inicio home visao geral panel'},
+        {label:'History',           kind:'page', page:'history',    hint:'g+h', kw:'history charts series'},
+        {label:'Alerts',             kind:'page', page:'alerts',     hint:'g+l', kw:'alerts alarmes avisos rules'},
         {label:'Metrics',            kind:'page', page:'metrics',                kw:'metrics cpu memoria ram disco carga'},
         {label:'Containers',          kind:'page', page:'containers', hint:'g+c', kw:'docker conteiner conteineres'},
         {label:'Compose',             kind:'page', page:'compose',                kw:'docker-compose stack projeto'},
-        {label:'Images',             kind:'page', page:'images',     hint:'g+i', kw:'images docker imagem'},
+        {label:'Images',             kind:'page', page:'images',     hint:'g+i', kw:'images docker image'},
         {label:'Volumes',             kind:'page', page:'volumes',    hint:'g+v', kw:'storage docker armazenamento'},
         {label:'Networks',               kind:'page', page:'networks',   hint:'g+n', kw:'networks network rede docker'},
-        {label:'Prune / Pull',        kind:'page', page:'prune',                  kw:'limpeza faxina docker prune pull limpar'},
+        {label:'Prune / Pull',        kind:'page', page:'prune',                  kw:'limpeza faxina docker prune pull clear'},
         {label:'Processes',           kind:'page', page:'processes',              kw:'processes ps top htop'},
         {label:'Ports / Connections',   kind:'page', page:'ports',                  kw:'ports connections sockets netstat rede'},
         {label:'Systemd / journalctl',kind:'page', page:'systemd',    hint:'g+s', kw:'services servicos unidades logs journal journalctl'},
@@ -1600,18 +1597,18 @@ function app() {
         {label:'Graphs',              kind:'page', page:'grafos',                 kw:'graphs grafo dependencias graphify'},
         {label:'VSCode (code-server)',kind:'page', page:'code',                   kw:'code editor vscode ide code-server'},
         {label:'Secrets',             kind:'page', page:'secrets',                kw:'segredos senhas vault credenciais'},
-        {label:'Audit',               kind:'page', page:'audit',      hint:'g+a', kw:'auditoria logs eventos rastro'},
+        {label:'Audit',               kind:'page', page:'audit',      hint:'g+a', kw:'auditoria logs events rastro'},
         {label:'Users',            kind:'page', page:'users',      hint:'g+u', kw:'users contas acesso permissoes'},
         {label:'Operations · Tasks',      kind:'page', page:'manutencao',  hint:'g+m', kw:'jira tasks tarefas manutencao kanban'},
-        {label:'Operations · Jobs (queue)',  kind:'page', page:'jobs',        hint:'g+j', kw:'queue fila trabalhos jobs'},
+        {label:'Operations · Jobs (queue)',  kind:'page', page:'jobs',        hint:'g+j', kw:'queue queue trabalhos jobs'},
         {label:'Operations · Schedules', kind:'page', page:'agendamentos',hint:'g+e', kw:'schedule cron agenda recorrente'},
         {label:'Operations · Git',          kind:'page', page:'git',                    kw:'versionamento repo repositorio commit branch'},
-        // The "Nós" entry still exists and leads to the merged screen: whoever types
+        // The "Nodes" entry still exists and leads to the merged screen: whoever types
         // "nos" in the palette is looking for the inventory, and it did not change
         // subject, it changed address. Removing the entry would make the search fail
         // for the word the operator has in mind.
-        {label:'Operations · Nodes (on the Proxmox screen)', kind:'page', page:'proxmox', kw:'nos nodes inventario no eixo guest lxc qemu credencial revogar ligar desligar console'},
-        {label:'Operations · Proxmox',      kind:'page', page:'proxmox',     kw:'proxmox pve hipervisor tarefas upid discos smart snapshot ram load cpu memoria disco rede filtro saude'},
+        {label:'Operations · Nodes (on the Proxmox screen)', kind:'page', page:'proxmox', kw:'nos nodes inventario no eixo guest lxc qemu credencial revoke turnOn turnOff console'},
+        {label:'Operations · Proxmox',      kind:'page', page:'proxmox',     kw:'proxmox pve hipervisor tarefas upid discos smart snapshot ram load cpu memoria disco rede filter health'},
         {label:'Operations · Deploy',       kind:'page', page:'deploy',      hint:'g+p', kw:'deploy paas publicar release rollback apps'},
         {label:'Apps · WhatsApp',          kind:'page', page:'whatsapp',    hint:'g+w', kw:'zap whats mensagens'},
         {label:'Apps · Video call',      kind:'page', page:'videocall',              kw:'video call reuniao meet chamada'},
@@ -1657,7 +1654,7 @@ function app() {
     sortState: safeJSON('vpsm_sort_state', {}),  // sort state for the tables
     sessions: [],
 // The active-sessions screen is where you check for an intrusion. A `catch →
-    // sessions=[]` rendered "nenhuma outra sessão ativa" — the SAME screen as a
+    // sessions=[]` rendered "no other active sessions", the SAME screen as a
     // clean system. These three flags separate loading / error / genuinely empty.
     sessionsLoading: false,
     sessionsLoaded: false,   // true only when the list came from the server
@@ -1686,7 +1683,7 @@ function app() {
     _tunnelTimer: null,
     deviceUsage: {},          // device name → {rate_bps, total_bytes, active_conns}
     _usageTimer: null,
-    // Data saver (Security tab → Economia)
+    // Data saver (Security tab)
     // The shape has to be COMPLETE, not a {} pretending to exist. `saved:{}` was
     // truthy and empty: every `dsStatus.saved ? dsStatus.saved.X : 0` in the index
     // passed the guard and returned undefined — calling `.toLocaleString()` on that
@@ -1792,10 +1789,10 @@ function app() {
     // saved from back then carries that name in localStorage; without migrating it
     // ON READ, the button disappears from their bar (the saved list beats the
     // default). Map it and move on.
-    termBarButtons: (function(){ const PADRAO = ['aa','clear','reconnect','sessoes','hide'];
+    termBarButtons: (function(){ const DEFAULTS = ['aa','clear','reconnect','sessoes','hide'];
       try { const v = JSON.parse(localStorage.getItem('vpsm_term_bar')||'null');
-        return Array.isArray(v) ? v.map(k => k === 'tmux' ? 'sessoes' : k) : PADRAO.slice();
-      } catch(_) { return PADRAO.slice(); } })(),
+        return Array.isArray(v) ? v.map(k => k === 'tmux' ? 'sessoes' : k) : DEFAULTS.slice();
+      } catch(_) { return DEFAULTS.slice(); } })(),
     // PWA: captures beforeinstallprompt so we can show a custom "Install app" button.
     // On iOS the native prompt does not exist — we show manual instructions instead.
     pwaPrompt: null,
@@ -1834,7 +1831,7 @@ function app() {
     statsLoading: false,
     toasts: [],
     _toastSeq: 0,
-// Per-container transition state: id -> label ("parando…"). It feeds aria-busy
+// Per-container transition state: id -> label ("stopping…"). It feeds aria-busy
     // and the badge on the row while docker applies the SIGTERM grace period.
     pendingActions: {},
     // Progress of the batch actions: a done/total bar and the honest list of items
@@ -1989,9 +1986,9 @@ function app() {
 
       // (The guest-mode landing is already handled at the top of init — before the token check.)
 
-      // Migration: 'docs' moved out of Operações into Dev, and 'prompts' became a
+      // Migration: 'docs' moved out of Operations into Dev, and 'prompts' became a
       // sub-tab of AI. Resets stale localStorage so we do not land on an orphaned
-      // Operações tab.
+      // Operations tab.
       if (this.tabs.operations === 'docs' || this.tabs.operations === 'prompts') {
         this.tabs.operations = 'tarefas';
         try { localStorage.setItem('vpsm_tabs', JSON.stringify(this.tabs)); } catch(_){}
@@ -2065,18 +2062,18 @@ function app() {
 // Loads jobs at startup to feed the "running" badge. 15s poll because new jobs can appear (scheduler).
       this.loadJobs();
       this.jobsPrefsLoad(); // restores the Jobs tab prefs from the profile
-      this.loadClaudeVersoes(); // which sessions are on an old version of Claude
+      this.loadClaudeVersions(); // which sessions are on an old version of Claude
       this.jiraColSortLoad(); // restores the per-column sorting of the kanban
       this.jiraPrefsLoad(); // restores the fontScale of the Jira panel from the profile
       // Store interval id so logout()/cleanup can clear it — leaking
       // setIntervals after token expiry pile up 401s in the console.
-      this.jobsPollTimer = setInterval(() => { if (document.hidden || this._pulaPoll('jobs')) return; if (this.currentView !== 'jobs') this.loadJobs(); }, 15*1000);
+      this.jobsPollTimer = setInterval(() => { if (document.hidden || this._skipPoll('jobs')) return; if (this.currentView !== 'jobs') this.loadJobs(); }, 15*1000);
       // On the jobs tab itself the 15s poll above is skipped (it would reset
       // jobsCounts on every tick). This 5s timer only reloads while there is visible
       // active work — bars/steps advance under the eyes of the user. The 1s clock only
       // updates elapsed time/ETA locally (zero requests).
       this.jobsLiveTimer = setInterval(() => {
-        if (document.hidden || this._pulaPoll('jobsLive')) return;
+        if (document.hidden || this._skipPoll('jobsLive')) return;
         if (this.currentView === 'jobs' && (this.jobsCounts.running > 0 || this.jobsCounts.queued > 0)) this.loadJobs();
       }, 5*1000);
       this.jobsClockTimer = setInterval(() => {
@@ -2088,8 +2085,8 @@ function app() {
       // Bandwidth poll: every 10s (it used to be 3s = 20 req/min just for a counter)
       // and paused while the tab is in the background. Increments accumulate on the server.
       this.loadBandwidth();
-      this.bwPollTimer = setInterval(() => { if (!document.hidden && !this._pulaPoll('banda')) this.loadBandwidth(); }, 10000);
-      this.pollTimer = setInterval(()=>{ if(document.hidden || this._pulaPoll('stats')) return; this.loadStats(); if(['containers','dashboard'].includes(this.page)) this.loadContainers(); if(this.currentView==='alerts') { this.loadMetricSnapshot(); if(!this.alertFormOpen) this.loadAlertRules(); } if(this.currentView==='history') { this.loadAlertRules(); this.loadHistory().then(()=>this.drawCharts()); } }, 5000);
+      this.bwPollTimer = setInterval(() => { if (!document.hidden && !this._skipPoll('banda')) this.loadBandwidth(); }, 10000);
+      this.pollTimer = setInterval(()=>{ if(document.hidden || this._skipPoll('stats')) return; this.loadStats(); if(['containers','dashboard'].includes(this.page)) this.loadContainers(); if(this.currentView==='alerts') { this.loadMetricSnapshot(); if(!this.alertFormOpen) this.loadAlertRules(); } if(this.currentView==='history') { this.loadAlertRules(); this.loadHistory().then(()=>this.drawCharts()); } }, 5000);
       // A 1s clock only for the live countdown on the state pills (Alerts tab).
       // It touches a single reactive integer; it does not refetch or re-render lists.
       this.clockAlertsTimer = setInterval(()=>{ if(document.hidden) return; if(this.currentView==='alerts') this.clockNowSec = Math.floor(Date.now()/1000); }, 1000);
@@ -2099,13 +2096,13 @@ function app() {
       // waiting on a timer while the connection was already up. The browser knows the
       // exact moment that happens; we just have to listen. The same applies to a tab
       // coming back to the foreground, where the timers were choked by background throttling.
-      window.addEventListener('online', () => this._reconectarPanesAgora());
+      window.addEventListener('online', () => this._reconnectPanesNow());
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) { this._reconectarPanesAgora(); this._reconciliaTamanhos(); }
+        if (!document.hidden) { this._reconnectPanesNow(); this._reconcileSizes(); }
       });
       // `focus` covers the reported case: switching the WINDOW (not the tab). In an
       // installed app/PWA visibilitychange does not always fire, but focus does.
-      window.addEventListener('focus', () => this._reconciliaTamanhos());
+      window.addEventListener('focus', () => this._reconcileSizes());
 
       // Mobile listener: invalidates the isMobile() cache and re-renders the terminal
       // if the viewport crosses the breakpoint (rotation, devtools, resize).
@@ -2189,11 +2186,11 @@ function app() {
 
       // Listens for server alerts and turns them into notifications
       this.pollNotifications();
-      this.notificationTimer = setInterval(()=>{ if(!document.hidden && !this._pulaPoll('notif')) this.pollNotifications(); }, 15000);
+      this.notificationTimer = setInterval(()=>{ if(!document.hidden && !this._skipPoll('notif')) this.pollNotifications(); }, 15000);
 
       // Polls the in-app inbox and pushes new events to the bell in the bar.
       this.loadNotifyInbox();
-      this.notifyInboxTimer = setInterval(()=>{ if(!document.hidden && !this._pulaPoll('inbox')) this.loadNotifyInbox(); }, 20000);
+      this.notifyInboxTimer = setInterval(()=>{ if(!document.hidden && !this._skipPoll('inbox')) this.loadNotifyInbox(); }, 20000);
 
       // Presence: listens for "incoming-call" when someone joins a room you are a
       // member of. Does not block if the module did not load — the feature is optional.
@@ -2523,7 +2520,7 @@ function app() {
     gsStateLabel(s) {
       if (!s) return '—';
       if (s.state === 'running') return 'online';
-      if (s.state === 'missing') return 'ausente';
+      if (s.state === 'missing') return 'missing';
       if (s.state === 'exited') return 'stopped';
       return s.state || '—';
     },
@@ -2650,8 +2647,8 @@ function app() {
       const name = await this.askInput({
         title: 'Duplicate world',
         label: 'Name of the copy of "' + w.name + '"',
-        value: w.name + '-copia',
-        placeholder: 'meu-mundo',
+        value: w.name + '-copy',
+        placeholder: 'my-world',
         validate: (v) => {
           v = String(v || '').trim();
           if (!v) return 'Enter a name';
@@ -2753,14 +2750,13 @@ function app() {
     },
     resetGameSettings() { this.games.gsDraft = JSON.parse(JSON.stringify(this.games.gsOrig || {})); },
 
-    // Agrupa os ~35 campos por assunto — 35 inputs numa lista chapada é
-    // inutilizável. Chave desconhecida cai em "Other", então jogo novo nunca
-    // perde campo.
+    // Groups the ~35 fields by subject. An unknown key falls into "Other", so a
+    // new game never loses a field.
     GS_SETTING_GROUPS: [
-      { title: 'Jogador',     match: /^player|^shroudTime|^foodBuff|^enableStarving|^fromHunger|^tombstone/ },
+      { title: 'Player',      match: /^player|^shroudTime|^foodBuff|^enableStarving|^fromHunger|^tombstone/ },
       { title: 'Progression',  match: /^experience|^perk/ },
       { title: 'Items & World', match: /^enableDurability|^mining|^plant|^resource|^factory|^weather|^fishing|^enableGlider|^dayTime|^nightTime|^curse/ },
-      { title: 'Inimigos',    match: /^enemy|^boss|^threat|^randomSpawner|^aggro|^pacify|^taming/ },
+      { title: 'Enemies',     match: /^enemy|^boss|^threat|^randomSpawner|^aggro|^pacify|^taming/ },
     ],
     gsSettingGroups() {
       const f = (this.games.settingsFilter || '').toLowerCase();
@@ -2919,9 +2915,9 @@ function app() {
       this.games.groups = [
         { name: 'Admin', password: this.gsGenPass(), canKickBan: true, canAccessInventories: true,
           canEditWorld: true, canEditBase: true, canExtendBase: true, reservedSlots: 1 },
-        { name: 'Amigo', password: this.gsGenPass(), canKickBan: false, canAccessInventories: true,
+        { name: 'Friend', password: this.gsGenPass(), canKickBan: false, canAccessInventories: true,
           canEditWorld: true, canEditBase: true, canExtendBase: true, reservedSlots: 0 },
-        { name: 'Visitante', password: this.gsGenPass(), canKickBan: false, canAccessInventories: false,
+        { name: 'Visitor', password: this.gsGenPass(), canKickBan: false, canAccessInventories: false,
           canEditWorld: false, canEditBase: false, canExtendBase: false, reservedSlots: 0 },
       ];
       this.showToast('Template applied with generated passwords — review and save', '');
@@ -3115,9 +3111,9 @@ function app() {
     // who wants something the dropdowns do not cover).
 
     GS_DOW: [
-      { v: 0, label: 'domingo' }, { v: 1, label: 'segunda' }, { v: 2, label: 'terca' },
-      { v: 3, label: 'quarta' }, { v: 4, label: 'quinta' }, { v: 5, label: 'sexta' },
-      { v: 6, label: 'sabado' },
+      { v: 0, label: 'Sunday' }, { v: 1, label: 'Monday' }, { v: 2, label: 'Tuesday' },
+      { v: 3, label: 'Wednesday' }, { v: 4, label: 'Thursday' }, { v: 5, label: 'Friday' },
+      { v: 6, label: 'Saturday' },
     ],
     GS_EVERY: [1, 2, 3, 4, 6, 8, 12],
 
@@ -3342,7 +3338,7 @@ function app() {
         const min = v / 60000000000;
         return v + ' (' + (Math.round(min * 10) / 10) + ' min)';
       }
-      if (typeof v === 'boolean') return v ? 'ligado' : 'desligado';
+      if (typeof v === 'boolean') return v ? 'on' : 'off';
       return String(v);
     },
     gsHint(k) {
@@ -3353,7 +3349,7 @@ function app() {
         bits.push((Math.round((cur / 60000000000) * 10) / 10) + ' min');
       }
       if (m.def !== undefined && JSON.stringify(cur) !== JSON.stringify(m.def)) {
-        bits.push('default: ' + (typeof m.def === 'boolean' ? (m.def ? 'ligado' : 'desligado') : m.def));
+        bits.push('default: ' + (typeof m.def === 'boolean' ? (m.def ? 'on' : 'off') : m.def));
       }
       return bits.join(' · ');
     },
@@ -3400,7 +3396,7 @@ function app() {
 
     // Categories in the order that makes sense to a player, not alphabetically.
     gameTrainerCategories() {
-      const ordem = ['Jogador', 'Dano e Defesa', 'Inventário', 'Inventario',
+      const order = ['Jogador', 'Dano e Defesa', 'Inventário', 'Inventario',
                      'Estatísticas', 'Estatisticas'];
       const cats = [];
       for (const c of this.games.trCatalog) {
@@ -3408,7 +3404,7 @@ function app() {
         if (!cats.includes(c.category)) cats.push(c.category);
       }
       return cats.sort((a, b) => {
-        const ia = ordem.indexOf(a), ib = ordem.indexOf(b);
+        const ia = order.indexOf(a), ib = order.indexOf(b);
         return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
       });
     },
@@ -3437,10 +3433,10 @@ function app() {
 
     // Requested but not applied yet — worth calling out visually.
     gameTrainerPending(c) {
-      const pedido = c.valueType === 'toggle'
+      const request = c.valueType === 'toggle'
         ? this.gameTrainerIsOn(c.id)
         : Number(this.gameTrainerVal(c.id)) !== 0;
-      return pedido && !this.gameTrainerApplied(c);
+      return request && !this.gameTrainerApplied(c);
     },
 
     gameTrainerToggle(id) {
@@ -3505,16 +3501,16 @@ function app() {
         + 'Name, slots, passwords and schedules are NOT affected — the game has no '
         + 'default for those fields.\n'
         + 'This only changes the form; nothing is written until you save.'))) return;
-      let mudou = 0, semPadrao = 0;
+      let changed = 0, noDefault = 0;
       for (const k of Object.keys(this.games.gsDraft || {})) {
-        if (this.gsMeta(k).def === undefined) { semPadrao++; continue; }
-        if (!this.gsIsDefault(k)) mudou++;
+        if (this.gsMeta(k).def === undefined) { noDefault++; continue; }
+        if (!this.gsIsDefault(k)) changed++;
         this.gsResetDefault(k);
       }
       // Honest feedback: saying how many fields have NO known default avoids the
       // impression that the button ignored part of the screen for no reason.
-      const extra = semPadrao ? (' · ' + semPadrao + ' with no known default, kept') : '';
-      this.showToast(mudou + ' field(s) returned to the default' + extra + ' — review and save', '');
+      const extra = noDefault ? (' · ' + noDefault + ' with no known default, kept') : '';
+      this.showToast(changed + ' field(s) returned to the default' + extra + ' — review and save', '');
     },
 
     GAME_SETTING_LABELS: {
@@ -3760,7 +3756,7 @@ function app() {
       secrets:           ['security', 'secrets'],
       sessions:          ['security', 'sessions'],
       rede:              ['security', 'rede'],
-      // AdGuard + Devices + Economia were merged into a single tab. The old keys
+      // AdGuard + Devices + Data saver were merged into a single tab. The old keys
       // become ALIASES → old links/favourites/palette entries land on the unified tab
       // (same pattern as nodes→proxmox). Deleting them would send the old ones nowhere.
       adguard:           ['security', 'rede'],
@@ -3774,7 +3770,7 @@ function app() {
       code:              ['dev', 'code'],
       git:               ['operations', 'git'],
       // 🔴 `nodes` was NOT deleted, and that is the point.
-      // The Nós tab was MERGED into the Proxmox tab, but old links, favourites,
+      // The Nodes tab was MERGED into the Proxmox tab, but old links, favourites,
       // memorised shortcuts and the palette entry all still ask for `nodes`.
       // Deleting the key would send every one of them nowhere; here they land on the
       // screen that inherited the content.
@@ -3847,7 +3843,7 @@ function app() {
     //
     // 🔴 The inverse of PAGE_REMAP is NOT a function: more than one key can point
     // at the same (group, tab). Today `nodes` and `proxmox` both point at
-    // ['operations','proxmox'], because the Nós tab was MERGED into Proxmox and the
+    // ['operations','proxmox'], because the Nodes tab was MERGED into Proxmox and the
     // legacy alias has to survive so that old links, favourites, memorised
     // shortcuts and the command-palette entry keep landing somewhere.
     //
@@ -3859,8 +3855,8 @@ function app() {
     // Rule: the CANONICAL key of a tab is the one with the SAME NAME as the tab.
     // Aliases are the fallback. Deterministic and immune to reordering the map.
     tabToView(group, tab) {
-      const canonica = this.PAGE_REMAP[tab];
-      if (canonica && canonica[0] === group && canonica[1] === tab) return tab;
+      const canonical = this.PAGE_REMAP[tab];
+      if (canonical && canonical[0] === group && canonical[1] === tab) return tab;
       for (const [view, [g, t]] of Object.entries(this.PAGE_REMAP)) {
         if (g === group && t === tab) return view;
       }
@@ -4050,7 +4046,7 @@ function app() {
     //   `sistema.ventoinhas` — a sub-tab of the fanhub proxy, it only exists in the
     //      panel of the VM. It stays in the canonical list (the file has to be
     //      byte-identical) and comes out as 0 in the report of this fork.
-    //   `nodes` (the Nós screen) — the screen stopped existing: it was MERGED into
+    //   `nodes` (the Nodes screen) — the screen stopped existing: it was MERGED into
     //      the Proxmox tab, and `nodes` today is only a remap to `proxmox` (see
     //      PAGE_REMAP), which never becomes `currentView`. The canonical id
     //      `operacoes.nos` IS ALREADY in the allowlist since the re-edit — what is
@@ -4147,7 +4143,7 @@ function app() {
       try {
         const id = this._telScreen();
         if (id && window.tel) window.tel.hit(id, origin || 'nav');
-        this._telSub(this._telSubAtual());
+        this._telSub(this._telSubCurrent());
       } catch (_) {}
     },
     // The measurement bias this method exists to correct: the third-level $watch
@@ -4164,7 +4160,7 @@ function app() {
     // `git` is deliberately left out: its default view is 'changes', which is not a
     // canonical sub-action, and prView='list' only means something with the PR panel
     // open. There, only the $watch handlers count.
-    _telSubAtual() {
+    _telSubCurrent() {
       try {
         const v = this.currentView;
         if (v === 'ai')         return 'dev.ai.' + this.aiTab;
@@ -4193,7 +4189,7 @@ function app() {
 
       w('aiTab',         (v) => { if (self.currentView === 'ai')         self._telSub('dev.ai.' + v); });
       w('jiraView',      (v) => { if (self.currentView === 'manutencao') self._telSub('operacoes.tarefas.jira.' + v); });
-      w('jiraDetailTab', (v) => { if (self.currentView === 'manutencao') self._telSub('operacoes.tarefas.jira.detalhe.' + v); });
+      w('jiraDetailTab', (v) => { if (self.currentView === 'manutencao') self._telSub('operacoes.tarefas.jira.detail.' + v); });
       w('git.view',      (v) => { self._telSub('operacoes.git.' + v); });
       w('git.inspect.kind', (v) => { self._telSub('operacoes.git.' + v); });
       w('git.prView',    (v) => { self._telSub('operacoes.git.prs.' + v); });
@@ -4318,13 +4314,13 @@ function app() {
     _triggerViewLoaders(p, opts) {
       opts = opts || {};
       // Mount latch. The heaviest screens live inside a <template
-      // x-if="_montados.X">, so the browser does not build their DOM and Alpine does
+      // x-if="_mounted.X">, so the browser does not build their DOM and Alpine does
       // not scan their directives until the first visit: boot stops paying for
       // screens nobody opened (that is ~195 KB of markup and thousands of nodes).
       // The latch NEVER goes back to false — it is the same pattern as codeMounted:
       // once mounted, the screen stays alive, so switching tabs does not lose scroll,
       // focus or state, as it would if the x-if followed visibility.
-      if (p) this._montados[p] = true;
+      if (p) this._mounted[p] = true;
       if (p==='dashboard')  { this.loadStats(); this.loadContainers(); this.loadVPSMHealth(); }
       if (p==='containers') this.loadContainers();
       if (p==='compose')    this.loadCompose();
@@ -4419,7 +4415,7 @@ function app() {
           this.$nextTick(()=>this.openHostTerminal());
         }
       }
-      if (p==='navegador')  this.checkNavegadorHealth();
+      if (p==='navegador')  this.checkBrowserHealth();
       if (p==='videocall')  {
         // Guest mode: a kind=videocall_guest token does not pass these protected routes
         // → noisy 401s in the console. Skip everything.
@@ -4434,12 +4430,12 @@ function app() {
 
     // Quick probe of the Browser service (Ultraviolet+Wisp). Runs when the user
     // enters the tab — avoids loading the iframe against a backend that is down.
-    async checkNavegadorHealth() {
-      this.navegadorHealth = null;
+    async checkBrowserHealth() {
+      this.browserHealth = null;
       try {
         const r = await fetch('/browser/healthz', {headers:{'Authorization':'Bearer '+this.token}});
-        this.navegadorHealth = r.ok;
-        if (this.navegadorHealth) {
+        this.browserHealth = r.ok;
+        if (this.browserHealth) {
           this.browserMounted = true;
           this.ensureBrowserState();
           if (!this.browserSnapTimer) {
@@ -4448,7 +4444,7 @@ function app() {
             this.browserSnapTimer = setInterval(()=>this.snapBrowserState(), 2000);
           }
         }
-      } catch(e) { this.navegadorHealth = false; }
+      } catch(e) { this.browserHealth = false; }
     },
 
     // ---------- Browser: state, tabs, split ----------
@@ -5099,10 +5095,10 @@ function app() {
       headers['Authorization'] = 'Bearer ' + this.token;
       // The helper itself measures how long the API is taking. It is the most honest
       // probe available here — same network path, same server, zero cost — and it is
-      // what drives the decision to loosen the polling when the link is bad (see _redeLenta).
+      // what drives the decision to loosen the polling when the link is bad (see _slowNetwork).
       const _t0 = Date.now();
       const r = await fetch(path, Object.assign({}, opts, { headers }));
-      this._marcaLatenciaApi(Date.now() - _t0);
+      this._markApiLatency(Date.now() - _t0);
       if (r.status===401) {
         // Do NOT drop the session right away. A 401 is almost always just the access
         // token expiring (an idle/background tab) — the session on the server (and the
@@ -6777,9 +6773,9 @@ function app() {
     schedFormMissing() {
       const desc = this.schedDescriptor(this.schedForm.j.kind);
       const miss = [];
-      if (!this.schedForm.j.name.trim()) miss.push('nome');
+      if (!this.schedForm.j.name.trim()) miss.push('name');
       if (!this.schedForm.j.schedule.trim()) miss.push('cron');
-      if (!this.schedForm.j.kind) miss.push('tipo');
+      if (!this.schedForm.j.kind) miss.push('type');
       ((desc && desc.args) || []).forEach(a => {
         if (!a.required) return;
         const v = this.schedForm.args[a.name];
@@ -7287,7 +7283,7 @@ function app() {
               okN++;
             } catch(e){ lastErr = e.message; }
           }
-          this.showToast(`${d.key}: ${okN}/${N} anexos`+(okN<N && lastErr ? ' — '+lastErr : ''), okN<N ? 'warn' : 'ok');
+          this.showToast(`${d.key}: ${okN}/${N} attachments`+(okN<N && lastErr ? ' — '+lastErr : ''), okN<N ? 'warn' : 'ok');
         }
 
         // the board is populated ONLY by JQL (Jira's Lucene index), which lags
@@ -7328,7 +7324,7 @@ function app() {
       };
       this.jiraDetailTab = 'overview';
       try {
-        const [rIss, rTr, rCom] = await Promise.all([
+        const [rIss, rTr, rWith] = await Promise.all([
           this.api('/api/jira/issue/'+iss.key),
           this.api('/api/jira/issue/'+iss.key+'/transitions'),
           this.api('/api/jira/issue/'+iss.key+'/comments'),
@@ -7336,8 +7332,8 @@ function app() {
         this.jiraDetail.issue = await rIss.json();
         const dTr = await rTr.json();
         this.jiraDetail.transitions = dTr.transitions || [];
-        const dCom = await rCom.json();
-        this.jiraDetail.comments = dCom.comments || [];
+        const dWith = await rWith.json();
+        this.jiraDetail.comments = dWith.comments || [];
         this.loadJiraWatchers();
         this.loadJiraVotes();
         this.loadJiraProjectMeta();
@@ -8333,7 +8329,7 @@ function app() {
     // this host runs claude-opus-5-5[1m], billing the whole tier at the
     // Opus 5 rate would overstate the card by ~25%.
     _tierRollup(){
-      // [entrada, saída, multiplicador de cache-read] por MTok.
+      // [input, output, cache-read multiplier] per MTok.
       const price = { fable:[10/1e6,50/1e6,0.1], opus:[5/1e6,25/1e6,0.1], opus55:[4/1e6,20/1e6,0.05],
                       sonnet:[3/1e6,15/1e6,0.1], haiku:[1/1e6,5/1e6,0.1] };
       const tierOf = (m)=>{ m=(m||'').toLowerCase();
@@ -8342,8 +8338,7 @@ function app() {
         if(m.includes('sonnet')) return 'sonnet';
         if(m.includes('haiku'))  return 'haiku';
         return 'opus'; };
-      // opus55 é uma LINHA DE PREÇO, não um tier — o card continua com as quatro
-      // barras de sempre.
+      // opus55 is a PRICE LINE, not a tier: the card keeps its usual four bars.
       const priceOf = (m,t)=> (t==='opus' && (m||'').toLowerCase().includes('opus-5-5'))
         ? price.opus55 : (price[t]||price.opus);
       const acc = {};
@@ -8445,7 +8440,7 @@ function app() {
         this.newPrivToken = { name:'', rpm:null, tpm:null, budget:null, expiresDays:null };
         this.showToast('Token created','ok');
         await this.loadPrivateApiTokens();
-      } catch(e){ this.showToast('Error creating token: '+(e.message||'rede'),'err'); }
+      } catch(e){ this.showToast('Error creating token: '+(e.message||'network'),'err'); }
       finally { this.privBusy = false; }
     },
     async revokePrivateApiToken(t){
@@ -8458,7 +8453,7 @@ function app() {
         if (!r.ok) { this.showToast(this._errText(d.error) || ('Failed to revoke (HTTP '+r.status+')'),'err'); return; }
         this.showToast('Token revoked','ok');
         await this.loadPrivateApiTokens();
-      } catch(e){ this.showToast('Error revoking: '+(e.message||'rede'),'err'); }
+      } catch(e){ this.showToast('Error revoking: '+(e.message||'network'),'err'); }
       finally { this.privBusy = false; }
     },
     copyPrivToken(){
@@ -8682,8 +8677,8 @@ function app() {
             ? '    "x-api-key: '+tok+'", "anthropic-version: 2023-06-01", "content-type: application/json",'
             : '    "Authorization: Bearer '+tok+'", "content-type: application/json",';
           const body = anthropic
-            ? '\'{"model":"'+model+'","max_tokens":1024,"messages":[{"role":"user","content":"Olá!"}]}\''
-            : '\'{"model":"'+model+'","messages":[{"role":"user","content":"Olá!"}]}\'';
+            ? '\'{"model":"'+model+'","max_tokens":1024,"messages":[{"role":"user","content":"Hello!"}]}\''
+            : '\'{"model":"'+model+'","messages":[{"role":"user","content":"Hello!"}]}\'';
           return L([
             '<?php',
             '$ch = curl_init("'+url+'");',
@@ -8708,14 +8703,14 @@ function app() {
             '  -H "anthropic-version: 2023-06-01" \\',
             '  -H "content-type: application/json" \\',
             tlsFlag,
-            '  -d \'{"model":"'+model+'","max_tokens":1024,"messages":[{"role":"user","content":"Olá!"}]}\'',
+            '  -d \'{"model":"'+model+'","max_tokens":1024,"messages":[{"role":"user","content":"Hello!"}]}\'',
           ]);
           return L([
             'curl '+base+'/v1/chat/completions \\',
             '  -H "Authorization: Bearer '+tok+'" \\',
             '  -H "content-type: application/json" \\',
             tlsFlag,
-            '  -d \'{"model":"'+model+'","messages":[{"role":"user","content":"Olá!"}]}\'',
+            '  -d \'{"model":"'+model+'","messages":[{"role":"user","content":"Hello!"}]}\'',
           ]);
         }
       }
@@ -8994,10 +8989,10 @@ function app() {
           this.loadContainers();
           return;
         }
-        const pendLabel = { start:'starting…', stop:'stopping…', restart:'restarting…', kill:'killing…', pause:'pausing…', unpause:'resuming…' }[base] || (base+'…');
+        const pendingLabel = { start:'starting…', stop:'stopping…', restart:'restarting…', kill:'killing…', pause:'pausing…', unpause:'resuming…' }[base] || (base+'…');
         const expected = { start:'running', stop:'exited', kill:'exited', pause:'paused', unpause:'running' }[base];
         const before = c.State;
-        this.pendingActions[id] = pendLabel;
+        this.pendingActions[id] = pendingLabel;
         const delays = [400, 1000, 2000, 4000, 4000, 4000]; // ~15s in total
         const t0 = Date.now();
         let settled = false;
@@ -9179,7 +9174,7 @@ function app() {
       catch (e) { return (e && e.message) || 'invalid'; }
     },
     // Enables askInput's Confirm button. Without validate, always true (the native
-    // prompt let you confirm an empty value; the call-site handles `if(!nome) return`).
+    // prompt let you confirm an empty value; the call-site handles `if(!name) return`).
     askInputOk() {
       const m = this.askInputModal;
       if (!m || !m.open) return false;
@@ -9359,12 +9354,12 @@ function app() {
     selectedAbs(){ return this.fileSel.map(n=>this.absPath(n)); },
     async refresh(){ if(this.fileList) await this.browseFiles(this.fileList.path); this.fileSel=[]; },
 
-    async newFolder(){ const name=await this.askInput({ title:'New folder', label:'Folder name:', placeholder:'nome' }); if(!name) return; const path=this.absPath(name); try{ const r=await this.api('/api/files/mkdir',{method:'POST',body:JSON.stringify({path})}); const d=await r.json(); if(d.ok){this.showToast('folder created','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
+    async newFolder(){ const name=await this.askInput({ title:'New folder', label:'Folder name:', placeholder:'name' }); if(!name) return; const path=this.absPath(name); try{ const r=await this.api('/api/files/mkdir',{method:'POST',body:JSON.stringify({path})}); const d=await r.json(); if(d.ok){this.showToast('folder created','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
     async newFile(){ const name=await this.askInput({ title:'New file', label:'File name:', placeholder:'name.txt' }); if(!name) return; const path=this.absPath(name); try{ const r=await this.api('/api/files/touch',{method:'POST',body:JSON.stringify({path})}); const d=await r.json(); if(d.ok){this.showToast('file created','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
     async uploadFiles(files){ if(!files||!files.length) return; this.fileBusy=true; const dir=this.fileList?.path||'/'; let ok=0,fail=0; for(const f of files){ try{ const fd=new FormData(); fd.append('file',f); const r=await this.api('/api/files/upload?path='+encodeURIComponent(dir),{method:'POST',body:fd}); const d=await r.json(); if(d.ok) ok++; else fail++; }catch(e){fail++;} } this.fileBusy=false; this.showToast(`upload: ${ok} ok, ${fail} failed`,fail?'err':'ok'); this.refresh(); },
     async downloadEntry(name){ const p=this.absPath(name); try{ const r=await this.api('/api/files/download?path='+encodeURIComponent(p)); const blob=await r.blob(); const u=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=u; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(u),5000); }catch(e){ this.showToast('download error: '+e.message,'err'); } },
     async previewEntry(e){ const p=this.absPath(e.name); const l=e.name.toLowerCase(); let kind='other'; if(l.match(/\.(png|jpe?g|gif|webp|svg|bmp|ico)$/)) kind='image'; else if(l.match(/\.(mp4|webm|mkv|mov)$/)) kind='video'; else if(l.match(/\.(mp3|wav|ogg|flac|m4a)$/)) kind='audio'; else if(l.endsWith('.pdf')) kind='pdf'; try{ const r=await this.api('/api/files/preview?path='+encodeURIComponent(p)); const blob=await r.blob(); this.filePreview={ url: URL.createObjectURL(blob), name: e.name, kind }; }catch(err){ this.showToast('preview unavailable: '+err.message,'err'); } },
-    async renamePrompt(name){ const novo=await this.askInput({ title:'Rename', label:'Rename to:', value:name }); if(!novo||novo===name) return; const from=this.absPath(name), to=this.absPath(novo); try{ const r=await this.api('/api/files/rename',{method:'POST',body:JSON.stringify({from,to})}); const d=await r.json(); if(d.ok){this.showToast('renomeado','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
+    async renamePrompt(name){ const fresh=await this.askInput({ title:'Rename', label:'Rename to:', value:name }); if(!fresh||fresh===name) return; const from=this.absPath(name), to=this.absPath(fresh); try{ const r=await this.api('/api/files/rename',{method:'POST',body:JSON.stringify({from,to})}); const d=await r.json(); if(d.ok){this.showToast('renamed','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
     async trashEntry(name){ if(!(await this.confirmAsync('Move '+name+' to the trash?'))) return; const path=this.absPath(name); try{ const r=await this.api('/api/files/trash',{method:'POST',body:JSON.stringify({path})}); const d=await r.json(); if(d.ok){this.showToast('moved to trash','ok'); this.refresh();} else this.showToast(d.error||'error','err'); }catch(e){this.showToast(e.message,'err');} },
     // Honest toast for batch operations: green only when EVERYTHING passed,
     // a warning on partial, an error when nothing passed — always saying how many.
@@ -9376,7 +9371,7 @@ function app() {
       if (ok === 0) this.showToast(`${label} failed: 0/${total}`+suf, 'err');
       else this.showToast(`${label}: ${ok}/${total} — ${fail} failed`+suf, 'warn');
     },
-    async bulkTrash(){ if(!(await this.confirmAsync('Move '+this.fileSel.length+' items to the trash?'))) return; const paths=this.selectedAbs(); this.fileBusy=true; let ok=0,fail=0,lastErr=''; for(const p of paths){ try{ const r=await this.api('/api/files/trash',{method:'POST',body:JSON.stringify({path:p})}); const d=await r.json().catch(()=>({ok:true})); if(d && d.ok===false){ fail++; lastErr=d.error||lastErr; } else ok++; }catch(e){ fail++; lastErr=(e&&e.message)||lastErr; } } this.fileBusy=false; this._bulkToast('lixeira', ok, fail, lastErr); this.refresh(); },
+    async bulkTrash(){ if(!(await this.confirmAsync('Move '+this.fileSel.length+' items to the trash?'))) return; const paths=this.selectedAbs(); this.fileBusy=true; let ok=0,fail=0,lastErr=''; for(const p of paths){ try{ const r=await this.api('/api/files/trash',{method:'POST',body:JSON.stringify({path:p})}); const d=await r.json().catch(()=>({ok:true})); if(d && d.ok===false){ fail++; lastErr=d.error||lastErr; } else ok++; }catch(e){ fail++; lastErr=(e&&e.message)||lastErr; } } this.fileBusy=false; this._bulkToast('Trash', ok, fail, lastErr); this.refresh(); },
     async bulkDelete(){ if(!(await this.confirmAsync('PERMANENTLY DELETE '+this.fileSel.length+' items? (no recovery)'))) return; const paths=this.selectedAbs(); try{ const r=await this.api('/api/files/bulk-delete',{method:'POST',body:JSON.stringify({paths})}); const d=await r.json(); const fail=(d.results||[]).filter(x=>!x.ok).length; this.showToast(fail?`${fail} failure(s)`:'deleted',fail?'err':'ok'); this.refresh(); }catch(e){this.showToast(e.message,'err');} },
     async bulkMovePrompt(){ const dest=await this.askInput({ title:'Move', label:'Move to which directory?', value:this.fileList?.path||'/' }); if(!dest) return; const paths=this.selectedAbs(); try{ const r=await this.api('/api/files/bulk-move',{method:'POST',body:JSON.stringify({paths,dest_dir:dest})}); const d=await r.json(); const res=Array.isArray(d.results)?d.results:null; let ok,fail,lastErr=''; if(res){ fail=res.filter(x=>!x.ok).length; ok=res.length-fail; lastErr=(res.find(x=>!x.ok)||{}).error||''; } else if(d.ok===false){ ok=0; fail=paths.length; lastErr=d.error||''; } else { ok=paths.length; fail=0; } this._bulkToast('moved', ok, fail, lastErr); this.refresh(); }catch(e){this.showToast('move failed: '+e.message,'err');} },
     async bulkCopyPrompt(){ const dest=await this.askInput({ title:'Copy', label:'Copy to which directory?', value:this.fileList?.path||'/' }); if(!dest) return; const paths=this.selectedAbs(); this.fileBusy=true; let ok=0,fail=0; for(const p of paths){ const to=(dest+'/'+p.split('/').pop()).replace('//','/'); try{ const r=await this.api('/api/files/copy',{method:'POST',body:JSON.stringify({from:p,to})}); const d=await r.json(); if(d.ok) ok++; else fail++; }catch(e){fail++;} } this.fileBusy=false; this.showToast(`copied: ${ok} ok, ${fail} failed`, fail?'err':'ok'); this.refresh(); },
@@ -9484,7 +9479,7 @@ function app() {
       const g = {};
       for (const m of (this.metricCatalog||[])){
         if (q && !((m.key||'').toLowerCase().includes(q) || (m.label||'').toLowerCase().includes(q) || (m.category||'').toLowerCase().includes(q))) continue;
-        (g[m.category||'Outras'] = g[m.category||'Outras'] || []).push(m);
+        (g[m.category||'Other'] = g[m.category||'Other'] || []).push(m);
       }
       return Object.entries(g).sort((a,b)=> (this._catRank(a[0])-this._catRank(b[0])) || a[0].localeCompare(b[0]));
     },
@@ -9817,7 +9812,7 @@ function app() {
         default:         return cfg.chat_jid || cfg.to || cfg.url || '—';
       }
     },
-    // ── Channel "Notificação no site" → feeds the status bar's existing BELL ──
+    // In-site notification channel: feeds the status bar's existing bell.
     // Instead of a bell of its own, it pushes the in-app inbox events to
     // addNotification() (the 🔔 bell on the bottom bar). _lastInboxT avoids
     // duplicates; on the 1st load it only sets the baseline (no spamming what already passed).
@@ -10147,7 +10142,7 @@ function app() {
             if (!ev || ev.resultCount === undefined) return;
             self.hostTermSearchMatchCount = ev.resultCount > 0
               ? (ev.resultIndex + 1) + '/' + ev.resultCount
-              : 'nada';
+              : 'none';
           });
         } catch(_) {}
         try { term.loadAddon(new WebLinksAddon.WebLinksAddon()); } catch(e){}
@@ -10183,12 +10178,12 @@ function app() {
             // flips it to 'text'. Desktop is untouched (a physical keyboard does not depend on this).
             try { if (self.isMobile && self.isMobile()) ta.setAttribute('inputmode','none'); } catch(_){}
             ta.addEventListener('paste', (ev) => {
-              const arquivos = self._arquivosDoClipboard(ev);
-              if (!arquivos) return;          // no file: xterm pastes the text
+              const files = self._clipboardFiles(ev);
+              if (!files) return;          // no file: xterm pastes the text
               ev.preventDefault();
               ev.stopImmediatePropagation();
-              if (self._pasteJaTratado(ev, arquivos)) return;
-              self._sendFilesToPane(state, arquivos).catch(()=>{});
+              if (self._pasteHandled(ev, files)) return;
+              self._sendFilesToPane(state, files).catch(()=>{});
             }, true /* capture */);
           }
         } catch(_) {}
@@ -10370,12 +10365,12 @@ function app() {
         // Native paste event (Ctrl+V): takes a FILE from the clipboard without requiring
         // the clipboard-read permission (clipboardData comes straight in the event).
         el.addEventListener('paste', (ev) => {
-          const arquivos = self._arquivosDoClipboard(ev);
-          if (!arquivos) return;              // no file: xterm pastes the text
+          const files = self._clipboardFiles(ev);
+          if (!files) return;              // no file: xterm pastes the text
           ev.preventDefault();
           ev.stopPropagation();
-          if (self._pasteJaTratado(ev, arquivos)) return;
-          self._sendFilesToPane(state, arquivos).catch(()=>{});
+          if (self._pasteHandled(ev, files)) return;
+          self._sendFilesToPane(state, files).catch(()=>{});
         });
 
         // Right-click: blocks forwarding the mouse to the app (a multiplexer that owns the screen has `mouse on`
@@ -10484,8 +10479,8 @@ function app() {
           el.addEventListener('wheel', (ev) => {
             if (!ev.shiftKey) return;
             if (!state.ws || state.ws.readyState !== 1) return;
-            const passo = ev.deltaY > 0 ? 4 : -4;
-            state._desloc = Math.max(0, (state._desloc || 0) + passo);
+            const step = ev.deltaY > 0 ? 4 : -4;
+            state._desloc = Math.max(0, (state._desloc || 0) + step);
             try { state.ws.send(JSON.stringify({ type: 'pan', x: state._desloc })); } catch (_) {}
             ev.preventDefault();
           }, { passive: false });
@@ -10535,7 +10530,7 @@ function app() {
         // will: the server deduplicates (pty.go), so SIGWINCH only reaches
         // the PTY when the value really changes. It is the cheap resend that closes the
         // whole class of bug, and no longer one guard for one path.
-        state._afirmaTamanho = (motivo) => {
+        state._assertSize = (reason) => {
           const t = state.term;
           if (!t || !state.ws || state.ws.readyState !== 1) return false;
           // ── WHAT IS ASSERTED IS THE WINDOW, NOT THE GRID DRAWN ──────────
@@ -10560,7 +10555,7 @@ function app() {
           if (!(cols >= 2 && rows >= 1)) return false;
           try {
             state.ws.send(JSON.stringify({ type:'resize', cols, rows }));
-            state._tamAfirmado = cols + 'x' + rows + (motivo ? ' ' + motivo : '');
+            state._assertedSize = cols + 'x' + rows + (reason ? ' ' + reason : '');
             return true;
           } catch (_) { return false; }
         };
@@ -10573,7 +10568,7 @@ function app() {
             // Sends the CURRENT size of xterm, not the one captured when the timer was
             // scheduled: in a hidden window the timer can fire minutes later, and
             // the value from back then is the one that counts.
-            state._afirmaTamanho('resize');
+            state._assertSize('resize');
           }, 100);
         });
 // "↓ new output" pill: re-evaluates visibility when the user scrolls.
@@ -10613,10 +10608,10 @@ function app() {
         // 128 KiB block it would re-emit over what the primer already wrote. The
         // repaint still applies — the log is a slice of a live stream and may
         // end in the middle of a frame, and only the program knows how to paint a whole
-        // frame. See primingDoServidor, in internal/pty/pty.go.
+        // frame. See the server-side priming in internal/pty/pty.go.
         const url = proto+'//'+location.host+opts.wsPath
           +(attachOnly ? (opts.wsPath.includes('?')?'&':'?')+'attach=1' : '')
-          +(state._primouOk ? (opts.wsPath.includes('?')?'&':'?')+'replay=0' : '');
+          +(state._primedOk ? (opts.wsPath.includes('?')?'&':'?')+'replay=0' : '');
         const ws = new WebSocket(url);
         ws.binaryType = 'arraybuffer';
         state.ws = ws;
@@ -10624,7 +10619,7 @@ function app() {
         // onclose, onerror) can fire async AFTER loadSessionIntoPane
         // or closePane replaced state.ws with another object. Without this guard, the
         // old ws's onclose would see state.reconnect.cancelled=false (reset
-        // by the new buildTerminal) and would write "[conexão perdida — reconectando]"
+        // by the new buildTerminal) and would write "[connection lost, reconnecting]"
         // into the new terminal, even with the new WS working.
         const myWs = ws;
 
@@ -10640,14 +10635,14 @@ function app() {
               // interval between this send and that frame is the connection's real RTT
               // — that is where the quality pill and the decision to turn on
               // predictive echo come from. Zero extra bytes on the wire.
-              if (!state._pingEm) state._pingEm = Date.now();
+              if (!state._pingAt) state._pingAt = Date.now();
               try { state.ws.send(JSON.stringify({type:'ping', t: Date.now()})); } catch(e){}
               // Reasserts the size along with the heartbeat: two numbers every
               // 20s, deduplicated by the server. It is what guarantees that ANY
               // divergence (a lost resize, a recycled socket, a deploy in the middle)
               // fixes itself within at most one cycle, instead of leaving the
               // screen corrupted until someone resizes the window by hand.
-              if (state._afirmaTamanho) state._afirmaTamanho('heartbeat');
+              if (state._assertSize) state._assertSize('heartbeat');
               // silent-death watchdog: if more than 70s went by with no message at all
               // (no output, no pong), the middleware has probably dropped it silently.
               // Forces a close with code 4000 — onclose will show "watchdog" and reconnect.
@@ -10701,14 +10696,14 @@ function app() {
           // (exec in a container) does not repaint — and then the guess would stay on screen
           // added to the real echo, duplicating the text. Clearing here works for
           // both cases and costs nothing.
-          if (state._ecoPintado > 0) {
-            try { state.term.write('\b \b'.repeat(state._ecoPintado)); } catch(_){}
+          if (state._echoPainted > 0) {
+            try { state.term.write('\b \b'.repeat(state._echoPainted)); } catch(_){}
           }
-          state._ecoPintado = 0;
+          state._echoPainted = 0;
           if (state._outbox && state._outbox.length) {
-            const pend = state._outbox.join('');
+            const pending = state._outbox.join('');
             state._outbox = []; state._outboxBytes = 0;
-            try { ws.send(JSON.stringify({ type:'input', data: pend })); } catch(_){}
+            try { ws.send(JSON.stringify({ type:'input', data: pending })); } catch(_){}
           }
           if (state._outboxDropped) {
             state._outboxDropped = false;
@@ -10790,14 +10785,14 @@ function app() {
           // releases when the burst goes QUIET (end of the frame), with a hard ceiling
           // so it never stalls the render on continuous output.
           if (state._holdUntil) {
-            const agora = Date.now();
-            const quieto = agora - (state._lastDataAt || 0);
-            if (agora < state._holdUntil && quieto < 90) {
+            const now = Date.now();
+            const quiet = now - (state._lastDataAt || 0);
+            if (now < state._holdUntil && quiet < 90) {
               if (!state._holdTimer) {
-                const espera = Math.max(16, Math.min(90 - quieto, state._holdUntil - agora));
+                const wait = Math.max(16, Math.min(90 - quiet, state._holdUntil - now));
                 state._holdTimer = setTimeout(() => {
                   state._holdTimer = 0; flushTerm();
-                }, espera);
+                }, wait);
               }
               return;   // keeps queueing, without painting
             }
@@ -10808,7 +10803,7 @@ function app() {
           if (!q.length) return;
           // The rule that makes predictive echo safe — the screen goes back to
           // the server's truth BEFORE any byte of it is applied.
-          try { self._apagaPrevisao(state); } catch(_){}
+          try { self._erasePrediction(state); } catch(_){}
           // Best practice (xterm.js official guide): a "fast path" with no callback on the
           // chunks and ONE callback only on the LAST — since the callbacks fire in
           // write order, the last one means the whole batch has been
@@ -10821,7 +10816,7 @@ function app() {
             fcCheck();
             // Now the cursor is already the server's: we can tell how much of the guess
             // it confirmed and repaint only what is left.
-            try { self._repreveEco(state); } catch(_){}
+            try { self._repredictEcho(state); } catch(_){}
           });
           fcCheck();
         };
@@ -10869,12 +10864,12 @@ function app() {
           }
           const _n = (typeof ev.data === 'string') ? ev.data.length : ((ev.data && ev.data.byteLength) | 0);
           if (_n === 0) {
-            if (state._pingEm) {
-              const rtt = Date.now() - state._pingEm; state._pingEm = 0;
+            if (state._pingAt) {
+              const rtt = Date.now() - state._pingAt; state._pingAt = 0;
               // Exponential moving average: one isolated bad sample must not
               // make the interface flash "terrible connection".
               state.rtt = state.rtt ? Math.round(state.rtt * 0.6 + rtt * 0.4) : rtt;
-              try { self._atualizaQualidade(state); } catch(_){}
+              try { self._updateQuality(state); } catch(_){}
             }
             return;
           }
@@ -10882,12 +10877,12 @@ function app() {
           // interval is the ECHO latency — the number the user feels while
           // typing (network + PTY + app). It is what decides predictive echo, and
           // what proves this prompt ECHOES (the opposite = a password prompt).
-          if (state._envioEm) {
-            const dt = Date.now() - state._envioEm; state._envioEm = 0;
+          if (state._sentAt) {
+            const dt = Date.now() - state._sentAt; state._sentAt = 0;
             state.eco = state.eco ? Math.round(state.eco * 0.6 + dt * 0.4) : dt;
-            state._servidorEcoa = true;
-            if (state._ecoTimer) { clearTimeout(state._ecoTimer); state._ecoTimer = 0; }
-            try { self._atualizaQualidade(state); } catch(_){}
+            state._serverEchoes = true;
+            if (state._echoTimer) { clearTimeout(state._echoTimer); state._echoTimer = 0; }
+            try { self._updateQuality(state); } catch(_){}
           }
           state._lastDataAt = Date.now();   // used by the hold to detect the end of the burst
           const data = (typeof ev.data === 'string') ? ev.data : new Uint8Array(ev.data);
@@ -10943,7 +10938,7 @@ function app() {
           // middle of typing.
           if (state._pred && state._pred.txt) {
             if (state._pred.timer) { try { clearTimeout(state._pred.timer); } catch(_){} state._pred.timer = 0; }
-            state._ecoPintado = (state._ecoPintado || 0) + state._pred.txt.length;
+            state._echoPainted = (state._echoPainted || 0) + state._pred.txt.length;
             state._pred.txt = '';
           }
           // Log at the level that fits the kind of close:
@@ -10976,8 +10971,8 @@ function app() {
           // expected ~2s event. With the warning we can tell the user the truth and
           // come back faster. 1001 ("going away") joins it because that is what
           // a proxy in front sends when the upstream restarts.
-          const ehRestart = (ev.code === 1012 || ev.code === 1001);
-          if (ehRestart) state._restarting = true;
+          const isRestart = (ev.code === 1012 || ev.code === 1001);
+          if (isRestart) state._restarting = true;
           state.reconnect.attempts += 1;
           // A deploy is off the air for ~2s (measured in deploy.log). The
           // old backoff started at 1s and DOUBLED, so the 1st attempt landed
@@ -11037,10 +11032,10 @@ function app() {
               if (state.ws && state.ws.readyState === 1) return;   // already back
               state.reconnect.noticed = true;
               const secs = Math.round((Date.now() - (state.reconnect.downSince || Date.now()))/1000);
-              const texto = state._restarting
+              const text = state._restarting
                 ? '[server update taking longer than usual — '+secs+'s; reconnecting…]'
                 : '['+codeMsg+' — no connection for '+secs+'s, reconnecting… click ↻ to try now]';
-              try { state.term.write('\r\n\x1b[33m'+texto+'\x1b[0m\r\n'); } catch(_){}
+              try { state.term.write('\r\n\x1b[33m'+text+'\x1b[0m\r\n'); } catch(_){}
             }, QUIET_MS);
           }
           state.reconnect.timer = setTimeout(open, delay);
@@ -11048,8 +11043,8 @@ function app() {
       };
       // Exposed so that whoever knows the network is back (the 'online' event, the
       // tab coming back) can cut the backoff short and reopen at once — see
-      // _reconectarPanesAgora.
-      state._reabrir = open;
+      // _reconnectPanesNow.
+      state._reopen = open;
 
       // ── PRIMER: the history goes in BEFORE the socket opens ─────────────
       //
@@ -11073,17 +11068,17 @@ function app() {
       //
       // A time ceiling, because history is comfort and a live session is the reason
       // the screen exists: a slow server must not become a terminal that will not open.
-      const primeEAbre = () => {
-        if (state._primerFeito) { open(); return; }
-        state._primerFeito = true;
-        const nome = state.sessionName;
+      const primeAndOpen = () => {
+        if (state._primerDone) { open(); return; }
+        state._primerDone = true;
+        const name = state.sessionName;
         const bytes = self._termPrimerBytes ? self._termPrimerBytes() : 0;
-        if (!nome || !bytes) { open(); return; }
-        let abriu = false;
-        const seguir = () => { if (abriu) return; abriu = true; open(); };
-        const teto = setTimeout(() => {
-          try { self._marcaPrimer(state, 'teto'); } catch(_){}
-          seguir();
+        if (!name || !bytes) { open(); return; }
+        let opened = false;
+        const follow = () => { if (opened) return; opened = true; open(); };
+        const cap = setTimeout(() => {
+          try { self._markPrimer(state, 'cap'); } catch(_){}
+          follow();
         }, 6000);
         // TWO SOURCES, IN THIS ORDER.
         //
@@ -11097,33 +11092,33 @@ function app() {
         //
         // The raw log stays as the FALLBACK: an old session, with no history file
         // yet, still loads whatever there is to load.
-        const busca = (rota) => fetch(rota + '?name=' + encodeURIComponent(nome) + '&bytes=' + bytes,
+        const search = (route) => fetch(route + '?name=' + encodeURIComponent(name) + '&bytes=' + bytes,
                                       { credentials: 'same-origin' })
           .then(r => r.ok ? r.arrayBuffer() : null)
           .then(b => (b && b.byteLength) ? b : null);
-        busca('/api/terminal/historico')
+        search('/api/terminal/historico')
           .catch(() => null)
-          .then(b => b || busca('/api/terminal/log-bruto'))
+          .then(b => b || search('/api/terminal/log-bruto'))
           .then(buf => {
-            if (!buf || abriu || !state.term) return;
+            if (!buf || opened || !state.term) return;
             const u8 = new Uint8Array(buf);
             if (!u8.length) return;
             // In chunks: up to a few MB come through here, and xterm queues
             // internally — writing it in one go would cost the whole frame
             // exactly at the moment the person is watching.
-            const PEDACO = 256 * 1024;
-            for (let i = 0; i < u8.length; i += PEDACO) {
-              state.term.write(u8.subarray(i, Math.min(i + PEDACO, u8.length)));
+            const CHUNK = 256 * 1024;
+            for (let i = 0; i < u8.length; i += CHUNK) {
+              state.term.write(u8.subarray(i, Math.min(i + CHUNK, u8.length)));
             }
             // Only now is it worth telling the server "I take care of the history": if
             // the fetch fails, its own replay is still the safety net.
-            state._primouOk = true;
-            try { self._marcaPrimer(state, (u8.length / 1024 | 0) + ' KiB'); } catch(_){}
+            state._primedOk = true;
+            try { self._markPrimer(state, (u8.length / 1024 | 0) + ' KiB'); } catch(_){}
           })
           .catch(() => {})
-          .finally(() => { clearTimeout(teto); seguir(); });
+          .finally(() => { clearTimeout(cap); follow(); });
       };
-      primeEAbre();
+      primeAndOpen();
     },
 
     // How many bytes of log the primer fetches. A user preference, with a sane
@@ -11135,8 +11130,8 @@ function app() {
     },
     // A light record of what the primer did — it shows in the diagnostic pill of the
     // pill and in the problem report, without polluting the screen.
-    _marcaPrimer(state, texto){
-      state._primerInfo = texto;
+    _markPrimer(state, text){
+      state._primerInfo = text;
     },
 
     // ------------------ Pane container (host terminal) ------------------
@@ -11631,10 +11626,10 @@ function app() {
       if (Array.isArray(snap.tabs) || Array.isArray(snap.names)) {
         const flatPaneDescriptors = [];
         if (Array.isArray(snap.names)) {
-          const vistos = new Set();
+          const seen = new Set();
           snap.names.forEach(name => {
-            if (vistos.has(name)) return;
-            vistos.add(name);
+            if (seen.has(name)) return;
+            seen.add(name);
             flatPaneDescriptors.push({ sessionName: name, startupCmd: '' });
           });
         } else {
@@ -12074,7 +12069,7 @@ function app() {
     },
     tlsExpiryLabel(){
       const h = this.vpsmHealth;
-      if (!h || !h.tls_enabled) return 'desligado';
+      if (!h || !h.tls_enabled) return 'off';
       if (h.tls_mode === 'letsencrypt') return "Let's Encrypt · " + (h.tls_domain||'');
       if (h.tls_expires_in_days != null) {
         const d = h.tls_expires_in_days;
@@ -12255,24 +12250,24 @@ function app() {
       }
       // Guard 2: writing empty over something that was NOT empty is
       // destructive and almost always accidental. It asks for explicit confirmation.
-      const novo = String(this.cron.content || '');
-      const antigo = String(this.cron.serverContent || '');
-      if (!novo.trim() && antigo.trim()) {
-        const linhas = antigo.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
+      const fresh = String(this.cron.content || '');
+      const old = String(this.cron.serverContent || '');
+      if (!fresh.trim() && old.trim()) {
+        const lines = old.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
         const ok = await this.confirmAsync(
           'Delete the WHOLE root crontab?\n\nYou are saving empty content over '
-          + linhas + ' active cron line(s). Every scheduled root task will be removed.',
+          + lines + ' active cron line(s). Every scheduled root task will be removed.',
           { title: 'Delete the whole crontab?', danger: true }
         );
         if (!ok) return;
       }
       this.cron.saving = true;
       try {
-        const r = await this.api('/api/system/cron', {method:'POST', body: JSON.stringify({content: novo})});
+        const r = await this.api('/api/system/cron', {method:'POST', body: JSON.stringify({content: fresh})});
         const d = await r.json();
         if (d.error) { this.showToast('crontab rejected: '+d.error, 'err'); return; }
         // Saved: the server now holds this content — it becomes the new baseline.
-        this.cron.serverContent = novo;
+        this.cron.serverContent = fresh;
         this.showToast('crontab saved','ok');
       } catch(e){ this.showToast('error saving the crontab: '+e.message,'err'); }
       finally { this.cron.saving = false; }
@@ -12652,7 +12647,7 @@ function app() {
       if (exit === d.exit) return;
       try {
         await this.api('/api/tunnel/devices/'+encodeURIComponent(d.uuid)+'/exit', {method:'POST', body: JSON.stringify({exit})});
-        this.showToast('exit for '+d.name+' → '+(exit==='casa'?'casa':'VPS')+' (reconnects in ~2s)','ok');
+        this.showToast('exit for '+d.name+' → '+(exit==='casa'?'home':'VPS')+' (reconnects in ~2s)','ok');
         await this.loadTunnelDevices();
       } catch(e){ this.showToast(e.message,'err'); await this.loadTunnelDevices(); }
     },
@@ -12661,7 +12656,7 @@ function app() {
       if (!name || name===d.name) return;
       try {
         await this.api('/api/tunnel/devices/'+encodeURIComponent(d.uuid)+'/rename', {method:'POST', body: JSON.stringify({name})});
-        this.showToast('renomeado','ok');
+        this.showToast('renamed','ok');
         await this.loadTunnelDevices();
       } catch(e){ this.showToast(e.message,'err'); }
     },
@@ -12726,14 +12721,14 @@ function app() {
         await this.loadTunnelDevices();
       } catch(e){ this.showToast(e.message,'err'); await this.loadTunnelDevices(); }
     },
-    // _dsForma normalizes the answer from the server into the COMPLETE panel
+    // _dsShape normalizes the answer from the server into the COMPLETE panel
     // contract. A raw `this.dsStatus = s` was the underlying defect: the shape declared
     // in the initial state evaporated on the first load, and any field the
     // server stopped sending became undefined inside an Alpine
     // expression — which Alpine turns into a boot error, taking the whole app down.
     // Normalizing here keeps the panel renderable with a partial, stale
     // or empty answer; the worst case becomes 'shows zero', never 'error screen'.
-    _dsForma(s){
+    _dsShape(s){
       const o = (s && typeof s === 'object') ? s : {};
       const sv = (o.saved && typeof o.saved === 'object') ? o.saved : {};
       const num = (v) => (typeof v === 'number' && isFinite(v)) ? v : 0;
@@ -12755,7 +12750,7 @@ function app() {
       try {
         const r = await this.api('/api/datasaver/status');
         const s = await r.json();
-        this.dsStatus = this._dsForma(s);
+        this.dsStatus = this._dsShape(s);
         const st = (s && s.settings) || {};
         this.dsForm = {
           enabled: st.enabled !== false,
@@ -12779,7 +12774,7 @@ function app() {
       this._dsTimer = setInterval(async () => {
         if (this.currentView !== 'rede') { clearInterval(this._dsTimer); this._dsTimer=null; return; }
         if (document.hidden) return;
-        try { const r = await this.api('/api/datasaver/status'); const s = await r.json(); this.dsStatus = this._dsForma(s); } catch(_){}
+        try { const r = await this.api('/api/datasaver/status'); const s = await r.json(); this.dsStatus = this._dsShape(s); } catch(_){}
       }, 6000);
     },
     async saveDatasaverSettings(){
@@ -12927,7 +12922,7 @@ function app() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = (filename || 'lista') + '-' + new Date().toISOString().slice(0,10) + '.csv';
+        a.download = (filename || 'list') + '-' + new Date().toISOString().slice(0,10) + '.csv';
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -12973,7 +12968,7 @@ function app() {
             this.addNotification('ok', rule + ' \u2014 normalized');
           } else {
             const v = (typeof f.Value === 'number') ? ' (' + f.Value.toFixed(1) + ')' : '';
-            this.addNotification(sev === 'crit' ? 'err' : 'alerta', rule + ' fired' + v);
+            this.addNotification(sev === 'crit' ? 'err' : 'alert', rule + ' fired' + v);
           }
         }
         this._lastFireT = maxT;
@@ -13462,7 +13457,7 @@ function app() {
     // Radial items with a position (dx,dy) on a circle. 6 actions.
     radialItems(){
       const defs = [
-        { kind:'keyboard', label:'Teclado', icon:'⌨' },
+        { kind:'keyboard', label:'Keyboard', icon:'⌨' },
         { kind:'clear',    label:'Clear',  icon:'🧹' },
         { kind:'reconnect',label:'Reconnect', icon:'↻' },
         { kind:'rename',   label:'Rename', icon:'✎' },
@@ -13486,8 +13481,8 @@ function app() {
         case 'reconnect': this.hostTermReconnectNow(); break;
         case 'rename': {
           (async () => {
-            const novo = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic):', value: pane.sessionName || '' })) || '').trim();
-            if (novo) { pane.sessionName = novo; this.renderPaneLayout(); this.saveState(); }
+            const fresh = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic):', value: pane.sessionName || '' })) || '').trim();
+            if (fresh) { pane.sessionName = fresh; this.renderPaneLayout(); this.saveState(); }
           })();
           break;
         }
@@ -13516,7 +13511,7 @@ function app() {
                       '<button class="pane-load" title="Load a session into this panel" style="opacity:0.6;padding:0 4px;">📋</button>' +
                       '<button class="pane-split-h" title="Split horizontal (stacks panes)" style="opacity:0.6;padding:0 4px;">⬓</button>' +
                       '<button class="pane-split-v" title="Split vertical (side by side)" style="opacity:0.6;padding:0 4px;">⬔</button>' +
-                      '<button class="pane-close" title="Fechar painel" style="opacity:0.6;padding:0 4px;color:#f43f5e;">✕</button>';
+                      '<button class="pane-close" title="Close panel" style="opacity:0.6;padding:0 4px;color:#f43f5e;">✕</button>';
       // Button listeners. Stop propagation on mousedown so the wrap does not
       // capture it (a re-render destroyed the button before the click). Buttons carry
       // draggable=false to stop the draggable of the bar from stealing the gesture.
@@ -13664,7 +13659,7 @@ function app() {
       state._repaintProbe = setTimeout(() => {
         state._repaintProbe = null;
         if (!state.term || !state.ws || state.ws.readyState !== 1) return;
-        if (!this._viewportPrecisaRepaint(state.term)) return;   // screen OK → nothing to do
+        if (!this._viewportNeedsRepaint(state.term)) return;   // screen OK → nothing to do
         console.debug('[vpsm:term] blank viewport on reattach — escalating to the wobble');
         const rc = state.term.cols | 0, rr = state.term.rows | 0;
         if (rc <= 12 || rr <= 6) return;
@@ -13679,7 +13674,7 @@ function app() {
     // true = a forced repaint is needed. It ALSO returns true when it cannot
     // decide (buffer unavailable/API changed): when in doubt it preserves the old
     // behaviour, because a black screen is worse than a jolt.
-    _viewportPrecisaRepaint(term){
+    _viewportNeedsRepaint(term){
       try {
         const buf = term.buffer && term.buffer.active;
         if (!buf || typeof buf.getLine !== 'function') return true;
@@ -13712,23 +13707,23 @@ function app() {
         // Single-flight: every pane calls this in its onopen, and on a deploy they ALL
         // reconnect together — without the latch, 4 panes become 4 /api/health at the same
         // instant, right when the server has only just come up.
-        const agora = Date.now();
-        if (this._buildCheckAt && (agora - this._buildCheckAt) < 3000) return;
-        this._buildCheckAt = agora;
-        if (!this._meuBuild) {
+        const now = Date.now();
+        if (this._buildCheckAt && (now - this._buildCheckAt) < 3000) return;
+        this._buildCheckAt = now;
+        if (!this._myBuild) {
           const m = document.querySelector('meta[name="vpsm-build"]');
-          this._meuBuild = (m && m.content) || '';
+          this._myBuild = (m && m.content) || '';
         }
-        if (!this._meuBuild) return;
+        if (!this._myBuild) return;
         const r = await this.api('/api/health');
         if (!r || !r.ok) return;
         const d = await r.json();
         const srv = d && d.build ? String(d.build) : '';
-        if (!srv || srv === this._meuBuild) return;
-        if (this._buildAvisado === srv) return;
-        this._buildAvisado = srv;
-        this.novaVersaoDisponivel = true;
-        this._armarReloadSeguro();
+        if (!srv || srv === this._myBuild) return;
+        if (this._buildWarned === srv) return;
+        this._buildWarned = srv;
+        this.newVersionAvailable = true;
+        this._armSafeReload();
       } catch(_){}
     },
     // Reloads the tab by itself ONLY when that is invisible to the user.
@@ -13742,31 +13737,31 @@ function app() {
     // The way out: reload only with the tab HIDDEN and the work stopped. When they
     // come back, they are already on the new version and saw nothing happen. The sessions live
     // in dtach, on the server, so the pane contents do not depend on the tab.
-    _armarReloadSeguro(){
+    _armSafeReload(){
       if (this._reloadTimer) return;
       if (!this.hostTermAutoReload) return;
-      const tentar = () => this._tentarReloadSeguro();
-      this._reloadTimer = setInterval(tentar, 5000);
-      document.addEventListener('visibilitychange', tentar);
+      const retry = () => this._trySafeReload();
+      this._reloadTimer = setInterval(retry, 5000);
+      document.addEventListener('visibilitychange', retry);
     },
-    _tentarReloadSeguro(){
-      if (!this.novaVersaoDisponivel || !this.hostTermAutoReload) return false;
+    _trySafeReload(){
+      if (!this.newVersionAvailable || !this.hostTermAutoReload) return false;
       // Tab visible: never. This is the entire point of the mechanism.
-      if (!document.hidden) { this._ocultaDesde = 0; return false; }
-      const agora = Date.now();
-      if (!this._ocultaDesde) { this._ocultaDesde = agora; return false; }
+      if (!document.hidden) { this._hiddenSince = 0; return false; }
+      const now = Date.now();
+      if (!this._hiddenSince) { this._hiddenSince = now; return false; }
       // Hidden only a moment ago: it could be a 3-second alt-tab to copy something
       // and come back. Reloading there would be exactly the fright we want to avoid.
       // 20s turned out to be far too short — any quick lookup in another tab
       // came back to a reloaded page. Ten minutes hidden is what separates
       // "I left the tab" from "I stopped working".
-      if (agora - this._ocultaDesde < 10 * 60 * 1000) return false;
+      if (now - this._hiddenSince < 10 * 60 * 1000) return false;
       // Work in progress beats any update (same scale).
-      if (this._ultimaDigitacao && (agora - this._ultimaDigitacao) < 10 * 60 * 1000) return false;
+      if (this._lastTyping && (now - this._lastTyping) < 10 * 60 * 1000) return false;
       // Nothing may be sitting in the outgoing queue: reloading would discard what the
       // user typed during an outage and that has not gone up yet.
-      const pendente = (this.terms.panes || []).some(p => p._outbox && p._outbox.length);
-      if (pendente) return false;
+      const pending = (this.terms.panes || []).some(p => p._outbox && p._outbox.length);
+      if (pending) return false;
       // Uploads in flight and open dialogs also mean live work.
       if (document.querySelector('[role="dialog"]')) return false;
       clearInterval(this._reloadTimer); this._reloadTimer = null;
@@ -13776,8 +13771,8 @@ function app() {
     _paneSendInput(pane, d){
       if (!pane || d == null || d === '') return false;
       // Activity stamp: it is what stops the automatic reload from happening
-      // while the user is actually working (see _tentarReloadSeguro).
-      this._ultimaDigitacao = Date.now();
+      // while the user is actually working (see _trySafeReload).
+      this._lastTyping = Date.now();
       if (pane.ws && pane.ws.readyState === 1) {
         // The key goes RAW, in a binary frame. The JSON envelope
         // ({"type":"input","data":"a"}) cost ~30 bytes to carry 1 —
@@ -13787,18 +13782,18 @@ function app() {
         // websocket.BinaryMessage), so this asks nothing new of that
         // side. As a bonus, the ambiguity of an input starting with '{' disappears.
         (pane._txQ || (pane._txQ = [])).push(d);
-        if (!pane._txAgendado) {
-          pane._txAgendado = true;
+        if (!pane._txScheduled) {
+          pane._txScheduled = true;
           // A microtask, NOT a timer: it gathers whatever the browser delivers in the same tick
           // (key auto-repeat, paste, IME) into a single frame without delaying at all
           // someone who types slowly. A setTimeout here would add latency
           // exactly in the case we are trying to fix.
-          const flush = () => { pane._txAgendado = false; this._paneTxFlush(pane); };
+          const flush = () => { pane._txScheduled = false; this._paneTxFlush(pane); };
           if (typeof queueMicrotask === 'function') queueMicrotask(flush);
           else Promise.resolve().then(flush);
         }
-        this._marcaEnvio(pane, d);
-        this._preveEco(pane, d);
+        this._markSend(pane, d);
+        this._predictEcho(pane, d);
         return true;
       }
       return this._paneEnfileiraOffline(pane, d);
@@ -13820,7 +13815,7 @@ function app() {
       if (pane._outboxBytes + d.length > 128 * 1024) { pane._outboxDropped = true; return false; }
       pane._outbox.push(d);
       pane._outboxBytes += d.length;
-      this._paneEcoOffline(pane, d);
+      this._paneEchoOffline(pane, d);
       try { this._renderPaneOverlay(pane); } catch(_){}
       return false;
     },
@@ -13837,13 +13832,13 @@ function app() {
     // arrows and Ctrl-* have an effect that only the shell on the other side knows; they go into
     // the queue silently. And the echo STOPS at the first control character of the sequence,
     // because after it we no longer know where the cursor is.
-    _paneEcoOffline(pane, d){
+    _paneEchoOffline(pane, d){
       if (!pane.term) return;
       // The server had stopped echoing before the drop = a password prompt.
       // Echoing here would write the password in clear text on screen. It is the same rule
       // mosh applies in its own prediction, and it is worth more than the convenience.
-      if (pane._servidorEcoa === false) return;
-      if (this._pareceLinhaDeSenha(pane)) return;
+      if (pane._serverEchoes === false) return;
+      if (this._looksLikePasswordLine(pane)) return;
       let out = '';
       for (const ch of d) {
         const c = ch.codePointAt(0);
@@ -13855,25 +13850,25 @@ function app() {
       try { pane.term.write('\x1b[2m' + out + '\x1b[22m'); } catch(_){}
       // How many cells the guess occupies RIGHT NOW on screen. It is what lets us erase it
       // when the connection returns, before the server echoes the real text.
-      let vis = pane._ecoPintado || 0;
+      let vis = pane._echoPainted || 0;
       for (const ch of d) {
         const c = ch.codePointAt(0);
         if (c === 0x7f || c === 0x08) vis = Math.max(0, vis - 1);
         else if (c < 0x20) break;
         else vis++;
       }
-      pane._ecoPintado = vis;
+      pane._echoPainted = vis;
     },
-    // Second layer of the password protection: even with _servidorEcoa still at
+    // Second layer of the password protection: even with _serverEchoes still at
     // "do not know" (a drop right after the prompt appeared, before any keystroke),
     // the cursor line itself gives the context away. When in doubt — and on error — it does not
     // echo: losing the echo is annoying, leaking a password on screen cannot be undone.
-    _pareceLinhaDeSenha(pane){
+    _looksLikePasswordLine(pane){
       try {
         const buf = pane.term.buffer.active;
-        const linha = buf.getLine(buf.baseY + buf.cursorY);
-        if (!linha) return true;
-        const txt = linha.translateToString(true);
+        const line = buf.getLine(buf.baseY + buf.cursorY);
+        if (!line) return true;
+        const txt = line.translateToString(true);
         // Two conditions, because one alone gets it wrong: real prompts almost always END
         // in ':' or '?' ("[sudo] password for sam:", "Enter passphrase for key
         // '/root/.ssh/id_rsa':", "Password:"), but the keyword can be far
@@ -13907,40 +13902,40 @@ function app() {
     //     only add the risk of flicker for no gain at all.
     //   - edge of the line: '\b' does not move up a line, so near the border the
     //     erasing could not be exact — better not to predict.
-    _preveEco(pane, d){
-      if (!this._podePrever(pane, d)) return;
+    _predictEcho(pane, d){
+      if (!this._canPredict(pane, d)) return;
       const term = pane.term, buf = term.buffer.active;
-      const p = pane._pred || (pane._pred = { txt:'', col:0, linha:0 });
-      if (!p.txt) { p.col = buf.cursorX; p.linha = buf.baseY + buf.cursorY; }
+      const p = pane._pred || (pane._pred = { txt:'', col:0, line:0 });
+      if (!p.txt) { p.col = buf.cursorX; p.line = buf.baseY + buf.cursorY; }
       if (buf.cursorX + d.length >= term.cols - 1) return;
       p.txt += d;
       try { term.write('\x1b[2m' + d + '\x1b[22m'); } catch(_){ p.txt = ''; return; }
       // A guess with no answer is an orphan guess: if the server says nothing (a
       // Ctrl-C that does not echo, a prompt that swallowed the key), nobody would erase
       // the mess. The deadline follows the measured latency, with a floor and a ceiling.
-      const prazo = Math.min(3000, Math.max(600, (pane.eco || pane.rtt || 200) * 3));
+      const deadline = Math.min(3000, Math.max(600, (pane.eco || pane.rtt || 200) * 3));
       if (p.timer) clearTimeout(p.timer);
-      p.timer = setTimeout(() => { p.timer = 0; this._apagaPrevisao(pane); }, prazo);
+      p.timer = setTimeout(() => { p.timer = 0; this._erasePrediction(pane); }, deadline);
     },
-    _podePrever(pane, d){
+    _canPredict(pane, d){
       if (!pane || !pane.term) return false;
-      const modo = this.hostTermEcoPreditivo || 'auto';
-      if (modo === 'nunca') return false;
+      const mode = this.hostTermPredictiveEcho || 'auto';
+      if (mode === 'nunca') return false;
       // Printable characters only: Enter, arrows and Ctrl-* have an effect that only the
       // program on the other side knows.
       if (!/^[\x20-\x7e\u00a0-\uffff]+$/.test(d)) return false;
       let buf;
       try { buf = pane.term.buffer.active; } catch(_) { return false; }
       if (!buf || buf.type === 'alternate') return false;
-      if (pane._servidorEcoa === false) return false;
-      if (this._pareceLinhaDeSenha(pane)) return false;
-      if (modo === 'sempre') return true;
+      if (pane._serverEchoes === false) return false;
+      if (this._looksLikePasswordLine(pane)) return false;
+      if (mode === 'sempre') return true;
       const ms = pane.eco || pane.rtt || 0;
-      return ms >= (this.hostTermEcoLimiar || 60);
+      return ms >= (this.hostTermEchoThreshold || 60);
     },
     // Erases the guess from the screen. Called before every batch of output (that is what
     // guarantees the server always writes on top of the truth) and by the deadline.
-    _apagaPrevisao(pane){
+    _erasePrediction(pane){
       const p = pane && pane._pred;
       if (!p || !p.txt) return;
       const n = p.txt.length;
@@ -13955,7 +13950,7 @@ function app() {
     // echoed N of our characters, and only the rest is still a guess. Without
     // this, someone typing faster than the network would see the tail of what they typed
     // disappear and come back on every frame.
-    _repreveEco(pane){
+    _repredictEcho(pane){
       const p = pane && pane._pred;
       if (!p || !p.txt) return;
       const term = pane.term;
@@ -13965,28 +13960,28 @@ function app() {
       if (!buf || buf.type === 'alternate') { p.txt = ''; return; }
       // The server changed line (Enter, scroll, repaint): the guess lost its
       // anchor and dies here — whatever is in flight shows up when it echoes.
-      if ((buf.baseY + buf.cursorY) !== p.linha) { p.txt = ''; return; }
-      const avanco = buf.cursorX - p.col;
-      if (avanco < 0) { p.txt = ''; return; }
-      const resto = p.txt.slice(avanco);
+      if ((buf.baseY + buf.cursorY) !== p.line) { p.txt = ''; return; }
+      const advance = buf.cursorX - p.col;
+      if (advance < 0) { p.txt = ''; return; }
+      const rest = p.txt.slice(advance);
       p.col = buf.cursorX;
-      p.txt = resto;
-      if (!resto) return;
-      if (buf.cursorX + resto.length >= term.cols - 1) { p.txt = ''; return; }
-      try { term.write('\x1b[2m' + resto + '\x1b[22m'); } catch(_){ p.txt = ''; }
+      p.txt = rest;
+      if (!rest) return;
+      if (buf.cursorX + rest.length >= term.cols - 1) { p.txt = ''; return; }
+      try { term.write('\x1b[2m' + rest + '\x1b[22m'); } catch(_){ p.txt = ''; }
     },
     // Marks that a key went out and is waiting for an answer. It serves two owners:
     // it measures echo latency (the number the user feels) and it discovers prompts
     // that do NOT echo — if nothing comes back in 1.5s with a live socket, it is a password.
-    _marcaEnvio(pane, d){
+    _markSend(pane, d){
       // Only printable characters make a good probe: Enter and Ctrl-* produce output for reasons
       // that are not echo and would skew both measurements.
       if (!/^[\x20-\x7e\u00a0-\uffff]+$/.test(d)) return;
-      if (!pane._envioEm) pane._envioEm = Date.now();
-      if (pane._ecoTimer) return;
-      pane._ecoTimer = setTimeout(() => {
-        pane._ecoTimer = 0;
-        if (pane._envioEm) { pane._servidorEcoa = false; pane._envioEm = 0; }
+      if (!pane._sentAt) pane._sentAt = Date.now();
+      if (pane._echoTimer) return;
+      pane._echoTimer = setTimeout(() => {
+        pane._echoTimer = 0;
+        if (pane._sentAt) { pane._serverEchoes = false; pane._sentAt = 0; }
       }, 1500);
     },
     // Publishes connection quality to the interface AT MOST once per
@@ -13994,17 +13989,17 @@ function app() {
     // output; wiring an Alpine binding straight to them would make the interface
     // re-render hundreds of times per second during heavy output —
     // exactly the kind of work that steals keyboard responsiveness.
-    _atualizaQualidade(pane){
-      const agora = Date.now();
-      if (pane._qualEm && (agora - pane._qualEm) < 1000) return;
-      pane._qualEm = agora;
+    _updateQuality(pane){
+      const now = Date.now();
+      if (pane._qualityAt && (now - pane._qualityAt) < 1000) return;
+      pane._qualityAt = now;
       const ms = pane.eco || pane.rtt || 0;
-      const nivel = !ms ? '' : (ms < 120 ? 'ok' : (ms < 350 ? 'medio' : 'ruim'));
+      const level = !ms ? '' : (ms < 120 ? 'ok' : (ms < 350 ? 'medio' : 'bad'));
       const label = ms ? (ms < 1000 ? ms + ' ms' : (ms/1000).toFixed(1) + ' s') : '';
       if (pane.netLabel !== label) pane.netLabel = label;
-      if (pane.netNivel !== nivel) pane.netNivel = nivel;
+      if (pane.netLevel !== level) pane.netLevel = level;
     },
-    _marcaLatenciaApi(ms){
+    _markApiLatency(ms){
       // Exponential moving average: an isolated spike (an endpoint doing heavy
       // work on the server) must not be read as "the network went down".
       this._apiEwma = this._apiEwma ? Math.round(this._apiEwma * 0.7 + ms * 0.3) : ms;
@@ -14012,30 +14007,30 @@ function app() {
     // "Is the network bad RIGHT NOW?" — two independent probes, the larger wins: the
     // latency of the API calls and the terminal echo. One covers the other: you can
     // be on a screen with no terminal open, or with the terminal idle.
-    _redeLenta(){
-      let pior = this._apiEwma || 0;
+    _slowNetwork(){
+      let worst = this._apiEwma || 0;
       for (const p of (this.terms && this.terms.panes || [])) {
         const ms = (p && (p.eco || p.rtt)) || 0;
-        if (ms > pior) pior = ms;
+        if (ms > worst) worst = ms;
       }
-      return pior >= 350;
+      return worst >= 350;
     },
     // On a bad link, the background polls (statistics, bandwidth, jobs,
     // notifications, inbox) compete for the SAME narrow uplink as the terminal —
     // and the terminal is what the user is looking at. Under a bad network, each one
     // skips 1 tick in 3: the numbers stay alive, just less eager.
     // None of this changes on a good network.
-    _pulaPoll(chave){
-      if (!this._redeLenta()) return false;
+    _skipPoll(key){
+      if (!this._slowNetwork()) return false;
       this._pollTicks || (this._pollTicks = {});
-      const n = (this._pollTicks[chave] = (this._pollTicks[chave] || 0) + 1);
+      const n = (this._pollTicks[key] = (this._pollTicks[key] || 0) + 1);
       return (n % 3) !== 0;
     },
     // Asks which sessions are running an old version of Claude. Cheap and rare: only at
     // boot and when the operator opens the detail — it is not a poller.
-    async loadClaudeVersoes(){
-      if (this.claudeVer.carregando) return;
-      this.claudeVer.carregando = true;
+    async loadClaudeVersions(){
+      if (this.claudeVer.loading) return;
+      this.claudeVer.loading = true;
       try {
         const r = await this.api('/api/claude/versoes');
         if (!r || !r.ok) return;
@@ -14045,17 +14040,17 @@ function app() {
         // Sorts by what matters: the outdated ones first, with the session name.
         this.claudeVer.processos = (d.processos || []).sort((a, b) =>
           (a.atual === b.atual) ? String(a.sessao||'').localeCompare(String(b.sessao||'')) : (a.atual ? 1 : -1));
-      } catch(_){} finally { this.claudeVer.carregando = false; }
+      } catch(_){} finally { this.claudeVer.loading = false; }
     },
     // Dispatcher for the "Restart" button of the version panel. There are TWO ways to
     // restart a Claude, and they are not interchangeable: a panel session
     // restarts by typing into the pane (in full view of the operator, with --continue); the recovery
     // Claude runs in a container and has no pane at all — only the container
     // restarts it. Before, the absence of that second path left the row inert.
-    async reiniciarClaudeDoPainel(proc){
+    async restartPanelClaude(proc){
       if (!proc) return;
-      if (proc.alvo === 'recovery') return this.reiniciarClaudeDoRecovery(proc);
-      return this.reiniciarClaudeDaSessao(proc);
+      if (proc.alvo === 'recovery') return this.restartRecoveryClaude(proc);
+      return this.restartSessionClaude(proc);
     },
     // Restarts the container of the recovery Claude.
     //
@@ -14063,16 +14058,16 @@ function app() {
     // `sleep infinity` and the session is born when someone opens /recovery —
     // there is no conversation to resume, and whichever one is open is lost. The confirm
     // text says so, because that is the difference that matters to the operator.
-    async reiniciarClaudeDoRecovery(proc){
-      const alvo = proc.ref || this.claudeVer.instalada || '?';
+    async restartRecoveryClaude(proc){
+      const target = proc.ref || this.claudeVer.instalada || '?';
       const ok = await this.confirmAsync(
         'Restart the recovery Claude?\n'
         + 'Restarts the container and Claude comes up on the version it already downloaded. '
         + 'Unlike the sessions, there is NO --continue here: a recovery conversation in progress is lost.\n\n'
-        + 'Running version: ' + proc.versao + '  →  in the container: ' + alvo,
+        + 'Running version: ' + proc.versao + '  →  in the container: ' + target,
         { danger: true });
       if (!ok) return;
-      this.claudeVer.reiniciando = proc.pid;
+      this.claudeVer.restarting = proc.pid;
       try {
         const r = await this.api('/api/claude/recovery/restart', { method:'POST' });
         const d = await r.json().catch(() => ({}));
@@ -14080,11 +14075,11 @@ function app() {
         this.showToast('recovery container restarted', 'ok');
         // The container takes a moment to bring the new process up; without the slack the
         // list goes back to showing the old PID and it looks like nothing happened.
-        setTimeout(() => this.loadClaudeVersoes(), 4000);
+        setTimeout(() => this.loadClaudeVersions(), 4000);
       } catch(e){
         this.showToast('error restarting the recovery: ' + e.message, 'err');
       } finally {
-        this.claudeVer.reiniciando = 0;
+        this.claudeVer.restarting = 0;
       }
     },
     // Restarts the Claude of ONE session, with the conversation preserved.
@@ -14094,7 +14089,7 @@ function app() {
     // The command is typed into the pane, in full view of the operator, exactly as they
     // would do by hand — and `claude --continue` resumes the conversation instead of starting
     // from scratch.
-    async reiniciarClaudeDaSessao(proc){
+    async restartSessionClaude(proc){
       if (!proc || !proc.sessao) return;
       // confirmAsync(message, opts) — the 1st line becomes the title when it is short.
       const ok = await this.confirmAsync(
@@ -14113,13 +14108,13 @@ function app() {
       this.setPage('dev'); this.setTab('host');
       // Ctrl-C aborts whatever is running; /exit closes Claude cleanly; then it
       // reopens with --continue. The intervals give the CLI time to process each step.
-      const passos = [['\x03', 400], ['/exit\r', 1200], ['claude --continue\r', 300]];
-      for (const [txt, espera] of passos) {
+      const steps = [['\x03', 400], ['/exit\r', 1200], ['claude --continue\r', 300]];
+      for (const [txt, wait] of steps) {
         this._paneSendInput(pane, txt);
-        await new Promise(r => setTimeout(r, espera));
+        await new Promise(r => setTimeout(r, wait));
       }
       this.showToast('restarting Claude in ' + proc.sessao, 'ok');
-      setTimeout(() => this.loadClaudeVersoes(), 8000);
+      setTimeout(() => this.loadClaudeVersions(), 8000);
     },
     // Redoes the fit and reasserts the size of ALL panes. Called when the
     // window/tab comes back — the moment when divergence usually appears, because
@@ -14127,29 +14122,29 @@ function app() {
     // first (xterm decides how many columns fit), the assertion after (so the
     // server agrees). Free when nothing changed: the fit changes nothing
     // and the server deduplicates a repeated size.
-    _reconciliaTamanhos(){
-      const agora = Date.now();
-      if (this._reconcTamEm && (agora - this._reconcTamEm) < 400) return;
-      this._reconcTamEm = agora;
+    _reconcileSizes(){
+      const now = Date.now();
+      if (this._reconcSizeAt && (now - this._reconcSizeAt) < 400) return;
+      this._reconcSizeAt = now;
       (this.terms && this.terms.panes || []).forEach(p => {
         if (!p || !p.term) return;
         try { this._safeFit(p.fit); } catch(_){}
-        try { if (p._afirmaTamanho) p._afirmaTamanho('janela'); } catch(_){}
+        try { if (p._assertSize) p._assertSize('window'); } catch(_){}
       });
     },
     // The network came back (or the tab came to the front): there is no point waiting for the
     // backoff. Reopens every pane that is off the air right now. Without writing
     // anything to the terminal — success is silent, and the overlay tells the rest.
-    _reconectarPanesAgora(){
-      const agora = Date.now();
-      if (this._reconectAgoraEm && (agora - this._reconectAgoraEm) < 1000) return;
-      this._reconectAgoraEm = agora;
+    _reconnectPanesNow(){
+      const now = Date.now();
+      if (this._reconnectNowAt && (now - this._reconnectNowAt) < 1000) return;
+      this._reconnectNowAt = now;
       (this.terms && this.terms.panes || []).forEach(p => {
         if (!p || !p.reconnect || p.reconnect.cancelled) return;
         if (p.ws && (p.ws.readyState === 0 || p.ws.readyState === 1)) return;
-        if (typeof p._reabrir !== 'function') return;
+        if (typeof p._reopen !== 'function') return;
         if (p.reconnect.timer) { clearTimeout(p.reconnect.timer); p.reconnect.timer = null; }
-        try { p._reabrir(); } catch(_){}
+        try { p._reopen(); } catch(_){}
       });
     },
     _renderPaneOverlay(pane){
@@ -14180,7 +14175,7 @@ function app() {
         // depend on the field being numeric "by convention".
         const q = (pane._outbox && pane._outbox.length) ? (pane._outboxBytes | 0) : 0;
         ov.innerHTML = '<div class="tpo-pill"><span class="tpo-dot"></span>'
-          + (pane.status === 'reconnecting' ? 'Reconnecting…' : 'Conectando…')
+          + (pane.status === 'reconnecting' ? 'Reconnecting…' : 'Connecting…')
           + (q ? '<span class="tpo-sub" style="margin-left:6px;opacity:.85">' + q + ' character' + (q>1?'s':'') + ' queued — nothing lost</span>' : '')
           + '<button class="tpo-link" data-a="now">reconnect now</button></div>';
         ov.style.display = 'flex';
@@ -14310,14 +14305,14 @@ function app() {
           // The natural window keeps being asserted (once per new value):
           // it is how the server knows what the session can go back to
           // when the small client leaves.
-          const marca = d.cols + 'x' + d.rows;
-          if (fit._ultimoNatural !== marca) {
-            fit._ultimoNatural = marca;
-            try { fit._vpsmState._afirmaTamanho && fit._vpsmState._afirmaTamanho('janela natural'); } catch (_) {}
+          const mark = d.cols + 'x' + d.rows;
+          if (fit._lastNatural !== mark) {
+            fit._lastNatural = mark;
+            try { fit._vpsmState._assertSize && fit._vpsmState._assertSize('natural window'); } catch (_) {}
           }
           return true;
         }
-        fit._ultimoNatural = d.cols + 'x' + d.rows;
+        fit._lastNatural = d.cols + 'x' + d.rows;
         // ── ONE-COLUMN HYSTERESIS ──────────────────────────────────────────
         // Changing `cols` re-wraps (reflows) the ENTIRE xterm scrollback. An app
         // that repaints by cursor addressing (the Claude CLI: go up N lines,
@@ -14339,8 +14334,8 @@ function app() {
         // changing `rows` causes no reflow.
         const dc = d.cols - term.cols;
         if (dc === 1 || dc === -1) {
-          if (fit._colPend !== d.cols) {
-            fit._colPend = d.cols;
+          if (fit._colPending !== d.cols) {
+            fit._colPending = d.cols;
             if (fit._colTimer) clearTimeout(fit._colTimer);
             fit._colTimer = setTimeout(() => { fit._colTimer = 0; this._safeFit(fit); }, 300);
             // Rows follow immediately: the prompt must not stay hidden behind
@@ -14348,7 +14343,7 @@ function app() {
             if (d.rows !== term.rows) { try { term.resize(term.cols, d.rows); } catch (_) {} }
             return true;
           }
-          fit._colPend = 0;   // the second measurement agreed: the width really did change
+          fit._colPending = 0;   // the second measurement agreed: the width really did change
           // ── AND IT MUST NOT UNDO THE PREVIOUS ONE ───────────
           // The quarantine filters the isolated spurious event, but not the pair that
           // repeats itself: applying +1 can change the pixel box (a scrollbar
@@ -14361,16 +14356,16 @@ function app() {
           // So a ±1 correction does not undo the last one inside the
           // quiet window. A change of >=2 columns still passes immediately:
           // rotation, split and sidebar are intent, not noise.
-          const agora = Date.now();
-          if (fit._ultimoAjuste1col &&
-              (agora - fit._ultimoAjuste1col.em) < 2000 &&
-              fit._ultimoAjuste1col.dc === -dc) {
+          const now = Date.now();
+          if (fit._lastFit1col &&
+              (now - fit._lastFit1col.em) < 2000 &&
+              fit._lastFit1col.dc === -dc) {
             return true;   // that would undo the one from a moment ago: leave it as it is
           }
-          fit._ultimoAjuste1col = { dc, em: agora };
+          fit._lastFit1col = { dc, em: now };
         } else {
-          fit._colPend = 0;
-          fit._ultimoAjuste1col = null;
+          fit._colPending = 0;
+          fit._lastFit1col = null;
           if (fit._colTimer) { clearTimeout(fit._colTimer); fit._colTimer = 0; }
         }
         fit.fit();
@@ -14524,7 +14519,7 @@ function app() {
       if (sessions.length === 0) {
         const empty = document.createElement('div');
         empty.style.cssText = 'padding:8px;color:#6b7280;font-style:italic;';
-        empty.textContent = 'Nenhuma sessão existente — use "New session"';
+        empty.textContent = 'No existing sessions. Use "New session"';
         menu.appendChild(empty);
       } else {
         sessions.forEach(s => {
@@ -14739,7 +14734,7 @@ function app() {
       // a valid drop target (HTML5 DnD): the drop escapes to the document and the browser
       // default action is to NAVIGATE to the file — the whole SPA disappears, taking
       // every pane and the tab state with it. That was the behaviour until this was fixed.
-      if (this._dragTemArquivos(ev)) {
+      if (this._dragHasFiles(ev)) {
         ev.preventDefault();
         try { ev.dataTransfer.dropEffect = 'copy'; } catch(_){}
         this._showFileDropOverlay(ev.currentTarget);
@@ -14765,7 +14760,7 @@ function app() {
       // Pane rearrangement: it does not remove the overlay on leave (dragover repeats right after)
       // — only on end or on drop. The FILE overlay, though, has to disappear here,
       // otherwise it stays stuck on screen when the user gives up and drags away.
-      if (ev && this._dragTemArquivos(ev)) {
+      if (ev && this._dragHasFiles(ev)) {
         const wrap = ev.currentTarget;
         // relatedTarget inside the wrap itself = it only moved between children, it did not leave.
         try { if (wrap && ev.relatedTarget && wrap.contains(ev.relatedTarget)) return; } catch(_){}
@@ -14774,14 +14769,14 @@ function app() {
     },
     _panelDrop(ev, targetPane){
       ev.preventDefault();
-      if (this._dragTemArquivos(ev)) {
+      if (this._dragHasFiles(ev)) {
         this._hideFileDropOverlay(ev.currentTarget);
-        const arquivos = (ev.dataTransfer && ev.dataTransfer.files) || [];
+        const files = (ev.dataTransfer && ev.dataTransfer.files) || [];
         // targetPane IS the pane state (the same object that carries .ws/.term and
         // that _paneSendInput expects) — the outbox covers the case of
         // dropping a file with the connection down: the path is queued and goes out on
         // reconnect instead of vanishing.
-        if (arquivos.length) this._sendFilesToPane(targetPane, arquivos).catch(()=>{});
+        if (files.length) this._sendFilesToPane(targetPane, files).catch(()=>{});
         return;
       }
       const src = this.terms._dragPane;
@@ -14880,7 +14875,7 @@ function app() {
     },
     // ----- Workspaces -----
     async saveCurrentWorkspace(){
-      const raw = await this.askInput({ title:'Save workspace', label:'Workspace name:', placeholder:'meu-workspace', validate:(v)=>{ const s=String(v||'').trim(); if(!s) return 'Enter a name'; return /^[\p{L}\p{N}_\- .]{1,64}$/u.test(s) ? '' : 'Use letters, numbers, space, -, _, . (max 64)'; } });
+      const raw = await this.askInput({ title:'Save workspace', label:'Workspace name:', placeholder:'my-workspace', validate:(v)=>{ const s=String(v||'').trim(); if(!s) return 'Enter a name'; return /^[\p{L}\p{N}_\- .]{1,64}$/u.test(s) ? '' : 'Use letters, numbers, space, -, _, . (max 64)'; } });
       const name = (raw || '').trim();
       if (!name) return;
       const snap = {
@@ -15021,8 +15016,8 @@ function app() {
           break;
         case 'rename': {
           (async () => {
-            const novo = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic — the session keeps its name):', value: pane.sessionName || '' })) || '').trim();
-            if (novo) { pane.sessionName = novo; this.renderPaneLayout(); this.saveState(); }
+            const fresh = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic — the session keeps its name):', value: pane.sessionName || '' })) || '').trim();
+            if (fresh) { pane.sessionName = fresh; this.renderPaneLayout(); this.saveState(); }
           })();
           break;
         }
@@ -15408,8 +15403,8 @@ function app() {
     // Renames (cosmetically) the name of the panel. Used by the tab manager and the radial menu.
     async renamePane(pane){
       if (!pane) return;
-      const novo = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic — the session keeps its name):', value: pane.sessionName || '' })) || '').trim();
-      if (novo) { pane.sessionName = novo; this.renderPaneLayout(); this.saveState(); }
+      const fresh = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic — the session keeps its name):', value: pane.sessionName || '' })) || '').trim();
+      if (fresh) { pane.sessionName = fresh; this.renderPaneLayout(); this.saveState(); }
     },
     hostTermClear(){ const p = this.activePane(); if (p && p.term) p.term.clear(); },
     toggleFocusMode(){
@@ -15584,7 +15579,7 @@ function app() {
       if (reverse) found = p.search.findPrevious(q, opts); else found = p.search.findNext(q, opts);
       // Updates the counter. xterm-addon-search exposes resultIndex/resultCount through an event
       // (onDidChangeResults). If it is not available, it only shows hit/miss.
-      this.hostTermSearchMatchCount = found ? '✓' : 'nada';
+      this.hostTermSearchMatchCount = found ? '✓' : 'none';
     },
     hostStatusLabel(){
       const p = this.activePane();
@@ -15858,8 +15853,8 @@ function app() {
         case 'pane-rename': {
           if (!pane) break;
           (async () => {
-            const novo = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic — the server keeps the name):', value: pane.sessionName || '' })) || '').trim();
-            if (novo) { pane.sessionName = novo; this.renderPaneLayout(); this.saveState(); }
+            const fresh = ((await this.askInput({ title:'Rename panel', label:'Rename panel (cosmetic — the server keeps the name):', value: pane.sessionName || '' })) || '').trim();
+            if (fresh) { pane.sessionName = fresh; this.renderPaneLayout(); this.saveState(); }
           })();
           break;
         }
@@ -16617,9 +16612,9 @@ function app() {
         const fs = inp.files;
         // Reset BEFORE uploading: picking the same file twice in a row does not
         // fire 'change' if the value stays filled in.
-        const copia = Array.from(fs || []);
+        const copy = Array.from(fs || []);
         inp.value = '';
-        if (copia.length) this._sendFilesToPane(state, copia).catch(()=>{});
+        if (copy.length) this._sendFilesToPane(state, copy).catch(()=>{});
       };
       inp.click();
     },
@@ -16629,21 +16624,21 @@ function app() {
     // that way the legitimate zones (panes, WhatsApp, video call, the Jira board)
     // stay in control and this guard only catches what is left over.
     _installGlobalDropGuard(){
-      if (this._dropGuardInstalado) return;
-      this._dropGuardInstalado = true;
-      const bloquear = (ev) => {
+      if (this._dropGuardInstalled) return;
+      this._dropGuardInstalled = true;
+      const block = (ev) => {
         if (ev.defaultPrevented) return;
-        if (!this._dragTemArquivos(ev)) return;
+        if (!this._dragHasFiles(ev)) return;
         ev.preventDefault();
         try { if (ev.type === 'dragover') ev.dataTransfer.dropEffect = 'none'; } catch(_){}
       };
-      window.addEventListener('dragover', bloquear, false);
+      window.addEventListener('dragover', block, false);
       window.addEventListener('drop', (ev) => {
-        const tinhaArquivo = this._dragTemArquivos(ev) && !ev.defaultPrevented;
-        bloquear(ev);
+        const hadFile = this._dragHasFiles(ev) && !ev.defaultPrevented;
+        block(ev);
         this._hideFileDropOverlay(null);
         // A hint only when the gesture got lost: the user clearly meant to attach.
-        if (tinhaArquivo) this.showToast?.('drop the file ONTO a terminal pane to attach it','info');
+        if (hadFile) this.showToast?.('drop the file ONTO a terminal pane to attach it','info');
       }, false);
     },
     // Extracts the FILES out of a paste event. Returns null when the paste
@@ -16656,11 +16651,11 @@ function app() {
     // screenshot upload — a silent regression on top of the single most common
     // case there is. Copying a file in the system file manager, which is the case
     // we do want to catch, carries no text/plain.
-    _arquivosDoClipboard(ev){
+    _clipboardFiles(ev){
       const cd = ev && ev.clipboardData;
       if (!cd) return null;
-      const tipos = Array.from(cd.types || []);
-      if (tipos.includes('text/plain')) return null;
+      const types = Array.from(cd.types || []);
+      if (types.includes('text/plain')) return null;
       const out = [];
       for (const it of (cd.items || [])) {
         if (it.kind === 'file') { const f = it.getAsFile(); if (f) out.push(f); }
@@ -16687,24 +16682,24 @@ function app() {
     // coming out of getAsFile() is born with lastModified = now, so two calls for
     // the same clipboard item produce different values and the signature would
     // fail to match in exactly the case it exists to catch.
-    _pasteJaTratado(ev, arquivos){
+    _pasteHandled(ev, files){
       try {
         if (ev && ev.__vpsmPasteHandled) return true;
         if (ev) ev.__vpsmPasteHandled = true;
       } catch(_) {}
-      const sig = (arquivos || [])
+      const sig = (files || [])
         .map((f) => (f.name||'') + ':' + (f.size||0) + ':' + (f.type||''))
         .join('|');
       if (!sig) return false;
-      const agora = Date.now();
-      const ult = this._ultimoPasteDedup;
-      if (ult && ult.sig === sig && agora - ult.ts < 1000) return true;
-      this._ultimoPasteDedup = { sig, ts: agora };
+      const now = Date.now();
+      const ult = this._lastPasteDedup;
+      if (ult && ult.sig === sig && now - ult.ts < 1000) return true;
+      this._lastPasteDedup = { sig, ts: now };
       return false;
     },
     // true when what is being dragged are system FILES (and not a pane of the
     // app itself being rearranged).
-    _dragTemArquivos(ev){
+    _dragHasFiles(ev){
       try {
         const t = ev.dataTransfer && ev.dataTransfer.types;
         if (!t) return false;
@@ -16719,12 +16714,12 @@ function app() {
     // This used to be _uploadPasteImage and sent an "image" field to
     // /api/terminal/paste-image, which rejected non-images with 415. The server
     // now accepts any type; the field is "file" and the route is /upload.
-    async _uploadTermFile(blob, nome){
+    async _uploadTermFile(blob, name){
       if (!blob) return null;
       const fd = new FormData();
       // The name matters: it becomes the name on disk (sanitized server-side) and
       // guides whoever reads the path later. A synthetic name only when there is none.
-      let n = nome || blob.name || '';
+      let n = name || blob.name || '';
       if (!n) {
         const ext = (blob.type && blob.type.split('/')[1]) || 'bin';
         n = 'paste.' + ext;
@@ -16745,7 +16740,7 @@ function app() {
         }
         return await r.json();
       } catch(err) {
-        this.showToast?.('upload failed: ' + (err && err.message || 'rede'), 'err');
+        this.showToast?.('upload failed: ' + (err && err.message || 'network'), 'err');
         return null;
       }
     },
@@ -16767,13 +16762,13 @@ function app() {
     // typing does not get chopped up. Uploads run in series on purpose: these are
     // tens of MB over a home connection, and in parallel one starves the other.
     async _sendFilesToPane(state, files){
-      const lista = Array.from(files || []).filter(Boolean);
-      if (!lista.length || !state) return;
-      const total = lista.length;
+      const list = Array.from(files || []).filter(Boolean);
+      if (!list.length || !state) return;
+      const total = list.length;
       const paths = [];
       for (let i = 0; i < total; i++) {
-        const f = lista[i];
-        this.showToast?.(total > 1 ? `enviando ${i+1}/${total}: ${f.name||'file'}…` : `enviando ${f.name||'file'}…`, 'info');
+        const f = list[i];
+        this.showToast?.(total > 1 ? `uploading ${i+1}/${total}: ${f.name||'file'}…` : `uploading ${f.name||'file'}…`, 'info');
         const d = await this._uploadTermFile(f, f.name);
         if (d && d.path) paths.push(this._quoteShellPath(d.path));
       }
@@ -16798,8 +16793,8 @@ function app() {
         if (navigator.clipboard && navigator.clipboard.read) {
           const items = await navigator.clipboard.read();
           for (const item of items) {
-            const tipos = item.types || [];
-            const img = tipos.find(t => t.startsWith('image/'));
+            const types = item.types || [];
+            const img = types.find(t => t.startsWith('image/'));
             if (img) {
               const blob = await item.getType(img);
               const path = await this._uploadPasteImage(blob);
@@ -16808,8 +16803,8 @@ function app() {
             }
           }
           for (const item of items) {
-            const tipos = item.types || [];
-            if (tipos.includes('text/plain')) {
+            const types = item.types || [];
+            if (types.includes('text/plain')) {
               const blob = await item.getType('text/plain');
               const txt = await blob.text();
               if (txt) this._paneSendInput(state, txt);
@@ -17105,7 +17100,7 @@ function app() {
         case 'video': return '🎬 Video';
         case 'audio': return '🎵 Audio';
         case 'voice': return '🎤 Voice message';
-        case 'document': return '📎 ' + (m.media?.filename || 'Documento');
+        case 'document': return '📎 ' + (m.media?.filename || 'Document');
         case 'sticker': return '🏷️ Sticker';
         case 'location': return '📍 Location';
       }
@@ -17371,7 +17366,7 @@ function app() {
         if (failed > 0) msg += ' · ' + failed + ' failure' + (failed !== 1 ? 's' : '');
         this.showToast && this.showToast(msg, failed > 0 ? 'err' : 'ok');
       } catch (e) {
-        this.showToast && this.showToast('Sync error: ' + (e && e.message || 'rede'), 'err');
+        this.showToast && this.showToast('Sync error: ' + (e && e.message || 'network'), 'err');
       } finally {
         wa.syncing = false;
       }
@@ -17384,7 +17379,7 @@ function app() {
     // Resolves the quoted msg (a local lookup in the loaded list). Returns
     // {label, body} ready to render OR null when the quoted one has not been
     // loaded yet (we do not fetch it from the server — the user would click to
-    // scroll, which then calls loadMore if needed). Media: uses "📷 Imagem"/etc.
+    // scroll, which then calls loadMore if needed). Media: uses "📷 Image"/etc.
     whatsappQuotedPreview(m) {
       if (!m || !m.quoted_id) return null;
       const list = this.whatsapp.messages[m.chat] || [];
@@ -17398,7 +17393,7 @@ function app() {
         else if (q.type === 'document') body = '📄 Document';
         else body = '(media)';
       }
-      const label = q.from_me ? 'You' : (this.whatsappSenderLabel(q) || 'Contato');
+      const label = q.from_me ? 'You' : (this.whatsappSenderLabel(q) || 'Contact');
       return { label, body: body.slice(0, 120) };
     },
 
@@ -17522,7 +17517,7 @@ function app() {
       if (words.length === 1) return words[0].slice(0,2).toUpperCase();
       return (words[0][0] + words[1][0]).toUpperCase();
     },
-    // Inserts "Today", "Yesterday", "Segunda-feira", "27/05/2026" separators
+    // Inserts "Today", "Yesterday", "Monday", "27/05/2026" separators
     // between messages from different days, as WhatsApp Web does. Returns a flat
     // list interleaving {type:'divider', label, id} and {type:'msg', m, id}.
     whatsappMessagesWithDividers(msgs) {
@@ -17786,11 +17781,11 @@ function app() {
     // Covers 90% of everyday WhatsApp use; the rest falls back to a Unicode keyboard.
     whatsappEmojiRows() {
       return [
-        { title:'Frequentes', emojis: ['😀','😂','🥰','😍','😘','😎','🤣','😊','😢','😭','😡','🥺','😴','🤔','👀','💔','❤️','🔥','✨','🎉','👏','🙏','💯','🚀'] },
+        { title:'Frequent', emojis: ['😀','😂','🥰','😍','😘','😎','🤣','😊','😢','😭','😡','🥺','😴','🤔','👀','💔','❤️','🔥','✨','🎉','👏','🙏','💯','🚀'] },
         { title:'Smileys', emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶'] },
-        { title:'Gestos', emojis: ['👍','👎','👌','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👋','🤚','🖐️','✋','🖖','👏','🙌','👐','🤲','🤝','🙏','✍️','💪','🦾'] },
+        { title:'Gestures', emojis: ['👍','👎','👌','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👋','🤚','🖐️','✋','🖖','👏','🙌','👐','🤲','🤝','🙏','✍️','💪','🦾'] },
         { title:'Heart', emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟'] },
-        { title:'Objetos', emojis: ['🔥','✨','🎉','🎊','🎁','🎂','🍰','☕','🍺','🍷','🍕','🍔','🌹','🌸','🌞','🌙','⭐','💯','💰','📱','💻','🚗','✈️','🏠'] },
+        { title:'Objects', emojis: ['🔥','✨','🎉','🎊','🎁','🎂','🍰','☕','🍺','🍷','🍕','🍔','🌹','🌸','🌞','🌙','⭐','💯','💰','📱','💻','🚗','✈️','🏠'] },
       ];
     },
     whatsappInsertEmoji(e) {
@@ -18862,7 +18857,7 @@ function app() {
             } else if (ev.type === 'owner-action') {
               // The owner applied an action to a peer — notify (non-fatal).
               const targetName = this.vcPeerName(ev.target) || ev.target.slice(-6);
-              const byName = this.vcPeerName(ev.by) || 'Dono';
+              const byName = this.vcPeerName(ev.by) || 'Owner';
               if (ev.action === 'mute') this.vcToast('🔇 ' + byName + ' muted ' + targetName);
               else if (ev.action === 'camera-off') this.vcToast('📷 ' + byName + ' turned off the camera of ' + targetName);
               else if (ev.action === 'kick') this.vcToast('🚪 ' + byName + ' removed ' + targetName + ' from the call');
@@ -18870,7 +18865,7 @@ function app() {
               this.vcInfo('The owner asked you to unmute.');
             } else if (ev.type === 'room-locked') {
               this.videocall.roomLocked = !!ev.locked;
-              const byName = this.vcPeerName(ev.by) || 'Dono';
+              const byName = this.vcPeerName(ev.by) || 'Owner';
               this.vcToast(ev.locked ? '🔒 ' + byName + ' locked the room' : '🔓 ' + byName + ' unlocked the room');
             } else if (ev.type === 'owner-transferred') {
               const newOwner = ev.newOwner || '';
@@ -18882,10 +18877,10 @@ function app() {
             } else if (ev.type === 'mic-gain') {
               if (typeof ev.value === 'number') this.videocall.micGain = ev.value;
             } else if (ev.type === 'mic-muted') {
-              // Mute forçado pelo dono da sala. Sem isto o botão seguia
-              // mostrando o mic aberto e o primeiro clique "mutava" de novo.
+              // Mute forced by the room owner. Without this the button kept
+              // showing the mic open and the first click "muted" it again.
               this.videocall.muted = true;
-              if (ev.forced) this.vcToast('🔇 ' + (this.vcPeerName(ev.by) || 'O dono da sala') + ' silenciou seu microfone');
+              if (ev.forced) this.vcToast('🔇 ' + (this.vcPeerName(ev.by) || 'The room owner') + ' muted your microphone');
             } else if (ev.type === 'mic-processing') {
               if (ev.value) this.videocall.micProc = Object.assign({}, ev.value);
             } else if (ev.type === 'subtitles-backend') {
@@ -19055,13 +19050,13 @@ function app() {
               // The peer we activated remotely confirmed that its STT came up — the
               // REAL confirmation (before, the initiator only knew that the
               // dc.send() happened, never that the engine on the other side worked).
-              const who = this.vcPeerLabel(ev.from) || 'Participante';
+              const who = this.vcPeerLabel(ev.from) || 'Participant';
               this.vcInfo('🎙 ' + who + ': starting transcription…');
             } else if (ev.type === 'subtitles-status') {
               // A failure status from the remote peer — makes the failure VISIBLE
               // (it used to be mute). We only announce failure here; ok=true arrives as an ack.
               if (!ev.ok) {
-                const who = this.vcPeerLabel(ev.from) || 'Participante';
+                const who = this.vcPeerLabel(ev.from) || 'Participant';
                 const reason = ev.reason ? (' (' + ev.reason + ')') : '';
                 this.vcInfo('⚠️ ' + who + ' could not turn transcription on' + reason);
               }
@@ -19243,7 +19238,7 @@ function app() {
         // Generate one. It needs the transcript left in the state of the previous call.
         const transcript = this.videocall.transcript || '';
         if (!transcript.trim()) {
-          this.videocall.summaryModal.summary = '⚠ Não há transcript desta chamada — ative "Live transcription" durante a chamada pra gerar o resumo IA depois.';
+          this.videocall.summaryModal.summary = '⚠ There is no transcript for this call. Turn on "Live transcription" during the call to generate the AI summary afterwards.';
           this.videocall.summaryModal.busy = false;
           return;
         }
@@ -19529,7 +19524,7 @@ function app() {
         // except the chat input (where typing a space is normal). A refinement of
         // the guard: Space used to be blocked in any input.
         if (e.code === 'Space' && !e.repeat) {
-          const isChatInput = t.tagName === 'INPUT' && (t.placeholder === 'Mensagem…' || t.placeholder === 'Mensagem...');
+          const isChatInput = t.tagName === 'INPUT' && (t.placeholder === 'Message…' || t.placeholder === 'Message...');
           if (!isChatInput && this.videocall.muted) {
             this.videocall.pttActive = true;
             for (const tr of (window.VPSMVideoCall._call?.localStream?.getAudioTracks() || [])) tr.enabled = true;
@@ -19619,7 +19614,7 @@ function app() {
     },
     vcConnectionLabel() {
       const b = this.vcConnectionQuality();
-      return b >= 4 ? 'excelente' : b === 3 ? 'boa' : b === 2 ? 'instável' : 'ruim';
+      return b >= 4 ? 'excellent' : b === 3 ? 'good' : b === 2 ? 'unstable' : 'bad';
     },
 
     // ---- QoL: Reactions (emoji floating) ----
@@ -19718,10 +19713,10 @@ function app() {
       // watchdog closes it by itself when `dragover` stops repeating.
       root.addEventListener('dragleave', (e) => {
         if (!this.videocall.dropOverlay) return;
-        const saiuDaJanela = !e.relatedTarget ||
+        const leftWindow = !e.relatedTarget ||
           e.clientX <= 0 || e.clientY <= 0 ||
           e.clientX >= (window.innerWidth || 0) || e.clientY >= (window.innerHeight || 0);
-        if (saiuDaJanela) this.vcDropOverlayHide();
+        if (leftWindow) this.vcDropOverlayHide();
       });
       root.addEventListener('dragend', () => this.vcDropOverlayHide());
       // Dragging out of the window (dropping into another app) usually just blurs.
@@ -19818,11 +19813,11 @@ function app() {
     },
     vcToggleGroup(k) {
       if (!this.videocall.settingsGroups || !(k in this.videocall.settingsGroups)) return;
-      const abrindo = !this.videocall.settingsGroups[k];
-      if (abrindo && this._vcSheetMobile()) {
+      const opening = !this.videocall.settingsGroups[k];
+      if (opening && this._vcSheetMobile()) {
         for (const g in this.videocall.settingsGroups) if (g !== k) this.videocall.settingsGroups[g] = false;
       }
-      this.videocall.settingsGroups[k] = abrindo;
+      this.videocall.settingsGroups[k] = opening;
       try { localStorage.setItem('vpsm_vc_settings_groups', JSON.stringify(this.videocall.settingsGroups)); } catch (e) {}
     },
 
@@ -19993,7 +19988,7 @@ function app() {
         if (r.status === 403) throw new Error('only the room owner can kick');
         if (r.status === 404) throw new Error('the peer is no longer in the call');
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        this.vcInfo((peerLabel || 'Participante') + ' kicked');
+        this.vcInfo((peerLabel || 'Participant') + ' kicked');
       } catch (e) { this.vcError('kick: ' + e.message); }
     },
 
@@ -20036,9 +20031,9 @@ function app() {
       // with 'quality' and 'owner' open) can bring several groups expanded. Leave
       // only the first one, otherwise the sheet opens in the middle of a wall of scrolling.
       if (this.videocall.settingsPopOpen && this._vcSheetMobile() && this.videocall.settingsGroups) {
-        const abertos = Object.keys(this.videocall.settingsGroups).filter((g) => this.videocall.settingsGroups[g]);
-        if (abertos.length > 1) {
-          for (const g of abertos.slice(1)) this.videocall.settingsGroups[g] = false;
+        const openOnes = Object.keys(this.videocall.settingsGroups).filter((g) => this.videocall.settingsGroups[g]);
+        if (openOnes.length > 1) {
+          for (const g of openOnes.slice(1)) this.videocall.settingsGroups[g] = false;
           try { localStorage.setItem('vpsm_vc_settings_groups', JSON.stringify(this.videocall.settingsGroups)); } catch (e) {}
         }
       }
@@ -20132,8 +20127,8 @@ function app() {
         );
         // When transcription is enabled for the first time, propagate the current
         // "show captions" state to the engine (preserving the saved preference).
-        if (this.videocall.subtitlesActive && window.VPSMVideoCall.setShowLegendas) {
-          try { window.VPSMVideoCall.setShowLegendas(this.videocall.subtitlesShow); } catch (_) {}
+        if (this.videocall.subtitlesActive && window.VPSMVideoCall.setShowCaptions) {
+          try { window.VPSMVideoCall.setShowCaptions(this.videocall.subtitlesShow); } catch (_) {}
         }
       } finally {
         this._subtitlesToggling = false;
@@ -20171,17 +20166,16 @@ function app() {
     // off. STT (transcription) keeps running — the text still goes to the panel +
     // the summary. Useful when you want to keep the speech history but do not want
     // letters over the picture of the peer.
-    vcToggleLegendas() {
+    vcToggleCaptions() {
       const next = !this.videocall.subtitlesShow;
       this.videocall.subtitlesShow = next;
       try { localStorage.setItem('vpsm_vc_subtitles_show', next ? '1' : '0'); } catch (_) {}
-      if (window.VPSMVideoCall && window.VPSMVideoCall.setShowLegendas) {
-        try { window.VPSMVideoCall.setShowLegendas(next); } catch (_) {}
+      if (window.VPSMVideoCall && window.VPSMVideoCall.setShowCaptions) {
+        try { window.VPSMVideoCall.setShowCaptions(next); } catch (_) {}
       }
     },
-    // Volume de envio do mic — aplica ao vivo no Call e persiste. Fora da
-    // chamada só guarda: entra no próximo connect() (e o medidor do lobby já
-    // mostra com ele).
+    // Outgoing mic volume: applied live in a call and persisted. Outside a call
+    // it is only stored and takes effect on the next connect().
     vcSetMicGain(v) {
       const g = Math.min(4, Math.max(0.25, Number(v) || 1.0));
       this.videocall.micGain = g;
@@ -20193,8 +20187,8 @@ function app() {
     vcMicGainPct() {
       return Math.round((this.videocall.micGain || 1) * 100) + '%';
     },
-    // O slider anda em log2 do volume (-2..2 = 25%..400%): cada passo soa
-    // igual, e 100% cai no meio. Perto do meio gruda em 100%.
+    // The slider moves in log2 of the volume (-2..2 = 25%..400%) so every step
+    // sounds equal and 100% sits in the middle; near the middle it snaps to 100%.
     vcMicGainPos() {
       return Math.log2(this.videocall.micGain || 1);
     },
@@ -20202,12 +20196,12 @@ function app() {
       const p = Math.abs(pos) < 0.08 ? 0 : pos;
       this.vcSetMicGain(Math.round(Math.pow(2, p) * 100) / 100);
     },
-    // Supressão de ruído / cancelamento de eco / ganho automático. Na chamada,
-    // reabre o mic com a nova config sem os peers perceberem.
+    // Noise suppression / echo cancellation / auto gain. In a call it reopens
+    // the mic with the new config without the peers noticing.
     async vcSetMicProc(key, on) {
       if (!['noiseSuppression', 'echoCancellation', 'autoGainControl'].includes(key)) return;
       if (key === 'echoCancellation' && !on) {
-        this.vcInfo('Cancelamento de eco desligado — sem fone, o outro lado vai se ouvir de volta.');
+        this.vcInfo('Echo cancellation off: without headphones, the other side will hear themselves back.');
       }
       await this._vcApplyMicProc(Object.assign({}, this.videocall.micProc, { [key]: !!on }));
     },
@@ -20236,10 +20230,9 @@ function app() {
         this.vcLobbyStartMicMonitor();
       }
     },
-    // Medidor ao vivo do que sai pros peers. Um laço só, que roda enquanto o
-    // menu do mic ou as configurações estiverem abertos na chamada e se
-    // desliga sozinho. ~20 atualizações/s: o suficiente pro olho, sem fazer
-    // o Alpine re-renderizar a cada frame.
+    // Live meter of what goes out to the peers. A single loop that runs only while
+    // the mic menu or settings are open in a call, then stops by itself. ~20
+    // updates/s is enough for the eye without making Alpine re-render every frame.
     _vcMicMeterEnsure() {
       if (this._vcMicMeterRaf) return;
       let last = 0;
@@ -20545,7 +20538,7 @@ function app() {
 
     // ---- Transcription: display helpers ----
     // Resolves peerId → a human name. peersList is populated by the cbState
-    // peer-count from the engine ({id, user}). user may arrive as "guest:Esposa"
+    // peer-count from the engine ({id, user}). user may arrive as "guest:Alice"
     // for guests joining by PIN — strip the prefix.
     vcPeerLabel(peerId) {
       if (!peerId || peerId === 'me') return this.username || 'You';
@@ -20555,15 +20548,13 @@ function app() {
       // displayName fallback in peerStates (when it was sent via peer-state)
       const st = this.videocall.peerStates && this.videocall.peerStates[peerId];
       if (st && st.displayName) return String(st.displayName).replace(/^guest:/, '');
-      return 'Participante';
+      return 'Participant';
     },
-    // Nome do peer, ou '' quando desconhecido — os chamadores têm fallback
-    // próprio ('Dono', id curto). Era chamado nos handlers de owner-lock,
-    // owner-transferred e afins sem nunca ter sido definido: o TypeError
-    // abortava o handler antes do toast.
+    // Peer name, or '' when unknown: callers have their own fallback ('Owner',
+    // short id). The owner-lock/owner-transferred handlers depend on it.
     vcPeerName(peerId) {
       const l = this.vcPeerLabel(peerId);
-      return l === 'Participante' ? '' : l;
+      return l === 'Participant' ? '' : l;
     },
     // A consistent color per peerId — hash → HSL. "me" is always the panel blue.
     vcPeerColor(peerId) {
@@ -20737,8 +20728,8 @@ function app() {
     vcLobbyStartMicMonitor() {
       if (this._lobbyMicMon) { this._lobbyMicMon.stop(); this._lobbyMicMon = null; }
       const micId = this.videocall.selectedDevices.mic;
-      // Mesmo volume e processamento da chamada: o lobby mostra o que o outro
-      // lado vai ouvir. gain como função — o slider muda ao vivo sem reabrir o mic.
+      // Same volume and processing as the call, so the lobby shows what the other
+      // side will hear. gain is a function so the slider applies live without reopening the mic.
       this._lobbyMicMon = window.VPSMVideoCall.createMicLevelMonitor(micId, (lvl, info) => {
         this.videocall.lobbyMicLevel = lvl;
         this.videocall.micLimiting = !!(info && info.limiting);
@@ -20798,18 +20789,18 @@ function app() {
       // devices actually changed, never during an open in progress, and with a
       // debounce (plugging in one device emits several events in a row).
       this._lobbyDevSig = null;
-      const assinatura = async () => {
+      const signature = async () => {
         try {
           const l = await navigator.mediaDevices.enumerateDevices();
           return l.map(d => d.kind + ':' + d.deviceId).sort().join('|');
         } catch (_) { return null; }
       };
-      assinatura().then(sig => { this._lobbyDevSig = sig; });
+      signature().then(sig => { this._lobbyDevSig = sig; });
       this._lobbyDevWatch = () => {
         clearTimeout(this._lobbyDevTimer);
         this._lobbyDevTimer = setTimeout(async () => {
           if (!this.videocall.lobbyOpen || this.videocall.lobbyBusy) return;
-          const sig = await assinatura();
+          const sig = await signature();
           if (sig === null || sig === this._lobbyDevSig) return; // only the labels changed
           this._lobbyDevSig = sig;
           this.vcLobbyOpen(this.videocall.lobbyForRoomId, this.videocall.lobbyForPassphrase);
@@ -20847,9 +20838,9 @@ function app() {
     },
     vcSettingsStartMicMonitor() {
       if (this._settingsMicMon) { this._settingsMicMon.stop(); this._settingsMicMon = null; }
-      // Na chamada, mede o que SAI (volume aplicado) direto do motor — sem
-      // abrir uma segunda captura do mic. O monitor separado fica de reserva
-      // pra quando o motor não tem pipeline de volume.
+      // In a call, measure what goes OUT (volume applied) straight from the engine,
+      // without opening a second mic capture. The separate monitor is the fallback
+      // for when the engine has no volume pipeline.
       const api = window.VPSMVideoCall;
       if (this.videocall.inCall && api && api.getMicLevel && api.getMicLevel()) {
         this._vcMicMeterEnsure();
@@ -20961,7 +20952,7 @@ function app() {
     },
     vcShareEmail() {
       const subject = encodeURIComponent('Video call — invite');
-      const body = encodeURIComponent(this._vcShareMessage() + '\n\n(Link expires in ' + (this.videocall.inviteExpiresAt ? new Date(this.videocall.inviteExpiresAt*1000).toLocaleString() : 'breve') + ')');
+      const body = encodeURIComponent(this._vcShareMessage() + '\n\n(Link expires in ' + (this.videocall.inviteExpiresAt ? new Date(this.videocall.inviteExpiresAt*1000).toLocaleString() : 'soon') + ')');
       window.location.href = 'mailto:?subject=' + subject + '&body=' + body;
     },
     vcShareSMS() {

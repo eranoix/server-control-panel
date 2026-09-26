@@ -28,15 +28,15 @@ private val sampleSnapshot = OpsSnapshot(
     healthOk = true,
     queueRunning = 1,
     queueQueued = 0,
-    alerts = listOf(OpsAlert(name = "cpu-alta", severity = "critical", state = "firing", currentValue = 95.0, threshold = 90.0, unit = "%")),
+    alerts = listOf(OpsAlert(name = "cpu-high", severity = "critical", state = "firing", currentValue = 95.0, threshold = 90.0, unit = "%")),
 )
 
 private class DashboardFakeOpsSource(
     private var statusResult: OpsStatusResult = OpsStatusResult.Success(sampleSnapshot),
 ) : OpsSource {
     override suspend fun fetchStatus(): OpsStatusResult = statusResult
-    override suspend fun triggerDeploy(): TriggerDeployResult = TriggerDeployResult.Error("não usado neste teste")
-    override suspend fun fetchDeployStatus(jobId: String): DeployStatusResult = DeployStatusResult.Error("não usado neste teste")
+    override suspend fun triggerDeploy(): TriggerDeployResult = TriggerDeployResult.Error("not used in this test")
+    override suspend fun fetchDeployStatus(jobId: String): DeployStatusResult = DeployStatusResult.Error("not used in this test")
 }
 
 private class DashboardFakeEventsSubscriber : EventsSubscriber {
@@ -83,12 +83,12 @@ class OpsDashboardViewModelTest {
         val events = DashboardFakeEventsSubscriber()
         val viewModel = OpsDashboardViewModel(
             eventsClient = events,
-            repository = DashboardFakeOpsSource(statusResult = OpsStatusResult.Error("falha de rede")),
+            repository = DashboardFakeOpsSource(statusResult = OpsStatusResult.Error("network failure")),
         )
 
         dispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(OpsDashboardUiState.LoadError("falha de rede"), viewModel.uiState.value)
+        assertEquals(OpsDashboardUiState.LoadError("network failure"), viewModel.uiState.value)
     }
 
     @Test
@@ -136,7 +136,7 @@ class OpsDashboardViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         events.opsHealth.emit(
-            MobileEvent(v = 1, channel = "ops.health", type = "ops.status", data = Json.parseToJsonElement("""{"nao":"reconhecido"}""")),
+            MobileEvent(v = 1, channel = "ops.health", type = "ops.status", data = Json.parseToJsonElement("""{"not":"recognized"}""")),
         )
         dispatcher.scheduler.advanceUntilIdle()
 

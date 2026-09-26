@@ -30,12 +30,9 @@ private inline fun <reified T> jsonPayload(value: T): JsonElement = testJson.enc
 private const val ROOM_ID = "sala-1"
 
 /**
- * Renders [CallScreen] under Robolectric across every reachable [CallUiState] -- never composed
- * before this. [CallUiState.InCall] stays safely renderable because [FakeSessionController] never
- * produces a real [VideoTrack] -- [VideoTile] falls back to its no-native-call placeholder
- * whenever `track == null` (see `VideoRenderer.kt`'s doc comment), so this never touches the real
- * WebRTC/SurfaceViewRenderer pipeline. Real SDP negotiation and rendered video frames need a real
- * device -- same boundary [CallViewModelTest]'s own doc comment already draws.
+ * Renders [CallScreen] under Robolectric across every reachable [CallUiState]. The fake
+ * controller never yields a real [VideoTrack], so [VideoTile] shows its placeholder and no
+ * real WebRTC rendering runs; SDP and video frames need a real device.
  */
 @RunWith(RobolectricTestRunner::class)
 class CallScreenTest {
@@ -53,14 +50,11 @@ class CallScreenTest {
     }
 
     /**
-     * [lancaAoLigarMidia] reproduces the REAL case seen on the device, not a
-     * test exaggeration: `startLocalMedia` loads a native library, enumerates
-     * cameras (and calls `error(...)` when there is none) and opens the
-     * capture (which throws if another app already holds the camera). This is
-     * the path along which the app crashed on the call screen.
+     * [throwOnStartMedia] mirrors real devices: `startLocalMedia` throws when there is no
+     * camera, the native library fails, or another app holds the camera.
      */
     private class FakeSessionController(
-        private val lancaAoLigarMidia: Boolean = false,
+        private val throwOnStartMedia: Boolean = false,
     ) : VideoCallSessionController {
         override val eglBaseContext: EglBase.Context = object : EglBase.Context {
             override fun getNativeEglContext(): Long = 0L
@@ -68,7 +62,7 @@ class CallScreenTest {
         override var localVideoTrack: VideoTrack? = null
         override var localAudioTrack: org.webrtc.AudioTrack? = null
         override fun startLocalMedia() {
-            if (lancaAoLigarMidia) error("camera ocupada por outro app")
+            if (throwOnStartMedia) error("camera in use by another app")
         }
         override fun createPeerConnectionFor(peerId: String, turn: TurnCredentials, observer: PeerConnection.Observer): PeerConnection? = null
         override fun closePeerConnectionFor(peerId: String) {}
@@ -83,7 +77,7 @@ class CallScreenTest {
         payload = jsonPayload(
             JoinResponse(
                 peerId = "self-1",
-                room = RoomInfo(id = ROOM_ID, name = "Sala 1", owner = "admin", members = emptyList(), createdAt = 0L),
+                room = RoomInfo(id = ROOM_ID, name = "Room 1", owner = "admin", members = emptyList(), createdAt = 0L),
                 peers = emptyList(),
                 turn = TurnCredentials(urls = listOf("turn:example.org"), username = "u", credential = "c", ttl = 60L),
                 politenessSeed = "self-1",
@@ -91,32 +85,12 @@ class CallScreenTest {
         ),
     )
 
-    /**
-     * THE FLOW CHANGED: the screen opens on the LOBBY, not already joining.
-     *
-     * Joining a call is the only action in this app that is public and
-     * irreversible — by the time the person finds out they were muted, the
-     * others have already seen. This test pins the lobby coming first; the
-     * spinner only appears after they DECIDE to join.
-     */
-    /**
-     * THE CALL SCREEN CRASH — pinned so it cannot come back.
-     *
-     * The app died with `UnsatisfiedLinkError` when opening a call. The root
-     * cause was a different and older one (`PeerConnectionFactory.initialize`
-     * was never called anywhere in the app, so the video call had been broken
-     * ever since it was written), but what turned a latent defect into a crash
-     * was the lobby starting the media WITHOUT any protection.
-     *
-     * This test pins the half that is this layer's responsibility: starting
-     * the media may fail, and failing has to turn into an audio call — never
-     * into an app that closes.
-     */
+    /** Starting media may throw; that must degrade to an audio-only lobby, never a crash. */
     @Test
-    fun `midia que lanca NAO derruba a tela — vira antessala sem camera`() {
+    fun `media that throws does NOT crash the screen, it becomes a lobby without camera`() {
         val viewModel = CallViewModel(
             permissionChecker = CallPermissionChecker { emptyList() },
-            sessionController = FakeSessionController(lancaAoLigarMidia = true),
+            sessionController = FakeSessionController(throwOnStartMedia = true),
             signaling = FakeSignaling(),
         )
         composeRule.setContent { CallScreen(roomId = ROOM_ID, onLeaveCall = {}, viewModel = viewModel) }
@@ -126,8 +100,9 @@ class CallScreenTest {
         composeRule.onNodeWithText("Join with audio only").assertExists()
     }
 
+    /** Joining is public and irreversible, so the screen opens on the lobby first. */
     @Test
-    fun `a tela abre na antessala, nao entrando direto na chamada`() {
+    fun `the screen opens on the lobby, not straight into the call`() {
         val viewModel = CallViewModel(
             permissionChecker = CallPermissionChecker { emptyList() },
             sessionController = FakeSessionController(),
@@ -140,7 +115,7 @@ class CallScreenTest {
     }
 
     @Test
-    fun `depois de tocar entrar, o spinner aparece enquanto o sinal nao responde`() {
+    fun `after tapping join, the spinner shows until signalling responds`() {
         val viewModel = CallViewModel(
             permissionChecker = CallPermissionChecker { emptyList() },
             sessionController = FakeSessionController(),
@@ -148,19 +123,14 @@ class CallScreenTest {
         )
         composeRule.setContent { CallScreen(roomId = ROOM_ID, onLeaveCall = {}, viewModel = viewModel) }
 
-        composeRule.entrarPelaAntessala()
+        composeRule.enterThroughLobby()
 
         composeRule.onNodeWithText("Joining the call…").assertExists()
     }
 
-    /**
-     * The camera being held by another app is the common case, not the
-     * exception. The lobby has to DEGRADE to audio, never block: an audio call
-     * is still the call, and refusing entry because of the camera trades a
-     * feature for an obstacle.
-     */
+    /** A busy camera is common, so the lobby must degrade to audio instead of blocking. */
     @Test
-    fun `sem camera a antessala oferece entrar so com audio, e nao bloqueia`() {
+    fun `without a camera the lobby offers audio only and does not block`() {
         val viewModel = CallViewModel(
             permissionChecker = CallPermissionChecker { emptyList() },
             // localVideoTrack null = the camera did not open.
@@ -195,7 +165,7 @@ class CallScreenTest {
         )
         var left = false
         composeRule.setContent { CallScreen(roomId = ROOM_ID, onLeaveCall = { left = true }, viewModel = viewModel) }
-        composeRule.entrarPelaAntessala()
+        composeRule.enterThroughLobby()
         signaling.push(joinedMessage())
         composeRule.waitForIdle()
 
@@ -215,26 +185,21 @@ class CallScreenTest {
         )
         var left = false
         composeRule.setContent { CallScreen(roomId = ROOM_ID, onLeaveCall = { left = true }, viewModel = viewModel) }
-        composeRule.entrarPelaAntessala()
-        signaling.push(SignalingMessage(type = "error", error = "A sala foi encerrada pelo administrador."))
+        composeRule.enterThroughLobby()
+        signaling.push(SignalingMessage(type = "error", error = "The room was closed by the administrator."))
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("A sala foi encerrada pelo administrador.").assertExists()
+        composeRule.onNodeWithText("The room was closed by the administrator.").assertExists()
         composeRule.onNodeWithText("Leave").performClick()
         assert(left)
     }
 }
 
 /**
- * Leaves the lobby and joins the call.
- *
- * In a single place because the button's label CHANGES with the state of the
- * camera ("Entrar na chamada" with video, "Entrar so com audio" without) — and
- * in the tests FakeSessionController has no video track, so the label is
- * always the second one. Spreading that subtlety over four tests would be four
- * places to get wrong when the label changes.
+ * Leaves the lobby and joins the call. The join label depends on the camera state, and
+ * the fake controller has no video track, so it is always the audio-only label.
  */
-private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.entrarPelaAntessala() {
+private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.enterThroughLobby() {
     waitForIdle()
     onNodeWithText("Join with audio only").performClick()
     waitForIdle()

@@ -20,17 +20,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The navigation drawer, actually rendered.
- *
- * The defect these tests exist to keep from coming back was seen in a
- * screenshot, not deduced: labels broken over two lines and clipped
- * ("Termin/al", "Notific/ações"), and later "Sign out" pushed off the
- * screen by a new destination. No test caught it because no test drew the
- * drawer.
- *
- * It runs on a real phone geometry (`qualifiers`), and not on
- * Robolectric's tiny default: the height is exactly the variable that
- * decides whether the footer fits.
+ * The navigation drawer, actually rendered, to catch labels that wrap or clip and a footer
+ * pushed off screen. Uses a real phone geometry (`qualifiers`) because the height decides
+ * whether the footer fits.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = android.app.Application::class, qualifiers = "w411dp-h891dp-xxhdpi")
@@ -40,7 +32,7 @@ class AppDrawerTest {
     val composeRule = createComposeRule()
 
     private fun renderDrawer(
-        currentRoute: String? = AppDestination.Inicio.route,
+        currentRoute: String? = AppDestination.Home.route,
         onDestinationSelected: (AppDestination) -> Unit = {},
         onSignOut: () -> Unit = {},
     ) {
@@ -56,20 +48,16 @@ class AppDrawerTest {
         composeRule.waitForIdle()
     }
 
-    /**
-     * The layout actually computed for a text — the only source that knows
-     * whether it wrapped or was clipped. An `assertExists` assertion does not
-     * know: a label split over two lines still "exists".
-     */
+    /** The computed text layout, the only source that knows whether a label wrapped or clipped. */
     private fun SemanticsNodeInteraction.textLayout(): TextLayoutResult {
         val results = mutableListOf<TextLayoutResult>()
         val action = fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult]
-        requireNotNull(action.action) { "nó sem GetTextLayoutResult — não é um texto?" }.invoke(results)
+        requireNotNull(action.action) { "node without GetTextLayoutResult, is it not a text?" }.invoke(results)
         return results.first()
     }
 
     @Test
-    fun `todo destino aparece com o rotulo inteiro, numa linha so e sem corte`() {
+    fun `every destination shows its full label on one line without clipping`() {
         renderDrawer()
 
         AppDestination.entries.forEach { destination ->
@@ -77,19 +65,19 @@ class AppDrawerTest {
             label.assertExists()
             val layout = label.textLayout()
             assertEquals(
-                "rótulo '${destination.label}' quebrou em ${layout.lineCount} linhas",
+                "label '${destination.label}' wrapped onto ${layout.lineCount} lines",
                 1,
                 layout.lineCount,
             )
             assertFalse(
-                "rótulo '${destination.label}' foi cortado — encurte o nome em vez de deixar cortar",
+                "label '${destination.label}' was clipped, shorten the name instead",
                 layout.hasVisualOverflow,
             )
         }
     }
 
     @Test
-    fun `o rotulo de sair tambem cabe numa linha`() {
+    fun `the sign out label also fits on one line`() {
         renderDrawer()
 
         val layout = composeRule.onNodeWithText(SIGN_OUT_LABEL).textLayout()
@@ -98,7 +86,7 @@ class AppDrawerTest {
     }
 
     @Test
-    fun `todo icone tem contentDescription, e nenhuma descricao se repete`() {
+    fun `every icon has a contentDescription and none repeats`() {
         renderDrawer()
 
         val descriptions = AppDestination.entries.map { it.iconDescription } + SIGN_OUT_ICON_DESCRIPTION
@@ -110,50 +98,44 @@ class AppDrawerTest {
         assertEquals(descriptions.size, descriptions.toSet().size)
     }
 
-    /**
-     * The drawer lists the web panel's PARENT pages, and only those.
-     *
-     * It is the fix for the defect the owner pointed out: there were two
-     * taxonomies for the same product (the drawer with loose screens,
-     * Administration with thirty blocks), and Jira appeared in both.
-     */
+    /** The drawer lists the web panel's parent pages and only those, so there is one taxonomy. */
     @Test
-    fun `a gaveta tem exatamente as maes do painel, na ordem da web`() {
+    fun `the drawer has exactly the panel's parents in web order`() {
         renderDrawer()
 
-        val esperado = listOf(
+        val expected = listOf(
             "Home", "System", "Docker", "Dev", "Security", "Apps", "Operations", "Settings",
         )
-        assertEquals(esperado, AppDestination.entries.map { it.label })
-        esperado.forEach { composeRule.onNodeWithText(it).assertExists() }
+        assertEquals(expected, AppDestination.entries.map { it.label })
+        expected.forEach { composeRule.onNodeWithText(it).assertExists() }
     }
 
     @Test
-    fun `inicio e o primeiro destino da gaveta`() {
+    fun `home is the first drawer destination`() {
         renderDrawer()
 
-        val inicioTop = composeRule.onNodeWithText(AppDestination.Inicio.label)
+        val homeTop = composeRule.onNodeWithText(AppDestination.Home.label)
             .fetchSemanticsNode().boundsInRoot.top
-        AppDestination.entries.filter { it != AppDestination.Inicio }.forEach { outro ->
-            val topo = composeRule.onNodeWithText(outro.label).fetchSemanticsNode().boundsInRoot.top
-            assertTrue("'${outro.label}' aparece acima do Início", topo > inicioTop)
+        AppDestination.entries.filter { it != AppDestination.Home }.forEach { other ->
+            val top = composeRule.onNodeWithText(other.label).fetchSemanticsNode().boundsInRoot.top
+            assertTrue("'${other.label}' appears above Home", top > homeTop)
         }
     }
 
     @Test
-    fun `configuracoes fica por ultimo, depois de todo destino de trabalho`() {
+    fun `settings comes last, after every work destination`() {
         renderDrawer()
 
-        val configTop = composeRule.onNodeWithText(AppDestination.Configuracoes.label)
+        val configTop = composeRule.onNodeWithText(AppDestination.Settings.label)
             .fetchSemanticsNode().boundsInRoot.top
-        AppDestination.entries.filter { it != AppDestination.Configuracoes }.forEach { outro ->
-            val topo = composeRule.onNodeWithText(outro.label).fetchSemanticsNode().boundsInRoot.top
-            assertTrue("'${outro.label}' ficou abaixo de Configurações", topo < configTop)
+        AppDestination.entries.filter { it != AppDestination.Settings }.forEach { other ->
+            val top = composeRule.onNodeWithText(other.label).fetchSemanticsNode().boundsInRoot.top
+            assertTrue("'${other.label}' ended up below Settings", top < configTop)
         }
     }
 
     @Test
-    fun `escolher um destino avisa quem navega`() {
+    fun `picking a destination notifies the navigator`() {
         var selected: AppDestination? = null
         renderDrawer(onDestinationSelected = { selected = it })
 
@@ -163,40 +145,31 @@ class AppDrawerTest {
     }
 
     /**
-     * The footer stays ANCHORED: signing out must not depend on discovering
-     * that the drawer scrolls.
-     *
-     * That is how "Sign out" vanished when a new destination arrived — the
-     * whole drawer scrolled, and each addition pushed the footer further out.
+     * The footer stays anchored: signing out must not depend on discovering that the drawer
+     * scrolls, and new destinations must not push it off screen.
      */
     @Test
-    fun `sair fica visivel sem rolar, e e clicavel`() {
+    fun `sign out is visible without scrolling and is clickable`() {
         var signedOut = false
         renderDrawer(onSignOut = { signedOut = true })
 
-        val sair = composeRule.onNodeWithText(SIGN_OUT_LABEL)
-        sair.assertIsDisplayed()
-        sair.assertHasClickAction()
+        val signOut = composeRule.onNodeWithText(SIGN_OUT_LABEL)
+        signOut.assertIsDisplayed()
+        signOut.assertHasClickAction()
 
-        val sairTop = sair.fetchSemanticsNode().boundsInRoot.top
+        val signOutTop = signOut.fetchSemanticsNode().boundsInRoot.top
         AppDestination.entries.forEach { destination ->
-            val topo = composeRule.onNodeWithText(destination.label).fetchSemanticsNode().boundsInRoot.top
-            assertTrue("'${destination.label}' ficou abaixo de Sair", topo < sairTop)
+            val top = composeRule.onNodeWithText(destination.label).fetchSemanticsNode().boundsInRoot.top
+            assertTrue("'${destination.label}' ended up below Sign out", top < signOutTop)
         }
 
-        sair.performClick()
+        signOut.performClick()
         assertTrue(signedOut)
     }
 
-    /**
-     * Appearance and the update check LEFT the drawer.
-     *
-     * A device setting is not a work destination; mixing it with System,
-     * Docker and Operations made the drawer answer two different questions.
-     * They now live in Settings.
-     */
+    /** Appearance and the update check live in Settings: device settings are not work destinations. */
     @Test
-    fun `aparencia e procurar atualizacoes nao estao mais na gaveta`() {
+    fun `appearance and check for updates are not in the drawer`() {
         renderDrawer()
 
         composeRule.onNodeWithText(CHECK_UPDATE_LABEL).assertDoesNotExist()
@@ -204,7 +177,7 @@ class AppDrawerTest {
     }
 
     @Test
-    fun `o destino atual aparece marcado, e so ele`() {
+    fun `only the current destination is highlighted`() {
         assertEquals(
             listOf(AppDestination.Docker),
             AppDestination.entries.filter { it.matches(AppDestination.Docker.route) },
@@ -212,21 +185,19 @@ class AppDrawerTest {
     }
 
     /**
-     * A parent matches its own grid, never the child screens.
-     *
-     * Highlighting "Docker" while the header says "Containers" would have the
-     * drawer claiming two different things at the same time.
+     * A parent matches its own grid, never its child screens, so the drawer and the header
+     * never disagree.
      */
     @Test
-    fun `mae nao casa com a rota de uma filha`() {
-        assertTrue(AppDestination.Docker.matches(rotaDaMae("docker")))
+    fun `a parent does not match a child's route`() {
+        assertTrue(AppDestination.Docker.matches(parentRoute("docker")))
         assertFalse(AppDestination.Docker.matches(adminSectionRoute("docker.containers")))
-        assertFalse(AppDestination.Operacoes.matches(ROTA_JIRA))
+        assertFalse(AppDestination.Operations.matches(ROUTE_JIRA))
     }
 
     /** A duplicate route would leave two items highlighted at the same time. */
     @Test
-    fun `nenhuma rota se repete entre destinos`() {
+    fun `no route repeats across destinations`() {
         val routes = AppDestination.entries.map { it.route }
         assertEquals(routes.size, routes.toSet().size)
     }

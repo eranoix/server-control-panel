@@ -14,12 +14,9 @@ import com.vpsmanager.data.ops.OpsSnapshot
 import com.vpsmanager.data.ops.SystemSnapshot
 
 /**
- * A REAL machine, exactly as `/ops/status` returned it: swap at 99.998%, CPU
- * at 91% with load 11.97 on 8 cores, 7% steal — and `alerts` empty with
- * `health_ok = true`.
- *
- * It is the main fixture because it is the case a naive dashboard paints as
- * "all fine".
+ * A real `/ops/status` response: swap at 99.998%, CPU at 91% with load 11.97 on
+ * 8 cores and 7% steal, yet `alerts` empty and `health_ok = true`. A naive
+ * dashboard would show this as all fine.
  */
 internal fun systemReal(
     swapUsedPercent: Double = 99.99814033419625,
@@ -55,7 +52,7 @@ internal fun systemReal(
 internal fun opsReal(system: SystemSnapshot? = systemReal()) = OpsSnapshot(
     health = mapOf(
         "audit" to "ok",
-        "claude_router" to "ok",
+        "model_router" to "ok",
         "config" to "ok",
         "docker" to "ok",
         "dtach" to "ok",
@@ -74,9 +71,9 @@ internal fun snapshotReal(
     ops: OpsSnapshot = opsReal(),
     deploys: List<DeploySummary>? = listOf(DeploySummary("hello", "rolled_back", "2026-07-19 13:17 UTC")),
     scheduled: List<ScheduledSummary>? = listOf(
-        ScheduledSummary("Backup de sessões do terminal", "ok", "2026-09-06 07:00 UTC", "2026-09-06 07:10 UTC", true),
+        ScheduledSummary("Terminal session backup", "ok", "2026-09-06 07:00 UTC", "2026-09-06 07:10 UTC", true),
     ),
-    identity: DashboardIdentity? = DashboardIdentity("teste", "test@northwind.example", isAdmin = true),
+    identity: DashboardIdentity? = DashboardIdentity("tester", "test@northwind.example", isAdmin = true),
     fetchedAtEpochMs: Long = 1_788_678_502_000,
 ) = DashboardSnapshot(
     ops = ops,
@@ -87,7 +84,7 @@ internal fun snapshotReal(
 )
 
 /** A machine where nothing crossed a threshold and nothing fired. */
-internal fun snapshotCalmo() = snapshotReal(
+internal fun calmSnapshot() = snapshotReal(
     ops = opsReal(systemReal(swapUsedPercent = 12.0, steal = 0.0, load1 = 1.2, rootUsedPercent = 30.0)),
     deploys = listOf(DeploySummary("hello", "ok", "2026-07-19 13:17 UTC")),
 )

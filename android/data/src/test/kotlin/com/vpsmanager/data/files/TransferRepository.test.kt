@@ -108,7 +108,7 @@ class TransferRepositoryTest {
                 .setBody("""{"session_id":"abc-123"}"""),
         )
 
-        val result = repositoryFor().startUpload("/srv/dest", "arquivo.bin", 1000)
+        val result = repositoryFor().startUpload("/srv/dest", "file.bin", 1000)
 
         assertEquals(UploadSessionResult.Started("abc-123"), result)
     }
@@ -146,9 +146,8 @@ class TransferRepositoryTest {
     }
 
     @Test
-    fun `disco cheio no servidor (507) nao e tratado como falha temporaria`() = runTest {
-        // Without this, an ENOSPC on the server would become an infinite retry
-        // in the background and the operator would never learn space must be freed.
+    fun `a full server disk (507) is not treated as a temporary failure`() = runTest {
+        // Otherwise ENOSPC would retry forever in the background without telling the operator.
         server.enqueue(MockResponse().setResponseCode(507).setBody("""{"title":"no space left on device"}"""))
 
         val result = repositoryFor().uploadChunk("abc-123", 0, ByteArray(400))
@@ -159,10 +158,10 @@ class TransferRepositoryTest {
     }
 
     @Test
-    fun `arquivo grande demais (413) diz o limite e nao manda tentar de novo`() = runTest {
+    fun `a file too large (413) states the limit and does not ask to retry`() = runTest {
         server.enqueue(MockResponse().setResponseCode(413).setBody("""{"title":"upload too large"}"""))
 
-        val result = repositoryFor().startUpload("/srv/dest", "enorme.bin", 3L shl 30)
+        val result = repositoryFor().startUpload("/srv/dest", "huge.bin", 3L shl 30)
 
         val error = result as UploadSessionResult.Error
         assertEquals(false, error.retryable)
@@ -170,10 +169,10 @@ class TransferRepositoryTest {
     }
 
     @Test
-    fun `permissao negada (403) manda escolher outra pasta em vez de repetir`() = runTest {
+    fun `permission denied (403) asks for another folder instead of retrying`() = runTest {
         server.enqueue(MockResponse().setResponseCode(403).setBody("""{"title":"permission denied"}"""))
 
-        val result = repositoryFor().startUpload("/root/.ssh", "chave.txt", 100)
+        val result = repositoryFor().startUpload("/root/.ssh", "key.txt", 100)
 
         val error = result as UploadSessionResult.Error
         assertEquals(false, error.retryable)
@@ -181,7 +180,7 @@ class TransferRepositoryTest {
     }
 
     @Test
-    fun `servidor fora do ar (503) e temporario, o envio continua depois`() = runTest {
+    fun `server down (503) is temporary and the upload continues later`() = runTest {
         server.enqueue(MockResponse().setResponseCode(503))
 
         val result = repositoryFor().uploadChunk("abc-123", 0, ByteArray(400))
@@ -195,12 +194,12 @@ class TransferRepositoryTest {
             MockResponse()
                 .setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .setBody("""{"ok":true,"path":"/srv/dest/arquivo.bin"}"""),
+                .setBody("""{"ok":true,"path":"/srv/dest/file.bin"}"""),
         )
 
         val result = repositoryFor().completeUpload("abc-123")
 
-        assertEquals(UploadCompleteResult.Success("/srv/dest/arquivo.bin"), result)
+        assertEquals(UploadCompleteResult.Success("/srv/dest/file.bin"), result)
     }
 
     @Test

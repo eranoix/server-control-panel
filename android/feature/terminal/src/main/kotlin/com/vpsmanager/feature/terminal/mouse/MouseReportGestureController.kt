@@ -53,7 +53,7 @@ fun interface MouseEventEncoder {
 class MouseReportGestureController(
     private val encoder: MouseEventEncoder,
     private val sink: ByteSink,
-    private val button: MouseButton = MouseButton.ESQUERDO,
+    private val button: MouseButton = MouseButton.LEFT,
 ) : CanvasDragTarget, CanvasTapTarget {
 
     /**
@@ -66,20 +66,20 @@ class MouseReportGestureController(
      * the app, and the app does not own the gesture in this mode.
      */
     override fun onTap(position: Offset, taps: Int) {
-        emitir(MouseAction.PRESS, position, anyButtonPressed = true)
-        emitir(MouseAction.RELEASE, position, anyButtonPressed = false)
+        emit(MouseAction.PRESS, position, anyButtonPressed = true)
+        emit(MouseAction.RELEASE, position, anyButtonPressed = false)
     }
 
     override fun onDrag(position: Offset, phase: DragPhase) {
         when (phase) {
             DragPhase.START -> {
-                ultimoMovimento = null
-                emitir(MouseAction.PRESS, position, anyButtonPressed = true)
+                lastMove = null
+                emit(MouseAction.PRESS, position, anyButtonPressed = true)
             }
-            DragPhase.MOVE -> emitir(MouseAction.MOTION, position, anyButtonPressed = true)
+            DragPhase.MOVE -> emit(MouseAction.MOTION, position, anyButtonPressed = true)
             DragPhase.END -> {
-                emitir(MouseAction.RELEASE, position, anyButtonPressed = false)
-                ultimoMovimento = null
+                emit(MouseAction.RELEASE, position, anyButtonPressed = false)
+                lastMove = null
             }
         }
     }
@@ -96,14 +96,14 @@ class MouseReportGestureController(
      * suppress repeated movement in button-tracking mode (1002), which is
      * precisely what a finger drag uses.
      */
-    private var ultimoMovimento: ByteArray? = null
+    private var lastMove: ByteArray? = null
 
-    private fun emitir(action: MouseAction, position: Offset, anyButtonPressed: Boolean) {
+    private fun emit(action: MouseAction, position: Offset, anyButtonPressed: Boolean) {
         val bytes = encoder.encode(action, position, button, anyButtonPressed) ?: return
         if (bytes.isEmpty()) return
         if (action == MouseAction.MOTION) {
-            if (bytes.contentEquals(ultimoMovimento)) return
-            ultimoMovimento = bytes
+            if (bytes.contentEquals(lastMove)) return
+            lastMove = bytes
         }
         sink.send(bytes)
     }

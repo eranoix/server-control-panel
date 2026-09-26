@@ -13,11 +13,9 @@ private const val TAG = "VpsmConnectionService"
 private const val ROOM_URI_SCHEME = "vpsm-room"
 
 /**
- * Self-managed `android.telecom.ConnectionService` (`MANAGE_OWN_CALLS`) — registering this via
- * [PhoneAccountRegistrar] is what makes Telecom treat calls from this app as real calls (native
- * lock-screen UI, ringtone, DND bypass, Bluetooth routing), not just call-shaped notifications.
- * `android:exported="true"` with `BIND_TELECOM_CONNECTION_SERVICE` is required and safe — that
- * permission is enforced by the system, not this app (reviewed and accepted).
+ * Self-managed `ConnectionService` (`MANAGE_OWN_CALLS`). Registered via [PhoneAccountRegistrar], it
+ * makes Telecom treat our calls as real calls (lock-screen UI, ringtone, DND bypass, Bluetooth).
+ * Exporting it is safe because `BIND_TELECOM_CONNECTION_SERVICE` is enforced by the system.
  */
 class VpsmConnectionService : ConnectionService() {
 
@@ -42,22 +40,14 @@ class VpsmConnectionService : ConnectionService() {
         connectionManagerPhoneAccount: PhoneAccountHandle?,
         request: ConnectionRequest?,
     ) {
-        // Telecom refused to let this call ring at all — e.g. a real cellular call already
-        // occupies the self-managed slot on some OEMs, or MANAGE_OWN_CALLS/the registered
-        // PhoneAccount was revoked between PhoneAccountRegistrar.ensureRegistered() and this
-        // callback (T-11 risk register). Nothing to tear down beyond what Telecom itself already
-        // discards; this device simply misses the ring, same as a rejected addNewIncomingCall.
-        Log.w(TAG, "Telecom recusou a conexao de entrada, chamada nao tocou")
+        // Telecom refused to ring (e.g. a cellular call is active on some OEMs, or the account was
+        // revoked after registration). Nothing to tear down; this device just misses the ring.
+        Log.w(TAG, "Telecom refused the incoming connection, call did not ring")
     }
 
     /**
-     * No current call site in this app places an outgoing call through Telecom —
-     * `CallViewModel.joinRoom` joins directly over the existing signaling/WebRTC path without
-     * `TelecomManager.placeCall`, since an outgoing call is always initiated from inside the
-     * app's own UI (the user is already looking at the phone, unlike an incoming ring). This
-     * override exists for `ConnectionService` contract completeness — `MANAGE_OWN_CALLS` self-
-     * managed apps that never call `placeCall` never have it invoked — not to serve a real path
-     * today.
+     * Only for `ConnectionService` completeness: the app never calls `placeCall`, since outgoing
+     * calls join directly through `CallViewModel.joinRoom`.
      */
     override fun onCreateOutgoingConnection(
         connectionManagerPhoneAccount: PhoneAccountHandle?,
@@ -74,6 +64,6 @@ class VpsmConnectionService : ConnectionService() {
         connectionManagerPhoneAccount: PhoneAccountHandle?,
         request: ConnectionRequest?,
     ) {
-        Log.w(TAG, "Telecom recusou a conexao de saida")
+        Log.w(TAG, "Telecom refused the outgoing connection")
     }
 }

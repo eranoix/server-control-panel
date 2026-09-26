@@ -9,10 +9,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Renders [ConnectionBanner] in every [ConnectionState] plus the `Live` +
- * stalled combination -- never composed before this, and the one place the
- * "never indistinguishable from frozen" claim gets checked against real
- * rendered text rather than just [bannerContent]'s (private) branching.
+ * Renders [ConnectionBanner] in every [ConnectionState] plus `Live` while stalled,
+ * checking the real rendered text so a stalled connection never looks healthy.
  */
 @RunWith(RobolectricTestRunner::class)
 class ConnectionBannerTest {
@@ -78,9 +76,9 @@ class ConnectionBannerTest {
     @Test
     fun `a failure surfaces the underlying reason`() {
         composeRule.setContent {
-            ConnectionBanner(state = ConnectionState.Failed(reason = "Ticket expirado"), isStalled = false)
+            ConnectionBanner(state = ConnectionState.Failed(reason = "Ticket expired"), isStalled = false)
         }
 
-        composeRule.onNodeWithText("Connection failed: Ticket expirado").assertExists()
+        composeRule.onNodeWithText("Connection failed: Ticket expired").assertExists()
     }
 }

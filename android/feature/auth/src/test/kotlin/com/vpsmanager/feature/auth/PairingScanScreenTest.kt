@@ -22,18 +22,13 @@ import org.robolectric.Shadows.shadowOf
 /**
  * Renders [PairingScanScreen] under Robolectric.
  *
- * What these tests protect: **the screen degrades, it does not die.** The
- * previous code called `cameraProviderFuture.get()` inside a `Runnable` on the
- * main executor, with no `try`; on a device with no usable camera the future
- * fails, nothing catches the exception and the app CLOSES. Here every cause of
- * unavailability is injected through [AmbienteDaCamera] and what is verified is
- * that the screen renders a state explaining the cause and offering a way out.
+ * Guards that the screen degrades instead of crashing when the camera is
+ * unavailable: each cause is injected through [CameraEnvironment] and must render
+ * an explanation plus a way out.
  *
- * The injection is deliberate rather than relying on the emulator: the AVD's
- * camera configuration is shared state that another session turns on and off,
- * so a test tied to it proves nothing reliably. The HAPPY path (a real camera,
- * the CameraX pipeline, QR decoding) still requires a device/emulator, as
- * before.
+ * Causes are injected rather than relying on the emulator's camera config, which
+ * is shared and unreliable. The happy path (real camera, QR decoding) still
+ * needs a device.
  */
 @RunWith(RobolectricTestRunner::class)
 class PairingScanScreenTest {
@@ -41,93 +36,86 @@ class PairingScanScreenTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun concederPermissaoDeCamera() {
+    private fun grantCameraPermission() {
         val context = ApplicationProvider.getApplicationContext<android.app.Application>()
         shadowOf(context).grantPermissions(Manifest.permission.CAMERA)
     }
 
-    private fun ambiente(
-        temPermissao: Boolean = true,
-        podePedirNovamente: Boolean = true,
-        vararg prontidoes: ProntidaoDaCamera,
-    ): AmbienteDaCamera {
-        var chamada = 0
-        return AmbienteDaCamera(
-            temPermissao = { temPermissao },
-            podePedirPermissaoNovamente = { podePedirNovamente },
-            checagem = { prontidoes[minOf(chamada++, prontidoes.size - 1)] },
+    private fun environment(
+        hasPermission: Boolean = true,
+        canAskAgain: Boolean = true,
+        vararg readinesses: CameraReadiness,
+    ): CameraEnvironment {
+        var call = 0
+        return CameraEnvironment(
+            hasPermission = { hasPermission },
+            canAskPermissionAgain = { canAskAgain },
+            cameraCheck = { readinesses[minOf(call++, readinesses.size - 1)] },
         )
     }
 
-    private fun renderizar(ambiente: AmbienteDaCamera, onManual: () -> Unit = {}, onLogin: () -> Unit = {}) {
+    private fun render(environment: CameraEnvironment, onManual: () -> Unit = {}, onLogin: () -> Unit = {}) {
         composeRule.setContent {
             PairingScanContent(
                 modifier = Modifier,
                 onPairingScanned = {},
                 onManualSetupRequested = onManual,
                 onLoginRequested = onLogin,
-                ambiente = ambiente,
+                environment = environment,
             )
         }
     }
 
-    // --- the regression: with no camera, the screen renders instead of throwing ---
-
     @Test
-    fun `sem nenhuma camera no aparelho a tela degrada, com a saida alternativa`() {
-        renderizar(ambiente(prontidoes = arrayOf(ProntidaoDaCamera.Indisponivel(FalhaDeCamera.SemCamera))))
+    fun `with no camera on the device the screen degrades with the alternative path`() {
+        render(environment(readinesses = arrayOf(CameraReadiness.Unavailable(CameraFailure.NoCamera))))
 
         composeRule.onNodeWithText("This device has no camera").assertExists()
-        composeRule.onNodeWithText(ROTULO_CONFIGURAR_MANUALMENTE).assertHasClickAction()
-        composeRule.onNodeWithText(ROTULO_JA_TENHO_ACESSO).assertHasClickAction()
+        composeRule.onNodeWithText(LABEL_SET_UP_MANUALLY).assertHasClickAction()
+        composeRule.onNodeWithText(LABEL_ALREADY_HAVE_ACCESS).assertHasClickAction()
     }
 
     /**
-     * The test that fails on the old code and passes on the new one, through
-     * the PUBLIC path and with no injection at all: under Robolectric the
-     * `CameraManager` exposes no camera whatsoever — the same condition as the
-     * lab emulator — and what is expected is the degraded screen, not a blank
-     * preview (nor the process dying).
+     * Through the public path with no injection: Robolectric's `CameraManager`
+     * exposes no camera, so the degraded screen must appear, not a blank preview or a crash.
      */
     @Test
-    fun `pelo caminho real, um aparelho sem camera cai no estado degradado`() {
-        concederPermissaoDeCamera()
+    fun `through the real path, a device without a camera reaches the degraded state`() {
+        grantCameraPermission()
 
         composeRule.setContent { PairingScanScreen(onPairingScanned = {}, onManualSetupRequested = {}) }
 
         composeRule.onNodeWithText("This device has no camera").assertExists()
-        composeRule.onNodeWithText(ROTULO_CONFIGURAR_MANUALMENTE).assertExists()
+        composeRule.onNodeWithText(LABEL_SET_UP_MANUALLY).assertExists()
     }
 
     @Test
-    fun `renderiza sem quebrar antes de a permissao ser concedida`() {
+    fun `renders without crashing before permission is granted`() {
         composeRule.setContent { PairingScanScreen(onPairingScanned = {}) }
 
         composeRule.onRoot().assertExists()
     }
 
     @Test
-    fun `enquanto a permissao e pedida as saidas continuam de pe - spinner sozinho tambem e beco`() {
-        renderizar(
-            ambiente(
-                temPermissao = false,
-                prontidoes = arrayOf(ProntidaoDaCamera.Pronta(usarCameraFrontal = false)),
+    fun `while permission is requested the alternative paths stay available`() {
+        render(
+            environment(
+                hasPermission = false,
+                readinesses = arrayOf(CameraReadiness.Ready(useFrontCamera = false)),
             ),
         )
 
-        composeRule.onNodeWithText(ROTULO_CONFIGURAR_MANUALMENTE).assertHasClickAction()
-        composeRule.onNodeWithText(ROTULO_JA_TENHO_ACESSO).assertHasClickAction()
+        composeRule.onNodeWithText(LABEL_SET_UP_MANUALLY).assertHasClickAction()
+        composeRule.onNodeWithText(LABEL_ALREADY_HAVE_ACCESS).assertHasClickAction()
     }
 
-    // --- each distinct cause, with the action that matches it ---
-
     @Test
-    fun `camera ocupada por outro app oferece tentar de novo, e a nova tentativa reconfere`() {
-        renderizar(
-            ambiente(
-                prontidoes = arrayOf(
-                    ProntidaoDaCamera.Indisponivel(FalhaDeCamera.CameraOcupada),
-                    ProntidaoDaCamera.Indisponivel(FalhaDeCamera.SemCamera),
+    fun `a camera in use offers retry, and retrying checks again`() {
+        render(
+            environment(
+                readinesses = arrayOf(
+                    CameraReadiness.Unavailable(CameraFailure.CameraInUse),
+                    CameraReadiness.Unavailable(CameraFailure.NoCamera),
                 ),
             ),
         )
@@ -136,20 +124,19 @@ class PairingScanScreenTest {
         composeRule.onNodeWithText("Try again").performClick()
         composeRule.waitForIdle()
 
-        // The second check returned a different cause: proof that the button
-        // really did re-check instead of merely repainting the same screen.
+        // A different cause on the second check proves the button really re-checked.
         composeRule.onNodeWithText("This device has no camera").assertExists()
     }
 
     @Test
-    fun `permissao negada pede de novo, e nao manda para as configuracoes`() {
-        var pedidos = 0
+    fun `a denied permission asks again instead of sending to Settings`() {
+        var requests = 0
         composeRule.setContent {
-            CameraIndisponivelContent(
-                falha = FalhaDeCamera.PermissaoNegada,
-                onPedirPermissao = { pedidos++ },
-                onAbrirConfiguracoes = { throw AssertionError("não deve abrir Configurações aqui") },
-                onTentarNovamente = { throw AssertionError("não deve reconferir sem permissão") },
+            CameraUnavailableContent(
+                failure = CameraFailure.PermissionDenied,
+                onRequestPermission = { requests++ },
+                onOpenSettings = { throw AssertionError("must not open Settings here") },
+                onRetry = { throw AssertionError("must not re-check without permission") },
                 onManualSetupRequested = {},
                 onLoginRequested = {},
             )
@@ -158,18 +145,18 @@ class PairingScanScreenTest {
         composeRule.onNodeWithText("No camera access").assertExists()
         composeRule.onNodeWithText("Allow camera access").performClick()
 
-        assertEquals(1, pedidos)
+        assertEquals(1, requests)
     }
 
     @Test
-    fun `permissao negada em definitivo leva as configuracoes, sem insistir no dialogo`() {
-        var configuracoes = 0
+    fun `a permanently denied permission opens Settings instead of the dialog`() {
+        var settingsOpened = 0
         composeRule.setContent {
-            CameraIndisponivelContent(
-                falha = FalhaDeCamera.PermissaoBloqueada,
-                onPedirPermissao = { throw AssertionError("pedir de novo aqui é o laço que queremos evitar") },
-                onAbrirConfiguracoes = { configuracoes++ },
-                onTentarNovamente = {},
+            CameraUnavailableContent(
+                failure = CameraFailure.PermissionBlocked,
+                onRequestPermission = { throw AssertionError("asking again here is the loop we must avoid") },
+                onOpenSettings = { settingsOpened++ },
+                onRetry = {},
                 onManualSetupRequested = {},
                 onLoginRequested = {},
             )
@@ -178,55 +165,55 @@ class PairingScanScreenTest {
         composeRule.onNodeWithText("Camera access blocked").assertExists()
         composeRule.onNodeWithText("Open app settings").performClick()
 
-        assertEquals(1, configuracoes)
+        assertEquals(1, settingsOpened)
     }
 
     @Test
-    fun `sem camera nao oferece retentar - so os caminhos alternativos`() {
+    fun `no camera offers no retry, only the alternative paths`() {
         var manual = 0
         var login = 0
         composeRule.setContent {
-            CameraIndisponivelContent(
-                falha = FalhaDeCamera.SemCamera,
-                onPedirPermissao = {},
-                onAbrirConfiguracoes = {},
-                onTentarNovamente = { throw AssertionError("não há o que retentar sem câmera") },
+            CameraUnavailableContent(
+                failure = CameraFailure.NoCamera,
+                onRequestPermission = {},
+                onOpenSettings = {},
+                onRetry = { throw AssertionError("nothing to retry without a camera") },
                 onManualSetupRequested = { manual++ },
                 onLoginRequested = { login++ },
             )
         }
 
         composeRule.onNodeWithText("Try again").assertDoesNotExist()
-        composeRule.onNodeWithText(ROTULO_CONFIGURAR_MANUALMENTE).performClick()
-        composeRule.onNodeWithText(ROTULO_JA_TENHO_ACESSO).performClick()
+        composeRule.onNodeWithText(LABEL_SET_UP_MANUALLY).performClick()
+        composeRule.onNodeWithText(LABEL_ALREADY_HAVE_ACCESS).performClick()
 
         assertEquals(1, manual)
         assertEquals(1, login)
     }
 
     @Test
-    fun `falha inesperada e honesta - mostra o detalhe tecnico para o dono relatar`() {
-        renderizar(
-            ambiente(
-                prontidoes = arrayOf(
-                    ProntidaoDaCamera.Indisponivel(
-                        FalhaDeCamera.FalhaInesperada("IllegalStateException: provedor não subiu"),
+    fun `an unexpected failure shows the technical detail for the owner to report`() {
+        render(
+            environment(
+                readinesses = arrayOf(
+                    CameraReadiness.Unavailable(
+                        CameraFailure.UnexpectedFailure("IllegalStateException: provider did not start"),
                     ),
                 ),
             ),
         )
 
         composeRule.onNodeWithText("Could not open the camera").assertExists()
-        composeRule.onNodeWithText("IllegalStateException: provedor não subiu").assertExists()
+        composeRule.onNodeWithText("IllegalStateException: provider did not start").assertExists()
         composeRule.onNodeWithText("Try again").assertHasClickAction()
     }
 
     @Test
-    fun `camera bloqueada pelo sistema tem texto proprio, distinto de ocupada`() {
-        renderizar(
-            ambiente(
-                prontidoes = arrayOf(
-                    ProntidaoDaCamera.Indisponivel(FalhaDeCamera.CameraBloqueadaPeloSistema),
+    fun `a camera blocked by the system has its own text, distinct from in use`() {
+        render(
+            environment(
+                readinesses = arrayOf(
+                    CameraReadiness.Unavailable(CameraFailure.CameraBlockedBySystem),
                 ),
             ),
         )
@@ -236,34 +223,34 @@ class PairingScanScreenTest {
     }
 
     @Test
-    fun `toda tela degradada mantem as duas saidas do pareamento por QR`() {
-        val causas = listOf(
-            FalhaDeCamera.PermissaoNegada,
-            FalhaDeCamera.PermissaoBloqueada,
-            FalhaDeCamera.SemCamera,
-            FalhaDeCamera.CameraOcupada,
-            FalhaDeCamera.CameraBloqueadaPeloSistema,
-            FalhaDeCamera.FalhaInesperada("x"),
+    fun `every degraded screen keeps both alternatives to QR pairing`() {
+        val causes = listOf(
+            CameraFailure.PermissionDenied,
+            CameraFailure.PermissionBlocked,
+            CameraFailure.NoCamera,
+            CameraFailure.CameraInUse,
+            CameraFailure.CameraBlockedBySystem,
+            CameraFailure.UnexpectedFailure("x"),
         )
-        var causaAtual by mutableStateOf<FalhaDeCamera>(FalhaDeCamera.PermissaoNegada)
+        var currentCause by mutableStateOf<CameraFailure>(CameraFailure.PermissionDenied)
 
         composeRule.setContent {
-            CameraIndisponivelContent(
-                falha = causaAtual,
-                onPedirPermissao = {},
-                onAbrirConfiguracoes = {},
-                onTentarNovamente = {},
+            CameraUnavailableContent(
+                failure = currentCause,
+                onRequestPermission = {},
+                onOpenSettings = {},
+                onRetry = {},
                 onManualSetupRequested = {},
                 onLoginRequested = {},
             )
         }
 
-        causas.forEach { causa ->
-            causaAtual = causa
+        causes.forEach { cause ->
+            currentCause = cause
             composeRule.waitForIdle()
-            composeRule.onNodeWithText(ROTULO_CONFIGURAR_MANUALMENTE).assertHasClickAction()
-            composeRule.onNodeWithText(ROTULO_JA_TENHO_ACESSO).assertHasClickAction()
+            composeRule.onNodeWithText(LABEL_SET_UP_MANUALLY).assertHasClickAction()
+            composeRule.onNodeWithText(LABEL_ALREADY_HAVE_ACCESS).assertHasClickAction()
         }
-        assertTrue("nenhuma causa pode ficar sem saída", causas.isNotEmpty())
+        assertTrue("no cause may be left without a way out", causes.isNotEmpty())
     }
 }

@@ -67,9 +67,9 @@ class UploadWorker @JvmOverloads constructor(
             sessionId = session.sessionId,
             startOffset = session.bytesUploaded,
             totalSize = totalBytes,
-            onProgress = { enviados ->
-                stateStore.saveUploadProgress(workName, enviados)
-                setProgress(workDataOf(KEY_PERCENT to percentOf(enviados, totalBytes)))
+            onProgress = { sent ->
+                stateStore.saveUploadProgress(workName, sent)
+                setProgress(workDataOf(KEY_PERCENT to percentOf(sent, totalBytes)))
             },
         )
 

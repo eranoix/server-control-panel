@@ -19,133 +19,94 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Destination of a VERTICAL DRAG on the grid — the fourth gesture of the same
- * finger, alongside the short tap, the long press with selection and the tap in
- * mouse mode.
+ * Target of a vertical drag on the grid, one of the four gestures of the same
+ * finger (tap, long-press selection, mouse-mode tap and this).
  */
 interface CanvasScrollTarget {
 
-    /** The gesture has been claimed: from here on the finger is scrolling. */
+    /** The gesture was claimed: from here on the finger is scrolling. */
     fun onScrollStart()
 
     /**
-     * Scrolled [deltaPx] pixels since the previous event — positive when the
-     * finger moves down (and therefore the content shows the PAST).
+     * Scrolled [deltaPx] pixels since the previous event; positive when the finger
+     * moves down (showing the past).
      *
-     * @return whether there is anywhere left to scroll. `false` ends the inertia
-     *   at once, instead of letting it grind against the end of the history.
+     * @return whether there is room left to scroll. `false` stops the inertia at once.
      */
     fun onScroll(deltaPx: Float, position: Offset): Boolean
 
-    /** The finger has left and the inertia (if any) has finished. */
+    /** The finger lifted and any inertia has finished. */
     fun onScrollEnd()
 }
 
-/**
- * Recognises the vertical drag on the grid and hands it to [target], with
- * inertia.
- *
- * ## The contest with the other three gestures
- *
- * This detector follows the same discipline as [canvasTapGesture][com.vpsmanager.feature.terminal.selection.canvasTapGesture]:
- * **giving up is the default, consuming is the exception**. It consumes nothing
- * until it is certain the gesture is its own, and that certainty has three
- * conditions, all mandatory:
- *
- * 1. the finger moved further than `touchSlop` — below that it could still be a
- *    tap;
- * 2. it moved **further vertically than horizontally** — a horizontal drag is
- *    not ours and is abandoned without touching anything;
- * 3. this happened **before** `longPressTimeoutMillis` — held still beyond that,
- *    the gesture belongs to long-press selection, and we leave the field.
- *
- * With all three met, only then does it consume the following events. That is
- * what makes the tap detector give up (it stops at the first `isConsumed`)
- * without either of the two needing to know about the other.
- *
- * In the other direction the coexistence is automatic: selection's
- * `detectDragGesturesAfterLongPress` cancels itself when the finger crosses the
- * slop before the long press fires — which is exactly the window in which this
- * gesture claims itself. A quick drag is ours; a drag after holding belongs to
- * selection. Neither needed a referee.
- */
 /** How many times the gesture block has been (re)started in this run of the app. */
-private val REINICIOS = java.util.concurrent.atomic.AtomicInteger(0)
+private val RESTARTS = java.util.concurrent.atomic.AtomicInteger(0)
 
+/**
+ * Recognises a vertical drag on the grid and hands it to [target], with inertia.
+ *
+ * Like [canvasTapGesture][com.vpsmanager.feature.terminal.selection.canvasTapGesture],
+ * it consumes nothing until the gesture is certainly its own: the finger moved
+ * past `touchSlop`, more vertically than horizontally, and before
+ * `longPressTimeoutMillis`. Only then does it consume, which makes the tap
+ * detector give up. Long-press selection cancels itself when the finger crosses
+ * the slop early, so a quick drag scrolls and a drag after holding selects.
+ */
 fun Modifier.canvasScrollGesture(target: CanvasScrollTarget): Modifier = pointerInput(target) {
-    // INSTRUMENTATION. The operator reports that dragging the history "only
-    // unlocks once the keyboard appears for the first time". The missing-focus
-    // hypothesis has been ruled out (a release addressing it changed nothing,
-    // and the view does enter focused). Three suspicions remain, and none of
-    // them can be settled by eye:
-    //   1. the AndroidView on top consumes the gesture until some state changes;
-    //   2. this `pointerInput` restarts on every recomposition — and a block
-    //      that restarts LOSES the gesture in flight, which would give exactly
-    //      this symptom;
-    //   3. the target depends on state that only exists after the first layout.
-    // The counter below separates (2) from the others: if the number climbs on
-    // every frame before the keyboard and settles afterwards, it is (2). The
-    // `down` says whether the event even REACHES here, which separates (1) from
-    // (3).
-    val geracao = REINICIOS.incrementAndGet()
-    TerminalDiag.log("scroll: pointerInput INICIADO geracao=$geracao")
+    // Diagnostics: a restart counter shows whether this `pointerInput` restarts
+    // on recomposition (which would drop the gesture in flight), and the `down`
+    // log shows whether events reach this detector at all.
+    val generation = RESTARTS.incrementAndGet()
+    TerminalDiag.log("scroll: pointerInput STARTED generation=$generation")
 
     val slop = viewConfiguration.touchSlop
-    val limiteToqueLongoMillis = viewConfiguration.longPressTimeoutMillis
-    val densidade: Density = this
+    val longPressTimeoutMillis = viewConfiguration.longPressTimeoutMillis
+    val density: Density = this
 
     coroutineScope {
-        var inercia: Job? = null
+        var flingJob: Job? = null
 
         awaitEachGesture {
-            // The `awaitFirstDown` comes BEFORE cancelling the inertia, and
-            // the order is the fix for a real defect: `awaitEachGesture`
-            // restarts this block as soon as the previous gesture ends, without
-            // waiting for any finger at all. Cancelling at the top killed the
-            // freshly launched inertia in the very instant it was born — the
-            // fling never happened, and the gesture was not even ended. Measured
-            // on the emulator
-            // (`arrasteVertical_encerraOGestoAoLevantarODedo`).
+            // Wait for the finger BEFORE cancelling inertia: `awaitEachGesture`
+            // restarts this block right after the previous gesture ends, so
+            // cancelling first would kill the fling that was just launched
+            // (see `verticalDrag_endsGestureOnFingerUp`).
             val down = awaitFirstDown(requireUnconsumed = false)
             TerminalDiag.log(
-                "scroll: DOWN geracao=$geracao consumido=${down.isConsumed} " +
+                "scroll: DOWN generation=$generation consumed=${down.isConsumed} " +
                     "pos=${down.position.x.toInt()},${down.position.y.toInt()}",
             )
 
-            // Now it holds: a genuinely NEW finger on screen interrupts the
-            // inertia, as in any Android list — without this, the tap meaning
-            // "hold the page" would be ignored while it is still gliding.
-            val deslizeEmCurso = inercia
-            inercia = null
-            if (deslizeEmCurso != null && deslizeEmCurso.isActive) {
-                deslizeEmCurso.cancel()
-                // The previous gesture died here, so this is where it ends:
-                // the cancelled fling's `onScrollEnd` would never have run.
+            // A new finger stops the inertia, as in any Android list.
+            val flingInProgress = flingJob
+            flingJob = null
+            if (flingInProgress != null && flingInProgress.isActive) {
+                flingInProgress.cancel()
+                // The cancelled fling will never call `onScrollEnd`, so end it here.
                 target.onScrollEnd()
             }
-            val rastreador = VelocityTracker()
-            rastreador.addPosition(down.uptimeMillis, down.position)
+            val tracker = VelocityTracker()
+            tracker.addPosition(down.uptimeMillis, down.position)
 
-            var percorrido = Offset.Zero
+            var traveled = Offset.Zero
 
-            // Phase 1 — not ours yet. Nothing gets consumed here.
-            val reivindicado = withTimeoutOrNull(limiteToqueLongoMillis) {
+            // Phase 1: not ours yet, consume nothing.
+            val claimed = withTimeoutOrNull(longPressTimeoutMillis) {
                 while (true) {
-                    val evento = awaitPointerEvent()
-                    val change = evento.changes.firstOrNull { it.id == down.id }
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id }
                         ?: return@withTimeoutOrNull false
-                    // Someone decided first (the selection handles consume):
-                    // the gesture is theirs.
+                    // Someone else claimed it first (e.g. selection handles).
                     if (change.isConsumed) return@withTimeoutOrNull false
                     if (!change.pressed) return@withTimeoutOrNull false
-                    percorrido += change.positionChange()
-                    rastreador.addPosition(change.uptimeMillis, change.position)
-                    if (percorrido.getDistance() > slop) {
+                    traveled += change.positionChange()
+                    tracker.addPosition(change.uptimeMillis, change.position)
+                    if (traveled.getDistance() > slop) {
                         // Horizontal is not ours: leave without touching anything.
-                        val vertical = abs(percorrido.y) > abs(percorrido.x)
+                        val vertical = abs(traveled.y) > abs(traveled.x)
                         TerminalDiag.log(
-                            "scroll: passou o slop geracao=$geracao vertical=$vertical " +
-                                "dx=${percorrido.x.toInt()} dy=${percorrido.y.toInt()}",
+                            "scroll: past slop generation=$generation vertical=$vertical " +
+                                "dx=${traveled.x.toInt()} dy=${traveled.y.toInt()}",
                         )
                         return@withTimeoutOrNull vertical
                     }
@@ -154,35 +115,35 @@ fun Modifier.canvasScrollGesture(target: CanvasScrollTarget): Modifier = pointer
                 false
             } == true
 
-            if (!reivindicado) return@awaitEachGesture
+            if (!claimed) return@awaitEachGesture
 
             target.onScrollStart()
-            // The displacement up to this point is not lost: it is already scroll.
-            var temParaOnde = target.onScroll(percorrido.y, down.position)
+            // The movement so far already counts as scroll.
+            var canMove = target.onScroll(traveled.y, down.position)
 
-            // Phase 2 — now it is ours, and that is why we consume.
-            var ultimaPosicao = down.position
+            // Phase 2: the gesture is ours, so consume.
+            var lastPosition = down.position
             while (true) {
-                val evento = awaitPointerEvent()
-                val change = evento.changes.firstOrNull { it.id == down.id } ?: break
-                ultimaPosicao = change.position
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                lastPosition = change.position
                 if (!change.pressed) {
                     change.consume()
                     break
                 }
-                rastreador.addPosition(change.uptimeMillis, change.position)
+                tracker.addPosition(change.uptimeMillis, change.position)
                 val delta = change.positionChange().y
-                if (temParaOnde || delta != 0f) {
-                    temParaOnde = target.onScroll(delta, change.position)
+                if (canMove || delta != 0f) {
+                    canMove = target.onScroll(delta, change.position)
                 }
                 change.consume()
             }
 
-            val velocidade = rastreador.calculateVelocity().y
-            if (temParaOnde && abs(velocidade) > VELOCIDADE_MINIMA_INERCIA_PX_S) {
-                val posicaoFinal = ultimaPosicao
-                inercia = launch {
-                    deslizar(velocidade, densidade, posicaoFinal, target)
+            val velocity = tracker.calculateVelocity().y
+            if (canMove && abs(velocity) > MIN_FLING_VELOCITY_PX_S) {
+                val finalPosition = lastPosition
+                flingJob = launch {
+                    fling(velocity, density, finalPosition, target)
                     target.onScrollEnd()
                 }
             } else {
@@ -193,30 +154,25 @@ fun Modifier.canvasScrollGesture(target: CanvasScrollTarget): Modifier = pointer
 }
 
 /**
- * The inertia — the "fling" of any Android list. It uses the system's own
- * deceleration curve ([splineBasedDecay]) so that terminal scrolling does not
- * feel like it came from another device.
+ * Inertia ("fling") using the system deceleration curve ([splineBasedDecay]),
+ * so scrolling feels like any Android list.
  */
-private suspend fun deslizar(
-    velocidadeInicial: Float,
-    densidade: Density,
-    posicao: Offset,
+private suspend fun fling(
+    initialVelocity: Float,
+    density: Density,
+    position: Offset,
     target: CanvasScrollTarget,
 ) {
-    val curva = splineBasedDecay<Float>(densidade)
-    var anterior = 0f
-    AnimationState(initialValue = 0f, initialVelocity = velocidadeInicial)
-        .animateDecay(curva) {
-            val delta = value - anterior
-            anterior = value
-            // Reached the end of the history: stop now, rather than grinding
-            // against the wall until the curve runs out on its own.
-            if (!target.onScroll(delta, posicao)) cancelAnimation()
+    val decay = splineBasedDecay<Float>(density)
+    var previous = 0f
+    AnimationState(initialValue = 0f, initialVelocity = initialVelocity)
+        .animateDecay(decay) {
+            val delta = value - previous
+            previous = value
+            // End of history: stop now instead of grinding against the wall.
+            if (!target.onScroll(delta, position)) cancelAnimation()
         }
 }
 
-/**
- * Below this the finger was practically still on lift-off, and gliding would be
- * motion the owner never asked for.
- */
-private const val VELOCIDADE_MINIMA_INERCIA_PX_S = 50f
+/** Below this the finger was practically still on lift-off, so no inertia. */
+private const val MIN_FLING_VELOCITY_PX_S = 50f

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Expose only the update staging folder, where the rebuilt APK sits after its
+  SHA-256 check. A `<root-path/>` would hand the whole app storage to whoever
+  receives the Uri.
+-->
+<paths>
+    <files-path name="atualizacao" path="atualizacoes/" />
+</paths>

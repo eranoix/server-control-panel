@@ -41,11 +41,7 @@ private object NeverRefreshes : SessionRefresher {
 }
 
 /**
- * Renders [LoginScreen] — the screen that simply did not exist. Before this
- * work, `PasskeyRepository.login()` was defined and never called by anyone,
- * and a freshly installed device dropped straight into `AppNavHost` with no
- * credential: every screen showed "error 401" and a "Try again" with no
- * future.
+ * Renders [LoginScreen] with fake passkey and password sources.
  */
 @RunWith(RobolectricTestRunner::class)
 class LoginScreenTest {
@@ -62,12 +58,12 @@ class LoginScreenTest {
     private fun viewModel(
         session: SessionManager = sessionManager(),
         passkey: PasskeyLoginSource = FakePasskeyLogin { LoginResult.PendingApproval },
-        password: PasswordLoginSource = FakePasswordLogin { PasswordLoginResult.Failed("nao usado") },
-        serverUrl: String? = "https://vpsmanager.exemplo.test",
+        password: PasswordLoginSource = FakePasswordLogin { PasswordLoginResult.Failed("unused") },
+        serverUrl: String? = "https://vpsmanager.example.test",
     ) = LoginViewModel(session, passkey, password, serverUrl)
 
     @Test
-    fun `a tela oferece os tres caminhos — passkey, senha e pareamento`() {
+    fun `the screen offers three paths, passkey, password and pairing`() {
         composeRule.setContent { LoginScreen(onPairDeviceRequested = {}, viewModel = viewModel()) }
         composeRule.waitForIdle()
 
@@ -77,15 +73,15 @@ class LoginScreenTest {
     }
 
     @Test
-    fun `mostra o servidor com que o aparelho vai falar`() {
+    fun `shows the server the device will talk to`() {
         composeRule.setContent { LoginScreen(onPairDeviceRequested = {}, viewModel = viewModel()) }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Server: https://vpsmanager.exemplo.test").assertExists()
+        composeRule.onNodeWithText("Server: https://vpsmanager.example.test").assertExists()
     }
 
     @Test
-    fun `um login por passkey bem-sucedido estabelece a sessao`() {
+    fun `a successful passkey login establishes the session`() {
         val session = sessionManager()
         val vm = viewModel(
             session = session,
@@ -102,7 +98,7 @@ class LoginScreenTest {
     }
 
     @Test
-    fun `pending_approval diz ao operador exatamente onde aprovar — nao e um beco`() {
+    fun `pending_approval tells the operator exactly where to approve`() {
         val vm = viewModel(passkey = FakePasskeyLogin { LoginResult.PendingApproval })
         composeRule.setContent { LoginScreen(onPairDeviceRequested = {}, viewModel = vm) }
         composeRule.waitForIdle()
@@ -120,7 +116,7 @@ class LoginScreenTest {
     }
 
     @Test
-    fun `sem passkey no aparelho a mensagem manda parear, nao so tentar de novo`() {
+    fun `with no passkey on the device the message says to pair, not just retry`() {
         val vm = viewModel(passkey = FakePasskeyLogin { LoginResult.Failed(PasskeyError.NoPasskeyAvailable) })
         composeRule.setContent { LoginScreen(onPairDeviceRequested = {}, viewModel = vm) }
         composeRule.waitForIdle()
@@ -135,23 +131,23 @@ class LoginScreenTest {
     }
 
     @Test
-    fun `o botao de parear leva ao fluxo de QR`() {
-        var pediuPareamento = false
+    fun `the pair button opens the QR flow`() {
+        var pairingRequested = false
         composeRule.setContent {
-            LoginScreen(onPairDeviceRequested = { pediuPareamento = true }, viewModel = viewModel())
+            LoginScreen(onPairDeviceRequested = { pairingRequested = true }, viewModel = viewModel())
         }
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("Pair this device (QR code)").performClick()
         composeRule.waitForIdle()
 
-        assertTrue(pediuPareamento)
+        assertTrue(pairingRequested)
     }
 
     @Test
-    fun `o formulario de senha aparece e loga`() {
+    fun `the password form appears and signs in`() {
         val session = sessionManager()
-        val password = FakePasswordLogin { PasswordLoginResult.Success("acc-senha", "ref", 900) }
+        val password = FakePasswordLogin { PasswordLoginResult.Success("acc-password", "ref", 900) }
         val vm = viewModel(session = session, password = password)
         composeRule.setContent { LoginScreen(onPairDeviceRequested = {}, viewModel = vm) }
         composeRule.waitForIdle()
@@ -159,17 +155,17 @@ class LoginScreenTest {
         composeRule.onNodeWithText("Sign in with username and password").performClick()
         composeRule.waitForIdle()
         vm.onUsernameChange("sam")
-        vm.onPasswordChange("segredo")
+        vm.onPasswordChange("secret")
         composeRule.onNodeWithText("Sign in").performClick()
         composeRule.waitForIdle()
 
-        assertEquals("acc-senha", session.currentAccessToken())
+        assertEquals("acc-password", session.currentAccessToken())
     }
 
     @Test
-    fun `totp_required pede o codigo em vez de tratar como erro`() {
-        val password = FakePasswordLogin { codigo ->
-            if (codigo == null) PasswordLoginResult.TotpRequired else PasswordLoginResult.Success("acc", "ref", 900)
+    fun `totp_required asks for the code instead of treating it as an error`() {
+        val password = FakePasswordLogin { code ->
+            if (code == null) PasswordLoginResult.TotpRequired else PasswordLoginResult.Success("acc", "ref", 900)
         }
         val session = sessionManager()
         val vm = viewModel(session = session, password = password)
@@ -178,12 +174,12 @@ class LoginScreenTest {
 
         vm.showPasswordForm()
         vm.onUsernameChange("sam")
-        vm.onPasswordChange("segredo")
+        vm.onPasswordChange("secret")
         vm.submitPassword()
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("Verification code").assertExists()
-        // Second attempt, this time with the code: in.
+        // Second attempt with the code succeeds.
         vm.onTotpChange("123456")
         vm.submitPassword()
         composeRule.waitForIdle()
@@ -193,16 +189,13 @@ class LoginScreenTest {
     }
 
     /**
-     * The "Sign in" button with the code field EMPTY was a silent nothing: the
-     * server receives an empty code, answers `totp_required` again (not an
-     * error — see `MobileLogin`, the `mfaCodeRequired` branch), and the screen
-     * refreshes into the state it was already in. No message, no change: the
-     * operator taps and concludes the app has frozen.
+     * Submitting an empty code would just get `totp_required` again with no
+     * visible change, so the screen must say what is missing instead.
      */
     @Test
-    fun `codigo em branco nao vira ida muda ao servidor — a tela diz o que falta`() {
-        val password = FakePasswordLogin { codigo ->
-            if (codigo == null) PasswordLoginResult.TotpRequired else PasswordLoginResult.Success("acc", "ref", 900)
+    fun `a blank code does not hit the server and the screen says what is missing`() {
+        val password = FakePasswordLogin { code ->
+            if (code == null) PasswordLoginResult.TotpRequired else PasswordLoginResult.Success("acc", "ref", 900)
         }
         val vm = viewModel(password = password)
         composeRule.setContent { LoginScreen(onPairDeviceRequested = {}, viewModel = vm) }
@@ -210,32 +203,31 @@ class LoginScreenTest {
 
         vm.showPasswordForm()
         vm.onUsernameChange("sam")
-        vm.onPasswordChange("segredo")
+        vm.onPasswordChange("secret")
         vm.submitPassword()
         composeRule.waitForIdle()
         assertEquals(1, password.calls)
 
-        // Second tap, code field still empty: it does NOT call the server.
+        // Second tap with the code still empty must not call the server.
         vm.submitPassword()
         composeRule.waitForIdle()
 
-        assertEquals("nao podia ter chamado o servidor de novo", 1, password.calls)
+        assertEquals("must not have called the server again", 1, password.calls)
         composeRule.onNodeWithText("Enter the verification code to continue.").assertExists()
     }
 
     /**
-     * A rejected code keeps the operator ON THE CODE STEP and clears only that
-     * field. Sending them back to the password (which the old message did) is
-     * the shortest route to the server's attempt lockout.
+     * A rejected code stays on the code step and clears only that field;
+     * sending the user back to the password invites the server's lockout.
      */
     @Test
-    fun `codigo recusado fica na etapa do codigo, limpa o campo e nao acusa a senha`() {
+    fun `a rejected code stays on the code step, clears the field and keeps the password`() {
         val vm = viewModel(
-            password = FakePasswordLogin { codigo ->
-                if (codigo == null) {
+            password = FakePasswordLogin { code ->
+                if (code == null) {
                     PasswordLoginResult.TotpRequired
                 } else {
-                    PasswordLoginResult.InvalidCode("Código inválido ou expirado.")
+                    PasswordLoginResult.InvalidCode("Invalid or expired code.")
                 }
             },
         )
@@ -244,7 +236,7 @@ class LoginScreenTest {
 
         vm.showPasswordForm()
         vm.onUsernameChange("sam")
-        vm.onPasswordChange("segredo")
+        vm.onPasswordChange("secret")
         vm.submitPassword()
         composeRule.waitForIdle()
 
@@ -252,29 +244,25 @@ class LoginScreenTest {
         vm.submitPassword()
         composeRule.waitForIdle()
 
-        val estado = vm.uiState.value
-        assertTrue("continua pedindo o codigo", estado.totpRequired)
-        assertEquals("o campo do codigo tem que vir limpo", "", estado.totpCode)
-        assertEquals("a senha nao se perde", "segredo", estado.password)
-        composeRule.onNodeWithText("Código inválido ou expirado.").assertExists()
-        // The code field stays on screen for the next attempt.
+        val state = vm.uiState.value
+        assertTrue("still asking for the code", state.totpRequired)
+        assertEquals("the code field must be cleared", "", state.totpCode)
+        assertEquals("the password is kept", "secret", state.password)
+        composeRule.onNodeWithText("Invalid or expired code.").assertExists()
         composeRule.onNodeWithText("Verification code").assertExists()
     }
 
     /**
-     * `totpRequired` is the server's answer ABOUT AN ACCOUNT. This screen
-     * survives a sign-out (the ViewModel belongs to the process), so carrying
-     * it over to the next account would show the code field to someone who may
-     * not even use 2FA — and would send the old code along on the first
-     * attempt.
+     * `totpRequired` belongs to one account. The ViewModel outlives sign-out, so
+     * it must reset on login and on a username change.
      */
     @Test
-    fun `entrar zera a etapa do codigo, e trocar de usuario tambem`() {
+    fun `signing in resets the code step, and so does changing user`() {
         val session = sessionManager()
         val vm = viewModel(
             session = session,
-            password = FakePasswordLogin { codigo ->
-                if (codigo == null) PasswordLoginResult.TotpRequired else PasswordLoginResult.Success("acc", "ref", 900)
+            password = FakePasswordLogin { code ->
+                if (code == null) PasswordLoginResult.TotpRequired else PasswordLoginResult.Success("acc", "ref", 900)
             },
         )
         composeRule.setContent { LoginScreen(onPairDeviceRequested = {}, viewModel = vm) }
@@ -282,7 +270,7 @@ class LoginScreenTest {
 
         vm.showPasswordForm()
         vm.onUsernameChange("sam")
-        vm.onPasswordChange("segredo")
+        vm.onPasswordChange("secret")
         vm.submitPassword()
         composeRule.waitForIdle()
         assertTrue(vm.uiState.value.totpRequired)
@@ -292,40 +280,38 @@ class LoginScreenTest {
         composeRule.waitForIdle()
 
         assertEquals("acc", session.currentAccessToken())
-        assertTrue("a etapa do codigo nao pode sobreviver ao login", !vm.uiState.value.totpRequired)
+        assertTrue("the code step must not survive sign-in", !vm.uiState.value.totpRequired)
 
-        // And switching account drops the code step regardless.
-        // (The password is cleared on success, so fill it in again before retrying.)
-        vm.onPasswordChange("segredo")
+        // Changing user also drops the code step. The password is cleared on
+        // success, so fill it in again first.
+        vm.onPasswordChange("secret")
         vm.submitPassword() // asks for the code again for "sam"
         composeRule.waitForIdle()
         assertTrue(vm.uiState.value.totpRequired)
         vm.onUsernameChange("jordan")
-        assertTrue("trocar de usuario derruba a etapa do codigo", !vm.uiState.value.totpRequired)
+        assertTrue("changing user drops the code step", !vm.uiState.value.totpRequired)
         assertEquals("", vm.uiState.value.totpCode)
     }
 
     @Test
-    fun `credenciais erradas mostram o motivo e a tela continua utilizavel`() {
-        val vm = viewModel(password = FakePasswordLogin { PasswordLoginResult.Failed("Usuário, senha ou código inválido.") })
+    fun `wrong credentials show the reason and the screen stays usable`() {
+        val vm = viewModel(password = FakePasswordLogin { PasswordLoginResult.Failed("Invalid username, password or code.") })
         composeRule.setContent { LoginScreen(onPairDeviceRequested = {}, viewModel = vm) }
         composeRule.waitForIdle()
 
         vm.showPasswordForm()
         vm.onUsernameChange("sam")
-        vm.onPasswordChange("errada")
+        vm.onPasswordChange("wrong")
         vm.submitPassword()
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Usuário, senha ou código inválido.").assertExists()
+        composeRule.onNodeWithText("Invalid username, password or code.").assertExists()
         composeRule.onNodeWithText("Sign in").assertExists()
     }
 
     @Test
-    fun `uma guarda so em memoria avisa que a sessao nao sera lembrada`() {
-        // InMemoryTokenStore.isPersistent is false — the same state
-        // KeystoreTokenStore ends up in when the device's Keystore fails. The
-        // operator has to know BEFORE they start wondering.
+    fun `an in-memory token store warns that the session will not be remembered`() {
+        // Same state KeystoreTokenStore falls into when the device Keystore fails.
         composeRule.setContent { LoginScreen(onPairDeviceRequested = {}, viewModel = viewModel()) }
         composeRule.waitForIdle()
 
@@ -333,7 +319,7 @@ class LoginScreenTest {
     }
 
     @Test
-    fun `enquanto a cerimonia roda a tela mostra progresso, nao fica muda`() {
+    fun `while the ceremony runs the screen shows progress`() {
         val vm = viewModel(passkey = FakePasskeyLogin { awaitCancellation() })
         composeRule.setContent { LoginScreen(onPairDeviceRequested = {}, viewModel = vm) }
         composeRule.waitForIdle()

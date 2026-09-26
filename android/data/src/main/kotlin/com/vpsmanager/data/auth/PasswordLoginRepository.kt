@@ -14,49 +14,30 @@ private const val HTTP_LOCKED = 423
 private const val HTTP_TOO_MANY_REQUESTS = 429
 
 /**
- * The marker that separates "the second factor was refused" from "wrong
- * username or password" inside the SAME 401.
- *
- * The BFF already distinguishes the two cases in the error body —
- * `ErrMobileLoginInvalidCode` answers `detail: "invalid 2FA code"`, while a
- * wrong credential answers `"invalid credentials"` (see
- * `internal/mobilebff/auth_passkey.go`). The app threw that information away
- * and said "invalid username, password or code" in both cases: at the code step
- * that is a FALSE accusation against the password the server has just accepted
- * — and it sends the operator back to retype the password until they trip the
- * attempt lockout.
- *
- * It matches on "2fa" rather than on the whole sentence on purpose: that is the
- * piece that survives a change of accent or wording on the server side. If it
- * still does not match, the caller falls back to the CONTEXT criterion (did we
- * send a code?), so a server change degrades to the old behaviour instead of
- * breaking.
+ * Marker that separates "second factor refused" from "wrong username or
+ * password" within the same 401: the BFF answers `"invalid 2FA code"` vs
+ * `"invalid credentials"` (see `internal/mobilebff/auth_passkey.go`). Matching on
+ * "2fa" alone survives wording changes; if it still fails, the caller falls back
+ * to whether a code was sent.
  */
-private const val SEGUNDO_FATOR_RECUSADO = "2fa"
+private const val SECOND_FACTOR_REJECTED = "2fa"
 
-/** Resultado de `POST /auth/login` — ver `internal/mobilebff/auth_login.go`. */
+/** Result of `POST /auth/login`; see `internal/mobilebff/auth_login.go`. */
 sealed interface PasswordLoginResult {
 
     data class Success(val accessToken: String, val refreshToken: String, val expiresInSeconds: Long) :
         PasswordLoginResult
 
     /**
-     * The user has a second factor enrolled and no code was sent. This is NOT
-     * an error: it is the same `{"totp_required": true}` branch the desktop
-     * panel's login already has. The screen should ask for the code and call
-     * again.
+     * The user has a second factor and no code was sent. Not an error: the screen
+     * asks for the code and calls again (`{"totp_required": true}`).
      */
     data object TotpRequired : PasswordLoginResult
 
     /**
-     * The SECOND FACTOR was refused — username and password already passed.
-     *
-     * Separate from [Failed] because the screen reacts differently: it keeps
-     * the form on the code step (rather than throwing the operator back to the
-     * password), clears only the code field, and says it was the code. A TOTP
-     * code is worth ~30 seconds, so getting it wrong by being late is routine,
-     * not an exception — and every error counts towards the server's attempt
-     * lockout (5 failures), which makes the wrong message genuinely expensive.
+     * The second factor was refused after the username and password passed. The
+     * screen stays on the code step and clears only the code; blaming the password
+     * would push the user towards the server's 5-attempt lockout.
      */
     data class InvalidCode(val reason: String) : PasswordLoginResult
 
@@ -64,9 +45,8 @@ sealed interface PasswordLoginResult {
 }
 
 /**
- * The slice of [PasswordLoginRepository] the login screen depends on — the same
- * convention as [com.vpsmanager.data.session.SessionSource]: anyone outside
- * `:data` tests against a fake without touching the generated client.
+ * The slice of [PasswordLoginRepository] the login screen depends on, so callers
+ * outside `:data` can test against a fake.
  */
 interface PasswordLoginSource {
     suspend fun login(username: String, password: String, totpCode: String? = null): PasswordLoginResult
@@ -74,17 +54,11 @@ interface PasswordLoginSource {
 
 /**
  * The single call site into the generated client for password login
- * (`AuthApi.mobileLogin`). It follows the same boundary as
- * [com.vpsmanager.data.session.SessionRepository]: no module outside `:data`
- * references `AuthApi` or the generated DTOs — callers only ever see
- * [PasswordLoginResult].
+ * (`AuthApi.mobileLogin`); callers only see [PasswordLoginResult].
  *
- * Password login is this app's SECONDARY path (the primary is passkey). It
- * exists because the primary has a prerequisite the operator cannot always
- * satisfy on the spot: a passkey registered by QR is born inert and only starts
- * logging in once it has been approved in the panel. Without password login, a
- * freshly installed device would have NO way in at all until somebody opened
- * the desktop.
+ * Password login is the secondary path (passkey is primary). It exists because a
+ * passkey registered by QR only works once approved in the panel, so a fresh
+ * device would otherwise have no way in.
  */
 class PasswordLoginRepository(
     private val serverConfigRepository: ServerConfigRepository,
@@ -114,10 +88,10 @@ class PasswordLoginRepository(
                 else -> PasswordLoginResult.Failed("Unexpected response from the server.")
             }
         } catch (e: ClientException) {
-            traduzFalhaDeLogin(
+            translateLoginFailure(
                 statusCode = e.statusCode,
-                corpoDoErro = (e.response as? ClientError<*>)?.body as? String,
-                enviouCodigo = !totpCode.isNullOrBlank(),
+                errorBody = (e.response as? ClientError<*>)?.body as? String,
+                sentCode = !totpCode.isNullOrBlank(),
             )
         } catch (e: ServerException) {
             PasswordLoginResult.Failed("The server is unavailable right now.")
@@ -130,34 +104,19 @@ class PasswordLoginRepository(
 }
 
 /**
- * Translates a 4xx response from `POST /auth/login` into what the SCREEN has to
- * do next.
+ * Translates a 4xx from `POST /auth/login` into what the screen does next.
  *
- * The 401 is the case that matters, because it covers TWO different accidents
- * calling for opposite reactions: a wrong password (go back to the password)
- * and a wrong second factor (stay on the code). Separating them:
- *
- * - Primary criterion: the server's own `detail`, which already distinguishes
- *   the two (see [SEGUNDO_FATOR_RECUSADO]). It is the exact criterion — it even
- *   catches the case where the operator edits the password at the code step and
- *   starts getting the PASSWORD wrong: the server then answers "invalid
- *   credentials" and the screen correctly goes back to talking about the
- *   password.
- * - Fallback criterion: [enviouCodigo]. If the body does not arrive (a proxy
- *   that swallows it, a generator that changes shape), it still holds that the
- *   server only asks for a code AFTER accepting the password — so a 401 on a
- *   call that carried a code is, overwhelmingly often, the code.
- *
- * A separate function, and `internal`, so it is testable without Android and
- * without the generated client: this is where the decision lives, not in the
- * `catch`.
+ * A 401 means either a wrong password or a wrong second factor. The server's
+ * `detail` decides first (see [SECOND_FACTOR_REJECTED]); if the body is missing,
+ * [sentCode] decides, since the server only asks for a code after accepting the
+ * password. `internal` so it is testable without Android or the generated client.
  */
-internal fun traduzFalhaDeLogin(statusCode: Int, corpoDoErro: String?, enviouCodigo: Boolean): PasswordLoginResult {
-    val foiOSegundoFator = when {
-        corpoDoErro.isNullOrBlank() -> enviouCodigo
-        else -> corpoDoErro.contains(SEGUNDO_FATOR_RECUSADO, ignoreCase = true)
+internal fun translateLoginFailure(statusCode: Int, errorBody: String?, sentCode: Boolean): PasswordLoginResult {
+    val wasSecondFactor = when {
+        errorBody.isNullOrBlank() -> sentCode
+        else -> errorBody.contains(SECOND_FACTOR_REJECTED, ignoreCase = true)
     }
-    if (statusCode == HTTP_UNAUTHORIZED && foiOSegundoFator) {
+    if (statusCode == HTTP_UNAUTHORIZED && wasSecondFactor) {
         return PasswordLoginResult.InvalidCode(
             "Invalid or expired code. The authenticator app code changes every 30 seconds — " +
                 "get a new one and type it in full. A backup code also works.",
@@ -178,10 +137,8 @@ internal fun traduzFalhaDeLogin(statusCode: Int, corpoDoErro: String?, enviouCod
 }
 
 /**
- * The label that appears in the panel's list of mobile sessions
- * (`device_label` in `mobileLoginInput`). Manufacturer plus model is what the
- * operator recognises when scanning the list; an opaque id would help nobody
- * decide which session to revoke.
+ * The label shown in the panel's list of mobile sessions (`device_label`):
+ * manufacturer plus model, which the operator recognises when revoking.
  */
 internal fun defaultDeviceLabel(): String = listOf(Build.MANUFACTURER, Build.MODEL)
     .filter { it.isNotBlank() }

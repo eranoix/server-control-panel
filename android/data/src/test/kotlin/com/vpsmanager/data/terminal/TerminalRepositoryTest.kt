@@ -92,7 +92,7 @@ class TerminalRepositoryTest {
     fun `wsTicket maps a 404 (session not owned) to Error, never throwing`() = runTest {
         server.enqueue(MockResponse().setResponseCode(404).setBody("""{"title":"Not Found"}"""))
 
-        val result = repositoryFor().wsTicket("outra-sessao")
+        val result = repositoryFor().wsTicket("other-session")
 
         assertTrue(result is WsTicketResult.Error)
     }
@@ -103,19 +103,19 @@ class TerminalRepositoryTest {
             MockResponse()
                 .setResponseCode(200)
                 .setHeader("Content-Type", "application/json")
-                .setBody("""{"data":"linha 1\nlinha 2\n"}"""),
+                .setBody("""{"data":"line 1\nline 2\n"}"""),
         )
 
         val result = repositoryFor().scrollback("main", lines = 100, plain = true)
 
-        assertEquals(ScrollbackResult.Success("linha 1\nlinha 2\n"), result)
+        assertEquals(ScrollbackResult.Success("line 1\nline 2\n"), result)
     }
 
     @Test
     fun `scrollback maps an HTTP error to Error, never throwing`() = runTest {
         server.enqueue(MockResponse().setResponseCode(404).setBody("""{"title":"Not Found"}"""))
 
-        val result = repositoryFor().scrollback("outra-sessao")
+        val result = repositoryFor().scrollback("other-session")
 
         assertTrue(result is ScrollbackResult.Error)
     }

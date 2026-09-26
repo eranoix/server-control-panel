@@ -8,16 +8,10 @@ import com.vpsmanager.data.ops.OpsSnapshot
 import com.vpsmanager.data.ops.SystemSnapshot
 
 /**
- * THE REAL MACHINE, as `GET /api/mobile/v1/ops/status` returned it in a live
- * capture.
- *
- * The numbers are neither invented nor rounded, and that is the point: this is
- * that host, with swap at 99.998%, CPU at 91%, load 11.97 on 8 cores and 7%
- * steal, at a moment when `alerts` was EMPTY and `health_ok` was `true`. It is
- * exactly the case a naive dashboard paints as "all good" — and that is why it
- * is this suite's main fixture.
+ * A live capture of `GET /api/mobile/v1/ops/status`, unrounded: swap near 100%, load 11.97 on
+ * 8 cores, yet `alerts` empty and `health_ok` true, the case a naive dashboard shows as healthy.
  */
-internal fun producaoReal(
+internal fun productionLike(
     swapUsedPercent: Double = 99.99814033419625,
     memUsedPercent: Double = 63.13659490136221,
     steal: Double = 7.0427350429260835,
@@ -60,11 +54,11 @@ internal fun producaoReal(
     platform = "ubuntu 24.04",
 )
 
-/** O `/ops/status` inteiro daquele mesmo instante: nove subsistemas ok, fila parada, zero alertas. */
-internal fun opsReal(system: SystemSnapshot? = producaoReal()) = OpsSnapshot(
+/** The full `/ops/status` from the same moment: all subsystems healthy, idle queue, no alerts. */
+internal fun opsReal(system: SystemSnapshot? = productionLike()) = OpsSnapshot(
     health = mapOf(
         "audit" to "ok",
-        "claude_router" to "ok",
+        "model_router" to "ok",
         "config" to "ok",
         "docker" to "ok",
         "dtach" to "ok",
@@ -80,27 +74,27 @@ internal fun opsReal(system: SystemSnapshot? = producaoReal()) = OpsSnapshot(
 )
 
 /** The real `/deploy/apps`: one app, with its last deploy rolled back. */
-internal fun deploysReais() = listOf(
+internal fun realisticDeploys() = listOf(
     DeploySummary(name = "hello", lastStatus = "rolled_back", updated = "2026-07-19 13:17 UTC"),
 )
 
 /** The five real scheduled jobs, all with `last_status = ok`. */
-internal fun agendadosReais() = listOf(
-    ScheduledSummary("Backup de sessões do terminal a cada 10min", "ok", "2026-09-06 07:00 UTC", "2026-09-06 07:10 UTC", true),
-    ScheduledSummary("Reaper de preview envs (#37)", "ok", "2026-09-06 06:17 UTC", "2026-09-06 07:17 UTC", true),
+internal fun realisticScheduled() = listOf(
+    ScheduledSummary("Terminal session backup every 10min", "ok", "2026-09-06 07:00 UTC", "2026-09-06 07:10 UTC", true),
+    ScheduledSummary("Preview env reaper", "ok", "2026-09-06 06:17 UTC", "2026-09-06 07:17 UTC", true),
     ScheduledSummary("Keep-alive 5h — Jordan", "ok", "2026-09-06 06:23 UTC", "2026-09-06 07:23 UTC", true),
     ScheduledSummary("Keep-alive 5h — Sam", "ok", "2026-09-06 06:38 UTC", "2026-09-06 07:38 UTC", true),
-    ScheduledSummary("Backup geral — diario 04:30 UTC", "ok", "2026-09-06 04:30 UTC", "2026-09-07 04:30 UTC", true),
+    ScheduledSummary("Full backup, daily 04:30 UTC", "ok", "2026-09-06 04:30 UTC", "2026-09-07 04:30 UTC", true),
 )
 
 internal fun snapshotReal(
     ops: OpsSnapshot = opsReal(),
-    deploys: List<DeploySummary>? = deploysReais(),
-    scheduled: List<ScheduledSummary>? = agendadosReais(),
+    deploys: List<DeploySummary>? = realisticDeploys(),
+    scheduled: List<ScheduledSummary>? = realisticScheduled(),
     fetchedAtEpochMs: Long = 1_788_678_502_000,
 ) = DashboardSnapshot(
     ops = ops,
-    identity = DashboardIdentity(user = "teste", email = "test@northwind.example", isAdmin = true),
+    identity = DashboardIdentity(user = "tester", email = "test@northwind.example", isAdmin = true),
     deploys = deploys,
     scheduled = scheduled,
     fetchedAtEpochMs = fetchedAtEpochMs,

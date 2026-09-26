@@ -1,116 +1,48 @@
-# Regras de manutencao do R8 — :app
+# R8 keep rules for :app (release build, where minify and resource shrinking are on).
+# Each rule comes from a real dependency and would break at RUNTIME without it: the build
+# passes and the app crashes later on the device.
 #
-# Este arquivo so vale para o buildType `release`, onde `isMinifyEnabled` e
-# `isShrinkResources` estao ligados (ver app/build.gradle.kts). Ele NAO e um
-# proguard-rules.pro generico copiado da internet: cada regra abaixo foi
-# derivada de uma dependencia real deste projeto, e cada uma diz o que
-# quebraria EM RUNTIME sem ela — porque e assim que uma regra errada se
-# manifesta. O build passa; o app crasha depois, no aparelho do operador.
+# Not here, because they already ship with the dependency (check configuration.txt in
+# app/build/outputs/mapping/release/, which lists every rule R8 received):
+#   - org.webrtc.**: the stream-webrtc-android AAR keeps it.
+#   - okhttp3/okio: okhttp ships META-INF/proguard/okhttp3.pro.
+#   - kotlinx.serialization: ships its own rules; field names need no keep because the
+#     generated serializer embeds the wire names.
+#   - Compose, WorkManager, Credential Manager, CameraX, Media3, Coil, Firebase, Tink.
+#   - Manifest components: AGP generates a keep for every class in the merged manifest.
+#   - io.github.rosemoe.** (sora-editor): kept by feature/files/consumer-rules.pro.
 #
-# O que NAO esta aqui, e por que (verificado no configuration.txt que o R8
-# escreve em app/build/outputs/mapping/release/ — ele lista TODA regra que o
-# R8 recebeu, inclusive as embutidas nos AARs):
-#
-#   - org.webrtc.**            o AAR io.getstream:stream-webrtc-android traz
-#                              `-keep class org.webrtc.** { *; }` no proprio
-#                              proguard.txt. Duplicar aqui seria ruido.
-#   - okhttp3/okio             okhttp-4.12.0.jar traz META-INF/proguard/okhttp3.pro.
-#   - kotlinx.serialization    kotlinx-serialization-core-jvm traz
-#                              META-INF/proguard/kotlinx-serialization-common.pro,
-#                              que preserva os `Companion` e os `serializer()`.
-#                              Os NOMES DE CAMPO nao precisam ser preservados:
-#                              o plugin do compilador gera uma classe
-#                              `<Modelo>$$serializer` com o SerialDescriptor e
-#                              os nomes de wire ja embutidos, entao renomear o
-#                              campo Kotlin nao muda o JSON.
-#   - Compose, WorkManager,    todos AARs do AndroidX/Google, que embarcam as
-#     Credential Manager,      proprias regras via proguard.txt no AAR.
-#     CameraX, Media3, Coil,
-#     Firebase, Tink
-#   - componentes do manifesto o AGP gera automaticamente um `-keep` para toda
-#     (Activity/Service/       classe citada no AndroidManifest.xml fundido
-#     Receiver/Provider/       (aapt_rules.txt). Isso cobre MainActivity,
-#     Application)             ShareTargetActivity, VpsmConnectionService,
-#                              CallForegroundService, VpsFirebaseMessagingService,
-#                              NotificationActionReceiver, FileProvider e
-#                              VpsManagerApplication — todos instanciados pelo
-#                              SISTEMA, pelo nome, e todos ja protegidos.
-#                              Conferido em mapping.txt: nenhum deles e renomeado.
-#   - io.github.rosemoe.**     ja vem de feature/files/consumer-rules.pro
-#     (sora-editor)            (obrigacao de LGPL, nao de funcionamento). O
-#                              proguard.txt dentro do AAR do sora-editor esta
-#                              VAZIO (0 bytes) — a regra do projeto e a unica.
-#
-# Regra de higiene: nao acrescente nada aqui sem antes confirmar, no
-# configuration.txt, que a regra ainda nao existe. Regra redundante e divida:
-# ninguem depois sabe se pode remover.
+# Do not add a rule without confirming in configuration.txt that it does not exist yet.
 
 
-# ---------------------------------------------------------------------------
-# JNI — terminal-engine (o risco numero um deste APK)
-# ---------------------------------------------------------------------------
-# libterminal_engine_jni.so exporta simbolos com o NOME totalmente qualificado
-# da classe Java embutido:
-#
-#   Java_com_vpsmanager_terminalengine_TerminalEngine_nativeResize
-#
-# A ligacao e feita pelo dalvik por casamento de nome na hora da primeira
-# chamada (nao ha RegisterNatives no shim — conferido em
-# terminal-engine/src/main/cpp/ghostty_jni.cpp, cujo JNI_OnLoad so guarda o
-# JavaVM). Se o R8 renomear a classe `TerminalEngine` para `a.b.c` ou renomear
-# `nativeResize` para `a`, o simbolo procurado deixa de existir e a chamada
-# estoura `UnsatisfiedLinkError` — nao no boot, mas no instante em que o
-# usuario ABRE O TERMINAL, que e o pior lugar possivel para descobrir isso.
-#
-# Os oito metodos `external` estao declarados no `companion object`, mas com
-# `@JvmStatic`: o Kotlin os emite como `private static final native` na classe
-# EXTERNA (conferido com javap — o Companion so tem os encaminhadores nao
-# nativos). Por isso a regra mira `TerminalEngine`, nao `TerminalEngine$Companion`.
-#
-# `includedescriptorclasses` mantem tambem os tipos das assinaturas: hoje sao
-# todos tipos de plataforma (long/int/byte[]/ByteBuffer), mas se algum dia um
-# metodo nativo passar a receber um tipo do app, a regra continua correta
-# sozinha em vez de virar uma armadilha silenciosa.
+# JNI for terminal-engine. libterminal_engine_jni.so exports symbols with the fully
+# qualified class name (Java_com_vpsmanager_terminalengine_TerminalEngine_nativeResize)
+# and is bound by name on first call (no RegisterNatives). Renaming the class or methods
+# causes UnsatisfiedLinkError when the user opens the terminal.
+# The `external` methods are @JvmStatic in the companion, so Kotlin emits them on the outer
+# class; that is why the rule targets TerminalEngine and not TerminalEngine$Companion.
+# includedescriptorclasses also keeps signature types in case an app type is ever passed.
 -keepclasseswithmembernames,includedescriptorclasses class com.vpsmanager.terminalengine.TerminalEngine {
     native <methods>;
 }
 
-# Rede de seguranca para QUALQUER metodo nativo futuro, em qualquer modulo.
-# O arquivo padrao do AGP (proguard-android-optimize.txt) ja traz uma regra
-# equivalente, mas aquele arquivo nao esta sob controle deste projeto e o
-# unico jeito de descobrir que ele mudou seria um UnsatisfiedLinkError no
-# aparelho do operador. Declarar aqui torna a garantia explicita e local.
+# Safety net for any future native method in any module. The default AGP file has an
+# equivalent rule, but it is not under this project's control.
 -keepclasseswithmembernames,includedescriptorclasses class * {
     native <methods>;
 }
 
 
-# ---------------------------------------------------------------------------
-# JNI reverso — excecoes que o codigo nativo constroi
-# ---------------------------------------------------------------------------
-# O shim faz `env->FindClass("java/lang/IllegalStateException")` para reportar
-# handle invalido. E classe de plataforma (nunca entra no dex, nunca e
-# renomeada), entao nao precisa de `-keep`. Esta anotado aqui para que a
-# proxima pessoa que ler o ghostty_jni.cpp e vir o FindClass nao ache que
-# faltou uma regra: se um dia o shim passar a lancar uma excecao DO APP,
-# ai sim ela precisara de `-keep` explicito, porque a busca e por nome.
+# The native shim uses FindClass("java/lang/IllegalStateException"), a platform class that
+# needs no keep. If it ever throws an app exception class, that class needs an explicit keep
+# because the lookup is by name.
 
 
-# ---------------------------------------------------------------------------
-# Diagnostico de crash — sem isso o mapping.txt nao basta
-# ---------------------------------------------------------------------------
-# SourceFile/LineNumberTable sao os atributos que fazem um stack trace ter
-# numero de linha. Sem eles, mesmo com o mapping.txt em maos, o retrace
-# devolve `Unknown Source` e um relatorio de crash do operador vira adivinhacao.
-# `-renamesourcefileattribute` troca o nome do arquivo por um literal para nao
-# vazar a arvore de fontes, mantendo as linhas.
+# SourceFile/LineNumberTable keep line numbers in stack traces so retrace works;
+# -renamesourcefileattribute hides the source tree while keeping the lines.
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 
-# Assinaturas genericas e anotacoes de tempo de execucao. O
-# `kotlinx-serialization-common.pro` ja pede RuntimeVisibleAnnotations, mas
-# `Signature` e `InnerClasses` nao: sem eles, um `TypeToken`-like ou qualquer
-# leitura de tipo parametrizado em runtime (o Json do kotlinx faz isso ao
-# resolver serializers de `List<Foo>`) perde a informacao de tipo e falha na
-# desserializacao com um erro que nao aponta para lugar nenhum.
+# Generic signatures and inner classes are needed for runtime reads of parameterized types
+# (kotlinx Json resolving serializers for List<Foo>); without them deserialization fails.
 -keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*

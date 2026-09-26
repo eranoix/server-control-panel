@@ -17,12 +17,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/**
- * Renders [FileBrowserScreen] under Robolectric in every [FileBrowserUiState]
- * -- never composed before this. Uses the same [BrowserScreenFakeFilesRepository] seam
- * [FileBrowserViewModelTest] already established, but drives the real
- * Compose tree instead of only the state machine.
- */
+/** Renders [FileBrowserScreen] under Robolectric in every [FileBrowserUiState] with a fake repository. */
 @RunWith(RobolectricTestRunner::class)
 class FileBrowserScreenTest {
 
@@ -31,9 +26,8 @@ class FileBrowserScreenTest {
 
     private val application = ApplicationProvider.getApplicationContext<android.app.Application>()
 
-    // TransferScreen (rendered inline by FileBrowserScreen whenever
-    // pickMode is false) constructs a real TransferViewModel, which reaches
-    // for WorkManager.getInstance() eagerly in its init block.
+    // The inline TransferScreen builds a real TransferViewModel, which calls
+    // WorkManager.getInstance() in its init block.
     @Before
     fun setUp() {
         val config = Configuration.Builder().setExecutor(SynchronousExecutor()).build()
@@ -45,8 +39,7 @@ class FileBrowserScreenTest {
     @Test
     fun `loading state shows the progress indicator, never a blank screen`() {
         val repository = BrowserScreenFakeFilesRepository { awaitCancellation() }
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = FileBrowserViewModel(repository)
         composeRule.setContent {
             FileBrowserScreen(viewModel = viewModel, transferViewModel = transferViewModel())
@@ -57,24 +50,22 @@ class FileBrowserScreenTest {
 
     @Test
     fun `error state shows the server's own message and a retry action`() {
-        val repository = BrowserScreenFakeFilesRepository { FileListResult.Error("O servidor está indisponível no momento.") }
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        val repository = BrowserScreenFakeFilesRepository { FileListResult.Error("The server is unavailable right now.") }
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = FileBrowserViewModel(repository)
         composeRule.setContent {
             FileBrowserScreen(viewModel = viewModel, transferViewModel = transferViewModel())
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("O servidor está indisponível no momento.").assertExists()
+        composeRule.onNodeWithText("The server is unavailable right now.").assertExists()
         composeRule.onNodeWithText("Try again").assertExists()
     }
 
     @Test
     fun `empty directory renders the empty card, not a stuck spinner`() {
         val repository = BrowserScreenFakeFilesRepository { FileListResult.Empty }
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = FileBrowserViewModel(repository)
         composeRule.setContent {
             FileBrowserScreen(viewModel = viewModel, transferViewModel = transferViewModel())
@@ -96,17 +87,14 @@ class FileBrowserScreenTest {
                 ),
             )
         }
-        // Construido FORA do setContent: a lambda de conteudo recompoe, e
-        // construir la dentro daria um ViewModel novo a cada recomposicao.
+        // Built outside setContent so recomposition does not create a new ViewModel.
         val viewModel = FileBrowserViewModel(repository)
         composeRule.setContent {
             FileBrowserScreen(viewModel = viewModel, transferViewModel = transferViewModel())
         }
         composeRule.waitForIdle()
 
-        // A zero-byte file is a real, unremarkable case (an empty readme, a
-        // touch'd placeholder) -- formatSize's `bytes < 1024` branch must not
-        // choke on it.
+        // Zero-byte files are common and must format as "0 B".
         composeRule.onNodeWithText("app").assertExists()
         composeRule.onNodeWithText("readme.md").assertExists()
         composeRule.onNodeWithText("0 B").assertExists()

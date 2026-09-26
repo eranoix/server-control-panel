@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    updatePeriodMillis = 1800000 (30 min) is the minimum Android accepts; lower values are
+    rounded up, and battery saver can defer it further. That is why the widget shows the
+    time of its data instead of implying it is current.
+    Resizable in both directions: the content (three numbers and a line) fits either way.
+    minWidth/minHeight follow the launcher grid formula (70dp * n - 30dp): 2 cells wide, 1 tall.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp"
+    android:minHeight="60dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="1800000"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/home_widget_description"
+    android:initialLayout="@layout/glance_default_loading_layout" />

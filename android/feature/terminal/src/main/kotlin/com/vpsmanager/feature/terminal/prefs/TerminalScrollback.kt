@@ -9,137 +9,85 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /**
- * How many LINES of history a person can SCROLL BACK through and read.
+ * How many lines of history the user can scroll back through. It sets both the
+ * emulator capacity and how much log is fetched to fill it on attach
+ * ([logBytesToFetch]), since a fresh attach starts with an empty grid (`dtach`
+ * keeps no screen).
  *
- * ## What this number came to mean
- *
- * It once meant only "emulator capacity" — and in that role it delivered
- * nothing, because the capacity was always empty. A freshly attached session
- * is born with a blank grid: `dtach` keeps no screen, and the earlier history
- * lives in the server's log. Choosing 200,000 lines of capacity for an
- * emulator that received 40 lines of content is choosing the size of an empty
- * cupboard.
- *
- * The number now drives both halves, which were always one and the same
- * thing: the emulator's capacity AND how much log the app fetches from the
- * server to fill that capacity on attach ([bytesDeLogParaBuscar]). It is the
- * question a person really asks — "how far up can I scroll and reread?".
- *
- * ## Why a ladder, and not a free-text field
- *
- * The cost is memory on the device and mobile data on the fetch, and nobody
- * can estimate the cost of "37,500 lines". A ladder gives anchors. It is what
- * Termux (`terminal-transcript-rows`, a ladder from 100 to 50,000) and iTerm2
- * do.
- *
- * The memory figures below are measured on this grid: one snapshot cell takes
- * 8 bytes (`ghostty_jni.cpp`), so a line of 67 columns costs ~536 B in the
- * worst case — but libghostty-vt keeps the scrollback compressed per page and
- * only pays for what was written. The numbers are a ceiling, not an average.
+ * A ladder rather than a free field gives anchors for the memory and data cost,
+ * as in Termux and iTerm2. The costs are worst-case ceilings: a snapshot cell is 8
+ * bytes (`ghostty_jni.cpp`), about 536 B per 67-column line, while libghostty-vt
+ * compresses scrollback per page.
  */
-enum class TerminalScrollback(val rotulo: String, val linhas: Int, val custoAproximado: String) {
+enum class TerminalScrollback(val label: String, val lines: Int, val approxCost: String) {
 
-    CINCO_MIL("5k", 5_000, "~3 MB"),
+    FIVE_THOUSAND("5k", 5_000, "~3 MB"),
 
-    DEZ_MIL("10k", 10_000, "~5 MB"),
+    TEN_THOUSAND("10k", 10_000, "~5 MB"),
 
-    VINTE_MIL("20k", 20_000, "~11 MB"),
+    TWENTY_THOUSAND("20k", 20_000, "~11 MB"),
 
-    CINQUENTA_MIL("50k", 50_000, "~27 MB"),
+    FIFTY_THOUSAND("50k", 50_000, "~27 MB"),
     ;
 
     /**
-     * How many bytes of raw log to fetch from the server to fill [linhas].
+     * How many bytes of raw log to fetch to fill [lines].
      *
-     * ## The 1,300 ratio is measured, not estimated
+     * The ratio is measured: replaying real logs onto a 67x40 grid gave 244 B per
+     * line for a shell and up to 1,250 B for a repainting TUI. The worst case is
+     * used so heavy sessions get the promised length; extra lines from light ones
+     * just fall off the top.
      *
-     * A byte of log is not a line of screen: a program that repaints writes
-     * the same frame dozens of times, and the emulator paints every one of
-     * them in the same place. Replaying the REAL logs of this machine onto a
-     * 67×40 grid, the ratio between log bytes and rendered lines came out as:
-     *
-     * ```
-     *   main.log       (shell)         244 B per line
-     *   Servidor.log   (mixed)         400 B per line
-     *   Vpsm.log       (mixed)         667 B per line
-     *   Aplicativo.log (Claude Code) 1,250 B per line
-     * ```
-     *
-     * A fivefold difference between the light end and the heavy one. An
-     * average ratio would leave precisely the conversation session — the one
-     * a person wants to reread — half as long as promised, which is the very
-     * defect being fixed. So the choice is the WORST measured case, with room
-     * to spare: the light session pulls in more log than it needs (and the
-     * leftover lines simply fall off the top of the scrollback, at no cost in
-     * memory), while the heavy one reaches the number promised.
-     *
-     * The 16 MiB ceiling is not a product decision: it is the largest the log
-     * can ever be on the server (8 MiB per generation, two generations — see
-     * `maxSessionLogBytes` in `internal/pty/sessionlog.go`). Asking for more
-     * than that would be asking for history that does not exist. On the wire
-     * the transport's gzip shrinks the log by ~15× (measured: 6.2 MB →
-     * 388 KB), and the fetch happens once, on attach.
+     * Capped at 16 MiB, the largest the server log can be (two 8 MiB generations,
+     * `maxSessionLogBytes` in `internal/pty/sessionlog.go`). Transport gzip shrinks
+     * it about 15x, and it is fetched once per attach.
      */
-    val bytesDeLogParaBuscar: Int
-        get() = (linhas.toLong() * BYTES_DE_LOG_POR_LINHA).coerceAtMost(TETO_DE_BUSCA_BYTES).toInt()
+    val logBytesToFetch: Int
+        get() = (lines.toLong() * LOG_BYTES_PER_LINE).coerceAtMost(FETCH_CAP_BYTES).toInt()
 
     companion object {
-        val DEFAULT: TerminalScrollback = CINCO_MIL
+        val DEFAULT: TerminalScrollback = FIVE_THOUSAND
 
-        /** See [bytesDeLogParaBuscar]: worst case measured on this machine's real logs. */
-        private const val BYTES_DE_LOG_POR_LINHA = 1_300L
+        /** See [logBytesToFetch]: worst case measured on real logs. */
+        private const val LOG_BYTES_PER_LINE = 1_300L
 
-        /** Two generations of 8 MiB — the whole log, never more than exists. */
-        private const val TETO_DE_BUSCA_BYTES = 16L * 1024 * 1024
+        /** Two 8 MiB generations: the whole log, never more than exists. */
+        private const val FETCH_CAP_BYTES = 16L * 1024 * 1024
 
-        fun porNome(nome: String?): TerminalScrollback =
-            entries.firstOrNull { it.name == nome } ?: DEFAULT
+        fun byName(name: String?): TerminalScrollback =
+            entries.firstOrNull { it.name == name } ?: DEFAULT
 
         /**
-         * The rung that a stored value belongs to.
-         *
-         * An exact match when one exists; if it does not, it SNAPS to the
-         * largest rung that does not exceed the stored value (and to the
-         * smallest, when the stored value is below them all). Falling back to
-         * the default would be wrong here: the ladder has already changed
-         * once, and anyone who had picked 200,000 lines would be left with an
-         * options sheet with no rung lit at all — the screen saying that their
-         * choice does not exist, instead of saying where it ended up.
+         * The rung a stored value belongs to: an exact match, else the largest rung
+         * not above it, else the smallest. Snapping instead of falling back to the
+         * default keeps a choice from an older ladder visible in the options sheet.
          */
-        fun porLinhas(linhas: Int): TerminalScrollback =
-            entries.firstOrNull { it.linhas == linhas }
-                ?: entries.lastOrNull { it.linhas <= linhas }
+        fun byRows(lines: Int): TerminalScrollback =
+            entries.firstOrNull { it.lines == lines }
+                ?: entries.lastOrNull { it.lines <= lines }
                 ?: entries.first()
     }
 }
 
 /**
- * Persists the size of the history, on the device only, for the same reason
- * as [TerminalLineSpacingPreference]: it is a presentation preference of ONE
- * client.
+ * Persists the history size on the device only (a per-client presentation choice).
+ * Stored as the line count, since here the value is the meaning.
  *
- * Stored as an INTEGER (the number of lines) rather than by the name of the
- * constant, on purpose — unlike the line spacing, here the value **is** the
- * meaning: if the ladder ever changes its rungs, whoever picked 50,000 lines
- * still has 50,000, instead of being reallocated to the nearest rung.
- *
- * ⚠️ The scrollback size is fixed at the emulator's **creation**
- * (`ghostty_terminal_new`), and the history fetch happens once, on attach —
- * so changing it here only takes effect for the next attached session. The
- * options sheet says so on screen; hiding that condition would make a person
- * think the change had not worked.
+ * The size is fixed when the emulator is created (`ghostty_terminal_new`) and the
+ * history is fetched once on attach, so a change only applies to the next attached
+ * session; the options sheet says so.
  */
 class TerminalScrollbackPreference(
     context: Context,
     private val dataStore: DataStore<Preferences> = context.terminalPrefsDataStore,
 ) {
 
-    val linhas: Flow<Int> = dataStore.data.map { prefs ->
-        prefs[SCROLLBACK_KEY] ?: TerminalScrollback.DEFAULT.linhas
+    val lines: Flow<Int> = dataStore.data.map { prefs ->
+        prefs[SCROLLBACK_KEY] ?: TerminalScrollback.DEFAULT.lines
     }
 
-    suspend fun setLinhas(valor: Int) {
-        dataStore.edit { prefs -> prefs[SCROLLBACK_KEY] = valor }
+    suspend fun setRows(value: Int) {
+        dataStore.edit { prefs -> prefs[SCROLLBACK_KEY] = value }
     }
 
     companion object {

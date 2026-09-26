@@ -68,7 +68,7 @@ class FileBrowserViewModel(
     }
 
     /**
-     * Goes straight to [caminho] — the jump the header's breadcrumb makes.
+     * Goes straight to [path] — the jump the header's breadcrumb makes.
      *
      * It exists apart from [navigateInto] because the breadcrumb does not
      * navigate to a CHILD: it jumps to an arbitrary ANCESTOR, possibly several
@@ -80,9 +80,9 @@ class FileBrowserViewModel(
      * only way to reload by accident, and the breadcrumb already disables that
      * step.
      */
-    fun irPara(caminho: String) {
-        if (caminho == currentPath) return
-        load(caminho)
+    fun goTo(path: String) {
+        if (path == currentPath) return
+        load(path)
     }
 
     /**

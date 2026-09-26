@@ -1,78 +1,78 @@
-# Templates sobrescritos do openapi-generator
+# Overridden openapi-generator templates
 
-Este diretório sobrescreve templates do `org.openapi.generator` (fixado em
-`7.25.0`, ver `gradle/libs.versions.toml`). O gerador usa os templates
-embutidos para tudo que **não** estiver aqui — então só existe arquivo aqui
-quando há defeito comprovado no template original.
+This directory overrides templates from `org.openapi.generator` (pinned at
+`7.25.0`, see `gradle/libs.versions.toml`). The generator uses its built-in
+templates for everything that is **not** here, so a file only exists here
+when the original template has a proven defect.
 
-Ao subir a versão do gerador: reveja cada arquivo daqui, confira se o defeito
-foi corrigido upstream e, se foi, **apague a sobrescrita** em vez de carregar
-divergência sem motivo. Copiar o template novo e reaplicar a correção à mão é
-o pior dos mundos: some o registro de por que ele existe.
+When bumping the generator version: review each file here, check whether the
+defect was fixed upstream and, if so, **delete the override** instead of
+carrying a pointless divergence. Copying the new template and reapplying the
+fix by hand is the worst option: it loses the record of why the override exists.
 
 ## `libraries/jvm-okhttp/api.mustache`
 
-Cópia byte-idêntica do template 7.25.0 **mais uma linha**:
+Byte-identical copy of the 7.25.0 template **plus one line**:
 `import kotlinx.serialization.encodeToString`.
 
-**Defeito:** o bloco `{{^multiplatform}}` importa só `SerialName` e
-`Serializable`; o bloco `{{#multiplatform}}`, ao lado, faz
-`import kotlinx.serialization.*`. Sem a extensão importada, a chamada
-`encodeToString<T>(obj)` que o próprio template emite para cada parte de
-formulário não-arquivo enxerga apenas a sobrecarga de **dois** parâmetros
-(`SerializationStrategy<T>, T`) e não compila.
+**Defect:** the `{{^multiplatform}}` block imports only `SerialName` and
+`Serializable`, while the `{{#multiplatform}}` block next to it does
+`import kotlinx.serialization.*`. Without the extension imported, the
+`encodeToString<T>(obj)` call the template emits for each non-file form part
+only sees the **two**-parameter overload
+(`SerializationStrategy<T>, T`) and does not compile.
 
-**Sintoma:** dezenas de
+**Symptom:** dozens of
 `Argument type mismatch: actual type is 'String', but 'SerializationStrategy<String>' was expected`
-em `MobileApi.kt`/`WhatsappApi.kt`, quebrando o cliente gerado inteiro — e
-portanto todo módulo Kotlin a jusante. Aparece só quando existe pelo menos um
-endpoint `multipart/form-data` no spec.
+in `MobileApi.kt`/`WhatsappApi.kt`, breaking the whole generated client and
+therefore every downstream Kotlin module. It only shows up when the spec has at
+least one `multipart/form-data` endpoint.
 
-**Não é questão de versão:** reproduzido isoladamente com
-`kotlinx-serialization-json` 1.7.3 e 1.4.1 (idêntico nas duas), e o `master`
-não lançado do gerador tem o mesmo bloco. 7.25.0 é a última release publicada.
+**Not a version issue:** reproduced in isolation with
+`kotlinx-serialization-json` 1.7.3 and 1.4.1 (same result on both), and the
+generator's unreleased `master` has the same block. 7.25.0 is the latest release.
 
 ## `libraries/jvm-okhttp/infrastructure/ApiClient.kt.mustache`
 
-Cópia byte-idêntica do template 7.25.0 **mais um guarda** em `request()`:
-`updateAuthParams(requestConfig)` só roda quando
-`requestConfig.requiresAuthentication` é `true` (procure por `GUARDA VPSM`).
+Byte-identical copy of the 7.25.0 template **plus one guard** in `request()`:
+`updateAuthParams(requestConfig)` only runs when
+`requestConfig.requiresAuthentication` is `true` (search for `VPSM GUARD`).
 
-**Defeito:** o template gera o campo `requiresAuthentication` em cada
-`RequestConfig` — derivado do `security` de cada operação no spec — e depois
-**nunca o consulta**: `updateAuthParams` é chamado em toda requisição, inclusive
-nas operações que declaram explicitamente não ter segurança.
+**Defect:** the template generates the `requiresAuthentication` field on every
+`RequestConfig` (derived from each operation's `security` in the spec) and then
+**never reads it**: `updateAuthParams` is called on every request, including
+operations that explicitly declare no security.
 
-**Sintoma neste projeto:** o BFF declara `bearerAuth` só nas rotas protegidas
-(ver `internal/mobilebff/security.go`) e o app espelha o access token da sessão
-em `ApiClient.accessToken` (`SessionManager`, para `MediaNetwork` e o WebSocket
-do WhatsApp). Sem o guarda, `POST /auth/login`, `/auth/refresh`, `/auth/pair` e
-`/auth/passkey/*` — que ficam FORA de `auth.Middleware` porque acontecem antes
-de existir sessão — passariam a levar `Authorization: Bearer <token da sessão
-anterior>`. Nenhuma delas lê o header no servidor, então não quebra nada; mas é
-mandar credencial para quem não pediu e diverge do que o
-`AuthTokenInterceptor` já faz (ele pula essas mesmas rotas por sufixo).
+**Symptom in this project:** the BFF declares `bearerAuth` only on protected
+routes (see `internal/mobilebff/security.go`) and the app mirrors the session
+access token into `ApiClient.accessToken` (`SessionManager`, for `MediaNetwork`
+and the WhatsApp WebSocket). Without the guard, `POST /auth/login`,
+`/auth/refresh`, `/auth/pair` and `/auth/passkey/*`, which sit OUTSIDE
+`auth.Middleware` because they happen before a session exists, would send
+`Authorization: Bearer <previous session token>`. None of them reads the header
+on the server, so nothing breaks, but it sends a credential nobody asked for and
+diverges from `AuthTokenInterceptor` (which skips these same routes by suffix).
 
-**Quem monta o header, afinal:** rota protegida ⇒ o cliente gerado monta a
-partir de `ApiClient.accessToken` e o `AuthTokenInterceptor` **sobrescreve**
-com o token de `SessionManager` (`Request.header()` substitui, não acumula —
-nunca sai duplicado); o interceptor continua sendo a fonte da verdade, porque
-só ele sabe renovar em 401 e repetir. Rota pública ⇒ ninguém monta header.
+**Who sets the header:** protected route: the generated client sets it from
+`ApiClient.accessToken` and `AuthTokenInterceptor` **overwrites** it with the
+`SessionManager` token (`Request.header()` replaces, it never duplicates). The
+interceptor stays the source of truth because only it knows how to refresh on
+401 and retry. Public route: nobody sets the header.
 
-## Defeito CONHECIDO e NÃO corrigido aqui — leia antes de adicionar multipart
+## KNOWN defect NOT fixed here: read before adding multipart
 
-O mesmo template força cast não-nulo (`obj as kotlin.String`) em **toda** parte
-de formulário não-arquivo, **ignorando a opcionalidade do campo**. Passar `null`
-para uma parte opcional lança `ClassCastException` dentro do método gerado, em
-vez de omitir a parte.
+The same template forces a non-null cast (`obj as kotlin.String`) on **every**
+non-file form part, **ignoring whether the field is optional**. Passing `null`
+for an optional part throws `ClassCastException` inside the generated method
+instead of omitting the part.
 
-Hoje isso é contornado no ponto de chamada: `WhatsAppRepository.uploadMedia`
-converte `null` para `""` antes de entrar no cliente gerado. É seguro *naquele*
-endpoint porque o `FormValue` do Go já devolve `""` para campo nunca enviado —
-mesma forma de requisição, não mudança de comportamento.
+This is currently worked around at the call site: `WhatsAppRepository.uploadMedia`
+converts `null` to `""` before calling the generated client. That is safe for
+*that* endpoint because Go's `FormValue` already returns `""` for a field that
+was never sent: same request shape, no behavior change.
 
-**Isso não vale automaticamente para um endpoint novo.** Se o seu endpoint
-precisar distinguir "campo ausente" de "campo vazio", o contorno de string
-vazia está errado e a correção tem que vir para cá — guardando o cast com uma
-checagem de nulo e omitindo a parte. Note que mexer nisso muda o comportamento
-de fio de **todo** multipart gerado, então mude com teste que prove a diferença.
+**This does not automatically hold for a new endpoint.** If your endpoint needs
+to tell "field absent" from "field empty", the empty-string workaround is wrong
+and the fix has to go here: guard the cast with a null check and omit the part.
+Changing this alters the wire behavior of **every** generated multipart call, so
+do it with a test that proves the difference.

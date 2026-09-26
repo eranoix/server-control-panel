@@ -13,11 +13,8 @@ import org.junit.Test
 import kotlin.random.Random
 
 /**
- * Hands out a queued sequence of tickets — proves a reconnect never reuses a consumed one.
- * [yield] is a real (if instant) suspension point, matching a real network call: without it,
- * [MobileEventsSocket]'s MINTING_TICKET->CONNECTING transition happens synchronously and a
- * StateFlow collector observing from another coroutine can miss the intermediate value
- * entirely (StateFlow conflates emissions a slow collector never got a chance to see).
+ * Hands out a queued sequence of tickets, so a reused ticket is detectable. The [yield] mimics a
+ * network suspension; without it the MINTING_TICKET state is conflated away before a collector sees it.
  */
 private class FakeTicketSource(private val tickets: MutableList<String>) : MobileEventsTicketSource {
     var callCount = 0
@@ -26,12 +23,12 @@ private class FakeTicketSource(private val tickets: MutableList<String>) : Mobil
     override suspend fun wsTicket(): WsTicketResult {
         yield()
         callCount++
-        if (tickets.isEmpty()) return WsTicketResult.Error("sem mais tickets fake")
+        if (tickets.isEmpty()) return WsTicketResult.Error("no more fake tickets")
         return WsTicketResult.Success(ticket = tickets.removeAt(0), expiresIn = 60)
     }
 }
 
-/** No real socket — just records every frame it was asked to send. */
+/** Records every frame it was asked to send. */
 private class RecordingWebSocket : MobileEventsWebSocket {
     val textFrames = mutableListOf<String>()
     var closed: Pair<Int, String>? = null
@@ -47,7 +44,7 @@ private class RecordingWebSocket : MobileEventsWebSocket {
     }
 }
 
-/** No network — records the URL of every open() call and hands back a [RecordingWebSocket]. */
+/** Records the URL of every open() call and returns a [RecordingWebSocket]. */
 private class FakeWebSocketFactory : MobileEventsWebSocketFactory {
     val openedUrls = mutableListOf<String>()
     val sockets = mutableListOf<RecordingWebSocket>()
@@ -66,8 +63,6 @@ class MobileEventsSocketTest {
 
     private fun recordingDelayer(sink: MutableList<Long>): suspend (Long) -> Unit = { sink += it }
 
-    // --- Property: pure backoff function actually applies the injected jitter source ---
-
     @Test
     fun `eventsBackoffDelayMs uses the injected random source, not a fixed formula`() {
         val same1 = eventsBackoffDelayMs(1, Random(42))
@@ -77,7 +72,7 @@ class MobileEventsSocketTest {
         val differentSeed = eventsBackoffDelayMs(1, Random(7))
         assertNotEquals("a different seed must move the jitter away from the first delay", same1, differentSeed)
 
-        // Both stay within the documented +/-20% jitter band around the base delay.
+        // Both stay within the +/-20% jitter band.
         assertTrue(same1 in 800L..1200L)
         assertTrue(differentSeed in 800L..1200L)
     }
@@ -87,12 +82,10 @@ class MobileEventsSocketTest {
         val random = Random(1)
         val delays = (1..8).map { eventsBackoffDelayMs(it, random) }
         assertTrue("delay must never exceed the 60s cap", delays.all { it <= 60_000L })
-        // Attempt 7 (base 64s, pre-cap) and attempt 8 must both land at the 60s ceiling.
+        // Attempts 7 and 8 exceed 60s before capping.
         assertTrue(delays[6] in 48_000L..60_000L)
         assertTrue(delays[7] in 48_000L..60_000L)
     }
-
-    // Property 1 + state machine: DISCONNECTED -> MINTING_TICKET -> CONNECTING -> CONNECTED ---
 
     @Test
     fun `start mints exactly one ticket then opens exactly one socket, walking the full state sequence`() = runTest {
@@ -130,17 +123,12 @@ class MobileEventsSocketTest {
         assertEquals(ConnectionState.CONNECTED, client.state.value)
     }
 
-    // Property 3: reconnect with backoff, fresh ticket every attempt, never a duplicate ticket ---
-
     @Test
     fun `handshake failure moves CONNECTING to BACKOFF and mints a fresh ticket before the next attempt`() = runTest {
         val factory = FakeWebSocketFactory()
         val ticketSource = FakeTicketSource(mutableListOf("t1", "t2", "t3"))
         val delays = mutableListOf<Long>()
-        // A REAL delay (not a no-op recorder) is required here: it is the only way to freeze
-        // the loop mid-BACKOFF under virtual time so the test can observe that exact state
-        // before deciding to advance the clock — a no-op delayer would race straight through
-        // BACKOFF into the next MINTING_TICKET/CONNECTING within the same runCurrent() drain.
+        // A real delay freezes the loop in BACKOFF under virtual time; a no-op would race past it.
         val client = MobileEventsSocket(
             ticketSource = ticketSource,
             scope = backgroundScope,
@@ -152,15 +140,14 @@ class MobileEventsSocketTest {
 
         client.start()
         runCurrent()
-        factory.listeners[0].onFailure("handshake falhou")
+        factory.listeners[0].onFailure("handshake failed")
         runCurrent()
 
         assertEquals(ConnectionState.BACKOFF, client.state.value)
         assertEquals(1, delays.size)
-        assertEquals(1, ticketSource.callCount) // only the first attempt so far — backoff hasn't elapsed yet
+        assertEquals(1, ticketSource.callCount) // backoff has not elapsed yet
 
-        // Advance virtual time past the recorded backoff delay: only now must a fresh ticket
-        // be minted and a second socket opened, never reusing the first ticket.
+        // Only after the backoff is a fresh ticket minted and a second socket opened.
         advanceTimeBy(delays[0] + 1)
         runCurrent()
 
@@ -171,7 +158,7 @@ class MobileEventsSocketTest {
         assertFalse("reconnect must never reuse the previous ticket", factory.openedUrls[1].contains("ticket=t1"))
 
         // A second consecutive failure must back off for at least as long as the first.
-        factory.listeners[1].onFailure("handshake falhou de novo")
+        factory.listeners[1].onFailure("handshake failed again")
         runCurrent()
         assertEquals(ConnectionState.BACKOFF, client.state.value)
         assertEquals(2, delays.size)
@@ -182,8 +169,6 @@ class MobileEventsSocketTest {
         assertEquals(3, ticketSource.callCount)
         assertTrue(factory.openedUrls[2].contains("ticket=t3"))
     }
-
-    // Property 4: stop() unconditionally closes and never reconnects ---
 
     @Test
     fun `stop while CONNECTED closes with 1000 background, settles DISCONNECTED, and never reconnects`() = runTest {
@@ -210,8 +195,7 @@ class MobileEventsSocketTest {
         assertEquals(ConnectionState.DISCONNECTED, client.state.value)
         assertEquals(1000 to "background", factory.sockets[0].closed)
 
-        // Advancing the (fake) clock well past any backoff window must trigger nothing further:
-        // no new ticket call, no new socket open. This is the un-bypassable half of that rule.
+        // Nothing further may happen after stop: no new ticket, no new socket.
         val ticketCallsAtStop = ticketSource.callCount
         val socketsOpenedAtStop = factory.openedUrls.size
         runCurrent()
@@ -251,8 +235,6 @@ class MobileEventsSocketTest {
         runCurrent()
         assertEquals(ConnectionState.CONNECTED, client.state.value)
     }
-
-    // --- Ack/event decoding + send() gating ---
 
     @Test
     fun `inbound text frames dispatch to acks or events depending on the op field`() = runTest {
@@ -294,12 +276,12 @@ class MobileEventsSocketTest {
             delayer = recordingDelayer(mutableListOf()),
         )
 
-        // Not started yet: DISCONNECTED, must be dropped, not queued.
+        // DISCONNECTED: dropped, not queued.
         assertFalse(client.send(ClientOp("subscribe", "notify.inbox")))
 
         client.start()
         runCurrent()
-        // Still CONNECTING at this point (no onOpen yet) — must also be dropped.
+        // Still CONNECTING (no onOpen yet), also dropped.
         assertFalse(client.send(ClientOp("subscribe", "notify.inbox")))
 
         factory.listeners[0].onOpen()

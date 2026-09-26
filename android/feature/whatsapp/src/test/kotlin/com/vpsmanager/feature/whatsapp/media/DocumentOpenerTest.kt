@@ -10,21 +10,15 @@ import org.robolectric.RobolectricTestRunner
 import org.junit.runner.RunWith
 
 /**
- * Proves the content-URI mitigation mechanically: the `Intent` [DocumentOpener]
- * launches to open a document always carries a `content://` URI (never
- * `file://`) with the revocable read-permission flag set. This does not
- * exercise the real Coil-cache download + [androidx.core.content.FileProvider]
- * authority resolution end to end -- that requires the merged app manifest's
- * `${applicationId}` placeholder resolved against a real package manager,
- * which only a device/instrumented run can provide (see the human
- * verification script).
+ * The intent [DocumentOpener] builds always carries a `content://` URI (never `file://`) with
+ * a revocable read grant. Real [androidx.core.content.FileProvider] resolution needs a device.
  */
 @RunWith(RobolectricTestRunner::class)
 class DocumentOpenerTest {
 
     @Test
     fun `built intent targets a content uri, never file`() {
-        val contentUri = Uri.parse("content://com.vpsmanager.app.whatsappmedia.fileprovider/whatsapp_media/relatorio.pdf")
+        val contentUri = Uri.parse("content://com.vpsmanager.app.whatsappmedia.fileprovider/whatsapp_media/report.pdf")
 
         val intent = DocumentOpener.buildViewIntent(contentUri, "application/pdf")
 
@@ -36,7 +30,7 @@ class DocumentOpenerTest {
 
     @Test
     fun `built intent grants a revocable read permission`() {
-        val contentUri = Uri.parse("content://com.vpsmanager.app.whatsappmedia.fileprovider/whatsapp_media/relatorio.pdf")
+        val contentUri = Uri.parse("content://com.vpsmanager.app.whatsappmedia.fileprovider/whatsapp_media/report.pdf")
 
         val intent = DocumentOpener.buildViewIntent(contentUri, "application/pdf")
 
@@ -45,7 +39,7 @@ class DocumentOpenerTest {
 
     @Test
     fun `a null mime type falls back to a generic binary type instead of crashing`() {
-        val contentUri = Uri.parse("content://com.vpsmanager.app.whatsappmedia.fileprovider/whatsapp_media/arquivo")
+        val contentUri = Uri.parse("content://com.vpsmanager.app.whatsappmedia.fileprovider/whatsapp_media/file")
 
         val intent = DocumentOpener.buildViewIntent(contentUri, mimeType = null)
 

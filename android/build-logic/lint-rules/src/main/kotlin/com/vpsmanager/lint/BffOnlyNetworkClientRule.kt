@@ -14,12 +14,8 @@ import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameOrNull
 import org.jetbrains.kotlin.types.KotlinType
 
-// Same allowlist as BffOnlyNetworkPlugin (the lexical half of this gate, in
-// :build-logic:convention) -- kept independent on purpose. That plugin reads
-// source text; this rule never looks at source text at all, only at what the
-// Kotlin compiler resolved an expression's type to. A module built to bypass
-// one (string concatenation, a fully-qualified reference with no import)
-// still resolves to the same forbidden type here.
+// Same list as BffOnlyNetworkPlugin, kept independent on purpose: this rule
+// checks resolved types, so source-text tricks that bypass the plugin still match.
 private val FORBIDDEN_TYPE_PACKAGES = listOf("okhttp3.", "retrofit2.")
 
 private val EXEMPT_PATH_SEGMENTS = listOf(
@@ -28,12 +24,8 @@ private val EXEMPT_PATH_SEGMENTS = listOf(
 )
 
 /**
- * True when the file being analyzed lives under one of the two modules
- * allowed to touch OkHttp/Retrofit directly. Detekt only ever configures
- * this rule set for non-exempt modules (see the root build's `subprojects`
- * block), so in normal operation this check never has anything to reject --
- * it exists as defense in depth so the rule stays correct even if detekt is
- * ever applied to :data for an unrelated reason in the future.
+ * True when the file belongs to a module allowed to use OkHttp/Retrofit. Defense in
+ * depth: detekt is normally not applied to those modules at all.
  */
 private fun isExemptFile(path: String): Boolean {
     val normalized = path.replace('\\', '/')
@@ -49,16 +41,9 @@ private fun KotlinType.isForbiddenNetworkType(): Boolean {
 }
 
 /**
- * The lexical gate in :build-logic:convention reads source text; it cannot
- * see a route built by joining two strings together at runtime, or a client
- * type referenced with its full package path and no import statement. This
- * rule closes that gap by reasoning over the type the Kotlin compiler
- * actually resolved an expression to, which does not change no matter how
- * the source text was written.
- *
- * It never inspects string contents at all -- an OkHttp/Retrofit client
- * TYPE appearing outside the BFF modules is itself the violation, regardless
- * of which route it would have called.
+ * Flags any expression or type reference that resolves to an OkHttp/Retrofit type
+ * outside the BFF modules, catching what the lexical gate in :build-logic:convention
+ * cannot see (fully qualified references, types reached without an import).
  */
 @RequiresTypeResolution
 class BffOnlyNetworkClientRule(config: Config) : Rule(config) {

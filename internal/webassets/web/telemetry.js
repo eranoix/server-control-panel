@@ -29,13 +29,13 @@
 
   var ENDPOINT = '/api/telemetry';
   var V = 1;
-  var MAX_LOTE = 200;    // the server rejects the WHOLE batch above this
+  var MAX_BATCH = 200;    // the server rejects the WHOLE batch above this
   var FLUSH_MS = 20000;  // 20 s: short enough not to lose a short session
 
   var buf = [];
   var dropped = 0;
   var timer = null;
-  var ultimo = '';       // dedup of an IMMEDIATE repeat (A -> A). A -> B -> A counts 2x.
+  var last = '';       // dedup of an IMMEDIATE repeat (A -> A). A -> B -> A counts 2x.
   var sid = '';
 
   function hex(n) {
@@ -46,7 +46,7 @@
     return out;
   }
 
-  function novoSid() {
+  function newSid() {
     // 16 hex = 8 bytes. Matches the ^[a-f0-9]{8,32}$ the handler demands.
     try { return hex(8); } catch (_) {
       var s = '';
@@ -58,10 +58,10 @@
   try {
     sid = sessionStorage.getItem('vpsm_tel_sid') || '';
     if (!/^[a-f0-9]{8,32}$/.test(sid)) {
-      sid = novoSid();
+      sid = newSid();
       sessionStorage.setItem('vpsm_tel_sid', sid);
     }
-  } catch (_) { sid = novoSid(); }
+  } catch (_) { sid = newSid(); }
 
   function agenda() {
     if (timer) return;
@@ -73,8 +73,8 @@
       if (timer) { clearTimeout(timer); timer = null; }
       if (!buf.length) return;
 
-      var lote = buf.slice(0, MAX_LOTE);
-      var corpo = JSON.stringify({ v: V, s: sid, e: lote, dropped: dropped });
+      var batch = buf.slice(0, MAX_BATCH);
+      var body = JSON.stringify({ v: V, s: sid, e: batch, dropped: dropped });
       buf = [];
       dropped = 0;
 
@@ -90,7 +90,7 @@
             keepalive: true,
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
-            body: corpo
+            body: body
           })['catch'](function () {});
           return;
         } catch (_) { /* fall through to the fallback */ }
@@ -99,7 +99,7 @@
       // (2) fallback: sendBeacon — authenticates with the HttpOnly vpsm_token cookie.
       //     Sends Content-Type: text/plain;charset=UTF-8, which the handler accepts.
       try {
-        if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, corpo)) return;
+        if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, body)) return;
       } catch (_) {}
 
       // (3) last resort: fetch without Bearer (cookie), still keepalive.
@@ -107,7 +107,7 @@
         if (window.fetch) {
           window.fetch(ENDPOINT, {
             method: 'POST', keepalive: true, credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' }, body: corpo
+            headers: { 'Content-Type': 'application/json' }, body: body
           })['catch'](function () {});
         }
       } catch (_) {}
@@ -118,13 +118,13 @@
     try {
       if (!screen || typeof screen !== 'string') return;
       origin = (origin === 'default') ? 'default' : 'nav';
-      var chave = screen + '|' + origin;
-      if (chave === ultimo) return;
-      ultimo = chave;
+      var key = screen + '|' + origin;
+      if (key === last) return;
+      last = key;
 
-      if (buf.length >= MAX_LOTE) { dropped++; flush(); return; }
+      if (buf.length >= MAX_BATCH) { dropped++; flush(); return; }
       buf.push({ screen: screen, origin: origin });
-      if (buf.length >= MAX_LOTE) { flush(); return; }
+      if (buf.length >= MAX_BATCH) { flush(); return; }
       agenda();
     } catch (_) {}
   }

@@ -6,16 +6,9 @@ import android.content.Intent
 import androidx.core.app.NotificationManagerCompat
 
 /**
- * Fires for the one inline action whitelisted for non-critical (info/warning) metric alerts —
- * "Dispensar" — without ever opening an Activity. No server endpoint exists yet for a
- * real acknowledge call (the generated `MobileApi` exposes no such operation —
- * a documented gap in the client/server contract, not an oversight here): this receiver's only
- * effect is cancelling the local notification, so it never needs network access and can never
- * be escalated into a destructive/state-mutating call even if a malformed or spoofed broadcast
- * is sent to it — the safe-action whitelist in [ActionableNotificationBuilder], not this
- * receiver's own logic, is what keeps state-mutating actions ("Refazer deploy"/"Reiniciar")
- * out of every notification's inline actions; those exist exclusively behind
- * `DeployTriggerScreen`'s in-app confirmation.
+ * Handles the inline Dismiss action on non-critical metric alerts. There is no server acknowledge
+ * API yet, so it only cancels the local notification and cannot trigger any server change, even
+ * from a spoofed broadcast.
  */
 class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

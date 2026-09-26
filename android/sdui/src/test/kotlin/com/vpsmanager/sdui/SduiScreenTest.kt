@@ -27,15 +27,9 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * Renders [SduiScreen] under Robolectric against the real fixture corpus in
- * `contracts/sdui/fixtures` -- never composed end to end before this. Every
- * read/write component reached here resolves through an inert
- * [ComponentDataFetcher]/[ActionInvoker] pair provided via
- * [LocalScreenState]/[LocalActionRunner], the exact seam the shipped
- * `PayloadPreviewScreen` already uses to keep a pasted payload from ever
- * hitting the real network -- see [ComponentDataSource.rememberComponentDataState],
- * which prefers `LocalScreenState.current?.componentDataFetcher` over a real,
- * network-hitting `SduiDataRepository()` whenever a [ScreenState] is provided.
+ * Renders [SduiScreen] under Robolectric against the real SDUI fixtures. Data and
+ * actions go through inert fakes provided via [LocalScreenState]/[LocalActionRunner],
+ * the same seam `PayloadPreviewScreen` uses to stay off the network.
  */
 @RunWith(RobolectricTestRunner::class)
 class SduiScreenTest {
@@ -76,9 +70,7 @@ class SduiScreenTest {
 
         renderInertly(envelope)
 
-        // The screen's LazyColumn only composes what is on/near screen --
-        // each assertion below scrolls its component's index into view first, rather
-        // than assuming everything the JSON declares composes in a single pass.
+        // LazyColumn only composes visible items, so scroll each one into view first.
         composeRule.onNodeWithText("Nenhum container em execução").assertExists() // table (index 0)
 
         composeRule.onNode(hasScrollAction()).performScrollToIndex(1)
@@ -92,43 +84,32 @@ class SduiScreenTest {
     }
 
     /**
-     * Regression: the Admin screen killed the app as soon as the table had ROWS.
-     *
-     * [TableComponent] and [com.vpsmanager.sdui.list.ListComponent] built the
-     * rows in a `LazyColumn` — inside an item of [SduiScreen]'s `LazyColumn`,
-     * which gives the child an infinite maximum height. Compose forbids two
-     * nested vertical scrolls and kills the process with
-     * `IllegalStateException("Vertically scrollable component was measured
-     * with an infinity maximum height constraints")`.
-     *
-     * WHY THE SUITE DID NOT CATCH IT. Every existing render test uses a
-     * [ComponentDataFetcher] that returns [SduiDataResult.Empty]: the table
-     * stopped at the `EmptyBlock` and the branch containing the inner
-     * `LazyColumn` was never composed. Only with real rows — the user's case —
-     * does the defect show up; that is why this test feeds real rows.
+     * A table with rows must render inside [SduiScreen]'s `LazyColumn`: a nested
+     * lazy list would crash with an infinite-height `IllegalStateException`. Real
+     * rows are needed, since an empty fetcher never reaches the row branch.
      */
     @Test
-    fun `uma tabela COM linhas renderiza — nao pode haver scroll vertical aninhado`() {
+    fun `a table with rows renders without a nested vertical scroll`() {
         val envelope = parseScreen(
             """
             {"sdui_version":1,"screen":{"id":"scheduler.jobs","title":"Scheduler","components":[
               {"type":"table","id":"jobs-table",
-               "columns":[{"key":"name","label":"Nome","kind":"text"},
-                          {"key":"schedule","label":"Agenda","kind":"text"}],
+               "columns":[{"key":"name","label":"Name","kind":"text"},
+                          {"key":"schedule","label":"Schedule","kind":"text"}],
                "rows_source":{"endpoint":"/api/mobile/v1/scheduler/jobs"},
-               "row_actions":[{"action_id":"scheduler.job.run_now","label":"Executar agora"}],
-               "empty_state":{"text":"Nenhum job agendado ainda."}}]}}
+               "row_actions":[{"action_id":"scheduler.job.run_now","label":"Run now"}],
+               "empty_state":{"text":"No scheduled jobs yet."}}]}}
             """.trimIndent(),
         )
         val rows = SduiJson.parseToJsonElement(
-            """{"rows":[{"id":"1","name":"backup-diario","schedule":"0 3 * * *"},
-                       {"id":"2","name":"limpeza-logs","schedule":"*/15 * * * *"}]}""",
+            """{"rows":[{"id":"1","name":"daily-backup","schedule":"0 3 * * *"},
+                       {"id":"2","name":"log-cleanup","schedule":"*/15 * * * *"}]}""",
         )
 
         render(envelope, ComponentDataFetcher { SduiDataResult.Success(rows) })
 
-        composeRule.onNodeWithText("backup-diario").assertExists()
-        composeRule.onNodeWithText("limpeza-logs").assertExists()
+        composeRule.onNodeWithText("daily-backup").assertExists()
+        composeRule.onNodeWithText("log-cleanup").assertExists()
     }
 
     @Test

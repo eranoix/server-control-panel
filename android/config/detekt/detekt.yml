@@ -1,12 +1,6 @@
-# Ativa somente a regra custom deste projeto. buildUponDefaultConfig
-# (definido em build.gradle.kts) supre o resto do baseline padrao do detekt;
-# este arquivo so precisa ligar o rule set adicionado via detektPlugins.
-#
-# Os rule sets padrao do detekt (naming, style, complexity, etc.) tem seus
-# proprios defaults "active" embutidos no codigo do provider, independentes
-# de buildUponDefaultConfig -- por isso precisam ser desligados aqui de forma
-# explicita, senao pegam codigo fora do escopo da regra (ex.: convencao
-# PascalCase de @Composable, que FunctionNaming trata como violacao).
+# Enables only this project's custom rule. The default detekt rule sets are
+# active by default regardless of buildUponDefaultConfig, so they are switched
+# off explicitly (e.g. FunctionNaming would flag PascalCase @Composable functions).
 comments:
   active: false
 complexity:
@@ -25,10 +19,8 @@ potential-bugs:
   active: false
 style:
   active: false
-# `formatting` nao entra aqui -- esse rule set vive no modulo separado
-# detekt-formatting, que nao esta na classpath deste projeto (nunca foi
-# adicionado como detektPlugins); citar a chave sem o modulo presente falha
-# a validacao de config do detekt ("misspelled or does not exist").
+# Do not list `formatting`: detekt-formatting is not on the classpath, and
+# naming its key without the module fails config validation.
 
 bff-lint:
   active: true

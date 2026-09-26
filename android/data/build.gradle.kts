@@ -29,7 +29,7 @@ android {
 }
 
 dependencies {
-    // Device security preferences (PreferenciasDeSeguranca).
+    // Device security preferences (SecurityPreferences).
     implementation(libs.androidx.datastore.preferences)
     implementation(project(":core"))
     implementation(project(":data:mobile-api-client"))

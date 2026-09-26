@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
-# Regera o par de fixtures PEQUENAS de src/androidTest/assets/hdiff/ --
-# smoke-old.bin (256 KiB) e smoke.hdiff (~8 KiB), os unicos binarios de teste
-# versionados deste modulo.
+# Regenerates the SMALL fixture pair in src/androidTest/assets/hdiff/:
+# smoke-old.bin (256 KiB) and smoke.hdiff (about 8 KiB), the only committed
+# test binaries in this module.
 #
-# Por que existem, se ja ha o teste com os APKs de verdade: aquele depende de
-# tools/make-patch-fixtures.sh ter rodado antes (dois builds de :app, ~4 min,
-# 66 MB fora do repositorio). Este par cabe em 270 KB, vai junto no clone e
-# garante que `connectedAndroidTest` num checkout limpo ainda prove o
-# essencial: que a .so carrega nesta ABI, que a assinatura JNI casa, que o
-# patch aplica e que a conferencia de SHA-256 reprova o que tem de reprovar.
+# Unlike the real-APK fixtures (tools/make-patch-fixtures.sh), this pair ships
+# with the clone, so `connectedAndroidTest` on a clean checkout still proves
+# the .so loads, the JNI signature matches, the patch applies and the SHA-256
+# check rejects what it must.
 #
-# Determinismo: a semente do PRNG e fixa, entao rodar de novo produz bytes
-# identicos -- o .hdiff so muda se o hdiffz mudar de versao.
+# The PRNG seed is fixed, so output is byte-identical unless hdiffz changes.
 #
-# Uso: ./tools/make-smoke-fixtures.sh   (de qualquer diretorio)
+# Usage: ./tools/make-smoke-fixtures.sh   (from any directory)
 
 set -euo pipefail
 
@@ -28,17 +25,17 @@ if [ ! -x "$HDIFFZ" ]; then
 fi
 if [ -z "$HDIFFZ" ] || [ ! -x "$HDIFFZ" ]; then
   cat >&2 <<'MSG'
-make-smoke-fixtures: hdiffz nao encontrado.
+make-smoke-fixtures: hdiffz not found.
 
-O GERADOR nao e vendorizado neste modulo de proposito -- so o patcher entra
-no aparelho (ver src/main/cpp/Android.mk). Para construir um hdiffz local:
+The GENERATOR is deliberately not vendored in this module; only the patcher
+ships on the device (see src/main/cpp/Android.mk). To build hdiffz locally:
 
-  clone https://github.com/sisong/HDiffPatch (e os irmaos lzma/ zstd/ xxHash/
-  libmd5/, mesmos commits de toolchain.properties), depois dentro dele:
+  clone https://github.com/sisong/HDiffPatch (plus the siblings lzma/ zstd/ xxHash/
+  libmd5/, at the commits in toolchain.properties), then inside it run:
       make LDEF=0 ZLIB=2 BSD=0 BZIP2=0 VCD=0 DIR_DIFF=0 -j8
-  e aponte:  HDIFFZ=<caminho>/hdiffz ./tools/make-smoke-fixtures.sh
+  and point to it:  HDIFFZ=<path>/hdiffz ./tools/make-smoke-fixtures.sh
 
-Ou copie o binario para .build/hdiffz (ignorado pelo controle de versao).
+Or copy the binary to .build/hdiffz (ignored by version control).
 MSG
   exit 1
 fi
@@ -50,39 +47,36 @@ import os, random, sys
 
 out = sys.argv[1]
 
-# Semente fixa: o par tem que ser reproduzivel byte a byte, senao regerar as
-# fixtures viraria um diff enorme e sem sentido no controle de versao.
+# Fixed seed so the pair is byte-for-byte reproducible.
 rnd = random.Random(20260906)
 old = bytearray(rnd.getrandbits(8) for _ in range(256 * 1024))
 
-# Dados pseudo-aleatorios de proposito: um arquivo de zeros comprimiria a
-# quase nada e o patch nao exercitaria o descompressor -- que e justamente a
-# parte do .so com mais superficie (zstd).
+# Pseudo-random on purpose: zeros would compress to nothing and the patch
+# would not exercise the zstd decompressor.
 new = bytearray(old)
 for off in (0, 40000, 190000):
-    # tres edicoes localizadas: cobre "cover" no inicio, no meio e perto do fim
+    # three local edits: covers at the start, middle and near the end
     new[off:off + 512] = bytes((i * 7 + 13) & 0xff for i in range(512))
-# ... mais um rabo novo, para o arquivo novo nao ter o mesmo tamanho do velho
+# plus a new tail, so the new file differs in size from the old one
 new += bytes(rnd.getrandbits(8) for _ in range(8 * 1024))
 
 open(os.path.join(out, "smoke-old.bin"), "wb").write(bytes(old))
 open(os.path.join(out, "smoke-new.bin"), "wb").write(bytes(new))
 PY
 
-# -s-4m: modo de fluxo com pouca memoria, o mesmo perfil que o aparelho usa.
-# -c-zstd-21-24: zstd e o compressor padrao do hdiffz e o que o servidor vai
-# gerar; forcar o mesmo aqui e o que faz o teste exercitar o descompressor
-# que de fato esta linkado no .so.
+# -s-4m: low-memory stream mode, the same profile the device uses.
+# -c-zstd-21-24: what the server generates, so the test exercises the
+# decompressor actually linked into the .so.
 "$HDIFFZ" -s-4m -c-zstd-21-24 -f \
   "$WORK_DIR/smoke-old.bin" "$WORK_DIR/smoke-new.bin" "$WORK_DIR/smoke.hdiff" >/dev/null
 
 cp -f "$WORK_DIR/smoke-old.bin" "$ASSETS_DIR/smoke-old.bin"
 cp -f "$WORK_DIR/smoke.hdiff"   "$ASSETS_DIR/smoke.hdiff"
 
-echo "make-smoke-fixtures: gravado em $ASSETS_DIR" >&2
+echo "make-smoke-fixtures: written to $ASSETS_DIR" >&2
 echo "  smoke-old.bin  $(stat -c%s "$ASSETS_DIR/smoke-old.bin") bytes  sha256=$(sha256sum "$ASSETS_DIR/smoke-old.bin" | cut -d' ' -f1)" >&2
 echo "  smoke.hdiff    $(stat -c%s "$ASSETS_DIR/smoke.hdiff") bytes" >&2
 echo >&2
-echo "SHA-256 do arquivo NOVO esperado (constante em ApkPatcherSmokeTest):" >&2
+echo "Expected SHA-256 of the NEW file (constant in ApkPatcherSmokeTest):" >&2
 sha256sum "$WORK_DIR/smoke-new.bin" | cut -d' ' -f1 >&2
-echo "tamanho do arquivo NOVO: $(stat -c%s "$WORK_DIR/smoke-new.bin")" >&2
+echo "size of the NEW file: $(stat -c%s "$WORK_DIR/smoke-new.bin")" >&2

@@ -60,23 +60,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.vpsmanager.data.terminal.ALVO_TODOS
+import com.vpsmanager.data.terminal.TARGET_ALL
 import com.vpsmanager.data.terminal.TerminalSession
 import com.vpsmanager.designsystem.VpsmIcons
 import com.vpsmanager.designsystem.vpsmStatusColors
 
 /**
- * The terminal sessions screen.
- *
- * ## What it shows, and why it shows it this way
- *
- * The previous version was one `ListItem` per session with the name on top and
- * the words "Not attached" underneath. Seven sessions filled the screen
- * repeating the same phrase six times, with no icon, no state visible at a
- * glance, not a single action. The operator called it threadbare, and the
- * diagnosis is information density: ~110 px of row to say one name.
- *
- * The new design puts, in the SAME height as before:
+ * The terminal sessions screen. Each row packs, in one compact card:
  *
  * ```
  * ┌──────────────────────────────────────────────┐
@@ -85,19 +75,10 @@ import com.vpsmanager.designsystem.vpsmStatusColors
  * └──────────────────────────────────────────────┘
  * ```
  *
- * — icon (category at a glance), name in monospace (it is a session name, not
- * a sentence), state badge on the scanning axis, meta on a single line, and a
- * menu with what can be done to that session. The badge sits on the right
- * because the question you ask while scanning the list is "which one is
- * active?", and the answer has to be in a column, not in the middle of the
- * text.
- *
- * ## Backups
- *
- * They have always existed on the server — an automatic collector every 6 h,
- * plus the button in the web panel — and the app could not see them. Now the
- * summary bar leads to the sheet ([BackupsSheet]) and each session can be saved
- * on its own from its menu.
+ * an icon, the name in monospace, an "active" badge in a column on the right
+ * (the question while scanning is "which one is active?"), a one-line meta row
+ * and a menu of actions. The summary bar leads to the backups sheet
+ * ([BackupsSheet]), and each session can be saved from its menu.
  */
 @Composable
 fun SessionListScreen(
@@ -106,109 +87,104 @@ fun SessionListScreen(
     viewModel: SessionListViewModel = viewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val recado by viewModel.recado.collectAsStateWithLifecycle()
-    val ocupada by viewModel.ocupada.collectAsStateWithLifecycle()
-    val previas by viewModel.previas.collectAsStateWithLifecycle()
-    val alvos by viewModel.alvos.collectAsStateWithLifecycle()
-    var backupsAbertos by rememberSaveable { mutableStateOf(false) }
-    var renomeando by remember { mutableStateOf<String?>(null) }
-    var encerrando by remember { mutableStateOf<String?>(null) }
-    var atribuindo by remember { mutableStateOf<String?>(null) }
+    val notice by viewModel.notice.collectAsStateWithLifecycle()
+    val busySession by viewModel.busySession.collectAsStateWithLifecycle()
+    val previews by viewModel.previews.collectAsStateWithLifecycle()
+    val targets by viewModel.targets.collectAsStateWithLifecycle()
+    var backupsOpen by rememberSaveable { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<String?>(null) }
+    var ending by remember { mutableStateOf<String?>(null) }
+    var assigning by remember { mutableStateOf<String?>(null) }
 
-    // The assignment targets are requested when the screen appears, not in the
-    // ViewModel's constructor — whoever constructs it controls what starts.
-    LaunchedEffect(Unit) { viewModel.carregarAlvos() }
+    // Assignment targets load when the screen appears, not in the ViewModel's
+    // constructor, so whoever constructs it controls what starts.
+    LaunchedEffect(Unit) { viewModel.loadTargets() }
 
     Column(modifier = modifier.fillMaxSize()) {
-        // The message takes up height only when there is one: a permanent empty
-        // strip would cost 40 dp on the screen where the list needs them.
-        recado?.let { texto ->
-            RecadoDaOperacao(texto = texto, aoFechar = viewModel::limparRecado)
+        // The notice takes height only when there is one.
+        notice?.let { text ->
+            OperationNotice(text = text, onClose = viewModel::clearNotice)
         }
 
         when (val current = state) {
-            is SessionListUiState.Loading -> ConteudoCarregando()
-            is SessionListUiState.Error -> ConteudoDeErro(
+            is SessionListUiState.Loading -> LoadingContent()
+            is SessionListUiState.Error -> ErrorContent(
                 message = current.message,
                 onRetry = viewModel::refresh,
             )
-            is SessionListUiState.Empty -> ConteudoVazio(
+            is SessionListUiState.Empty -> EmptyContent(
                 onAttach = onSessionSelected,
-                aoAbrirBackups = { backupsAbertos = true },
+                onOpenBackups = { backupsOpen = true },
             )
-            is SessionListUiState.Success -> ListaDeSessoes(
+            is SessionListUiState.Success -> SessionList(
                 sessions = current.sessions,
-                ocupada = ocupada,
+                busySession = busySession,
                 onSessionClick = { onSessionSelected(it.name) },
                 onAttach = onSessionSelected,
-                aoSalvarTudo = { viewModel.salvarBackup(null) },
-                aoAbrirBackups = { backupsAbertos = true },
-                aoSalvarSessao = { viewModel.salvarBackup(it) },
-                aoRenomear = { renomeando = it },
-                previas = previas,
-                // The list comes back empty for anyone who is not an admin (the
-                // route returns 404), so the option does not even appear —
-                // rather than appearing and failing.
-                podeAtribuir = !alvos.isNullOrEmpty(),
-                aoEspiar = { viewModel.alternarPrevia(it) },
-                aoAtribuir = { atribuindo = it },
-                aoEncerrar = { encerrando = it },
+                onSaveAll = { viewModel.saveBackup(null) },
+                onOpenBackups = { backupsOpen = true },
+                onSaveSession = { viewModel.saveBackup(it) },
+                onRename = { renaming = it },
+                previews = previews,
+                // Non-admins get an empty list (the route returns 404), so the
+                // option is hidden rather than shown and failing.
+                canAssign = !targets.isNullOrEmpty(),
+                onPeek = { viewModel.togglePreview(it) },
+                onAssign = { assigning = it },
+                onEnd = { ending = it },
             )
         }
     }
 
-    if (backupsAbertos) {
+    if (backupsOpen) {
         BackupsSheet(
             viewModel = viewModel,
-            aoFechar = { backupsAbertos = false },
+            onClose = { backupsOpen = false },
         )
     }
 
-    encerrando?.let { nome ->
-        DialogoDeEncerrar(
-            nome = nome,
-            aoConfirmar = {
-                encerrando = null
-                viewModel.matar(nome)
+    ending?.let { name ->
+        EndDialog(
+            name = name,
+            onConfirm = {
+                ending = null
+                viewModel.kill(name)
             },
-            aoCancelar = { encerrando = null },
+            onCancel = { ending = null },
         )
     }
 
-    atribuindo?.let { nome ->
-        FolhaDeAtribuicao(
-            nome = nome,
-            alvos = alvos.orEmpty(),
-            aoEscolher = { alvo ->
-                atribuindo = null
-                viewModel.atribuir(nome, alvo)
+    assigning?.let { name ->
+        AssignSheet(
+            name = name,
+            targets = targets.orEmpty(),
+            onChoose = { target ->
+                assigning = null
+                viewModel.assign(name, target)
             },
-            aoFechar = { atribuindo = null },
+            onClose = { assigning = null },
         )
     }
 
-    renomeando?.let { nomeAtual ->
-        DialogoDeRenomear(
-            nomeAtual = nomeAtual,
-            aoConfirmar = { novo ->
-                renomeando = null
-                viewModel.renomear(nomeAtual, novo)
+    renaming?.let { currentName ->
+        RenameDialog(
+            currentName = currentName,
+            onConfirm = { next ->
+                renaming = null
+                viewModel.rename(currentName, next)
             },
-            aoCancelar = { renomeando = null },
+            onCancel = { renaming = null },
         )
     }
 }
 
 /**
- * The sentence reporting back on the last operation.
- *
- * Deliberately not a `Snackbar`: a snackbar vanishes on its own after 4 s, and
- * the answer that matters here ("3 restored, 2 skipped as already present") is
- * precisely the one you want to read twice. This strip stays until it is
+ * The result of the last operation. Not a `Snackbar`, which vanishes after 4 s:
+ * answers like "3 restored, 2 skipped" deserve a second read, so this stays until
  * dismissed.
  */
 @Composable
-private fun RecadoDaOperacao(texto: String, aoFechar: () -> Unit) {
+private fun OperationNotice(text: String, onClose: () -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         modifier = Modifier.fillMaxWidth(),
@@ -218,18 +194,18 @@ private fun RecadoDaOperacao(texto: String, aoFechar: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = texto,
+                text = text,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = aoFechar) { Text(text = "OK") }
+            TextButton(onClick = onClose) { Text(text = "OK") }
         }
     }
 }
 
 @Composable
-private fun ConteudoCarregando() {
+private fun LoadingContent() {
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -241,7 +217,7 @@ private fun ConteudoCarregando() {
 }
 
 @Composable
-private fun ConteudoDeErro(message: String, onRetry: () -> Unit) {
+private fun ErrorContent(message: String, onRetry: () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
         Card {
             Column(
@@ -257,14 +233,11 @@ private fun ConteudoDeErro(message: String, onRetry: () -> Unit) {
 }
 
 /**
- * No sessions, but possibly WITH backups — and that is the case the previous
- * version had no way of telling. After the machine restarts the list is empty
- * and the whole history is stored away; offering only "type a name" would send
- * the person back to square one on top of a backup they do not even know is
- * there.
+ * No sessions, but possibly with backups (e.g. after the machine restarts), so
+ * restoring is offered next to creating a new session.
  */
 @Composable
-private fun ConteudoVazio(onAttach: (String) -> Unit, aoAbrirBackups: () -> Unit) {
+private fun EmptyContent(onAttach: (String) -> Unit, onOpenBackups: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.Center,
@@ -285,35 +258,35 @@ private fun ConteudoVazio(onAttach: (String) -> Unit, aoAbrirBackups: () -> Unit
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(20.dp))
-        CampoDeNovaSessao(onAttach = onAttach)
+        NewSessionField(onAttach = onAttach)
         Spacer(modifier = Modifier.height(8.dp))
-        TextButton(onClick = aoAbrirBackups) { Text(text = "View backups") }
+        TextButton(onClick = onOpenBackups) { Text(text = "View backups") }
     }
 }
 
 @Composable
-private fun ListaDeSessoes(
+private fun SessionList(
     sessions: List<TerminalSession>,
-    ocupada: String?,
+    busySession: String?,
     onSessionClick: (TerminalSession) -> Unit,
     onAttach: (String) -> Unit,
-    aoSalvarTudo: () -> Unit,
-    aoAbrirBackups: () -> Unit,
-    aoSalvarSessao: (String) -> Unit,
-    aoRenomear: (String) -> Unit,
-    previas: Map<String, PreviaUiState>,
-    podeAtribuir: Boolean,
-    aoEspiar: (String) -> Unit,
-    aoAtribuir: (String) -> Unit,
-    aoEncerrar: (String) -> Unit,
+    onSaveAll: () -> Unit,
+    onOpenBackups: () -> Unit,
+    onSaveSession: (String) -> Unit,
+    onRename: (String) -> Unit,
+    previews: Map<String, PreviewUiState>,
+    canAssign: Boolean,
+    onPeek: (String) -> Unit,
+    onAssign: (String) -> Unit,
+    onEnd: (String) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        BarraDeResumo(
+        SummaryBar(
             total = sessions.size,
-            ativas = sessions.count { it.attached },
-            salvandoTudo = ocupada == SessionListViewModel.TODAS,
-            aoSalvarTudo = aoSalvarTudo,
-            aoAbrirBackups = aoAbrirBackups,
+            active = sessions.count { it.attached },
+            savingAll = busySession == SessionListViewModel.ALL,
+            onSaveAll = onSaveAll,
+            onOpenBackups = onOpenBackups,
         )
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -323,38 +296,37 @@ private fun ListaDeSessoes(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             items(items = sessions, key = { it.name }) { session ->
-                LinhaDeSessao(
+                SessionRow(
                     session = session,
-                    ocupada = ocupada == session.name,
-                    previa = previas[session.name],
-                    podeAtribuir = podeAtribuir,
+                    busySession = busySession == session.name,
+                    preview = previews[session.name],
+                    canAssign = canAssign,
                     onClick = { onSessionClick(session) },
-                    aoSalvar = { aoSalvarSessao(session.name) },
-                    aoRenomear = { aoRenomear(session.name) },
-                    aoEspiar = { aoEspiar(session.name) },
-                    aoAtribuir = { aoAtribuir(session.name) },
-                    aoEncerrar = { aoEncerrar(session.name) },
+                    onSave = { onSaveSession(session.name) },
+                    onRename = { onRename(session.name) },
+                    onPeek = { onPeek(session.name) },
+                    onAssign = { onAssign(session.name) },
+                    onEnd = { onEnd(session.name) },
                 )
             }
             item {
-                CartaoDeNovaSessao(onAttach = onAttach)
+                NewSessionCard(onAttach = onAttach)
             }
         }
     }
 }
 
 /**
- * The top row: how many sessions, how many active, and the two actions that
- * apply to the set. It lives outside the `LazyColumn` because it is an anchor,
- * not content — scrolling the list must not carry away access to the backups.
+ * The top row: session count, active count and the two actions for the whole
+ * set. Outside the `LazyColumn` so scrolling never hides access to backups.
  */
 @Composable
-private fun BarraDeResumo(
+private fun SummaryBar(
     total: Int,
-    ativas: Int,
-    salvandoTudo: Boolean,
-    aoSalvarTudo: () -> Unit,
-    aoAbrirBackups: () -> Unit,
+    active: Int,
+    savingAll: Boolean,
+    onSaveAll: () -> Unit,
+    onOpenBackups: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -364,20 +336,20 @@ private fun BarraDeResumo(
             Text(
                 text = buildString {
                     append(if (total == 1) "1 session" else "$total sessions")
-                    if (ativas > 0) append(" · $ativas active" + if (ativas > 1) "" else "")
+                    if (active > 0) append(" · $active active" + if (active > 1) "" else "")
                 },
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.weight(1f),
             )
-            if (salvandoTudo) {
+            if (savingAll) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 Spacer(modifier = Modifier.width(12.dp))
             } else {
-                TextButton(onClick = aoSalvarTudo, modifier = Modifier.testTag(SALVAR_TUDO_TAG)) {
+                TextButton(onClick = onSaveAll, modifier = Modifier.testTag(SAVE_ALL_TAG)) {
                     Text(text = "Save all")
                 }
             }
-            TextButton(onClick = aoAbrirBackups, modifier = Modifier.testTag(BACKUPS_TAG)) {
+            TextButton(onClick = onOpenBackups, modifier = Modifier.testTag(BACKUPS_TAG)) {
                 Text(text = "Backups")
             }
         }
@@ -385,21 +357,21 @@ private fun BarraDeResumo(
 }
 
 @Composable
-private fun LinhaDeSessao(
+private fun SessionRow(
     session: TerminalSession,
-    ocupada: Boolean,
-    previa: PreviaUiState?,
-    podeAtribuir: Boolean,
+    busySession: Boolean,
+    preview: PreviewUiState?,
+    canAssign: Boolean,
     onClick: () -> Unit,
-    aoSalvar: () -> Unit,
-    aoRenomear: () -> Unit,
-    aoEspiar: () -> Unit,
-    aoAtribuir: () -> Unit,
-    aoEncerrar: () -> Unit,
+    onSave: () -> Unit,
+    onRename: () -> Unit,
+    onPeek: () -> Unit,
+    onAssign: () -> Unit,
+    onEnd: () -> Unit,
 ) {
-    val previaAberta = previa != null
-    var menuAberto by remember { mutableStateOf(false) }
-    val cores = vpsmStatusColors
+    val previewOpen = preview != null
+    var menuOpen by remember { mutableStateOf(false) }
+    val statusColors = vpsmStatusColors
 
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
@@ -422,16 +394,14 @@ private fun LinhaDeSessao(
                 Text(
                     text = session.name,
                     style = MaterialTheme.typography.titleSmall,
-                    // Monospace: this is a terminal session name, and reading
-                    // `web-2` without mistaking the `2` for a `z` matters more
-                    // here than the elegance of a proportional face.
+                    // Monospace, so `web-2` is not misread in a session name.
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = metaDaSessao(session),
+                    text = sessionMeta(session),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -439,14 +409,12 @@ private fun LinhaDeSessao(
                 )
             }
             if (session.attached) {
-                // Only the ACTIVE state earns a badge. Marking the inactive one
-                // too would make seven badges in a list of seven, and seven
-                // badges distinguish nothing — that was exactly the repeated
-                // "Not attached" of the previous version.
-                SeloAtiva(cor = cores.ok.accent)
+                // Only active sessions get a badge; a badge on every row would
+                // distinguish nothing.
+                ActiveBadge(color = statusColors.ok.accent)
                 Spacer(modifier = Modifier.width(4.dp))
             }
-            if (ocupada) {
+            if (busySession) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(18.dp).padding(end = 2.dp),
                     strokeWidth = 2.dp,
@@ -454,102 +422,94 @@ private fun LinhaDeSessao(
                 Spacer(modifier = Modifier.width(10.dp))
             } else {
                 Box {
-                    IconButton(onClick = { menuAberto = true }) {
+                    IconButton(onClick = { menuOpen = true }) {
                         Icon(
                             imageVector = Icons.Filled.MoreVert,
                             contentDescription = "Actions for session ${session.name}",
                         )
                     }
-                    DropdownMenu(expanded = menuAberto, onDismissRequest = { menuAberto = false }) {
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(
                             text = { Text("Open") },
-                            onClick = { menuAberto = false; onClick() },
+                            onClick = { menuOpen = false; onClick() },
                         )
                         DropdownMenuItem(
                             text = { Text("Save backup") },
-                            onClick = { menuAberto = false; aoSalvar() },
+                            onClick = { menuOpen = false; onSave() },
                         )
                         DropdownMenuItem(
                             text = { Text("Rename…") },
-                            onClick = { menuAberto = false; aoRenomear() },
+                            onClick = { menuOpen = false; onRename() },
                         )
                         DropdownMenuItem(
-                            // The label follows the STATE, not the action:
-                            // whoever has the preview open reads "Close preview".
-                            text = { Text(if (previaAberta) "Close preview" else "Peek") },
-                            onClick = { menuAberto = false; aoEspiar() },
+                            // The label follows the state: "Close preview" when open.
+                            text = { Text(if (previewOpen) "Close preview" else "Peek") },
+                            onClick = { menuOpen = false; onPeek() },
                         )
-                        if (podeAtribuir) {
+                        if (canAssign) {
                             DropdownMenuItem(
                                 text = { Text("Visible to…") },
-                                onClick = { menuAberto = false; aoAtribuir() },
+                                onClick = { menuOpen = false; onAssign() },
                             )
                         }
                         HorizontalDivider()
                         DropdownMenuItem(
-                            // Set apart by a divider and painted in the error
-                            // colour: it is the only one here with no way back.
+                            // Set apart and in the error colour: the only
+                            // irreversible action here.
                             text = {
                                 Text(
                                     text = "End…",
                                     color = MaterialTheme.colorScheme.error,
                                 )
                             },
-                            onClick = { menuAberto = false; aoEncerrar() },
+                            onClick = { menuOpen = false; onEnd() },
                         )
                     }
                 }
             }
         }
-        if (previa != null) {
-            CartaoDePrevia(previa = previa)
+        if (preview != null) {
+            PreviewCard(preview = preview)
         }
     }
 }
 
 /**
- * The session's portrait, inside the row's own card.
- *
- * It stays ANCHORED to the session instead of opening a sheet over the top: the
- * question the preview answers is "which of these do I want to open?", and a
- * modal sheet hides precisely the other options being compared.
- *
- * Monospace and horizontally scrollable because it is terminal output —
- * wrapping lines here would throw off tables, progress bars and directory
- * trees, which are half of what you are trying to recognise at a glance.
+ * The session preview, inside the row's own card rather than a sheet, so the
+ * other sessions being compared stay visible. Monospace and horizontally
+ * scrollable, since wrapping would break tables, progress bars and trees.
  */
 @Composable
-private fun CartaoDePrevia(previa: PreviaUiState) {
+private fun PreviewCard(preview: PreviewUiState) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 10.dp),
         shape = RoundedCornerShape(8.dp),
     ) {
         Box(modifier = Modifier.padding(10.dp)) {
-            when (previa) {
-                is PreviaUiState.Carregando -> Row(verticalAlignment = Alignment.CenterVertically) {
+            when (preview) {
+                is PreviewUiState.Loading -> Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(text = "Reading the session…", style = MaterialTheme.typography.bodySmall)
                 }
 
-                is PreviaUiState.Vazia -> Text(
-                    // "Empty" is information, not failure: a freshly created
-                    // session has not written anything yet, and saying so keeps it
-                    // from looking like an error.
+                is PreviewUiState.Empty -> Text(
+                    // Empty is information, not failure: a new session has not
+                    // written anything yet.
                     text = "The session has not written anything yet.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                is PreviaUiState.Erro -> Text(
-                    text = previa.mensagem,
+                is PreviewUiState.Error -> Text(
+                    text = preview.message,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
 
-                is PreviaUiState.Pronta -> Text(
-                    text = previa.texto,
+                is PreviewUiState.Ready -> Text(
+                    text = preview.text,
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -562,25 +522,19 @@ private fun CartaoDePrevia(previa: PreviaUiState) {
 
 
 /**
- * Confirmation before killing a session.
- *
- * It states the NAME and it states the CONSEQUENCE, because both are what the
- * person needs in order to decide: killing it kills whatever is running inside
- * — a build, a migration, an agent halfway through a task — and none of it
- * comes back.
- *
- * The confirm button carries the verb ("Kill"), not "OK". An "OK" forces you to
- * re-read the question to know what you are confirming.
+ * Confirmation before ending a session. It names the session and the consequence
+ * (everything running inside ends and does not come back), and the confirm button
+ * carries the verb rather than "OK".
  */
 @Composable
-private fun DialogoDeEncerrar(
-    nome: String,
-    aoConfirmar: () -> Unit,
-    aoCancelar: () -> Unit,
+private fun EndDialog(
+    name: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
 ) {
     AlertDialog(
-        onDismissRequest = aoCancelar,
-        title = { Text("End $nome?") },
+        onDismissRequest = onCancel,
+        title = { Text("End $name?") },
         text = {
             Text(
                 "Everything running inside it ends too. " +
@@ -588,51 +542,45 @@ private fun DialogoDeEncerrar(
             )
         },
         confirmButton = {
-            TextButton(onClick = aoConfirmar) {
+            TextButton(onClick = onConfirm) {
                 Text(text = "End", color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = {
-            TextButton(onClick = aoCancelar) { Text("Cancel") }
+            TextButton(onClick = onCancel) { Text("Cancel") }
         },
     )
 }
 
 /**
- * Choice of audience: who the session shows up for.
- *
- * It is a LIST and not a text field — a project rule, and one with teeth here:
- * the server accepts any target, so a name with one character wrong would make
- * the session vanish from everybody's list, with no error at all.
- *
- * "Everyone" comes last and with its explanation attached: it is the option
- * that changes the outcome the most, and "*" says nothing to anyone who does
- * not know the convention.
+ * Who the session shows up for, chosen from a list: the server accepts any
+ * target, so a mistyped name would silently hide the session from everyone.
+ * "Everyone" is explained, since "*" means nothing to most people.
  */
 @Composable
-private fun FolhaDeAtribuicao(
-    nome: String,
-    alvos: List<String>,
-    aoEscolher: (String) -> Unit,
-    aoFechar: () -> Unit,
+private fun AssignSheet(
+    name: String,
+    targets: List<String>,
+    onChoose: (String) -> Unit,
+    onClose: () -> Unit,
 ) {
     AlertDialog(
-        onDismissRequest = aoFechar,
-        title = { Text("Who sees $nome?") },
+        onDismissRequest = onClose,
+        title = { Text("Who sees $name?") },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                alvos.forEach { alvo ->
-                    val ehTodos = alvo == ALVO_TODOS
+                targets.forEach { target ->
+                    val isAll = target == TARGET_ALL
                     TextButton(
-                        onClick = { aoEscolher(alvo) },
+                        onClick = { onChoose(target) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (ehTodos) "Everyone" else alvo,
+                                text = if (isAll) "Everyone" else target,
                                 style = MaterialTheme.typography.bodyLarge,
                             )
-                            if (ehTodos) {
+                            if (isAll) {
                                 Text(
                                     text = "Shows up in every account's list",
                                     style = MaterialTheme.typography.bodySmall,
@@ -645,53 +593,46 @@ private fun FolhaDeAtribuicao(
             }
         },
         confirmButton = {
-            TextButton(onClick = aoFechar) { Text("Cancel") }
+            TextButton(onClick = onClose) { Text("Cancel") }
         },
     )
 }
 
 @Composable
-private fun SeloAtiva(cor: Color) {
+private fun ActiveBadge(color: Color) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(cor))
+        Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(color))
         Spacer(modifier = Modifier.width(5.dp))
         Text(
             text = "active",
             style = MaterialTheme.typography.labelSmall,
-            color = cor,
+            color = color,
         )
     }
 }
 
 /**
- * The meta row: the session's age and the originating tab, where there is one.
- *
- * The age is what answers "is this yesterday's or just now?" in a list of
- * similar names, and it is the only temporal information the server sends
- * today — `created` exists in the BFF's session summary, "last activity" does
- * not.
+ * The meta row: the session's age and its originating tab, if any. Age is the
+ * only time information the server sends (`created`, not last activity).
  */
-private fun metaDaSessao(session: TerminalSession): String {
-    val partes = mutableListOf(idadeLegivel(session.created))
-    // The tab only goes in when it says something the name does not. On the
-    // server it is filled with the session's own name in most cases, and
-    // repeating "pouco1 · pouco1" spends the entire meta row to convey nothing —
-    // which is exactly how the first version of this screen turned out.
+private fun sessionMeta(session: TerminalSession): String {
+    val parts = mutableListOf(readableAge(session.created))
+    // The tab only when it differs from the name; the server usually fills it
+    // with the session name, and repeating it conveys nothing.
     session.tab
         ?.takeIf { it.isNotBlank() && !it.equals(session.name, ignoreCase = true) }
-        ?.let { partes += it }
-    return partes.joinToString(" · ")
+        ?.let { parts += it }
+    return parts.joinToString(" · ")
 }
 
 /**
- * "3 h ago", "2 d ago". Seconds become "now": a terminal opened 40 s ago and one
- * opened 55 s ago are the same thing to somebody choosing which to open, and a
- * clock ticking in the list would only draw attention to what does not matter.
+ * "3 h ago", "2 d ago". Under a minute is "now": a ticking clock in the list would
+ * only draw attention to what does not matter.
  */
-internal fun idadeLegivel(criadoEmSegundos: Long, agoraSegundos: Long = System.currentTimeMillis() / 1000): String {
-    val delta = (agoraSegundos - criadoEmSegundos).coerceAtLeast(0)
+internal fun readableAge(createdAtSeconds: Long, nowSeconds: Long = System.currentTimeMillis() / 1000): String {
+    val delta = (nowSeconds - createdAtSeconds).coerceAtLeast(0)
     return when {
-        criadoEmSegundos <= 0L -> "—"
+        createdAtSeconds <= 0L -> "—"
         delta < 60 -> "now"
         delta < 3_600 -> "${delta / 60} min ago"
         delta < 86_400 -> "${delta / 3_600} h ago"
@@ -700,9 +641,9 @@ internal fun idadeLegivel(criadoEmSegundos: Long, agoraSegundos: Long = System.c
     }
 }
 
-/** At the end of the list, not at the top: what you do here 9 times out of 10 is open a session that already exists. */
+/** At the end of the list: most of the time the user opens an existing session. */
 @Composable
-private fun CartaoDeNovaSessao(onAttach: (String) -> Unit) {
+private fun NewSessionCard(onAttach: (String) -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
         shape = RoundedCornerShape(12.dp),
@@ -719,25 +660,25 @@ private fun CartaoDeNovaSessao(onAttach: (String) -> Unit) {
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(text = "New session", style = MaterialTheme.typography.labelLarge)
             }
-            CampoDeNovaSessao(onAttach = onAttach)
+            NewSessionField(onAttach = onAttach)
         }
     }
 }
 
 @Composable
-private fun CampoDeNovaSessao(onAttach: (String) -> Unit) {
-    var nome by rememberSaveable { mutableStateOf("") }
+private fun NewSessionField(onAttach: (String) -> Unit) {
+    var name by rememberSaveable { mutableStateOf("") }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
-            value = nome,
-            onValueChange = { nome = it },
+            value = name,
+            onValueChange = { name = it },
             label = { Text(text = "Session name") },
             singleLine = true,
             modifier = Modifier.weight(1f),
         )
         TextButton(
-            enabled = nome.isNotBlank(),
-            onClick = { onAttach(nome.trim()) },
+            enabled = name.isNotBlank(),
+            onClick = { onAttach(name.trim()) },
         ) {
             Text(text = "Attach")
         }
@@ -745,16 +686,16 @@ private fun CampoDeNovaSessao(onAttach: (String) -> Unit) {
 }
 
 @Composable
-private fun DialogoDeRenomear(nomeAtual: String, aoConfirmar: (String) -> Unit, aoCancelar: () -> Unit) {
-    var novo by remember { mutableStateOf(nomeAtual) }
+private fun RenameDialog(currentName: String, onConfirm: (String) -> Unit, onCancel: () -> Unit) {
+    var next by remember { mutableStateOf(currentName) }
     AlertDialog(
-        onDismissRequest = aoCancelar,
+        onDismissRequest = onCancel,
         title = { Text(text = "Rename session") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
-                    value = novo,
-                    onValueChange = { novo = it },
+                    value = next,
+                    onValueChange = { next = it },
                     label = { Text(text = "New name") },
                     singleLine = true,
                 )
@@ -767,31 +708,28 @@ private fun DialogoDeRenomear(nomeAtual: String, aoConfirmar: (String) -> Unit, 
         },
         confirmButton = {
             TextButton(
-                enabled = novo.isNotBlank() && novo != nomeAtual,
-                onClick = { aoConfirmar(novo.trim()) },
+                enabled = next.isNotBlank() && next != currentName,
+                onClick = { onConfirm(next.trim()) },
             ) { Text(text = "Rename") }
         },
-        dismissButton = { TextButton(onClick = aoCancelar) { Text(text = "Cancel") } },
+        dismissButton = { TextButton(onClick = onCancel) { Text(text = "Cancel") } },
     )
 }
 
-/**
- * The session chips inside a backup, used by the sheet. It lives here because
- * it shares the list's visual language.
- */
+/** The session chips inside a backup, used by the backups sheet; shares the list's visual language. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun ChipsDeSessoes(nomes: List<String>, aoTocar: (String) -> Unit) {
+internal fun SessionChips(names: List<String>, onTap: (String) -> Unit) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        nomes.forEach { nome ->
+        names.forEach { name ->
             AssistChip(
-                onClick = { aoTocar(nome) },
+                onClick = { onTap(name) },
                 label = {
                     Text(
-                        text = nome,
+                        text = name,
                         style = MaterialTheme.typography.labelSmall,
                         fontFamily = FontFamily.Monospace,
                         maxLines = 1,
@@ -803,5 +741,5 @@ internal fun ChipsDeSessoes(nomes: List<String>, aoTocar: (String) -> Unit) {
     }
 }
 
-internal const val SALVAR_TUDO_TAG = "sessoes-salvar-tudo"
+internal const val SAVE_ALL_TAG = "sessoes-salvar-tudo"
 internal const val BACKUPS_TAG = "sessoes-backups"

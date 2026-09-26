@@ -37,7 +37,7 @@ import org.junit.Test
 /** Mirrors `TerminalSocketClientTest`'s fake ticket source. */
 private class FakeTicketSource(private val tickets: MutableList<String>) : TerminalTicketSource {
     override suspend fun wsTicket(name: String): WsTicketResult {
-        if (tickets.isEmpty()) return WsTicketResult.Error("sem mais tickets fake")
+        if (tickets.isEmpty()) return WsTicketResult.Error("no more fake tickets")
         return WsTicketResult.Success(ticket = tickets.removeAt(0), expiresIn = 60)
     }
 }
@@ -57,30 +57,22 @@ private class RecordingWebSocket : TerminalWebSocket {
     override fun close(code: Int, reason: String): Boolean = true
 }
 
-/**
- * Records every byte ceiling requested and returns the results in order. Empty
- * = "session with no log", which is the normal case for a freshly created
- * session, not an error.
- */
-private class FakeRawLogSource(private val resultados: MutableList<RawLogResult>) : TerminalRawLogSource {
-    val bytesPedidos = mutableListOf<Int>()
+/** Records each requested byte ceiling and returns results in order; empty means "no log yet", not an error. */
+private class FakeRawLogSource(private val results: MutableList<RawLogResult>) : TerminalRawLogSource {
+    val requestedBytes = mutableListOf<Int>()
 
-    /**
-     * Results for the RENDERED history. Empty = "this session has no history
-     * file yet", which is the case for every older session — and that is why
-     * the primer falls back to the raw log instead of giving up.
-     */
-    val doHistorico = mutableListOf<RawLogResult>()
-    val pedidosDeHistorico = mutableListOf<Int>()
+    /** Results for the rendered history; empty means the session has no history file yet. */
+    val fromHistory = mutableListOf<RawLogResult>()
+    val historyRequests = mutableListOf<Int>()
 
-    override suspend fun historico(name: String, bytes: Int): RawLogResult {
-        pedidosDeHistorico += bytes
-        return if (doHistorico.isEmpty()) RawLogResult.Success(ByteArray(0), 0) else doHistorico.removeAt(0)
+    override suspend fun history(name: String, bytes: Int): RawLogResult {
+        historyRequests += bytes
+        return if (fromHistory.isEmpty()) RawLogResult.Success(ByteArray(0), 0) else fromHistory.removeAt(0)
     }
 
-    override suspend fun logBruto(name: String, bytes: Int): RawLogResult {
-        bytesPedidos += bytes
-        return if (resultados.isEmpty()) RawLogResult.Success(ByteArray(0), 0) else resultados.removeAt(0)
+    override suspend fun rawLog(name: String, bytes: Int): RawLogResult {
+        requestedBytes += bytes
+        return if (results.isEmpty()) RawLogResult.Success(ByteArray(0), 0) else results.removeAt(0)
     }
 }
 
@@ -103,28 +95,28 @@ private class FakeGridEngine(private val snapshotToReturn: CellSnapshot) : GridE
     val resizeCalls = mutableListOf<Pair<Int, Int>>()
     var closed = false
 
-    /** How many times the history was cleared — the scaffolding for the attach repaint. */
-    var limpezasDeHistorico = 0
+    /** How many times the history was cleared (setup for the attach repaint). */
+    var historyClears = 0
         private set
 
-    override fun limparHistorico() {
-        limpezasDeHistorico++
+    override fun clearHistory() {
+        historyClears++
     }
 
-    /** What this test's "remote program" switched on. Swapped live, like an `htop` that opens and closes. */
-    var modes = TerminalModes.NENHUM
+    /** Modes the fake remote program has enabled; changed live, like `htop` opening and closing. */
+    var modes = TerminalModes.NONE
 
-    /** Bytes the native encoder would return; `null` = "this event produces no report". */
+    /** Bytes the native encoder would return; `null` means the event produces no report. */
     var mouseBytes: ByteArray? = null
     val mouseCalls = mutableListOf<MouseAction>()
-    val pastesCodificados = mutableListOf<String>()
+    val encodedPastes = mutableListOf<String>()
 
-    /** Every scroll request, in lines — negative scrolls up (into the past). */
-    val rolagens = mutableListOf<Int>()
-    var voltasAoFim = 0
+    /** Every scroll request in lines; negative scrolls up into the past. */
+    val scrolls = mutableListOf<Int>()
+    var backToEndCount = 0
 
     /** A fake viewport, just enough for the test to observe position. */
-    var estadoDeRolagem = TerminalScrollState(total = 100, offset = 90, visiveis = 10, noFim = true)
+    var scrollState = TerminalScrollState(total = 100, offset = 90, visible = 10, atEnd = true)
 
     override fun write(bytes: ByteArray) { writes += bytes }
     override fun snapshot(): CellSnapshot = snapshotToReturn
@@ -142,26 +134,25 @@ private class FakeGridEngine(private val snapshotToReturn: CellSnapshot) : GridE
         mouseCalls += action
         return mouseBytes
     }
-    override fun scrollViewport(linhas: Int) {
-        rolagens += linhas
-        val novoOffset = (estadoDeRolagem.offset + linhas).coerceIn(0, estadoDeRolagem.historico)
-        estadoDeRolagem = estadoDeRolagem.copy(
-            offset = novoOffset,
-            noFim = novoOffset >= estadoDeRolagem.historico,
+    override fun scrollViewport(lines: Int) {
+        scrolls += lines
+        val newOffset = (scrollState.offset + lines).coerceIn(0, scrollState.history)
+        scrollState = scrollState.copy(
+            offset = newOffset,
+            atEnd = newOffset >= scrollState.history,
         )
     }
 
     override fun scrollToBottom() {
-        voltasAoFim++
-        estadoDeRolagem = estadoDeRolagem.copy(offset = estadoDeRolagem.historico, noFim = true)
+        backToEndCount++
+        scrollState = scrollState.copy(offset = scrollState.history, atEnd = true)
     }
 
-    override fun scrollState(): TerminalScrollState = estadoDeRolagem
+    override fun scrollState(): TerminalScrollState = scrollState
 
     override fun encodePaste(text: String): ByteArray {
-        pastesCodificados += text
-        // Mirrors the real contract: with 2004 on the text arrives wrapped,
-        // without it the line breaks become carriage returns.
+        encodedPastes += text
+        // Mirrors the real contract: wrapped with 2004 on, otherwise newlines become CRs.
         return if (modes.bracketedPaste) {
             "\u001b[200~$text\u001b[201~".toByteArray(Charsets.UTF_8)
         } else {
@@ -171,14 +162,9 @@ private class FakeGridEngine(private val snapshotToReturn: CellSnapshot) : GridE
 }
 
 /**
- * A structurally valid 1x1 grid — content is irrelevant to these tests, only
- * identity is checked. [CellSnapshot]'s only public construction path
- * ([CellSnapshot.fromBuffer]) is `internal` to `:terminal-engine`, invisible
- * across the module boundary even to `:feature-terminal`'s own test source
- * set (friend-paths only bridge a module's own main/test split, not two
- * separate Gradle modules) — so this reaches its private constructor via
- * reflection rather than depending on a native-backed engine just to obtain
- * one immutable value object.
+ * A valid 1x1 grid; only identity matters here. [CellSnapshot.fromBuffer] is `internal`
+ * to `:terminal-engine`, so the private constructor is used via reflection instead of
+ * depending on the native engine.
  */
 private fun trivialSnapshot(): CellSnapshot {
     val cell = CellSnapshot.Cell(
@@ -215,17 +201,9 @@ class TerminalViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
 
-    // Every ViewModel built via [buildViewModel] is tracked here so its
-    // `viewModelScope` (which backs the init-block's stall-check loop) is
-    // genuinely cancelled before each test's `runTest` body returns. Without
-    // this, that loop keeps re-scheduling itself forever on the SAME
-    // `TestCoroutineScheduler` `Dispatchers.Main` is bound to below, which
-    // `runTest`'s own idle-detection also drives -- an uncancelled recurring
-    // `delay` loop on that shared scheduler means the scheduler never reports
-    // idle, and `runTest` hangs indefinitely (a known kotlinx-coroutines-test
-    // gotcha, not specific to this ViewModel). `ViewModelStore.clear()` is the
-    // only way to reach `ViewModel.clear()` from outside the lifecycle
-    // module -- it is Kotlin `internal` to `androidx.lifecycle`.
+    // Tracks every ViewModel so its stall-check loop is cancelled before `runTest`
+    // returns; otherwise the shared scheduler never goes idle and `runTest` hangs.
+    // `ViewModelStore.clear()` is the only public way to reach `ViewModel.clear()`.
     private val viewModelStore = ViewModelStore()
     private var viewModelKeyCounter = 0
 
@@ -236,12 +214,8 @@ class TerminalViewModelTest {
 
     @After
     fun tearDown() {
-        // DRAIN before releasing Main. Without this, a coroutine still
-        // pending on a ViewModel from this test wakes up AFTER resetMain(),
-        // touches a Dispatchers.Main that no longer exists, and the exception
-        // surfaces as "uncaught exceptions before the test started" in the
-        // NEXT test — which may even belong to another class. That was the
-        // flake: it passed alone, failed in the suite, victim always changing.
+        // Drain before resetting Main: a pending coroutine waking after resetMain()
+        // would fail a later, unrelated test with "uncaught exceptions".
         dispatcher.scheduler.advanceUntilIdle()
         Dispatchers.resetMain()
     }
@@ -280,61 +254,52 @@ class TerminalViewModelTest {
         return viewModel to engine
     }
 
-    // ---- Grace window: switching apps must not cost any noise ----
-
-    // THE PRIMER PREFERS THE RENDERED HISTORY; THE RAW LOG IS THE FALLBACK.
-    //
-    // Replaying the raw log duplicates: the `ESC[nA` of a repainting program
-    // saturates at the top of the SCREEN and never reaches the scrollback, so
-    // the earlier copy stays put. The server's history has no such problem
-    // because it is not a replay — those lines already left the screen of an
-    // emulator alive on the session's grid. Swapping the order of these two
-    // sources brings the duplication straight back.
+    // The primer prefers the server's rendered history: replaying the raw log of a
+    // repainting program duplicates output, since cursor-up saturates at the screen top.
     @Test
-    fun `o primer usa o historico renderizado quando ele existe`() = runViewModelTest {
-        val fonte = FakeRawLogSource(mutableListOf())
-        fonte.doHistorico += RawLogResult.Success("HISTORICO\r\n".toByteArray(), 11)
+    fun `the primer uses the rendered history when it exists`() = runViewModelTest {
+        val source = FakeRawLogSource(mutableListOf())
+        source.fromHistory += RawLogResult.Success("HISTORICO\r\n".toByteArray(), 11)
         val factory = FakeWebSocketFactory()
-        val (viewModel, engine) = buildViewModel(factory, rawLogSource = fonte)
+        val (viewModel, engine) = buildViewModel(factory, rawLogSource = source)
         viewModel.onGridSizeChanged(80, 24)
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
 
-        assertEquals("pediu o historico", 1, fonte.pedidosDeHistorico.size)
-        assertEquals("e nao precisou do log cru", 0, fonte.bytesPedidos.size)
+        assertEquals("requested the history", 1, source.historyRequests.size)
+        assertEquals("and did not need the raw log", 0, source.requestedBytes.size)
         assertTrue(
-            "o historico foi replayado na engine",
+            "the history was replayed into the engine",
             engine.writes.any { String(it).contains("HISTORICO") },
         )
     }
 
-    // An older session has no history file yet: empty is a legitimate answer,
-    // and the primer has to fall back to the raw log instead of opening blank.
+    // Older sessions have no history file, so the primer falls back to the raw log.
     @Test
-    fun `sem historico renderizado o primer cai no log cru`() = runViewModelTest {
-        val fonte = FakeRawLogSource(mutableListOf(RawLogResult.Success("CRU\r\n".toByteArray(), 5)))
+    fun `without rendered history the primer falls back to the raw log`() = runViewModelTest {
+        val source = FakeRawLogSource(mutableListOf(RawLogResult.Success("CRU\r\n".toByteArray(), 5)))
         val factory = FakeWebSocketFactory()
-        val (viewModel, engine) = buildViewModel(factory, rawLogSource = fonte)
+        val (viewModel, engine) = buildViewModel(factory, rawLogSource = source)
         viewModel.onGridSizeChanged(80, 24)
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
 
-        assertEquals("tentou o historico primeiro", 1, fonte.pedidosDeHistorico.size)
-        assertEquals("e caiu no log cru", 1, fonte.bytesPedidos.size)
+        assertEquals("tried the history first", 1, source.historyRequests.size)
+        assertEquals("and fell back to the raw log", 1, source.requestedBytes.size)
         assertTrue(
-            "a reserva foi replayada",
+            "the fallback was replayed",
             engine.writes.any { String(it).contains("CRU") },
         )
     }
 
     @Test
-    fun `reconexao rapida nao acende faixa nenhuma`() = runViewModelTest {
+    fun `a quick reconnect shows no banner`() = runViewModelTest {
         val factory = FakeWebSocketFactory()
         val (viewModel, _) = buildViewModel(factory)
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles — see onGridSizeChanged.
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
@@ -342,17 +307,17 @@ class TerminalViewModelTest {
         runCurrent()
         assertEquals(ConnectionState.Live, viewModel.bannerState.value)
 
-        // Android cut the network when it sent the app to the background.
-        factory.listeners[0].onFailure("rede cortada em segundo plano")
+        // Android cuts the network when the app goes to the background.
+        factory.listeners[0].onFailure("network cut in the background")
         runCurrent()
         assertEquals(
-            "o estado REAL já é de reconexão",
+            "the real state is already reconnecting",
             ConnectionState.Reconnecting(1),
             viewModel.connectionState.value,
         )
-        assertEquals("a faixa, não", ConnectionState.Live, viewModel.bannerState.value)
+        assertEquals("but the banner is not", ConnectionState.Live, viewModel.bannerState.value)
 
-        // Back in ~600 ms, inside the measured window of 0.5 s to 1 s.
+        // Back in about 600 ms, within the typical 0.5 to 1 s.
         advanceTimeBy(600)
         runCurrent()
         factory.listeners[1].onOpen()
@@ -361,171 +326,155 @@ class TerminalViewModelTest {
         runCurrent()
 
         assertEquals(
-            "reconectou antes da carência: a faixa nunca chegou a acender",
+            "reconnected within the grace period, so the banner never showed",
             ConnectionState.Live,
             viewModel.bannerState.value,
         )
     }
 
     @Test
-    fun `reconexao que passa da carencia acende a faixa`() = runViewModelTest {
+    fun `a reconnect that outlasts the grace period shows the banner`() = runViewModelTest {
         val factory = FakeWebSocketFactory()
         val (viewModel, _) = buildViewModel(factory)
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles — see onGridSizeChanged.
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
         factory.listeners[0].onOpen()
         runCurrent()
 
-        factory.listeners[0].onFailure("servidor fora do ar")
+        factory.listeners[0].onFailure("server down")
         runCurrent()
-        // Nobody opens the next socket: the reconnect really does take a while.
+        // The next socket never opens, so the reconnect takes a while.
         advanceTimeBy(TerminalViewModel.BANNER_GRACE_MS_DEFAULT + 200)
         runCurrent()
 
         assertEquals(
-            "demorou de verdade: aí a informação é útil",
+            "it really took a while, so the banner is useful",
             ConnectionState.Reconnecting(1),
             viewModel.bannerState.value,
         )
     }
 
-    // ---- Paste: the VT emulator decides the wrapping, not the server ----
+    // Paste: the VT emulator decides the bracketing, not the server.
 
     @Test
-    fun `colar com colagem entre colchetes ligada manda os marcadores em UM quadro binario`() = runViewModelTest {
+    fun `paste with bracketed paste on sends the markers in one binary frame`() = runViewModelTest {
         val factory = FakeWebSocketFactory()
         val engine = FakeGridEngine(trivialSnapshot()).apply {
             modes = TerminalModes(mouseTracking = false, bracketedPaste = true)
         }
         val (viewModel, _) = buildViewModel(factory, engine = engine)
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles — see onGridSizeChanged.
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
-        // Actually OPEN it: `send` only writes to an OPEN socket. It used to be
-        // enough for one to EXIST, and that slack was what made typing vanish
-        // during a reconnect — this test went along with it without meaning to,
-        // sending bytes down a socket that was never opened.
+        // `send` only writes to an open socket.
         factory.listeners[0].onOpen()
         runCurrent()
 
-        viewModel.sendPaste("linha 1\nlinha 2\nlinha 3")
+        viewModel.sendPaste("line 1\nline 2\nline 3")
 
         val socket = factory.sockets[0]
-        assertEquals("uma colagem e UM quadro, nunca picada em pedacos", 1, socket.binaryFrames.size)
+        assertEquals("a paste is one frame, never split into pieces", 1, socket.binaryFrames.size)
         assertEquals(
-            "\u001b[200~linha 1\nlinha 2\nlinha 3\u001b[201~",
+            "\u001b[200~line 1\nline 2\nline 3\u001b[201~",
             String(socket.binaryFrames[0], Charsets.UTF_8),
         )
         assertTrue(
-            "colagem nao pode mais sair como quadro de controle: o servidor embrulhava as cegas",
+            "paste must not go out as a control frame, the server would bracket it blindly",
             socket.textFrames.none { it.contains("\"paste\"") },
         )
     }
 
     @Test
-    fun `colar com colagem entre colchetes desligada nao manda marcador nenhum`() = runViewModelTest {
-        // The other side of the same defect. The server ALWAYS wrapped, and
-        // with DECSET 2004 off the markers themselves turned into literal text
-        // on the command line — the same kind of garbage as the mouse defect.
+    fun `paste with bracketed paste off sends no markers`() = runViewModelTest {
+        // With DECSET 2004 off, bracket markers would appear as literal text.
         val factory = FakeWebSocketFactory()
-        val engine = FakeGridEngine(trivialSnapshot()).apply { modes = TerminalModes.NENHUM }
+        val engine = FakeGridEngine(trivialSnapshot()).apply { modes = TerminalModes.NONE }
         val (viewModel, _) = buildViewModel(factory, engine = engine)
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles — see onGridSizeChanged.
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
-        // Actually OPEN it: `send` only writes to an OPEN socket. It used to be
-        // enough for one to EXIST, and that slack was what made typing vanish
-        // during a reconnect — this test went along with it without meaning to,
-        // sending bytes down a socket that was never opened.
+        // `send` only writes to an open socket.
         factory.listeners[0].onOpen()
         runCurrent()
 
-        viewModel.sendPaste("linha 1\nlinha 2")
+        viewModel.sendPaste("line 1\nline 2")
 
-        val enviado = String(factory.sockets[0].binaryFrames[0], Charsets.UTF_8)
-        assertFalse(enviado.contains("\u001b[200~"))
-        assertFalse(enviado.contains("\u001b[201~"))
-        assertEquals("linha 1\rlinha 2", enviado)
+        val sent = String(factory.sockets[0].binaryFrames[0], Charsets.UTF_8)
+        assertFalse(sent.contains("\u001b[200~"))
+        assertFalse(sent.contains("\u001b[201~"))
+        assertEquals("line 1\rline 2", sent)
     }
 
     @Test
-    fun `colar consulta o motor, que e quem conhece o modo do programa remoto`() = runViewModelTest {
+    fun `paste asks the engine, which knows the remote program's mode`() = runViewModelTest {
         val factory = FakeWebSocketFactory()
         val engine = FakeGridEngine(trivialSnapshot())
         val (viewModel, _) = buildViewModel(factory, engine = engine)
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles — see onGridSizeChanged.
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
 
-        viewModel.sendPaste("texto")
+        viewModel.sendPaste("text")
 
-        assertEquals(listOf("texto"), engine.pastesCodificados)
+        assertEquals(listOf("text"), engine.encodedPastes)
     }
 
-    // THE "CLEAR HISTORY" TESTS WENT AWAY TOGETHER WITH THE BUTTON.
-    //
-    // It existed as a remedy for damage of our own making — a log written
-    // twice over, with `dtach`'s screen clear inside it. Once the causes
-    // were fixed, the owner was explicit: "I will never want to erase my
-    // history". Offering "erase everything" as the way out of a defect
-    // charges the person the highest possible price for the author's mistake.
-
     @Test
-    fun `colar sem motor ainda criado nao envia nada`() = runViewModelTest {
+    fun `paste before the engine exists sends nothing`() = runViewModelTest {
         val factory = FakeWebSocketFactory()
         val (viewModel, _) = buildViewModel(factory)
 
-        viewModel.sendPaste("texto")
+        viewModel.sendPaste("text")
         runCurrent()
 
-        assertTrue("sem terminal nao ha onde colar, e nao ha modo a consultar", factory.sockets.isEmpty())
+        assertTrue("without a terminal there is nowhere to paste and no mode to check", factory.sockets.isEmpty())
     }
 
-    // ---- Modes: the truth comes from the engine, re-read on every ask ----
+    // Modes come from the engine and are re-read on every query.
 
     @Test
-    fun `sem motor os modos sao os seguros - nada de mouse, nada de colchetes`() = runViewModelTest {
+    fun `without an engine the modes are the safe defaults`() = runViewModelTest {
         val (viewModel, _) = buildViewModel(FakeWebSocketFactory())
 
-        assertEquals(TerminalModes.NENHUM, viewModel.currentModes())
+        assertEquals(TerminalModes.NONE, viewModel.currentModes())
     }
 
     @Test
-    fun `os modos acompanham o programa remoto abrindo e fechando`() = runViewModelTest {
+    fun `modes follow the remote program opening and closing`() = runViewModelTest {
         val factory = FakeWebSocketFactory()
         val engine = FakeGridEngine(trivialSnapshot())
         val (viewModel, _) = buildViewModel(factory, engine = engine)
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles — see onGridSizeChanged.
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
 
-        assertFalse("prompt de shell: ninguem pediu mouse", viewModel.currentModes().mouseTracking)
+        assertFalse("shell prompt, nobody asked for the mouse", viewModel.currentModes().mouseTracking)
 
         engine.modes = TerminalModes(mouseTracking = true, bracketedPaste = true)
-        assertTrue("abriu o htop", viewModel.currentModes().mouseTracking)
+        assertTrue("htop opened", viewModel.currentModes().mouseTracking)
 
-        engine.modes = TerminalModes.NENHUM
-        assertFalse("fechou o htop", viewModel.currentModes().mouseTracking)
+        engine.modes = TerminalModes.NONE
+        assertFalse("htop closed", viewModel.currentModes().mouseTracking)
     }
 
     @Test
-    fun `encodeMouse sem motor devolve nada em vez de inventar bytes`() = runViewModelTest {
+    fun `encodeMouse without an engine returns nothing instead of inventing bytes`() = runViewModelTest {
         val (viewModel, _) = buildViewModel(FakeWebSocketFactory())
 
         val bytes = viewModel.encodeMouse(
             action = MouseAction.PRESS,
-            button = MouseButton.ESQUERDO,
+            button = MouseButton.LEFT,
             positionXPx = 10f,
             positionYPx = 10f,
             geometry = MouseGeometry(cellWidthPx = 10, cellHeightPx = 20, screenWidthPx = 800, screenHeightPx = 480),
@@ -548,8 +497,7 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles — see onGridSizeChanged.
-
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
@@ -566,14 +514,13 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles — see onGridSizeChanged.
-
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
         runCurrent()
         viewModel.onGridSizeChanged(80, 24)
-        // The grid is only applied once it settles — see onGridSizeChanged.
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
         runCurrent()
         runCurrent()
@@ -583,14 +530,9 @@ class TerminalViewModelTest {
     }
 
     @Test
-    fun `mudar a janela AVISA o servidor e NAO mexe na engine`() = runViewModelTest {
-        // The server decides the GRID size: a session can have several clients
-        // and the PTY settles on the smallest of them. The engine only changes
-        // when the announcement arrives.
-        //
-        // Resizing the engine from the window measurement was the defect: with
-        // a smaller client attached, the program broke its lines at 66 columns
-        // while the app drew on a grid of 72.
+    fun `resizing the window notifies the server and leaves the engine alone`() = runViewModelTest {
+        // The server decides the grid size (the smallest of all clients); the engine
+        // only resizes when the server announces it.
         val factory = FakeWebSocketFactory()
         val (viewModel, engine) = buildViewModel(factory)
 
@@ -604,28 +546,21 @@ class TerminalViewModelTest {
         runCurrent()
         runCurrent()
 
-        assertEquals("nao pode reconectar por mudanca de janela", 1, factory.openedUrls.size)
+        assertEquals("a window change must not reconnect", 1, factory.openedUrls.size)
         assertTrue(
-            "a engine nao pode seguir a janela — quem manda e o anuncio do servidor",
+            "the engine must not follow the window, only the server announcement",
             engine.resizeCalls.isEmpty(),
         )
         assertTrue(
-            "mas o servidor TEM de saber o tamanho desta janela, senao nao ha minimo a calcular",
+            "but the server must know this window size to compute the minimum",
             factory.sockets[0].textFrames.any { it.contains("\"cols\":100") && it.contains("\"rows\":30") },
         )
     }
 
     @Test
-    fun `o PRIMEIRO tamanho tambem e enviado ao servidor`() = runViewModelTest {
-        // The engine's CREATION branch never sent the size; only the CHANGE
-        // branch did. And `reafirmarTamanho` gives up if nothing was ever sent.
-        // On a fresh attach the app never said what size it was: the PTY stayed
-        // at the previous client's size and the screen came out wrong, nearly
-        // always black.
-        //
-        // It explains the gestures that "fixed" it: changing the font size,
-        // attaching an image, opening the sheet. All of them change the grid
-        // height and land in the CHANGE branch — and only then did the size go.
+    fun `the first size is also sent to the server`() = runViewModelTest {
+        // The size must be sent when the engine is created, not only on change;
+        // `reassertSize` does nothing if no size was ever sent.
         val factory = FakeWebSocketFactory()
         val (viewModel, _) = buildViewModel(factory)
 
@@ -637,15 +572,14 @@ class TerminalViewModelTest {
         runCurrent()
 
         assertTrue(
-            "o servidor precisa saber o tamanho ja no primeiro attach",
+            "the server must know the size on the first attach",
             factory.sockets[0].textFrames.any { it.contains("\"cols\":80") && it.contains("\"rows\":24") },
         )
     }
 
     @Test
-    fun `o anuncio do servidor e que redimensiona a engine`() = runViewModelTest {
-        // The other half of the minimum-size rule: every client draws a grid the
-        // size of the SESSION, not the size of its own window.
+    fun `the server announcement is what resizes the engine`() = runViewModelTest {
+        // Every client draws a grid the size of the session, not of its own window.
         val factory = FakeWebSocketFactory()
         val (viewModel, engine) = buildViewModel(factory)
 
@@ -655,7 +589,7 @@ class TerminalViewModelTest {
         runCurrent()
         factory.listeners[0].onOpen()
 
-        // The server says the session is smaller, because another client is attached.
+        // Another client is attached, so the server announces a smaller session.
         factory.listeners[0].onTextMessage("""{"type":"size","cols":66,"rows":24}""")
         runCurrent()
 
@@ -663,9 +597,8 @@ class TerminalViewModelTest {
     }
 
     @Test
-    fun `quadro de texto desconhecido nao derruba nem redimensiona nada`() = runViewModelTest {
-        // A frame that is not the announcement must never turn into garbage on
-        // screen nor into an exception: it simply is not this announcement.
+    fun `an unknown text frame neither crashes nor resizes anything`() = runViewModelTest {
+        // Frames other than the size announcement are ignored without error.
         val factory = FakeWebSocketFactory()
         val (viewModel, engine) = buildViewModel(factory)
 
@@ -675,8 +608,8 @@ class TerminalViewModelTest {
         runCurrent()
         factory.listeners[0].onOpen()
 
-        factory.listeners[0].onTextMessage("isto nao e json")
-        factory.listeners[0].onTextMessage("""{"type":"outra coisa"}""")
+        factory.listeners[0].onTextMessage("this is not json")
+        factory.listeners[0].onTextMessage("""{"type":"something else"}""")
         runCurrent()
 
         assertTrue(engine.resizeCalls.isEmpty())
@@ -689,8 +622,7 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles — see onGridSizeChanged.
-
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
@@ -710,16 +642,12 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles — see onGridSizeChanged.
-
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
         runCurrent()
-        // Actually OPEN it: `send` only writes to an OPEN socket. It used to be
-        // enough for one to EXIST, and that slack was what made typing vanish
-        // during a reconnect — this test went along with it without meaning to,
-        // sending bytes down a socket that was never opened.
+        // `send` only writes to an open socket.
         factory.listeners[0].onOpen()
         runCurrent()
         viewModel.byteSink.send(byteArrayOf(9))
@@ -735,8 +663,7 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles — see onGridSizeChanged.
-
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
@@ -758,8 +685,7 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles — see onGridSizeChanged.
-
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
@@ -783,8 +709,7 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles — see onGridSizeChanged.
-
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
@@ -803,8 +728,7 @@ class TerminalViewModelTest {
 
         viewModel.onGridSizeChanged(80, 24)
 
-        // The grid is only applied once it settles — see onGridSizeChanged.
-
+        // The grid is only applied once it settles (see onGridSizeChanged).
         advanceTimeBy(300)
 
         runCurrent()
@@ -816,161 +740,151 @@ class TerminalViewModelTest {
         assertFalse(viewModel.isStalled.value)
     }
 
-    // ---- Session history: fetched, replayed, BEFORE the live stream ----
+    // Session history is fetched and replayed before the live stream.
 
     @Test
-    fun `o historico buscado entra na engine antes do fluxo vivo, nunca depois`() = runViewModelTest {
+    fun `the fetched history enters the engine before the live stream, never after`() = runViewModelTest {
         val factory = FakeWebSocketFactory()
-        val historico = "conversa antiga\r\n".toByteArray()
+        val history = "old conversation\r\n".toByteArray()
         val (viewModel, engine) = buildViewModel(
             factory,
-            rawLogSource = FakeRawLogSource(mutableListOf(RawLogResult.Success(historico, historico.size))),
+            rawLogSource = FakeRawLogSource(mutableListOf(RawLogResult.Success(history, history.size))),
         )
 
         viewModel.onGridSizeChanged(80, 24)
-        advanceTimeBy(TerminalViewModel.ESTABILIZACAO_DE_TAMANHO_MS + 1)
+        advanceTimeBy(TerminalViewModel.SIZE_SETTLE_MS + 1)
         runCurrent()
-        // The live byte arrives BEFORE the history has been written — this is
-        // the real race: the socket opens in the same turn the fetch goes out.
+        // A live byte arrives before the history is written, as in the real race.
         factory.listeners.last().onOpen()
-        factory.listeners.last().onBinaryMessage("ao vivo".toByteArray())
+        factory.listeners.last().onBinaryMessage("live".toByteArray())
         runCurrent()
 
-        val escritos = engine.writes.map { String(it) }
-        assertEquals(listOf("conversa antiga\r\n", "ao vivo"), escritos)
+        val written = engine.writes.map { String(it) }
+        assertEquals(listOf("old conversation\r\n", "live"), written)
     }
 
     @Test
-    fun `o attach fresco dispensa o historico do servidor mas continua sendo fresco`() = runViewModelTest {
+    fun `a fresh attach skips the server history but stays a fresh attach`() = runViewModelTest {
         val factory = FakeWebSocketFactory()
         val (viewModel, _) = buildViewModel(factory)
 
         viewModel.onGridSizeChanged(80, 24)
-        advanceTimeBy(TerminalViewModel.ESTABILIZACAO_DE_TAMANHO_MS + 1)
+        advanceTimeBy(TerminalViewModel.SIZE_SETTLE_MS + 1)
         runCurrent()
 
         val url = factory.openedUrls.first()
         assertTrue(
-            "sem replay=0 o historico apareceria duas vezes: o do servidor e o " +
-                "que o app replaya (URL=$url)",
+            "without replay=0 the history would appear twice, from the server and " +
+                "from the app replay (URL=$url)",
             url.contains("replay=0"),
         )
         assertFalse(
-            "attach=1 na PRIMEIRA conexao desligaria o repaint-wobble, e a tela " +
-                "ficaria parada no ultimo quadro gravado (URL=$url)",
+            "attach=1 on the first connection would disable the repaint wobble, and the screen " +
+                "would stay on the last recorded frame (URL=$url)",
             url.contains("attach=1"),
         )
     }
 
     @Test
-    fun `o teto de bytes buscados sai da preferencia de linhas, nao de um chute`() = runViewModelTest {
+    fun `the fetched byte ceiling comes from the line preference, not a guess`() = runViewModelTest {
         val factory = FakeWebSocketFactory()
-        val fonte = FakeRawLogSource(mutableListOf())
-        val (viewModel, _) = buildViewModel(factory, rawLogSource = fonte)
-        viewModel.scrollbackLinhas = TerminalScrollback.DEZ_MIL.linhas
+        val source = FakeRawLogSource(mutableListOf())
+        val (viewModel, _) = buildViewModel(factory, rawLogSource = source)
+        viewModel.scrollbackLines = TerminalScrollback.TEN_THOUSAND.lines
 
         viewModel.onGridSizeChanged(80, 24)
-        advanceTimeBy(TerminalViewModel.ESTABILIZACAO_DE_TAMANHO_MS + 1)
+        advanceTimeBy(TerminalViewModel.SIZE_SETTLE_MS + 1)
         runCurrent()
 
-        assertEquals(listOf(TerminalScrollback.DEZ_MIL.bytesDeLogParaBuscar), fonte.bytesPedidos)
+        assertEquals(listOf(TerminalScrollback.TEN_THOUSAND.logBytesToFetch), source.requestedBytes)
     }
 
     @Test
-    fun `historico que nao vem nao pode reter o fluxo vivo - ele e liberado do mesmo jeito`() = runViewModelTest {
+    fun `missing history must not hold back the live stream`() = runViewModelTest {
         val factory = FakeWebSocketFactory()
         val (viewModel, engine) = buildViewModel(
             factory,
             rawLogSource = FakeRawLogSource(
-                MutableList(TerminalViewModel.TENTATIVAS_DO_PRIMER) { RawLogResult.Error("falha de rede") },
+                MutableList(TerminalViewModel.PRIMER_ATTEMPTS) { RawLogResult.Error("network failure") },
             ),
         )
 
         viewModel.onGridSizeChanged(80, 24)
-        advanceTimeBy(TerminalViewModel.ESTABILIZACAO_DE_TAMANHO_MS + 1)
+        advanceTimeBy(TerminalViewModel.SIZE_SETTLE_MS + 1)
         runCurrent()
 
-        // THE SOCKET DOES NOT EXIST YET, and that is the point: connecting
-        // only happens after the fetch. See the KDoc of `iniciarPrimer` —
-        // attaching in parallel made the server write into the log the very
-        // bytes already arriving over the socket, and the engine got them twice.
+        // No socket yet: connecting only happens after the fetch (see `startPrimer`),
+        // or the server would log bytes the socket also delivers.
         assertTrue(
-            "conectar durante a busca reintroduz a sobreposicao que embaralhava a tela",
+            "connecting during the fetch would cause the overlap that garbled the screen",
             factory.listeners.isEmpty(),
         )
 
-        // The attempts, with the breather between them. After that, it
-        // connects. The `+ 1` on the number of breathers is deliberate: there
-        // are N attempts and N-1 waits, and a test that counts them exactly
-        // breaks when someone tunes the retry count — which is legitimate
-        // tuning, not a regression.
+        // After all attempts and waits it connects. The `+ 1` leaves slack so tuning the
+        // retry count does not break the test.
         advanceTimeBy(
-            TerminalViewModel.ESPERA_ENTRE_TENTATIVAS_MS * (TerminalViewModel.TENTATIVAS_DO_PRIMER + 1),
+            TerminalViewModel.RETRY_DELAY_MS * (TerminalViewModel.PRIMER_ATTEMPTS + 1),
         )
         runCurrent()
 
         assertEquals(1, factory.listeners.size)
         factory.listeners.last().onOpen()
-        factory.listeners.last().onBinaryMessage("ao vivo".toByteArray())
+        factory.listeners.last().onBinaryMessage("live".toByteArray())
         runCurrent()
 
-        assertEquals(listOf("ao vivo"), engine.writes.map { String(it) })
+        assertEquals(listOf("live"), engine.writes.map { String(it) })
     }
 
     @Test
-    fun `o historico e buscado ANTES de conectar - e o encaixe que evita byte repetido`() = runViewModelTest {
-        // The server only writes to the session log WHILE someone is attached.
-        // Fetching with the log frozen makes the history end exactly where the
-        // live stream begins. Reproduced off-device, in the app's own engine:
-        // 2000 repeated bytes at the end of the log are enough to paint a rule
-        // over text, because Claude Code's frame uses relative cursor movement
-        // and column jumps that do not erase what they skip.
+    fun `the history is fetched before connecting so no byte is repeated`() = runViewModelTest {
+        // The server only logs while someone is attached, so fetching first makes the
+        // history end exactly where the live stream begins. Repeated bytes garble
+        // programs that use relative cursor movement.
         val factory = FakeWebSocketFactory()
-        val log = FakeRawLogSource(mutableListOf(RawLogResult.Success("historico".toByteArray(), 9)))
+        val log = FakeRawLogSource(mutableListOf(RawLogResult.Success("history".toByteArray(), 9)))
         val (viewModel, engine) = buildViewModel(factory, rawLogSource = log)
 
         viewModel.onGridSizeChanged(80, 24)
-        advanceTimeBy(TerminalViewModel.ESTABILIZACAO_DE_TAMANHO_MS + 1)
+        advanceTimeBy(TerminalViewModel.SIZE_SETTLE_MS + 1)
         runCurrent()
 
-        assertEquals("a busca do log tem de acontecer antes de qualquer attach", 1, log.bytesPedidos.size)
+        assertEquals("the log fetch must happen before any attach", 1, log.requestedBytes.size)
         assertEquals(1, factory.listeners.size)
         factory.listeners.last().onOpen()
-        factory.listeners.last().onBinaryMessage("vivo".toByteArray())
+        factory.listeners.last().onBinaryMessage("live".toByteArray())
         runCurrent()
 
-        // History first, live stream after, every byte exactly once.
-        assertEquals(listOf("historico", "vivo"), engine.writes.map { String(it) })
+        // History first, then the live stream, every byte exactly once.
+        assertEquals(listOf("history", "live"), engine.writes.map { String(it) })
     }
 
     @Test
-    fun `fluxo vivo demais durante a busca abandona o historico em vez de encher a memoria`() = runViewModelTest {
+    fun `too much live output during the fetch drops the history instead of filling memory`() = runViewModelTest {
         val factory = FakeWebSocketFactory()
-        // A fetch that never answers in time: meanwhile, the session dumps.
+        // The fetch never answers in time while the session floods output.
         val (viewModel, engine) = buildViewModel(
             factory,
-            rawLogSource = FakeRawLogSource(mutableListOf(RawLogResult.Error("demorou"))),
+            rawLogSource = FakeRawLogSource(mutableListOf(RawLogResult.Error("timed out"))),
         )
 
         viewModel.onGridSizeChanged(80, 24)
-        advanceTimeBy(TerminalViewModel.ESTABILIZACAO_DE_TAMANHO_MS + 1)
+        advanceTimeBy(TerminalViewModel.SIZE_SETTLE_MS + 1)
         runCurrent()
-        // The fetch fails and the ceiling wins; only then does the socket open.
-        // The guard stays reachable: the replay writes in chunks, yielding as
-        // it goes, and it is in those yields that a live dump can arrive.
-        advanceTimeBy(TerminalViewModel.TETO_DO_PRIMER_MS + 1)
+        // After the timeout the socket opens; the replay yields between chunks, so a
+        // live flood can still arrive during it.
+        advanceTimeBy(TerminalViewModel.PRIMER_TIMEOUT_MS + 1)
         runCurrent()
         factory.listeners.last().onOpen()
-        val despejo = ByteArray(TerminalViewModel.MAX_BYTES_PENDENTES + 1) { 'x'.code.toByte() }
-        factory.listeners.last().onBinaryMessage(despejo)
+        val flood = ByteArray(TerminalViewModel.MAX_PENDING_BYTES + 1) { 'x'.code.toByte() }
+        factory.listeners.last().onBinaryMessage(flood)
         runCurrent()
 
         assertEquals(
-            "o despejo tem de chegar a engine na hora, sem esperar a busca",
+            "the flood must reach the engine immediately, without waiting for the fetch",
             1,
             engine.writes.size,
         )
-        assertEquals(despejo.size, engine.writes.first().size)
+        assertEquals(flood.size, engine.writes.first().size)
     }
 
 }

@@ -1,27 +1,22 @@
-{{! Override do template embutido kotlin-client/libraries/jvm-okhttp/infrastructure/ApiClient.kt.mustache
-   do org.openapi.generator (verificado byte-a-byte contra o upstream 7.25.0). A ÚNICA diferença é
-   o guarda `if (requestConfig.requiresAuthentication)` em volta da chamada a updateAuthParams()
-   dentro de request() — procure por "GUARDA VPSM" abaixo.
+{{! Override of org.openapi.generator's built-in kotlin-client/libraries/jvm-okhttp/infrastructure/ApiClient.kt.mustache
+   (verified byte-identical to upstream 7.25.0). The ONLY difference is the
+   `if (requestConfig.requiresAuthentication)` guard around updateAuthParams() inside request();
+   search for "VPSM GUARD" below.
 
-   Por quê: o upstream chama updateAuthParams() em TODA requisição, ignorando o campo
-   requiresAuthentication que ele mesmo gera em cada RequestConfig. Como o spec do BFF declara
-   segurança só nas rotas protegidas (ver internal/mobilebff/security.go) e o app espelha o access
-   token da sessão em ApiClient.accessToken (SessionManager, para MediaNetwork e o WebSocket do
-   WhatsApp), sem esse guarda o cliente passaria a mandar `Authorization: Bearer <token da sessão
-   anterior>` também em POST /auth/login, /auth/refresh, /auth/pair e /auth/passkey/* — rotas que
-   ficam FORA de auth.Middleware justamente porque acontecem antes de existir sessão. O servidor
-   ignoraria (nenhuma delas lê o header), mas seria mandar credencial para quem não pediu, e uma
-   mudança de comportamento em relação ao que o AuthTokenInterceptor já faz hoje (ele pula essas
-   mesmas rotas por sufixo de caminho).
+   Why: upstream calls updateAuthParams() on EVERY request, ignoring the requiresAuthentication
+   field it generates for each RequestConfig. The BFF spec declares security only on protected
+   routes (see internal/mobilebff/security.go) and the app mirrors the session access token into
+   ApiClient.accessToken, so without the guard the client would send the previous session's
+   bearer token to /auth/login, /auth/refresh, /auth/pair and /auth/passkey/*, which run outside
+   auth.Middleware because no session exists yet. AuthTokenInterceptor already skips those routes.
 
-   Com o guarda, a divisão de responsabilidade fica: rota protegida ⇒ o gerado monta o header a
-   partir de ApiClient.accessToken e o AuthTokenInterceptor o SOBRESCREVE (Request.header()
-   substitui, não acumula — nunca sai duplicado) com o token de SessionManager, que é quem sabe
-   renovar; rota pública ⇒ ninguém monta header, como antes. Ver
-   android/data/src/main/kotlin/com/vpsmanager/data/auth/AuthTokenInterceptor.kt.
+   With the guard: on a protected route the generated code sets the header from
+   ApiClient.accessToken and AuthTokenInterceptor overwrites it (Request.header() replaces, never
+   duplicates) with the SessionManager token, since only it knows how to refresh; on a public route
+   nobody sets the header. See android/data/src/main/kotlin/com/vpsmanager/data/auth/AuthTokenInterceptor.kt.
 
-   Arquivos que o gerador não achar aqui caem no template embutido dele — todo o resto do código
-   gerado continua intocado. Ver android/data/mobile-api-client/build.gradle.kts (templateDir). }}
+   Files not found here fall back to the generator's built-in templates. See
+   android/data/mobile-api-client/build.gradle.kts (templateDir). }}
 package {{packageName}}.infrastructure
 
 {{#supportAndroidApiLevel25AndBelow}}
@@ -519,8 +514,8 @@ import com.squareup.moshi.adapter
         {{#hasAuthMethods}}
 
         // take authMethod from operation
-        // GUARDA VPSM: só as operações que DECLARAM segurança no spec recebem o header — ver o
-        // comentário no topo deste template.
+        // VPSM GUARD: only operations that declare security in the spec get the header (see the
+        // comment at the top of this template).
         if (requestConfig.requiresAuthentication) {
             updateAuthParams(requestConfig)
         }
