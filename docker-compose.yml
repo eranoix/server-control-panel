@@ -1,0 +1,22 @@
+services:
+  server-control-panel:
+    build: .
+    ports:
+      - "8765:8765"
+    environment:
+      # Read-only demo: every mutating verb, every WebSocket upgrade and every
+      # shell-adjacent path is refused at Router.ServeHTTP. Drop this line to
+      # run the real thing locally. See internal/api/demo_mode.go.
+      DEMO_MODE: "1"
+    # The demo gate is the first line of defence; everything below is the
+    # backstop, so a mistake in the allowlist still reaches nothing that
+    # matters. The data directory is tmpfs, which is also what makes the demo
+    # reset itself on restart.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/data:uid=10001,gid=10001
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

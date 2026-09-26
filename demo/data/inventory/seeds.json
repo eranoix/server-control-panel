@@ -1,0 +1,5 @@
+[
+  {"id": "edge-01", "name": "edge-01", "transport": "agente", "address": "203.0.113.11", "kind": "externo", "vmid": 0},
+  {"id": "build-01", "name": "build-01", "transport": "ssh", "address": "203.0.113.12", "kind": "externo", "vmid": 0},
+  {"id": "archive-01", "name": "archive-01", "transport": "ssh", "address": "198.51.100.30", "kind": "externo", "vmid": 0}
+]

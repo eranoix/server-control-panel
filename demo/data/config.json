@@ -1,0 +1,13 @@
+{
+  "schema_version": 2,
+  "listen": ":8765",
+  "primary": "demo",
+  "jwt_secret": "6f4a2d1e8b7c059a3e2f1d4c6b8a0e7f5c3d1b9a8e6f4c2d0b7a5e3f1c9d8b6a",
+  "users": [
+    {
+      "username": "demo",
+      "password_hash": "$2a$12$ZDTczJ1P..se4P/uR9tZIeMuJK6SyRM8z71l/skjNRI6oCfD7p9FK",
+      "admin": true
+    }
+  ]
+}
