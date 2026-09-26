@@ -12,6 +12,8 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.geometry.Offset
 import dev.servercontrolpanel.data.jira.JiraResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -160,5 +162,26 @@ class BoardScreenTest {
 
         compose.onNodeWithText("Connection failed.").assertIsDisplayed()
         compose.onNodeWithText("Try again").assertIsDisplayed()
+    }
+
+    @Test
+    fun `dragging a card onto another column moves it there`() {
+        val source = FakeSource(JiraResult.Ok(testBoard(toDo = listOf(card("TASK-1")))))
+        compose.setContent { JiraBoardRoute(vm = BoardViewModel(source)) }
+
+        val from = compose.onNodeWithText("summary of TASK-1").fetchSemanticsNode().boundsInRoot.center.x
+        val to = compose.onNodeWithText("In Progress").fetchSemanticsNode().boundsInRoot.center.x
+        compose.onNodeWithText("summary of TASK-1").performTouchInput {
+            down(center)
+            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 100)
+            val steps = 10
+            repeat(steps) { moveBy(Offset((to - from) / steps, 0f)) }
+            up()
+        }
+        compose.waitForIdle()
+
+        assert(source.moves == listOf("TASK-1" to "In Progress")) {
+            "dropping on In Progress should move TASK-1 there, moves were ${source.moves}"
+        }
     }
 }

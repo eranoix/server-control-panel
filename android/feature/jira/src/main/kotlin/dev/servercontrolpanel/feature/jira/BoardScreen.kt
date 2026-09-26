@@ -272,10 +272,7 @@ private fun Board(
                             onOpen = vm::openIssue,
                             onSelect = vm::toggleSelection,
                             onPick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
-                            onDrop = { card ->
-                                // Target is the column under the finger on release; outside all columns, nothing moves.
-                                dragState.targetColumn()?.let { vm.move(card.key, it) }
-                            },
+                            onDrop = { card, column -> vm.move(card.key, column) },
                         )
                     }
                 }
@@ -318,7 +315,7 @@ private fun BoardColumn(
     onOpen: (String) -> Unit,
     onSelect: (String) -> Unit,
     onPick: () -> Unit,
-    onDrop: (JiraCard) -> Unit,
+    onDrop: (card: JiraCard, column: String) -> Unit,
 ) {
     Column(
         modifier = Modifier

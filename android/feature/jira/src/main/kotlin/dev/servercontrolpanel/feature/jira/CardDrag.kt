@@ -83,6 +83,18 @@ internal class DragState {
         offset += delta
     }
 
+    /**
+     * Ends the drag and returns the card with the column under the finger, or null when nothing
+     * was being dragged. The column is read before the state is cleared: [targetColumn] answers
+     * null once [card] is gone.
+     */
+    fun release(): Pair<JiraCard, String?>? {
+        val picked = card ?: return null
+        val target = targetColumn()
+        drop()
+        return picked to target
+    }
+
     fun drop() {
         card = null
         sourceColumn = null
@@ -112,8 +124,8 @@ internal class DragState {
  * Makes a card draggable after a long press.
  *
  * [onPick] fires when the card lifts (for haptic feedback confirming the pickup). [onDrop]
- * receives the card when the finger lifts. A false [enabled] disables the gesture, as in
- * multi-select mode.
+ * receives the card and the column under the finger when it lifts; a release outside every
+ * column calls nothing. A false [enabled] disables the gesture, as in multi-select mode.
  */
 internal fun Modifier.draggable(
     state: DragState,
@@ -121,7 +133,7 @@ internal fun Modifier.draggable(
     column: String,
     enabled: Boolean,
     onPick: () -> Unit,
-    onDrop: (JiraCard) -> Unit,
+    onDrop: (card: JiraCard, column: String) -> Unit,
 ): Modifier {
     if (!enabled) return this
     var origin = Offset.Zero
@@ -142,9 +154,9 @@ internal fun Modifier.draggable(
                     state.drag(delta)
                 },
                 onDragEnd = {
-                    val picked = state.card
-                    state.drop()
-                    if (picked != null) onDrop(picked)
+                    state.release()?.let { (picked, target) ->
+                        if (target != null) onDrop(picked, target)
+                    }
                 },
                 // A system cancellation (incoming call, backgrounding) moves nothing.
                 onDragCancel = { state.drop() },
