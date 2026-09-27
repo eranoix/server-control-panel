@@ -591,6 +591,19 @@ window.installFocusTrap = function (root) {
 // and any external call would become a ReferenceError at boot.
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+// base64ToText decodes base64 or base64url and returns the text as UTF-8.
+// atob alone returns one character per BYTE (Latin-1), so every multi-byte
+// character turns into mojibake. Every text that arrives as base64 (terminal OSC 52, the JWT
+// payload) goes through here, never through atob directly.
+function base64ToText(b64) {
+  let s = String(b64 == null ? '' : b64).replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  if (s.length % 4) s += '='.repeat(4 - (s.length % 4));
+  const bin = atob(s);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
 // safeJSON(key, fallback) reads localStorage[key] and parses it. If
 // localStorage is corrupted (e.g. an extension injected a non-JSON string, or
 // the user edited it in DevTools), it returns the fallback instead of throwing
@@ -5235,7 +5248,7 @@ function app() {
     },
     _tokenExpMs() {
       try {
-        const p = JSON.parse(atob((this.token || '').split('.')[1]));
+        const p = JSON.parse(base64ToText((this.token || '').split('.')[1]));
         return (p && p.exp) ? p.exp * 1000 : 0;
       } catch(_) { return 0; }
     },
@@ -10424,8 +10437,8 @@ function app() {
               const parts = (data || '').split(';');
               if (parts.length < 2) return false;
               const b64 = parts[parts.length - 1];
-              if (!b64) return true;
-              const text = atob(b64);
+              if (!b64 || b64 === '?') return true; // '?' asks to READ the clipboard: not answered
+              const text = base64ToText(b64);
               navigator.clipboard.writeText(text).catch(() => {});
               return true;
             } catch (_) { return false; }
