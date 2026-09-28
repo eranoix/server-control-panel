@@ -12,6 +12,8 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The git half (push, tag, GitHub Release) is not part of what this covers.
+export SKIP_GIT_RELEASE=1
 SCRIPT="$ROOT/scripts/android-publish.sh"
 APKSIGNER_BIN="$(command -v apksigner || true)"
 AAPT2_BIN=""

@@ -38,6 +38,10 @@ FDROID_REPO_DIR="${FDROID_REPO_DIR:-$ROOT_DIR/data/fdroid/repo}"
 KEYSTORE_DOC="${KEYSTORE_DOC:-$ROOT_DIR/docs/android-signing-keystore.md}"
 APKSIGNER="${APKSIGNER:-apksigner}"
 
+# A release is published from a clean main that matches origin/main, so the
+# tag created at the end points at code everyone can fetch.
+"$ROOT_DIR/scripts/release-git.sh" check
+
 RELEASE_DIR="$STAGING_DIR/$VERSION_CODE"
 SIGNED_APK="$RELEASE_DIR/app-release-signed.apk"
 REPO_BUNDLE="$RELEASE_DIR/fdroid-repo"
@@ -113,4 +117,13 @@ if [ "${SKIP_PATCHES:-0}" != "1" ]; then
   else
     echo "WARNING: incremental patch generation failed. The F-Droid release is published and intact, but the incremental update channel is stale. Run scripts/android-patches.sh by hand." >&2
   fi
+fi
+
+# The git half of the release: push main, tag vX.Y.Z and create the GitHub
+# Release. The version is read from the signed APK, never typed.
+AAPT2="${AAPT2:-$(command -v aapt2 || ls /opt/android-sdk/build-tools/*/aapt2 2>/dev/null | sort -r | head -1)}"
+VERSION_NAME="$("$AAPT2" dump badging "$SIGNED_APK" 2>/dev/null | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)"
+if [ "${SKIP_GIT_RELEASE:-0}" != "1" ]; then
+  [ -n "$VERSION_NAME" ] || fail "could not read versionName from $SIGNED_APK with aapt2"
+  "$ROOT_DIR/scripts/release-git.sh" publish "$VERSION_NAME"
 fi
